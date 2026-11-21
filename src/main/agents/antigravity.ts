@@ -25,7 +25,7 @@ import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, A
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { bracketCompaction, markCompactionActivity } from './compactionActivity'
+import { markCompactionActivity, type CompactionMark } from './compactionActivity'
 import type { ActivitySubscriptionOptions, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ProviderHost, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { watcherMayWrite } from './host'
@@ -134,6 +134,7 @@ const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), desc
 const ANTIGRAVITY_GEMINI_ONLY = 'Antigravity threads in Sotto run Gemini models only, under Google’s terms. Nothing was sent, and your thread and draft are kept. Choose a Gemini model, then send.'
 const COMPACTING = 'Antigravity is compacting this thread. Wait for it to finish, then send.'
 const COMPACTION_LOST = 'Antigravity stopped before it finished compacting this thread. Nothing was lost. Compact it again if it still needs it.'
+const COMPACTION_UNCONFIRMED = 'Antigravity did not confirm whether it compacted this thread. Nothing was lost. Its next reply shows how full the context is; compact again then if it still needs it.'
 const PROCESS_LOST = 'Antigravity stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const WATCHER_WITHOUT_TOOLS = 'This Antigravity client cannot give Watcher its Sotto tools or instructions, so Watcher did not start. Nothing was sent. Update Antigravity, then connect it again, or choose another model for Watcher.'
 
@@ -225,9 +226,9 @@ export class AntigravityAcpHost implements ProviderHost {
   private readonly turns = new Map<string, LiveTurn>()
   private readonly pending = new Map<string, Pending>()
   private readonly dispatching = new Set<string>()
-  /** Each thread's `/compact` in flight, by its command, and the threads whose next context size closes a compaction's record. */
+  /** Each thread's `/compact` in flight, by its command, and the boundary each thread's next context size closes. */
   private readonly compactions = new Map<string, string>()
-  private readonly compactedSince = new Set<string>()
+  private readonly compactedSince = new Map<string, CompactionMark>()
   private readonly observed = new Set<string>()
   private readonly outdated = new Set<string>()
   private readonly processes = new Set<AntigravityRpc>()
@@ -833,7 +834,12 @@ export class AntigravityAcpHost implements ProviderHost {
     if (kind === 'usage_update') {
       this.taken(id)
       if (this.compactions.has(id) || !countAntigravityFullness(this.thread(id), update)) return
-      if (this.compactedSince.delete(id)) { const thread = this.thread(id); thread.activities = bracketCompaction(thread.activities, { after: thread.usage!.contextUsed! }); this.changed(id) }
+      const boundary = this.compactedSince.get(id), after = this.thread(id).usage?.contextUsed
+      // Only a reading with the size closes the boundary, and only its own: one that did not shrink is a later turn's growth, as for Codex.
+      if (boundary && typeof update.used === 'number' && after !== undefined) {
+        this.compactedSince.delete(id)
+        if (boundary.before === undefined || after < boundary.before) { const thread = this.thread(id); thread.activities = markCompactionActivity(thread.activities, { ...boundary, after }); this.changed(id) }
+      }
       this.emit(true); return
     }
     // A compaction is not a turn: anything `agy` says while it folds the conversation is not shown as the last turn's.
@@ -1179,8 +1185,13 @@ export class AntigravityAcpHost implements ProviderHost {
     if (thread.compaction?.commandId === command.commandId) return { accepted: true }
     if ((running && !running.ended) || this.compactions.has(id) || compactionPending(thread.compaction)) throw new Error('Antigravity is still working on this thread. Wait for it to finish before compacting.')
     if (thread.requests.length) throw new Error('Answer Antigravity’s pending request before compacting.')
+    // `agy` takes an unknown `/name` as words, so a client that does not list `/compact` is not sent it.
+    if (connection.commands && !connection.commands.some(skill => skill.name === 'compact')) throw new Error('This Antigravity client does not offer /compact. Nothing was changed. Update Antigravity to compact its threads.')
     await this.applySettings(alias, connection)
     if (generation !== this.generation || this.connections.get(id) !== connection) throw new AntigravityUncertain('Antigravity’s connection changed.')
+    // A request may have come while the settings were applied; it is answered first, as before a send.
+    if (thread.requests.length) throw new Error('Answer Antigravity’s pending request before compacting.')
+    if (this.turns.get(id)?.ended === false) throw new Error('Antigravity is still working on this thread. Wait for it to finish before compacting.')
     watcherGuard?.()
     const before = thread.usage?.contextUsed
     this.compactions.set(id, command.commandId); this.compactedSince.delete(id)
@@ -1192,15 +1203,16 @@ export class AntigravityAcpHost implements ProviderHost {
       countAntigravityAnswer(this.thread(id), value, false)
       const stop = promptAnswerSchema.parse(value).stopReason
       if (stop === 'end_turn') this.settleCompaction(id, command.commandId, before)
-      else this.settleCompaction(id, command.commandId, before, stop === 'cancelled' ? 'The compaction was stopped. Nothing was lost.' : 'Antigravity did not compact this thread. Nothing was lost. Try again later.')
+      else this.settleCompaction(id, command.commandId, before, stop === 'cancelled' ? 'The compaction was stopped. Nothing was lost. Compact the thread again when you want to.'
+        : 'Antigravity did not compact this thread. Nothing was lost. Try again later.')
     }, true).catch((error: unknown) => {
       this.settleCompaction(id, command.commandId, before, !connection.rpc.alive ? COMPACTION_LOST
-        : error instanceof AntigravityRejected ? 'Antigravity refused to compact this thread. Nothing was lost.' : COMPACTION_LOST)
+        : error instanceof AntigravityRejected ? 'Antigravity refused to compact this thread. Nothing was lost. Try again later.' : COMPACTION_UNCONFIRMED)
     })
     return { accepted: true }
   }
   /** The end of a `/compact`: its record, and on success a boundary in the transcript and no stale context size. */
-  private settleCompaction(id: string, commandId: string, before: number | undefined, error?: string): void {
+  private settleCompaction(id: string, commandId: string, before: number | undefined, error?: string, publish = true): void {
     if (this.compactions.get(id) !== commandId) return
     this.compactions.delete(id)
     const thread = this.threads.get(id); if (!thread) return
@@ -1208,11 +1220,13 @@ export class AntigravityAcpHost implements ProviderHost {
     thread.status = error ? 'error' : 'idle'
     if (!error) {
       const anchor = this.log.lastMessageId(id)
-      thread.activities = markCompactionActivity(thread.activities, { provider: 'antigravity', key: commandId, turnId: this.log.lastUserMessageId(id) ?? 'antigravity-history',
-        ...(anchor !== undefined ? { afterMessageId: anchor } : {}), ...(before !== undefined ? { before } : {}) })
-      forgetAntigravityFullness(thread); this.compactedSince.add(id)
+      const boundary: CompactionMark = { provider: 'antigravity', key: commandId, turnId: this.log.lastUserMessageId(id) ?? 'antigravity-history', at: Date.now(),
+        ...(anchor !== undefined ? { afterMessageId: anchor } : {}), ...(before !== undefined ? { before } : {}) }
+      thread.activities = markCompactionActivity(thread.activities, boundary)
+      forgetAntigravityFullness(thread); this.compactedSince.set(id, boundary)
     }
-    this.changed(id); this.reaper.touch(id); this.emit()
+    this.changed(id); this.reaper.touch(id)
+    if (publish) this.emit()
   }
   private async answer(command: Extract<AgentHostCommand, { type: 'answer' }>, alias: Alias, connection: Connection, profile: WatcherLaunchProfile | undefined): Promise<AgentHostResult> {
     const pending = this.pending.get(command.requestId)
@@ -1330,7 +1344,8 @@ export class AntigravityAcpHost implements ProviderHost {
     }
     this.pending.clear()
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
-    for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST)
+    // Published once, with the rest of the disconnect.
+    for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST, false)
     this.turns.clear()
     for (const thread of this.threads.values()) thread.requests = []
     this.threadChanges.markAll()

@@ -123,7 +123,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     save(sessionId); resident.add(sessionId)
     record({ method: 'fixture/session-resident', params: { sessionId, resident: true } })
     send({ id: frame.id, result: { sessionId, configOptions: configOptions(sessions.get(sessionId)) } })
-    update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'plan', description: 'Plan before acting' }] })
+    update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'plan', description: 'Plan before acting' }, { name: 'compact', description: 'Compact the conversation' }] })
   } else if (frame.method === 'session/resume') {
     if (needsAuth()) return
     const session = loadSession(p.sessionId)

@@ -201,7 +201,12 @@ describe('Antigravity ACP adapter', () => {
     expect(compacted.messages.map(message => message.text)).toEqual(['Write about bicycles', 'Bicycles'])
     expect(compacted.activities?.filter(row => row.kind !== 'turn' && row.kind !== 'compaction').length).toBe(before)
     expect(compacted.activities?.find(row => row.kind === 'compaction')).toMatchObject({ title: 'Context compacted', context: { before: 11964 } })
-    // The next turn says the smaller size, which closes the boundary's record.
+    // A reading with only the window leaves the boundary open; the next turn's smaller size closes it.
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm4', text: 'Say hi' })
+    await f!.action(id, { type: 'complete', text: 'hi', fullness: { size: 1048576 } })
+    await expect.poll(async () => (await thread(id)).messages.length).toBe(4)
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    expect((await thread(id)).activities?.find(row => row.kind === 'compaction')?.context).toEqual({ before: 11964 })
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm3', text: 'Say ok' })
     await f!.action(id, { type: 'complete', text: 'ok', fullness: { used: 9816, size: 1048576 },
       usage: { inputTokens: 9774, outputTokens: 42, cachedReadTokens: 0, cachedWriteTokens: 0, thoughtTokens: 40, totalTokens: 9816 } })
@@ -217,7 +222,7 @@ describe('Antigravity ACP adapter', () => {
     await f!.host.execute({ type: 'compact-thread', threadId: id, commandId: 'compact-1' })
     await expect.poll(async () => (await thread(id)).compaction?.status).toBe('running')
     await f!.host.execute({ type: 'interrupt', threadId: id, commandId: randomUUID() })
-    await expect.poll(async () => (await thread(id)).compaction).toEqual({ commandId: 'compact-1', status: 'failed', error: 'The compaction was stopped. Nothing was lost.' })
+    await expect.poll(async () => (await thread(id)).compaction).toEqual({ commandId: 'compact-1', status: 'failed', error: 'The compaction was stopped. Nothing was lost. Compact the thread again when you want to.' })
     expect((await thread(id)).messages.map(message => message.text)).toEqual(['Say ok', 'ok'])
     expect((await thread(id)).activities?.some(row => row.kind === 'compaction')).toBe(false)
   })
@@ -274,6 +279,6 @@ describe('Antigravity ACP adapter', () => {
 
   it('lists agy’s commands as skills', async () => {
     const id = await open()
-    await expect.poll(async () => (await f!.host.listThreadSkills!(id)).skills.map(skill => skill.invocation)).toEqual(['/plan'])
+    await expect.poll(async () => (await f!.host.listThreadSkills!(id)).skills.map(skill => skill.invocation)).toEqual(['/plan', '/compact'])
   })
 })
