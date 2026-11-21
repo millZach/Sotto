@@ -3,23 +3,31 @@ import type { AgentActivity } from '../../../shared/agentActivity'
 import { agentActivitySignature } from '../../../shared/agentThreadDetail'
 
 /**
- * Cut bodies on the desktop (ADR-0025, October 18 amendment). A remote thread's records come with their long bodies cut;
+ * Cut bodies on the desktop (ADR-0025, October 18 amendment). A thread's records come with their long bodies cut, a
+ * remote thread's by its host and this computer's by main (#2737);
  * a row that opens asks the thread's host for its record whole, and the answer is kept here, outside the thread's
  * detail, so the next delta, which replaces the record by its ID, does not wipe it. An answer is kept under the record's
  * signature as it was when it was asked for: a record that changed shows its new cut, and is asked for again when its
  * row is open. Answers stay for the session, bounded below, so a row opened again shows its body at once.
  */
 
-/** What the transcript knows of a remote thread's host, for its rows' cut bodies. Null for this computer's threads. */
+/** What the transcript knows of a thread's host, for its rows' cut bodies. Null outside a transcript. */
 export interface ActivityBodyHost {
   /** The thread as the window keys it, host included. */
   readonly threadId: string
   /** The host's name as the window shows it. */
   readonly hostName: string
   readonly connected: boolean
+  /** Whether the thread is on a paired host; false for this computer's threads, whose bodies main keeps (#2737). */
+  readonly remote: boolean
 }
 export const ActivityBodyContext = createContext<ActivityBodyHost | null>(null)
 export const useActivityBodyHost = (): ActivityBodyHost | null => useContext(ActivityBodyContext)
+/** The paired host a transcript's thread is on, for what that host holds; null for this computer's threads. */
+export const usePairedHost = (): ActivityBodyHost | null => {
+  const host = useContext(ActivityBodyContext)
+  return host?.remote === true ? host : null
+}
 
 type Fetch = (request: { readonly threadId: string; readonly activityId: string }) => Promise<AgentActivity | null>
 type Entry = { readonly status: 'loading' } | { readonly status: 'loaded'; readonly record: AgentActivity; readonly bytes: number } | { readonly status: 'failed' }
