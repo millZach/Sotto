@@ -1,4 +1,4 @@
-import { pictureCopy, type PictureAnswer, type PictureRequest } from './pictureCopy'
+import { pictureCopy, pictureRedraw, pictureThumbnail, type PictureAnswer, type PictureRequest } from './pictureCopy'
 
 /**
  * The headless host's picture worker (ADR-0203): a process of its own, started by `PictureMaker` with Node's `fork`, that
@@ -8,9 +8,16 @@ import { pictureCopy, type PictureAnswer, type PictureRequest } from './pictureC
  * It writes nothing to standard output or error, which the host does not read.
  */
 process.on('message', (request: PictureRequest) => {
-  let copy: string | null
-  try { copy = pictureCopy(request.dataUrl, request.edge) } catch { copy = null }
-  process.send?.({ id: request.id, copy, pid: process.pid } satisfies PictureAnswer)
+  let copy: string | null = null
+  let kind: 'image/jpeg' | 'image/png' | undefined
+  try {
+    if (request.op === 'thumbnail') copy = pictureThumbnail(request.dataUrl, request.width, request.height)
+    else if (request.op === 'redraw') {
+      const drawn = pictureRedraw(request.dataUrl, request.kind)
+      if (drawn) { copy = drawn.dataUrl; kind = drawn.kind }
+    } else copy = pictureCopy(request.dataUrl, request.edge)
+  } catch { copy = null }
+  process.send?.({ id: request.id, copy, ...(kind ? { kind } : {}), pid: process.pid } satisfies PictureAnswer)
 })
 // It ends with the host: once the channel to it closes, nothing is left to ask.
 process.on('disconnect', () => { process.exit(0) })

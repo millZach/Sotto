@@ -9,14 +9,45 @@ export interface CredentialEncryption {
   decryptString(value: Buffer): string
 }
 
+export interface CredentialSnapshot {
+  readonly available: boolean
+  readonly plaintext: Readonly<Record<string, string>>
+  readonly sealed: Readonly<Record<string, string>>
+  readonly unreadable: Readonly<Record<string, string>>
+}
+
 /** The only persisted representation is OS-encrypted ciphertext. */
 export class AgentCredentials {
   private readonly store: AtomicJsonStore<Record<string, string>>
   private values: Record<string, string> = {}
   private mutation: Promise<void> = Promise.resolve()
+  private readonly listeners = new Set<() => void>()
   constructor(directory: string, private readonly encryption: CredentialEncryption, onRecovery?: (notice: RecoveryNotice) => void) {
     this.store = new AtomicJsonStore(join(directory, 'credentials.json'), z.record(z.string(), z.string()).parse, () => ({}),
       undefined, undefined, () => onRecovery?.({ code: 'CREDENTIALS_RECOVERED' }))
+  }
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+  private notify(): void {
+    for (const listener of this.listeners) listener()
+  }
+  /** In-memory snapshot for syncing the local out-of-process engine over its authenticated OS pipe (ADR-0210). */
+  exportSnapshot(): CredentialSnapshot {
+    const available = this.available()
+    const plaintext: Record<string, string> = {}
+    const sealed: Record<string, string> = {}
+    const unreadable: Record<string, string> = {}
+    for (const [slot, cipher] of Object.entries(this.values)) {
+      if (!cipher) continue
+      sealed[slot] = cipher
+      if (available) {
+        try { plaintext[slot] = this.encryption.decryptString(Buffer.from(cipher, 'base64')) }
+        catch (error) { unreadable[slot] = error instanceof Error ? error.message : String(error) }
+      }
+    }
+    return { available, plaintext, sealed, unreadable }
   }
   async load(): Promise<void> {
     await this.mutation
@@ -46,6 +77,7 @@ export class AgentCredentials {
       else delete updated[slot]
       await this.store.write(updated)
       this.values = updated
+      this.notify()
     })
   }
   private enqueue(operation: () => Promise<void>): Promise<void> {
@@ -60,5 +92,6 @@ export class AgentCredentials {
     else delete updated[slot]
     await this.store.write(updated)
     this.values = updated
+    this.notify()
   }
 }

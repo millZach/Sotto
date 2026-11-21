@@ -455,7 +455,7 @@ export class DesktopHostRouter {
      * This desktop's thumbnail maker for pictures in threads (ADR-0170): a data URL in, the picture at tile size out, or
      * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
      */
-    mediaThumbnail?: (dataUrl: string, scale: number) => string | null
+    mediaThumbnail?: (dataUrl: string, scale: number) => string | null | Promise<string | null>
     /** Where those thumbnails are kept: shared with the copies made for phones, so all of them keep to one budget in bytes. */
     mediaTiles?: KeptThumbnails
     /**
@@ -1354,7 +1354,7 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     const whole = await connection.media?.({ threadId: id!, activityId: request.activityId, mediaId: request.mediaId }) ?? null
     if (!whole || request.size === 'full') return whole
-    const tile = thumbnail(whole.dataUrl, scale)
+    const tile = await thumbnail(whole.dataUrl, scale)
     if (tile === null) return null
     this.mediaTiles.set(key, tile)
     return { dataUrl: tile }

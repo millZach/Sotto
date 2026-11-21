@@ -23,6 +23,7 @@ export interface PopupDependencies {
   readonly command: (command: AgentCommand, client: ClientIdentity) => Promise<AgentState>
   readonly showMain: () => Promise<void>
   readonly sendToMain: (channel: string, payload: unknown) => void
+  readonly onVisible?: (visible: boolean) => void
 }
 
 export interface Popup {
@@ -59,6 +60,7 @@ export function createPopup(dependencies: PopupDependencies, startup: AppSetting
   const window: PopupWindow = new PopupWindow({
     ...dependencies.window,
     onVisible: visible => {
+      dependencies.onVisible?.(visible)
       if (visible) return
       feed.observe([])
       void dependencies.command({ type: 'observe-threads', threadIds: [] }, popupClient).catch(() => undefined)
