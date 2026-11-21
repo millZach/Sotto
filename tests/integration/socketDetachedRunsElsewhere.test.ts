@@ -59,6 +59,35 @@ describe('detached runs from elsewhere over the socket (#2749)', () => {
     } finally { desktop.frames.close(); await server.close() }
   })
 
+  it('refuses a recorded desktop\'s look and Stop before its hello accepted them, and pushes nothing once it is no longer recorded', async () => {
+    const found: { runs: readonly DetachedRunElsewhere[] } = { runs: [run] }
+    const listeners = new Set<() => void>()
+    const look = vi.fn(), stop = vi.fn(async () => null)
+    const known = new Set<string>()
+    const server = await startSocketServer({ service: reportingHost(found, listeners, look, stop), pairing: fixture.host.pairing,
+      watcherDesktops: { has: (clientId: string) => known.has(clientId), refresh: async () => undefined } })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+    known.add(paired.clientId)
+    const quiet = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    const desktop = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    try {
+      await quiet.call('hello', { op: 'hello', accepts: [] })
+      expect(await quiet.call('look', { op: 'detached-runs-look' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(await quiet.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(stop).not.toHaveBeenCalled()
+      await desktop.call('hello', { op: 'hello', accepts: ['detached-runs-elsewhere'] })
+      await expect.poll(() => pushes(desktop.messages).length).toBe(1)
+      // The launch script lets this desktop go: the next change reaches it no more, and its Stop is refused.
+      known.delete(paired.clientId)
+      found.runs = []
+      for (const listener of listeners) listener()
+      await desktop.call('shell', { op: 'shell' })
+      expect(pushes(desktop.messages)).toHaveLength(1)
+      expect(await desktop.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(stop).not.toHaveBeenCalled()
+    } finally { quiet.frames.close(); desktop.frames.close(); await server.close() }
+  })
+
   it('offers none of it to a client the launch script did not record as a desktop, and refuses its look and Stop', async () => {
     const listeners = new Set<() => void>()
     const look = vi.fn(), stop = vi.fn(async () => null)

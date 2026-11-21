@@ -97,14 +97,37 @@ describe('a desktop shows a run a paired host found as its own thread\'s', () =>
     expect(watch.runsFor('gt3rs-thread')).toBeUndefined()
   })
 
-  it('sends Stop to the host that found the run, and refuses it for another thread', async () => {
+  it('sends Stop to the host that found the run, by the host\'s own ID for it, and refuses it for another thread', async () => {
     const { watch, stop } = laptop()
-    watch.setElsewhere(FORGE, 'forge', await reported())
+    const runs = await reported()
+    watch.setElsewhere(FORGE, 'forge', runs)
     const id = watch.runsFor('gt3rs-thread')![0]!.id
+    // This desktop's ID for the run is its own, so a run of another machine with the same process numbers never shares it.
+    expect(id).not.toBe(runs[0]!.work.id)
     await expect(watch.stop('some-other-thread', id)).rejects.toThrow(DETACHED_RUN_ENDED)
     expect(stop).not.toHaveBeenCalled()
     await watch.stop('gt3rs-thread', id)
-    expect(stop).toHaveBeenCalledWith(FORGE, id)
+    expect(stop).toHaveBeenCalledWith(FORGE, runs[0]!.work.id)
+  })
+
+  it('asks the adapters about a mark once, not at every report, and lists a thread\'s oldest runs whichever machine runs them', async () => {
+    const owner = vi.fn((item: RunMark) => item.value === LAPTOP_SESSION ? 'gt3rs-thread' : undefined)
+    const watch = new DetachedRunWatch({ scan: computer([]).scan, rootPid: SOTTO, owner })
+    cleanup.push(() => watch.close())
+    const runs = await reported()
+    watch.setElsewhere(FORGE, 'forge', runs)
+    const asked = owner.mock.calls.filter(([item]) => item.value === LAPTOP_SESSION).length
+    watch.setElsewhere(FORGE, 'forge', [...runs])
+    watch.setElsewhere('33333333-3333-4333-8333-333333333333', 'mac', runs)
+    expect(owner.mock.calls.filter(([item]) => item.value === LAPTOP_SESSION).length).toBe(asked)
+    // Seventeen runs on forge, newest first in the report: the sixteen oldest are listed.
+    const many = Array.from({ length: 17 }, (_, index) => ({ ...runs[0]!, work: { ...runs[0]!.work, id: `${index.toString(16).padStart(8, '0')}-0000-5000-8000-000000000000`,
+      startedAt: new Date(Date.UTC(2026, 10, 20, 20, 59 - index)).toISOString() } }))
+    watch.setElsewhere('33333333-3333-4333-8333-333333333333', 'mac', [])
+    watch.setElsewhere(FORGE, 'forge', many)
+    const listed = watch.runsFor('gt3rs-thread')!
+    expect(listed).toHaveLength(16)
+    expect(listed.map(work => work.startedAt)).toEqual([...many].reverse().slice(0, 16).map(run => run.work.startedAt))
   })
 
   it('asks its paired hosts to look again when one of its own turns ends', () => {

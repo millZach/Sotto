@@ -1,5 +1,5 @@
 import type { DetachedRunElsewhere } from '../../shared/agentMonitoring'
-import type { DetachedRunWatch } from './detachedRuns'
+import { DETACHED_RUN_NOT_STOPPED, type DetachedRunWatch } from './detachedRuns'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { AgentThreadWords } from '../../shared/threadWords'
 import { startHandoverPrefix } from '../../shared/threadStarts'
@@ -696,8 +696,9 @@ export class LocalHostService implements HostService {
   subscribeDetachedRunsElsewhere(listener: () => void): () => void { return this.options.detachedRuns?.subscribeForeign(listener) ?? (() => undefined) }
   lookForDetachedRuns(): void { this.options.detachedRuns?.turnEnded() }
   async stopDetachedRunElsewhere(runId: string): Promise<string | null> {
-    if (!this.options.detachedRuns) return 'This computer is not looking for detached runs. Nothing was stopped.'
-    try { await this.options.detachedRuns.stopForeign(runId); return null } catch (error) { return error instanceof Error ? error.message : 'Sotto could not stop that detached run. It may still be running.' }
+    if (!this.options.detachedRuns) return DETACHED_RUN_NOT_STOPPED
+    // Only a run it reports now, and only the same process: the watch's own words say why not.
+    try { await this.options.detachedRuns.stopForeign(runId); return null } catch (error) { return error instanceof Error ? error.message : DETACHED_RUN_NOT_STOPPED }
   }
   get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }
   /** The queue's own view, taken only after it changed, so a read copies nothing. */

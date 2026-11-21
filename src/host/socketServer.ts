@@ -1392,8 +1392,10 @@ export async function startSocketServer(options: SocketServerOptions) {
    * hello accepted `detached-runs-elsewhere`: after its hello and whenever they change. Each desktop shows only the ones a
    * mark of its own threads names.
    */
+  /** A desktop the launch script still records, whose hello accepted the runs: asked afresh, since a record can go after hello. */
+  const takesRunsElsewhere = (peer: Peer): boolean => peer.runsElsewhere === true && options.watcherDesktops?.has(peer.client.clientId) === true
   const pushRunsElsewhere = (peer: Peer): void => {
-    if (!peer.runsElsewhere || peer.frames.isClosed || !service.detachedRunsElsewhere) return
+    if (!takesRunsElsewhere(peer) || peer.frames.isClosed || !service.detachedRunsElsewhere) return
     push(peer, { v: 1, event: 'detached-runs-elsewhere', runs: [...service.detachedRunsElsewhere()] })
   }
   const unsubscribeRunsElsewhere = service.subscribeDetachedRunsElsewhere?.(() => {
@@ -2093,13 +2095,15 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       // A recorded desktop's turn ended, which may have started a run here (#2749): this host looks again a few seconds later.
       case 'detached-runs-look':
-        if (!offers(peer, 'detached-runs-elsewhere') || !service.lookForDetachedRuns) throw new Refusal('invalid_request')
+        if (!offers(peer, 'detached-runs-elsewhere') || !takesRunsElsewhere(peer) || !service.lookForDetachedRuns) throw new Refusal('invalid_request')
         service.lookForDetachedRuns()
         return {}
       // Its user pressed Stop on a run this host reported: the host looks again and ends only the same process.
-      case 'detached-run-elsewhere-stop':
-        if (!offers(peer, 'detached-runs-elsewhere') || !service.stopDetachedRunElsewhere) throw new Refusal('invalid_request')
+      case 'detached-run-elsewhere-stop': {
+        if (!offers(peer, 'detached-runs-elsewhere') || !takesRunsElsewhere(peer) || !service.stopDetachedRunElsewhere) throw new Refusal('invalid_request')
+        // The host ends only a run it reports now, as this desktop was sent it, after it looks again (`stopForeign`).
         return { error: await service.stopDetachedRunElsewhere(request.runId) }
+      }
       case 'host-facts': {
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
         try {

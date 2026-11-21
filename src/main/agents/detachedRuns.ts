@@ -55,13 +55,29 @@ export interface DetachedRunWatchOptions {
 interface RunRecord { readonly threadId: string; readonly pid: number; readonly work: AgentBackgroundWork }
 /** A run found here that carries a mark no thread here owns (#2749): what a desktop may know it by, and what was read. */
 interface ForeignRecord { readonly pid: number; readonly run: DetachedRunElsewhere }
-/** A run a paired host reported, as this desktop's own thread's (#2749). */
-interface RemoteRecord { readonly threadId: string; readonly hostId: string }
+/** A run a paired host reported, as this desktop's own thread's (#2749): the host's own ID for it, for its Stop there. */
+interface RemoteRecord { readonly threadId: string; readonly hostId: string; readonly runId: string }
 
 /** A run's ID: the same for one process for as long as it runs, and never the same for another that takes its number. */
 function runId(process: AgentProcess): string {
   const hex = createHash('sha256').update(`${process.pid}\0${process.startedAt ?? ''}\0${process.commandLine}`).digest('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${(8 | (parseInt(hex[16]!, 16) & 3)).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
+/** A run a paired host reported, by an ID of this desktop's own: its host's ID and the host's ID for it, so two machines never share one (#2749). */
+function reportedRunId(hostId: string, runId: string): string {
+  const hex = createHash('sha256').update(`elsewhere\0${hostId}\0${runId}`).digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${(8 | (parseInt(hex[16]!, 16) & 3)).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+
+/** Whether one of `pids` started this process, up to sixteen parents: a client a marked client started counts once, at the top. */
+function startedBy(table: ProcessTable, pid: number, started: (parentPid: number) => boolean): boolean {
+  let parentPid = table.processes.get(pid)?.parentPid
+  for (let steps = 0; parentPid !== undefined && steps < 16; steps++) {
+    if (started(parentPid)) return true
+    parentPid = table.processes.get(parentPid)?.parentPid
+  }
+  return false
 }
 
 /** One run as a piece of its thread's background work. */
@@ -127,8 +143,13 @@ export class DetachedRunWatch {
   private readonly foreignListeners = new Set<() => void>()
   /** What each paired host reported, as it reported it (#2749). */
   private readonly reported = new Map<string, { readonly machine: string; readonly runs: readonly DetachedRunElsewhere[] }>()
-  /** Where each reported run this desktop's threads own belongs. */
+  /** Where each reported run this desktop's threads own belongs, by this desktop's ID for it. */
   private remoteRecords = new Map<string, RemoteRecord>()
+  /**
+   * Which thread each reported mark named when it was asked, so a report asks the adapters only about marks it has not seen:
+   * the work stays the size of the reports, not of the history the adapters search (#2749). Marks no report names are let go.
+   */
+  private readonly owners = new Map<string, string | null>()
   /** Each thread's runs as `runsFor` gives them: its own, then those its paired hosts found, within the list's limit. */
   private shown = new Map<string, AgentBackgroundWork[]>()
   private elsewhere: DetachedRunWatchOptions['elsewhere']
@@ -174,12 +195,19 @@ export class DetachedRunWatch {
    */
   async stopForeign(id: string): Promise<void> {
     if (!this.foreign.has(id)) throw new Error(DETACHED_RUN_ENDED)
+    await this.endChecked(() => this.foreign.get(id)?.pid)
+  }
+  /**
+   * Ends the process `find` names after a fresh look, and looks again after: a look that could not read the table vouches
+   * for nothing, a process that is gone is not signalled, and one that would not end is said to.
+   */
+  private async endChecked(find: () => number | undefined): Promise<void> {
     if (!await this.lookNow()) throw new Error(DETACHED_RUN_UNCHECKED)
-    const record = this.foreign.get(id)
-    if (!record) throw new Error(DETACHED_RUN_ENDED)
-    const ended = await (this.options.end ?? endRun)(record.pid)
+    const pid = find()
+    if (pid === undefined) throw new Error(DETACHED_RUN_ENDED)
+    const ended = await (this.options.end ?? endRun)(pid)
     await this.lookNow()
-    if (!ended && this.foreign.has(id)) throw new Error(DETACHED_RUN_NOT_STOPPED)
+    if (!ended && find() !== undefined) throw new Error(DETACHED_RUN_NOT_STOPPED)
   }
 
   /**
@@ -207,17 +235,12 @@ export class DetachedRunWatch {
     const remote = this.remoteRecords.get(id)
     if (remote) {
       if (remote.threadId !== threadId || !this.elsewhere) throw new Error(DETACHED_RUN_ENDED)
-      await this.elsewhere.stop(remote.hostId, id)
+      await this.elsewhere.stop(remote.hostId, remote.runId)
       return
     }
     if (this.records.get(id)?.threadId !== threadId) throw new Error(DETACHED_RUN_ENDED)
     // Only a look that read the table now may vouch for the process: one that failed leaves the old records standing.
-    if (!await this.lookNow()) throw new Error(DETACHED_RUN_UNCHECKED)
-    const record = this.records.get(id)
-    if (record?.threadId !== threadId) throw new Error(DETACHED_RUN_ENDED)
-    const ended = await (this.options.end ?? endRun)(record.pid)
-    await this.lookNow()
-    if (!ended && this.records.has(id)) throw new Error(DETACHED_RUN_NOT_STOPPED)
+    await this.endChecked(() => { const record = this.records.get(id); return record?.threadId === threadId ? record.pid : undefined })
   }
 
   close(): void {
@@ -256,7 +279,7 @@ export class DetachedRunWatch {
     } catch {
       // A look that failed says nothing about the runs: the ones known stay, and it tries again a few times, whether or not
       // it knows of any, so a run already going when the first look failed is still found.
-      if (++this.failedLooks <= FAILED_LOOKS_RETRIED || this.records.size) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
+      if (++this.failedLooks <= FAILED_LOOKS_RETRIED || this.records.size || (this.foreign.size && this.foreignListeners.size)) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
       return false
     }
     this.failedLooks = 0
@@ -287,7 +310,7 @@ export class DetachedRunWatch {
     const unownedPids = new Set(table.agents.filter(agent => agent.marks.length > 0 && !owned.has(agent.pid)).map(agent => agent.pid))
     const foreign: ForeignRecord[] = []
     for (const agent of table.agents) {
-      if (!unownedPids.has(agent.pid) || this.underAny(table, agent.pid, unownedPids)) continue
+      if (!unownedPids.has(agent.pid) || startedBy(table, agent.pid, parentPid => unownedPids.has(parentPid))) continue
       foreign.push({ pid: agent.pid, run: { marks: agent.marks.map(mark => ({ name: mark.name, value: mark.value })), work: detachedRunWork(agent) } })
     }
     // The oldest are reported, the same ones at every look.
@@ -312,17 +335,34 @@ export class DetachedRunWatch {
   private refreshShown(): void {
     const remoteRecords = new Map<string, RemoteRecord>()
     const remote = new Map<string, AgentBackgroundWork[]>()
+    const named = new Set<string>()
+    const owner = (mark: DetachedRunElsewhere['marks'][number]): string | undefined => {
+      const key = `${mark.name}\0${mark.value}`
+      named.add(key)
+      // A mark no thread here named is asked again, since its session may load after the report came; a named one is kept.
+      const known = this.owners.get(key)
+      if (known) return known
+      const found = this.options.owner(mark)
+      this.owners.set(key, found ?? null)
+      return found
+    }
     for (const [hostId, { machine, runs }] of this.reported) {
       for (const { marks, work } of runs) {
-        const threadId = marks.map(mark => this.options.owner(mark)).find(id => id !== undefined)
-        if (!threadId || !work.run || this.records.has(work.id) || remoteRecords.has(work.id)) continue
-        remoteRecords.set(work.id, { threadId, hostId })
-        remote.set(threadId, [...remote.get(threadId) ?? [], { ...work, run: { ...work.run, machine } }])
+        const threadId = marks.map(owner).find(id => id !== undefined)
+        if (!threadId || !work.run) continue
+        const id = reportedRunId(hostId, work.id)
+        if (remoteRecords.has(id)) continue
+        remoteRecords.set(id, { threadId, hostId, runId: work.id })
+        remote.set(threadId, [...remote.get(threadId) ?? [], { ...work, id, run: { ...work.run, machine } }])
       }
     }
+    for (const key of this.owners.keys()) if (!named.has(key)) this.owners.delete(key)
     const shown = new Map<string, AgentBackgroundWork[]>()
     for (const threadId of new Set([...this.byThread.keys(), ...remote.keys()])) {
-      shown.set(threadId, [...this.byThread.get(threadId) ?? [], ...remote.get(threadId) ?? []].slice(0, MAX_DETACHED_RUNS))
+      const own = this.byThread.get(threadId) ?? [], elsewhere = remote.get(threadId)
+      // The oldest runs, whichever machine they run on, the same ones at every look (decision 6).
+      shown.set(threadId, !elsewhere ? own : [...own, ...elsewhere]
+        .sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? '') || a.id.localeCompare(b.id)).slice(0, MAX_DETACHED_RUNS))
     }
     const changed = new Set<string>()
     for (const [threadId, list] of shown) if (JSON.stringify(this.shown.get(threadId)) !== JSON.stringify(list)) changed.add(threadId)
@@ -332,22 +372,8 @@ export class DetachedRunWatch {
     if (changed.size) for (const listener of [...this.listeners]) listener([...changed])
   }
 
-  /** Whether one of `pids` started this process, up its parents: a client a marked client started counts once, at the top. */
-  private underAny(table: ProcessTable, pid: number, pids: ReadonlySet<number>): boolean {
-    let parentPid = table.processes.get(pid)?.parentPid
-    for (let steps = 0; parentPid !== undefined && steps < 16; steps++) {
-      if (pids.has(parentPid)) return true
-      parentPid = table.processes.get(parentPid)?.parentPid
-    }
-    return false
-  }
 
   private underAnotherRun(table: ProcessTable, pid: number, threadId: string, owned: ReadonlyMap<number, string>): boolean {
-    let parentPid = table.processes.get(pid)?.parentPid
-    for (let steps = 0; parentPid !== undefined && steps < 16; steps++) {
-      if (owned.get(parentPid) === threadId) return true
-      parentPid = table.processes.get(parentPid)?.parentPid
-    }
-    return false
+    return startedBy(table, pid, parentPid => owned.get(parentPid) === threadId)
   }
 }
