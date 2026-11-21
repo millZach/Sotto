@@ -18,13 +18,15 @@ const later = { id: 'later', role: 'assistant' as const, text: 'Written after th
  * coordinator publishes one, and a raw desktop of it.
  */
 async function readHost() {
-  const thread = { current: { threadId: 'clicked', revision: 1, messages: [first] } as AgentThreadDetail, emit: ((update: AgentThreadDetailUpdate) => { void update }) as (update: AgentThreadDetailUpdate) => void }
+  const thread = { current: { threadId: 'clicked', revision: 1, messages: [first] } as AgentThreadDetail, emit: ((update: AgentThreadDetailUpdate) => { void update }) as (update: AgentThreadDetailUpdate) => void,
+    /** What the observe publishes, when it is not the thread as it stands. */
+    published: undefined as AgentThreadDetail | undefined }
   const service: HostService = {
     shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(),
     threadProvider: () => 'codex',
     threadDetail: id => id === 'clicked' ? structuredClone(thread.current) : null,
     command: (command, identity) => {
-      if (command.type === 'observe-threads' && command.threadIds.includes('clicked')) thread.emit(structuredClone(thread.current))
+      if (command.type === 'observe-threads' && command.threadIds.includes('clicked')) thread.emit(structuredClone(thread.published ?? thread.current))
       return fixture.host.service.command(command, identity)
     },
     events: (afterSeq, threadId, limit) => fixture.host.service.events(afterSeq, threadId, limit), subscribe: listener => fixture.host.service.subscribe(listener),
@@ -75,6 +77,22 @@ describe('a thread read whole before it is observed (#1990)', () => {
       const [told] = pushes(peer.messages, 'detail-delta')
       expect(hostPushSchema.parse(told)).toEqual(told)
       expect(told!.delta).toEqual({ threadId: 'clicked', baseRevision: 1, revision: 3, messageDeltas: [], activityDeltas: [] })
+    } finally { peer.frames.close(); await server.close() }
+  })
+
+  it('is not sent a whole the observe publishes that is older than the read, and holds the read (Bug Bot on #2763, N1)', async () => {
+    const { thread, server, desktop } = await readHost()
+    const peer = await desktop(['detail-delta', 'detail-read-held'])
+    try {
+      thread.current = { ...thread.current, revision: 2 }
+      thread.published = { ...thread.current, revision: 1 }
+      expect((await click(peer)).revision).toBe(2)
+      expect(pushes(peer.messages, 'detail')).toEqual([])
+      expect(pushes(peer.messages, 'detail-delta')).toEqual([])
+      // Held at the revision it read, not the older one published.
+      thread.current = { ...thread.current, revision: 3, messages: [first, later] }
+      thread.emit({ threadId: 'clicked', baseRevision: 2, revision: 3, messageDeltas: [{ message: later }], activityDeltas: [] })
+      await expect.poll(() => pushes(peer.messages, 'detail-delta')).toHaveLength(1)
     } finally { peer.frames.close(); await server.close() }
   })
 

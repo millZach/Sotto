@@ -1090,7 +1090,7 @@ export async function startSocketServer(options: SocketServerOptions) {
    */
   const holdAsRead = (peer: Peer, threadId: string, whole: AgentThreadDetail | null): boolean => {
     const read = peer.readAhead.get(threadId)
-    // A whole older than the read leaves it for the newer whole on its way.
+    // A whole older than the read is never compared: the read stays remembered, and the caller sends the thread as it is.
     if (!read || !whole || whole.revision < read.revision) return false
     peer.readAhead.delete(threadId)
     const sent = forPeer(peer, whole)
@@ -1235,8 +1235,14 @@ export async function startSocketServer(options: SocketServerOptions) {
     // and goes no second time (#2699): one the service published again, as a read made while recovering from a delta can.
     if (!isAgentThreadDetailDelta(update)) {
       if (peer.sentAhead.has(update) || held !== undefined && update.revision <= held) return
-      // The whole an observe publishes goes no second time either to a client that read it just before (#1990).
-      if (peer.opening.has(threadId) && holdAsRead(peer, threadId, update)) return
+      // The whole an observe publishes goes no second time either to a client that read it just before (#1990). One older
+      // than that read is left to the observe, which compares the thread as it is then, as a waiting one older than the
+      // read is: sent, it would have the client held at a revision older than the one it holds.
+      if (peer.opening.has(threadId)) {
+        const read = peer.readAhead.get(threadId)
+        if (read && update.revision < read.revision) return
+        if (holdAsRead(peer, threadId, update)) return
+      }
       sendWhole(peer, threadId, update); return
     }
     if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return

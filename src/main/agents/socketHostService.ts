@@ -249,7 +249,7 @@ export class SocketHostService implements HostService {
    * handled first, since the answer is held only once its promise settles, so it waits for the read rather than reading
    * the thread again (#1990).
    */
-  private readonly reads = new Map<string, Promise<void>>()
+  private readonly reads = new Map<string, Promise<unknown>>()
   /**
    * The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3
    * amendment), and once a shell naming it has been read, that reading frozen and owned (`certified`). A later shell naming
@@ -991,9 +991,14 @@ export class SocketHostService implements HostService {
   async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> {
     if (!this.threadAvailable(threadId)) return null
     const generation = this.generation
-    const reading = (async () => { const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail) })()
-    this.reads.set(threadId, reading)
-    try { await reading } finally { if (this.reads.get(threadId) === reading) this.reads.delete(threadId) }
+    // The answer itself is what a waiting delta waits on, so the read takes no more turns to settle than it did: what
+    // follows a failed read, such as a resync's end, happens when it did (#1990). Its own continuation holds the answer
+    // before a waiting delta's, which was made after it.
+    const answer = this.call({ op: 'detail', threadId })
+    this.reads.set(threadId, answer)
+    let result: unknown
+    try { result = await answer } finally { if (this.reads.get(threadId) === answer) this.reads.delete(threadId) }
+    const detail = this.read(agentThreadDetailResultSchema, result); this.sameGeneration(generation); this.cacheDetail(threadId, detail)
     return this.threadDetail(threadId)
   }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
