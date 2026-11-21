@@ -106,15 +106,49 @@ describe('Devin dispatch and decision boundaries', () => {
     expect((await f.driver.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
   })
 
-  it('refuses a changed native model on resume without substituting it or sending', async () => {
+  it('keeps a long turn of large finished edits running past the bound on tool details', async () => {
     await send()
+    // Twelve finished edits of a 384 KiB file send about 9 MiB of tool details, past the 8 MiB the adapter holds.
+    await f.action(threadId, { type: 'edits', count: 12, bytes: 384 * 1024 })
+    await expect.poll(async () => (await thread()).activities?.filter(activity => activity.kind === 'file-change' && activity.status === 'completed').length).toBe(12)
+    await f.driver.completeTurn(threadId, 'Edits done')
+    await expect.poll(async () => (await thread()).status).toBe('idle')
+    expect((await thread()).lastTurn?.status).toBe('completed')
+    expect((await thread()).messages.find(message => message.role === 'assistant')?.text).toBe('Edits done')
+  })
+
+  it('puts a resumed session back on the thread’s own model when Devin reports another', async () => {
+    await send()
+    await f.driver.completeTurn(threadId, 'Finished')
+    await expect.poll(async () => (await thread()).status).toBe('idle')
     const native = await f.realId(threadId)
+    // A Devin process stopped mid-turn never saves its session's model, so a later load reports Devin's default.
     f = await f.driver.restart(); await f.host.connect()
     await f.script({ replayModel: 'different-model', loadModel: 'different-model' })
-    await expect(f.host.refreshThread(threadId)).rejects.toThrow('Restore the original model in Devin')
+    await f.host.refreshThread(threadId)
+    expect((await thread()).status).toBe('idle')
+    expect((await thread()).modelId).toBe(f.modelId)
+    expect(await f.realId(threadId)).toBe(native)
+    const records = await f.driver.requests()
+    const load = records.findLastIndex(record => record.method === 'session/load')
+    expect(records.slice(load).some(record => record.method === 'session/set_config_option' && record.params?.configId === 'model' && record.params?.value === f.modelId)).toBe(true)
+    expect(records.filter(record => record.method === 'session/prompt')).toHaveLength(1)
+    expect(await send()).toEqual({ accepted: true })
+  })
+
+  it('refuses a resumed session whose own model Devin no longer offers, without substituting another or sending', async () => {
+    await f.cleanup()
+    f = await devinFixture(); await f.script({ plainModel: true }); await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    threadId = randomUUID()
+    expect(await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, modelId: 'fixture-plain', title: 'Synthetic thread' })).toEqual({ accepted: true })
+    await send()
+    const native = await f.realId(threadId)
+    f = await f.driver.restart(); await f.script({ loadModel: 'fixture-model' }); await f.host.connect()
+    await expect(f.host.refreshThread(threadId)).rejects.toThrow('no longer offers this thread’s model')
     f.host.observeThreads([threadId])
     await expect.poll(async () => (await thread()).status).toBe('error')
-    expect((await thread()).modelId).toBe(f.modelId)
+    expect((await thread()).modelId).toBe('fixture-plain')
     expect(await f.realId(threadId)).toBe(native)
     expect((await f.driver.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
   })
