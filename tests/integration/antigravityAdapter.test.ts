@@ -150,8 +150,8 @@ describe('Antigravity ACP adapter', () => {
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Write the report' })
     await expect.poll(async () => (await thread(id)).status).toBe('running')
     expect(await f!.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Make it shorter' })).toEqual({ accepted: true })
-    const prompts = (await f!.requests()).filter(record => record.method === 'session/prompt')
-    expect(prompts).toHaveLength(2)
+    // The adapter has written the steer when it answers; the fake agy records it a moment later.
+    await expect.poll(async () => (await f!.requests()).filter(record => record.method === 'session/prompt').length).toBe(2)
     expect((await thread(id)).status).toBe('running')
     await f!.driver.completeTurn(id, 'Short report')
     await expect.poll(async () => (await thread(id)).status).toBe('idle')
