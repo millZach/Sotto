@@ -284,6 +284,13 @@ const control = setInterval(() => {
   if (command.type === 'mode') update(sessionId, { sessionUpdate: 'current_mode_update', currentModeId: command.mode })
   // Any one session update, as a test scripts it, so a test can say which kinds of streamed work show a prompt was taken.
   if (command.type === 'update') update(sessionId, command.update)
+  // A long turn's edits, each finished: Devin sends a whole file before and after on every edit's result, so a turn of
+  // edits to a large file sends megabytes of tool details while every tool it started has ended.
+  if (command.type === 'edits') for (let index = 0; index < command.count; index++) {
+   const toolCallId = `${processToken}-edit-${++serial}`; const text = 'x'.repeat(command.bytes)
+   update(sessionId, { sessionUpdate: 'tool_call', toolCallId, kind: 'edit', title: 'Edit file', status: 'pending', rawInput: { file_path: 'large.ts' } })
+   update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', content: [{ type: 'diff', path: 'large.ts', oldText: text, newText: text }] })
+  }
   // The running prompt answered with an error, while this process stays up.
   if (command.type === 'fail') { const id = active.get(sessionId); if (id !== undefined) { active.delete(sessionId); reject(id) } }
   if (command.type === 'changed-permission') {
