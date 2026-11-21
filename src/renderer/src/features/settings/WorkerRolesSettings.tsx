@@ -374,7 +374,7 @@ function RoleCard({ read, catalog, availableModels, providerOf, ceiling, platfor
     <p className="worker-role__what tt-paragraph">{role.what}</p>
     {shown ? <div className="worker-role__fields">
       <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">{t({ message: 'Model', comment: 'A worker role field: the model it runs on' })}</span>
-        <ModelPicker models={availableModels} modelId={shown.modelId} current={model} disabled={false} label={status === 'away' ? t`Choose ${roleName}’s model. Now ${name}, not available` : t`Choose ${roleName}’s model. Now ${name}`}
+        <ModelPicker availableFavoritesOnly models={availableModels} modelId={shown.modelId} current={model} disabled={false} label={status === 'away' ? t`Choose ${roleName}’s model. Now ${name}, not available` : t`Choose ${roleName}’s model. Now ${name}`}
           note={!read.fallback ? undefined : defaultEffort ? t`${defaultModelName} at ${defaultEffort} is ${roleName}’s default.` : t`${defaultModelName} is ${roleName}’s default.`}
           onChange={id => onRow({ modelId: chosenModelId(catalog, id, shown.modelId) })} /></div>
       <div className="worker-role__field"><span aria-hidden="true">{t({ message: 'Effort', comment: 'A worker role field: the model\'s reasoning effort' })}</span>
@@ -533,7 +533,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, ava
       <p className="worker-role__what tt-paragraph">{role.what}</p>
       {shown ? <div className="worker-role__fields">
         <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">{t({ message: 'Model', comment: 'A worker role field: the model it runs on' })}</span>
-          <ModelPicker models={watcherModels} modelId={shown.modelId} current={model} disabled={fixedReason !== undefined} label={t`Choose Watcher’s model. Now ${name}`} unavailable={refused}
+          <ModelPicker availableFavoritesOnly models={watcherModels} modelId={shown.modelId} current={model} disabled={fixedReason !== undefined} label={t`Choose Watcher’s model. Now ${name}`} unavailable={refused}
             note={watcher ? t`Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history.`
               : t`Watcher’s model: the same choice as the model chip under its composer. Watcher runs on ${watcherProviders}.`}
             onChange={id => choose(chosenModelId(catalog, id, shown.modelId), undefined)} /></div>
