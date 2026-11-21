@@ -436,7 +436,8 @@ export class AntigravityAcpHost implements ProviderHost {
       // agy 1.5.14 names an MCP permission "Run mcp_<server>_<tool>". Bind those exact names to this launch or resume.
       connection.watcherToolTitles = new Set([
         ...profile.toolNames.map(name => `Run mcp_${profile.server.name}_${name}`),
-        ...scoped.flatMap(({ server, tools }) => tools.definitions.map(tool => `Run mcp_${server.name}_${tool.name}`)),
+        ...scoped.flatMap(({ server, tools }) => (tools.definitionsFor?.(id) ?? tools.definitions)
+          .map(tool => `Run mcp_${server.name}_${tool.name}`)),
       ])
       return [{ name: profile.server.name, type: profile.server.type, url: profile.server.url, headers: profile.server.headers.map(header => ({ ...header })) },
         ...scoped.map(({ server }) => server)]

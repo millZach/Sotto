@@ -154,6 +154,8 @@ function callContext(request: IncomingMessage): ThreadToolCallContext {
 export interface ScopedThreadTools {
   readonly name: string
   readonly definitions: readonly ThreadToolDefinition[]
+  /** The definitions returned by tools/list when this server offers a thread only part of its catalog. */
+  definitionsFor?(threadId: string): readonly ThreadToolDefinition[]
   /** How long one call may take before the client gives up, when that is longer than the client's own default. */
   readonly timeoutMs?: number
   mcpServer(threadId: string): Promise<ThreadMcpServer | undefined>

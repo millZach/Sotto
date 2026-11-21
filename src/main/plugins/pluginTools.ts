@@ -373,7 +373,10 @@ export class PluginToolServer implements ScopedThreadTools {
     this.server = new ThreadToolServer({ name: PLUGINS_MCP_SERVER, serverName: 'sotto-plugins', instructions: INSTRUCTIONS,
       unavailable: `The plugin tools are unavailable. ${NOTHING_READ}`, failed: `The plugin could not be used. ${NOTHING_READ} Nothing was changed.`, maxRequestBytes: PluginToolServer.MAX_REQUEST_BYTES },
     this.definitions, (threadId, name, args, context) => this.invoke(threadId, name, args, { context, started: Date.now() }),
-    threadId => this.isWatcher(threadId) ? this.definitions.filter(tool => READING_TOOLS.has(tool.name)) : this.definitions)
+    threadId => this.definitionsFor(threadId))
+  }
+  definitionsFor(threadId: string): readonly ThreadToolDefinition[] {
+    return this.isWatcher(threadId) ? this.definitions.filter(tool => READING_TOOLS.has(tool.name)) : this.definitions
   }
   async mcpServer(threadId: string): Promise<ThreadMcpServer | undefined> {
     return this.admits(threadId) ? this.server.mcpServer(threadId) : undefined
