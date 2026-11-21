@@ -128,15 +128,20 @@ describe('Antigravity ACP adapter', () => {
   it('asks agy’s own questions as one card, offering forms, and answers its form with each question’s choices and words, even on Full access', async () => {
     const id = await open({ runtimeMode: 'full-access' })
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
-    expect((await f!.requests()).find(record => record.method === 'initialize')?.params?.clientCapabilities).toMatchObject({ elicitation: { form: {} } })
+    // The thread's own process takes forms; the probe that reads the account's models does not.
+    expect((await f!.requests()).filter(record => record.method === 'initialize').map(record => (record.params?.clientCapabilities as { elicitation?: unknown }).elicitation))
+      .toEqual([undefined, { form: {} }])
     const card = await ask(id, [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }, { question: 'Which days are you free?', options: ['Monday', 'Tuesday', 'Friday'], several: true }])
     expect(card).toMatchObject({ kind: 'question', text: 'The agent has 2 questions.', skippable: true, questions: [
-      { id: 'q1', question: 'Tea or coffee?', options: [{ id: '1', label: 'Tea' }, { id: '2', label: 'Coffee' }], multiSelect: false, allowFreeText: true, required: true },
-      { id: 'q2', question: 'Which days are you free?', options: [{ id: '1', label: 'Monday' }, { id: '2', label: 'Tuesday' }, { id: '3', label: 'Friday' }], multiSelect: true, allowFreeText: true, required: true },
+      { id: 'q1', question: 'Tea or coffee?', options: [{ id: '1', label: 'Tea' }, { id: '2', label: 'Coffee' }], multiSelect: false, allowFreeText: true, required: false },
+      { id: 'q2', question: 'Which days are you free?', options: [{ id: '1', label: 'Monday' }, { id: '2', label: 'Tuesday' }, { id: '3', label: 'Friday' }], multiSelect: true, allowFreeText: true, required: false },
     ] })
     expect(await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: card!.id, answer: '',
       questionAnswers: { q1: { optionIds: ['2'] }, q2: { optionIds: ['1', '3'], text: 'Sunday too' } } })).toMatchObject({ accepted: true })
-    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '2', q2: ['1', '3'], q2_other: 'Sunday too' } }])
+    // agy's form requires no question, so one may be left unanswered.
+    const second = await ask(id, [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }, { question: 'Milk?', options: ['Yes', 'No'] }])
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: second!.id, answer: '', questionAnswers: { q2: { optionIds: ['1'] } } })
+    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '2', q2: ['1', '3'], q2_other: 'Sunday too' } }, { action: 'accept', content: { q2: '1' } }])
     expect((await thread(id)).requests).toEqual([])
   })
 
@@ -153,7 +158,13 @@ describe('Antigravity ACP adapter', () => {
     await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: card!.id, answer: '', skipped: true })
     await ask(id, tea)
     await f!.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: id })
-    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '1' } }, { action: 'accept', content: { q1_other: 'Green tea, please' } }, { action: 'decline' }, { action: 'cancel' }])
+    // A form still open when its turn ends, as after a Stop that only cancelled, goes with the turn.
+    await expect.poll(async () => (await thread(id)).status).not.toBe('running')
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Again' })
+    await ask(id, tea)
+    await f!.action(id, { type: 'complete', reason: 'cancelled' })
+    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '1' } }, { action: 'accept', content: { q1_other: 'Green tea, please' } }, { action: 'decline' }, { action: 'cancel' }, { action: 'cancel' }])
+    expect((await thread(id)).requests).toEqual([])
   })
 
   it('refuses a form of another shape, so agy asks in its reply instead, and leaves the user no card', async () => {

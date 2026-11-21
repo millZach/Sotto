@@ -52,6 +52,8 @@ it('runs Watcher on Antigravity with its own tools and its instructions in agyâ€
   expect(servers.map(server => server.name)).not.toContain('sotto_browser')
   const append = (made.params!._meta as { antigravity: { systemPrompt: { append: string } } }).antigravity.systemPrompt.append
   expect(append).toContain('Watcher')
+  // agy's own question tool is closed to Watcher (ADR-0073): its process is offered no forms, so it never asks with one.
+  expect((await records(f, 'initialize')).map(record => (record.params!.clientCapabilities as { elicitation?: unknown }).elicitation)).not.toContainEqual({ form: {} })
 
   // The words go as typed, with only the request note's line after them.
   const requestId = f.service.state().requests.at(-1)!.id

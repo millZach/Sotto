@@ -105,7 +105,7 @@ function antigravityForm(wireId: string | number, params: unknown, threadId: str
     form.push({ key, several: !one.success, ...(other ? { other } : {}) })
     questions.push({ id: key, question: bounded(field.title?.trim() || 'Choose an option.'),
       options: field.choices.map(choice => ({ id: choice.const, label: bounded(choice.title.trim() || choice.const, 512) })),
-      multiSelect: !one.success, allowFreeText: other !== undefined, required: true })
+      multiSelect: !one.success, allowFreeText: other !== undefined, required: parsed.data.requestedSchema.required?.includes(key) ?? false })
   }
   if (!questions.length || questions.length > 20) return undefined
   const text = questions.length === 1 ? questions[0]!.question : bounded(parsed.data.message?.trim() || 'Antigravity has questions.')

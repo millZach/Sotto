@@ -18,7 +18,7 @@ import { findAntigravityExecutable, type AntigravityLookup } from './antigravity
 import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, antigravityGeminiModel, antigravityModeIsOption, antigravityModelChoices, antigravityOffersAuto, antigravityRuntimeMode,
   antigravitySessionMode, antigravitySessionSettingsSchema, antigravityThinking, leastEffort, ANTIGRAVITY_RUNTIME_MODES, type AntigravityModelFacts, type AntigravityModelThinking,
   type AntigravityRuntimeMode, type AntigravitySessionSettings } from './antigravityModels'
-import { antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, type AntigravityPending } from './antigravityRequests'
+import { ANTIGRAVITY_QUESTION, antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, type AntigravityPending } from './antigravityRequests'
 import { countAntigravityAnswer, countAntigravityFullness, forgetAntigravityFullness } from './antigravityThreadUsage'
 import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, meetsAntigravityFloor, readAntigravityVersion,
   writeAntigravitySettings, ANTIGRAVITY_ACP_VERSION, ANTIGRAVITY_CLI_FLOOR, GOOGLE_ACCOUNT, type AntigravityFrame, type AntigravitySignIn } from './antigravityRpc'
@@ -471,11 +471,11 @@ export class AntigravityAcpHost implements ProviderHost {
   }
   /**
    * `initialize`, then `authenticate` with the sign-in method, as T3 does on every start. A method `agy` does not offer,
-   * or no sign-in, is refused in words.
+   * or no sign-in, is refused in words. `forms` is a thread's own process, other than Watcher's, which takes `agy`'s questions.
    */
-  private async handshake(rpc: AntigravityRpc, signIn: AntigravitySignIn): Promise<AntigravityClient> {
+  private async handshake(rpc: AntigravityRpc, signIn: AntigravitySignIn, forms = false): Promise<AntigravityClient> {
     let client: AntigravityClient | undefined
-    await this.sendInitialize(rpc, value => { client = initializeSchema.parse(value) })
+    await this.sendInitialize(rpc, value => { client = initializeSchema.parse(value) }, forms)
     if (client!.protocolVersion !== ANTIGRAVITY_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${ANTIGRAVITY_ACP_VERSION}, and this Antigravity client answered ACP ${client!.protocolVersion}.`)
     const version = client!.agentInfo?.version
     if (!version || !meetsAntigravityFloor(version)) {
@@ -498,7 +498,7 @@ export class AntigravityAcpHost implements ProviderHost {
       modeIsOption: false, offersAuto: false, commands: undefined } as Connection
     const rpc = this.spawn(executable, antigravityArguments(this.folders), cwd, signIn, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: AntigravityRpc }).rpc = rpc
-    try { (connection as { client: AntigravityClient }).client = await this.handshake(rpc, signIn) }
+    try { (connection as { client: AntigravityClient }).client = await this.handshake(rpc, signIn, !watcher) }
     catch (error) { connection.closing = true; rpc.close(); throw error }
     void alias
     return connection
@@ -599,11 +599,13 @@ export class AntigravityAcpHost implements ProviderHost {
     ].map(work => work.catch(() => undefined)))
   }
   /**
-   * ACP `initialize`: no file or terminal capability, forms for `agy`'s own questions (`antigravityRequests.ts`), Sotto's
-   * name, and the start's own deadline, since `agy` unpacks itself first.
+   * ACP `initialize`: no file or terminal capability, Sotto's name, and the start's own deadline, since `agy` unpacks
+   * itself first. A thread's own process, never Watcher's, also takes forms, which `agy`'s own questions need
+   * (`antigravityRequests.ts`); without them `agy` asks in its reply, and Watcher asks with Sotto's `ask_user` (ADR-0073).
    */
-  private sendInitialize(rpc: AntigravityRpc, read: (value: unknown) => void): Promise<void> {
-    return rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, elicitation: { form: {} } },
+  private sendInitialize(rpc: AntigravityRpc, read: (value: unknown) => void, forms = false): Promise<void> {
+    return rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION,
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, ...(forms ? { elicitation: { form: {} } } : {}) },
       clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }, read, false, this.options.startTimeoutMs ?? 90_000)
   }
   /** One `agy acp` of its own, for a sign-in or a sign-out, in a scratch folder: initialized, then handed to `work`, then closed. */
@@ -813,7 +815,8 @@ export class AntigravityAcpHost implements ProviderHost {
     if (this.connections.get(id) !== connection) { connection.rpc.refuse(frame.id); return }
     this.taken(id)
     if ((frame.method === 'session/request_permission' || frame.method === 'elicitation/create') && alias.antigravitySessionId && params?.sessionId !== alias.antigravitySessionId) { connection.rpc.refuse(frame.id); return }
-    const asked = antigravityPending(frame.id, frame.method, frame.params, id)
+    // Watcher's process is offered no forms, so one that comes anyway is refused: its questions are Sotto's `ask_user`.
+    const asked = connection.watcher && frame.method === ANTIGRAVITY_QUESTION ? undefined : antigravityPending(frame.id, frame.method, frame.params, id)
     if (!asked) {
       connection.rpc.refuse(frame.id)
       if (needsPerson(frame.method)) { const notice = unreadableRequest('Antigravity'); const thread = this.thread(id); thread.requestNotice = notice; this.state.error = notice; this.emit() }
@@ -1150,6 +1153,7 @@ export class AntigravityAcpHost implements ProviderHost {
       const counted = generation === this.generation && this.threads.has(id) && countAntigravityAnswer(this.thread(id), value, !superseded())
       if (superseded()) { if (counted) this.emit(true); return }
       const stop = promptAnswerSchema.parse(value).stopReason
+      this.closeForms(id)
       this.endTurn(id, stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
         stop === 'refusal' ? 'Antigravity refused this turn, or the account reached its limit. Nothing else was lost.' : undefined)
       this.emit()
@@ -1277,6 +1281,12 @@ export class AntigravityAcpHost implements ProviderHost {
     watcherGuard?.()
     if (connection) connection.rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.antigravitySessionId } })
     this.emit(); return { accepted: true }
+  }
+  /** `agy`'s forms still open when the thread's turn ended, as on a Stop that only cancelled: cancelled, their cards gone. */
+  private closeForms(id: string): void {
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id && pending.form && !pending.answering) {
+      this.removeRequest(requestId); void pending.connection.rpc.reply(pending.wireId, antigravityDecline(pending)).catch(() => undefined)
+    }
   }
   private removeRequest(requestId: string): void {
     const pending = this.pending.get(requestId); if (!pending) return
