@@ -1,4 +1,4 @@
-import { providerIdSchema, type ProviderId } from './providerIds'
+import { providerIdSchema, type ActiveProviderId, type ProviderId } from './providerIds'
 
 /** How a written skill mention starts: `$name` for every provider with skills, and the native `/name` where one takes it. */
 export type SkillSigil = '$' | '/'
@@ -33,7 +33,7 @@ export interface ProviderProfile {
  * Compacting and reporting context are kept apart: one is what the provider does when asked, the other what it tells
  * Sotto unasked, and the compaction recommendation needs both.
  */
-export const PROVIDER_PROFILES: Readonly<Record<ProviderId, ProviderProfile>> = {
+export const PROVIDER_PROFILES: Readonly<Record<ActiveProviderId, ProviderProfile>> = {
   codex: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['$'], compacts: true, reportsContext: true },
   claude: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['$', '/'], compacts: true, reportsContext: true },
   grok: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['$', '/'], compacts: false, reportsContext: false },
@@ -41,7 +41,6 @@ export const PROVIDER_PROFILES: Readonly<Record<ProviderId, ProviderProfile>> = 
   muse: { writesShortText: false, takesSottoTools: true, runsWatcher: true, skillSigils: ['$'], compacts: true, reportsContext: true },
   opencode: { writesShortText: true, takesSottoTools: true, runsWatcher: false, skillSigils: ['$'], compacts: false, reportsContext: false },
   cursor: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['$', '/'], compacts: false, reportsContext: false },
-  pi: { writesShortText: false, takesSottoTools: true, runsWatcher: false, skillSigils: [], compacts: false, reportsContext: true },
   hermes: { writesShortText: false, takesSottoTools: true, runsWatcher: false, skillSigils: ['/'], compacts: false, reportsContext: true },
   deepseek: { writesShortText: false, takesSottoTools: true, runsWatcher: false, skillSigils: [], compacts: false, reportsContext: true },
   antigravity: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['/'], compacts: false, reportsContext: true },
@@ -52,7 +51,7 @@ export const PROVIDER_PROFILES: Readonly<Record<ProviderId, ProviderProfile>> = 
  * such as one a newer host sent. Callers decide what an unknown provider gets; most get nothing it has not said it does.
  */
 export function providerProfile(providerId: string | undefined): ProviderProfile | undefined {
-  return providerId !== undefined && Object.hasOwn(PROVIDER_PROFILES, providerId) ? PROVIDER_PROFILES[providerId as ProviderId] : undefined
+  return providerId !== undefined && Object.hasOwn(PROVIDER_PROFILES, providerId) ? PROVIDER_PROFILES[providerId as ActiveProviderId] : undefined
 }
 
 /** The providers Watcher runs on, in the provider list's order: Codex, Claude Code, Grok Build, Muse. */

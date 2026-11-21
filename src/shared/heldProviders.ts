@@ -14,7 +14,6 @@ export const HELD_PROVIDER_ENTRIES = [
   { provider: 'cursor', feature: 'cursor' },
   { provider: 'deepseek', feature: 'deepseek' },
   { provider: 'hermes', feature: 'hermes' },
-  { provider: 'pi', feature: 'pi' },
 ] as const satisfies readonly HeldProviderEntry[]
 
 /** The providers held on this run: a fact read once at start, like the Owl answers it comes from. */
@@ -23,7 +22,7 @@ export type HeldProviders = ReadonlySet<ProviderId>
 /** Providers whose Owl feature is off on this run. A missing answer holds its provider: the gate fails closed. */
 export function heldProvidersOf(features: Partial<Readonly<Record<OwlFeatureId, boolean>>>,
   entries: readonly HeldProviderEntry[] = HELD_PROVIDER_ENTRIES): HeldProviders {
-  return new Set(entries.filter(entry => features[entry.feature] !== true).map(entry => entry.provider))
+  return new Set([...entries.filter(entry => features[entry.feature] !== true).map(entry => entry.provider), 'pi'])
 }
 
 /** Whether any table provider runs on this run, which needs Owl's matching host. */
@@ -58,6 +57,7 @@ export type HeldProviderNames = ProviderId | readonly ProviderId[]
  * sent." Several held providers are named together: "Muse and OpenCode are available in Sotto Owl. ..."
  */
 export function heldProviderRefusal(provider: HeldProviderNames): string {
+  if (provider === 'pi' || typeof provider !== 'string' && provider.includes('pi')) return 'Sotto no longer runs Pi. Choose another provider for a new thread. Nothing was sent.'
   const labels = inHeldOrder(typeof provider === 'string' ? [provider] : provider).map(id => PROVIDER_LABELS[id])
   const named = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)} are` : `${labels[0] ?? ''} is`
   return `${named} available in Sotto Owl. Open an Owl build to continue. Nothing was sent.`

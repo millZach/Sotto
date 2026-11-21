@@ -58,9 +58,6 @@ import { registerNextPromptIpc, windowNextPrompt } from '../agents/nextPromptIpc
 import { nextPromptWatcherFacts } from '../agents/nextPromptProject'
 import { OpenCodeHost } from '../agents/opencode'
 import { registerOpenCodeSignInIpc } from '../agents/opencodeSignInIpc'
-import { PiHost } from '../agents/pi'
-import { PiSignIn } from '../agents/piSignIn'
-import { registerPiSignInIpc } from '../agents/piSignInIpc'
 import { ClaudeStreamJsonHost } from '../agents/providers/claude/claude'
 import { CodexAppServerHost } from '../agents/providers/codex/codex'
 import { PullRequestToolServer } from '../agents/pullRequestTools'
@@ -242,7 +239,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   })
   productEvents.setPermission(productEventsPermission(workingCopySettings))
 
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes') || !heldProviders.has('pi')) && startupSettings.localHostEnabled
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
     ? new OwnServers({
         directory: userDataPath,
         ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}),
@@ -395,8 +392,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     },
     babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
     ...(e2eConfiguration !== null ? { signInCommand: async () => undefined } : {}),
-    createPiHost: (directory, hostOptions) => new PiHost(directory, hostOptions),
-    createPiSignIn: (host, signInOptions) => new PiSignIn(host.accounts, signInOptions),
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}\n`, 'utf8') : shellBridge.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { shellBridge.onE2EThreadFolder?.(path); return }
@@ -1164,7 +1159,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const cleanupMainCheckout = registerMainCheckoutIpc(ipc, localRuntime.mainCheckout, senders,
     async path => { const error = await shellBridge.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
   const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { shellBridge.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
-  const cleanupPiSignIn = registerPiSignInIpc(ipc, heldProviders.has('pi') ? undefined : localRuntime.piSignIn, senders)
   const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipc, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, senders)
   const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipc, localRuntime.providerSignIn, senders)
   const cleanupCursorSignIn = registerCursorSignInIpc(ipc, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, senders)
@@ -1403,7 +1397,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     unsubscribeHostNextPrompts?.()
     cleanupMainCheckout()
     unsubscribeMainCheckout?.()
-    cleanupPiSignIn()
     cleanupOpenCodeSignIn()
     cleanupCursorSignIn()
     cleanupAntigravityAccount()

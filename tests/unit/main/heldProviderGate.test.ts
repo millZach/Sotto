@@ -81,11 +81,11 @@ function hostState(provider: Held): AgentState {
 describe('the held-provider table', () => {
   it('holds a provider until its Owl feature is on, and a missing answer holds it', () => {
     const entries: readonly HeldProviderEntry[] = [...HELD_PROVIDER_ENTRIES, { provider: 'grok', feature: 'usage' }]
-    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi', 'grok'])
-    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['opencode', 'cursor', 'deepseek', 'hermes', 'pi', 'grok'])
-    expect([...heldProvidersOf({ muse: true, opencode: true, cursor: true, deepseek: true, hermes: true, pi: true, usage: true }, entries)]).toEqual([])
+    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'grok', 'pi'])
+    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['opencode', 'cursor', 'deepseek', 'hermes', 'grok', 'pi'])
+    expect([...heldProvidersOf({ muse: true, opencode: true, cursor: true, deepseek: true, hermes: true, usage: true }, entries)]).toEqual(['pi'])
     expect(releasesHeldProvider(new Set(['grok']), entries)).toBe(true)
-    expect(releasesHeldProvider(new Set(['muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi', 'grok']), entries)).toBe(false)
+    expect(releasesHeldProvider(new Set(['muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'grok', 'pi']), entries)).toBe(false)
     expect([...heldProvidersOf({})]).toEqual(['muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi'])
   })
   it('holds every table provider by default and honors an explicit held set, including an empty one', () => {
@@ -396,6 +396,16 @@ describe('parking and restoring held providers', () => {
     saved.dormantMuseConfiguration = { enabled: true }
     saved.dormantProviderConfigurations = { grok: parkedGrok }
   }
+
+  it('opens a profile that selected Pi and keeps its choices dormant', async () => {
+    const model = publicProviderEntityId('pi', 'model', 'old-model')
+    const root = await seeded(saved => {
+      saved.configuration = { ...defaultAgentConfiguration(), provider: 'pi', enabledProviders: ['pi', 'claude'], defaultModelId: model } satisfies AgentConfiguration
+    })
+    const { configuration, saved } = await run(root, heldProvidersOf({ muse: true, opencode: true, cursor: true, deepseek: true, hermes: true }))
+    expect(configuration).toMatchObject({ provider: 'claude', enabledProviders: ['claude'], defaultModelId: '' })
+    expect(saved.dormantProviderConfigurations).toEqual({ pi: { provider: 'pi', enabled: true, defaultModelId: model } })
+  })
 
   it("parks each held provider's choices from the configuration as saved", async () => {
     const root = await seeded(saved => {

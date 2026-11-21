@@ -1,6 +1,10 @@
 # Pi is a thread provider
 
-Accepted November 10, 2026. Pi is an Owl feature with Full access only, the user's own keyless model servers and Pi's own sign-ins. The first slice (#2421) implements own servers; the sign-in follow-up adds the existing Model sources surface to Pi. This amendment also replaces per-thread Pi config folders with one shared config and a per-thread tool gateway, for the credential reason below. The adapter was checked against Pi 1.5.2 from `@earendil-works/pi-coding-agent` (MIT). **Number provisional until merge.**
+Retired November 21, 2026. Sotto no longer offers Pi on stable or Owl. Its adapter, model sources, tool gateway and client update support have been removed. Saved profiles still recognize the provider ID. The existing dormant-thread handling preserves Pi’s threads, drafts and choices on disk and prevents them from starting with another provider. Sotto leaves the former Pi session and sign-in folder on disk.
+
+## Original decision
+
+Accepted November 10, 2026. Pi is an Owl feature with Full access only, the user's own keyless model servers and Pi's own sign-ins. The first slice (#2421) implements own servers; the sign-in follow-up adds the existing Model sources surface to Pi. This amendment also replaces per-thread Pi config folders with one shared config and a per-thread tool gateway, for the credential reason below. The adapter was checked against Pi 1.5.2 from `@earendil-works/pi-coding-agent` (MIT).
 
 Pi joins Sotto's thread providers as `pi`, shown as **Pi**. It speaks Pi's native RPC, not ACP: `pi --mode rpc --session-dir <dir> --model <provider>/<model>`, in the thread's folder. One process belongs to one thread (ADR-0038). Commands have string IDs; their `response` records are matched by ID. Stdout is strict JSONL, split on LF alone, so U+2028 and U+2029 inside a JSON string survive. Stderr is drained and discarded. Neither stream, prompts nor credentials reach diagnostic logs.
 
