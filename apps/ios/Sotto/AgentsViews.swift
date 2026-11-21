@@ -255,7 +255,9 @@ private struct AgentsSheet: View {
         .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .sheetLeft($sheetLeft)
         .refreshable { await refresh() }
-        .task(id: source.map { AgentsRoster.refreshSignal($0.owner, on: ref.hostID, in: $0.computers) } ?? "") { await load() }
+        // Only its own computer's threads ask for the reads again: a delegated thread on another computer redraws from its own
+        // computer's list, and the reads, which only the sheet's computer answers, know nothing of it (#2750).
+        .task(id: source.map { AgentsRoster.refreshSignal($0.owner, in: $0.threads) } ?? "") { await load() }
         // Ends when nothing is running or the sheet goes.
         .task(id: AgentsRoster.followsAgents(page?.rows ?? [])) { if AgentsRoster.followsAgents(page?.rows ?? []) { await follow() } }
         .presentationBackground { SheetBackdrop(wash: false) }

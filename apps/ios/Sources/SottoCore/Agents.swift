@@ -226,6 +226,8 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     public var detailsKey: String? = nil
     /// The computer a delegated thread runs on, where that is not the sheet's own thread's (#2750): its row opens it there.
     public var hostID: String? = nil
+    /// That computer's name, which VoiceOver says with the row, as the row's line shows it.
+    public var computer: String? = nil
 
     /// Whether the row's "Delegated by" line adds that Watcher watches it through that thread (#1217, Zach's pick B). Only
     /// a row below a thread the sheet's own thread delegated to has the line, and Watcher, which talks only to the thread
@@ -243,7 +245,8 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
                 String(localized: "\(title), delegated thread on \(AgentNames.name($0))", bundle: .module,
                        comment: "A delegated thread's row for VoiceOver; the first %@ is its title, the second its agent's name, such as Codex")
             } ?? String(localized: "\(title), delegated thread", bundle: .module, comment: "A delegated thread's row for VoiceOver; %@ is its title")
-            let said = Self.withStatus(what, status)
+            // A thread on another computer says which, in the same words as its status, before how it stands (#2750).
+            let said = Self.withStatus(Self.withStatus(what, computer), status)
             return waitingFor != nil
                 ? String(localized: "\(said). Opens it to answer", bundle: .module,
                          comment: "A delegated thread's row for VoiceOver; %@ is what the row is and what it is doing")
@@ -440,10 +443,6 @@ public enum AgentsRoster {
     public static func refreshSignal(_ owner: ThreadSummary, in threads: [ThreadSummary]) -> String {
         refreshSignal(owner, below: delegated(below: owner.id, in: threads).map(\.thread))
     }
-    /// The same value, with the delegated threads on every one of the phone's computers (#2750).
-    public static func refreshSignal(_ owner: ThreadSummary, on hostID: String, in computers: [ComputerThreads]) -> String {
-        refreshSignal(owner, below: delegatedAcross(below: ThreadRef(hostID: hostID, threadID: owner.id), in: computers).map(\.thread))
-    }
     private static func refreshSignal(_ owner: ThreadSummary, below threads: [ThreadSummary]) -> String {
         func agents(_ summary: SubagentSummary?) -> String { summary.map { "\($0.total)/\($0.working)/\($0.unknown)" } ?? "" }
         let below = threads.map { thread in
@@ -636,6 +635,7 @@ public enum AgentsRoster {
                             providerID: thread.providerId, delegatedBy: by?.title, preview: record?.brief, facts: facts, startedAt: start,
                             elapsed: elapsed, status: status, tone: tone, waitingFor: waiting)
         row.hostID = hostID
+        if hostID != nil { row.computer = computer }
         return row
     }
 

@@ -59,6 +59,8 @@ final class AgentsRosterTests: XCTestCase {
         let forgeRow = try XCTUnwrap(rows.first { $0.threadID == "on-forge" })
         XCTAssertEqual(forgeRow.hostID, forgeID, "A row on another computer opens there")
         XCTAssertEqual(forgeRow.id, "thread:\(forgeID)/on-forge", "And is that computer's thread, by its ID")
+        XCTAssertTrue(forgeRow.spokenLabel.contains(", forge"), "VoiceOver says which computer it runs on")
+        XCTAssertNil(try XCTUnwrap(rows.first { $0.threadID == "local-child" }).computer)
         XCTAssertTrue(forgeRow.facts.contains("forge"))
         XCTAssertEqual(forgeRow.tone, .working, "The list says it is working, though the laptop's record does not know it")
         let reviewRow = try XCTUnwrap(rows.first { $0.threadID == "review" })
