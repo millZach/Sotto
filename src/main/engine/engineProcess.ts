@@ -8,6 +8,7 @@ import type { BrowserAgentTools, BrowserMcpServer, BrowserToolDefinition, Browse
 import type { CredentialSnapshot } from '../agents/credentials'
 import type { ClientIdentity } from '../agents/hostService'
 import type { ThreadToolCallContext } from '../agents/threadToolServer'
+import { MainInterfaceLanguage } from '../interfaceLanguage'
 import { MainLoopMonitor } from '../performance/mainLoopMonitor'
 import { mainProcessProfiler } from '../performance/profilers'
 import type { ProfilerTarget, RawCpuProfile } from '../performance/activityRecorder'
@@ -74,6 +75,7 @@ class RemoteCredentialsCache {
 export function attachEngineProcessServer(connection: EngineRpcConnection, onExit?: () => void): void {
   let engine: DesktopEngine | undefined
   let credentialsCache: RemoteCredentialsCache | undefined
+  let engineLanguage: MainInterfaceLanguage | undefined
   let activeProfiler: ProfilerTarget | null = null
   let shuttingDown = false
 
@@ -176,6 +178,10 @@ export function attachEngineProcessServer(connection: EngineRpcConnection, onExi
         onE2EThreadFolder: path => { connection.sendPush('shell:e2eThreadFolder', path) },
         onPopupObserved: threadIds => { connection.sendPush('shell:popupObserved', threadIds) },
       }
+      if (payload.options.interfaceLanguage) {
+        engineLanguage = new MainInterfaceLanguage(payload.options.interfaceLanguage)
+        await engineLanguage.apply(payload.options.startupSettings).catch(() => undefined)
+      }
       engine = await createDesktopEngine(payload.options, shellBridge)
       const result: EngineInitResult = {
         metadata: engine.metadata,
@@ -194,10 +200,15 @@ export function attachEngineProcessServer(connection: EngineRpcConnection, onExi
         return engine.acquireTerminalStart(args[0] as string)
       case 'engine:onSettingsChanged':
         return engine.onSettingsChanged(args[0] as AppSettings, args[1] as AppSettings)
-      case 'engine:cleanSettingsHistory':
-        return engine.cleanSettingsHistory(() => connection.request<void>('shell:afterCleanSettingsHistory'))
-      case 'engine:onInterfaceLanguageChanged':
-        return engine.onInterfaceLanguageChanged(args[0] as AppSettings)
+      case 'engine:cleanSettingsHistory': {
+        const callbackId = args[0] as number
+        return engine.cleanSettingsHistory(() => connection.request<void>('shell:afterCleanSettingsHistory', [callbackId]))
+      }
+      case 'engine:onInterfaceLanguageChanged': {
+        const settings = args[0] as AppSettings
+        await engineLanguage?.apply(settings).catch(() => undefined)
+        return engine.onInterfaceLanguageChanged(settings)
+      }
       case 'engine:restartHold':
         return engine.restartHold()
       case 'engine:readVisual':

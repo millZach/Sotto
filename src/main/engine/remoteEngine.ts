@@ -66,12 +66,13 @@ export async function startOutOfProcessEngine(
         SOTTO_ENGINE_TOKEN: token,
       },
       windowsHide: true,
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'ignore', 'ignore'],
     })
 
   let intentionalShutdown = false
   let unexpectedExitReported = false
-  let afterCleanCallback: (() => Promise<void>) | undefined
+  let nextCleanCallbackId = 1
+  const cleanCallbacks = new Map<number, () => Promise<void>>()
   let cachedRestartHold: string | undefined
 
   const reportUnexpectedExit = (): void => {
@@ -184,9 +185,12 @@ export async function startOutOfProcessEngine(
       case 'shell:credentialsRestoreSealed':
         await shellBridge.credentials.restoreSealed(args[0] as string, args[1] as string | undefined)
         return snapshotCredentials(shellBridge)
-      case 'shell:afterCleanSettingsHistory':
-        if (afterCleanCallback) await afterCleanCallback()
+      case 'shell:afterCleanSettingsHistory': {
+        const callbackId = args[0] as number
+        const callback = cleanCallbacks.get(callbackId)
+        if (callback) await callback()
         return true
+      }
       default:
         throw new Error(`SHELL_METHOD_UNKNOWN: ${method}`)
     }
@@ -296,9 +300,10 @@ export async function startOutOfProcessEngine(
     onSettingsChanged: (settings: AppSettings, previous: AppSettings) =>
       connection.request<void>('engine:onSettingsChanged', [settings, previous]),
     cleanSettingsHistory: async (afterClean: () => Promise<void>) => {
-      afterCleanCallback = afterClean
-      try { await connection.request<void>('engine:cleanSettingsHistory') }
-      finally { afterCleanCallback = undefined }
+      const callbackId = nextCleanCallbackId++
+      cleanCallbacks.set(callbackId, afterClean)
+      try { await connection.request<void>('engine:cleanSettingsHistory', [callbackId]) }
+      finally { cleanCallbacks.delete(callbackId) }
     },
     onInterfaceLanguageChanged: (settings: AppSettings) =>
       connection.request<void>('engine:onInterfaceLanguageChanged', [settings]),

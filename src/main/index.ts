@@ -767,10 +767,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
   // English as the computer's language, so every test and design capture reads English on any machine; the setting still
   // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
+  const systemLanguages = e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(',')
+  const languageOverride = app.isPackaged ? undefined : process.env.SOTTO_INTERFACE_LANGUAGE
   const interfaceLanguage = new MainInterfaceLanguage({
     enabled: interfaceLanguageEnabled,
-    systemLanguages: e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(','),
-    override: app.isPackaged ? undefined : process.env.SOTTO_INTERFACE_LANGUAGE,
+    systemLanguages,
+    override: languageOverride,
   })
   // A catalog that cannot be read leaves Sotto in English, which every window can show.
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
@@ -932,6 +934,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     e2eConfiguration,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     env: process.env,
+    interfaceLanguage: { enabled: interfaceLanguageEnabled, systemLanguages, override: languageOverride },
   }
   const engineShellBridge: EngineShellBridge = {
     openExternal: url => shell.openExternal(url),

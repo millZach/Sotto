@@ -84,6 +84,11 @@ export interface DesktopEngineOptions {
   readonly claudeHistoryModulePath?: string | undefined
   readonly pictureWorkerPath?: string | undefined
   readonly env: Readonly<Record<string, string | undefined>>
+  readonly interfaceLanguage?: {
+    readonly enabled: boolean
+    readonly systemLanguages: readonly string[]
+    readonly override?: string | undefined
+  } | undefined
 }
 
 export interface EngineMetadata {
