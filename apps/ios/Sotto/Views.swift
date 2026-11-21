@@ -842,10 +842,9 @@ enum DuoLayout: Equatable {
     var isFolded: Bool { if case .folded = self { return true } else { return false } }
     /// How wide the upright rail's column is: room for the tabs' pill and the round buttons, with a margin each side.
     static let uprightRail: CGFloat = 80
-    /// How far down the strip New thread, or a thread's Back, sits: under the clock, battery and page dots, lower on the
-    /// cover screen than unfolded. On Zach's Duo the + overlapped the battery at 156 and 108 points (TestFlight build 45),
-    /// so both moved down a step and a half.
-    var clockClearance: CGFloat { if case .folded = self { return 176 } else { return 124 } }
+    /// With a Live Activity above the folded Duo's clock, the battery and signal dots can reach 198 points
+    /// down the cover screen. Leave room below them for the first button.
+    var clockClearance: CGFloat { isFolded ? 216 : 124 }
     /// How wide the strip is on each side of the window, where a page that reaches it carries its ground on under it.
     var strip: (leading: CGFloat, trailing: CGFloat) {
         switch self {
