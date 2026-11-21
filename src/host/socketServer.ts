@@ -67,6 +67,7 @@ import type { HostThreadMoves } from '../main/agents/threadMovesHost'
 import type { HostBrowserTools } from './browser/hostBrowserTools'
 import { HOST_BROWSER_FRAME_MAX, type HostBrowserFrame } from '../shared/hostBrowser'
 import type { BrowserEvent } from '../shared/browser'
+import type { PhoneSends } from './phoneSends'
 
 /** Watcher's box on a phone (October 31, 2026): each of its operations and the change it asks of the phone service. */
 const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new', 'watcher-phone-stop-turn': 'stop-turn',
@@ -234,6 +235,8 @@ export interface SocketServerOptions {
    * need their own, or one's observations would replace the other's.
    */
   observationKey?: string
+  /** Notes what each phone is sent (`phone-send-diagnostics.jsonl`, #2755); set only while its diagnostics switch is on. */
+  phoneSends?: PhoneSends | undefined
   /**
    * Set on a listener whose pairing store sits beside the phones' over one service, as the local apps' does (ADR-0180).
    * Whether a client it never paired may still give Watcher instructions is then left to the listener that paired it.
@@ -962,7 +965,11 @@ export async function startSocketServer(options: SocketServerOptions) {
    */
   const deliver = (peer: Peer, value: HostPush | HostResponse, carried: Oversize): boolean => {
     const text = JSON.stringify(value)
-    if (fits(text)) { peer.frames.sendText(text); return true }
+    if (fits(text)) {
+      peer.frames.sendText(text)
+      if (options.phoneSends && isPhonePeer(peer)) options.phoneSends.sent(peer, 'event' in value ? value.event : 'answer', Buffer.byteLength(text), 'threadId' in value && typeof value.threadId === 'string' ? value.threadId : undefined)
+      return true
+    }
     const error = { code: 'too_large' as const, message: TOO_LARGE[carried] }
     const thread = 'event' in value && (value.event === 'detail' || value.event === 'detail-delta')
     peer.frames.send('event' in value ? { v: 1, event: 'error', ...(thread ? { threadId: value.threadId } : {}), error } : { v: 1, id: value.id, ok: false, error })
@@ -1135,7 +1142,12 @@ export async function startSocketServer(options: SocketServerOptions) {
       // One whose only news is Watcher's conversation waits out its window, and is read again when the window closes.
       else if (noEvents && !threadNews && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + WATCHER_WRITING_WINDOW_MS) holdWriting(peer, last.at + WATCHER_WRITING_WINDOW_MS)
       else {
-        peer.frames.sendText(keeps ? frameOf(JSON.stringify(sent())) : full)
+        const wrote = keeps ? sent() : state, text = keeps ? frameOf(JSON.stringify(wrote)) : full
+        peer.frames.sendText(text)
+        if (options.phoneSends && isPhonePeer(peer)) {
+          options.phoneSends.sent(peer, 'shell', Buffer.byteLength(text))
+          options.phoneSends.shell(peer, wrote as unknown as Readonly<Record<string, unknown>>, records?.payload.changed ?? [])
+        }
         peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer); written()
       }
     } else {
@@ -2646,7 +2658,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }
@@ -2714,7 +2726,7 @@ export async function startSocketServer(options: SocketServerOptions) {
      */
     dropRevoked: dropRefused,
     close: async (): Promise<void> => {
-      stopServing()
+      stopServing(); options.phoneSends?.flush()
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
       await Promise.allSettled([...operations]); await pairing.settled()
     },
