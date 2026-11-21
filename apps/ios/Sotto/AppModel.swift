@@ -4967,19 +4967,23 @@ struct RailAsk: Equatable {
     }
     /// Registration and creation are separate commands. Neither is replayed after a lost acknowledgement.
     func createThread(on hostID: String, projectID: String?, folder: FolderListing?, modelID: String,
-                      effort: String, permissionID: String, workingCopy: WorkingCopy = .shared) async -> ThreadRef? {
+                      effort: String, permissionID: String, workingCopy: WorkingCopy = .shared, speed: String? = nil) async -> ThreadRef? {
         #if DEBUG && os(iOS)
         if isUIFixture {
             guard online(hostID), var root = fixtureShells[hostID], var host = root["host"] as? [String: Any],
                   let chosen = creationModels(hostID).first(where: { $0.id == modelID }) else { return nil }
             let threadID = UUID().uuidString, chosenProject = projectID ?? "new-project"
             do {
-                _ = try Commands.createThread(projectID: chosenProject, threadID: threadID, model: chosen,
-                                              effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
-                                              workingCopy: workingCopy)
+                let command = try Commands.createThread(projectID: chosenProject, threadID: threadID, model: chosen,
+                                                        effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
+                                                        workingCopy: workingCopy, speed: speed)
                 // Only this debug simulator fixture can mutate in-memory display data without a host.
                 var rows = host["threads"] as? [[String: Any]] ?? []
-                rows.append(["id": threadID, "projectId": chosenProject, "title": "New thread", "providerId": "codex", "status": "idle", "requests": []])
+                var row: [String: Any] = ["id": threadID, "projectId": chosenProject, "title": "New thread", "status": "idle", "requests": []]
+                row["providerId"] = chosen.providerId
+                row["modelId"] = chosen.id
+                row["speed"] = command["speed"].string
+                rows.append(row)
                 var projects = host["projects"] as? [[String: Any]] ?? []
                 if let folder { projects.append(["id": chosenProject, "title": folder.projectName, "path": folder.path ?? ""]) }
                 host["threads"] = rows; host["projects"] = projects; root["host"] = host
@@ -5005,7 +5009,7 @@ struct RailAsk: Equatable {
             // Validate the visible options before registering anything on the computer.
             _ = try Commands.createThread(projectID: projectID ?? "new-project", threadID: threadID, model: model,
                                           effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
-                                          workingCopy: workingCopy)
+                                          workingCopy: workingCopy, speed: speed)
             var chosenProject = projectID
             if let folder, let path = folder.path {
                 guard case .listed(let fresh) = try await folders(hostID, path: .string(path)), fresh.path != nil else {
@@ -5037,7 +5041,7 @@ struct RailAsk: Equatable {
             }
             let command = try Commands.createThread(projectID: chosenProject, threadID: threadID, model: currentModel,
                                                    effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
-                                                   workingCopy: workingCopy)
+                                                   workingCopy: workingCopy, speed: speed)
             let marker = PendingOperation(hostID: hostID, clientID: computer.pairing.clientId, threadID: threadID, kind: "create-thread")
             try remember(marker)
             _ = await dispatch(command, operation: marker)

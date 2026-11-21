@@ -539,16 +539,27 @@ struct SpeedMenu: View {
     let choose: (String) -> Void
     var body: some View {
         Menu {
-            SettingOption(name: ThreadSettings.speedName(ThreadSettings.standard, offered: speeds), chosen: speed == ThreadSettings.standard) {
-                choose(ThreadSettings.standard)
-            }
-            ForEach(speeds, id: \.id) { item in
-                SettingOption(name: ThreadSettings.speedName(item.id, offered: speeds), line: ThreadSettings.speedCost(item, providerID: providerID),
-                              chosen: item.id == speed) { choose(item.id) }
-            }
+            SpeedChoices(speeds: speeds, speed: speed, providerID: providerID, choose: choose)
         } label: {
             SettingRow(name: Text("Speed", comment: "The thread setting for how fast its agent answers."),
                        value: ThreadSettings.speedName(speed, offered: speeds))
+        }
+    }
+}
+
+/// The same speed names, prices and checkmark in New thread and the composer.
+struct SpeedChoices: View {
+    let speeds: [ModelSpeed]
+    let speed: String
+    let providerID: String?
+    let choose: (String) -> Void
+    var body: some View {
+        SettingOption(name: ThreadSettings.speedName(ThreadSettings.standard, offered: speeds), chosen: speed == ThreadSettings.standard) {
+            choose(ThreadSettings.standard)
+        }
+        ForEach(speeds, id: \.id) { item in
+            SettingOption(name: ThreadSettings.speedName(item.id, offered: speeds), line: ThreadSettings.speedCost(item, providerID: providerID),
+                          chosen: item.id == speed) { choose(item.id) }
         }
     }
 }

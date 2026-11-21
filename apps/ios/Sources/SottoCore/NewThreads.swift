@@ -2,6 +2,7 @@ import Foundation
 
 public struct ThreadStartPreferences: Decodable, Equatable, Sendable {
     public let newThreadModelId: String?; public let newThreadReasoningEffort: String?
+    public let newThreadSpeed: String?
 }
 
 /// Display data from this computer's own model catalog. IDs are opaque Sotto IDs.
@@ -38,6 +39,10 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
         let agent = AgentNames.name(providerID)
         let named: String? = source?.isEmpty == false && (source != agent || providerID == "deepseek") ? source : nil
         return [agent, named, name].compactMap { $0 }.joined(separator: " · ")
+    }
+    /// Computers that report only the older fastMode can change an open thread's speed, but cannot set it at creation.
+    public var creationSpeeds: [ModelSpeed] {
+        speeds == nil ? [] : ThreadSettings.offeredSpeeds(self, providerID: providerId)
     }
     public var startingEffort: String {
         if let value = defaultReasoningEffort, reasoningEfforts?.contains(value) == true { return value }
@@ -226,7 +231,7 @@ extension Commands {
     /// chooses the new worktree's base branch, as it does for the desktop's own default.
     public static func createThread(projectID: String, threadID: String, model: ThreadModel,
                                     effort: String, permissionID: String, mayAnswer: Bool,
-                                    workingCopy: WorkingCopy = .shared) throws -> JSONValue {
+                                    workingCopy: WorkingCopy = .shared, speed: String? = nil) throws -> JSONValue {
         guard !projectID.isEmpty, projectID.utf16.count <= 6144, UUID(uuidString: threadID) != nil,
               model.ready, !model.id.isEmpty, model.id.utf16.count <= 6144,
               let permission = model.permissions.first(where: { $0.id == permissionID }),
@@ -237,6 +242,13 @@ extension Commands {
             "modelId": .string(model.id), "workingCopy": .string(workingCopy.rawValue), "managed": .bool(false)]
         fields[permission.providerOwned ? "providerMode" : "runtimeMode"] = .string(permission.id)
         if !effort.isEmpty { fields["reasoningEffort"] = .string(effort) }
+        if let speed {
+            let offered = model.creationSpeeds
+            guard !offered.isEmpty, speed == ThreadSettings.standard || offered.contains(where: { $0.id == speed }) else {
+                throw ClientError.invalidRequest
+            }
+            fields["speed"] = speed == ThreadSettings.standard ? .null : .string(speed)
+        }
         return try RemoteCommands.checked(.object(fields))
     }
 }
