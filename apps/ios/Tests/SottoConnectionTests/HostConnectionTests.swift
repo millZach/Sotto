@@ -149,6 +149,7 @@ private final class HostResponses: URLProtocol {
         XCTAssertEqual(accepts.filter { $0 == .string("provider-opencode") }.count, 1, "OpenCode's threads and models reach this phone")
         XCTAssertEqual(accepts.filter { $0 == .string("provider-cursor") }.count, 1, "Cursor's threads and models reach this phone")
         XCTAssertEqual(accepts.filter { $0 == .string("provider-deepseek") }.count, 1, "DeepSeek Harness's threads and models reach this phone")
+        XCTAssertEqual(accepts.filter { $0 == .string("provider-antigravity") }.count, 1, "Antigravity's threads and models reach this phone")
         XCTAssertEqual(HostConnection.hello["op"], .string("hello"))
         XCTAssertEqual(HostConnection.hello["afterSeq"], Wire.snapshotHello["afterSeq"])
     }

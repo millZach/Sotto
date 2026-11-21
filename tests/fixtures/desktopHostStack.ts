@@ -15,8 +15,11 @@ type HeadlessOptions = Parameters<typeof startHeadlessHost>[0]
 type HostProviders = NonNullable<HeadlessOptions['providers']>
 export function startFixtureHeadlessHost(options: Omit<HeadlessOptions, 'providers'> & { providers?: { [K in keyof HostProviders]?: HostProviders[K] | undefined } }) {
   const { providers, ...settings } = options
+  // Every provider is a test host: one real adapter here would turn on event-sourced history for the whole host
+  // (ConfiguredProviderHost, as soon as any provider has subscribeEvents), and these test hosts emit no thread events, so
+  // their threads would read empty. A host in use never mixes the two: every real adapter emits events.
   const chosen = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(),
-    muse: new E2EAgentHost(), opencode: new E2EAgentHost(), hermes: new E2EAgentHost(), cursor: new E2EAgentHost(), ...providers }
+    muse: new E2EAgentHost(), opencode: new E2EAgentHost(), hermes: new E2EAgentHost(), cursor: new E2EAgentHost(), antigravity: new E2EAgentHost(), ...providers }
   return startHeadlessHost({ reasoner: e2eAgentReasoner, ...settings,
     providers: Object.fromEntries(Object.entries(chosen).filter(([, host]) => host !== undefined)) as HostProviders })
 }

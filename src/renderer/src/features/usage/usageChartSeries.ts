@@ -19,8 +19,8 @@ export type SeriesTone = 'strong' | 'input' | 'output' | 'other' | `${number}`
 export const MODELS_DRAWN = 5
 /** The series colours a theme provides, `--tt-chart-1` to `--tt-chart-6`. */
 export const SERIES_SLOTS = 6
-/** A provider keeps one colour wherever it is drawn, near its own: Codex blue, Claude orange, Devin cyan, Muse magenta, Grok violet, OpenCode amber. */
-export const PROVIDER_SLOT: Readonly<Record<UsageProviderId, number>> = { codex: 1, claude: 2, devin: 3, muse: 4, grok: 5, opencode: 6 }
+/** A provider keeps one colour wherever it is drawn, near its own: Codex blue, Claude orange, Devin cyan, Muse magenta, Grok violet, OpenCode amber, and Antigravity Devin's cyan, since Devin draws no tokens. */
+export const PROVIDER_SLOT: Readonly<Record<UsageProviderId, number>> = { codex: 1, claude: 2, devin: 3, muse: 4, grok: 5, opencode: 6, antigravity: 3 }
 
 /** One provider or model that could be drawn, with its range total by the stage's measure. */
 export interface SeriesCandidate {

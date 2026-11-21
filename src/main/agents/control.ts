@@ -40,6 +40,8 @@ import type { CheckpointObservation, PullRequestObservation } from './watcherEvi
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
+import type { AntigravityRuntime } from './antigravityInstall'
+import { antigravitySignInChanged, guardAntigravityPath, restartAntigravity } from './antigravitySignIn'
 import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
 import { desktopWindowClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
 import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadHistorySource, ThreadReadPurpose } from './host'
@@ -1206,7 +1208,7 @@ export class AgentControl {
       // Taken like a new snapshot, so the stored thread carries the outcome and every client is told.
       this.commandSummaries.onChanged = () => { if (!this.disposed) this.acceptSnapshot(this.state.host) }
     }
-    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
+    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config'), antigravityDirectory: dependencies.directory })
     this.clientUpdates = new ClientUpdates({
       state: () => this.state, disposed: () => this.disposed, publish: () => this.publish(), say: text => this.say(text),
       acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), clients: this.clients, dependencies,
@@ -2838,11 +2840,15 @@ export class AgentControl {
   }
   /** Main calls this when Sotto finds a new version of itself (ADR-0077). */
   checkClientsAfresh(): Promise<void> { return this.clientUpdates.checkAfresh() }
+  /** The `agy` Sotto downloads and verifies itself (ADR-0212), for the Antigravity row's Install and Remove. */
+  antigravityRuntime(): AntigravityRuntime | undefined { return this.clients.antigravity }
   /** Tests wait on this; it goes when they move to the module. */
   get clientChecks(): number { return this.clientUpdates.checksWaiting }
+  /** A connected Antigravity starts again on a new sign-in (ADR-0212). */
+  private restartAntigravity(): void { restartAntigravity(this.state, this.dependencies.host, () => this.commandShell({ type: 'connect', provider: 'antigravity', notice: false })) }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
-    this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available() }
+    this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available(), antigravity: vault.has('antigravity') }
   }
   private async checkReasoning(provider: SubscriptionProvider): Promise<void> {
     const pending = this.accountChecks.get(provider)
@@ -4724,6 +4730,8 @@ export class AgentControl {
         // Turning Muse's shell sandbox off on this machine is this machine's own Settings' to do. A paired client may turn it
         // back on, which grants nothing, and is refused turning it off whatever its answer policy (ADR-0079).
         if (command.patch.museDisableSandbox === true && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
+        // Antigravity's binary path names a program this machine starts, so only this machine's own Settings set it (ADR-0212).
+        guardAntigravityPath(command.patch, this.state.configuration, client)
         const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
         let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })
         const before = this.state.configuration
@@ -4739,13 +4747,17 @@ export class AgentControl {
           if (command.patch.disconnectedProviders === undefined) next = withTurnedOff(next, turnedOff(before, removed, next.enabledProviders ?? []))
         }
         this.state.configuration = next
+        if (antigravitySignInChanged(before, next)) this.restartAntigravity()
         // The newly chosen account's models and efforts fill Settings; check it without holding up the save.
         if (next.reasoning !== before.reasoning && isSubscriptionReasoning(next.reasoning)) void this.checkReasoning(next.reasoning).then(() => this.publish())
         this.scheduleProviderReconnects()
         if (command.patch.enabled === false && !this.dependencies.host.concurrentProviders) this.disconnect()
         return
       }
-      case 'credential': await this.dependencies.credentials.set(command.slot, command.value.trim()); return
+      case 'credential':
+        await this.dependencies.credentials.set(command.slot, command.value.trim()); this.updateCredentials()
+        if (command.slot === 'antigravity') this.restartAntigravity()
+        return
       case 'connect': {
         if (command.provider) {
           this.state.configuration.enabledProviders = [...new Set([...enabledThreadProviders(this.state.configuration), command.provider])]

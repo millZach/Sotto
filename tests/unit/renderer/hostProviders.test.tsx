@@ -55,7 +55,7 @@ it('opens the tiles under the host and acts on that host alone', async () => {
   await user.click(toggle)
   expect(screen.getByRole('button', { name: 'Hide providers on forge' })).toHaveAttribute('aria-expanded', 'true')
   const tiles = within(screen.getByRole('list', { name: 'Providers on forge' })).getAllByRole('listitem')
-  expect(tiles.map(tile => within(tile).getByRole('heading').textContent)).toEqual(['Claude Code', 'Codex', 'Grok Build', 'Devin'])
+  expect(tiles.map(tile => within(tile).getByRole('heading').textContent)).toEqual(['Claude Code', 'Codex', 'Grok Build', 'Devin', 'Antigravity'])
   expect(screen.getByText('forge connects each provider that is signed in when its host starts. A provider you disconnect stays off.')).toBeInTheDocument()
   expect(within(tiles[1]!).getByText('ChatGPT · 0.155.1')).toBeInTheDocument()
   expect(within(tiles[0]!).getByRole('button', { name: 'Sign in to Claude Code on forge from this computer' })).toHaveTextContent('Sign in')
@@ -78,7 +78,7 @@ it('shows the command for Devin, which signs in from a terminal on the host', as
   render(<div className="hosts-settings"><HostProviders host={forge} bridge={hosts}
     providers={[status('devin', { connection: 'error', problem: 'signed-out', version: '3000.10.31 / ACP 1' })]} /></div>)
   await user.click(screen.getByRole('button', { name: 'Show providers on forge' }))
-  const devin = screen.getAllByRole('listitem').at(-1)!
+  const devin = screen.getAllByRole('listitem').find(item => item.getAttribute('data-provider') === 'devin')!
   expect(within(devin).getByText('devin auth login --force-manual-token-flow')).toBeInTheDocument()
   expect(within(devin).queryByRole('button', { name: /^Sign in/u })).toBeNull()
   expect(within(devin).getByRole('button', { name: 'Copy the Devin sign-in command' })).toBeInTheDocument()

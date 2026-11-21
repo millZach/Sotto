@@ -72,3 +72,30 @@ it('draws Cursor’s cube on both phones from the desktop’s path and view box 
   expect(drawn.match(/-?\d*\.?\d+/gu)!.map(Number)).toEqual(path!.match(/-?\d*\.?\d+/gu)!.map(Number))
   expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"cursor": "ProviderCursor"')
 })
+
+it('draws Antigravity’s arch on both phones from the desktop’s path and view box (ADR-0212)', () => {
+  const match = /antigravity: \{\s*viewBox: '([^']+)',\s*path: '([^']+)'/u.exec(read('src/renderer/src/agents/ProviderMark.tsx'))
+  if (!match) throw new Error('The desktop has no Antigravity mark.')
+  const [, viewBox, path] = match
+  expect(viewBox).toBe('0 0 24 24')
+  // Android draws the desktop's path as it is, in one shape at full strength.
+  expect(read(`${ANDROID}/core/ProviderMarks.kt`)).toContain(`"antigravity" to ProviderMarkShape(24f, 24f, listOf(MarkShape("${path!}", 1f)))`)
+  // The iPhone's asset spells the relative curves out as absolute ones, so the two are compared by the points they name.
+  const points = (d: string): number[] => {
+    const out: number[] = []
+    let x = 0, y = 0
+    for (const [, command, args] of d.matchAll(/([MCcZ])([^MCcZ]*)/gu)) {
+      const n = (args!.match(/-?\d*\.?\d+/gu) ?? []).map(Number)
+      if (command === 'M') { x = n[0]!; y = n[1]!; out.push(x, y); continue }
+      for (let i = 0; i + 5 < n.length; i += 6) {
+        const at = command === 'c' ? n.slice(i, i + 6).map((value, k) => value + (k % 2 ? y : x)) : n.slice(i, i + 6)
+        out.push(...at); x = at[4]!; y = at[5]!
+      }
+    }
+    return out.map(value => Math.round(value * 1000) / 1000)
+  }
+  const asset = read('apps/ios/Sotto/Resources/Assets.xcassets/ProviderAntigravity.imageset/ProviderAntigravity.svg')
+  expect(asset).toContain(`viewBox="${viewBox!}"`)
+  expect(points(/\bd="([^"]+)"/u.exec(asset)![1]!)).toEqual(points(path!))
+  expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"antigravity": "ProviderAntigravity"')
+})

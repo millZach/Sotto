@@ -23,9 +23,22 @@
 .thread-prompt[data-quiet] .model-picker__source { flex: 0 1000 auto; min-width: 1em; }
 .thread-prompt[data-quiet] .model-picker__name { flex-shrink: 1; }
 
-/* The model and its effort read as words, not a chip: no fill and no hairline between them. */
+/* The model and its effort read as words, not a chip: no fill and no hairline between them. Hovering or opening either
+   half of the combined picker highlights the whole pair (model, effort and speed bolt) as one seamless control. */
 .thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) { gap: 0; height: 28px; }
 .thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) .model-picker__trigger { height: 28px; min-height: 28px; border-radius: var(--tt-radius-row); padding-inline-end: 4px; color: var(--tt-text); }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort:not(.effort-fixed)) .model-picker__trigger { border-start-start-radius: var(--tt-radius-row); border-end-start-radius: var(--tt-radius-row); border-start-end-radius: 0; border-end-end-radius: 0; }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort:not(.effort-fixed)) .split-chip-effort__trigger { border-start-start-radius: 0; border-end-start-radius: 0; border-start-end-radius: var(--tt-radius-row); border-end-end-radius: var(--tt-radius-row); transition: background-color 120ms ease, color 120ms ease; }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort:not(.effort-fixed)):is(
+  :has(.model-picker__trigger:hover:not(:disabled)),
+  :has(.split-chip-effort__trigger:hover:not([aria-disabled='true'])),
+  :has(.model-picker__trigger[aria-expanded='true']),
+  :has(.split-chip-effort__trigger[aria-expanded='true'])
+) :is(.model-picker__trigger, .split-chip-effort__trigger) { border-color: transparent; background: var(--tt-hover); color: var(--tt-text); }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort:not(.effort-fixed)):is(
+  :has(.model-picker__trigger:active:not(:disabled):not([aria-expanded='true'])),
+  :has(.split-chip-effort__trigger:active:not([aria-disabled='true']):not([aria-expanded='true']))
+) :is(.model-picker__trigger, .split-chip-effort__trigger) { background: var(--tt-hover-strong); }
 
 /* The model keeps its mark and name and loses its chevron. Permissions come first at the footer's end, in a slot of
    their own before the model, as their shield and the mode's name in the mode's colour. The words shorten with an
@@ -63,7 +76,7 @@
 
 /* The effort chip: the level in words, then the speed's bolt. Its menu opens above it, like the shield's. */
 .split-chip-effort { position: relative; display: inline-flex; align-items: center; min-width: 2em; height: 28px; flex: 0 1000 auto; }
-.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; }
+.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; height: 28px; min-height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; }
 .split-chip-effort__word { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .split-chip-effort__trigger:hover:not([aria-disabled='true']), .split-chip-effort__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .split-chip-effort__trigger[aria-disabled='true'] { cursor: default; }
@@ -79,7 +92,7 @@
 /* A level the draft seems to want (ADR-0172, Drake's pick A of docs/prototypes/effort-suggestion-prototype.html): after
    the word, a muted arrow and the level in the accent on its wash, one press that sets it. It rises in once, and stands
    still while the draft still asks for it. */
-.split-chip-effort__suggest { display: inline-flex; align-items: center; gap: 5px; height: 28px; margin-inline-start: -4px; padding: 0 4px 0 2px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; }
+.split-chip-effort__suggest { display: inline-flex; align-items: center; gap: 5px; height: 28px; min-height: 28px; margin-inline-start: -4px; padding: 0 4px 0 2px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; }
 /* A thinner wash than --tt-accent-wash, so the accent's text holds 4.5:1 on it in every theme (paintedTextPairs.ts). */
 .split-chip-effort__suggested { --effort-offer-wash: color-mix(in srgb, var(--tt-accent) 10%, transparent); display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: var(--tt-radius-control); background: var(--effort-offer-wash); color: var(--tt-accent-text); font-weight: 600; }
 /* The arrow points from the word to the level in a right-to-left interface too. */

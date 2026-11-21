@@ -576,6 +576,10 @@ msgstr "another version"
 msgid "Answer the request to open this page first."
 msgstr "Answer the request to open this page first."
 
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Antigravity’s key is kept on this computer, which is not running its own threads. Nothing was saved."
+msgstr "Antigravity’s key is kept on this computer, which is not running its own threads. Nothing was saved."
+
 #: src/main/agents/nextPromptIpc.ts
 msgid "Ask for Watcher's first message from the main Sotto window."
 msgstr "Ask for Watcher's first message from the main Sotto window."
@@ -1005,6 +1009,10 @@ msgstr "Hyprland reloaded with no new errors. Voxtype keeps running without thes
 #: src/main/omarchy/setup.ts
 msgid "Hyprland reported an error after Sotto’s change. Hyprland said: “{said}”."
 msgstr "Hyprland reported an error after Sotto’s change. Hyprland said: “{said}”."
+
+#: src/main/agents/antigravityAccountIpc.ts
+msgid "Install Antigravity from the main Sotto window."
+msgstr "Install Antigravity from the main Sotto window."
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Install that Node for the SSH account on {name}, then try again."
@@ -1659,6 +1667,10 @@ msgstr "Showing linked files is not part of this version of Sotto. Nothing was o
 #: src/main/agents/localProviderSignInIpc.ts
 msgid "Sign a provider in from the main Sotto window."
 msgstr "Sign a provider in from the main Sotto window."
+
+#: src/main/agents/antigravityAccountIpc.ts
+msgid "Sign Antigravity in from the main Sotto window."
+msgstr "Sign Antigravity in from the main Sotto window."
 
 #: src/main/agents/cursorSignInIpc.ts
 msgid "Sign Cursor in from the main Sotto window."

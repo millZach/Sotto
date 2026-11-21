@@ -33,8 +33,8 @@ describe('provider profiles', () => {
 
   it("names Watcher's providers as Watcher's schema does, in the same order", () => {
     expect(watcherProviderIds()).toEqual(watcherProviderSchema.options)
-    expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build, Muse or Cursor')
-    expect(watcherProvidersInWords(new Set(['muse', 'cursor']))).toBe('Codex, Claude Code or Grok Build')
+    expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build, Muse, Cursor or Antigravity')
+    expect(watcherProvidersInWords(new Set(['muse', 'cursor']))).toBe('Codex, Claude Code, Grok Build or Antigravity')
   })
 
   // Claude Code was the only provider offered the recommendation before ADR-0095; Codex and Muse are new.
