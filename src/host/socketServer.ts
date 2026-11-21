@@ -444,6 +444,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-new-owner' || watcherReads)
     && (feature !== 'watcher-muse' || watcherReads)
     && (feature !== 'watcher-cursor' || watcherReads)
+    && (feature !== 'watcher-antigravity' || watcherReads)
     // A host keeps its own check queue (#1312) only where its Owl answer turns on Work across machines.
     && (feature !== 'watcher-check-queue' || watcherChecks)
     // Watcher's stop_thread takes a check out of that queue (#1637), so it goes with the queue.

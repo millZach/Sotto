@@ -8,7 +8,7 @@ import Foundation
 
 public enum WatcherSettings {
     /// The providers Watcher runs on (`watcherProviderSchema`).
-    public static let providers: [String] = ["codex", "claude", "grok", "muse", "cursor"]
+    public static let providers: [String] = ["codex", "claude", "grok", "muse", "cursor", "antigravity"]
 
     /// One provider's models in the model menu, the current Watcher's own first.
     public struct Group: Equatable, Sendable, Identifiable {

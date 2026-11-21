@@ -48,6 +48,7 @@ import { markTurnActivity } from './turnActivity'
 import { validateWatcherProfile, WatcherHistoryRefusal, WatcherProfileRefusal } from './watcherProfile'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { watcherRequestLine } from './watcherRequestNote'
+import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 
 /**
  * Google Antigravity as a thread provider, the way T3 Code runs it (docs/research/2026-11-20-antigravity-in-t3code.md,
@@ -432,7 +433,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!watcher) return undefined
     const profile = await this.launchProfile(id)
     if (!profile) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Nothing was sent. Reopen Watcher to recover.')
-    return { antigravity: { systemPrompt: { append: profile.instructions } } }
+    return { antigravity: { systemPrompt: { append: profile.instructions ?? WATCHER_SYSTEM_PROMPT } } }
   }
 
   // ---- Processes -----------------------------------------------------------------------------------------------------

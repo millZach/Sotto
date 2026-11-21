@@ -5760,11 +5760,12 @@ ${operation.draftId}`)
   }
   /**
    * An older host refuses a Watcher identity that names a provider it did not know Watcher on, so a Watcher on Muse asks only
-   * hosts that list `watcher-muse`, and one on Cursor only hosts that list `watcher-cursor` (ADR-0079, ADR-0128).
+   * hosts that list `watcher-muse`, one on Cursor only hosts that list `watcher-cursor`, and one on Antigravity only hosts that
+   * list `watcher-antigravity` (ADR-0079, ADR-0128, ADR-0211).
    */
-  private takesMaster(host: { readonly muse?: boolean; readonly cursor?: boolean }): boolean {
+  private takesMaster(host: { readonly muse?: boolean; readonly cursor?: boolean; readonly antigravity?: boolean }): boolean {
     const provider = this.view().current?.provider
-    return provider === 'muse' ? host.muse === true : provider === 'cursor' ? host.cursor === true : true
+    return provider === 'muse' ? host.muse === true : provider === 'cursor' ? host.cursor === true : provider === 'antigravity' ? host.antigravity === true : true
   }
   private takingHost(hostId: string | undefined) {
     const host = this.remote?.hosts().find(item => item.hostId === hostId)

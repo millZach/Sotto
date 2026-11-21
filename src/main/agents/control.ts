@@ -4722,8 +4722,8 @@ export class AgentControl {
         // back on, which grants nothing, and is refused turning it off whatever its answer policy (ADR-0079).
         if (command.patch.museDisableSandbox === true && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
         // Antigravity's binary path names a program this machine starts, so only this machine's own Settings set it (ADR-0211).
-        if (command.patch.antigravityBinaryPath !== undefined && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
-        const patch =newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
+        if (command.patch.antigravityBinaryPath !== undefined && command.patch.antigravityBinaryPath !== this.state.configuration.antigravityBinaryPath && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
+        const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
         let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })
         const before = this.state.configuration
         // Coordinator account selection has no authority over native thread connections.
