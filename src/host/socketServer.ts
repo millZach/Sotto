@@ -169,6 +169,11 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * parts, by reference, under its thread records' revision; a push is measured from it only when its thread records are.
    */
   keptParts?: boolean; keptBase?: HeldParts | null
+  /**
+   * Watcher's page as the last shell push written to this phone carried it: a digest of the page without its time, and
+   * the time it carried. A page with the same digest goes with that time, so it is the page the phone holds (#2755).
+   */
+  pageStamp?: { readonly digest: string; readonly observedAt: string } | undefined
   /** Whether its hello accepted `provider-mode-lists`: a catalog it is sent lists each provider's modes once, not on every model. */
   providerModeLists?: boolean
   /**
@@ -904,15 +909,21 @@ export async function startSocketServer(options: SocketServerOptions) {
    * time out, so a page with nothing new but its time is not pushed again. `withoutConversation` leaves Watcher's
    * conversation out too, so a shell whose only news is Watcher writing can wait its window. Each part is serialized and
    * hashed once.
+   *
+   * The page also goes with the time it last changed rather than when it was read (November 20, 2026, #2755): `held` is
+   * the page the phone was last pushed, and a page with the same digest is written with its time. A new time on every read
+   * made the page unlike the one the phone held, so kept parts never kept it and every shell pushed to a phone, for any
+   * thread's news, carried Watcher's whole page again. `page` is the digest and time written, for the phone to hold.
    */
-  const shellText = (state: HostWireShell): { text: string; digest: string; withoutConversation: string } => {
+  const shellText = (state: HostWireShell, held?: Peer['pageStamp']): { text: string; digest: string; withoutConversation: string; page?: Peer['pageStamp'] } => {
     const page = state.watcher
     const hash = (text: string): string => createHash('sha1').update(text).digest('base64')
     if (!page) { const text = JSON.stringify(state), digest = hash(text); return { text, digest, withoutConversation: digest } }
     const rest = JSON.stringify({ ...state, watcher: undefined }), untimed = JSON.stringify({ ...page, observedAt: undefined })
-    const text = rest.slice(0, -1) + ',"watcher":' + untimed.slice(0, -1) + ',"observedAt":' + JSON.stringify(page.observedAt) + '}}'
+    const pageDigest = hash(untimed), observedAt = held?.digest === pageDigest ? held.observedAt : page.observedAt
+    const text = rest.slice(0, -1) + ',"watcher":' + untimed.slice(0, -1) + ',"observedAt":' + JSON.stringify(observedAt) + '}}'
     const restDigest = hash(rest), pageWithoutConversation = JSON.stringify({ ...page, observedAt: undefined, conversation: undefined })
-    return { text, digest: restDigest + hash(untimed), withoutConversation: restDigest + hash(pageWithoutConversation) }
+    return { text, digest: restDigest + pageDigest, withoutConversation: restDigest + hash(pageWithoutConversation), page: { digest: pageDigest, observedAt } }
   }
   /**
    * One read of the service's shell for every phone sent together: each read copies the whole coordinator state. It is
@@ -1107,10 +1118,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     // To a client that accepted `changed-thread-records`, the thread records that changed since its last shell push go
     // beside a state whose own list is empty (#996); they become what it holds once the frame is written.
     const records = peer.threadRecords?.encode(wire.state.host.threads)
-    const state = records ? { ...wire.state, host: { ...wire.state.host, threads: [] } } : wire.state
+    const listed = records ? { ...wire.state, host: { ...wire.state.host, threads: [] } } : wire.state
     const threadNews = records !== undefined && (records.payload.base === null || records.payload.changed.length > 0 || records.payload.removed !== undefined || records.payload.order !== undefined)
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
-    const { text: stateText, digest, withoutConversation } = shellText(state)
+    const { text: stateText, digest, withoutConversation, page } = shellText(listed, peer.pageStamp)
+    // Watcher's page with the time the phone holds it under, when nothing on it is new, so its kept part below is kept.
+    const state = page && listed.watcher && listed.watcher.observedAt !== page.observedAt ? { ...listed, watcher: { ...listed.watcher, observedAt: page.observedAt } } : listed
     const threadsText = records ? ',"threads":' + JSON.stringify(records.payload) : '', eventsText = ',"eventPage":' + JSON.stringify(eventPage) + '}'
     const frameOf = (text: string): string => '{"v":1,"event":"shell","state":' + text + threadsText + eventsText
     const full = frameOf(stateText)
@@ -1122,7 +1135,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A written push moves the client past its events, and what it carried is what the client now holds: its parts, whole,
     // become what the next push's are measured from, with its thread records.
     const written = (): void => {
-      peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire); records?.commit()
+      peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire); records?.commit(); peer.pageStamp = page
       if (peer.keptParts) peer.keptBase = records && peer.threadRecords?.baseRevision === records.payload.revision ? { revision: records.payload.revision, top: state, host: state.host } : null
     }
     if (fits(full)) {
@@ -2494,7 +2507,9 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       // An answer that carries a shell gives the client a picture of its own, so the next shell push goes whatever it repeats.
       // So does one that carries Watcher's page: a phone shows the page it was answered with until a shell replaces it.
-      if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
+      // Its page was stamped when it was read, so the next push's page is too: one stamped with the older time the last
+      // push carried would read as older than the page the phone shows, and go unshown though it changed since (#2755).
+      if (carried || request.op.startsWith('watcher-phone-')) { peer.shellSent = null; peer.pageStamp = undefined }
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
       else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'plugin-meshy-model-bytes' || request.op === 'plugin-elevenlabs-sound-bytes' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {

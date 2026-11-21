@@ -16,6 +16,7 @@ import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../src/shared/watcherRoom'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { rawPeer } from '../fixtures/rawHostPeer'
+import { iphoneAccepts } from '../fixtures/iphoneAccepts.mjs'
 import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
@@ -1024,18 +1025,22 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
     await expect.poll(() => shells()).toHaveLength(1)
     await publish(); await publish(); await received()
     expect(shells()).toHaveLength(1)
-    // The phone may answer now: its shell says so, with the page as read then.
+    // The phone may answer now: its shell says so, with the page as it was, under the time it last changed (#2755).
     f.canAnswer(true)
     await publish()
     await expect.poll(() => shells()).toHaveLength(2)
     const [first, second] = shells()
     expect(second!.state.clientCapabilities).toEqual({ mayAnswer: true })
     expect(() => watcherPhoneStateSchema.parse(second!.state.watcher)).not.toThrow()
-    expect(Date.parse(second!.state.watcher!.observedAt)).toBeGreaterThan(Date.parse(first!.state.watcher!.observedAt))
+    expect(second!.state.watcher!.observedAt).toBe(first!.state.watcher!.observedAt)
     // A page the phone was answered with replaces the one its last shell carried, so the next shell goes though it repeats.
-    expect(await peer.call('read', { op: 'watcher-phone-read' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+    const answered = await peer.call('read', { op: 'watcher-phone-read' })
+    expect(answered).toMatchObject({ ok: true, result: { status: 'ok' } })
     await publish()
     await expect.poll(() => shells()).toHaveLength(3)
+    // Not older than the page it was answered with, or the iPhone would leave it unshown though it may have changed (#2755).
+    const answeredAt = (answered as { result: { state: { observedAt: string } } }).result.state.observedAt
+    expect(Date.parse(shells()[2]!.state.watcher!.observedAt)).toBeGreaterThanOrEqual(Date.parse(answeredAt))
     await publish(); await received()
     expect(shells()).toHaveLength(3)
   } finally { vi.useRealTimers() }
@@ -1226,3 +1231,57 @@ describe('Watcher’s box on a phone (October 31, 2026)', () => {
     expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'interrupt')).toHaveLength(1)
   })
 })
+
+/**
+ * Watcher's page on a phone says when it was read (`observedAt`), and the room stamps a new time on every read, so a
+ * page with nothing new but its time compared unlike the one the phone held, and kept parts never kept it: every shell a
+ * phone was pushed, for any thread's news, carried Watcher's whole page again, its 200 newest messages and up to 500
+ * receipts. On the owner's laptop on November 20, 2026 that was most of the 50 to 120 KB/s it sent the iPhone (#2755).
+ * The page now keeps the time it last changed, so an unchanged page is kept and a changed one goes, newer, at once.
+ */
+describe('a phone\'s Watcher page between pushes (#2755)', () => {
+  type Pushed = { event: string; state: { watcher?: { working: boolean; observedAt: string; conversation: { messages: unknown[] } }; kept?: string[] } }
+  /** A Watcher holding 200 messages of the owner's average length, on a phone that sends the iPhone's own hello. */
+  async function busyWatcher() {
+    const f = await fixture()
+    const phone = await f.pair(iphoneAccepts())
+    await phone.call('send', f.send(phone.paired.clientId))
+    const native = f.native(f.target.threadId)
+    for (let index = 0; index < 200; index++) native.messages.push({ id: 'synthetic-' + index, role: index % 2 ? 'assistant' as const : 'user' as const, text: 'Synthetic words. '.repeat(18), createdAt: new Date(Date.UTC(2026, 10, 20, 12, 0, index)).toISOString() })
+    f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    const shells = () => (phone.messages as unknown as Pushed[]).filter(message => message.event === 'shell')
+    await expect.poll(() => shells().at(-1)?.state.watcher?.conversation.messages.length ?? (shells().at(-1)?.state.kept?.includes('watcher') ? 200 : 0)).toBe(200)
+    await new Promise(resolve => setTimeout(resolve, 300))
+    const other = f.workspace.adapters.codex.state.threads.find(row => row.id !== native.id)!
+    return { f, phone, native, other, shells }
+  }
+
+  it('is not sent Watcher\'s page again when only another thread changed', async () => {
+    const { f, other, shells } = await busyWatcher()
+    const before = shells().length
+    for (let change = 0; change < 5; change++) {
+      other.status = change % 2 ? 'idle' : 'running'; f.workspace.adapters.codex.emit()
+      await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+      await expect.poll(() => shells().length).toBeGreaterThan(before + change)
+    }
+    const pushed = shells().slice(before)
+    const bytes = pushed.map(push => Buffer.byteLength(JSON.stringify(push)))
+    if (process.env.SOTTO_PUSH_SIZES === '1') console.log('WATCHER-PAGE-PUSHES ' + JSON.stringify({ pushes: pushed.length, bytes, carriedPage: pushed.filter(push => push.state.watcher !== undefined).length }))
+    // Before, each of these carried the page whole: about 67 KB a push here.
+    expect(pushed.filter(push => push.state.watcher !== undefined)).toHaveLength(0)
+    for (const push of pushed) expect(push.state.kept).toContain('watcher')
+    expect(Math.max(...bytes)).toBeLessThan(PAGE_KEPT_PUSH_BYTES)
+  })
+
+  it('is sent the page at once when it changes, newer than the one it holds', async () => {
+    const { f, native, shells } = await busyWatcher()
+    const held = [...shells()].reverse().find(push => push.state.watcher !== undefined)!.state.watcher!
+    native.status = held.working ? 'idle' : 'running'; f.workspace.adapters.codex.emit()
+    await expect.poll(() => shells().at(-1)?.state.watcher?.working).toBe(!held.working)
+    // The iPhone leaves a page older than the one it shows unshown; a changed page is never older.
+    expect(Date.parse(shells().at(-1)!.state.watcher!.observedAt)).toBeGreaterThanOrEqual(Date.parse(held.observedAt))
+  })
+})
+
+/** Bytes of one push to the phone above while its Watcher page is kept: the changed thread record and the parts' names. */
+const PAGE_KEPT_PUSH_BYTES = 6_000
