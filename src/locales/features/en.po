@@ -1495,6 +1495,10 @@ msgstr "Answers"
 msgid "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
 msgstr "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
 
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Antigravity's sign-in on {host} needs renewing. Run an Antigravity turn there, then read again."
+msgstr "Antigravity's sign-in on {host} needs renewing. Run an Antigravity turn there, then read again."
+
 #: src/renderer/src/features/updates/updateControlLogic.ts
 msgid "Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing."
 msgstr "Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing."
@@ -3040,6 +3044,10 @@ msgstr "Go to Watcher’s question in this conversation: {asked}"
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Goal"
 msgstr "Goal"
+
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "Google account through Antigravity"
+msgstr "Google account through Antigravity"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Got a code from your teammate?"

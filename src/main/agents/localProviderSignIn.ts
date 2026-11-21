@@ -24,6 +24,10 @@ export interface LocalProviderSignInOptions {
   readonly command?: (provider: LocalSignInProvider) => Promise<SignInCommand | undefined>
   readonly hermesHome?: string
   readonly hermesSignedOut?: () => Promise<void>
+  /** The directory Sotto's own Antigravity folder is under: this computer's user data (ADR-0212). */
+  readonly antigravityDirectory?: string
+  /** Settings' binary path for `agy`, read at each sign-in; empty for none. */
+  readonly antigravityBinaryPath?: () => string
   readonly lifetimeMs?: number
   readonly startTimeoutMs?: number
 }
@@ -53,7 +57,7 @@ export class LocalProviderSignIn {
       place: 'computer',
       ...(options.hermesHome ? { hermesHome: options.hermesHome } : {}),
       ...(options.hermesSignedOut ? { hermesSignedOut: options.hermesSignedOut } : {}),
-      command: async provider => withoutOwnBrowser(provider as LocalSignInProvider, await (options.command ? options.command(provider as LocalSignInProvider) : defaultSignInCommand(provider, undefined, options.hermesHome))),
+      command: async provider => withoutOwnBrowser(provider as LocalSignInProvider, await (options.command ? options.command(provider as LocalSignInProvider) : defaultSignInCommand(provider, undefined, options.hermesHome, options.antigravityDirectory, options.antigravityBinaryPath?.()))),
       connect: async provider => options.connect(provider as LocalSignInProvider),
       ...(options.lifetimeMs !== undefined ? { lifetimeMs: options.lifetimeMs } : {}),
       ...(options.startTimeoutMs !== undefined ? { startTimeoutMs: options.startTimeoutMs } : {}),

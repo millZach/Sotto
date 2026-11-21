@@ -27,6 +27,11 @@ import { WorkerRoles } from './subagentRoles'
 import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
+import { AntigravityAcpHost } from './antigravity'
+import { describeAntigravityProgress, managedAntigravityExecutable, removeDownloadedAntigravity } from './antigravityInstall'
+import { withAntigravityBinaryPath } from './antigravityLookup'
+import type { AntigravitySignIn } from './antigravityRpc'
+import type { AntigravityLookup } from './antigravityLookup'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
@@ -105,6 +110,7 @@ import type { DelegationNews } from '../../shared/delegation'
 import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 import { DetachedRunWatch } from './detachedRuns'
+import { locateClient } from './providerClients'
 import { scanProcesses, type RunMark } from './detachedRunScan'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -265,6 +271,10 @@ export interface AgentRuntimeOptions {
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
    */
   ownServers?: () => Promise<readonly OwnServer[]>
+  /** Antigravity's sign-in and where its program is, read from Settings and the credential store before each start. */
+  antigravity?: { readonly signIn?: () => Promise<AntigravitySignIn>; readonly lookup?: () => Promise<AntigravityLookup>
+    /** An end-to-end run's fake `agy`, started in place of finding the real one. */
+    readonly program?: { readonly executable: string; readonly args: readonly string[] } }
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -388,6 +398,19 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
+    // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
+    antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia, usageEnabled: options.usageEnabled === true,
+      ...(options.antigravity?.program ? { executable: options.antigravity.program.executable, executableArgs: options.antigravity.program.args } : {}),
+      // The sign-in Settings chose, with the key from the credential store only for the two methods that take one (ADR-0212).
+      signIn: options.antigravity?.signIn ?? (async () => {
+        const configuration = agentControl.configuration(), method = configuration.antigravitySignInMethod
+        const key = method === 'gemini-api-key' || method === 'agent-platform' ? credentials.get('antigravity') : ''
+        return { method, ...(key ? { apiKey: key } : {}), ...(configuration.antigravityProject ? { project: configuration.antigravityProject } : {}),
+          ...(configuration.antigravityLocation ? { location: configuration.antigravityLocation } : {}) }
+      }),
+      // Settings' binary path, then the `agy` Sotto downloaded under this directory, then `agy` on PATH (T3's order).
+      lookup: async () => ({ managed: () => managedAntigravityExecutable(directory),
+        ...(agentControl.configuration().antigravityBinaryPath ? { binaryPath: agentControl.configuration().antigravityBinaryPath } : {}), ...await options.antigravity?.lookup?.() }) })),
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
       : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
@@ -407,6 +430,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
     opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
     cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+    antigravity: new SottoThreadHost('antigravity', providers.antigravity!, threadRegistry!),
     pi: new SottoThreadHost('pi', providers.pi!, threadRegistry!),
     hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
     deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
@@ -531,8 +555,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
-    ...(options.locateClient ? { locateClient: options.locateClient } : {}),
-    ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
+    // Antigravity's lookup also asks for the copy Sotto downloaded under this directory.
+    locateClient: options.locateClient ?? (provider => locateClient(provider, { antigravityDirectory: directory, antigravityBinaryPath: agentControl.configuration().antigravityBinaryPath })),
+    ...(options.installedProviders ? { installedProviders: async () => withAntigravityBinaryPath(await options.installedProviders!(), agentControl.configuration().antigravityBinaryPath) } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeCommandSummary: commandSummaryWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
@@ -1032,6 +1057,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
     ...(providers.hermes instanceof HermesAcpHost ? { hermesHome: providers.hermes.folder, hermesSignedOut: hermesAccountChanged } : {}),
     openExternal: async url => { await options.openExternal(url) },
+    antigravityDirectory: directory, antigravityBinaryPath: () => agentControl.configuration().antigravityBinaryPath,
     ...(options.signInCommand ? { command: options.signInCommand } : {}),
     // Settings connections leave Threads quiet (ADR-0068): the row and the dialog say how it went.
     connect: async provider => {
@@ -1042,6 +1068,29 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       return provider === 'hermes' && connectedHermes()?.hasChatGptModels() === false ? 'Hermes did not return any ChatGPT models.' : undefined
     },
   }) : undefined
+  // Antigravity's own account actions from its row in Settings › Providers (ADR-0212): Gemini Enterprise's browser
+  // sign-in, which connects through the coordinator once it has signed in, and Sign out.
+  const antigravityHost = providers.antigravity instanceof AntigravityAcpHost ? providers.antigravity : undefined
+  let antigravityProgress: string | undefined
+  const antigravityAccount = antigravityHost && options.runsAs !== 'headless-host' ? {
+    signInWithBrowser: async (): Promise<string | undefined> => { await antigravityHost.signInWithBrowser(); return whyNotConnected(await agentControl.command({ type: 'connect', provider: 'antigravity', notice: false }), 'antigravity') },
+    signOut: async (): Promise<void> => { await antigravityHost.signOut(); await agentControl.command({ type: 'disconnect', provider: 'antigravity' }) },
+    // Install downloads Google's agy, checks its SHA-512 and connects Antigravity; the row reads how far it has got.
+    install: async (): Promise<string | undefined> => {
+      const runtime = agentControl.antigravityRuntime()
+      if (!runtime) return 'Sotto cannot download Antigravity here. Nothing was installed.'
+      const result = await runtime.install({ onProgress: progress => { antigravityProgress = describeAntigravityProgress(progress) } }).finally(() => { antigravityProgress = undefined })
+      if (!result.ok) return result.detail
+      return whyNotConnected(await agentControl.command({ type: 'connect', provider: 'antigravity', notice: false }), 'antigravity')
+    },
+    installProgress: (): string | undefined => antigravityProgress,
+    cancelInstall: (): boolean => agentControl.antigravityRuntime()?.cancel() ?? false,
+    removeDownloaded: async (): Promise<string> => {
+      const runtime = agentControl.antigravityRuntime()
+      if (!runtime) return 'There is no downloaded Antigravity to remove.'
+      return removeDownloadedAntigravity(runtime, antigravityHost, () => agentControl.command({ type: 'disconnect', provider: 'antigravity' }))
+    },
+  } : undefined
   idleCompaction.start()
-  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, detachedRuns, prepareForShutdown, close }
+  return { antigravityAccount, piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, detachedRuns, prepareForShutdown, close }
 }

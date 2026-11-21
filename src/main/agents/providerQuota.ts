@@ -466,3 +466,83 @@ export function parseMuseQuota(value: unknown): UsageQuotaRead | undefined {
   const current = windows.filter(window => !expired(window, observedAt))
   return read('muse', current, observedAt, true)
 }
+
+/** Which of Antigravity's limits a quota bucket is, by its ID's prefix as T3 Code reads them. Other buckets are another limit. */
+function antigravityFamily(bucketId: string): string {
+  return bucketId.startsWith('gemini-argon-') ? 'Gemini Argon' : bucketId.startsWith('gemini-carbon-') ? 'Gemini Carbon'
+    : bucketId.startsWith('gemini-') ? 'Gemini' : bucketId.startsWith('3p-') ? 'Claude & GPT (shared)' : 'Other limit'
+}
+const ANTIGRAVITY_FAMILY_ORDER = ['Gemini', 'Claude & GPT (shared)', 'Claude', 'GPT', 'Gemini Argon', 'Gemini Carbon', 'Other limit']
+const ANTIGRAVITY_WINDOWS: Readonly<Record<string, { minutes: number; kind: UsageQuotaWindow['kind'] }>> = { '5h': { minutes: 300, kind: 'primary' }, weekly: { minutes: 10_080, kind: 'weekly' } }
+function antigravityWindow(nativeId: string, family: string, raw: Record<string, unknown>, observedAt: string | undefined,
+  spec: { minutes: number; kind: UsageQuotaWindow['kind'] } | undefined, resetsAt: string | undefined): UsageQuotaWindow | undefined {
+  const remaining = typeof raw.remainingFraction === 'number' && Number.isFinite(raw.remainingFraction) ? raw.remainingFraction : undefined
+  if (remaining === undefined) return undefined
+  const span = quotaDurationLabel(spec?.minutes)
+  return { id: windowId('antigravity', nativeId, spec?.kind ?? 'other'), label: span ? `${family}, ${span.toLocaleLowerCase('en-US')}` : family,
+    kind: spec?.kind ?? 'other', usedPercent: (1 - Math.max(0, Math.min(1, remaining))) * 100,
+    ...(resetsAt ? { resetsAt } : {}), ...(spec ? { durationMinutes: spec.minutes } : {}), ...(observedAt ? { observedAt } : {}) }
+}
+const sortAntigravity = (windows: UsageQuotaWindow[]): UsageQuotaWindow[] => windows
+  .map((window, index) => ({ window, index, family: ANTIGRAVITY_FAMILY_ORDER.findIndex(name => window.label === name || window.label.startsWith(`${name}, `)) }))
+  .sort((a, b) => a.family - b.family || a.index - b.index).map(entry => entry.window).slice(0, USAGE_QUOTA_WINDOWS_MAX)
+
+/**
+ * Antigravity's `retrieveUserQuotaSummary` answers, one per host asked in order (as T3 Code reads them): Gemini and the
+ * shared Claude and GPT allowance, each with a 5-hour and a weekly window. A bucket the first host answered is that host's
+ * reading. A bucket left untouched reports a reset a whole window away, which is not a reset, so it is left off. Native
+ * bucket IDs and group names are never published: an ID is hashed, and a name is one of the fixed families.
+ */
+export function parseAntigravityQuota(responses: readonly { value: unknown; requestedAt: number }[], observedAt: string): UsageQuotaRead {
+  const at = timestamp(observedAt)
+  const windows = new Map<string, UsageQuotaWindow>()
+  for (const { value, requestedAt } of responses) {
+    const summary = object(value)
+    const groups = Array.isArray(summary?.groups) && summary.groups.some(group => Array.isArray(object(group)?.buckets) && (object(group)!.buckets as unknown[]).length)
+      ? summary.groups : [{ buckets: summary?.buckets }]
+    for (const group of groups) {
+      const buckets = object(group)?.buckets
+      if (!Array.isArray(buckets)) continue
+      for (const raw of buckets.slice(0, 64)) {
+        const bucket = object(raw)
+        if (!bucket || bucket.disabled === true || typeof bucket.bucketId !== 'string' || !bucket.bucketId || bucket.bucketId.length > 256) continue
+        const spec = typeof bucket.window === 'string' ? ANTIGRAVITY_WINDOWS[bucket.window] : undefined
+        const reset = timestamp(bucket.resetTime)
+        const untouched = bucket.remainingFraction === 1 && bucket.description === undefined && spec !== undefined && reset !== undefined
+          && Math.abs(Date.parse(reset) - requestedAt - spec.minutes * 60_000) <= 60_000
+        const window = antigravityWindow(bucket.bucketId, antigravityFamily(bucket.bucketId), bucket, at, spec, untouched ? undefined : reset)
+        if (window && !windows.has(window.id)) windows.set(window.id, window)
+      }
+    }
+  }
+  return read('antigravity', sortAntigravity([...windows.values()]), observedAt, true)
+}
+
+/**
+ * Antigravity's `fetchAvailableModels` answers, for an account whose summary has no windows: each model's reported share
+ * left, folded by family to the most used. Its plain quota names no length, so none is given it.
+ */
+export function parseAntigravityModels(responses: readonly unknown[], observedAt: string): UsageQuotaRead {
+  const at = timestamp(observedAt)
+  const windows = new Map<string, UsageQuotaWindow>()
+  for (const value of responses) {
+    const models = object(object(value)?.models)
+    if (!models) continue
+    for (const [modelId, raw] of Object.entries(models).slice(0, 256)) {
+      const model = object(raw)
+      if (!model) continue
+      const family = model.modelProvider === 'MODEL_PROVIDER_GOOGLE' || modelId.startsWith('gemini-') ? 'Gemini'
+        : model.modelProvider === 'MODEL_PROVIDER_ANTHROPIC' || modelId.startsWith('claude-') ? 'Claude'
+          : model.modelProvider === 'MODEL_PROVIDER_OPENAI' || modelId.startsWith('gpt-') ? 'GPT' : undefined
+      if (!family) continue
+      for (const [suffix, quota] of [['quota', object(model.quotaInfo)], ['weekly', object(model.weeklyQuotaInfo)]] as const) {
+        if (!quota) continue
+        const window = antigravityWindow(`${family}-${suffix}`, family, quota, at, suffix === 'weekly' ? ANTIGRAVITY_WINDOWS.weekly : undefined, timestamp(quota.resetTime))
+        if (!window) continue
+        const previous = windows.get(window.id)
+        if (!previous || (window.usedPercent ?? 0) > (previous.usedPercent ?? 0)) windows.set(window.id, window)
+      }
+    }
+  }
+  return read('antigravity', sortAntigravity([...windows.values()]), observedAt, true)
+}

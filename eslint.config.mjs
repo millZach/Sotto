@@ -196,6 +196,7 @@ export default tseslint.config(
       'artifacts/opencode-sign-in/**',
       'artifacts/opencode-model-menu/**',
       'artifacts/cursor-provider/**',
+      'artifacts/antigravity-provider/**',
       'artifacts/starting-screen/**',
       'artifacts/watcher-start-and-empty-rooms/**',
       'artifacts/unconfirmed-send/**',

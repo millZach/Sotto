@@ -60,7 +60,7 @@ export function clientUpdateHost(directory: string, home: string) {
   delete process.env.npm_config_prefix
   const where: Record<ProviderId, string> = {
     claude: join(installs, 'claude', 'latest', 'claude'), codex: join(installs, 'codex', 'latest', 'bin', 'codex'),
-    grok: join(home, '.grok', 'bin', 'grok'), devin: join(home, 'nowhere', 'devin'), muse: join(home, 'nowhere', 'muse'), opencode: join(home, 'nowhere', 'opencode'), cursor: join(home, 'nowhere', 'cursor'), deepseek: join(home, 'nowhere', 'dsh'), hermes: join(home, 'nowhere', 'dsh'), pi: join(home, 'nowhere', 'pi'),
+    grok: join(home, '.grok', 'bin', 'grok'), devin: join(home, 'nowhere', 'devin'), muse: join(home, 'nowhere', 'muse'), opencode: join(home, 'nowhere', 'opencode'), cursor: join(home, 'nowhere', 'cursor'), deepseek: join(home, 'nowhere', 'dsh'), hermes: join(home, 'nowhere', 'dsh'), pi: join(home, 'nowhere', 'pi'), antigravity: join(home, 'nowhere', 'antigravity'),
   }
   const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
   /** The client a mise argument names: its tool, or an update's `<tool>@<version>`, the version that was published. */
@@ -100,6 +100,6 @@ export function clientUpdateHost(directory: string, home: string) {
   return {
     clients, locateClient: async (provider: ProviderId) => where[provider],
     providers: { claude: new InstalledClient('claude', disk), codex: new InstalledClient('codex', disk), grok: new InstalledClient('grok', disk),
-      devin: new NotInstalled('Install Devin CLI and run devin auth login'), muse: new NotInstalled('Install Muse'), opencode: new NotInstalled('Install OpenCode'), cursor: new NotInstalled('Install Cursor'), hermes: new NotInstalled('Install Hermes') } satisfies Record<HostProviderId, E2EAgentHost>,
+      devin: new NotInstalled('Install Devin CLI and run devin auth login'), muse: new NotInstalled('Install Muse'), opencode: new NotInstalled('Install OpenCode'), cursor: new NotInstalled('Install Cursor'), hermes: new NotInstalled('Install Hermes'), antigravity: new NotInstalled('Install Antigravity') } satisfies Record<HostProviderId, E2EAgentHost>,
   }
 }

@@ -1260,6 +1260,10 @@ msgstr ""
 msgid "AI formatting"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "All four permission modes: on Allow edits Sotto answers Antigravity’s requests to change files for you, on Full access every request, and Auto is Antigravity’s own. Its questions always come to you. Usage shows Antigravity’s token counts and your account’s limits. Antigravity has no compaction, and keeps its own history in Sotto’s own Antigravity folder."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "All shortcuts are back to their defaults."
 msgstr ""
@@ -1378,6 +1382,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Answer SSH's question for {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Antigravity’s setting was not saved, so it keeps the one it had. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
@@ -5845,6 +5853,10 @@ msgstr ""
 msgid "Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, reasoning, approvals and Antigravity’s questions, steering, images, and skills as /name, on the models your sign-in lists. Watcher runs on Antigravity, and Antigravity threads run on paired hosts and phones too. Change models and permissions in a thread."
+msgstr ""
+
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Reports no limits, so it would be chosen blind"
 msgstr ""
@@ -7636,6 +7648,14 @@ msgstr ""
 msgid "The key could not be saved. Nothing was changed."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The key was not removed. It is still saved. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The key was not saved. Nothing was changed. Try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "The last check stopped here."
 msgstr ""
@@ -8107,6 +8127,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Threads with a turn running on each machine, unless you set its own number below."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Antigravity"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx

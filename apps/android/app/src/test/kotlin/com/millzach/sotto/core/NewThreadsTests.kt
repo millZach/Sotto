@@ -132,9 +132,24 @@ class NewThreadsTests {
         assertEquals("Cursor's own model reads Cursor once", "Cursor · Auto", ThreadModel.labelOf("cursor", "Cursor", "Auto"))
     }
 
+    // A host that names Antigravity sends its threads, projects and models under provider-antigravity. They decode, the
+    // provider reads Antigravity, a model reads its name as the host sends it, and a phone may open a thread on it.
+    @Test fun anAntigravityHostDecodesAndItsModelIsAChoiceWhileAntigravityIsConnected() {
+        val shell = decode<Shell>("""{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"a","projectId":"p","title":"On Antigravity","providerId":"antigravity","status":"idle","requests":[]}],"projects":[{"id":"p","title":"Panel","path":"/home/zach/panel","providerId":"antigravity"}],"models":[{"id":"antigravity:gemini-3.1-pro","name":"Gemini 3.1 Pro","provider":"Antigravity","providerId":"antigravity","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"antigravity","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}}""")
+        shell.validate("h")
+        assertEquals(listOf("antigravity"), shell.host.threads.map { it.providerId })
+        assertEquals("antigravity", shell.host.projects.single().providerId)
+        assertEquals("Antigravity", AgentNames.name(shell.host.threads.single().providerId))
+        val model = NewThreads.availableModels(shell.host).single()
+        assertEquals("Antigravity · Gemini 3.1 Pro", model.label)
+        val command = Commands.createProject(providerID = "antigravity", title = "Panel tools", path = "/home/zach/panel")
+        assertEquals(JsonPrimitive("antigravity"), command["provider"])
+    }
+
     @Test fun openCodeHasItsNameAndAProviderThePhoneDoesNotKnowReadsTheAgent() {
         assertEquals("OpenCode", AgentNames.name("opencode"))
         assertEquals("Cursor", AgentNames.name("cursor"))
+        assertEquals("Antigravity", AgentNames.name("antigravity"))
         assertEquals("Codex", AgentNames.name("codex"))
         assertEquals("The agent", AgentNames.name("future"))
         assertEquals("The agent", AgentNames.name(null))

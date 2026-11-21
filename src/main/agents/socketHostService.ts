@@ -64,7 +64,7 @@ import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatche
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
-import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 /** Answers read on every call, checked against schemas built once rather than on every call. */
 const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
@@ -462,7 +462,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -1056,6 +1056,8 @@ export class SocketHostService implements HostService {
   get supportsWatcherCheckStop(): boolean { return this.supportsWatcherCheckQueue && this.features.includes('watcher-check-stop') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
   get supportsWatcherCursor(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-cursor') }
+  /** The host lists `watcher-antigravity`: it takes Watcher requests whose identity names Antigravity (ADR-0212). */
+  get supportsWatcherAntigravity(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-antigravity') }
   private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
     return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)
   }
@@ -2079,13 +2081,16 @@ export class SocketHostService implements HostService {
     const { sources, since, ...older } = usageLocalQuerySchema.parse(query)
     // One from before Muse and OpenCode were counted refuses a query naming either, and has none of their work to read.
     if (!this.features.includes('usage-muse-opencode') && older.providerIds !== undefined) older.providerIds = usageProvidersBeforeMuse(older.providerIds)
+    // One from before Antigravity was counted refuses a query naming it the same way.
+    if (!this.features.includes('usage-antigravity') && older.providerIds !== undefined) older.providerIds = usageProvidersBeforeAntigravity(older.providerIds)
     const sent = this.features.includes('usage-history') ? { ...older, ...(sources ? { sources } : {}), ...(since ? { since } : {}) } : older
     return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: sent }, undefined, undefined, 15000))
   }
   async usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
     const named = providerIds === undefined ? undefined : usageProviderIdsSchema.parse(providerIds)
-    const parsed = named === undefined || this.features.includes('usage-muse-opencode') ? named : usageProvidersBeforeMuse(named)
+    const known = named === undefined || this.features.includes('usage-antigravity') ? named : usageProvidersBeforeAntigravity(named)
+    const parsed = known === undefined || this.features.includes('usage-muse-opencode') ? known : usageProvidersBeforeMuse(known)
     // A host from before `usage-background-refresh` refuses the field, and reads every refresh afresh.
     const quiet = background && this.features.includes('usage-background-refresh')
     return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', ...(parsed ? { providerIds: parsed } : {}), ...(quiet ? { background: true } : {}) }, undefined, undefined, 15000))

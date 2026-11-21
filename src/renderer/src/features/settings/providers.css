@@ -32,6 +32,7 @@
 .provider-badge[data-provider='opencode'] { --provider-badge: var(--tt-provider-opencode-badge); }
 .provider-badge[data-provider='cursor'] { --provider-badge: var(--tt-provider-cursor-badge); }
 .provider-badge[data-provider='deepseek'] { --provider-badge: var(--tt-provider-deepseek-badge); }
+.provider-badge[data-provider='antigravity'] { --provider-badge: var(--tt-provider-antigravity-badge); }
 
 /* Update to <version>: a filled chip in the selected card's colour, beside the switch while an update is offered. */
 .provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-tag); background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: var(--tt-type-caption); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: box-shadow 120ms ease, opacity 120ms ease; }
@@ -67,6 +68,30 @@
 .provider-row__column p.provider-connection__notice { margin-top: 10px; }
 .provider-connection__waiting i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--tt-accent-text); animation: provider-busy 1s ease-in-out infinite; }
 .provider-connection .provider-detail__error { margin-top: 14px; }
+/* Antigravity's connection (ADR-0212, variant B of its prototype): the sign-in method as a four-way choice, two by two
+   when the row is narrow, then that method's numbered steps, each number a small tag. */
+.antigravity-form { display: grid; gap: 16px; max-width: 38em; margin-top: 16px; min-width: 0; }
+.antigravity-field { display: grid; gap: 6px; min-width: 0; }
+.antigravity-field > label, .antigravity-field > span, .antigravity-fields label > span { color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.antigravity-field__row { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.antigravity-field__row .tt-input { flex: 1 1 200px; min-width: 0; }
+.antigravity-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.antigravity-fields label { display: grid; gap: 6px; min-width: 0; }
+.provider-row__column p.antigravity-hint { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; }
+.provider-connection--antigravity .segmented-control { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; max-width: 38em; }
+.provider-connection--antigravity .antigravity-steps .segmented-control { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 26em; }
+.provider-connection--antigravity .segmented-control button { min-width: 0; white-space: normal; line-height: 1.25; }
+.antigravity-steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.antigravity-steps > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
+.antigravity-steps > li > div { display: grid; gap: 8px; min-width: 0; }
+.antigravity-steps > li > div > .tt-button { justify-self: start; }
+.antigravity-steps__n { display: grid; place-items: center; width: 22px; height: 22px; margin-top: 1px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; }
+.provider-row__column .antigravity-steps p { margin: 0; color: var(--tt-text); }
+.antigravity-key-saved { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; padding: 6px 6px 6px 12px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-field); }
+.provider-row__column .antigravity-key-saved p { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.antigravity-key-saved svg { color: var(--tt-success); }
+.antigravity-client { margin-top: 16px; }
+.antigravity-client .antigravity-field { margin-top: 10px; }
 /* The client's own sentence about a problem the folded row already names in a word. */
 .provider-row__column p.provider-connection__said { margin-top: 8px; overflow-wrap: anywhere; }
 .provider-login { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; margin-top: 9px; }
@@ -112,6 +137,8 @@
   .provider-row__trigger { grid-template-columns: 16px 28px minmax(0, 1fr); }
   .provider-row__name { display: grid; gap: 3px; min-width: 0; }
   .provider-row__meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .provider-connection--antigravity .segmented-control { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .antigravity-fields { grid-template-columns: minmax(0, 1fr); }
 }
 @container providers (width < 430px) {
   .provider-row__head { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'trigger toggle' 'update update'; padding-right: 12px; }

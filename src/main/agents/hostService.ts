@@ -120,6 +120,7 @@ export interface HostService {
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
+  readonly supportsWatcherAntigravity?: boolean
   readonly supportsWatcherCursor?: boolean
   /**
    * Tells `listener` each time the host's Watcher projection changes, with the projection now held: undefined when a

@@ -222,6 +222,27 @@ describe('combined model, effort and speed picker', () => {
     expect(within(dialog).getByRole('button', { name: /^Show OpenCode Zen models/u })).toHaveFocus()
   })
 
+  it('lists Antigravity’s models by maker and expands one inline with its own thinking levels and no speed (ADR-0212)', async () => {
+    const state = multiProviderState()
+    const agy = (id: string, name: string, source: string, reasoningEfforts: AgentModel['reasoningEfforts']): AgentModel =>
+      ({ id, name, provider: 'Antigravity', providerId: 'antigravity', source, ready: true, reasoningEfforts, defaultReasoningEffort: reasoningEfforts?.[0], speeds: [] })
+    state.host.models = [...state.host.models, agy('gemini-3.8-flash', 'Gemini 3.8 Flash', 'Google', ['low', 'medium', 'high']),
+      agy('claude-opus-5-5', 'Claude Opus 5.5', 'Anthropic', ['low', 'high'])]
+    const { sent } = mountQuiet(state)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const dialog = screen.getByRole('dialog', { name: 'Choose model' })
+    fireEvent.click(within(dialog).getByRole('tab', { name: 'Antigravity' }))
+    expect(within(dialog).getByRole('group', { name: 'Antigravity’s model makers' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Show Google models/u }))
+    fireEvent.click(within(dialog).getByRole('option', { name: 'Gemini 3.8 Flash' }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Gemini 3.8 Flash'))
+    const slider = within(dialog).getByRole('slider', { name: 'Thread reasoning effort' })
+    expect(slider).toHaveAttribute('max', '2')
+    expect(slider).toHaveAttribute('aria-valuetext', 'Low')
+    expect(within(dialog).queryByRole('radio')).toBeNull()
+    expect(sent).toEqual([{ type: 'configure-thread', threadId: 'thread', modelId: 'gemini-3.8-flash' }])
+  })
+
   it('lands on the first effort level from an unknown saved effort and ignores modified arrows on the gauge', async () => {
     const start = multiProviderState()
     start.host.threads[0]!.reasoningEffort = 'legacy'
