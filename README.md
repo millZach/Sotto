@@ -127,6 +127,8 @@ Sotto has no account of its own and no crash reports. It does send **product eve
 
 Nothing goes until you answer a one-time notice. **Send product events** in **Settings → Application**, or `SOTTO_TELEMETRY_ENABLED=false` or `DO_NOT_TRACK=1` in the environment, turns them off. [Every event and field is listed here](docs/product-events.md).
 
+An agent run a thread leaves going on a paired host is found there and shown on your desktop (ADR-0204): the host sends the run's provider session, its command, with anything that looks like a key or token left out, its model and its folder only to your desktops over their paired connection, and keeps no record of it.
+
 The pictures a thread shows you from its agent are kept on the computer that runs the thread, at most the newest 1 GB, and only in memory while **Keep local history** is off. Your iPhone and paired desktops read one only when its tile, or its small picture in a step, is on screen, over the connection they already use.
 
 A **Dynamic** thread can send your work beyond the provider you picked. Its model hands each piece to a model it chooses, so its brief, and the files that model reads, go to the company behind that provider. Only the providers ticked in **Settings → Threads** are used, Dynamic is off until you turn it on for a thread, and it adds no host of Sotto's own. Its record of how each model's pieces ended stays on this computer, in counts and model names, until you clear it.

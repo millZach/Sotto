@@ -138,6 +138,16 @@ describe('detached runs in Tools › Agents', () => {
     expect(document.activeElement).toBe(document.body)
   })
 
+  it('names the machine a run from elsewhere works on, and stops it by the same Stop (#2749)', async () => {
+    owl(false)
+    const state = stateWith([{ ...run, run: { ...run.run!, machine: 'forge' } }])
+    const { command } = setup(state)
+    const row = await within(runs()).findByRole('listitem', { name: 'Detached run: Codex run on forge, Working' })
+    expect(within(row).getByText('Started from this thread on forge and left running there. Sotto on forge found it running; its provider does not report it.')).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'Stop the detached run Codex run on forge' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'stop-detached-run', threadId: THREAD, runId: RUN }))
+  })
+
   it('leaves the pane as it was for a thread with no detached run', async () => {
     owl(false)
     setup(stateWith(undefined))

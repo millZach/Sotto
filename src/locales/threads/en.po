@@ -106,6 +106,12 @@ msgstr "{0} context"
 msgid "{0} of {1} models selected"
 msgstr "{0} of {1} models selected"
 
+#. A detached run on another machine: {0} is its name, such as "Codex run"; {machine} is the machine, such as forge.
+#. placeholder {0}: work.label
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "{0} on {machine}"
+msgstr "{0} on {machine}"
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -9333,6 +9339,10 @@ msgstr "Started by you. Sotto sends this thread a wake-up when #{number} needs i
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."
 msgstr "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Started from this thread on {machine} and left running there. Sotto on {machine} found it running; its provider does not report it."
+msgstr "Started from this thread on {machine} and left running there. Sotto on {machine} found it running; its provider does not report it."
 
 #. A background agent's status.
 #. A delegated thread's state: its brief is still being started or sent.

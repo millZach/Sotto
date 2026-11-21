@@ -37,6 +37,9 @@ describe('what a row says about a run', () => {
 
   it('leaves out the value after any flag that names a key, a token, a secret or a password', () => {
     expect(shownCommand(['codex', 'exec', '--api-key', 'sk-live-123', '--token=abc', '--client-secret', 's3', 'go'])).toBe('codex exec --api-key … --token=… --client-secret … go')
+    // A run's command can cross to a paired desktop (#2749): a PAT's name, a URL's password and token-shaped words go too.
+    expect(shownCommand(['codex', 'exec', '-c', 'GITHUB_PAT=ghp_abcdefgh1234', 'clone https://zach:hunter2@github.com/x/y and use sk-live_SECRETVALUE123'])).toBe(
+      'codex exec -c GITHUB_PAT=… "clone https://…@github.com/x/y and use …"')
   })
 
   it('leaves out a credential in an override, a header, a bearer token or inline JSON', () => {

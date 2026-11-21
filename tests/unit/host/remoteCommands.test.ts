@@ -208,6 +208,10 @@ describe('remote command allow-list', () => {
       'delegation-relay-answer', 'delegation-relay-news', 'watcher-tell-answer',
       // The name the relaying desktop saved for this host, kept as words for the away refusal (Zach, October 27, 2026).
       'delegation-relay-name',
+      // Detached runs from elsewhere (#2749): a recorded desktop asks the host to look again after its own turn ends, and
+      // ends a run the host reported, which carries that desktop's own thread's mark, by its user's Stop and the host's
+      // look-again rule. Only on a listener that offers detached-runs-elsewhere; neither answers or grants anything.
+      'detached-runs-look', 'detached-run-elsewhere-stop',
       // A delegation on this host for a thread on another machine, asked by a recorded desktop on a listener that offers
       // delegation-remote (#1316 part 2): admitted by the host's own delegation under its own rules, never a grant.
       'delegation-remote-ask',
@@ -255,7 +259,8 @@ describe('remote command allow-list', () => {
     // any operation it admitted, so a lost answer is read back by its receipt.
     expect(HOST_FEATURES).toContain('watcher-check-stop')
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
-    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all', 'watcher-phone-stop-turn'])
+    // A detached run's Stop from a desktop (#2749) is the user's Stop on a run, not a check's: a check still has none.
+    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['detached-run-elsewhere-stop', 'watcher-phone-prepare-stop-all', 'watcher-phone-stop-all', 'watcher-phone-stop-turn'])
     expect(Object.keys(watcherToolSchemas.stop_thread.input.shape).sort()).toEqual(['requestId', 'retryKey', 'target'])
   })
   it('sends a host\u2019s own check queue to a recorded desktop as a push under check-queue-views, no request of its own, and only ids and names (#1312)', () => {
