@@ -3,14 +3,15 @@ import type { AgentActivity } from '../../../shared/agentActivity'
 import { agentActivitySignature } from '../../../shared/agentThreadDetail'
 
 /**
- * Cut bodies on the desktop (ADR-0025, October 18 amendment). A remote thread's records come with their long bodies cut;
+ * Cut bodies on the desktop (ADR-0025, October 18 amendment). A thread's records come with their long bodies cut, a
+ * remote thread's by its host and this computer's by main (#2737);
  * a row that opens asks the thread's host for its record whole, and the answer is kept here, outside the thread's
  * detail, so the next delta, which replaces the record by its ID, does not wipe it. An answer is kept under the record's
  * signature as it was when it was asked for: a record that changed shows its new cut, and is asked for again when its
  * row is open. Answers stay for the session, bounded below, so a row opened again shows its body at once.
  */
 
-/** What the transcript knows of a remote thread's host, for its rows' cut bodies. Null for this computer's threads. */
+/** What the transcript knows of a thread's host, for its rows' cut bodies. Null outside a transcript. */
 export interface ActivityBodyHost {
   /** The thread as the window keys it, host included. */
   readonly threadId: string

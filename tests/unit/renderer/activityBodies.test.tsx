@@ -189,7 +189,19 @@ describe('cut activity bodies on a remote thread (ADR-0025, October 18 amendment
     expect(screen.getByText('Getting output from forge…')).toBeInTheDocument()
   })
 
-  it('leaves this computer’s rows as they always were', async () => {
+  it('reads a cut row of this computer’s thread whole from main, named as this computer (#2737)', async () => {
+    const user = userEvent.setup()
+    answers({ test: wholeTest })
+    render(<ActivityBodyContext.Provider value={{ threadId: 'thread', hostName: 'this computer', connected: true }}>
+      <ActivityGroupView group={group([sentTest])} live threadRunning={false} connected provider="Claude Code" />
+    </ActivityBodyContext.Provider>)
+    await user.click(screen.getByRole('button', { name: /npm test|Bash/u }))
+    expect(fetchBody).toHaveBeenCalledExactlyOnceWith({ threadId: 'thread', activityId: 'test' })
+    expect(await screen.findByText(/passed 0./u)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy the output' })).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('draws a record sent whole as it always was', async () => {
     const user = userEvent.setup()
     render(<ActivityGroupView group={group([wholeTest])} live threadRunning={false} connected provider="Claude Code" />)
     await user.click(screen.getByRole('button', { name: /npm test|Bash/u }))

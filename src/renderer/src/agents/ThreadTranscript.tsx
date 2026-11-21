@@ -1346,11 +1346,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   useLayoutEffect(() => { browserStore?.update(thread.activities, liveTurn, thread.messages) }, [browserStore, thread.activities, liveTurn, thread.messages])
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, threadId: thread.id, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.id, thread.status, row.connected, row.provider, onDisclosure, onSeek])
-  // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
-  // 18 amendment). This computer's threads have no such body, and their rows are given nothing.
-  const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : undefined
-  const bodyHostConnected = thread.remoteHost === true && (state.connections?.find(item => item.hostId === thread.hostId)?.connected ?? thread.clientConnected !== false)
-  const bodyHost = useMemo<ActivityBodyHost | null>(() => bodyHostName === undefined ? null : { threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected },
+  // A thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October 18
+  // amendment). This computer keeps long bodies back from the window too (#2737), and is always there to ask.
+  const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : t`this computer`
+  const bodyHostConnected = thread.remoteHost !== true || (state.connections?.find(item => item.hostId === thread.hostId)?.connected ?? thread.clientConnected !== false)
+  const bodyHost = useMemo<ActivityBodyHost>(() => ({ threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected }),
     [thread.id, bodyHostName, bodyHostConnected])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
   // The folder the thread works in, so an opened command says where it ran only when that was somewhere else. A string,
