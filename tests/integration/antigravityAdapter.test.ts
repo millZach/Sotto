@@ -132,6 +132,17 @@ describe('Antigravity ACP adapter', () => {
     expect(settings.indexOf(settings.find(entry => entry[0] === 'model')!)).toBeLessThan(settings.findIndex(entry => entry[0] === 'thinking_level' && entry[1] === 'low'))
   })
 
+  it('takes agy out of its own Auto at once when a working thread leaves Auto, not at the next prompt', async () => {
+    const id = await open({ runtimeMode: 'auto' })
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Work on it' })
+    await expect.poll(async () => (await thread(id)).status).toBe('running')
+    const modes = async () => (await f!.requests()).filter(record => record.method === 'session/set_config_option' && record.params?.configId === 'mode').map(record => record.params?.value)
+    expect(await modes()).toEqual(['auto'])
+    await f!.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'approval-required' })
+    await expect.poll(modes).toEqual(['auto', 'default'])
+    expect((await thread(id)).status).toBe('running')
+  })
+
   it('steers a running turn with a second prompt in the same session, as T3 does on 1.5', async () => {
     const id = await open()
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Write the report' })

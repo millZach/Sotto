@@ -341,6 +341,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     if (plugins) { const held = plugins; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'), antigravityDirectory: directory,
+      antigravityBinaryPath: () => runtime.agentControl.configuration().antigravityBinaryPath,
       ...(heldProviders.has('hermes') ? {} : { hermesHome: join(directory, 'hermes'), hermesSignedOut: runtime.hermesAccountChanged }),
       connect: async (provider, clientId) => {
         const hermes = provider === 'hermes' ? runtime.connectedHermes() : undefined

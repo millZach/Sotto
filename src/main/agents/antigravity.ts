@@ -13,6 +13,7 @@ import { antigravityActivities, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigra
 import { antigravityFolders, type AntigravityFolders } from './antigravityFolders'
 import { leaseAntigravityRuntime } from './antigravityInstall'
 import { antigravityUsageHooks, type AntigravityUsageHooks } from './antigravityUsage'
+import { unavailableProviderQuota } from './providerQuota'
 import { findAntigravityExecutable, type AntigravityLookup } from './antigravityLookup'
 import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, antigravityModeIsOption, antigravityModelChoices, antigravityOffersAuto, antigravityRuntimeMode,
   antigravitySessionMode, antigravitySessionSettingsSchema, antigravityThinking, leastEffort, ANTIGRAVITY_RUNTIME_MODES, type AntigravityModelFacts, type AntigravityModelThinking,
@@ -263,7 +264,11 @@ export class AntigravityAcpHost implements ProviderHost {
     this.folders = antigravityFolders(directory)
     // Usage knows each session Sotto owns by its `agy` session ID, so Sotto's own threads count as Sotto's, not Antigravity's app.
     this.usage = options.usageEnabled ? antigravityUsageHooks({ directory, owned: () => new Map(Object.entries(this.aliases).flatMap(([id, alias]) => alias.antigravitySessionId ? [[alias.antigravitySessionId, id] as const] : [])) }) : undefined
-    if (this.usage) { const usage = this.usage; this.scanUsageHistory = (sink, signal) => usage.scanUsageHistory(sink, signal); this.readProviderQuota = (providerId, refresh, background) => usage.readProviderQuota(providerId, refresh, background) }
+    if (this.usage) { const usage = this.usage; this.scanUsageHistory = (sink, signal) => usage.scanUsageHistory(sink, signal); this.readProviderQuota = async (providerId, refresh, background) => {
+      // Only a Google sign-in has limits to read, as T3 reads them: a key method would show a previous account's.
+      const method = (await this.signInNow()).method
+      return method === 'oauth-personal' || method === 'oauth-business' ? usage.readProviderQuota(providerId, refresh, background) : unavailableProviderQuota(providerId, 'unsupported')
+    } }
     this.aliasStore = new AtomicJsonStore(join(directory, 'antigravity-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(directory, 'antigravity-projects.json'), projectsSchema.parse, () => [])
     this.reaper = new SessionReaper({
@@ -982,12 +987,15 @@ export class AntigravityAcpHost implements ProviderHost {
       await rpc.request('session/set_config_option', { sessionId, configId: option, value: effort }, value => { this.readSettings(connection, value) })
       if (connection.effort !== effort) throw new Error('Antigravity did not confirm this thread’s effort. Your thread and draft are kept. Choose the effort again, then send.')
     }
+    await this.applyMode(connection, rpc, sessionId, mode)
+  }
+  /** Put the session in the session mode the thread's permission mode runs in, and read it back. */
+  private async applyMode(connection: Connection, rpc: AntigravityRpc, sessionId: string | undefined, mode: AntigravityRuntimeMode): Promise<void> {
     const sessionMode = antigravitySessionMode(mode, connection.offersAuto)
-    if (connection.mode !== undefined && connection.mode !== sessionMode) {
-      if (connection.modeIsOption) await rpc.request('session/set_config_option', { sessionId, configId: 'mode', value: sessionMode }, value => { this.readSettings(connection, value) })
-      else { await rpc.request('session/set_mode', { sessionId, modeId: sessionMode }); connection.mode = sessionMode }
-      if (connection.mode !== sessionMode) throw new Error('Antigravity did not confirm this thread’s permission mode. Your thread and draft are kept. Choose the mode again, then send.')
-    }
+    if (connection.mode === undefined || connection.mode === sessionMode) return
+    if (connection.modeIsOption) await rpc.request('session/set_config_option', { sessionId, configId: 'mode', value: sessionMode }, value => { this.readSettings(connection, value) })
+    else { await rpc.request('session/set_mode', { sessionId, modeId: sessionMode }); connection.mode = sessionMode }
+    if (connection.mode !== sessionMode) throw new Error('Antigravity did not confirm this thread’s permission mode. Your thread and draft are kept. Choose the mode again, then send.')
   }
   private async configure(command: Extract<AgentHostCommand, { type: 'configure-thread' }>, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
     const id = command.threadId, alias = this.aliases[id]
@@ -1007,6 +1015,16 @@ export class AntigravityAcpHost implements ProviderHost {
     thread.modelId = alias.modelId; thread.runtimeMode = alias.runtimeMode
     if (alias.reasoningEffort) thread.reasoningEffort = alias.reasoningEffort; else delete thread.reasoningEffort
     this.changed(id)
+    // A new mode reaches agy at once, even mid-turn, so leaving Auto takes agy's own approvals away now rather than at the
+    // next prompt. If agy will not take it, the turn is stopped rather than left running on the wider mode.
+    const live = this.connections.get(id)
+    if (runtimeMode && live && !live.closing) {
+      try { await this.applyMode(live, live.rpc, alias.antigravitySessionId, alias.runtimeMode) }
+      catch {
+        try { live.rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.antigravitySessionId } }) } catch { /* A closed pipe runs nothing more. */ }
+        thread.requestNotice = 'Antigravity did not take the new permission mode, so its turn was stopped. Nothing else was lost. Send a message to carry on in the new mode.'
+      }
+    }
     // A request waiting now is answered by the new mode where it would be: Full access or Allow edits takes it off the user.
     for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id && !pending.answering && !pending.connection.watcher) {
       const automatic = antigravityAutoAnswer(alias.runtimeMode, pending)

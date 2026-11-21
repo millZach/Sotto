@@ -1049,7 +1049,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
     ...(providers.hermes instanceof HermesAcpHost ? { hermesHome: providers.hermes.folder, hermesSignedOut: hermesAccountChanged } : {}),
     openExternal: async url => { await options.openExternal(url) },
-    antigravityDirectory: directory,
+    antigravityDirectory: directory, antigravityBinaryPath: () => agentControl.configuration().antigravityBinaryPath,
     ...(options.signInCommand ? { command: options.signInCommand } : {}),
     // Settings connections leave Threads quiet (ADR-0068): the row and the dialog say how it went.
     connect: async provider => {

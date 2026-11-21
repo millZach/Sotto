@@ -40,6 +40,8 @@ export interface ProviderSignInOptions {
   readonly hermesSignedOut?: () => Promise<void>
   /** The directory Sotto's own Antigravity folder is under (ADR-0211): the host's data directory, or this computer's user data. */
   readonly antigravityDirectory?: string
+  /** Settings' binary path for `agy`, read at each sign-in; empty for none. */
+  readonly antigravityBinaryPath?: () => string
   /** Connects the provider once its client says it signed in, for the client that asked; answers the provider's error when it did not connect. */
   readonly connect: (provider: ProviderId, clientId: string) => Promise<string | undefined>
   readonly lifetimeMs?: number
@@ -93,7 +95,7 @@ async function hermesAccountCommand(hermesHome: string, args: readonly string[])
  * Where each client is, found the way its adapter finds it (ADR-0036), with the environment its adapter gives it. Cursor's
  * runs with Sotto's own Cursor folder, `cursorConfigDirectory`, and prints its page rather than opening a browser.
  */
-export async function defaultSignInCommand(provider: ProviderId, cursorConfigDirectory?: string, hermesHome?: string, antigravityDirectory?: string): Promise<SignInCommand | undefined> {
+export async function defaultSignInCommand(provider: ProviderId, cursorConfigDirectory?: string, hermesHome?: string, antigravityDirectory?: string, antigravityBinaryPath?: string): Promise<SignInCommand | undefined> {
   const args = PROVIDER_SIGN_IN_ARGS[provider]
   if (!args) return undefined
   if (provider === 'antigravity') {
@@ -101,7 +103,7 @@ export async function defaultSignInCommand(provider: ProviderId, cursorConfigDir
     // accounts.google.com page and waits for the code, or the address, of the antigravity.google page it lands on.
     if (!antigravityDirectory) return undefined
     const folders = antigravityFolders(antigravityDirectory)
-    const executable = await findAntigravityExecutable(process.env, { managed: () => managedAntigravityExecutable(antigravityDirectory) })
+    const executable = await findAntigravityExecutable(process.env, { managed: () => managedAntigravityExecutable(antigravityDirectory), ...(antigravityBinaryPath ? { binaryPath: antigravityBinaryPath } : {}) })
     if (!executable) return undefined
     await writeAntigravitySettings(folders, GOOGLE_ACCOUNT)
     return { executable, args: antigravityArguments(folders, args), env: withCliPath(antigravityEnvironment(folders, GOOGLE_ACCOUNT), executable) }
@@ -163,7 +165,7 @@ export class ProviderSignIns {
     const entry: Entry = { view: { id, provider, shape, stage: 'starting' }, clientId, shape, output: '', codeSent: false, timers: [] }
     this.entries.set(id, entry)
     let command: SignInCommand | undefined
-    try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory, this.options.hermesHome, this.options.antigravityDirectory)) } catch { command = undefined }
+    try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory, this.options.hermesHome, this.options.antigravityDirectory, this.options.antigravityBinaryPath?.())) } catch { command = undefined }
     if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) return this.copy(entry)
     if (!command) {
       this.entries.delete(id)
