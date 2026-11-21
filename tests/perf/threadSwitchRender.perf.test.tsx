@@ -27,6 +27,7 @@ import { useAgents } from '../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
 import { SplitLayoutStore } from '../../src/renderer/src/agents/splitLayout'
+import { Editor } from '@tiptap/core'
 
 vi.mock('../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -86,10 +87,15 @@ describe('thread switch render cost', async () => {
           restore.push(() => { Object.defineProperty(owner, name, { configurable: true, get: getter }) })
         }
       }
+      // Every reply editor torn down over the timed switches: TipTap takes one down on a timer once its composer has gone, so
+      // the count runs across the switches and the timers they leave (#2746).
+      let editorsDestroyed = 0, timed = false
+      const destroy = Editor.prototype.destroy
+      vi.spyOn(Editor.prototype, 'destroy').mockImplementation(function (this: Editor) { if (timed) editorsDestroyed++; return destroy.call(this) })
       const rendered = render(view())
       const samples: number[] = []
       for (let index = 0; index < WARMUP + ITERATIONS; index++) {
-        if (index === WARMUP) { commits = 0; committed = 0; parts.sidebar = 0; parts.composer = 0; layoutReads = 0 }
+        if (index === WARMUP) { commits = 0; committed = 0; parts.sidebar = 0; parts.composer = 0; layoutReads = 0; editorsDestroyed = 0; timed = true }
         const target = index % 2 === 0 ? second! : first!
         const answer = { ...state, activeThreadId: target.id, activeProjectId: target.projectId }
         const started = performance.now()
@@ -99,9 +105,12 @@ describe('thread switch render cost', async () => {
         counting = false
         if (index >= WARMUP) samples.push(performance.now() - started)
       }
+      await act(async () => { await new Promise(resolve => { setTimeout(resolve, 50) }) })
+      timed = false
       rendered.unmount()
       const report = { threads: host.threads.length, switches: ITERATIONS, msPerSwitch: round(median(samples), 2), reactMsPerSwitch: round(committed / ITERATIONS, 2),
-        sidebarMsPerSwitch: round(parts.sidebar / ITERATIONS, 2), composerMsPerSwitch: round(parts.composer / ITERATIONS, 2), commits, layoutReadsPerSwitch: round(layoutReads / ITERATIONS, 1) }
+        sidebarMsPerSwitch: round(parts.sidebar / ITERATIONS, 2), composerMsPerSwitch: round(parts.composer / ITERATIONS, 2), commits, layoutReadsPerSwitch: round(layoutReads / ITERATIONS, 1),
+        editorsDestroyedPerSwitch: round(editorsDestroyed / ITERATIONS, 1) }
       console.info(`thread switch render: ${JSON.stringify(report)}`)
       expect(commits).toBeGreaterThan(0)
     }, 600_000)

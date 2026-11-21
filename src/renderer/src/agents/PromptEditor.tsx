@@ -7,7 +7,7 @@ import HardBreak from '@tiptap/extension-hard-break'
 import History from '@tiptap/extension-history'
 import { Slice } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { EditorState, Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { useLingui } from '@lingui/react/macro'
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from '@tiptap/react'
@@ -109,7 +109,7 @@ const Ghost = Extension.create({
 })
 
 /** A text draft's view. No formatting, HTML paste, persistence or provider protocol lives here. */
-export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAfterInsert, id, label, placeholder = '', editable = true, ghost = null, onChange, onSelection, onKeyDown, ...aria }: {
+export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAfterInsert, id, label, placeholder = '', editable = true, ghost = null, owner, onChange, onSelection, onKeyDown, ...aria }: {
   readonly text: string
   readonly skills: readonly AgentSkillReference[]
   readonly sigils: readonly SkillSigil[]
@@ -123,6 +123,11 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   readonly editable?: boolean
   /** The rest of the next prompt, drawn after the text and never part of it (ADR-0132); null draws nothing. */
   readonly ghost?: string | null
+  /**
+   * Whose draft this is, for an editor kept across a switch to another thread (`paneEditor.tsx`, #2746): when it changes,
+   * the editor takes the new owner's text as a fresh document with an undo history of its own.
+   */
+  readonly owner?: string
   readonly onChange: (text: string, pills: readonly AgentSkillReference[]) => void
   readonly onSelection?: (selection: PromptSelection) => void
   readonly onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
@@ -133,6 +138,7 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   readonly 'aria-activedescendant'?: string | undefined
 }): ReactNode {
   const latest = useRef({ text, skills, onChange, onSelection })
+  const owned = useRef(owner)
   latest.current = { text, skills, onChange, onSelection }
   const editor = useEditor({
     extensions: [Document, Paragraph, Text, HardBreak, History, Skill, Ghost],
@@ -174,6 +180,11 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   })
   useLayoutEffect(() => {
     if (!editor) return
+    // Another thread's draft: its own document and its own undo history, never an edit on top of the last thread's.
+    if (owner !== owned.current) {
+      owned.current = owner
+      editor.view.updateState(EditorState.create({ doc: editor.schema.nodeFromJSON(textToPromptDoc(text, skills, sigils)), plugins: editor.state.plugins }))
+    }
     const element = editor.view.dom as PromptEditorElement
     fieldRef.current = element
     editor.setEditable(editable, false)
