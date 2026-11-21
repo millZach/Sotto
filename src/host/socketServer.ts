@@ -521,6 +521,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
+    // So is a read held for the observe after it (#1990).
+    && (feature !== 'detail-read-held' || options.admin !== false || options.tailnet !== undefined)
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
     && (feature !== 'agents-view' || service.supportsAgentsView === true)
     // Branch moves (ADR-0105 decision 8) only where the host's Owl answer turns on cross-machine work, for recorded desktops.
@@ -1088,8 +1090,9 @@ export async function startSocketServer(options: SocketServerOptions) {
    */
   const holdAsRead = (peer: Peer, threadId: string, whole: AgentThreadDetail | null): boolean => {
     const read = peer.readAhead.get(threadId)
-    peer.readAhead.delete(threadId)
+    // A whole older than the read leaves it for the newer whole on its way.
     if (!read || !whole || whole.revision < read.revision) return false
+    peer.readAhead.delete(threadId)
     const sent = forPeer(peer, whole)
     if (!sent || sentDigest(sent) !== read.digest) return false
     if (whole.revision !== read.revision && !push(peer, { v: 1, event: 'detail-delta', threadId,
@@ -2043,7 +2046,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           await peer.frames.drained(); if (peer.frames.isClosed) break
           if (!peer.opening.has(id)) continue
           // A copy still waiting is sent now in its place, so the thread is neither read again nor sent twice.
-          const offered = waiting.get(id)
+          // One older than a read the client made since is not offered: the thread as it is now is compared instead.
+          const read = peer.readAhead.get(id)
+          const offered = read && waiting.get(id) && waiting.get(id)!.revision < read.revision ? undefined : waiting.get(id)
           const whole = offered ?? service.threadDetail(id)
           if (offered) peer.sentAhead.add(offered)
           if (!holdAsRead(peer, id, whole)) sendWhole(peer, id, whole)

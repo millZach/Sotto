@@ -245,6 +245,12 @@ export class SocketHostService implements HostService {
    */
   private readonly lateDetails = new Map<string, string>()
   /**
+   * Each thread's whole read still on its way here, until its answer is held. A delta that arrives with the answer is
+   * handled first, since the answer is held only once its promise settles, so it waits for the read rather than reading
+   * the thread again (#1990).
+   */
+  private readonly reads = new Map<string, Promise<void>>()
+  /**
    * The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3
    * amendment), and once a shell naming it has been read, that reading frozen and owned (`certified`). A later shell naming
    * the same revision is read without its catalog and handed the certified one, so no push or answer reads the catalog
@@ -758,6 +764,8 @@ export class SocketHostService implements HostService {
     const held = this.details.get(threadId)
     if (held && delta.revision <= held.revision) return
     const applied = held ? applyAgentThreadDetailDelta(held, delta) : null
+    const reading = applied === null ? this.reads.get(threadId) : undefined
+    if (reading) { void reading.then(() => { this.applyDelta(threadId, delta) }, () => { this.behind.add(threadId); this.resync(threadId) }); return }
     if (applied === null) { this.behind.add(threadId); this.resync(threadId); return }
     this.details.set(threadId, applied)
     for (const listener of this.detailListeners) listener(structuredClone(delta))
@@ -980,7 +988,14 @@ export class SocketHostService implements HostService {
     const state = this.read(protocolAgentStateSchema, await this.call({ op: 'check-answer', answer }))
     this.sameGeneration(generation); this.publish(state)
   }
-  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { if (!this.threadAvailable(threadId)) return null; const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
+  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> {
+    if (!this.threadAvailable(threadId)) return null
+    const generation = this.generation
+    const reading = (async () => { const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail) })()
+    this.reads.set(threadId, reading)
+    try { await reading } finally { if (this.reads.get(threadId) === reading) this.reads.delete(threadId) }
+    return this.threadDetail(threadId)
+  }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
   /** `shown`: false while this desktop's window is behind another app (ADR-0092); absent, its threads are shown. */

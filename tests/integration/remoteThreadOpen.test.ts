@@ -56,6 +56,18 @@ describe('opening a thread on a remote host (#996)', () => {
     expect(transfers()).toBe(1)
   })
 
+  it('applies a delta that arrives with a read\'s answer to what the read brings, rather than reading again (#1990)', async () => {
+    const { client, threadId, transfers } = await opened()
+    const revision = fixture.host.service.threadDetail(threadId)!.revision
+    // The host's delta from the revision read to the next, handled before the read's answer is held, as when both frames
+    // come in one chunk of the socket.
+    const reading = client.readThreadDetail(threadId)
+    ;(client as unknown as { applyDelta: (id: string, delta: unknown) => void }).applyDelta(threadId, { threadId, baseRevision: revision, revision: revision + 1, messageDeltas: [], activityDeltas: [] })
+    await reading
+    await expect.poll(() => client.threadDetail(threadId)?.revision).toBe(revision + 1)
+    expect(transfers()).toBe(1)
+  })
+
   it('reads a thread the host said was too large again, rather than answer with an older copy', async () => {
     const { client, threadId, transfers } = await opened()
     await client.observe([threadId])
