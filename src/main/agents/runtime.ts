@@ -108,6 +108,7 @@ import type { DelegationNews } from '../../shared/delegation'
 import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 import { DetachedRunWatch } from './detachedRuns'
+import { locateClient } from './providerClients'
 import { scanProcesses, type RunMark } from './detachedRunScan'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -538,7 +539,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
-    ...(options.locateClient ? { locateClient: options.locateClient } : {}),
+    // Antigravity's lookup also asks for the copy Sotto downloaded under this directory.
+    locateClient: options.locateClient ?? (provider => locateClient(provider, { antigravityDirectory: directory })),
     ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeCommandSummary: commandSummaryWriter(shortTextWriter, options.writingSettings),

@@ -1218,7 +1218,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...(authority === undefined ? {} : { authority }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
-    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
+    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders, directory: userDataPath }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),

@@ -19,6 +19,8 @@ import { findDeepSeekExecutable } from './deepseekRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
 import { findExecutable as findCodexExecutable } from './subscriptionCodex'
+import { findAntigravityExecutable } from './antigravityLookup'
+import { AntigravityRuntime, managedAntigravityExecutable } from './antigravityInstall'
 
 /** The package whose `latest` tag says what each client has published. Devin ships inside its own app. */
 export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
@@ -671,6 +673,10 @@ export interface ProviderClientsOptions {
   readonly cursorConfigDirectory?: string
   /** Where Claude Code's managed settings are read: the system folder Claude Code reads, by default. */
   readonly claudeManagedFolder?: string
+  /** The runtime's directory, under which Sotto keeps the `agy` it downloads. Without it Antigravity is never installed by Sotto. */
+  readonly antigravityDirectory?: string
+  /** The managed `agy`, injected by tests; made from `antigravityDirectory` otherwise. */
+  readonly antigravity?: AntigravityRuntime
 }
 
 /**
@@ -691,6 +697,8 @@ export class ProviderClients {
   private readonly cursorConfigDirectory: string | undefined
   private readonly claudeManagedFolder: string
   private readonly platform: NodeJS.Platform
+  /** The `agy` Sotto downloads and verifies itself, as T3 Code does: Install and Update run it rather than an installer. */
+  readonly antigravity: AntigravityRuntime | undefined
   constructor(options: ProviderClientsOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init))
     this.run = options.run ?? defaultRun
@@ -703,6 +711,27 @@ export class ProviderClients {
     this.cursorConfigDirectory = options.cursorConfigDirectory
     this.claudeManagedFolder = options.claudeManagedFolder ?? claudeManagedFolder()
     this.platform = options.platform ?? process.platform
+    this.antigravity = options.antigravity ?? (options.antigravityDirectory ? new AntigravityRuntime({ directory: options.antigravityDirectory, fetchImpl: this.fetchImpl }) : undefined)
+  }
+
+  /**
+   * Only the copy Sotto downloaded is Sotto's to update. An `agy` the user installed or set a path to is theirs, as in T3,
+   * so it is named and never replaced. With no `agy` at all, Install downloads one.
+   */
+  private antigravityInstall(executable: string | undefined): ClientInstall {
+    const runtime = this.antigravity
+    if (!runtime) return { channel: 'unknown' }
+    if (!executable) return { channel: 'self-update' }
+    const folder = runtime.root
+    return within(executable, folder) ? { channel: 'self-update' } : { channel: 'unknown' }
+  }
+
+  private async publishedAntigravityVersion(afresh: boolean): Promise<string | undefined> {
+    const key = 'antigravity:manifest', cached = this.cache.get(key)
+    if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
+    const version = (await (this.antigravity ?? new AntigravityRuntime({ directory: '', fetchImpl: this.fetchImpl })).latest())?.version
+    if (version) this.cache.set(key, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
+    return version
   }
 
   /**
@@ -712,6 +741,8 @@ export class ProviderClients {
   async publishedVersion(provider: ProviderId, museChannel: MuseChannel = 'muse-stable', afresh = false): Promise<string | undefined> {
     if (provider === 'muse') return this.publishedMuseVersion(museChannel, afresh)
     if (provider === 'cursor') return this.publishedCursorVersion(afresh)
+    // Google's platform manifest, the one Antigravity's own updater reads (the research note, "Launch").
+    if (provider === 'antigravity') return this.publishedAntigravityVersion(afresh)
     const packageName = CLIENT_PACKAGES[provider]
     if (!packageName) return undefined
     const cached = this.cache.get(packageName)
@@ -789,7 +820,7 @@ export class ProviderClients {
   async check(provider: ProviderId, installed: string, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean; readonly unanswered?: () => void } = {}): Promise<ProviderClientUpdate> {
     if (provider === 'hermes') return { id: provider, installed, behind: false, channel: 'unknown', canInstall: false, checkedAt: new Date(this.now()).toISOString(), state: 'idle' }
-    const install = await detectClientInstall(provider, executable, environment, this.platform)
+    const install = provider === 'antigravity' ? this.antigravityInstall(executable) : await detectClientInstall(provider, executable, environment, this.platform)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
     // A native Claude Code is compared with what its own updater can install, and an npm one with npm's `latest` (ADR-0165).
     const claudeChannel = provider === 'claude' && install.channel === 'self-update' ? await claudeReleaseChannel(environment, this.claudeManagedFolder) : undefined
@@ -807,7 +838,8 @@ export class ProviderClients {
     const target = behind ? latest : undefined
     const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag, target)
     const byHand = action?.byHand ?? byHandFor(provider, install, process.platform, false, target)
-    const makerUpdate = provider === 'muse' && Boolean(install.muse)
+    // Sotto's own `agy` is updated by Sotto's download, a step that is not a command (as Muse's maker update is not).
+    const makerUpdate = (provider === 'muse' && Boolean(install.muse)) || (provider === 'antigravity' && install.channel === 'self-update')
     return {
       id: provider, installed, ...(latest ? { published: latest } : {}), behind, channel: install.channel,
       ...(makerUpdate ? { steps: 1 } : action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: commandOf(install, byHand, target) } : {}),
@@ -823,7 +855,13 @@ export class ProviderClients {
    */
   async install(provider: ProviderId, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void, version?: string): Promise<InstallResult> {
-    const install = await detectClientInstall(provider, executable, environment, this.platform)
+    const install = provider === 'antigravity' ? this.antigravityInstall(executable) : await detectClientInstall(provider, executable, environment, this.platform)
+    if (provider === 'antigravity' && install.channel === 'self-update' && this.antigravity) {
+      onStep?.(1)
+      const installed = await this.antigravity.install()
+      return installed.ok ? { ok: true, detail: `Antigravity is now ${installed.version}.` }
+        : { ok: false, step: 1, failure: installed.failure === 'download' ? 'download' : 'installer', detail: installed.detail }
+    }
     if (provider === 'muse' && install.muse) {
       onStep?.(1)
       const updated = await installMuseClient(install.muse, environment, {
@@ -916,7 +954,7 @@ export class ProviderClients {
  * Where each client is installed, asked of the same discovery the adapters use, so the update check
  * cannot disagree with the connection about which binary it means.
  */
-export async function locateClient(provider: ProviderId): Promise<string | undefined> {
+export async function locateClient(provider: ProviderId, options: { readonly antigravityDirectory?: string } = {}): Promise<string | undefined> {
   switch (provider) {
     case 'claude': return (await findClaudeExecutable()) ?? undefined
     case 'codex': return (await findCodexExecutable()) ?? undefined
@@ -928,5 +966,9 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'deepseek': return findDeepSeekExecutable()
     case 'pi': return findPiExecutable()
     case 'hermes': return findHermesExecutable()
+    case 'antigravity': {
+      const directory = options.antigravityDirectory
+      return findAntigravityExecutable(process.env, directory ? { managed: () => managedAntigravityExecutable(directory) } : {})
+    }
   }
 }

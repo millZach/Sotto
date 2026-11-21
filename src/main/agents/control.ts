@@ -1203,7 +1203,7 @@ export class AgentControl {
       // Taken like a new snapshot, so the stored thread carries the outcome and every client is told.
       this.commandSummaries.onChanged = () => { if (!this.disposed) this.acceptSnapshot(this.state.host) }
     }
-    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
+    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config'), antigravityDirectory: dependencies.directory })
     this.clientUpdates = new ClientUpdates({
       state: () => this.state, disposed: () => this.disposed, publish: () => this.publish(), say: text => this.say(text),
       acceptSnapshot: snapshot => this.acceptSnapshot(snapshot), clients: this.clients, dependencies,
