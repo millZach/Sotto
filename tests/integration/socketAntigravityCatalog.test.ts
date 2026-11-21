@@ -8,9 +8,9 @@ import { PairedClients } from '../../src/main/agents/pairing'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import type { AgentModel } from '../../src/shared/agents'
+import type { AgentModel, ProviderId } from '../../src/shared/agents'
 
-const model = (id: string, providerId: string, provider: string): AgentModel => ({ id, name: id, provider, providerId, ready: true, runtimeModes: ['approval-required'] })
+const model = (id: string, providerId: ProviderId, provider: string): AgentModel => ({ id, name: id, provider, providerId, ready: true, runtimeModes: ['approval-required'] })
 
 it('keeps a paired host’s Antigravity models to Gemini, as a host from before Google’s terms still lists Claude and GPT (ADR-0212)', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-antigravity-catalog-'))
