@@ -29,6 +29,7 @@ import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentModel, AgentThread, ProviderId } from '../../shared/agents'
 import { immutableModels } from './activitySnapshots'
+import { antigravityGeminiModel } from './antigravityModels'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { withKeptPartsPutBack, type HeldParts } from '../../shared/keptParts'
@@ -64,7 +65,7 @@ import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatche
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
-import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+import { USAGE_LIMIT_PROVIDERS, usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 /** Answers read on every call, checked against schemas built once rather than on every call. */
 const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
@@ -724,7 +725,8 @@ export class SocketHostService implements HostService {
     const held = this.readCatalogs.get(wire)
     if (held) { host.models = held; return }
     const revision = this.namedCatalogs.get(wire), catalog = this.catalog
-    if (revision !== undefined && catalog?.revision === revision) host.models = catalog.certified ??= immutableModels(host.models)
+    // A host from before November 21, 2026 still lists the Claude and GPT models its agy offers; Antigravity is Gemini only (ADR-0212).
+    if (revision !== undefined && catalog?.revision === revision) host.models = catalog.certified ??= immutableModels(host.models.filter(model => model.providerId !== 'antigravity' || antigravityGeminiModel(model.id)))
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
@@ -2088,12 +2090,14 @@ export class SocketHostService implements HostService {
   }
   async usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    const named = providerIds === undefined ? undefined : usageProviderIdsSchema.parse(providerIds)
-    const known = named === undefined || this.features.includes('usage-antigravity') ? named : usageProvidersBeforeAntigravity(named)
-    const parsed = known === undefined || this.features.includes('usage-muse-opencode') ? known : usageProvidersBeforeMuse(known)
+    // Named even when the caller names none: a host from before November 21, 2026 would otherwise read Antigravity's limits with
+    // agy's own token, which Google's terms forbid (ADR-0212). Every limit provider but Antigravity is named.
+    const named = usageProviderIdsSchema.parse(providerIds ?? [...USAGE_LIMIT_PROVIDERS])
+    const known = this.features.includes('usage-antigravity') ? named : usageProvidersBeforeAntigravity(named)
+    const parsed = this.features.includes('usage-muse-opencode') ? known : usageProvidersBeforeMuse(known)
     // A host from before `usage-background-refresh` refuses the field, and reads every refresh afresh.
     const quiet = background && this.features.includes('usage-background-refresh')
-    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', ...(parsed ? { providerIds: parsed } : {}), ...(quiet ? { background: true } : {}) }, undefined, undefined, 15000))
+    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', providerIds: parsed, ...(quiet ? { background: true } : {}) }, undefined, undefined, 15000))
   }
   async usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
     void client // This socket's authenticated pairing supplies its own host authority.

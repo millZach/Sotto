@@ -4899,8 +4899,8 @@ msgid "Google then shows a code on an antigravity.google page. Paste it here to 
 msgstr "Google then shows a code on an antigravity.google page. Paste it here to finish."
 
 #: src/renderer/src/agents/AntigravityConnection.tsx
-msgid "Google’s Antigravity terms let it suspend an account it sees used outside its own apps. Sotto drives Google’s own agy, which keeps its own sign-in, and stays inside what the terms name:"
-msgstr "Google’s Antigravity terms let it suspend an account it sees used outside its own apps. Sotto drives Google’s own agy, which keeps its own sign-in, and stays inside what the terms name:"
+msgid "Google’s Antigravity terms let it suspend an account it sees used outside its own apps, such as one whose sign-in another app takes or uses to call Google’s servers. Sotto drives Google’s own agy, which keeps its own sign-in, and avoids what the terms name:"
+msgstr "Google’s Antigravity terms let it suspend an account it sees used outside its own apps, such as one whose sign-in another app takes or uses to call Google’s servers. Sotto drives Google’s own agy, which keeps its own sign-in, and avoids what the terms name:"
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Got something in mind?"

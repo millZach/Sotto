@@ -390,7 +390,7 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
       {/* Google's Antigravity terms put the user's own account at risk; Zach's pick A: always there when the row is open (ADR-0212). */}
       <div className="antigravity-risk" role="note" aria-labelledby={`${ids}-risk`}>
         <p id={`${ids}-risk`} className="antigravity-risk__head tt-paragraph"><TriangleAlert size={15} aria-hidden="true" />{t`Your Google account carries the risk`}</p>
-        <p className="tt-paragraph">{t`Google’s Antigravity terms let it suspend an account it sees used outside its own apps. Sotto drives Google’s own agy, which keeps its own sign-in, and stays inside what the terms name:`}</p>
+        <p className="tt-paragraph">{t`Google’s Antigravity terms let it suspend an account it sees used outside its own apps, such as one whose sign-in another app takes or uses to call Google’s servers. Sotto drives Google’s own agy, which keeps its own sign-in, and avoids what the terms name:`}</p>
         <ul>
           <li>{t`Sotto never reads agy’s sign-in or calls Google’s servers with it.`}</li>
           <li>{t`Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them.`}</li>
