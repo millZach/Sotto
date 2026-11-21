@@ -41,7 +41,7 @@ Amended November 21, 2026, for Google's Antigravity terms: Sotto no longer reads
 - Sotto answers some of `agy`'s permission requests on the user's behalf: a thread's mode, chosen by the user for that thread, is the authority, recorded with the thread, as T3 treats it. ADR-0004's amendment says so.
 - Sotto holds a second key the user chose, the user's own Google one, on this computer only.
 - Sotto contacts Google's download hosts for things the user asked for: Install, Update and the hourly update check. It no longer contacts Google's limits hosts (the amendment below).
-- Not yet matched from T3: Sotto's own download on a paired host, per-turn token counts from each prompt's answer (Usage reads them from `agy`'s conversation files instead), Gemini Enterprise on a host, reading child work from `agy`'s `brain` folder, placing edit snippets on lines, and reading a failed turn from the conversation file's last step. Each is a follow-up.
+- Not yet matched from T3: Sotto's own download on a paired host, Gemini Enterprise on a host, reading child work from `agy`'s `brain` folder, placing edit snippets on lines, and reading a failed turn from the conversation file's last step. Each is a follow-up. A thread's token count and how full its context is now come from each prompt's answer and `agy`'s `usage_update` (November 21, 2026); Usage still reads its counts from `agy`'s conversation files, so they are never counted twice.
 - Verified with a fake `agy` through the adapter contract; the live check on the laptop is in [the verification note](../verification/2026-11-20-antigravity-provider.md).
 
 ## Amendment, November 21, 2026: Google's terms

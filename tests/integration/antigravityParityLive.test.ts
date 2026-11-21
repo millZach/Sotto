@@ -83,6 +83,15 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
       return { passed: reply.includes('red'), saw: reply.slice(0, 200) }
     })
 
+    // The thread's token count and how full its context is, from what agy sends with the turn.
+    await check('token-count', async () => {
+      const id = await open('approval-required')
+      await send(id, 'Reply with exactly: ok'); await idle(id)
+      const usage = (await thread(id)).usage
+      return { passed: (usage?.contextUsed ?? 0) > 0 && (usage?.contextWindow ?? 0) > 0 && (usage?.latest?.input ?? 0) > 0 && (usage?.latest?.output ?? 0) > 0,
+        saw: { contextUsed: usage?.contextUsed, contextWindow: usage?.contextWindow, latest: usage?.latest, total: usage?.total } }
+    })
+
     // Another Gemini model and thinking level for the next prompt.
     await check('model-and-effort-next-prompt', async () => {
       const id = await open('approval-required')

@@ -150,12 +150,29 @@ describe('Antigravity ACP adapter', () => {
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Write the report' })
     await expect.poll(async () => (await thread(id)).status).toBe('running')
     expect(await f!.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Make it shorter' })).toEqual({ accepted: true })
-    const prompts = (await f!.requests()).filter(record => record.method === 'session/prompt')
-    expect(prompts).toHaveLength(2)
+    // The adapter has written the steer when it answers; the fake agy records it a moment later.
+    await expect.poll(async () => (await f!.requests()).filter(record => record.method === 'session/prompt').length).toBe(2)
     expect((await thread(id)).status).toBe('running')
     await f!.driver.completeTurn(id, 'Short report')
     await expect.poll(async () => (await thread(id)).status).toBe('idle')
     expect((await thread(id)).messages.map(message => [message.role, message.text])).toEqual([['user', 'Write the report'], ['user', 'Make it shorter'], ['assistant', 'Short report']])
+  })
+
+  it('counts a thread’s tokens and its context from what agy sends with each turn', async () => {
+    const id = await open()
+    // The numbers agy 1.5.13 sent for two short turns: inputTokens leaves out the cache, output holds the thinking.
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Say ok' })
+    await f!.action(id, { type: 'complete', text: 'ok', fullness: { used: 9101, size: 1048576 },
+      usage: { inputTokens: 9075, outputTokens: 26, cachedReadTokens: 0, cachedWriteTokens: 0, thoughtTokens: 23, totalTokens: 9101 } })
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    expect((await thread(id)).usage).toMatchObject({ contextUsed: 9101, contextWindow: 1048576, modelId: f!.modelId, partial: true,
+      latest: { input: 9075, output: 26, cached: 0, cacheWrite: 0 }, total: { input: 9075, output: 26 } })
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Say ok again' })
+    await f!.action(id, { type: 'complete', text: 'ok', fullness: { used: 9203, size: 1048576 },
+      usage: { inputTokens: 2162, outputTokens: 23, cachedReadTokens: 7018, cachedWriteTokens: 0, thoughtTokens: 20, totalTokens: 9203 } })
+    // The answer comes after the context reading, so wait for the total it adds.
+    await expect.poll(async () => (await thread(id)).usage?.total?.output).toBe(49)
+    expect((await thread(id)).usage).toMatchObject({ contextUsed: 9203, latest: { input: 9180, output: 23, cached: 7018 }, total: { input: 18255, output: 49, cached: 7018 } })
   })
 
   it('shows a command with agy’s own fields', async () => {
