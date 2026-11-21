@@ -28,7 +28,7 @@ import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { AntigravityAcpHost } from './antigravity'
-import { managedAntigravityExecutable } from './antigravityInstall'
+import { describeAntigravityProgress, describeAntigravityRemoval, managedAntigravityExecutable } from './antigravityInstall'
 import type { AntigravitySignIn } from './antigravityRpc'
 import type { AntigravityLookup } from './antigravityLookup'
 import { MuseMspHost } from './muse'
@@ -1063,9 +1063,21 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Antigravity's own account actions from its row in Settings › Providers (ADR-0211): Gemini Enterprise's browser
   // sign-in, which connects through the coordinator once it has signed in, and Sign out.
   const antigravityHost = providers.antigravity instanceof AntigravityAcpHost ? providers.antigravity : undefined
+  let antigravityProgress: string | undefined
   const antigravityAccount = antigravityHost && options.runsAs !== 'headless-host' ? {
     signInWithBrowser: async (): Promise<string | undefined> => { await antigravityHost.signInWithBrowser(); return whyNotConnected(await agentControl.command({ type: 'connect', provider: 'antigravity', notice: false }), 'antigravity') },
     signOut: async (): Promise<void> => { await antigravityHost.signOut(); await agentControl.command({ type: 'disconnect', provider: 'antigravity' }) },
+    // Install downloads Google's agy, checks its SHA-512 and connects Antigravity; the row reads how far it has got.
+    install: async (): Promise<string | undefined> => {
+      const runtime = agentControl.antigravityRuntime()
+      if (!runtime) return 'Sotto cannot download Antigravity here. Nothing was installed.'
+      const result = await runtime.install({ onProgress: progress => { antigravityProgress = describeAntigravityProgress(progress) } }).finally(() => { antigravityProgress = undefined })
+      if (!result.ok) return result.detail
+      return whyNotConnected(await agentControl.command({ type: 'connect', provider: 'antigravity', notice: false }), 'antigravity')
+    },
+    installProgress: (): string | undefined => antigravityProgress,
+    cancelInstall: (): boolean => agentControl.antigravityRuntime()?.cancel() ?? false,
+    removeDownloaded: async (): Promise<string> => { const runtime = agentControl.antigravityRuntime(); return runtime ? describeAntigravityRemoval(await runtime.remove()) : 'There is no downloaded Antigravity to remove.' },
   } : undefined
   idleCompaction.start()
   return { antigravityAccount, piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }

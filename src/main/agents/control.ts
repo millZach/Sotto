@@ -36,6 +36,7 @@ import type { CheckpointObservation, PullRequestObservation } from './watcherEvi
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
+import type { AntigravityRuntime } from './antigravityInstall'
 import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
 import { desktopWindowClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
 import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadHistorySource, ThreadReadPurpose } from './host'
@@ -2844,6 +2845,8 @@ export class AgentControl {
   }
   /** Main calls this when Sotto finds a new version of itself (ADR-0077). */
   checkClientsAfresh(): Promise<void> { return this.clientUpdates.checkAfresh() }
+  /** The `agy` Sotto downloads and verifies itself (ADR-0211), for the Antigravity row's Install and Remove. */
+  antigravityRuntime(): AntigravityRuntime | undefined { return this.clients.antigravity }
   /** Tests wait on this; it goes when they move to the module. */
   get clientChecks(): number { return this.clientUpdates.checksWaiting }
   private updateCredentials(): void {

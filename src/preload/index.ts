@@ -43,7 +43,8 @@ import {
 } from '../shared/opencodeSignIn'
 import { PI_RENDERER_ARGUMENT, PI_SIGN_IN, piSignInCallSchema, type PiSignInBridge } from '../shared/piSignIn'
 import { LOCAL_PROVIDER_SIGN_IN, localSignInRequestSchema, type LocalProviderSignInBridge } from '../shared/localProviderSignIn'
-import { ANTIGRAVITY_ENTERPRISE_SIGN_IN, ANTIGRAVITY_SIGN_OUT, antigravityAccountDoneSchema, type AntigravityAccountBridge } from '../shared/antigravityAccount'
+import { ANTIGRAVITY_CANCEL_INSTALL, ANTIGRAVITY_ENTERPRISE_SIGN_IN, ANTIGRAVITY_INSTALL, ANTIGRAVITY_INSTALL_PROGRESS, ANTIGRAVITY_REMOVE_DOWNLOADED, ANTIGRAVITY_SIGN_OUT,
+  antigravityAccountDoneSchema, antigravityInstallProgressSchema, type AntigravityAccountBridge } from '../shared/antigravityAccount'
 import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import {
@@ -616,6 +617,10 @@ export function createSottoBridge(
     antigravity: Object.freeze<AntigravityAccountBridge>({
       enterpriseSignIn: async () => invokeParsed(renderer, ANTIGRAVITY_ENTERPRISE_SIGN_IN, antigravityAccountDoneSchema),
       signOut: async () => invokeParsed(renderer, ANTIGRAVITY_SIGN_OUT, antigravityAccountDoneSchema),
+      install: async () => invokeParsed(renderer, ANTIGRAVITY_INSTALL, antigravityAccountDoneSchema),
+      installProgress: async () => invokeParsed(renderer, ANTIGRAVITY_INSTALL_PROGRESS, antigravityInstallProgressSchema),
+      cancelInstall: async () => invokeParsed(renderer, ANTIGRAVITY_CANCEL_INSTALL, antigravityAccountDoneSchema),
+      removeDownloaded: async () => invokeParsed(renderer, ANTIGRAVITY_REMOVE_DOWNLOADED, antigravityAccountDoneSchema),
     }),
     // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
     ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
