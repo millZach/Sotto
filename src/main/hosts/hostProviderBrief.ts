@@ -16,7 +16,7 @@ export interface HostProviderBriefInput {
 }
 
 /** The command each client is started by on the host, which the lookup searches for. */
-export const PROVIDER_COMMANDS: Readonly<Record<HostProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin', muse: 'muse', opencode: 'opencode', cursor: 'agent', hermes: 'hermes' }
+export const PROVIDER_COMMANDS: Readonly<Record<HostProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin', muse: 'muse', opencode: 'opencode', cursor: 'agent', hermes: 'hermes', antigravity: 'agy' }
 
 /**
  * Each provider's official way to install it on Linux or macOS, as its maker documents it, and what the host's lookup
@@ -34,6 +34,7 @@ export const PROVIDER_INSTALL_METHODS: Readonly<Record<HostProviderId, string>> 
   opencode: 'OpenCode 2\'s installer, `curl -fsSL https://opencode.ai/v2/install | bash`, which puts `opencode` in ~/.opencode/bin, which the host searches first, or npm\'s `npm install -g @opencode/cli` (https://opencode.ai/v2/docs/). Sotto drives OpenCode 2 only: `https://opencode.ai/install` and npm\'s `opencode-ai` install OpenCode 1, which it refuses. Never move an existing install between channels: a copy in ~/.opencode/bin updates with `opencode upgrade`, an npm copy with npm, and a Homebrew, scoop or pacman copy with that manager. Check the result with `opencode --version` only. Sotto keeps the host\'s OpenCode data and sign-ins in a folder of its own, so do not start OpenCode itself or sign it in.',
   hermes: 'Follow the official Hermes Agent installation guide at https://hermes-agent.nousresearch.com/docs/getting-started/quickstart. Check with `hermes --version`. The user signs Hermes in from Sotto.',
   cursor: 'Cursor\'s installer, `curl https://cursor.com/install -fsS | bash` (https://cursor.com/docs/cli/installation), which keeps each version in ~/.local/share/cursor-agent/versions and links `agent` into ~/.local/bin. Update an existing install with `agent update`. Check the result with `agent --version` only. Do not run `agent login` or `agent logout`: the user signs Cursor in from Sotto.',
+  antigravity: 'Sotto\'s own download from the host\'s Antigravity tile, which checks Google\'s published SHA-512, or Google\'s installer, which puts `agy` in ~/.local/bin. Check the result with `agy --version` only. Do not run `agy acp --login`: the user signs Antigravity in from Sotto, into Sotto\'s own Antigravity folder.',
 }
 
 /** Where the host's CLI lookup searches on Linux and macOS, in order (ADR-0036, `src/main/agents/cliLookup.ts`). */

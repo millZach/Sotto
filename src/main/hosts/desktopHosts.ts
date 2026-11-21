@@ -1035,7 +1035,9 @@ export class DesktopHosts {
    */
   async providerAction(action: HostProviderAction): Promise<HostProviderActionResult> {
     const { host, socket } = this.connectedSocket(action.id)
-    const state = await socket.command({ type: action.action, provider: action.provider })
+    // One object per action: TypeScript checks a union of actions and providers only up to 25 pairs.
+    const { provider } = action
+    const state = await socket.command(action.action === 'connect' ? { type: 'connect', provider } : action.action === 'disconnect' ? { type: 'disconnect', provider } : { type: 'refresh', provider })
     return state.error ? { error: nameHostInRefusal(state.error, host.name) } : {}
   }
   /**

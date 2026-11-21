@@ -100,6 +100,6 @@ export function clientUpdateHost(directory: string, home: string) {
   return {
     clients, locateClient: async (provider: ProviderId) => where[provider],
     providers: { claude: new InstalledClient('claude', disk), codex: new InstalledClient('codex', disk), grok: new InstalledClient('grok', disk),
-      devin: new NotInstalled('Install Devin CLI and run devin auth login'), muse: new NotInstalled('Install Muse'), opencode: new NotInstalled('Install OpenCode'), cursor: new NotInstalled('Install Cursor'), hermes: new NotInstalled('Install Hermes') } satisfies Record<HostProviderId, E2EAgentHost>,
+      devin: new NotInstalled('Install Devin CLI and run devin auth login'), muse: new NotInstalled('Install Muse'), opencode: new NotInstalled('Install OpenCode'), cursor: new NotInstalled('Install Cursor'), hermes: new NotInstalled('Install Hermes'), antigravity: new NotInstalled('Install Antigravity') } satisfies Record<HostProviderId, E2EAgentHost>,
   }
 }

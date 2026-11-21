@@ -28,6 +28,7 @@ import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { AntigravityAcpHost } from './antigravity'
+import { managedAntigravityExecutable } from './antigravityInstall'
 import type { AntigravitySignIn } from './antigravityRpc'
 import type { AntigravityLookup } from './antigravityLookup'
 import { MuseMspHost } from './muse'
@@ -393,8 +394,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
     // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
-    antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia,
-      ...(options.antigravity?.signIn ? { signIn: options.antigravity.signIn } : {}), ...(options.antigravity?.lookup ? { lookup: options.antigravity.lookup } : {}) })),
+    antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia, usageEnabled: options.usageEnabled === true,
+      ...(options.antigravity?.signIn ? { signIn: options.antigravity.signIn } : {}),
+      // The `agy` Sotto downloaded under this directory, unless Settings names a binary path (T3's order).
+      lookup: async () => ({ managed: () => managedAntigravityExecutable(directory), ...await options.antigravity?.lookup?.() }) })),
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
       : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),

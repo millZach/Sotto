@@ -6,13 +6,8 @@ import { ANTIGRAVITY_APP_DATA, type AntigravityFolders } from './antigravityFold
 import { withCliPath } from './cliLookup'
 import { stderrRateExceeded } from './stderrRate'
 
-/**
- * Antigravity's `agy acp` over stdio, as T3 Code drives it (the research note, "Launch" and "The protocol").
- *
- * The floor is 1.5.0, T3's: older clients restrict non-Gemini models by client name, have no steering by prompt, and
- * keep a different sign-in. 1.5.12 is the newest T3 recommends and 1.5.13 the version Sotto was built against.
- */
-export const ANTIGRAVITY_CLI_FLOOR = '1.5.0'
+/** Antigravity's `agy acp` over stdio, as T3 Code drives it (the research note, "Launch" and "The protocol"). */
+export { ANTIGRAVITY_CLI_FLOOR, compareAntigravityVersions, meetsAntigravityFloor } from './antigravityRelease'
 export const ANTIGRAVITY_ACP_VERSION = 1
 
 /** The client did not answer, or answered in a way that leaves the outcome unknown. */
@@ -31,17 +26,8 @@ export class AntigravityRejected extends Error {
   }
 }
 
-/** `major.minor.patch` of an `agy` version, or undefined for anything else, which never passes the floor. */
-export function parseAntigravityVersion(value: string | undefined): readonly [number, number, number] | undefined {
-  const match = /^(\d+)\.(\d+)\.(\d+)/u.exec(value?.trim() ?? '')
-  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined
-}
-/** Negative when `a` is older. A version Sotto cannot read sorts before every one it can. */
-export function compareAntigravityVersions(a: string | undefined, b: string | undefined): number {
-  const left = parseAntigravityVersion(a), right = parseAntigravityVersion(b)
-  if (!left || !right) return left ? 1 : right ? -1 : 0
-  return left[0] - right[0] || left[1] - right[1] || left[2] - right[2]
-}
+/** A version `agy --version` prints: `major.minor.patch`. */
+const VERSION = /^\d+\.\d+\.\d+$/u
 
 /** The four ways `agy` signs in, as its `initialize` names them and T3 offers them. */
 export const ANTIGRAVITY_SIGN_IN_METHODS = ['oauth-personal', 'oauth-business', 'gemini-api-key', 'agent-platform'] as const
@@ -242,7 +228,7 @@ export function readAntigravityVersion(executable: string, prefix: readonly stri
     execFile(executable, [...prefix, '--version'], { env: withCliPath(env, executable), windowsHide: true, shell: false, timeout: timeoutMs, killSignal: 'SIGKILL',
       maxBuffer: 64 * 1024, encoding: 'utf8' }, (error, stdout) => {
       const version = (typeof stdout === 'string' ? stdout : '').trim().split(/\r?\n/u).at(-1)?.trim()
-      resolve(!error && parseAntigravityVersion(version) ? version : undefined)
+      resolve(!error && version && VERSION.test(version) ? version : undefined)
     })
   })
 }

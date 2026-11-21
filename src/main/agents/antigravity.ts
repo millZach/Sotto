@@ -11,12 +11,14 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import { antigravityActivities, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
 import { antigravityFolders, type AntigravityFolders } from './antigravityFolders'
+import { leaseAntigravityRuntime } from './antigravityInstall'
+import { antigravityUsageHooks, type AntigravityUsageHooks } from './antigravityUsage'
 import { findAntigravityExecutable, type AntigravityLookup } from './antigravityLookup'
 import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, antigravityModeIsOption, antigravityModelChoices, antigravityOffersAuto, antigravityRuntimeMode,
   antigravitySessionMode, antigravitySessionSettingsSchema, antigravityThinking, leastEffort, ANTIGRAVITY_RUNTIME_MODES, type AntigravityModelFacts, type AntigravityModelThinking,
   type AntigravityRuntimeMode, type AntigravitySessionSettings } from './antigravityModels'
 import { antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, type AntigravityPending } from './antigravityRequests'
-import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, compareAntigravityVersions, readAntigravityVersion,
+import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, meetsAntigravityFloor, readAntigravityVersion,
   writeAntigravitySettings, ANTIGRAVITY_ACP_VERSION, ANTIGRAVITY_CLI_FLOOR, GOOGLE_ACCOUNT, type AntigravityFrame, type AntigravitySignIn } from './antigravityRpc'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -34,6 +36,9 @@ import { busyHolds, SessionReaper, type HeldSession } from './sessionReaper'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
+import type { UsageHistorySink } from './usageHistory/sink'
+import type { ProviderId } from '../../shared/agents'
+import type { UsageQuotaRead } from '../../shared/usageDashboard'
 import type { MediaCapture } from './threadMedia'
 import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -196,6 +201,8 @@ export interface AntigravityAcpOptions {
   reaperSweepMs?: number
   sessionIdleMs?: number
   captureMedia?: MediaCapture
+  /** Usage on: `agy`'s token counts and the account's limits, as T3 reads them (`antigravityUsage.ts`). */
+  usageEnabled?: boolean
 }
 
 export class AntigravityAcpHost implements ProviderHost {
@@ -247,9 +254,15 @@ export class AntigravityAcpHost implements ProviderHost {
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true,
       reconcile: true, configureThread: true, configureThreadModel: true, skills: true, steer: true, compact: false } }
   readonly folders: AntigravityFolders
+  private readonly usage: AntigravityUsageHooks | undefined
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
 
   constructor(directory: string, private readonly options: AntigravityAcpOptions = {}) {
     this.folders = antigravityFolders(directory)
+    // Usage knows each session Sotto owns by its `agy` session ID, so Sotto's own threads count as Sotto's, not Antigravity's app.
+    this.usage = options.usageEnabled ? antigravityUsageHooks({ directory, owned: () => new Map(Object.entries(this.aliases).flatMap(([id, alias]) => alias.antigravitySessionId ? [[alias.antigravitySessionId, id] as const] : [])) }) : undefined
+    if (this.usage) { const usage = this.usage; this.scanUsageHistory = (sink, signal) => usage.scanUsageHistory(sink, signal); this.readProviderQuota = (providerId, refresh, background) => usage.readProviderQuota(providerId, refresh, background) }
     this.aliasStore = new AtomicJsonStore(join(directory, 'antigravity-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(directory, 'antigravity-projects.json'), projectsSchema.parse, () => [])
     this.reaper = new SessionReaper({
@@ -428,9 +441,12 @@ export class AntigravityAcpHost implements ProviderHost {
   private prefix(executable: string): readonly string[] { return executable === this.options.executable ? this.options.executableArgs ?? [] : [] }
   private spawn(executable: string, args: readonly string[], cwd: string, signIn: AntigravitySignIn, receive: (frame: AntigravityFrame, rpc: AntigravityRpc) => Promise<void> | void, lost: () => void): AntigravityRpc {
     const rpc: AntigravityRpc = new AntigravityRpc(executable, [...this.prefix(executable), ...args], cwd, antigravityEnvironment(this.folders, signIn, this.options.environment), this.options.requestTimeoutMs ?? 30_000, frame => receive(frame, rpc), lost)
-    this.processes.add(rpc); void rpc.closed.then(() => this.processes.delete(rpc))
+    const release = leaseAntigravityRuntime(executable)
+    this.processes.add(rpc); void rpc.closed.then(() => { this.processes.delete(rpc); release() })
     return rpc
   }
+  /** The account's last limits reading is forgotten, as on sign-out. */
+  forgetAccount(): void { this.usage?.clearQuota() }
   /**
    * `initialize`, then `authenticate` with the sign-in method, as T3 does on every start. A method `agy` does not offer,
    * or no sign-in, is refused in words.
@@ -441,7 +457,7 @@ export class AntigravityAcpHost implements ProviderHost {
       clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }, value => { client = initializeSchema.parse(value) }, false, this.options.startTimeoutMs ?? 90_000)
     if (client!.protocolVersion !== ANTIGRAVITY_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${ANTIGRAVITY_ACP_VERSION}, and this Antigravity client answered ACP ${client!.protocolVersion}.`)
     const version = client!.agentInfo?.version
-    if (compareAntigravityVersions(version, ANTIGRAVITY_CLI_FLOOR) < 0) {
+    if (!version || !meetsAntigravityFloor(version)) {
       throw new ProviderUnavailable('too-old', `Antigravity ${ANTIGRAVITY_CLI_FLOOR} or newer is needed${version ? `, and this one is ${version}` : ''}. Update Antigravity, then connect again. Your threads are kept.`, version, ANTIGRAVITY_CLI_FLOOR)
     }
     try { await rpc.request('authenticate', { methodId: signIn.method }) }
@@ -574,7 +590,7 @@ export class AntigravityAcpHost implements ProviderHost {
     const version = await readAntigravityVersion(executable, this.prefix(executable), antigravityEnvironment(this.folders, await this.signInNow(), this.options.environment))
     if (generation !== this.generation || !this.state.connected) return
     if (!version) throw new Error('Antigravity was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect Antigravity again to try the new version.')
-    if (compareAntigravityVersions(version, ANTIGRAVITY_CLI_FLOOR) < 0) throw new Error(`Antigravity was updated, but Sotto cannot run ${version}: ${ANTIGRAVITY_CLI_FLOOR} or newer is needed. Threads that are working carry on and nothing was lost.`)
+    if (!meetsAntigravityFloor(version)) throw new Error(`Antigravity was updated, but Sotto cannot run ${version}: ${ANTIGRAVITY_CLI_FLOOR} or newer is needed. Threads that are working carry on and nothing was lost.`)
     this.executable = executable; this.clientRevision++
     this.state.version = `${version} / ACP ${ANTIGRAVITY_ACP_VERSION}`
     for (const [id, connection] of this.connections) if (connection.clientRevision < this.clientRevision) this.outdated.add(id)
