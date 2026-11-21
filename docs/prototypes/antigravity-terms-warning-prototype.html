@@ -1,0 +1,884 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not app code; not committed.
+  Question: how should a paired host's Antigravity tile in Settings > Hosts & phones offer
+  (a) installing Sotto's own checked download of agy on that host, with progress, Cancel and Remove, and
+  (b) Gemini Enterprise sign-in on that host (project and location, finished in a browser on the host)?
+  Four variants on one page, switchable with ?variant=A|B|C|D and the floating bar (or the Left and Right keys):
+    A  The tile opens out       the Antigravity tile does it all in place and spans the row while signing in
+    B  One dialog                the tile keeps one button; a dialog "Antigravity on forge" holds install and sign-in
+    C  A block under the tiles   like OpenCode's model sources: "Antigravity on forge" rows under the tiles
+    D  Keep it as it is          installed agy only, Google account only
+  Tokens are copied from src/renderer/src/styles/tokens.css on feat/antigravity-provider; Figtree is embedded.
+  Nothing here talks to a host: every press is simulated in memory.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: Antigravity warning in Settings</title>
+<style>
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url(data:font/woff2;base64,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) format('woff2'); }
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-chrome: oklch(0.115 0.008 265);
+  --theme-toolbar: oklch(0.115 0.008 265);
+  --theme-toolbar-foreground: oklch(0.985 0.005 280);
+  --theme-toolbar-border: oklch(0.285 0.02 265);
+  --theme-toolbar-control: oklch(0.155 0.008 265);
+  --theme-toolbar-control-foreground: oklch(0.985 0.005 280);
+  --theme-toolbar-control-hover: oklch(0.195 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-text-muted: oklch(0.72 0.014 265);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-secondary: oklch(0.155 0.008 265);
+  --theme-secondary-foreground: oklch(0.985 0.005 280);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-secondary-label: oklch(0.72 0.014 265);
+  --theme-icon-muted: oklch(0.72 0.014 265);
+  --theme-error: oklch(0.655108 0.221148 23.473);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-error-surface: oklch(0.29 0.04 20);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-warning-surface: oklch(0.315 0.032 80);
+  --theme-update: oklch(0.714403 0.104089 183.092);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-update-surface: oklch(0.26 0.04 185);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-accent-surface-foreground: oklch(0.985 0.005 280);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-message-foreground: oklch(0.985 0.005 280);
+  --theme-message-action: oklch(0.714403 0.104089 183.092);
+  --theme-message-action-foreground: oklch(0.16 0.012 190);
+  --theme-message-action-hover: oklch(0.77 0.1 183);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-code-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar: oklch(0.235 0.003 265);
+  --theme-sidebar-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar-muted-foreground: oklch(0.72 0.014 265);
+  --theme-sidebar-control-surface: oklch(0.295 0.003 265);
+  --theme-sidebar-row-hover: oklch(0.28 0.003 265);
+  --theme-sidebar-row-active: oklch(0.32 0.025 190);
+  --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-sidebar-border: oklch(0.355 0.012 265);
+  --theme-terminal-background: oklch(0.115 0.008 265);
+  --theme-terminal-foreground: oklch(0.985 0.005 280);
+  --theme-terminal-cursor: oklch(0.714403 0.104089 183.092);
+  --theme-terminal-selection: oklch(0.32 0.05 185);
+  --theme-terminal-scrollbar: oklch(0.315 0.008 265);
+  --theme-terminal-scrollbar-hover: oklch(0.415 0.008 265);
+  --theme-contrast-base: 100%;
+  --theme-contrast-boost: 0%;
+  --theme-contrast-border-boost: 0%;
+  --theme-contrast-hint-boost: 0%;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-chrome: oklch(0.978 0.004 85);
+  --theme-toolbar: oklch(0.978 0.004 85);
+  --theme-toolbar-foreground: oklch(0.235 0.014 75);
+  --theme-toolbar-border: oklch(0.86 0.012 80);
+  --theme-toolbar-control: oklch(0.93 0.01 85);
+  --theme-toolbar-control-foreground: oklch(0.235 0.014 75);
+  --theme-toolbar-control-hover: oklch(0.9 0.012 82);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-text-muted: oklch(0.5 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-secondary: oklch(0.93 0.01 85);
+  --theme-secondary-foreground: oklch(0.235 0.014 75);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-secondary-label: oklch(0.5 0.014 75);
+  --theme-icon-muted: oklch(0.5 0.014 75);
+  --theme-error: oklch(0.637823 0.237287 25.436);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-error-surface: oklch(0.94 0.02 25);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-warning-surface: oklch(0.955 0.018 80);
+  --theme-update: oklch(0.53 0.095 186);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-update-surface: oklch(0.92 0.03 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-accent-surface-foreground: oklch(0.235 0.014 75);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-message-foreground: oklch(0.235 0.014 75);
+  --theme-message-action: oklch(0.53 0.095 186);
+  --theme-message-action-foreground: oklch(0.99 0.003 85);
+  --theme-message-action-hover: oklch(0.47 0.09 186);
+  --theme-code-background: oklch(0.96 0.005 85);
+  --theme-code-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar: oklch(0.955 0.008 85);
+  --theme-sidebar-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar-muted-foreground: oklch(0.5 0.014 75);
+  --theme-sidebar-control-surface: oklch(0.995 0.002 85);
+  --theme-sidebar-row-hover: oklch(0.93 0.01 85);
+  --theme-sidebar-row-active: oklch(0.915 0.02 190);
+  --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-sidebar-border: oklch(0.87 0.012 82);
+  --theme-terminal-background: oklch(0.978 0.004 85);
+  --theme-terminal-foreground: oklch(0.235 0.014 75);
+  --theme-terminal-cursor: oklch(0.53 0.095 186);
+  --theme-terminal-selection: oklch(0.92 0.03 186);
+  --theme-terminal-scrollbar: oklch(0.84 0.01 85);
+  --theme-terminal-scrollbar-hover: oklch(0.76 0.012 85);
+}
+
+/* Tokens every feature reads. Declared once for both modes: the theme roles
+   already differ per mode, and the few constants that do not come from a theme
+   (status green, provider marks, shadows, glass blur) are set per mode below.
+   A custom property substitutes its var()s where it is declared, so an element
+   that carries `data-theme-scope` with its own --theme-* roles (the preview on
+   Settings → Appearance, showing the other half) re-derives every token from
+   them here without repainting the window. */
+:root, [data-theme-scope] {
+  --theme-contrast-target: white;
+  --tt-glass-blur: 16px;
+  --tt-glass-saturation: 1.08;
+
+  --tt-canvas: var(--theme-canvas);
+  --tt-chrome: var(--theme-chrome);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-panel: var(--theme-surface);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-field: var(--theme-surface);
+  /* A card is a filled container with no outline, one step off the room: the raised surface by night, a step
+     darker than the canvas by day (set in the light block below). Rows inside it divide with a line of the inset,
+     and fields, samples and tracks inside it take the inset too. The selected card or item wears the accent
+     surface mixed into the card. */
+  --tt-card: var(--theme-surface-raised);
+  /* The card's own solid colour, which Glass's translucent card leaves in place for what must stay solid. */
+  --tt-card-solid: var(--theme-surface-raised);
+  --tt-card-inset: var(--theme-canvas);
+  --tt-card-selected: color-mix(in oklab, var(--theme-accent-surface) 65%, var(--tt-card));
+  /* The composer's card and its faint ink: the card's and the faint ink's, unless a theme's block parts them (the Sotto
+     theme by day does, so the composer keeps the card it was drawn on). */
+  --tt-composer-card: var(--tt-card);
+  --tt-composer-text-faint: var(--tt-text-faint);
+  /* A segmented control is a sunken track with the chosen segment raised out of it: the overlay by night, the
+     surface by day (set in the light block below). */
+  --tt-segment-on: var(--theme-surface-overlay);
+
+  --tt-text: color-mix(in oklab, color-mix(in oklab, var(--theme-text) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-2: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  /* Secondary text, the times, statuses, labels and metadata read at the caption sizes: the theme's muted role, a quarter
+     of the way to its text, so a 12px time reads clearly and still sits a step under the words it describes. It lifts in
+     proportion, so a theme whose muted text is already near its body text (Glass) moves little. The composer keeps the
+     quieter tier it was drawn in, `--tt-text-quiet`, the muted role 15% of the way, and so does the effort control. */
+  --tt-text-quiet: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-muted-foreground) 76%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  /* The prompt's hint (its placeholder): the theme's own Placeholder role, the ink every other field's placeholder takes.
+     It was the Muted text role, but a theme can draw its muted text close to its body text (Vellum Night's sits at
+     7.7:1 on the composer card, against the body's 12:1), and a hint that bright reads as typed words (Drake, November
+     2, 2026). High Contrast lifts it at half strength, so at the top step it stays dimmer than typed words, which go to
+     pure white (or black) there. */
+  --tt-text-hint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-hint-boost));
+  --tt-text-faint: color-mix(in oklab, color-mix(in oklab, var(--theme-placeholder) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  /* What the transcript writes in the muted tier, names, times and folded work, a step nearer the body, because it is read
+     for a long time at small sizes. threads.css sets it as the transcript's muted tier; the composer stays on its quiet tier. */
+  --tt-transcript-muted: color-mix(in oklab, var(--tt-text-quiet) 80%, var(--tt-text));
+  /* The weight of the small secondary words, the times, counts, statuses and Worked for lines read at the caption and small
+     steps: regular by night, and a step heavier by day (set in the light block below), where strokes that thin render
+     lighter than their ink (Zach's pick B, ADR-0024 November 7 amendment). */
+  --tt-weight-quiet: 400;
+  /* What the reading surface reads: the theme's own inks and rules, unless a block below softens them. */
+  --tt-reading-text: var(--tt-text);
+  --tt-reading-text-2: var(--tt-text-2);
+  --tt-reading-bubble-text: var(--tt-bubble-text);
+  --tt-reading-code-text: var(--tt-code-text);
+  --tt-reading-hairline: var(--tt-border-faint);
+  --tt-reading-field-border: var(--tt-field-border);
+
+  /* Boundaries: `border` draws rules, `input` outlines fields, and the
+     control boundary leans toward the muted text so a control stays findable. */
+  --tt-border-faint: color-mix(in srgb, color-mix(in srgb, var(--theme-border) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-hairline: var(--tt-border-faint);
+  --tt-panel-border: var(--tt-border-faint);
+  --tt-field-border: color-mix(in srgb, color-mix(in srgb, var(--theme-input) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+  --tt-border: color-mix(in srgb, color-mix(in srgb, color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground)) var(--theme-contrast-base), transparent), var(--theme-text) var(--theme-contrast-border-boost));
+
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-hover-strong: var(--theme-accent-surface);
+  --tt-track: color-mix(in srgb, var(--theme-text) 4%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-bubble-text: color-mix(in oklab, color-mix(in oklab, var(--theme-message-foreground) var(--theme-contrast-base), var(--theme-message-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-kbd: var(--theme-secondary);
+  --tt-skeleton-a: var(--theme-surface);
+  --tt-skeleton-b: var(--theme-surface-raised);
+  --tt-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-scrollbar-hover: var(--theme-terminal-scrollbar-hover);
+  /* The neutral pill carries a page's one action in the theme's own ink. */
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+
+  --tt-warning: color-mix(in oklab, color-mix(in oklab, var(--theme-warning-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-warning-text: var(--tt-warning);
+  --tt-warning-surface: var(--theme-warning-surface);
+  --tt-attention: var(--tt-warning);
+  --tt-error: color-mix(in oklab, color-mix(in oklab, var(--theme-error-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-error-text: var(--tt-error);
+  --tt-danger: var(--tt-error);
+  --tt-error-contrast: var(--theme-canvas);
+  --tt-error-surface: var(--theme-error-surface);
+  --tt-error-border: color-mix(in oklab, var(--theme-error) 38%, var(--theme-error-surface));
+  /* Mark up's red and amber inks (ADR-0170, part 5): the theme's error and warning colours at full strength, which stand
+     out on any picture, where the text roles above are tuned to read on the theme's own surfaces. */
+  --tt-ink-red: var(--theme-error);
+  --tt-ink-amber: var(--theme-warning);
+  /* Status text on a tinted surface, the selection or the bubble, steps toward the body ink so it keeps 4.5:1. */
+  --tt-warning-on-tint: color-mix(in oklab, var(--tt-warning-text) 90%, var(--tt-text));
+  --tt-error-on-tint: color-mix(in oklab, var(--tt-error-text) 80%, var(--tt-text));
+  --tt-update: var(--theme-update);
+  --tt-update-text: color-mix(in oklab, color-mix(in oklab, var(--theme-update-foreground) var(--theme-contrast-base), var(--theme-update-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-update-surface: var(--theme-update-surface);
+
+  --tt-code-bg: var(--theme-code-background);
+  --tt-code-border: var(--tt-border-faint);
+  --tt-code-text: color-mix(in oklab, color-mix(in oklab, var(--theme-code-foreground) var(--theme-contrast-base), var(--theme-code-background)), var(--theme-contrast-target) var(--theme-contrast-boost));
+
+  /* The accent: the live wave, focus, selection and accent-coloured text.
+     Accent text uses the theme's readable accent tone, not the raw fill. */
+  --tt-accent: var(--theme-accent);
+  --tt-accent-hover: color-mix(in oklab, var(--theme-accent) 84%, var(--theme-contrast-target));
+  --tt-accent-text: color-mix(in oklab, color-mix(in oklab, var(--theme-update-foreground) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+
+  /* Primary actions are the theme's message action, as in T3 Code. */
+  --tt-primary: var(--theme-message-action);
+  --tt-primary-hover: var(--theme-message-action-hover);
+  --tt-primary-contrast: var(--theme-message-action-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-link: var(--tt-accent-text);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-activity-wash: var(--tt-accent-wash);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-field-border-focus: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-field-border));
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  /* Outline for colour swatches whose fill is not a theme colour. */
+  --tt-swatch-edge: color-mix(in srgb, var(--theme-text) 22%, transparent);
+  --tt-table-stripe: color-mix(in srgb, var(--tt-text) 3%, transparent);
+
+  /* Surfaces that own their palette: the sidebar, toolbars, accent and
+     secondary surfaces, and terminals. */
+  --tt-sidebar-text: color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-foreground) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  /* The sidebar's times and statuses lift a quarter of the way to its text, as the window's secondary text does. */
+  --tt-sidebar-text-muted: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-sidebar-muted-foreground) 76%, var(--theme-sidebar-foreground)) var(--theme-contrast-base), var(--theme-sidebar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-sidebar-control: var(--theme-sidebar-control-surface);
+  --tt-sidebar-row-hover: var(--theme-sidebar-row-hover);
+  --tt-sidebar-row-active: var(--theme-sidebar-row-active);
+  --tt-sidebar-row-selected: var(--theme-sidebar-row-selected);
+  --tt-sidebar-border: color-mix(in srgb, color-mix(in srgb, var(--theme-sidebar-border) var(--theme-contrast-base), transparent), var(--theme-sidebar-foreground) var(--theme-contrast-border-boost));
+  --tt-toolbar: var(--theme-toolbar);
+  --tt-toolbar-text: color-mix(in oklab, color-mix(in oklab, var(--theme-toolbar-foreground) var(--theme-contrast-base), var(--theme-toolbar)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-toolbar-border: color-mix(in srgb, color-mix(in srgb, var(--theme-toolbar-border) var(--theme-contrast-base), transparent), var(--theme-toolbar-foreground) var(--theme-contrast-border-boost));
+  --tt-toolbar-control: var(--theme-toolbar-control);
+  --tt-toolbar-control-text: color-mix(in oklab, color-mix(in oklab, var(--theme-toolbar-control-foreground) var(--theme-contrast-base), var(--theme-toolbar-control)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-toolbar-control-hover: var(--theme-toolbar-control-hover);
+  --tt-secondary: var(--theme-secondary);
+  --tt-secondary-text: color-mix(in oklab, color-mix(in oklab, var(--theme-secondary-foreground) var(--theme-contrast-base), var(--theme-secondary)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-accent-surface: var(--theme-accent-surface);
+  --tt-accent-surface-text: color-mix(in oklab, color-mix(in oklab, var(--theme-accent-surface-foreground) var(--theme-contrast-base), var(--theme-accent-surface)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-terminal-background: var(--theme-terminal-background);
+  --tt-terminal-foreground: color-mix(in oklab, color-mix(in oklab, var(--theme-terminal-foreground) var(--theme-contrast-base), var(--theme-terminal-background)), var(--theme-contrast-target) var(--theme-contrast-boost));
+  --tt-terminal-cursor: var(--theme-terminal-cursor);
+  --tt-terminal-selection: var(--theme-terminal-selection);
+  --tt-terminal-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-terminal-scrollbar-hover: var(--theme-terminal-scrollbar-hover);
+
+  /* Glass: floating surfaces are the solid overlay colour, and the composer the solid field (ADR-0084). */
+  --tt-glass: var(--theme-surface-overlay);
+  --tt-glass-filter: blur(var(--tt-glass-blur)) saturate(var(--tt-glass-saturation));
+  --tt-glass-field: var(--tt-field);
+
+  /* Sotto Owl's night sky behind the sidebar header (agents/owlSky.css). The stars are the sidebar's own text at
+     four low strengths, three of them in the accent, and the accent glows faintly behind the tile. The night is the
+     sidebar a hair darker with its chroma lifted, on the sidebar's own hue; a sidebar with no hue (Citrine) borrows
+     Sotto's night blue, 265. The search field is a deeper pool of that night, so its placeholder reads within a
+     twentieth of how it reads on the theme's own field.
+     --owl-night-hue is a channel expression, so it is only valid inside a relative oklch(). */
+  --owl-night-hue: calc(h * clamp(0, (c - .001) * 100000, 1) + 265 * (1 - clamp(0, (c - .001) * 100000, 1)));
+  --tt-owl-star: var(--tt-sidebar-text);
+  --tt-owl-star-accent: var(--tt-accent);
+  --tt-owl-star-o1: .62;
+  --tt-owl-star-o2: .38;
+  --tt-owl-star-o3: .22;
+  --tt-owl-star-o4: .13;
+  --tt-owl-faintest-stars: block;
+  --tt-owl-star-scale: 1;
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
+  /* The light crossing a running turn's working words (agents/activity.css): the accent at its most vivid, lifted well
+     above the words' muted ink so it reads on any theme, however dull its accent. */
+  --tt-working-light: oklch(from var(--tt-accent) max(l, .9) min(calc(c * 1.6), .2) h);
+  --tt-owl-night: oklch(from var(--tt-sidebar) calc(l - .011) min(calc(c + .025), .05) var(--owl-night-hue));
+  --tt-owl-night-field: oklch(from var(--tt-sidebar) calc(l - .05) min(calc(c + .023), .045) var(--owl-night-hue));
+  /* Watcher's room has no sidebar, so its night sits in the room's top-left corner (watcher/watcher.css), derived
+     from the canvas as the sidebar's is from the sidebar: the canvas is the darkest surface, so a little lighter
+     than it, chroma lifted, on the same hue. */
+  --tt-owl-room-night: oklch(from var(--tt-canvas) calc(l + .04) min(calc(c + .028), .055) var(--owl-night-hue));
+  /* The collapsed rail's trays (agents/threadSidebar.css) take these in turn: the accent, then the accent turned round
+     the hue wheel at its own lightness and chroma, so a quiet accent gives quiet trays. A grey accent borrows the
+     Sotto Owl night's blue and a little chroma, so its trays still differ. A turned hue that lands on red, orange or
+     amber (under 75), the error and attention colours, turns a further 120 degrees. On Citrine they are its yellow,
+     a blue, a green and a pink. Like --owl-night-hue, the --rail-* parts are channel expressions, valid only inside
+     a relative oklch(). */
+  --rail-chroma: calc(c + .1 * (1 - clamp(0, (c - .001) * 100000, 1)));
+  --rail-turn-2: calc(var(--owl-night-hue) + 155);
+  --rail-turn-3: calc(var(--owl-night-hue) + 60);
+  --rail-turn-4: calc(var(--owl-night-hue) + 245);
+  --rail-hue-2: calc(var(--rail-turn-2) - 360 * clamp(0, (var(--rail-turn-2) - 360) * 100000, 1));
+  --rail-hue-3: calc(var(--rail-turn-3) - 360 * clamp(0, (var(--rail-turn-3) - 360) * 100000, 1));
+  --rail-hue-4: calc(var(--rail-turn-4) - 360 * clamp(0, (var(--rail-turn-4) - 360) * 100000, 1));
+  --tt-rail-group-1: oklch(from var(--tt-accent) l var(--rail-chroma) var(--owl-night-hue));
+  --tt-rail-group-2: oklch(from var(--tt-accent) l var(--rail-chroma) calc(var(--rail-hue-2) + 120 * clamp(0, (75 - var(--rail-hue-2)) * 100000, 1)));
+  --tt-rail-group-3: oklch(from var(--tt-accent) l var(--rail-chroma) calc(var(--rail-hue-3) + 120 * clamp(0, (75 - var(--rail-hue-3)) * 100000, 1)));
+  --tt-rail-group-4: oklch(from var(--tt-accent) l var(--rail-chroma) calc(var(--rail-hue-4) + 120 * clamp(0, (75 - var(--rail-hue-4)) * 100000, 1)));
+
+  --tt-success: oklch(0.79 0.13 165);
+  /* A ready Merge (ADR-0110, November 5): the status green washed over the surface, inside an edge of it. */
+  --tt-success-wash: color-mix(in oklab, var(--tt-success) 18%, var(--tt-surface));
+  --tt-success-wash-hover: color-mix(in oklab, var(--tt-success) 25%, var(--tt-surface));
+  --tt-success-wash-press: color-mix(in oklab, var(--tt-success) 31%, var(--tt-surface));
+  --tt-success-edge: color-mix(in oklab, var(--tt-success) 55%, var(--tt-field-border));
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-devin: #a5d8f5;
+  --tt-provider-opencode: #ece3d0;
+  --tt-provider-cursor: #f2b9c9;
+  --tt-provider-antigravity: #a8c7fa;
+  /* A provider's mark drawn as a glyph rather than on its badge. By night the badge colours read at 10:1 or more as
+     glyphs; by day they are too pale (Codex's grey sits under 2:1 on the room), so the light block mixes them halfway
+     toward the text colour, keeping the provider's hue at about 4:1 on the room, the sidebar and a card. */
+  --tt-provider-codex-mark: var(--tt-provider-codex);
+  --tt-provider-claude-mark: var(--tt-provider-claude);
+  --tt-provider-grok-mark: var(--tt-provider-grok);
+  --tt-provider-devin-mark: var(--tt-provider-devin);
+  /* Settings → Providers draws each mark in the ink on a badge of its provider's colour. Muse has no other colour
+     here, and OpenCode's and Cursor's badges keep a pale shade in both modes: their light glyph colours are too dark
+     under the ink. */
+  --tt-provider-muse: #e6e1d6;
+  --tt-provider-opencode-badge: #ece3d0;
+  --tt-provider-cursor-badge: #f2b9c9;
+  /* DeepSeek's whale has no colour elsewhere, so its badge is a pale shade of DeepSeek's own blue (#4d6bfe). */
+  --tt-provider-deepseek-badge: #a3b3ff;
+  /* Antigravity's arch is Google's logo (ADR-0212), in Google's blue: a pale shade of it by night and on its badge, a deep one
+     as a glyph by day. */
+  --tt-provider-antigravity-badge: #a8c7fa;
+  --tt-provider-ink: #080b0a;
+  /* Chart series (Usage's split chart). Constants per mode like the provider marks: a theme carries T3 Code's
+     roles, which name no categorical hues. Six hues and an Other grey, each at least 3:1 on every built-in theme's
+     canvas and surface, and every pair, Other included, apart for protanopia and deuteranopia (Machado 2009, OKLab
+     distance at least 8 in both modes; themeTokens.test.ts holds both). Slot 1 to 6: blue, orange, cyan, magenta,
+     violet, amber. */
+  --tt-chart-1: #3792fd;
+  --tt-chart-2: #b85207;
+  --tt-chart-3: #1dcaf7;
+  --tt-chart-4: #c33786;
+  --tt-chart-5: #8056d6;
+  --tt-chart-6: #c99414;
+  --tt-chart-other: #9e9e9e;
+  --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
+  --tt-backdrop: rgb(0 0 0 / 38%);
+  /* The effort control (ADR-0019): a pill track in the card, and the colourway chosen in Settings → Appearance
+     for the fill, the wash and the tinted word at a model's highest level. The colourway's three hues
+     (`--tt-effort-a/b/c`), its ink and its border hue are set per colourway after the mode blocks; the tokens
+     here shape them for the mode. `--tt-effort-text-fill` is the colour the word is painted in and
+     `--tt-effort-text-image` the gradient clipped to it, so a colourway that paints its word as a gradient
+     needs no branch in feature CSS. */
+  --tt-effort-track: color-mix(in srgb, var(--tt-text) 7%, var(--tt-surface-elevated));
+  --tt-effort-dot: color-mix(in srgb, var(--tt-text-quiet) 55%, var(--tt-effort-track));
+  --tt-effort-fill-cool: var(--tt-text-quiet);
+  --tt-effort-fill-veil: transparent;
+  --tt-effort-thumb: var(--tt-text);
+  --tt-effort-thumb-edge: color-mix(in srgb, var(--tt-text) 10%, transparent);
+  --tt-effort-text: var(--effort-ink);
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+  --tt-effort-wash-image: linear-gradient(to top, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+
+  --tt-shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  /* How strongly the effort trace's halo falls on the room (effortTrace.css); a light room takes a little more. */
+  --tt-effort-trace-halo: .55;
+
+  /* Type sizes (ADR-0169). Every font-size in a renderer stylesheet names one of these steps, and
+     scaleTokens.test.ts holds it there. `--tt-text-*` already names text colours, so sizes are `--tt-type-*`. */
+  --tt-type-micro: 11px; /* Keys, badges and tiny marks */
+  --tt-type-caption: 12px; /* Times, counts, statuses, metadata, code in Changes (a sidebar row's take small) */
+  --tt-type-small: 13px; /* Descriptions, controls, most interface text, a sidebar row's status and time */
+  --tt-type-body: 14px; /* Sidebar rows, fields, menu items */
+  --tt-type-reading: 15px; /* Composer, Watcher's conversation, journal entries, settings labels */
+  --tt-type-lead: 16px; /* A thread's messages, dialog titles, section intros, request prompts */
+  --tt-type-heading: 18px; /* Sidebar brand, empty-room headings */
+  --tt-type-figure: 22px; /* Figures in a narrow room, sub-titles */
+  --tt-type-title: 28px; /* Room titles and large figures */
+
+  /* Corners (ADR-0169), by what they round. Every border-radius names one of these steps. */
+  --tt-radius-mark: 2px; /* Meters, legend squares, focus marks */
+  --tt-radius-tag: 4px; /* Tags, keys, chips, small close buttons */
+  --tt-radius-control: 6px; /* Buttons, fields, composer chips */
+  --tt-radius-row: 8px; /* Sidebar and menu rows, icon buttons */
+  --tt-radius-inset: 10px; /* Code blocks, menus, notes inside a card */
+  --tt-radius-card: 14px; /* Cards, the full composer, the Dictate bar */
+  --tt-radius-overlay: 20px; /* Dialogs, Zach's two-row composer and the widget */
+  --tt-radius-full: 50%; /* Dots and rings: a circle on a square box, never a pill (ADR-0110) */
+  /* The names before the scale, kept so whatever names them still rounds the same. */
+  --tt-radius-sm: var(--tt-radius-control);
+  --tt-radius-md: var(--tt-radius-inset);
+  --tt-radius-lg: var(--tt-radius-card);
+  --tt-font-ui:
+    'Figtree', ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --tt-font-mono:
+    'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
+    Consolas, 'Liberation Mono', monospace;
+}
+
+:root[data-theme='light'], [data-theme-scope='light'] {
+  --theme-contrast-target: black;
+  /* By day the raised surface is barely off the canvas, so a card is the canvas with a little of the text in it. */
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  --tt-card-solid: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  /* Small secondary words a step heavier by day (see the token above). */
+  --tt-weight-quiet: 500;
+  --tt-segment-on: var(--theme-surface);
+  --tt-glass-blur: 12px;
+  --tt-glass-saturation: 1.14;
+  --tt-success: oklch(0.445 0.11 158);
+  /* By day the green is dark, and a little of it over a near-white surface reads grey, as a control at rest. So the
+     wash is the same green raised to a light, clear tint, and its edge is the green itself. */
+  --tt-success-wash: oklch(from var(--tt-success) .9 calc(c * .62) h);
+  --tt-success-wash-hover: oklch(from var(--tt-success) .86 calc(c * .7) h);
+  --tt-success-wash-press: oklch(from var(--tt-success) .82 calc(c * .78) h);
+  --tt-success-edge: var(--tt-success);
+  --tt-provider-codex: #c9ced6;
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-grok: #bfaefc;
+  --tt-provider-devin: #8fcaef;
+  --tt-provider-codex-mark: color-mix(in srgb, var(--tt-provider-codex) 50%, var(--tt-text));
+  --tt-provider-claude-mark: color-mix(in srgb, var(--tt-provider-claude) 50%, var(--tt-text));
+  --tt-provider-grok-mark: color-mix(in srgb, var(--tt-provider-grok) 50%, var(--tt-text));
+  --tt-provider-devin-mark: color-mix(in srgb, var(--tt-provider-devin) 50%, var(--tt-text));
+  /* OpenCode's mark is drawn straight from its token in both modes, so the light one is already dark enough to read. */
+  --tt-provider-opencode: #625843;
+  /* Cursor's, like OpenCode's, is drawn straight from its token in both modes: a pale rose by night, a deep one by day. */
+  --tt-provider-cursor: #94405a;
+  --tt-provider-antigravity: #0b57d0;
+  --tt-provider-muse: #d9d3c4;
+  --tt-provider-opencode-badge: #e4dac4;
+  --tt-provider-cursor-badge: #eaaabd;
+  --tt-provider-deepseek-badge: #93a6ff;
+  --tt-provider-antigravity-badge: #a8c7fa;
+  --tt-provider-ink: #0b0d0c;
+  --tt-chart-1: #0554a3;
+  --tt-chart-2: #883c04;
+  --tt-chart-3: #038db6;
+  --tt-chart-4: #980563;
+  --tt-chart-5: #885ee0;
+  --tt-chart-6: #a07506;
+  --tt-chart-other: #747474;
+  --tt-overlay: color-mix(in srgb, var(--theme-canvas) 60%, transparent);
+  --tt-backdrop: rgb(20 24 22 / 22%);
+  --tt-shadow-sm: 0 1px 2px rgb(20 24 22 / 10%);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  /* Light: the effort fill tints toward white so it stays a light surface, the thumb is paper with an edge,
+     and the tinted word mixes toward the ink so it reads at 4.5:1. */
+  --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-quiet) 40%, var(--tt-surface-elevated));
+  --tt-effort-fill-veil: color-mix(in srgb, white 38%, transparent);
+  --tt-effort-thumb: var(--tt-surface);
+  --tt-effort-thumb-edge: var(--tt-border);
+  --tt-effort-text: var(--effort-ink-light);
+  /* Sotto Owl's sky by day: grey dots on a light surface read as dust, so the stars take the accent, a little
+     larger, and the faintest drop out. There is no night by day. The band is a faint wash of the accent's hue: the
+     accent is mixed in at full lightness, so the wash is never darker than the sidebar whatever the theme. The field
+     and the switch keep their own colours. */
+  --tt-owl-star: var(--tt-accent);
+  --tt-owl-star-o1: .58;
+  --tt-owl-star-o2: .44;
+  --tt-owl-star-o3: .32;
+  --tt-owl-star-o4: 0;
+  --tt-owl-faintest-stars: none;
+  --tt-owl-star-scale: 1.2;
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
+  /* By day the light is the accent deepened instead, below the muted ink. */
+  --tt-working-light: oklch(from var(--tt-accent) min(l, .38) min(calc(c * 1.6), .2) h);
+  --tt-owl-night: color-mix(in oklab, var(--tt-sidebar) 90%, oklch(from var(--tt-accent) 1 c h));
+  --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 90%, oklch(from var(--tt-accent) 1 c h));
+  --tt-owl-night-field: var(--tt-field);
+  --tt-effort-trace-halo: .7;
+}
+
+/* The desktop's Sotto halves read softer than the palette says (ADR-0024, November 4, 2026 amendment). This lives here rather
+   than in palettes.ts because the iPhone's palette is generated from that file and keeps its own values. The room rises only
+   as far as leaves the composer's card its step above it. --tt-canvas stays the palette's at the root and across Watcher's
+   room: its night scene, its Stars and its words' glow read the root and the shell, and they keep their colours exactly.
+   The inks are read only by the reading surface below; the composer and the chrome keep theirs.
+   By night the room is a soft warm ink with the sidebar and Tools a step below it, as Zach picked (C, November 5, 2026).
+   The palette writes its roles inline on the root, so the surfaces it moves are set here as the tokens they paint through.
+   The composer's card, the raised surface, keeps its value, and so does every token the composer reads. */
+:root { --tt-font-ui: 'Figtree', system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { min-height: 100dvh; background: var(--tt-canvas); color: var(--tt-text); font: 400 var(--tt-type-body)/1.45 var(--tt-font-ui); -webkit-font-smoothing: antialiased; padding-bottom: 120px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* The window: a thin drag strip, the settings list and the room. */
+.strip { height: 34px; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-caption); background: var(--tt-canvas); }
+.strip b { color: var(--tt-text); font-weight: 600; margin-right: 8px; }
+.shell { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: calc(100dvh - 34px); }
+.nav { border-right: 1px solid var(--tt-hairline); padding: 18px 10px; display: grid; align-content: start; gap: 2px; }
+.nav a { display: block; padding: 7px 10px; border-radius: var(--tt-radius-row); color: var(--tt-text-muted); text-decoration: none; font-size: var(--tt-type-body); }
+.nav a[aria-current] { background: var(--tt-card); color: var(--tt-text); font-weight: 600; }
+.room { min-width: 0; padding: 28px 32px; }
+.room > h2 { margin: 0 0 18px; font-size: var(--tt-type-figure); font-weight: 600; letter-spacing: -0.01em; }
+@media (max-width: 760px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .nav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--tt-hairline); padding: 8px 10px; gap: 4px; }
+  .nav a { white-space: nowrap; }
+  .room { padding: 18px 14px; }
+}
+
+/* Copied from global.css, crossing-settings.css, hosts.css and hostProviders.css on the branch. */
+.tt-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); padding: 0 14px; background: var(--tt-surface); color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.2; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease, opacity 120ms ease; }
+.tt-button:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.tt-button:active:not(:disabled) { background: var(--tt-hover); }
+.tt-button:disabled { cursor: not-allowed; opacity: .45; }
+.tt-button--primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.tt-button--primary:hover:not(:disabled) { border-color: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.12); }
+.tt-button--ghost { border-color: transparent; background: transparent; color: var(--tt-text-faint); }
+.tt-button--ghost:hover:not(:disabled) { border-color: transparent; color: var(--tt-text); }
+.tt-button--danger { border-color: transparent; background: transparent; color: var(--tt-error); }
+.tt-button--icon { width: 28px; min-height: 28px; height: 28px; padding: 0; border-color: transparent; background: transparent; color: var(--tt-text-muted); }
+.tt-input { width: 100%; min-height: 32px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-control); background: var(--tt-surface-sunken); padding: 4px 12px; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; }
+.tt-input:hover:not(:disabled) { border-color: var(--tt-border); }
+.tt-input:disabled { cursor: not-allowed; opacity: .62; }
+.tt-input::placeholder { color: var(--tt-text-faint); }
+.segmented-control { display: inline-flex; justify-self: start; align-items: center; padding: 3px; gap: 2px; border-radius: var(--tt-radius-control); background: var(--tt-surface-sunken); max-width: 100%; }
+.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: var(--tt-radius-tag); font-size: var(--tt-type-small); color: var(--tt-text-muted); background: none; white-space: normal; line-height: 1.25; }
+.segmented-control button:hover:not(:disabled) { color: var(--tt-text); }
+.segmented-control button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 18%); }
+.segmented-control button:disabled { opacity: .5; cursor: default; }
+.segmented-control button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+
+.hosts-settings { display: grid; gap: 20px; max-width: 1040px; }
+.hosts-settings h3, .hosts-settings h4 { margin: 0; font-weight: 600; }
+.hosts-settings h3 { font-size: var(--tt-type-heading); }
+.hosts-settings h4 { font-size: var(--tt-type-reading); }
+.hosts-settings p { margin: 6px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-body); }
+.hosts-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.hosts-card { display: grid; padding: 2px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.hosts-settings .hosts-card > * { padding: 16px 0; border: 0; border-bottom: 2px solid var(--tt-card-inset); }
+.hosts-settings .hosts-card > :last-child { border-bottom: 0; }
+.hosts-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; min-width: 0; }
+.hosts-row__icon { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: var(--tt-radius-sm); background: var(--tt-card-inset); color: var(--tt-accent-text); }
+.hosts-row__icon--local { color: var(--tt-text-muted); }
+.hosts-row__info { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.hosts-settings .hosts-row__meta { margin-top: 2px; font-size: var(--tt-type-small); }
+.hosts-row__meta b { color: var(--tt-text); font-weight: 400; }
+.hosts-row__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; margin-left: auto; }
+.hosts-switch { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.switch { width: 36px; height: 20px; border-radius: 10px; background: var(--tt-accent); position: relative; border: 0; padding: 0; }
+.switch::after { content: ''; position: absolute; top: 3px; right: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-accent-foreground, #fff); }
+
+.host-providers { display: grid; flex: 1 0 100%; gap: 10px; min-width: 0; padding-left: 48px; }
+.host-providers__toggle.tt-button { justify-self: start; margin-left: -12px; }
+.host-providers__panel { display: grid; gap: 10px; min-width: 0; container-type: inline-size; }
+.host-providers__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+@container (min-width: 700px) { .host-providers__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 340px) { .host-providers__grid { grid-template-columns: minmax(0, 1fr); } }
+.hosts-settings .host-providers__foot { margin: 0 0 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.host-provider { position: relative; display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid transparent; border-radius: var(--tt-radius-md); background: var(--tt-card-inset); padding: 12px; }
+.host-provider[data-kind='not-installed'] { background: transparent; border-color: var(--tt-card-inset); }
+.host-provider__top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.host-provider__top h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; flex: 1; }
+.host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-card); }
+.host-provider__mark svg { width: 16px; height: 16px; fill: currentColor; }
+.hosts-settings .host-provider__state { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
+.hosts-settings .host-provider__detail { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
+.host-provider__act { align-self: end; min-width: 0; }
+.host-provider__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.host-provider__actions .tt-button { max-width: 100%; white-space: normal; text-align: left; }
+.hosts-settings .host-provider__note { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.hosts-settings .host-provider__note:empty { display: none; }
+.host-provider__dot { flex: 0 0 auto; width: 8px; height: 8px; border: 1.5px solid var(--tt-text-faint); border-radius: 50%; }
+.host-provider[data-kind='connected'] .host-provider__dot { border-color: var(--tt-success); background: var(--tt-success); }
+.host-provider[data-kind='signed-out'] .host-provider__dot { border-color: var(--tt-attention); background: var(--tt-attention); }
+.host-provider[data-kind='working'] .host-provider__dot { border-color: var(--tt-accent); background: var(--tt-accent); }
+.host-provider[data-kind='not-installed'] .host-provider__dot { background: var(--tt-text-faint); }
+.mark-claude { color: var(--tt-provider-claude-mark); } .mark-codex { color: var(--tt-provider-codex-mark); } .mark-grok { color: var(--tt-provider-grok-mark); } .mark-antigravity { color: var(--tt-provider-antigravity); }
+
+/* The spinner an update shows while it runs; reduced motion keeps it still. */
+.spin { display: inline-block; flex: none; width: 11px; height: 11px; border: 2px solid var(--tt-border); border-top-color: var(--tt-update); border-radius: 50%; animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-right-color: var(--tt-update); } }
+.hosts-settings .progress, .tt-dialog .progress { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-accent-text); font-size: var(--tt-type-caption); font-weight: 500; }
+
+/* The dialog. */
+.tt-dialog-backdrop { position: fixed; z-index: 50; display: grid; inset: 0; place-items: center; background: var(--tt-overlay); padding: 20px 20px 96px; }
+.tt-dialog { width: min(480px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); padding: 24px; }
+@media (prefers-reduced-motion: no-preference) { .tt-dialog { animation: rise 160ms cubic-bezier(.2,.8,.2,1); } @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } } }
+.tt-dialog h2 { margin: 0; font-size: var(--tt-type-lead); font-weight: 600; line-height: 1.3; }
+.tt-dialog__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.tt-dialog__actions .tt-button { min-height: 44px; padding-inline: 16px; }
+.hosts-notice { display: flex; align-items: flex-start; gap: 10px; border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); padding: 10px 12px; font-size: var(--tt-type-small); }
+.hosts-settings .hosts-notice p, .tt-dialog .hosts-notice p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
+.hosts-notice--done { border-left-color: var(--tt-success); }
+.hosts-notice--done svg { color: var(--tt-success); }
+.hosts-notice--forge { border-left-color: var(--tt-attention); }
+.sign-in { display: grid; gap: 12px; margin-top: 12px; }
+.sign-in p, .ag p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
+.quiet, .hosts-settings p.quiet, .tt-dialog p.quiet { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.row .tt-input { flex: 1 1 200px; min-width: 0; min-height: 36px; }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field > label, .field > span { color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+@media (max-width: 520px) { .fields { grid-template-columns: minmax(0, 1fr); } }
+.steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.steps > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
+.steps > li > div { display: grid; gap: 8px; min-width: 0; }
+.steps > li > div > .tt-button { justify-self: start; }
+.steps__n { display: grid; place-items: center; width: 22px; height: 22px; margin-top: 1px; border-radius: var(--tt-radius-tag); background: var(--tt-card); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; }
+.address { display: block; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: var(--tt-type-caption)/1.5 var(--tt-font-mono); }
+.ag { display: grid; gap: 14px; }
+.ag h6 { margin: 0; font-size: var(--tt-type-small); font-weight: 600; color: var(--tt-text); }
+.ag .done { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.ag .done svg { color: var(--tt-success); }
+
+/* A prototype-only control: dashed, so it is never mistaken for the design. */
+.proto-only { justify-self: start; border: 1px dashed var(--tt-text-faint); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); padding: 6px 10px; font-size: var(--tt-type-caption); }
+
+/* Variant A: the tile opens out across the row while it signs in, and has a More menu. */
+.host-provider[data-wide] { grid-column: 1 / -1; grid-template-rows: none; background: var(--tt-card-inset); }
+.tile-menu { position: absolute; z-index: 20; top: 40px; right: 8px; display: grid; min-width: 220px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); padding: 4px; }
+.tile-menu button { min-height: 32px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; padding: 6px 10px; color: var(--tt-text); font-size: var(--tt-type-small); text-align: left; }
+.tile-menu button:hover, .tile-menu button:focus-visible { background: var(--tt-hover); }
+.tile-menu [data-danger] { color: var(--tt-error-text); }
+.wide-body { display: grid; gap: 14px; max-width: 40em; margin-top: 4px; }
+
+/* Variant B: the dialog's two parts. */
+.setup-part { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--tt-hairline); }
+.setup-part:first-of-type { border-top: 0; padding-top: 4px; }
+.choices { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 10px; align-items: start; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-control); padding: 10px 12px; cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--tt-accent); background: color-mix(in srgb, var(--tt-accent) 8%, transparent); }
+.choice input { margin: 2px 0 0; accent-color: var(--tt-accent); }
+.choice b { color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.choice span { grid-column: 2; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.choice:has(input:disabled) { opacity: .55; cursor: default; }
+
+/* Variant C: rows under the tiles, label left and control right, as settings rows are. */
+.ag-block { display: grid; gap: 0; border-radius: var(--tt-radius-md); background: var(--tt-card-inset); padding: 4px 16px; }
+.ag-block > header { display: flex; align-items: center; gap: 10px; padding: 12px 0 10px; }
+.ag-block > header h5 { margin: 0; font-size: var(--tt-type-body); font-weight: 600; }
+.ag-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tt-hairline); }
+.ag-row > div:first-child > b { display: block; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.hosts-settings .ag-row > div:first-child p { margin: 2px 0 0; font-size: var(--tt-type-caption); }
+.ag-row__control { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; min-width: 0; }
+.ag-row__control .tt-input { width: 220px; }
+.ag-row--wide { grid-template-columns: minmax(0, 1fr); }
+@container (max-width: 520px) { .ag-row { grid-template-columns: minmax(0, 1fr); } .ag-row__control { justify-content: flex-start; } .ag-row__control .tt-input { width: 100%; } }
+
+/* The floating prototype bar: high contrast, plainly not part of the design. */
+.proto-bar { position: fixed; z-index: 100; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; width: max-content; max-width: calc(100vw - 16px); padding: 8px 10px; border-radius: 12px; background: #111; color: #fff; box-shadow: 0 8px 30px rgb(0 0 0 / 45%); font: 500 13px/1.2 system-ui, sans-serif; border: 1px solid #ffd54a; }
+.proto-bar button, .proto-bar select { border: 1px solid #555; background: #222; color: #fff; border-radius: 7px; min-height: 32px; padding: 0 10px; font: inherit; }
+.proto-bar .label { min-width: 0; text-align: center; font-weight: 600; }
+.proto-bar .label small { display: block; font-weight: 400; color: #bbb; font-size: 11px; margin-top: 2px; }
+.proto-bar .tag { color: #ffd54a; font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+@media (max-width: 700px) { .host-providers { padding-left: 0; } .host-providers__toggle.tt-button { margin-left: 0; } }
+.proto-bar .group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The prototype's dialog stops above the bar. */
+.tt-dialog { max-height: calc(100dvh - 116px); }
+@media (max-width: 560px) {
+  .proto-bar { left: 8px; right: 8px; transform: none; width: auto; }
+  .proto-bar .group { flex: 1 1 100%; }
+  .proto-bar .label { flex: 1 1 auto; }
+  .proto-bar select { flex: 1 1 auto; min-width: 0; }
+  body { padding-bottom: 150px; }
+  .tt-dialog-backdrop { padding: 12px 12px 120px; }
+  .tt-dialog { max-height: calc(100dvh - 132px); padding: 18px; }
+}
+</style>
+<style>
+/* PROTOTYPE, throwaway. Antigravity's Settings row with a warning that the user's own Google account carries the risk. */
+body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font-family: Figtree, system-ui, sans-serif; font-size: var(--tt-type-body); padding: 24px 16px 140px; }
+.page { max-width: 760px; margin: 0 auto; }
+.page h1 { font-size: var(--tt-type-title); font-weight: 650; margin: 0 0 4px; }
+.page .sub { color: var(--tt-text-muted); margin: 0 0 18px; }
+.prov { background: var(--tt-card); border-radius: var(--tt-radius-card); overflow: hidden; }
+.prow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--tt-card-inset); min-height: 28px; }
+.prow:last-child { border-bottom: 0; }
+.prow svg { width: 20px; height: 20px; flex: none; fill: currentColor; color: var(--tt-provider-antigravity, var(--tt-accent)); }
+.prow .name { font-weight: 600; }
+.prow .status { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-small); display: flex; align-items: center; gap: 8px; }
+.prow .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-success); }
+.prow .caution { color: var(--tt-warning-text); font-size: var(--tt-type-small); display: inline-flex; align-items: center; gap: 6px; }
+.prow--dim { color: var(--tt-text-muted); }
+.prow--dim .name { font-weight: 500; }
+.detail { padding: 4px 14px 16px 46px; display: grid; gap: 14px; border-bottom: 1px solid var(--tt-card-inset); }
+.detail p { margin: 0; line-height: 1.45; }
+.muted { color: var(--tt-text-muted); }
+.field-label { font-size: var(--tt-type-small); color: var(--tt-text-2); margin-bottom: 6px; display: block; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--tt-card-inset); border-radius: var(--tt-radius-control); }
+.seg span { padding: 6px 10px; border-radius: var(--tt-radius-sm); font-size: var(--tt-type-small); color: var(--tt-text-2); }
+.seg span.on { background: var(--tt-segment-on); color: var(--tt-text); font-weight: 600; }
+.steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.steps li { display: flex; gap: 10px; align-items: flex-start; }
+.steps .n { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--tt-card-inset); display: grid; place-items: center; font-size: var(--tt-type-caption); font-weight: 650; }
+.steps .tt-button { margin-top: 8px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The warning, in the theme's warning roles. */
+.risk { border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text); padding: 12px 14px; display: grid; gap: 8px; }
+.risk__head { display: flex; gap: 8px; align-items: flex-start; font-weight: 650; color: var(--tt-warning-on-tint, var(--tt-text)); }
+.risk__head svg { flex: none; width: 16px; height: 16px; margin-top: 2px; stroke: var(--tt-warning-text); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.risk ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.risk li, .risk p { line-height: 1.45; }
+.risk a { color: var(--tt-accent-text); }
+.risk--quiet { background: transparent; padding: 0; }
+.disclose { background: none; border: 0; padding: 0; color: var(--tt-warning-text); font: inherit; font-size: var(--tt-type-small); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; text-align: left; }
+.disclose:focus-visible, .tt-button:focus-visible, .check input:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--theme-focus)); outline-offset: 2px; }
+.check { display: flex; gap: 10px; align-items: flex-start; line-height: 1.45; }
+.check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--theme-accent); }
+.limit { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--tt-card-inset); }
+.limit p { font-size: var(--tt-type-small); }
+.toggle { flex: none; width: 36px; height: 20px; border-radius: 999px; background: var(--tt-card-inset); position: relative; border: 1px solid var(--tt-border); cursor: pointer; }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text-muted); transition: left 120ms; }
+.toggle[aria-checked='true'] { background: var(--theme-accent); border-color: var(--theme-accent); }
+.toggle[aria-checked='true']::after { left: 18px; background: var(--theme-accent-foreground); }
+@media (prefers-reduced-motion: reduce) { .toggle::after { transition: none; } }
+@media (max-width: 560px) { .detail { padding-left: 14px; } .prow .status .word { display: none; } }
+.proto-note { margin-top: 18px; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
+</style>
+</head>
+<body>
+<!--
+  PROTOTYPE, throwaway. Not app code.
+  Question: how should Settings > Providers > Antigravity warn that the user's own Google account carries the risk under
+  Google's Antigravity terms? Three variants, switchable with ?variant=A|B|C, the bar, or the Left and Right keys:
+    A  A notice in the opened row       always there, above the sign-in method
+    B  One line, opens for the detail   a short caution under the row's status; the specifics open in place
+    C  Before you sign in               the notice in the sign-in step, with a box to tick before Sign in
+  The bar also shows the row signed in, light and dark, and the limits answer: removed, or an opt-in switch.
+  Nothing here talks to Google or agy; every press is simulated in memory.
+-->
+<main class="page">
+  <h1>Providers</h1>
+  <p class="sub">This computer’s clients. Choose one to see its connection and models.</p>
+  <div class="prov" id="prov"></div>
+  <p class="proto-note" id="note"></p>
+</main>
+<div class="proto-bar" role="region" aria-label="Prototype controls">
+  <span class="group"><span class="tag">PROTOTYPE</span>
+    <button id="prev" aria-label="Previous variant">←</button>
+    <span class="label" id="vlabel" aria-live="polite"></span>
+    <button id="next" aria-label="Next variant">→</button></span>
+  <span class="group">
+    <select id="state" aria-label="Row state"><option value="out">Not signed in</option><option value="in">Signed in</option></select>
+    <select id="limits" aria-label="Account limits"><option value="removed">Limits: removed</option><option value="optin">Limits: opt-in switch</option></select>
+    <button id="theme" aria-label="Switch light and dark">Light</button></span>
+</div>
+<script>
+const MARK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"/></svg>'
+const ALERT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>'
+const VARIANTS = {
+  A: { name: 'A notice in the opened row', note: 'Always there when the row is open, above the sign-in method, signed in or not. The row itself stays as it is when closed.' },
+  B: { name: 'One line, opens for the detail', note: 'A short caution sits under the row’s status even when the row is closed; “What Google allows” opens the specifics in place.' },
+  C: { name: 'Before you sign in', note: 'The notice sits in the sign-in step, and Sign in waits for the box to be ticked. Once signed in, a single line stays.' },
+}
+const ORDER = ['A', 'B', 'C']
+const params = new URLSearchParams(location.search)
+let variant = ORDER.includes(params.get('variant')) ? params.get('variant') : 'A'
+let signedIn = params.get('state') === 'in', limits = params.get('limits') === 'optin' ? 'optin' : 'removed'
+let open = false, ticked = false, limitsOn = false
+const TITLE = 'Your Google account carries the risk'
+const LEAD = 'Google’s Antigravity terms let it suspend an account it sees used outside its own apps. Sotto drives Google’s own agy, which keeps its own sign-in, and stays inside what the terms name:'
+const POINTS = [
+  'Sotto never reads agy’s sign-in or calls Google’s servers with it.',
+  'Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them.',
+  'Running agy from another app is still a gray area. Google may count it against the account you sign in with here.',
+]
+const TERMS = '<a href="#" onclick="return false">Google’s Antigravity terms</a>'
+const full = () => `<div class="risk" role="note" aria-label="${TITLE}"><div class="risk__head">${ALERT}<span>${TITLE}</span></div>
+  <p>${LEAD}</p><ul>${POINTS.map(p => `<li>${p}</li>`).join('')}</ul><p class="muted">Read ${TERMS} before you sign in an account you depend on.</p></div>`
+const method = () => `<div><span class="field-label">Sign-in method</span><div class="seg"><span class="on">Google account</span><span>Gemini Enterprise</span><span>Gemini API key</span><span>Agent Platform</span></div></div>`
+const limitSwitch = () => limits !== 'optin' ? '' : `<div class="limit"><div><p><strong>Show account limits in Usage</strong></p>
+  <p class="muted">Off by default. On, Sotto reads agy’s sign-in and asks Google’s Antigravity servers for your limits, which Google’s terms name as a reason to suspend an account.</p></div>
+  <button class="toggle" role="switch" aria-checked="${limitsOn}" aria-label="Show Antigravity account limits in Usage" onclick="limitsOn=!limitsOn;draw()"></button></div>`
+function signInSteps(gate) {
+  const disabled = gate && !ticked
+  return `<ol class="steps"><li><span class="n">1</span><div><p>Sign in with your Google account in your browser.</p>
+    ${gate ? `<label class="check" style="margin-top:8px"><input type="checkbox" ${ticked ? 'checked' : ''} onchange="ticked=this.checked;draw()"><span>I understand my Google account carries this risk.</span></label>` : ''}
+    <button class="tt-button tt-button--primary" ${disabled ? 'disabled aria-disabled="true"' : ''} onclick="signedIn=true;document.getElementById('state').value='in';draw()">Sign in with Google</button></div></li>
+    <li><span class="n">2</span><div><p>Google then shows a code on an antigravity.google page. Paste it here to finish.</p></div></li></ol>`
+}
+function detail() {
+  const lead = `<p class="muted">${signedIn ? 'Sotto runs agy with a folder of its own, so the agy you run yourself, and its sign-in, stay as they are.' : 'Sotto runs agy with a folder of its own. Choose how it signs in: a Google account, Gemini Enterprise, a Gemini API key or Agent Platform.'}</p>`
+  const out = signedIn ? `<div class="actions"><button class="tt-button tt-button--ghost">Connect again</button><button class="tt-button tt-button--ghost" onclick="signedIn=false;ticked=false;document.getElementById('state').value='out';draw()">Sign out of Antigravity</button></div>` : ''
+  if (variant === 'A') return `${full()}${lead}${method()}${signedIn ? out : signInSteps(false)}${limitSwitch()}`
+  if (variant === 'B') return `${lead}${method()}${signedIn ? out : signInSteps(false)}${limitSwitch()}`
+  return `${lead}${method()}${signedIn ? `<div class="risk risk--quiet"><p class="caution" style="color:var(--tt-warning-text)">${ALERT.replace('<svg', '<svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;vertical-align:-2px"')} Your Google account carries the risk under ${TERMS}.</p></div>${out}` : `${full()}${signInSteps(true)}`}${limitSwitch()}`
+}
+let bOpen = false
+function draw() {
+  document.documentElement.dataset.theme = document.getElementById('theme').dataset.mode || 'dark'
+  const status = signedIn ? '<span class="dot" aria-hidden="true"></span><span class="word">Connected · 1.5.13</span>' : '<span class="word">Not signed in</span>'
+  const caution = variant === 'B' ? `<div style="padding:0 14px 12px 46px"><button class="disclose" aria-expanded="${bOpen}" onclick="bOpen=!bOpen;draw()">${ALERT.replace('<svg', '<svg style="width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2"')}<span>Google may suspend an account used outside its own apps. <u>${bOpen ? 'Hide what Google allows' : 'What Google allows'}</u></span></button>${bOpen ? `<div style="margin-top:10px">${full()}</div>` : ''}</div>` : ''
+  document.getElementById('prov').innerHTML = `
+    <div class="prow prow--dim"><span class="name">Claude Code</span><span class="status"><span class="dot"></span><span class="word">Connected</span></span></div>
+    <div class="prow prow--dim"><span class="name">Codex</span><span class="status"><span class="dot"></span><span class="word">Connected</span></span></div>
+    <div class="prow" role="button" tabindex="0" aria-expanded="${open}" onclick="open=!open;draw()" onkeydown="if(event.key==='Enter'){open=!open;draw()}">${MARK}<span class="name">Antigravity</span><span class="status">${status}</span></div>
+    ${caution}${open ? `<div class="detail">${detail()}</div>` : ''}
+    <div class="prow prow--dim"><span class="name">Cursor</span><span class="status"><span class="word">Not installed</span></span></div>`
+  document.getElementById('vlabel').innerHTML = `${variant}: ${VARIANTS[variant].name}<small>${ORDER.indexOf(variant) + 1} of ${ORDER.length}</small>`
+  document.getElementById('note').textContent = `${VARIANTS[variant].note} Press the Antigravity row to open it.`
+  const url = new URL(location.href); url.searchParams.set('variant', variant); url.searchParams.set('state', signedIn ? 'in' : 'out'); url.searchParams.set('limits', limits); history.replaceState(null, '', url)
+}
+const step = by => { variant = ORDER[(ORDER.indexOf(variant) + by + ORDER.length) % ORDER.length]; ticked = false; bOpen = false; draw() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('state').value = signedIn ? 'in' : 'out'
+document.getElementById('state').onchange = event => { signedIn = event.target.value === 'in'; ticked = false; draw() }
+document.getElementById('limits').value = limits
+document.getElementById('limits').onchange = event => { limits = event.target.value; draw() }
+document.getElementById('theme').onclick = event => { const button = event.target; button.dataset.mode = button.dataset.mode === 'light' ? 'dark' : 'light'; button.textContent = button.dataset.mode === 'light' ? 'Dark' : 'Light'; draw() }
+addEventListener('keydown', event => { if (event.target.closest('input, select')) return; if (event.key === 'ArrowLeft') step(-1); if (event.key === 'ArrowRight') step(1) })
+open = true
+draw()
+</script>
+</body>
+</html>
