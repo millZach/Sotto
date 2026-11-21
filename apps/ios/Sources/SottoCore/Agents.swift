@@ -361,7 +361,11 @@ public enum AgentsRoster {
         public let threads: [ThreadSummary]
         /// Whether this computer says which failures a client has shown (`failure-seen`): its own threads' Needs attention follows it.
         public let failuresSeen: Bool
-        public init(hostID: String, threads: [ThreadSummary], failuresSeen: Bool = true) { self.hostID = hostID; self.threads = threads; self.failuresSeen = failuresSeen }
+        /// Whether the phone can reach it now: a computer it cannot is listed as it last shared its threads, which may be stale.
+        public let reachable: Bool
+        public init(hostID: String, threads: [ThreadSummary], failuresSeen: Bool = true, reachable: Bool = true) {
+            self.hostID = hostID; self.threads = threads; self.failuresSeen = failuresSeen; self.reachable = reachable
+        }
     }
     /// One delegated thread below a thread, on whichever of the phone's computers runs it: 1 under it, 2 under one of its
     /// delegated threads, `by`.
@@ -379,8 +383,10 @@ public enum AgentsRoster {
         public let models: [ThreadModel]
         /// Whether this computer says which failures a client has shown (`failure-seen`).
         public let failuresSeen: Bool
-        public init(projects: [Project], computer: String?, models: [ThreadModel], failuresSeen: Bool = true) {
-            self.projects = projects; self.computer = computer; self.models = models; self.failuresSeen = failuresSeen
+        /// Whether the phone can reach it now (`ComputerThreads.reachable`).
+        public let reachable: Bool
+        public init(projects: [Project], computer: String?, models: [ThreadModel], failuresSeen: Bool = true, reachable: Bool = true) {
+            self.projects = projects; self.computer = computer; self.models = models; self.failuresSeen = failuresSeen; self.reachable = reachable
         }
     }
 
@@ -471,10 +477,12 @@ public enum AgentsRoster {
     /// computer says of failures a client has shown.
     public static func count(_ owner: ThreadSummary, on hostID: String, in computers: [ComputerThreads]) -> AgentsCount? {
         let seen = Dictionary(computers.map { ($0.hostID, $0.failuresSeen) }, uniquingKeysWith: { first, _ in first })
+        // What a computer the phone cannot reach last said is not current, so its threads add nothing to what needs you.
+        let away = Set(computers.filter { !$0.reachable && $0.hostID != hostID }.map(\.hostID))
         let below = delegatedAcross(below: ThreadRef(hostID: hostID, threadID: owner.id), in: computers)
         let total = below.count + (owner.subagentSummary?.total ?? 0)
         guard total > 0 else { return nil }
-        return AgentsCount(total: total, needs: below.filter { needsYou($0.thread, failuresSeen: seen[$0.hostID] ?? true) }.count)
+        return AgentsCount(total: total, needs: below.filter { !away.contains($0.hostID) && needsYou($0.thread, failuresSeen: seen[$0.hostID] ?? true) }.count)
     }
 
     /// The sheet's rows: the delegated threads and the sub-agents in one list, newest start first. Each delegated thread
@@ -516,7 +524,7 @@ public enum AgentsRoster {
             let here = item.hostID == hostID, at = placed(item.hostID)
             family.append(threadRow(item.thread, level: item.level, by: item.by, record: here ? records[item.thread.id] : nil, read: here && delegations != nil, quiet: quiet,
                                     models: at.place.models, failuresSeen: here ? failuresSeen : at.place.failuresSeen, project: at.titles[item.thread.projectId],
-                                    computer: at.place.computer, hostID: here ? nil : item.hostID))
+                                    computer: at.place.computer, hostID: here ? nil : item.hostID, reachable: here || at.place.reachable))
         }
         closeFamily()
         var agentBlock: [AgentsRow] = []
@@ -592,10 +600,13 @@ public enum AgentsRoster {
     }
 
     static func threadRow(_ thread: ThreadSummary, level: Int, by: ThreadSummary?, record: DelegatedThreadRecord?, read: Bool, quiet: Bool,
-                          models: [ThreadModel], failuresSeen: Bool = true, project: String? = nil, computer: String? = nil, hostID: String? = nil) -> AgentsRow {
-        let waiting = waitingFor(thread)
+                          models: [ThreadModel], failuresSeen: Bool = true, project: String? = nil, computer: String? = nil, hostID: String? = nil,
+                          reachable: Bool = true) -> AgentsRow {
+        // A thread on a computer the phone cannot reach is as that computer last shared it (#2750): it says so, and claims
+        // no work, request or failure it may no longer have.
+        let waiting = reachable ? waitingFor(thread) : nil
         // An unseen failure needs the user too, but asks nothing: it says Needs attention and has no Open to answer.
-        let attention = waiting == nil && failureUnseen(thread, failuresSeen: failuresSeen)
+        let attention = reachable && waiting == nil && failureUnseen(thread, failuresSeen: failuresSeen)
         // Settled is quiet, whether the sheet's own thread or this one was settled: only a request or a failure lights it.
         let settled = quiet || ThreadGroups.isSettled(thread)
         let state = ThreadState(thread)
@@ -603,11 +614,13 @@ public enum AgentsRoster {
         // its outcome is Unknown, never guessed; before then, nothing is said.
         let outcome: String?
         if let record { outcome = record.outcome }
+        else if !reachable { outcome = nil }
         else if state.workInProgress { outcome = "working" }
         else { outcome = read ? "unknown" : nil }
         let working = outcome == "working" || outcome == "background"
         let status: String?
-        if let waiting {
+        if !reachable { status = ComputerStatus.unreachable.words }
+        else if let waiting {
             status = waiting == "question" ? String(localized: "Needs your answer", bundle: .module)
                 : String(localized: "Needs your approval", bundle: .module)
         }
@@ -616,7 +629,8 @@ public enum AgentsRoster {
         else if let outcome { status = outcomeWord(outcome) }
         else { status = nil }
         let tone: AgentsRow.Tone
-        if waiting != nil || attention { tone = .needs }
+        if !reachable { tone = .quiet }
+        else if waiting != nil || attention { tone = .needs }
         else if settled { tone = .quiet }
         else if working { tone = .working }
         else if outcome == "failed" { tone = .failed }

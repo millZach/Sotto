@@ -5240,10 +5240,13 @@ extension AppModel {
     /// another computer finds its delegated threads there (#2750).
     func agentComputers(first hostID: String) -> [AgentsRoster.ComputerThreads] {
         let shared = live.compactMap { id, computer in
-            computer.shell.map { AgentsRoster.ComputerThreads(hostID: id, threads: $0.host.threads, failuresSeen: computer.features.contains("failure-seen")) }
+            computer.shell.map { AgentsRoster.ComputerThreads(hostID: id, threads: $0.host.threads, failuresSeen: computer.features.contains("failure-seen"),
+                                                              reachable: computer.status == .online) }
         }
         return shared.sorted { one, other in one.hostID == hostID ? other.hostID != hostID : other.hostID == hostID ? false : one.hostID < other.hostID }
     }
+    /// Whether the phone can reach a computer now, so its delegated threads are current rather than as it last shared them.
+    func reachable(_ hostID: String) -> Bool { live[hostID]?.status == .online }
     /// A computer's model catalog as it last shared it, for a delegated thread's model on that computer.
     func threadModels(_ hostID: String) -> [ThreadModel] { live[hostID]?.shell?.host.models ?? [] }
     /// Whether the thread's computer says which failures a client has shown (`failure-seen`), so an unseen one can say

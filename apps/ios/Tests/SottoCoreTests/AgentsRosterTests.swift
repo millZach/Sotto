@@ -76,6 +76,31 @@ final class AgentsRosterTests: XCTestCase {
         XCTAssertEqual(AgentsRoster.count(cutover, in: [cutover, local, baselines])?.total, 1)
     }
 
+    /// #2750, Bug Bot's L1: a computer the phone cannot reach lists its threads as it last shared them, so its delegated
+    /// threads say so, and claim no work or request they may no longer have, nor anything that needs you.
+    func testADelegatedThreadOnAComputerThePhoneCannotReachSaysSoAndNeedsNothing() throws {
+        let laptopID = "5b0445e9-b649-4480-86fb-ce0a61de1c30", forgeID = "62c79358-687d-4274-a876-1a0d79e1c195"
+        let owner = try thread("owner")
+        let link = #", "delegatedBy":"relay:2e67ec62-e3ec-46ac-b5b1-c7dafc3113dd:owner""#
+        let running = try thread("running", link, status: "running")
+        let asking = try thread("asking", link, requests: permission)
+        func computers(_ reachable: Bool) -> [AgentsRoster.ComputerThreads] {
+            [AgentsRoster.ComputerThreads(hostID: laptopID, threads: [owner]), AgentsRoster.ComputerThreads(hostID: forgeID, threads: [running, asking], reachable: reachable)]
+        }
+        XCTAssertEqual(AgentsRoster.count(owner, on: laptopID, in: computers(true)), AgentsCount(total: 2, needs: 1))
+        XCTAssertEqual(AgentsRoster.count(owner, on: laptopID, in: computers(false)), AgentsCount(total: 2, needs: 0))
+        let below = AgentsRoster.delegatedAcross(below: ThreadRef(hostID: laptopID, threadID: owner.id), in: computers(false))
+        let rows = AgentsRoster.rows(owner: owner, on: laptopID, below: below, delegations: [], agents: [],
+                                     place: { AgentsRoster.Place(projects: [], computer: $0 == laptopID ? "This laptop" : "forge", models: [], reachable: $0 == laptopID) })
+        for id in ["running", "asking"] {
+            let row = try XCTUnwrap(rows.first { $0.threadID == id })
+            XCTAssertEqual(row.status, ComputerStatus.unreachable.words)
+            XCTAssertEqual(row.tone, .quiet)
+            XCTAssertNil(row.waitingFor)
+            XCTAssertEqual(row.hostID, forgeID, "It still opens on forge, which says it cannot be reached")
+        }
+    }
+
     func testTheTopBarCountsBothLevelsAndTheAgentsAndSaysWhatWaitsOnYou() throws {
         let owner = try thread("owner", #", "subagentSummary":{"total":2,"working":1,"completed":1,"failed":0,"interrupted":0,"unknown":0}"#)
         let review = try thread("review", #", "delegatedBy":"owner""#, status: "running", requests: permission)

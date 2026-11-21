@@ -166,7 +166,8 @@ private struct AgentsSheet: View {
                               agents: page?.rows ?? [], models: source.models, failuresSeen: source.failuresSeen,
                               place: { hostID in AgentsRoster.Place(projects: model.projectsListed(hostID), computer: model.computerName(hostID),
                                                                     models: hostID == ref.hostID ? source.models : model.threadModels(hostID),
-                                                                    failuresSeen: model.offersFailuresSeen(hostID)) })
+                                                                    failuresSeen: model.offersFailuresSeen(hostID),
+                                                                    reachable: model.reachable(hostID)) })
         } ?? []
         let counts = AgentsRoster.countLine(rows, summary: page?.summary ?? source?.owner.subagentSummary)
         let needs = rows.contains { $0.tone == .needs }
