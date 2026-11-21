@@ -66,6 +66,20 @@ describe('Antigravity’s provider row (variant B)', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'configure', patch: { antigravitySignInMethod: 'gemini-api-key' } })))
   })
 
+  it('says in the opened row, signed in or not, that the user’s own Google account carries the risk under Google’s terms', async () => {
+    for (const status of [signedOut, {}]) {
+      const { details } = await mount(status)
+      const note = within(details).getByRole('note', { name: 'Your Google account carries the risk' })
+      expect(within(note).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+        'Sotto never reads agy’s sign-in or calls Google’s servers with it.',
+        'Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them.',
+        'Running agy from another app is still a gray area. Google may count it against the account you sign in with here.'])
+      // It comes before the sign-in method, so it is read before an account is chosen.
+      expect(note.compareDocumentPosition(within(details).getByRole('radiogroup', { name: 'Sign-in method' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      cleanup()
+    }
+  })
+
   it('signs in with a Google account in the row: Open sign-in page, then the code pasted back, and Escape cancels a waiting one', async () => {
     const signIn = vi.fn(async (request: LocalSignInRequest): Promise<ProviderSignInView | null> => request.type === 'code' ? { ...waiting, stage: 'finishing' } : waiting)
     const { signIn: sent, header, details } = await mount(signedOut, { signIn })
@@ -149,14 +163,12 @@ describe('Antigravity’s provider row (variant B)', () => {
 })
 
 describe('Antigravity in a thread', () => {
-  const model = (id: string, name: string, source: string): AgentModel => ({ id, name, provider: 'Antigravity', providerId: 'antigravity', source, ready: true,
+  const model = (id: string, name: string): AgentModel => ({ id, name, provider: 'Antigravity', providerId: 'antigravity', ready: true,
     runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'], reasoningEfforts: ['low', 'medium', 'high'] })
-  const MODELS = [model('gemini-4-carbon', 'Gemini 4 Carbon', 'Google'), model('gemini-3.8-flash', 'Gemini 3.8 Flash', 'Google'),
-    model('claude-opus-5.5', 'Claude Opus 5.5', 'Anthropic'), model('gpt-oss-120b', 'GPT-OSS 120B', 'OpenAI')]
+  const MODELS = [model('gemini-4-carbon', 'Gemini 4 Carbon'), model('gemini-3.8-flash', 'Gemini 3.8 Flash')]
 
-  it('groups its models by maker in Antigravity’s order, as Cursor’s are', () => {
-    expect(modelSources(MODELS, 'Antigravity')?.map(group => [group.name, group.models.map(item => item.id)])).toEqual([
-      ['Google', ['gemini-4-carbon', 'gemini-3.8-flash']], ['Anthropic', ['claude-opus-5.5']], ['OpenAI', ['gpt-oss-120b']]])
+  it('lists its Gemini models as one list, with no makers to choose between (ADR-0212)', () => {
+    expect(modelSources(MODELS, 'Antigravity')).toBeUndefined()
   })
 
   it('says plainly who answers under each permission mode', () => {

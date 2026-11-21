@@ -4898,6 +4898,10 @@ msgstr ""
 msgid "Google then shows a code on an antigravity.google page. Paste it here to finish."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Google’s Antigravity terms let it suspend an account it sees used outside its own apps. Sotto drives Google’s own agy, which keeps its own sign-in, and stays inside what the terms name:"
+msgstr ""
+
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Got something in mind?"
 msgstr ""
@@ -6573,6 +6577,10 @@ msgstr ""
 msgid "one of its agents"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them."
+msgstr ""
+
 #. {whole} lists the parts of a handover, such as "the task and the result".
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "only one of {whole}"
@@ -7519,6 +7527,10 @@ msgstr ""
 msgid "Read all"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Read Google’s Antigravity terms before you sign in an account you depend on."
+msgstr ""
+
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Read it"
 msgstr ""
@@ -8074,6 +8086,10 @@ msgstr ""
 #. How long a detached run has been going, such as "running 20m".
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "running {time}"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Running agy from another app is still a gray area. Google may count it against the account you sign in with here."
 msgstr ""
 
 #. Shown when the pointer rests on the Ultracode effort level, on the reasoning effort slider or its chip.
@@ -9140,6 +9156,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Sotto lost track of it"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sotto never reads agy’s sign-in or calls Google’s servers with it."
 msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
@@ -11614,6 +11634,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Your first message starts a new thread on the model you pick, with a handover of this one."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Your Google account carries the risk"
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
