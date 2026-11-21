@@ -82,7 +82,7 @@ export type { WholeReadCause }
  * of it: the record the window already holds, which its sharing meets by identity. A list naming another read, or none, is
  * taken as it is, so it does not matter whether it reaches the page before or after the read's answer (#2733).
  */
-type RepeatedRecords = (list: Pick<AgentThreadsBroadcast, 'base' | 'changed'> & { readonly repeats?: AgentThreadsBroadcast['repeats'] | undefined }) => AgentThread[]
+type RepeatedRecords = (list: Pick<AgentThreadsBroadcast, 'base' | 'changed'> & { readonly repeats?: AgentThreadsBroadcast['repeats'] | undefined }, broadcast?: boolean) => AgentThread[]
 /** The page's own reads of the whole state, each asked with why: one request each, a retry another, a shared one once. */
 interface WholeStateReader { get(cause?: WholeReadCause): Promise<AgentState> }
 const wholeReadListeners = new Set<(cause: WholeReadCause) => void>()
@@ -103,12 +103,14 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   let read: { readonly revision: number; readonly records: ReadonlyMap<string, AgentThread> } | undefined
   /** The number main gave the page's latest whole read, or undefined when its answer named none. */
   let answeredRead: number | undefined
-  const restoreRepeatedRecords: RepeatedRecords = list => {
-    const repeats = list.repeats
-    if (repeats === undefined || list.base !== null || read === undefined || read.revision !== repeats.read) return list.changed
+  const restoreRepeatedRecords: RepeatedRecords = (list, broadcast = false) => {
+    const repeats = list.repeats, held = read
+    // Main marks by a read only until the first complete broadcast after it, so the page lets its copy go there too.
+    if (broadcast && list.base === null) read = undefined
+    if (repeats === undefined || list.base !== null || held === undefined || held.revision !== repeats.read) return list.changed
     const changed = [...list.changed]
     for (const position of repeats.positions) {
-      const kept = changed[position] === undefined ? undefined : read.records.get(changed[position]!.id)
+      const kept = changed[position] === undefined ? undefined : held.records.get(changed[position]!.id)
       if (kept !== undefined) changed[position] = kept
     }
     return changed
@@ -361,7 +363,7 @@ function createReassembler(bridge: WholeStateReader, catalogs: CatalogCache, lis
    * are always those of the broadcast whose thread records are held. Undefined when its threads were not applied.
    */
   const applyThreads = (raw: CompleteAgentStateBroadcast | undefined): AgentThread[] | undefined => {
-    const list = raw === undefined ? undefined : threads(raw.host.threads.base === null ? { ...raw.host.threads, changed: repeated(raw.host.threads) } : raw.host.threads)
+    const list = raw === undefined ? undefined : threads(raw.host.threads.base === null ? { ...raw.host.threads, changed: repeated(raw.host.threads, true) } : raw.host.threads)
     if (list !== undefined) apply(raw!)
     return list
   }
@@ -419,8 +421,16 @@ function createReassembler(bridge: WholeStateReader, catalogs: CatalogCache, lis
     })
   }
 
-  return raw => { if (recovering) queued.push(raw); else process(raw) }
+  return raw => {
+    if (!recovering) { process(raw); return }
+    // Held while a read is on its way, up to a bound: the oldest go first, and they would only have lent their catalogs.
+    if (queued.length >= RECOVERY_QUEUE_LIMIT) queued.shift()
+    queued.push(raw)
+  }
 }
+
+/** At most this many broadcasts are held while a recovery's read is on its way: three threads streaming for 15 s. */
+const RECOVERY_QUEUE_LIMIT = 64
 
 /** A broadcast's thread revision, which main's one counter numbers its whole reads by too. */
 function threadsRevisionOf(raw: unknown): number | undefined {
