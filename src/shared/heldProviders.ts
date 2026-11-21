@@ -35,11 +35,6 @@ export function heldProvidersOption(options: { readonly heldProviders?: HeldProv
   return options.heldProviders ?? heldProvidersOf({})
 }
 
-/** The provider a refusal names when a dormant thread's own provider is no longer known. */
-export function firstHeldProvider(held: HeldProviders): ProviderId {
-  return held.values().next().value ?? HELD_PROVIDER_ENTRIES[0].provider
-}
-
 /**
  * Providers in the held table's order, those the table does not name after them as given, so a sentence naming several
  * reads the same whatever order their threads were seen in.
@@ -56,9 +51,13 @@ export type HeldProviderNames = ProviderId | readonly ProviderId[]
  * What a refused command says. Muse's words are "Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was
  * sent." Several held providers are named together: "Muse and OpenCode are available in Sotto Owl. ..."
  */
-export function heldProviderRefusal(provider: HeldProviderNames): string {
-  if (provider === 'pi' || typeof provider !== 'string' && provider.includes('pi')) return 'Sotto no longer runs Pi. Choose another provider for a new thread. Nothing was sent.'
-  const labels = inHeldOrder(typeof provider === 'string' ? [provider] : provider).map(id => PROVIDER_LABELS[id])
-  const named = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)} are` : `${labels[0] ?? ''} is`
-  return `${named} available in Sotto Owl. Open an Owl build to continue. Nothing was sent.`
+export function heldProviderRefusal(provider: HeldProviderNames | undefined): string {
+  if (!provider || !provider.length) return 'This thread is unavailable in this build. Choose another thread. Nothing was sent.'
+  const ids = inHeldOrder(typeof provider === 'string' ? [provider] : provider)
+  const retired = ids.includes('pi')
+  const labels = ids.filter(id => id !== 'pi').map(id => PROVIDER_LABELS[id])
+  if (!labels.length) return 'Sotto no longer runs Pi. Choose another provider for a new thread. Nothing was sent.'
+  const named = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)} are` : `${labels[0]} is`
+  return retired ? `${named} available in Sotto Owl. Sotto no longer runs Pi. Choose an available provider. Nothing was sent.`
+    : `${named} available in Sotto Owl. Open an Owl build to continue. Nothing was sent.`
 }

@@ -97,6 +97,8 @@ describe('the held-provider table', () => {
   it("keeps Muse's refusal word for word and builds another's from its label", () => {
     expect(heldProviderRefusal('muse')).toBe('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     expect(heldProviderRefusal('grok')).toBe('Grok Build is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    expect(heldProviderRefusal(undefined)).toBe('This thread is unavailable in this build. Choose another thread. Nothing was sent.')
+    expect(heldProviderRefusal(['muse', 'pi'])).toBe('Muse is available in Sotto Owl. Sotto no longer runs Pi. Choose an available provider. Nothing was sent.')
     expect(heldProviderRefusal(['muse'])).toBe(heldProviderRefusal('muse'))
     expect(heldProviderRefusal(['muse', 'opencode'])).toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     expect(heldProviderRefusal(['muse', 'opencode', 'grok'])).toBe('Muse, OpenCode and Grok Build are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
