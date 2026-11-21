@@ -1250,24 +1250,31 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
     for (let index = 0; index < 200; index++) native.messages.push({ id: 'synthetic-' + index, role: index % 2 ? 'assistant' as const : 'user' as const, text: 'Synthetic words. '.repeat(18), createdAt: new Date(Date.UTC(2026, 10, 20, 12, 0, index)).toISOString() })
     f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
     const shells = () => (phone.messages as unknown as Pushed[]).filter(message => message.event === 'shell')
-    await expect.poll(() => shells().at(-1)?.state.watcher?.conversation.messages.length ?? (shells().at(-1)?.state.kept?.includes('watcher') ? 200 : 0)).toBe(200)
-    await new Promise(resolve => setTimeout(resolve, 300))
+    // The phone holds the page with all 200 once a push has carried it whole.
+    await expect.poll(() => shells().some(push => push.state.watcher?.conversation.messages.length === 200)).toBe(true)
+    // An answer to a request comes behind every shell written before it, on the same socket.
+    let asked = 0
+    const received = () => phone.call('settled-' + ++asked, { op: 'events', afterSeq: 0, threadId: f.target.threadId })
+    await received()
     const other = f.workspace.adapters.codex.state.threads.find(row => row.id !== native.id)!
-    return { f, phone, native, other, shells }
+    /** Another thread's status changes, and the push it makes has reached the phone. */
+    const changeOther = async (status: 'idle' | 'running') => {
+      const before = shells().length
+      other.status = status; f.workspace.adapters.codex.emit()
+      await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+      await expect.poll(() => shells().length).toBeGreaterThan(before)
+    }
+    return { f, phone, native, shells, received, changeOther }
   }
 
   it('is not sent Watcher\'s page again when only another thread changed', async () => {
-    const { f, other, shells } = await busyWatcher()
+    const { shells, changeOther } = await busyWatcher()
     const before = shells().length
-    for (let change = 0; change < 5; change++) {
-      other.status = change % 2 ? 'idle' : 'running'; f.workspace.adapters.codex.emit()
-      await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-      await expect.poll(() => shells().length).toBeGreaterThan(before + change)
-    }
+    for (let change = 0; change < 5; change++) await changeOther(change % 2 ? 'idle' : 'running')
     const pushed = shells().slice(before)
     const bytes = pushed.map(push => Buffer.byteLength(JSON.stringify(push)))
     if (process.env.SOTTO_PUSH_SIZES === '1') console.log('WATCHER-PAGE-PUSHES ' + JSON.stringify({ pushes: pushed.length, bytes, carriedPage: pushed.filter(push => push.state.watcher !== undefined).length }))
-    // Before, each of these carried the page whole: about 67 KB a push here.
+    // Before, each of these carried the page whole: about 80.8 KB a push here.
     expect(pushed.filter(push => push.state.watcher !== undefined)).toHaveLength(0)
     for (const push of pushed) expect(push.state.kept).toContain('watcher')
     expect(Math.max(...bytes)).toBeLessThan(PAGE_KEPT_PUSH_BYTES)
@@ -1280,6 +1287,27 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
     await expect.poll(() => shells().at(-1)?.state.watcher?.working).toBe(!held.working)
     // The iPhone leaves a page older than the one it shows unshown; a changed page is never older.
     expect(Date.parse(shells().at(-1)!.state.watcher!.observedAt)).toBeGreaterThanOrEqual(Date.parse(held.observedAt))
+  })
+
+  it('never goes back to a time older than a page the phone was answered with, after the computer\'s clock went back', async () => {
+    const { f, phone, native, shells, received, changeOther } = await busyWatcher()
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 60_000 })
+    try {
+      const answered = await phone.call('read', { op: 'watcher-phone-read' })
+      const answeredAt = (answered as { result: { state: { observedAt: string } } }).result.state.observedAt
+      // The clock goes back a minute and the page changes: it goes under the earlier time, which the iPhone leaves unshown.
+      vi.setSystemTime(Date.now() - 60_000)
+      const before = shells().length
+      native.status = native.status === 'running' ? 'idle' : 'running'; f.workspace.adapters.codex.emit()
+      await expect.poll(() => shells().slice(before).some(push => push.state.watcher !== undefined)).toBe(true)
+      await received()
+      // The clock comes back. The page is unchanged, but its earlier time is not used again: the next push is shown.
+      vi.setSystemTime(Date.now() + 120_000)
+      await changeOther('running')
+      const last = shells().at(-1)!.state.watcher
+      expect(last).toBeDefined()
+      expect(Date.parse(last!.observedAt)).toBeGreaterThanOrEqual(Date.parse(answeredAt))
+    } finally { vi.useRealTimers() }
   })
 })
 
