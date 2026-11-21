@@ -11,7 +11,7 @@ export type DesktopLocalRuntime = Omit<Partial<RunningRuntime>, 'agentControl' |
     'subscribeThreadDetail' | 'questionPage' | 'questionPageOpened' | 'useCouncil' | 'commandFromCouncil' | 'refreshCouncilObservation' |
     'hostId' | 'configuration' | 'command' | 'onThreadsDeleted' | 'checkClientsAfresh' | 'privacyChanged' |
     'dispose' | 'closed' | 'hasPendingThreadWork' | 'watcherObservationsEnabled' | 'useSottoRequests' |
-    'refreshRequestDraft' | 'requestDraftView' | 'requestAnswerRecovery' | 'threadMedia' | 'threadMediaVideo' |
+    'refreshRequestDraft' | 'requestDraftView' | 'requestAnswerRecovery' | 'threadMedia' | 'threadMediaVideo' | 'threadActivity' |
     'filesBinding' | 'projects' | 'watcherSnapshot' | 'delegationMessage' | 'checkpointObserved' | 'restoreCheckpoint'> & {
       watcherRecords: Pick<WatcherRecords, 'view'>
     }

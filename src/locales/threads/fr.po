@@ -9829,6 +9829,7 @@ msgstr ""
 #. The computer Sotto runs on, inside a sentence.
 #: src/renderer/src/agents/DelegatedWork.tsx
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
+#: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "this computer"
 msgstr ""
 

@@ -166,7 +166,7 @@ describe('a 3D model’s line in its thread', () => {
 const FORGE = '33333333-3333-4333-8333-000000000001'
 const ON_FORGE = `host:${FORGE}:model-1`
 function onForge(connected: boolean): React.ReactElement {
-  return <ActivityBodyContext.Provider value={{ threadId: `host:${FORGE}:thread-1`, hostName: 'forge', connected }}>
+  return <ActivityBodyContext.Provider value={{ threadId: `host:${FORGE}:thread-1`, hostName: 'forge', connected, remote: true }}>
     <VisualCard visual={{ id: 'v1', title: 'Oak barrel', kind: '3d-model', source: 'model-1' }} threadId={`host:${FORGE}:thread-1`} />
   </ActivityBodyContext.Provider>
 }
