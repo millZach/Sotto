@@ -1,0 +1,1512 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Round 3 for the combined model, effort & speed picker on branch `feat/combined-model-effort-picker`.
+  Direction C (Inline Model Card) with a more refined, aesthetic precision slider, and three distinct
+  highest-tier arrival & sustained effects driven by Sotto's 6 Effort colourways (ADR-0019):
+
+    A  Prism Ignition.   Concentric colourway shockwave expanding from the thumb + diagonal sheen sweep
+                         + letter-by-letter word glow + sleek orbiting comet rim around the active card.
+    B  Kinetic Sparks.   Live canvas spark burst erupting from the thumb in the colourway's 3 hues on
+                         arrival, settling into quiet drifting colourway motes rising past the slider.
+    C  Aurora Veil.      Silky layered liquid-light aurora swelling up behind the inline card from the
+                         slider, breathing softly while held at the top tier with a gliding beam sheen.
+
+  All six Effort colourways (Ember, Accent, Cyberpunk, Aurora, Plasma, Rainbow), Light/Dark themes,
+  Reduced motion, and a synchronized Compare all 3 view are live in the top bar.
+-->
+<html lang="en" data-theme="dark" data-effort-color="cyberpunk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — Inline Card Aesthetic Slider &amp; 3 Top-Tier Effects</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/renderer/src/assets/fonts/figtree-latin.woff2') format('woff2'); }
+
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-overlay: oklch(0.215 0.008 265);
+  --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-card: oklch(0.185 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: oklch(0.865 0.010 272);
+  --tt-text-muted: oklch(0.76 0.013 265);
+  --tt-text-quiet: oklch(0.74 0.013 265);
+  --tt-text-faint: oklch(0.62 0.012 270);
+  --tt-hairline: oklch(0.305 0.02 265 / 0.72);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-border: oklch(0.42 0.022 265);
+  --tt-accent: oklch(0.714 0.104 183.1);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-accent-surface: oklch(0.32 0.05 185);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-hover: color-mix(in srgb, var(--tt-accent-surface) 70%, transparent);
+  --tt-hover-strong: var(--tt-accent-surface);
+  --tt-selected: oklch(0.355 0.035 188);
+  --tt-focus-ring: oklch(0.714 0.104 183.1);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--tt-canvas);
+  --tt-warning: oklch(0.772 0.173 65.4);
+  --tt-gold: #c99414;
+  --tt-shadow: 0 20px 52px rgb(0 0 0 / 0.65);
+  --tt-scrollbar: oklch(0.34 0.01 265);
+
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-devin: #a5d8f5;
+  --tt-provider-opencode: #ece3d0;
+  --tt-provider-muse: #e6e1d6;
+
+  --tt-effort-track: oklch(0.105 0.008 265);
+  --tt-effort-track-edge: rgb(255 255 255 / 0.06);
+  --tt-effort-tick: rgb(255 255 255 / 0.22);
+  --tt-effort-fill-cool: oklch(0.56 0.016 265);
+  --tt-effort-thumb-bg: linear-gradient(180deg, oklch(0.99 0.004 265), oklch(0.86 0.01 265));
+  --tt-effort-thumb-ink: oklch(0.16 0.01 265);
+  --tt-effort-trace-halo: 0.55;
+
+  --tt-radius-mark: 3px;
+  --tt-radius-tag: 5px;
+  --tt-radius-control: 7px;
+  --tt-radius-row: 8px;
+  --tt-radius-inset: 11px;
+  --tt-radius-card: 14px;
+  --tt-radius-overlay: 18px;
+  --tt-radius-full: 9999px;
+
+  --tt-type-micro: 11px;
+  --tt-type-caption: 12px;
+  --tt-type-small: 13.5px;
+  --tt-type-body: 14.5px;
+
+  --font-ui: 'Figtree', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.992 0.003 85);
+  --tt-surface-elevated: oklch(0.996 0.002 85);
+  --tt-surface-overlay: oklch(0.945 0.007 85);
+  --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-card: oklch(0.945 0.007 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.36 0.014 75);
+  --tt-text-muted: oklch(0.47 0.014 75);
+  --tt-text-quiet: oklch(0.49 0.014 75);
+  --tt-text-faint: oklch(0.56 0.014 78);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.80 0.016 80);
+  --tt-border: oklch(0.75 0.016 80);
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-text: oklch(0.41 0.085 186);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-accent-surface: oklch(0.91 0.03 186);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 11%, transparent);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 42%, var(--tt-field-border));
+  --tt-hover: color-mix(in srgb, var(--tt-accent-surface) 72%, transparent);
+  --tt-hover-strong: var(--tt-accent-surface);
+  --tt-selected: oklch(0.895 0.028 188);
+  --tt-focus-ring: oklch(0.53 0.095 186);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--tt-canvas);
+  --tt-warning: oklch(0.62 0.16 55);
+  --tt-gold: #9a6d04;
+  --tt-shadow: 0 18px 44px rgb(20 24 22 / 0.16);
+  --tt-scrollbar: oklch(0.82 0.01 85);
+
+  --tt-provider-claude: color-mix(in srgb, #c57a3c 78%, var(--tt-text));
+  --tt-provider-codex: color-mix(in srgb, #525966 80%, var(--tt-text));
+  --tt-provider-grok: color-mix(in srgb, #7755cc 78%, var(--tt-text));
+  --tt-provider-devin: color-mix(in srgb, #2e7cb5 78%, var(--tt-text));
+  --tt-provider-opencode: color-mix(in srgb, #6e6452 80%, var(--tt-text));
+  --tt-provider-muse: color-mix(in srgb, #665e52 80%, var(--tt-text));
+
+  --tt-effort-track: oklch(0.915 0.008 85);
+  --tt-effort-track-edge: rgb(0 0 0 / 0.07);
+  --tt-effort-tick: rgb(0 0 0 / 0.18);
+  --tt-effort-fill-cool: oklch(0.70 0.016 80);
+  --tt-effort-thumb-bg: linear-gradient(180deg, #ffffff, oklch(0.955 0.005 85));
+  --tt-effort-thumb-ink: oklch(0.24 0.014 75);
+  --tt-effort-trace-halo: 0.72;
+}
+
+/* Exact 6 Sotto Effort Colourways (ADR-0019) */
+:root[data-effort-color='ember'] {
+  --tt-effort-a: oklch(0.772 0.173 65.4);
+  --tt-effort-b: oklch(0.73 0.19 48);
+  --tt-effort-c: oklch(0.89 0.12 85);
+  --tt-effort-border: oklch(0.772 0.173 65.4);
+  --tt-effort-text: oklch(0.86 0.14 72);
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-b), var(--tt-effort-a), var(--tt-effort-c));
+}
+:root[data-theme='light'][data-effort-color='ember'] { --tt-effort-text: oklch(0.48 0.145 48); --tt-effort-text-fill: var(--tt-effort-text); }
+
+:root[data-effort-color='accent'] {
+  --tt-effort-a: var(--tt-accent);
+  --tt-effort-b: oklch(0.76 0.11 190);
+  --tt-effort-c: oklch(0.88 0.07 183);
+  --tt-effort-border: var(--tt-accent);
+  --tt-effort-text: var(--tt-accent-text);
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+}
+
+:root[data-effort-color='cyberpunk'] {
+  --tt-effort-a: oklch(0.7 0.3 345);
+  --tt-effort-b: oklch(0.62 0.27 305);
+  --tt-effort-c: oklch(0.86 0.15 200);
+  --tt-effort-border: oklch(0.7 0.3 345);
+  --tt-effort-text: oklch(0.86 0.15 200);
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+}
+:root[data-theme='light'][data-effort-color='cyberpunk'] { --tt-effort-text: oklch(0.44 0.22 335); --tt-effort-text-fill: var(--tt-effort-text); }
+
+:root[data-effort-color='aurora'] {
+  --tt-effort-a: oklch(0.86 0.18 160);
+  --tt-effort-b: oklch(0.82 0.14 200);
+  --tt-effort-c: oklch(0.68 0.22 300);
+  --tt-effort-border: oklch(0.82 0.14 200);
+  --tt-effort-text: oklch(0.87 0.16 165);
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+}
+:root[data-theme='light'][data-effort-color='aurora'] { --tt-effort-text: oklch(0.44 0.12 175); --tt-effort-text-fill: var(--tt-effort-text); }
+
+:root[data-effort-color='plasma'] {
+  --tt-effort-a: oklch(0.46 0.25 300);
+  --tt-effort-b: oklch(0.68 0.29 350);
+  --tt-effort-c: oklch(0.86 0.18 75);
+  --tt-effort-border: oklch(0.68 0.29 350);
+  --tt-effort-text: oklch(0.83 0.18 35);
+  --tt-effort-text-fill: var(--tt-effort-text);
+  --tt-effort-text-image: none;
+  --tt-effort-fill-image: linear-gradient(90deg, var(--tt-effort-a), var(--tt-effort-b), var(--tt-effort-c));
+}
+:root[data-theme='light'][data-effort-color='plasma'] { --tt-effort-text: oklch(0.45 0.22 350); --tt-effort-text-fill: var(--tt-effort-text); }
+
+:root[data-effort-color='rainbow'] {
+  --tt-effort-a: oklch(0.7 0.24 20);
+  --tt-effort-b: oklch(0.8 0.2 130);
+  --tt-effort-c: oklch(0.7 0.24 300);
+  --tt-effort-border: oklch(0.7 0.22 300);
+  --tt-effort-text: oklch(0.82 0.16 200);
+  --effort-spectrum: linear-gradient(90deg, oklch(0.7 0.24 20), oklch(0.82 0.18 70), oklch(0.85 0.2 130), oklch(0.85 0.14 200), oklch(0.65 0.24 280), oklch(0.7 0.28 340));
+  --tt-effort-text-fill: transparent;
+  --tt-effort-text-image: var(--effort-spectrum);
+  --tt-effort-fill-image: var(--effort-spectrum);
+}
+:root[data-theme='light'][data-effort-color='rainbow'] {
+  --tt-effort-text: oklch(0.44 0.2 290);
+  --tt-effort-text-image: linear-gradient(90deg, oklch(0.55 0.22 20), oklch(0.6 0.16 70), oklch(0.58 0.18 140), oklch(0.55 0.13 210), oklch(0.5 0.22 280), oklch(0.55 0.25 340));
+}
+
+:root[data-reduced-motion='on'] *,
+:root[data-reduced-motion='on'] *::before,
+:root[data-reduced-motion='on'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--tt-canvas);
+  color: var(--tt-text);
+  font-family: var(--font-ui);
+  font-size: var(--tt-type-body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+
+/* ---------------- Prototype top chrome ---------------- */
+.proto-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px 16px; background: var(--tt-surface); border-bottom: 1px solid var(--tt-hairline); font-size: var(--tt-type-caption); flex: none; z-index: 30; }
+.proto-title { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--tt-text); }
+.proto-badge { padding: 2px 7px; border-radius: var(--tt-radius-tag); background: var(--tt-accent-wash); color: var(--tt-accent-text); font-size: var(--tt-type-micro); font-weight: 600; }
+
+.seg { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--tt-radius-row); background: color-mix(in oklab, var(--tt-text) 6%, transparent); border: 1px solid var(--tt-hairline); }
+.seg button { height: 26px; padding: 0 9px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; transition: background-color 120ms ease, color 120ms ease; }
+.seg button:hover { color: var(--tt-text); }
+.seg button[aria-pressed='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 0 0 1px var(--tt-hairline); }
+.swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.18); }
+
+.proto-toggles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.chip-btn { height: 28px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-caption); display: inline-flex; align-items: center; gap: 6px; transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease; }
+.chip-btn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.chip-btn--primary { border-color: var(--tt-accent-border); background: var(--tt-accent-wash); color: var(--tt-accent-text); font-weight: 600; }
+.chip-btn--primary:hover { background: color-mix(in srgb, var(--tt-accent) 22%, transparent); }
+.chip-btn[aria-pressed='true'] { background: var(--tt-accent-wash); border-color: var(--tt-accent-border); color: var(--tt-accent-text); font-weight: 600; }
+
+.brief { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 9px 18px; border-bottom: 1px solid var(--tt-hairline); background: color-mix(in oklab, var(--tt-surface) 55%, var(--tt-canvas)); font-size: var(--tt-type-small); flex: none; }
+.brief strong { color: var(--tt-text); font-weight: 600; margin-right: 8px; }
+.brief span { color: var(--tt-text-muted); }
+.brief-meta { flex: none; color: var(--tt-text-faint); font-size: var(--tt-type-caption); white-space: nowrap; }
+
+/* ---------------- Stage ---------------- */
+.stage-wrap { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; padding: 18px 20px 26px; }
+.stage-single { width: 100%; max-width: 900px; min-height: 620px; display: flex; flex-direction: column; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-card); background: var(--tt-canvas); overflow: hidden; }
+.stage-compare { width: 100%; max-width: 1580px; display: grid; grid-template-columns: repeat(3, minmax(386px, 1fr)); gap: 16px; align-items: stretch; }
+@media (max-width: 1240px) { .stage-compare { grid-template-columns: 1fr; } }
+.compare-col { display: flex; flex-direction: column; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-card); background: var(--tt-canvas); overflow: hidden; min-height: 650px; }
+.compare-col__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: var(--tt-surface); border-bottom: 1px solid var(--tt-hairline); }
+.compare-col__head h2 { margin: 0; font-size: var(--tt-type-small); font-weight: 600; }
+.compare-col__head p { margin: 2px 0 0; font-size: var(--tt-type-caption); color: var(--tt-text-muted); }
+.compare-col__pick { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font-size: var(--tt-type-caption); }
+.compare-col__pick:hover { background: var(--tt-hover); color: var(--tt-text); border-color: var(--tt-accent-border); }
+
+/* ---------------- Room & Composer ---------------- */
+.room { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--tt-canvas); }
+.room-strip { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); font-size: var(--tt-type-caption); color: var(--tt-text-muted); flex: none; }
+.room-strip b { color: var(--tt-text); font-weight: 600; }
+.room-strip .branch { margin-left: auto; padding: 2px 8px; border-radius: var(--tt-radius-tag); background: var(--tt-surface); color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 22px 12px; display: flex; flex-direction: column; gap: 14px; }
+.transcript__inner { width: 100%; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.t-msg { font-size: var(--tt-type-small); color: var(--tt-text-2); line-height: 1.55; }
+.t-msg--user { align-self: flex-end; max-width: 82%; padding: 8px 13px; border-radius: 14px; background: var(--tt-surface-overlay); color: var(--tt-text); }
+.t-msg__who { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: var(--tt-type-caption); color: var(--tt-text-muted); }
+.t-msg p { margin: 0 0 6px; }
+.t-msg code { padding: 1px 5px; border-radius: 4px; background: var(--tt-surface); font-size: 12px; color: var(--tt-text); }
+
+.composer-dock { position: relative; flex: none; padding: 10px 16px 16px; }
+.composer { position: relative; width: 100%; max-width: 720px; margin: 0 auto; padding: 14px 10px 8px 16px; border-radius: var(--tt-radius-overlay); background: var(--tt-card); }
+.composer-trace { display: none; position: absolute; inset: -1px; z-index: 2; border-radius: var(--tt-radius-overlay); pointer-events: none; contain: layout; }
+.composer[data-top-effort='true'] .composer-trace { display: block; }
+.composer-trace__halo, .composer-trace__line { position: absolute; -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor; mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0); }
+.composer-trace__halo { inset: -24px; padding: 24px; border-radius: calc(var(--tt-radius-overlay) + 24px); opacity: var(--tt-effort-trace-halo); }
+.composer-trace__glow { position: absolute; inset: 17px; overflow: hidden; border-radius: calc(var(--tt-radius-overlay) + 8px); container-type: size; filter: blur(9px); }
+.composer-trace__line { inset: 0; overflow: hidden; padding: 1.5px; border-radius: inherit; container-type: size; }
+.composer-trace__stretch { position: absolute; top: 50%; left: 50%; width: 100cqh; height: 100cqh; translate: -50% -50%; scale: 5 1; scale: calc(100cqw / 100cqh) 1; }
+.composer-trace__light {
+  position: absolute; inset: -25%; transform: rotate(-0.16turn); will-change: transform;
+  background: conic-gradient(from 0turn, transparent 0turn 0.7turn, color-mix(in srgb, var(--tt-effort-a) 38%, transparent) 0.84turn, var(--tt-effort-b) 0.95turn, var(--tt-effort-c) 0.97turn, transparent 1turn);
+  animation: trace-turn 9s linear infinite;
+}
+.composer-trace__glow .composer-trace__light {
+  background: conic-gradient(from 0turn, transparent 0turn 0.7turn, color-mix(in srgb, var(--tt-effort-a) 38%, transparent) 0.84turn, var(--tt-effort-a) 0.93turn, var(--tt-effort-b) 0.97turn, transparent 1turn);
+}
+@keyframes trace-turn { from { transform: rotate(-0.16turn); } to { transform: rotate(0.84turn); } }
+
+.composer__input { width: 100%; min-height: 38px; color: var(--tt-text-faint); font-size: var(--tt-type-body); line-height: 1.5; padding-right: 6px; }
+.composer__footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; position: relative; z-index: 3; }
+.composer__attach { width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); display: inline-grid; place-items: center; flex: none; }
+.composer__attach:hover { background: var(--tt-hover); color: var(--tt-text); }
+.composer__right { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; flex: 1; }
+.perm-chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 7px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-gold); font-size: var(--tt-type-small); white-space: nowrap; min-width: 0; flex: 0 10 auto; }
+.perm-chip:hover { background: var(--tt-hover); }
+.perm-chip svg { flex: none; filter: drop-shadow(0 0 3px color-mix(in oklab, var(--tt-gold) 38%, transparent)); }
+
+.combo-anchor { position: relative; display: inline-flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.combo-trigger { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text); font-size: var(--tt-type-small); white-space: nowrap; min-width: 0; max-width: 100%; transition: background-color 120ms ease, color 120ms ease; }
+.combo-trigger:hover, .combo-trigger[aria-expanded='true'] { background: var(--tt-hover); }
+.combo-trigger__model { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text); }
+.combo-trigger__source { color: var(--tt-text-muted); }
+.combo-trigger__sep { color: var(--tt-text-faint); margin: 0 -2px; }
+.combo-trigger__name { overflow: hidden; text-overflow: ellipsis; }
+.combo-trigger__suffix { color: var(--tt-accent-text); font-weight: 500; }
+.combo-trigger__effort { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-2); padding-left: 2px; }
+.combo-trigger__effort-word[data-top='true'] { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 600; }
+.combo-trigger__bolts { display: inline-flex; align-items: center; color: var(--tt-text-2); }
+.combo-trigger__bolts[data-fast='true'] { color: var(--tt-accent-text); }
+.combo-trigger__bolts svg + svg { margin-left: -3px; }
+.combo-trigger__bolts svg[data-off='true'] { opacity: 0.55; }
+.send-disc { width: 32px; height: 32px; border: 0; border-radius: var(--tt-radius-full); background: color-mix(in oklab, var(--tt-text) 24%, var(--tt-card)); color: var(--tt-text); display: inline-grid; place-items: center; flex: none; margin-left: 2px; }
+
+.pm { flex: none; display: inline-block; vertical-align: middle; fill: currentColor; }
+.pm[data-provider='claude'] { color: var(--tt-provider-claude); }
+.pm[data-provider='codex'] { color: var(--tt-provider-codex); }
+.pm[data-provider='grok'] { color: var(--tt-provider-grok); }
+.pm[data-provider='devin'] { color: var(--tt-provider-devin); }
+.pm[data-provider='opencode'] { color: var(--tt-provider-opencode); }
+.pm[data-provider='muse'] { color: var(--tt-provider-muse); }
+
+/* ---------------- Picker Shell (Direction C: Inline Model Card) ---------------- */
+.picker {
+  position: absolute; bottom: calc(100% + 10px); right: -36px; z-index: 20;
+  width: min(378px, calc(100vw - 28px)); max-height: min(546px, calc(100vh - 135px));
+  display: flex; flex-direction: column;
+  border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-card);
+  background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: var(--tt-shadow);
+  overflow: hidden; animation: picker-rise 130ms cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes picker-rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.picker[hidden] { display: none; }
+.compare-col .picker { right: -30px; width: min(362px, calc(100vw - 36px)); }
+
+.pk-search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); flex: none; }
+.pk-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: var(--tt-type-small); }
+.pk-search input::placeholder { color: var(--tt-text-faint); }
+.pk-close { width: 26px; height: 26px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); display: grid; place-items: center; flex: none; }
+.pk-close:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+.pkC-providers { display: flex; align-items: center; gap: 3px; padding: 5px 8px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface); overflow-x: auto; scrollbar-width: none; flex: none; }
+.pkC-providers button { position: relative; height: 30px; min-width: 34px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background-color 110ms ease, color 110ms ease; }
+.pkC-providers button .pm { opacity: 0.72; }
+.pkC-providers button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pkC-providers button:hover .pm, .pkC-providers button[aria-selected='true'] .pm { opacity: 1; }
+.pkC-providers button[aria-selected='true'] { background: var(--tt-selected); color: var(--tt-activity); }
+.pkC-providers button[aria-selected='true']::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -5px; height: 2px; border-radius: var(--tt-radius-mark) var(--tt-radius-mark) 0 0; background: var(--tt-activity); }
+
+.pkC-pinned { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--tt-hairline); background: color-mix(in oklab, var(--tt-accent-wash) 45%, var(--tt-surface)); font-size: var(--tt-type-caption); flex: none; }
+.pkC-pinned__left { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-2); }
+.pkC-pinned__left b { color: var(--tt-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkC-pinned button { border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-accent-text); font-size: var(--tt-type-micro); font-weight: 600; padding: 2px 6px; flex: none; }
+.pkC-pinned button:hover { background: var(--tt-hover); }
+
+.pkC-list { flex: 1; min-height: 0; max-height: 364px; overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.pk-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 5px 8px 5px 10px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: left; transition: background-color 100ms ease, color 100ms ease; }
+.pk-row:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pk-row__main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; }
+.pk-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-row__source { color: var(--tt-text-muted); font-size: var(--tt-type-caption); flex: none; }
+.pk-row__check { flex: none; color: var(--tt-activity); }
+.pk-star { width: 22px; height: 22px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); display: grid; place-items: center; flex: none; opacity: 0; transition: opacity 100ms ease, background-color 100ms ease, color 100ms ease; }
+.pk-row:hover .pk-star, .pk-row:focus-within .pk-star, .pk-star[data-starred='true'] { opacity: 1; }
+.pk-star[data-starred='true'] { color: var(--tt-activity); }
+.pk-star:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
+.pk-empty { margin: 0; padding: 14px 10px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+
+/* =====================================================================
+   REFINED AESTHETIC INLINE MODEL CARD + PRECISION SLIDER
+   ===================================================================== */
+.inline-card {
+  --effort-x: 0.6;
+  --effort-heat: 0.6;
+  position: relative;
+  margin: 2px 0 7px;
+  padding: 11px 12px 11px;
+  border: 1px solid color-mix(in srgb, var(--tt-effort-border) calc(10% + 26% * var(--effort-heat)), var(--tt-hairline));
+  border-radius: var(--tt-radius-inset);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--tt-surface-elevated) 45%, var(--tt-surface)), var(--tt-surface));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+}
+.inline-card[data-highest='true'] {
+  border-color: color-mix(in srgb, var(--tt-effort-border) 55%, var(--tt-field-border));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 24px -14px color-mix(in srgb, var(--tt-effort-b) 55%, transparent);
+}
+.inline-card__content { position: relative; z-index: 3; display: flex; flex-direction: column; gap: 10px; }
+.inline-card__head { display: flex; align-items: center; gap: 7px; font-size: var(--tt-type-small); font-weight: 600; color: var(--tt-text); }
+.inline-card__head .pk-star { opacity: 1; }
+.inline-card__name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; }
+
+/* Effort header: airy, crisp hierarchy */
+.ef-block { display: flex; flex-direction: column; gap: 4px; }
+.ef-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 20px; }
+.ef-word {
+  margin: 0;
+  font-size: var(--tt-type-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--tt-text);
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.3;
+}
+.ef-word > span { display: inline-block; }
+.ef-word__mark { margin-right: 5px; flex: none; }
+.ef-word[data-top='true'] {
+  color: var(--tt-effort-text-fill);
+  background: var(--tt-effort-text-image);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.ef-word[data-top='true'] .ef-word__mark { color: var(--tt-effort-text); }
+.ef-line { margin: 0; font-size: var(--tt-type-micro); color: var(--tt-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* THE AESTHETIC PRECISION SLIDER */
+.lux-slider {
+  position: relative;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+.lux-slider__ambient {
+  position: absolute;
+  top: 50%;
+  left: calc(10px + var(--effort-x) * (100% - 20px));
+  width: 68px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--tt-effort-b) 0%, transparent 72%);
+  filter: blur(10px);
+  opacity: calc(0.08 + 0.52 * var(--effort-heat) * var(--effort-heat));
+  pointer-events: none;
+  z-index: 0;
+}
+.lux-slider__rail {
+  position: relative;
+  width: 100%;
+  height: 7px;
+  border-radius: var(--tt-radius-full);
+  background: var(--tt-effort-track);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.42), 0 1px 0 var(--tt-effort-track-edge);
+  overflow: hidden;
+  z-index: 1;
+}
+.lux-slider__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(10px + var(--effort-x) * (100% - 20px));
+  border-radius: var(--tt-radius-full);
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--tt-effort-a) calc(35% + 65% * var(--effort-heat)), var(--tt-effort-fill-cool)),
+    color-mix(in srgb, var(--tt-effort-b) calc(45% + 55% * var(--effort-heat)), var(--tt-effort-fill-cool))
+  );
+  overflow: hidden;
+}
+.lux-slider__fill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--tt-effort-fill-image);
+  opacity: calc(0.25 + 0.75 * var(--effort-heat));
+}
+/* Top specular glass highlight on the ribbon */
+.lux-slider__fill::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.42));
+}
+/* Precision micro-notches along the rail */
+.lux-slider__notch {
+  position: absolute;
+  top: 50%;
+  left: calc(10px + var(--stop) * (100% - 20px));
+  width: 2px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--tt-effort-tick);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
+.lux-slider__notch[data-under='true'] { background: rgb(255 255 255 / 0.48); }
+
+/* Sculpted jewel-like thumb */
+.lux-slider__thumb {
+  position: absolute;
+  top: 50%;
+  left: calc(10px + var(--effort-x) * (100% - 20px));
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--tt-effort-thumb-bg);
+  color: var(--tt-effort-thumb-ink);
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 0.42),
+    0 0 0 1.5px color-mix(in srgb, var(--tt-effort-b) calc(18% + 78% * var(--effort-heat)), rgb(255 255 255 / 0.25)),
+    0 0 calc(14px * var(--effort-heat) * var(--effort-heat)) color-mix(in srgb, var(--tt-effort-c) calc(72% * var(--effort-heat)), transparent);
+  pointer-events: none;
+  z-index: 3;
+  transition: transform 140ms cubic-bezier(.2, .8, .2, 1), box-shadow 180ms ease;
+}
+.lux-slider__thumb-core {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tt-effort-b) calc(35% + 65% * var(--effort-heat)), var(--tt-text-muted));
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+.inline-card[data-dragging='true'] .lux-slider__thumb { transform: translate(-50%, -50%) scale(1.12); }
+.inline-card[data-highest='true'] .lux-slider__thumb-core { transform: scale(1.2); background: var(--tt-effort-a); }
+.lux-slider:has(.ef-range:focus-visible) .lux-slider__thumb {
+  box-shadow: 0 0 0 2px var(--tt-surface), 0 0 0 4px var(--tt-focus-ring);
+}
+.ef-range { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; appearance: none; background: transparent; border: 0; outline: 0; cursor: ew-resize; touch-action: none; z-index: 5; }
+.ef-range::-webkit-slider-thumb { appearance: none; width: 24px; height: 24px; background: transparent; border: 0; }
+.ef-range:disabled { cursor: default; }
+.inline-card[data-locked='true'] .lux-slider { opacity: 0.42; }
+
+/* Stop labels under the slider */
+.ef-stops { display: flex; justify-content: space-between; margin-top: 1px; padding: 0 1px; }
+.ef-stops button { border: 0; background: transparent; padding: 2px 3px; border-radius: var(--tt-radius-mark); color: var(--tt-text-faint); font-size: 10.5px; font-weight: 500; line-height: 1.2; transition: color 120ms ease; }
+.ef-stops button:hover:not(:disabled) { color: var(--tt-text); }
+.ef-stops button[data-active='true'] { color: var(--tt-text); font-weight: 600; }
+.ef-stops button[data-active='true'][data-top='true'] { color: var(--tt-effort-text); }
+.ef-stops button:disabled { opacity: 0.45; cursor: default; }
+
+/* =====================================================================
+   HIGHEST-TIER EFFECT A: PRISM IGNITION
+   (Thumb shockwave + diagonal glass sheen + orbiting comet rim + letter wave)
+   ===================================================================== */
+.fx-shockwave {
+  position: absolute;
+  top: 50%;
+  left: calc(10px + var(--effort-x) * (100% - 20px));
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  border: 2px solid var(--tt-effort-c);
+  box-shadow: 0 0 14px var(--tt-effort-b), inset 0 0 8px var(--tt-effort-a);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.inline-card[data-fx='A'][data-arriving='true'] .fx-shockwave {
+  animation: fx-shock 780ms cubic-bezier(.16, .84, .32, 1) both;
+}
+.fx-shockwave--2 {
+  border-color: var(--tt-effort-a);
+  border-width: 1.5px;
+}
+.inline-card[data-fx='A'][data-arriving='true'] .fx-shockwave--2 {
+  animation: fx-shock 920ms cubic-bezier(.16, .84, .32, 1) 110ms both;
+}
+@keyframes fx-shock {
+  0% { transform: translate(-50%, -50%) scale(0.7); opacity: 0.95; }
+  100% { transform: translate(-50%, -50%) scale(5.8); opacity: 0; }
+}
+
+.fx-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.fx-sheen::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: linear-gradient(112deg, transparent 36%, color-mix(in srgb, var(--tt-effort-a) 22%, transparent) 46%, color-mix(in srgb, var(--tt-effort-c) 34%, white) 50%, color-mix(in srgb, var(--tt-effort-b) 20%, transparent) 54%, transparent 64%);
+  transform: translateX(-110%);
+  opacity: 0;
+}
+.inline-card[data-fx='A'][data-arriving='true'] .fx-sheen::before {
+  animation: fx-sheen-sweep 880ms cubic-bezier(.22, .8, .28, 1) 60ms both;
+}
+@keyframes fx-sheen-sweep {
+  0% { transform: translateX(-95%); opacity: 0; }
+  20% { opacity: 0.9; }
+  100% { transform: translateX(95%); opacity: 0; }
+}
+
+/* Sustained orbiting comet rim for Effect A */
+.fx-comet {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  z-index: 2;
+  -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0);
+  container-type: size;
+}
+.inline-card[data-fx='A'][data-highest='true'] .fx-comet { display: block; }
+.fx-comet__spin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 155cqw;
+  height: 155cqw;
+  translate: -50% -50%;
+  background: conic-gradient(from 0turn, transparent 0turn 0.58turn, color-mix(in srgb, var(--tt-effort-a) 45%, transparent) 0.76turn, var(--tt-effort-b) 0.91turn, var(--tt-effort-c) 0.97turn, transparent 1turn);
+  animation: trace-turn 3.8s linear infinite;
+}
+
+/* Letter-by-letter glow shared on arrival */
+.inline-card[data-arriving='true'] .ef-word[data-top='true'] {
+  animation: ef-word-lift 480ms cubic-bezier(.2, .8, .2, 1) both;
+}
+.inline-card[data-arriving='true'] .ef-word[data-top='true'] > span {
+  animation: ef-letter-glow 500ms cubic-bezier(.2, .8, .2, 1) both;
+  animation-delay: calc(80ms + var(--i) * 44ms);
+}
+@keyframes ef-word-lift { from { transform: translateY(0); } 45% { transform: translateY(-1.5px); } to { transform: none; } }
+@keyframes ef-letter-glow { from { color: var(--tt-text); } 40% { color: var(--tt-text); } to { color: var(--tt-effort-text-fill); } }
+
+/* =====================================================================
+   HIGHEST-TIER EFFECT B: KINETIC SPARKS (Live Canvas Particle Burst + Embers)
+   ===================================================================== */
+.fx-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+}
+.inline-card[data-fx='B'][data-highest='true']::before {
+  content: '';
+  position: absolute;
+  right: -24px;
+  top: 25%;
+  width: 140px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--tt-effort-a) 28%, transparent) 0%, color-mix(in srgb, var(--tt-effort-b) 12%, transparent) 45%, transparent 72%);
+  filter: blur(14px);
+  pointer-events: none;
+  z-index: 1;
+  animation: fx-ember-breathe 2.6s ease-in-out infinite;
+}
+@keyframes fx-ember-breathe {
+  0%, 100% { opacity: 0.65; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+/* =====================================================================
+   HIGHEST-TIER EFFECT C: AURORA VEIL (Silky Liquid-Light Curtain + Beam Shimmer)
+   ===================================================================== */
+.fx-aurora {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 420ms ease;
+}
+.inline-card[data-fx='C'][data-highest='true'] .fx-aurora { opacity: 1; }
+.fx-aurora__ribbon {
+  position: absolute;
+  inset: -45% -30%;
+  filter: blur(26px);
+  will-change: transform;
+}
+.fx-aurora__ribbon--1 {
+  background: radial-gradient(ellipse 55% 42% at 78% 58%, color-mix(in srgb, var(--tt-effort-a) 34%, transparent), transparent 70%),
+              radial-gradient(ellipse 48% 36% at 24% 72%, color-mix(in srgb, var(--tt-effort-c) 26%, transparent), transparent 68%);
+  animation: aurora-drift-1 6.5s ease-in-out infinite alternate;
+}
+.fx-aurora__ribbon--2 {
+  background: radial-gradient(ellipse 52% 38% at 52% 30%, color-mix(in srgb, var(--tt-effort-b) 28%, transparent), transparent 70%);
+  animation: aurora-drift-2 8.2s ease-in-out infinite alternate;
+}
+@keyframes aurora-drift-1 {
+  0% { transform: translate(-8%, 6%) rotate(-4deg) scale(1); }
+  100% { transform: translate(10%, -8%) rotate(5deg) scale(1.1); }
+}
+@keyframes aurora-drift-2 {
+  0% { transform: translate(10%, 4%) scale(1.06); }
+  100% { transform: translate(-10%, -6%) scale(0.96); }
+}
+.inline-card[data-fx='C'][data-arriving='true'] .fx-aurora {
+  animation: aurora-bloom 1100ms cubic-bezier(.2, .8, .2, 1) both;
+}
+@keyframes aurora-bloom {
+  0% { opacity: 0; filter: brightness(1.45); }
+  35% { opacity: 1; filter: brightness(1.35); }
+  100% { opacity: 1; filter: brightness(1); }
+}
+/* Gliding highlight on the slider beam itself while at top in Effect C */
+.inline-card[data-fx='C'][data-highest='true'] .lux-slider__fill::after {
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.55) 50%, transparent 100%);
+  animation: beam-glide 2.2s ease-in-out infinite;
+}
+@keyframes beam-glide {
+  0% { transform: translateX(-100%); }
+  65%, 100% { transform: translateX(130%); }
+}
+
+/* Speed & Toggles */
+.pkC-speed-row { display: flex; align-items: center; gap: 8px; padding-top: 2px; }
+.pkC-speed-row > span { font-size: var(--tt-type-micro); color: var(--tt-text-muted); flex: none; }
+.speed-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 2px; border-radius: var(--tt-radius-row); background: color-mix(in oklab, var(--tt-text) 6%, transparent); flex: 1; }
+.speed-seg button { height: 26px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 4px; transition: background-color 120ms ease, color 120ms ease; }
+.speed-seg button:hover { color: var(--tt-text); }
+.speed-seg button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 0 0 1px var(--tt-hairline); }
+.speed-seg button[aria-checked='true'][data-fast='true'] { color: var(--tt-accent-text); }
+
+.pk-toggles { padding: 6px 12px 7px; border-top: 1px solid var(--tt-hairline); display: flex; flex-direction: column; gap: 2px; flex: none; }
+.pk-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 28px; padding: 2px 0; border: 0; background: transparent; color: var(--tt-text); font-size: var(--tt-type-small); text-align: left; }
+.pk-toggle:disabled { opacity: 0.45; cursor: default; }
+.pk-toggle__label { display: flex; flex-direction: column; min-width: 0; }
+.pk-toggle__sub { font-size: var(--tt-type-micro); color: var(--tt-text-muted); line-height: 1.3; }
+.pk-switch { position: relative; width: 30px; height: 18px; border-radius: var(--tt-radius-full); border: 1px solid var(--tt-field-border); background: var(--tt-surface-sunken); flex: none; transition: background-color 140ms ease, border-color 140ms ease; }
+.pk-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--tt-text-muted); transition: transform 140ms ease, background-color 140ms ease; }
+.pk-toggle[aria-checked='true'] .pk-switch { background: var(--tt-accent-wash); border-color: var(--tt-accent-border); }
+.pk-toggle[aria-checked='true'] .pk-switch::after { transform: translateX(12px); background: var(--tt-accent); }
+</style>
+</head>
+<body>
+  <header class="proto-bar" role="region" aria-label="Prototype controls">
+    <div class="proto-title">
+      <span class="proto-badge">ROUND 3</span>
+      <span>Aesthetic Slider · Top-Tier Effects</span>
+    </div>
+
+    <div class="seg" role="group" aria-label="Top-tier effect">
+      <button type="button" data-fx-pick="A" aria-pressed="true">A · Prism Ignition</button>
+      <button type="button" data-fx-pick="B" aria-pressed="false">B · Kinetic Sparks</button>
+      <button type="button" data-fx-pick="C" aria-pressed="false">C · Aurora Veil</button>
+      <button type="button" data-fx-pick="compare" aria-pressed="false">Compare all 3</button>
+    </div>
+
+    <div class="seg" role="group" aria-label="Effort colourway">
+      <button type="button" data-color-pick="ember" aria-pressed="false"><i class="swatch" style="background:oklch(0.77 0.17 65)"></i>Ember</button>
+      <button type="button" data-color-pick="accent" aria-pressed="false"><i class="swatch" style="background:oklch(0.71 0.10 183)"></i>Accent</button>
+      <button type="button" data-color-pick="cyberpunk" aria-pressed="true"><i class="swatch" style="background:linear-gradient(135deg,oklch(0.7 0.3 345),oklch(0.86 0.15 200))"></i>Cyberpunk</button>
+      <button type="button" data-color-pick="aurora" aria-pressed="false"><i class="swatch" style="background:linear-gradient(135deg,oklch(0.86 0.18 160),oklch(0.68 0.22 300))"></i>Aurora</button>
+      <button type="button" data-color-pick="plasma" aria-pressed="false"><i class="swatch" style="background:linear-gradient(135deg,oklch(0.46 0.25 300),oklch(0.68 0.29 350),oklch(0.86 0.18 75))"></i>Plasma</button>
+      <button type="button" data-color-pick="rainbow" aria-pressed="false"><i class="swatch" style="background:linear-gradient(90deg,oklch(0.7 0.24 20),oklch(0.85 0.2 130),oklch(0.7 0.28 340))"></i>Rainbow</button>
+    </div>
+
+    <div class="proto-toggles">
+      <button type="button" class="chip-btn chip-btn--primary" id="btn-replay">Fire top-tier effect</button>
+      <button type="button" class="chip-btn" id="btn-theme" aria-pressed="false">Light</button>
+      <button type="button" class="chip-btn" id="btn-motion" aria-pressed="false">Reduced motion</button>
+    </div>
+  </header>
+
+  <div class="brief" id="brief"></div>
+  <main class="stage-wrap" id="stage"></main>
+
+<script>
+const PROVIDER_MARKS = {
+  claude: { viewBox: '0 0 256 257', path: 'm50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z' },
+  grok: { viewBox: '0 0 24 24', path: 'M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257' },
+  codex: { viewBox: '0 0 256 260', path: 'M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z' },
+  devin: { viewBox: '48 48 330 330', path: 'M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z' },
+  muse: { viewBox: '0 0 100 100', path: 'M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z' },
+  opencode: { viewBox: '0 0 32 40', path: 'M24 8H8V32H24V8ZM32 40H0V0H32V40Z' },
+};
+
+const PROVIDERS = [
+  { id: 'favorites', name: 'Favorites' },
+  { id: 'claude', name: 'Claude Code' },
+  { id: 'grok', name: 'Grok Build' },
+  { id: 'codex', name: 'Codex' },
+  { id: 'devin', name: 'Devin' },
+  { id: 'muse', name: 'Muse' },
+  { id: 'opencode', name: 'OpenCode' },
+];
+
+const MODELS = [
+  { id: 'opus-5.5', name: 'Opus 5.5', providerId: 'claude', provider: 'Claude Code', efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'], defaultEffort: 'high', speeds: ['standard', 'fast'] },
+  { id: 'sonnet-5.5', name: 'Sonnet 5.5', providerId: 'claude', provider: 'Claude Code', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium', speeds: ['standard', 'fast'] },
+  { id: 'haiku-5.5', name: 'Haiku 5.5', providerId: 'claude', provider: 'Claude Code', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', speeds: ['standard'] },
+  { id: 'fable-5.2', name: 'Fable 5.2', providerId: 'claude', provider: 'Claude Code', efforts: ['low', 'medium', 'high', 'max'], defaultEffort: 'high', speeds: ['standard', 'fast'] },
+  { id: 'grok-4.2-code', name: 'Grok 4.2 Code', providerId: 'grok', provider: 'Grok Build', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', speeds: ['standard'] },
+  { id: 'gpt-6.2-sol', name: 'GPT-6.2-Sol', providerId: 'codex', provider: 'Codex', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'high', speeds: ['standard', 'fast', 'ultrafast'] },
+  { id: 'gpt-6.2-astra', name: 'GPT-6.2-Astra', providerId: 'codex', provider: 'Codex', efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', speeds: ['standard', 'fast'] },
+  { id: 'devin-2.5', name: 'Devin 2.5', providerId: 'devin', provider: 'Devin', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', speeds: ['standard'] },
+  { id: 'muse-v2', name: 'Muse v2', providerId: 'muse', provider: 'Muse', efforts: [], defaultEffort: '', speeds: ['standard'] },
+  { id: 'deepseek-v4.1-flash', name: 'deepseek-v4.1-flash', providerId: 'opencode', provider: 'OpenCode', source: 'Obsidian', efforts: ['off', 'low', 'medium', 'high'], defaultEffort: 'medium', speeds: ['standard'] },
+];
+
+const EFFORT_LABELS = {
+  off: { full: 'Off', short: 'Off', line: 'Thinking is off.' },
+  low: { full: 'Low', short: 'Low', line: 'Fast. For small, clear tasks.' },
+  medium: { full: 'Medium', short: 'Med', line: 'Balanced speed and care.' },
+  high: { full: 'High', short: 'High', line: 'Takes longer and catches more.' },
+  xhigh: { full: 'XHigh', short: 'XHigh', line: 'For stubborn problems.' },
+  max: { full: 'Max', short: 'Max', line: 'Near the model’s limit.' },
+  ultracode: { full: 'Ultracode', short: 'Ultra', line: 'Team of agents · high token use.' },
+};
+
+const SPEED_META = {
+  standard: { name: 'Standard', cost: '' },
+  fast: { name: 'Fast', cost: 'Up to 2.5× faster output, at 2× tokens.' },
+  ultrafast: { name: 'Ultra fast', cost: 'Fastest priority tier, at higher cost.' },
+};
+
+const FX_INFO = {
+  A: {
+    name: 'A · Prism Ignition',
+    summary: 'Double shockwave rings pulse outward from the thumb, a diagonal glass sheen sweeps the active card, the word ripples into the colourway, and a sleek comet rim orbits the card.',
+    meta: 'Precision mechanical ignition · Matches composer comet trace',
+  },
+  B: {
+    name: 'B · Kinetic Sparks',
+    summary: 'Hitting the top tier launches a crisp colourway spark burst straight from the thumb, then settles into quiet luminous motes drifting upward along the card edge.',
+    meta: 'Live colourway particles · Zero text obstruction',
+  },
+  C: {
+    name: 'C · Aurora Veil',
+    summary: 'Silky layered colourway light ribbons bloom softly behind the inline card and drift like an aurora, paired with a gliding sheen along the slider beam.',
+    meta: 'Atmospheric & quiet · 4.5:1 text contrast preserved',
+  },
+  compare: {
+    name: 'Compare all 3 top-tier effects',
+    summary: 'Same refined precision slider across all three. Drag any slider to Ultracode or click “Fire top-tier effect” to watch all three fire together across any colourway.',
+    meta: 'Try Cyberpunk, Rainbow, Plasma & Ember · Dark & Light',
+  },
+};
+
+const state = {
+  fx: 'A',
+  color: 'cyberpunk',
+  theme: 'dark',
+  reducedMotion: false,
+  open: { A: true, B: true, C: true },
+  modelId: 'opus-5.5',
+  effort: 'ultracode',
+  speed: 'standard',
+  dynamic: false,
+  routing: false,
+  favorites: new Set(['opus-5.5', 'sonnet-5.5', 'haiku-5.5', 'fable-5.2', 'gpt-6.2-sol', 'gpt-6.2-astra', 'deepseek-v4.1-flash']),
+  providerTab: { A: 'favorites', B: 'favorites', C: 'favorites' },
+  query: { A: '', B: '', C: '' },
+  arriving: false,
+  arriveTimer: null,
+  dragging: false,
+  dragPos: null,
+};
+
+const getModel = (id = state.modelId) => MODELS.find(m => m.id === id) || MODELS[0];
+const isTopEffort = (model, effort) => model.efforts.length > 0 && (effort === 'ultracode' || effort === 'max' || (model.efforts.length > 1 && model.efforts[model.efforts.length - 1] === effort));
+const isHighestStop = (model, effort) => model.efforts.length > 1 && model.efforts[model.efforts.length - 1] === effort;
+
+/* ---------------- Live Canvas Spark Engine (Effect B) ---------------- */
+const sparkEngines = new Map();
+
+function readEffortPalette() {
+  const cs = getComputedStyle(document.documentElement);
+  return [
+    cs.getPropertyValue('--tt-effort-a').trim() || '#ff4da6',
+    cs.getPropertyValue('--tt-effort-b').trim() || '#a855f7',
+    cs.getPropertyValue('--tt-effort-c').trim() || '#38e8ff',
+  ];
+}
+
+function attachSparkCanvases(burst = false) {
+  // Clean up detached canvases
+  for (const [el, eng] of sparkEngines) {
+    if (!el.isConnected) { cancelAnimationFrame(eng.raf); sparkEngines.delete(el); }
+  }
+  const model = getModel();
+  const highest = !state.routing && isHighestStop(model, state.effort);
+  document.querySelectorAll('canvas.fx-canvas').forEach(canvas => {
+    let eng = sparkEngines.get(canvas);
+    if (!eng) {
+      eng = { particles: [], raf: 0, last: performance.now(), ambientAcc: 0 };
+      sparkEngines.set(canvas, eng);
+    }
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (rect.width > 0 && rect.height > 0) {
+      const w = Math.round(rect.width * dpr);
+      const h = Math.round(rect.height * dpr);
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    }
+    if (burst && highest && !state.reducedMotion) {
+      spawnBurst(canvas, eng);
+    }
+    if (!eng.raf && highest && !state.reducedMotion) {
+      eng.last = performance.now();
+      const tick = now => {
+        if (!canvas.isConnected) { sparkEngines.delete(canvas); return; }
+        const dt = Math.min(0.05, (now - eng.last) / 1000);
+        eng.last = now;
+        const stillTop = !state.routing && isHighestStop(getModel(), state.effort) && !state.reducedMotion;
+        if (stillTop) {
+          eng.ambientAcc += dt;
+          if (eng.ambientAcc > 0.16) {
+            eng.ambientAcc = 0;
+            spawnAmbientMote(canvas, eng);
+          }
+        }
+        drawSparks(canvas, eng, dt);
+        if (stillTop || eng.particles.length > 0) eng.raf = requestAnimationFrame(tick);
+        else eng.raf = 0;
+      };
+      eng.raf = requestAnimationFrame(tick);
+    } else if (!highest || state.reducedMotion) {
+      eng.particles.length = 0;
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  });
+}
+
+function thumbOrigin(canvas) {
+  const card = canvas.closest('.inline-card');
+  const thumb = card?.querySelector('.lux-slider__thumb');
+  const cRect = canvas.getBoundingClientRect();
+  if (thumb && cRect.width > 0) {
+    const tRect = thumb.getBoundingClientRect();
+    return { x: tRect.left + tRect.width / 2 - cRect.left, y: tRect.top + tRect.height / 2 - cRect.top };
+  }
+  return { x: cRect.width - 24, y: cRect.height * 0.56 };
+}
+
+function spawnBurst(canvas, eng) {
+  const colors = readEffortPalette();
+  const origin = thumbOrigin(canvas);
+  for (let i = 0; i < 28; i++) {
+    const angle = (-Math.PI * 0.92) + Math.random() * (Math.PI * 1.15); // mostly left/up/fan from right thumb
+    const speed = 42 + Math.random() * 145;
+    eng.particles.push({
+      x: origin.x + (Math.random() - 0.5) * 6,
+      y: origin.y + (Math.random() - 0.5) * 6,
+      vx: Math.cos(angle) * speed - 18,
+      vy: Math.sin(angle) * speed - 16,
+      drag: 0.92 + Math.random() * 0.04,
+      gravity: 48,
+      size: 1.4 + Math.random() * 2.1,
+      life: 0,
+      maxLife: 0.45 + Math.random() * 0.55,
+      color: i % 5 === 0 ? '#ffffff' : colors[i % colors.length],
+      streak: true,
+    });
+  }
+}
+
+function spawnAmbientMote(canvas, eng) {
+  const colors = readEffortPalette();
+  const cRect = canvas.getBoundingClientRect();
+  if (!cRect.width) return;
+  const origin = thumbOrigin(canvas);
+  eng.particles.push({
+    x: origin.x - Math.random() * 95 + 10,
+    y: origin.y + (Math.random() - 0.5) * 14,
+    vx: (Math.random() - 0.5) * 12,
+    vy: -(12 + Math.random() * 22),
+    drag: 0.99,
+    gravity: -4,
+    size: 1.1 + Math.random() * 1.4,
+    life: 0,
+    maxLife: 1.1 + Math.random() * 0.9,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    streak: false,
+  });
+}
+
+function drawSparks(canvas, eng, dt) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+  ctx.globalCompositeOperation = state.theme === 'dark' ? 'lighter' : 'source-over';
+
+  for (let i = eng.particles.length - 1; i >= 0; i--) {
+    const p = eng.particles[i];
+    p.life += dt;
+    if (p.life >= p.maxLife) { eng.particles.splice(i, 1); continue; }
+    const px = p.x, py = p.y;
+    p.vx *= Math.pow(p.drag, dt * 60);
+    p.vy = p.vy * Math.pow(p.drag, dt * 60) + p.gravity * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    const t = p.life / p.maxLife;
+    const alpha = p.streak ? (1 - t) * (1 - t) : Math.sin(t * Math.PI) * 0.8;
+
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    if (p.streak) {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = p.size * (1 - t * 0.45);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function triggerArrival() {
+  if (state.reducedMotion) { render(); return; }
+  clearTimeout(state.arriveTimer);
+  state.arriving = false;
+  render();
+  requestAnimationFrame(() => {
+    state.arriving = true;
+    render();
+    attachSparkCanvases(true);
+    state.arriveTimer = setTimeout(() => { state.arriving = false; render(); }, 1350);
+  });
+}
+
+function setEffort(level, { forceArrive = false } = {}) {
+  if (state.routing) return;
+  const model = getModel();
+  const wasTop = isHighestStop(model, state.effort);
+  const nowTop = isHighestStop(model, level);
+  state.effort = level;
+  state.dragPos = null;
+  if ((nowTop && !wasTop) || forceArrive) triggerArrival();
+  else render();
+}
+
+function selectModel(id) {
+  const m = getModel(id);
+  if (state.routing) state.routing = false;
+  state.modelId = m.id;
+  if (m.efforts.length) {
+    if (!m.efforts.includes(state.effort)) state.effort = m.defaultEffort || m.efforts[0];
+  } else state.effort = '';
+  if (!m.speeds.includes(state.speed)) state.speed = 'standard';
+  state.arriving = false;
+  render();
+}
+
+function svgMark(providerId, size = 14) {
+  const m = PROVIDER_MARKS[providerId];
+  return m ? `<svg class="pm" data-provider="${providerId}" width="${size}" height="${size}" viewBox="${m.viewBox}" aria-hidden="true"><path d="${m.path}"/></svg>` : '';
+}
+
+const ICONS = {
+  star: (filled = false, size = 14) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+  search: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
+  x: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+  check: `<svg class="pk-row__check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`,
+  bolt: (filled = false, size = 12, off = false) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="${filled ? '0' : '2'}" stroke-linecap="round" stroke-linejoin="round" data-off="${off}" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>`,
+  shield: `<svg width="14" height="14" viewBox="0 0 24 24" fill="color-mix(in oklab, currentColor 26%, transparent)" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>`,
+  plus: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`,
+  arrowUp: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>`,
+  workflow: (size = 13) => `<svg class="ef-word__mark" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>`,
+};
+
+function filteredList(slot) {
+  const tab = state.providerTab[slot];
+  const q = state.query[slot].trim().toLowerCase();
+  const words = q ? q.split(/\s+/) : [];
+  const matches = m => words.every(w => `${m.name} ${m.provider} ${m.source || ''}`.toLowerCase().includes(w));
+  if (tab === 'favorites') {
+    if (words.length) return { mode: 'search-all', items: MODELS.filter(matches) };
+    return { mode: 'favorites', items: MODELS.filter(m => state.favorites.has(m.id)) };
+  }
+  return { mode: 'provider', items: MODELS.filter(m => m.providerId === tab && matches(m)) };
+}
+
+function renderSpeedControl(model, slot) {
+  if (model.speeds.length <= 1) return '';
+  return `<div class="pkC-speed-row"><span>Speed</span>
+    <div class="speed-seg" role="radiogroup" aria-label="Speed">
+      ${model.speeds.map(sp => {
+        const fast = sp !== 'standard';
+        const bolts = sp === 'fast' ? ICONS.bolt(true, 11) : sp === 'ultrafast' ? ICONS.bolt(true, 11) + ICONS.bolt(true, 11) : '';
+        return `<button type="button" role="radio" data-action="speed" data-slot="${slot}" data-speed="${sp}" data-fast="${fast}" aria-checked="${state.speed === sp}" title="${SPEED_META[sp].cost || 'Standard speed'}">${bolts}${SPEED_META[sp].name}</button>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function renderInlineCard(model, fxCode, slot) {
+  const starred = state.favorites.has(model.id);
+  const count = model.efforts.length;
+  const idx = Math.max(0, model.efforts.indexOf(state.effort));
+  const pos = (state.dragging && state.dragPos !== null) ? state.dragPos : idx;
+  const rounded = Math.round(pos);
+  const shownId = model.efforts[rounded] || state.effort;
+  const info = EFFORT_LABELS[shownId] || { full: 'Default', line: '' };
+  const x = count > 1 ? pos / (count - 1) : 0;
+  const top = count > 1 && !state.routing && isTopEffort(model, shownId);
+  const highest = count > 1 && !state.routing && isHighestStop(model, shownId);
+  const letters = Array.from(info.full, (ch, i) => `<span style="--i:${i}">${ch === ' ' ? '&nbsp;' : ch}</span>`).join('');
+  const thumbInner = shownId === 'ultracode'
+    ? ICONS.workflow(10).replace('class="ef-word__mark"', '')
+    : `<i class="lux-slider__thumb-core"></i>`;
+
+  return `<div class="inline-card" data-fx="${fxCode}" data-top="${top}" data-highest="${highest}" data-arriving="${state.arriving && highest}" data-locked="${state.routing}" data-dragging="${state.dragging}"
+    style="--effort-x:${x.toFixed(4)};--effort-heat:${(state.routing ? 0 : x).toFixed(3)}" role="group" aria-label="${model.name}, active model">
+
+    ${fxCode === 'A' ? `<div class="fx-sheen" aria-hidden="true"></div><div class="fx-comet" aria-hidden="true"><div class="fx-comet__spin"></div></div>` : ''}
+    ${fxCode === 'B' ? `<canvas class="fx-canvas" aria-hidden="true"></canvas>` : ''}
+    ${fxCode === 'C' ? `<div class="fx-aurora" aria-hidden="true"><div class="fx-aurora__ribbon fx-aurora__ribbon--1"></div><div class="fx-aurora__ribbon fx-aurora__ribbon--2"></div></div>` : ''}
+
+    <div class="inline-card__content">
+      <div class="inline-card__head">
+        <span class="inline-card__name">
+          ${svgMark(model.providerId, 14)}
+          <span class="pk-row__name">${model.name}</span>
+          ${model.source ? `<span class="pk-row__source">${model.source}</span>` : ''}
+        </span>
+        ${ICONS.check}
+        <button type="button" class="pk-star" data-action="star" data-model="${model.id}" data-starred="${starred}" title="${starred ? 'Remove from favorites' : 'Add to favorites'}">${ICONS.star(starred, 13)}</button>
+      </div>
+
+      ${count > 0 ? `<div class="ef-block">
+        <div class="ef-head">
+          <p class="ef-word" data-top="${top}">
+            ${shownId === 'ultracode' && !state.routing ? ICONS.workflow(13) : ''}
+            ${state.routing ? '<span>Auto</span>' : letters}
+          </p>
+          <p class="ef-line">${state.routing ? 'Chosen by model routing' : info.line}</p>
+        </div>
+
+        <div class="lux-slider" data-slider-track="${slot}">
+          <div class="lux-slider__ambient" aria-hidden="true"></div>
+          ${fxCode === 'A' ? `<span class="fx-shockwave" aria-hidden="true"></span><span class="fx-shockwave fx-shockwave--2" aria-hidden="true"></span>` : ''}
+          <div class="lux-slider__rail" aria-hidden="true">
+            <div class="lux-slider__fill"></div>
+            ${model.efforts.map((lv, i) => `<span class="lux-slider__notch" data-under="${i <= rounded}" style="--stop:${count > 1 ? i / (count - 1) : 0}"></span>`).join('')}
+          </div>
+          <span class="lux-slider__thumb" aria-hidden="true">${thumbInner}</span>
+          <input class="ef-range" type="range" min="0" max="${Math.max(0, count - 1)}" step="0.001" value="${pos}" data-slider="${slot}" ${state.routing ? 'disabled' : ''} aria-label="Reasoning effort">
+        </div>
+
+        <div class="ef-stops">
+          ${model.efforts.map((lv, i) => {
+            const meta = EFFORT_LABELS[lv];
+            const label = count <= 4 ? meta.full : meta.short;
+            return `<button type="button" data-action="effort-stop" data-effort="${lv}" data-active="${!state.routing && i === rounded}" data-top="${isTopEffort(model, lv)}" ${state.routing ? 'disabled' : ''} title="${meta.full}: ${meta.line}">${label}</button>`;
+          }).join('')}
+        </div>
+      </div>` : `<p class="ef-line">No adjustable effort levels for ${model.name}.</p>`}
+
+      ${renderSpeedControl(model, slot)}
+    </div>
+  </div>`;
+}
+
+function renderPicker(fxCode, slot) {
+  const model = getModel();
+  const { mode, items } = filteredList(slot);
+  const showMark = mode === 'favorites' || mode === 'search-all';
+  const activeVisible = items.some(m => m.id === model.id);
+  const effWord = state.routing ? 'Auto' : (EFFORT_LABELS[state.effort]?.full || '');
+  const fastLabel = model.speeds.length > 1 && state.speed !== 'standard' ? SPEED_META[state.speed].name : '';
+
+  return `<div class="picker" role="dialog" aria-label="Model, effort and speed" ${state.open[slot] ? '' : 'hidden'}>
+    <div class="pk-search">
+      ${ICONS.search}
+      <input type="text" data-search="${slot}" value="${state.query[slot]}" placeholder="Search models" aria-label="Search models">
+      <button type="button" class="pk-close" data-action="close" data-slot="${slot}" aria-label="Close picker">${ICONS.x}</button>
+    </div>
+    <div class="pkC-providers" role="tablist" aria-label="Providers">
+      ${PROVIDERS.map(p => `<button type="button" role="tab" data-action="tab" data-slot="${slot}" data-tab="${p.id}" aria-selected="${state.providerTab[slot] === p.id}" title="${p.name}" aria-label="${p.name}">${p.id === 'favorites' ? ICONS.star(false, 14) : svgMark(p.id, 14)}</button>`).join('')}
+    </div>
+    ${!activeVisible ? `<div class="pkC-pinned">
+      <span class="pkC-pinned__left">${svgMark(model.providerId, 13)}<b>${model.name}</b><span>${[effWord, fastLabel].filter(Boolean).join(' · ')}</span></span>
+      <button type="button" data-action="jump-active" data-slot="${slot}">Tune</button>
+    </div>` : ''}
+    <div class="pkC-list" role="listbox">
+      ${items.length ? items.map(m => m.id === model.id
+        ? renderInlineCard(m, fxCode, slot)
+        : `<button type="button" class="pk-row" role="option" data-action="pick-model" data-model="${m.id}">
+            <span class="pk-row__main">${showMark ? svgMark(m.providerId, 13) : ''}<span class="pk-row__name">${m.name}</span>${m.source ? `<span class="pk-row__source">${m.source}</span>` : ''}</span>
+            <span class="pk-star" role="button" tabindex="-1" data-action="star" data-model="${m.id}" data-starred="${state.favorites.has(m.id)}">${ICONS.star(state.favorites.has(m.id), 13)}</span>
+          </button>`
+      ).join('') : `<p class="pk-empty">No matching models.</p>`}
+    </div>
+    <div class="pk-toggles">
+      <button type="button" class="pk-toggle" role="switch" data-action="toggle-dynamic" aria-checked="${state.dynamic}" ${state.routing ? 'disabled' : ''}>
+        <span class="pk-toggle__label"><span>Dynamic</span>${state.routing ? '<span class="pk-toggle__sub">Turn model routing off to use Dynamic.</span>' : ''}</span>
+        <span class="pk-switch" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="pk-toggle" role="switch" data-action="toggle-routing" aria-checked="${state.routing}" ${state.dynamic ? 'disabled' : ''}>
+        <span class="pk-toggle__label"><span>Model routing</span>${state.dynamic ? '<span class="pk-toggle__sub">Turn Dynamic off to use model routing.</span>' : ''}</span>
+        <span class="pk-switch" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>`;
+}
+
+function renderComposer(fxCode, slot) {
+  const model = getModel();
+  const hasEffort = model.efforts.length > 0;
+  const effWord = hasEffort ? (EFFORT_LABELS[state.effort]?.full || 'Default') : '';
+  const hasSpeed = model.speeds.length > 1;
+  const isFast = hasSpeed && state.speed !== 'standard';
+  const bolts = !hasSpeed ? '' : state.speed === 'standard'
+    ? ICONS.bolt(false, 12, true)
+    : state.speed === 'ultrafast'
+      ? ICONS.bolt(true, 12) + ICONS.bolt(true, 12)
+      : ICONS.bolt(true, 12);
+  const top = hasEffort && !state.routing && isTopEffort(model, state.effort);
+
+  return `<div class="composer-dock">
+    <div class="composer" data-top-effort="${top}">
+      <div class="composer-trace" aria-hidden="true">
+        <div class="composer-trace__halo"><div class="composer-trace__glow"><div class="composer-trace__stretch"><div class="composer-trace__light"></div></div></div></div>
+        <div class="composer-trace__line"><div class="composer-trace__stretch"><div class="composer-trace__light"></div></div></div>
+      </div>
+      <div class="composer__input">19. iOS journeys passed, mergeable.</div>
+      <div class="composer__footer">
+        <button type="button" class="composer__attach" aria-label="Attach">${ICONS.plus}</button>
+        <div class="composer__right">
+          <button type="button" class="perm-chip" title="Permissions: Full access">${ICONS.shield}<span>Full access</span></button>
+          <div class="combo-anchor">
+            ${renderPicker(fxCode, slot)}
+            <button type="button" class="combo-trigger" data-action="toggle-open" data-slot="${slot}" aria-haspopup="dialog" aria-expanded="${state.open[slot]}" title="Model, effort and speed">
+              <span class="combo-trigger__model">
+                ${svgMark(model.providerId, 14)}
+                ${state.routing
+                  ? `<span class="combo-trigger__name">Auto</span><span class="combo-trigger__suffix">· ${model.name}</span>`
+                  : model.source
+                    ? `<span class="combo-trigger__source">${model.source}</span><span class="combo-trigger__sep">/</span><span class="combo-trigger__name">${model.name}</span>`
+                    : `<span class="combo-trigger__name">${model.name}</span>`}
+                ${state.dynamic ? `<span class="combo-trigger__suffix">oversees</span>` : ''}
+              </span>
+              ${(hasEffort || hasSpeed) ? `<span class="combo-trigger__effort">
+                ${hasEffort ? `<span class="combo-trigger__effort-word" data-top="${top}">${effWord}</span>` : ''}
+                ${hasSpeed ? `<span class="combo-trigger__bolts" data-fast="${isFast}">${bolts}</span>` : ''}
+              </span>` : ''}
+            </button>
+          </div>
+          <button type="button" class="send-disc" aria-label="Send">${ICONS.arrowUp}</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderRoom(fxCode, slot) {
+  return `<div class="room">
+    <div class="room-strip">
+      <b>Sotto</b><span>·</span><span>Effort colour: ${state.color}</span>
+      <span class="branch">feat/combined-model-effort-picker</span>
+    </div>
+    <div class="transcript">
+      <div class="transcript__inner">
+        <div class="t-msg t-msg--user">Check the iOS journeys PR and confirm whether all required checks are green.</div>
+        <div class="t-msg">
+          <div class="t-msg__who">${svgMark('claude', 12)} <span>Claude Code · Opus 5.5</span></div>
+          <p>Checked <code>pull/2759</code>: iOS journeys and desktop gates are green. Drag back to <b>High</b> and slide into <b>Ultracode</b> — or click <b>Fire top-tier effect</b> above — to feel the ignition across all six colourways.</p>
+        </div>
+      </div>
+    </div>
+    ${renderComposer(fxCode, slot)}
+  </div>`;
+}
+
+function render() {
+  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.effortColor = state.color;
+  document.documentElement.dataset.reducedMotion = state.reducedMotion ? 'on' : 'off';
+
+  document.querySelectorAll('[data-fx-pick]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.fxPick === state.fx)));
+  document.querySelectorAll('[data-color-pick]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.colorPick === state.color)));
+  document.getElementById('btn-theme').textContent = state.theme === 'light' ? 'Dark' : 'Light';
+  document.getElementById('btn-theme').setAttribute('aria-pressed', String(state.theme === 'light'));
+  document.getElementById('btn-motion').setAttribute('aria-pressed', String(state.reducedMotion));
+
+  const info = FX_INFO[state.fx];
+  document.getElementById('brief').innerHTML = `<div><strong>${info.name}</strong><span>${info.summary}</span></div><div class="brief-meta">${info.meta}</div>`;
+
+  const stage = document.getElementById('stage');
+  const activeSearch = document.activeElement?.dataset?.search;
+  const selStart = activeSearch ? document.activeElement.selectionStart : null;
+
+  if (state.fx === 'compare') {
+    stage.innerHTML = `<div class="stage-compare">
+      ${['A', 'B', 'C'].map(code => `<section class="compare-col">
+        <div class="compare-col__head">
+          <div>
+            <h2>${FX_INFO[code].name}</h2>
+            <p>${code === 'A' ? 'Shockwave + glass sheen + comet rim' : code === 'B' ? 'Canvas spark burst + drifting embers' : 'Liquid aurora veil + gliding beam'}</p>
+          </div>
+          <button type="button" class="compare-col__pick" data-action="solo" data-slot="${code}">Focus ${code}</button>
+        </div>
+        ${renderRoom(code, code)}
+      </section>`).join('')}
+    </div>`;
+  } else {
+    stage.innerHTML = `<section class="stage-single">${renderRoom(state.fx, state.fx)}</section>`;
+  }
+
+  if (activeSearch) {
+    const input = stage.querySelector(`input[data-search="${activeSearch}"]`);
+    if (input) { input.focus(); if (selStart !== null) input.setSelectionRange(selStart, selStart); }
+  }
+
+  attachSparkCanvases(false);
+}
+
+const MAGNET = 0.22;
+function magnet(raw) {
+  const near = Math.round(raw);
+  const d = raw - near;
+  return Math.abs(d) < MAGNET ? near + d * Math.pow(Math.abs(d) / MAGNET, 2) : raw;
+}
+
+function paintLiveDrag(card, model, pos) {
+  const count = model.efforts.length;
+  const x = count > 1 ? pos / (count - 1) : 0;
+  const rounded = Math.round(pos);
+  const lv = model.efforts[rounded];
+  const info = EFFORT_LABELS[lv];
+  const top = isTopEffort(model, lv);
+  const highest = isHighestStop(model, lv);
+
+  card.style.setProperty('--effort-x', x.toFixed(4));
+  card.style.setProperty('--effort-heat', x.toFixed(3));
+  card.dataset.top = String(top);
+  card.dataset.highest = String(highest);
+  card.dataset.dragging = 'true';
+
+  const word = card.querySelector('.ef-word');
+  const line = card.querySelector('.ef-line');
+  if (word && info) {
+    word.dataset.top = String(top);
+    word.innerHTML = (lv === 'ultracode' ? ICONS.workflow(13) : '') + Array.from(info.full, (ch, i) => `<span style="--i:${i}">${ch}</span>`).join('');
+  }
+  if (line && info) line.textContent = info.line;
+
+  card.querySelectorAll('.lux-slider__notch').forEach((n, i) => { n.dataset.under = String(i <= rounded); });
+  card.querySelectorAll('.ef-stops button').forEach((btn, i) => { btn.dataset.active = String(i === rounded); });
+  const thumb = card.querySelector('.lux-slider__thumb');
+  if (thumb) thumb.innerHTML = lv === 'ultracode' ? ICONS.workflow(10).replace('class="ef-word__mark"', '') : `<i class="lux-slider__thumb-core"></i>`;
+}
+
+document.addEventListener('pointerdown', e => {
+  const input = e.target.closest('input.ef-range');
+  if (!input || input.disabled) return;
+  state.dragging = true;
+  state.dragPos = Number(input.value);
+});
+
+document.addEventListener('input', e => {
+  if (e.target?.dataset?.search) { state.query[e.target.dataset.search] = e.target.value; render(); return; }
+  if (e.target.matches('input.ef-range')) {
+    const model = getModel();
+    const raw = Number(e.target.value);
+    const snapped = state.dragging ? magnet(raw) : Math.round(raw);
+    state.dragPos = snapped;
+    const card = e.target.closest('.inline-card');
+    if (card) paintLiveDrag(card, model, snapped);
+  }
+});
+
+document.addEventListener('change', e => {
+  if (e.target.matches('input.ef-range')) {
+    const model = getModel();
+    const idx = Math.max(0, Math.min(model.efforts.length - 1, Math.round(Number(e.target.value))));
+    state.dragging = false;
+    state.dragPos = null;
+    if (model.efforts[idx]) setEffort(model.efforts[idx]);
+  }
+});
+
+document.addEventListener('pointerup', () => {
+  if (!state.dragging) return;
+  const model = getModel();
+  const idx = Math.max(0, Math.min(model.efforts.length - 1, Math.round(state.dragPos ?? 0)));
+  state.dragging = false;
+  state.dragPos = null;
+  if (model.efforts[idx]) setEffort(model.efforts[idx]);
+});
+
+document.addEventListener('wheel', e => {
+  const track = e.target.closest('[data-slider-track]');
+  if (!track || state.routing || e.deltaY === 0) return;
+  e.preventDefault();
+  const model = getModel();
+  const cur = model.efforts.indexOf(state.effort);
+  const next = Math.max(0, Math.min(model.efforts.length - 1, cur + (e.deltaY < 0 ? 1 : -1)));
+  if (next !== cur) setEffort(model.efforts[next]);
+}, { passive: false });
+
+document.addEventListener('click', e => {
+  const fxBtn = e.target.closest('[data-fx-pick]');
+  if (fxBtn) {
+    state.fx = fxBtn.dataset.fxPick;
+    if (state.fx === 'compare') state.open = { A: true, B: true, C: true };
+    else state.open[state.fx] = true;
+    const m = getModel();
+    if (isHighestStop(m, state.effort)) triggerArrival();
+    else render();
+    return;
+  }
+  const colBtn = e.target.closest('[data-color-pick]');
+  if (colBtn) {
+    state.color = colBtn.dataset.colorPick;
+    const m = getModel();
+    if (isHighestStop(m, state.effort)) triggerArrival();
+    else render();
+    return;
+  }
+  if (e.target.id === 'btn-replay') {
+    const m = getModel();
+    if (m.efforts.length) setEffort(m.efforts[m.efforts.length - 1], { forceArrive: true });
+    return;
+  }
+  if (e.target.id === 'btn-theme') { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render(); return; }
+  if (e.target.id === 'btn-motion') { state.reducedMotion = !state.reducedMotion; render(); return; }
+
+  const act = e.target.closest('[data-action]');
+  if (!act) {
+    if (state.fx !== 'compare' && !e.target.closest('.picker') && !e.target.closest('.combo-trigger') && e.target.closest('.room')) {
+      if (state.open[state.fx]) { state.open[state.fx] = false; render(); }
+    }
+    return;
+  }
+  const { action, slot } = act.dataset;
+  if (action === 'solo') { state.fx = slot; state.open[slot] = true; triggerArrival(); return; }
+  if (action === 'toggle-open') { state.open[slot] = !state.open[slot]; render(); return; }
+  if (action === 'close') { state.open[slot] = false; render(); return; }
+  if (action === 'tab') { state.providerTab[slot] = act.dataset.tab; render(); return; }
+  if (action === 'star') {
+    e.stopPropagation();
+    const id = act.dataset.model;
+    state.favorites.has(id) ? state.favorites.delete(id) : state.favorites.add(id);
+    render();
+    return;
+  }
+  if (action === 'pick-model') { selectModel(act.dataset.model); return; }
+  if (action === 'effort-stop') { setEffort(act.dataset.effort, { forceArrive: isHighestStop(getModel(), act.dataset.effort) }); return; }
+  if (action === 'speed') { state.speed = act.dataset.speed; render(); return; }
+  if (action === 'toggle-dynamic') { if (!state.routing) { state.dynamic = !state.dynamic; render(); } return; }
+  if (action === 'toggle-routing') { if (!state.dynamic) { state.routing = !state.routing; render(); } return; }
+  if (action === 'jump-active') {
+    const m = getModel();
+    state.providerTab[slot] = state.favorites.has(m.id) ? 'favorites' : m.providerId;
+    state.query[slot] = '';
+    render();
+    return;
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') {
+    if (e.key === 'Escape' && e.target.dataset.search) {
+      const s = e.target.dataset.search;
+      if (state.query[s]) { state.query[s] = ''; render(); }
+      else { state.open[s] = false; render(); }
+    }
+    return;
+  }
+  if (e.key === 'Escape' && state.fx !== 'compare' && state.open[state.fx]) { state.open[state.fx] = false; render(); return; }
+  if (e.key === '1') { state.fx = 'A'; state.open.A = true; triggerArrival(); }
+  else if (e.key === '2') { state.fx = 'B'; state.open.B = true; triggerArrival(); }
+  else if (e.key === '3') { state.fx = 'C'; state.open.C = true; triggerArrival(); }
+  else if (e.key === '4') { state.fx = 'compare'; state.open = { A: true, B: true, C: true }; triggerArrival(); }
+});
+
+// Start in Compare or A with an immediate arrival beat so the first impression is alive
+render();
+setTimeout(() => triggerArrival(), 180);
+</script>
+</body>
+</html>
