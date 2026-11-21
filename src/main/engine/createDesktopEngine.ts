@@ -475,6 +475,14 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
   })
+  // Detached runs a thread here started on a paired host, as over ssh (#2749): that host reports the runs it found with marks
+  // it does not own, this computer's watch claims the ones its own threads' marks name, a turn ending here asks each host to
+  // look again, and Stop on one goes to the host that found it.
+  const detachedRunWatch = localRuntime.detachedRuns
+  if (detachedRunWatch) {
+    detachedRunWatch.useElsewhere({ look: () => hostRouter.lookForDetachedRunsElsewhere(), stop: (hostId, runId, mark) => hostRouter.stopDetachedRunElsewhere(hostId, runId, mark) })
+    hostRouter.subscribeDetachedRunsElsewhere((hostId, machine, runs) => detachedRunWatch.setElsewhere(hostId, machine, runs))
+  }
 
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
   const threadMoves = 'threadMoves' in localRuntime ? localRuntime.threadMoves : undefined
