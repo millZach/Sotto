@@ -160,9 +160,15 @@ private struct AgentsSheet: View {
 
     var body: some View {
         let source = model.agentsSource(ref)
-        let rows = source.map { AgentsRoster.rows(owner: $0.owner, threads: $0.threads, delegations: delegations, agents: page?.rows ?? [], models: $0.models,
-                                                  failuresSeen: $0.failuresSeen, projects: model.projectsListed(ref.hostID),
-                                                  computer: model.computerName(ref.hostID)) } ?? []
+        // The delegated threads on every computer the phone knows, each row placed on its own (#2750).
+        let rows = source.map { source in
+            AgentsRoster.rows(owner: source.owner, on: ref.hostID, below: AgentsRoster.delegatedAcross(below: ref, in: source.computers), delegations: delegations,
+                              agents: page?.rows ?? [], models: source.models, failuresSeen: source.failuresSeen,
+                              place: { hostID in AgentsRoster.Place(projects: model.projectsListed(hostID), computer: model.computerName(hostID),
+                                                                    models: hostID == ref.hostID ? source.models : model.threadModels(hostID),
+                                                                    failuresSeen: model.offersFailuresSeen(hostID),
+                                                                    reachable: model.reachable(hostID)) })
+        } ?? []
         let counts = AgentsRoster.countLine(rows, summary: page?.summary ?? source?.owner.subagentSummary)
         let needs = rows.contains { $0.tone == .needs }
         ScrollView {
@@ -250,6 +256,8 @@ private struct AgentsSheet: View {
         .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .sheetLeft($sheetLeft)
         .refreshable { await refresh() }
+        // Only its own computer's threads ask for the reads again: a delegated thread on another computer redraws from its own
+        // computer's list, and the reads, which only the sheet's computer answers, know nothing of it (#2750).
         .task(id: source.map { AgentsRoster.refreshSignal($0.owner, in: $0.threads) } ?? "") { await load() }
         // Ends when nothing is running or the sheet goes.
         .task(id: AgentsRoster.followsAgents(page?.rows ?? [])) { if AgentsRoster.followsAgents(page?.rows ?? []) { await follow() } }
@@ -266,7 +274,8 @@ private struct AgentsSheet: View {
                 switch row.kind {
                 case .thread:
                     AgentsThreadRow(row: row, sheetWatched: model.watchedByWatcher(ref)) {
-                        if let id = row.threadID { open(ThreadRef(hostID: ref.hostID, threadID: id)) }
+                        // A delegated thread on another computer opens there (#2750).
+                        if let id = row.threadID { open(ThreadRef(hostID: row.hostID ?? ref.hostID, threadID: id)) }
                     }
                 case .agent:
                     AgentsAgentRow(ref: ref, row: row, refreshes: refreshes)

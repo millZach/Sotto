@@ -61,6 +61,7 @@ import type { DesktopLocalRuntime } from './hosts/localRuntime'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
 import { registerHostsIpc } from './hosts/ipc'
 import { PhoneAccess, phonesCompressed, type PhoneAccessEvent } from './phones/phoneAccess'
+import { phoneSendsFor } from '../host/phoneSends'
 import { LocalApps, type LocalAppsEvent } from './phones/localApps'
 import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
@@ -1749,7 +1750,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled, ...(phoneCompression ? {} : { compressPhones: false }), ...(phoneModelViews ? { phoneModels: phoneModelViews } : {}) },
+  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled, phoneSends: phoneSendsFor(userDataPath), ...(phoneCompression ? {} : { compressPhones: false }), ...(phoneModelViews ? { phoneModels: phoneModelViews } : {}) },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     // An E2E run names no real machine, so a capture or a check reads the same on every computer.

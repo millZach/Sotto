@@ -31,6 +31,76 @@ final class AgentsRosterTests: XCTestCase {
         XCTAssertEqual(assignments.assignments.first?.result, "Three.")
     }
 
+    /// #2750: a thread's delegated threads on another of the phone's computers. The laptop thread "Rust Cutover" delegated
+    /// one thread on the laptop and one on forge, which names it as the host does (`relay:<client>:<caller>`) and delegated a
+    /// review in turn on forge; forge's thread "UI hillclimb" delegated one on the laptop, which names it as the desktop
+    /// does (`host:<forge>:<id>`). Each finds its own, both levels, wherever they run.
+    func testDelegatedThreadsOnAnotherComputerAreListedNamedForItAndOpenThere() throws {
+        let laptopID = "5b0445e9-b649-4480-86fb-ce0a61de1c30", forgeID = "62c79358-687d-4274-a876-1a0d79e1c195"
+        let cutover = try thread("C449D630-6C48-4F71-B1ED-FFB6392BB404")
+        let local = try thread("local-child", #", "delegatedBy":"C449D630-6C48-4F71-B1ED-FFB6392BB404""#)
+        let baselines = try thread("baselines", #", "delegatedBy":"host:62c79358-687d-4274-a876-1a0d79e1c195:hillclimb""#)
+        let onForge = try thread("on-forge", #", "delegatedBy":"relay:2e67ec62-e3ec-46ac-b5b1-c7dafc3113dd:C449D630-6C48-4F71-B1ED-FFB6392BB404""#, status: "running")
+        let review = try thread("review", #", "delegatedBy":"on-forge""#)
+        let hillclimb = try thread("hillclimb")
+        // Another desktop's thread of a name the phone does not hold names no one here.
+        let stranger = try thread("stranger", #", "delegatedBy":"relay:another-desktop:not-held""#)
+        let computers = [AgentsRoster.ComputerThreads(hostID: laptopID, threads: [cutover, local, baselines]),
+                         AgentsRoster.ComputerThreads(hostID: forgeID, threads: [onForge, review, hillclimb, stranger])]
+
+        let below = AgentsRoster.delegatedAcross(below: ThreadRef(hostID: laptopID, threadID: cutover.id), in: computers)
+        XCTAssertEqual(below.map { "\($0.level) \($0.thread.id)@\($0.hostID == laptopID ? "laptop" : "forge")" }, ["1 local-child@laptop", "1 on-forge@forge", "2 review@forge"])
+        XCTAssertEqual(below.last?.by?.id, "on-forge")
+        XCTAssertEqual(AgentsRoster.delegatedAcross(below: ThreadRef(hostID: forgeID, threadID: hillclimb.id), in: computers).map(\.thread.id), ["baselines"])
+        XCTAssertEqual(AgentsRoster.count(cutover, on: laptopID, in: computers)?.total, 3)
+
+        let rows = AgentsRoster.rows(owner: cutover, on: laptopID, below: below, delegations: [], agents: [],
+                                     place: { AgentsRoster.Place(projects: [], computer: $0 == laptopID ? "This laptop" : "forge", models: []) })
+        let forgeRow = try XCTUnwrap(rows.first { $0.threadID == "on-forge" })
+        XCTAssertEqual(forgeRow.hostID, forgeID, "A row on another computer opens there")
+        XCTAssertEqual(forgeRow.id, "thread:\(forgeID)/on-forge", "And is that computer's thread, by its ID")
+        XCTAssertTrue(forgeRow.spokenLabel.contains(", forge"), "VoiceOver says which computer it runs on")
+        XCTAssertNil(try XCTUnwrap(rows.first { $0.threadID == "local-child" }).computer)
+        XCTAssertTrue(forgeRow.facts.contains("forge"))
+        XCTAssertEqual(forgeRow.tone, .working, "The list says it is working, though the laptop's record does not know it")
+        let reviewRow = try XCTUnwrap(rows.first { $0.threadID == "review" })
+        XCTAssertNil(reviewRow.status, "Idle on another computer, whose record the laptop cannot read: nothing is guessed")
+        let localRow = try XCTUnwrap(rows.first { $0.threadID == "local-child" })
+        XCTAssertNil(localRow.hostID)
+        XCTAssertEqual(localRow.status, AgentsRoster.outcomeWord("unknown"), "The laptop's own record answered without it")
+        // A caller's ID held by two other computers does not say which thread it is, so it names no one.
+        let twin = AgentsRoster.ComputerThreads(hostID: "33333333-3333-4333-8333-333333333333", threads: [try thread("C449D630-6C48-4F71-B1ED-FFB6392BB404")])
+        XCTAssertFalse(AgentsRoster.delegatedAcross(below: ThreadRef(hostID: laptopID, threadID: cutover.id), in: computers + [twin]).contains { $0.thread.id == "on-forge" })
+        // The one-computer forms are as they were.
+        XCTAssertEqual(AgentsRoster.delegated(below: cutover.id, in: [cutover, local, baselines]).map(\.thread.id), ["local-child"])
+        XCTAssertEqual(AgentsRoster.count(cutover, in: [cutover, local, baselines])?.total, 1)
+    }
+
+    /// #2750, Bug Bot's L1: a computer the phone cannot reach lists its threads as it last shared them, so its delegated
+    /// threads say so, and claim no work or request they may no longer have, nor anything that needs you.
+    func testADelegatedThreadOnAComputerThePhoneCannotReachSaysSoAndNeedsNothing() throws {
+        let laptopID = "5b0445e9-b649-4480-86fb-ce0a61de1c30", forgeID = "62c79358-687d-4274-a876-1a0d79e1c195"
+        let owner = try thread("owner")
+        let link = #", "delegatedBy":"relay:2e67ec62-e3ec-46ac-b5b1-c7dafc3113dd:owner""#
+        let running = try thread("running", link, status: "running")
+        let asking = try thread("asking", link, requests: permission)
+        func computers(_ reachable: Bool) -> [AgentsRoster.ComputerThreads] {
+            [AgentsRoster.ComputerThreads(hostID: laptopID, threads: [owner]), AgentsRoster.ComputerThreads(hostID: forgeID, threads: [running, asking], reachable: reachable)]
+        }
+        XCTAssertEqual(AgentsRoster.count(owner, on: laptopID, in: computers(true)), AgentsCount(total: 2, needs: 1))
+        XCTAssertEqual(AgentsRoster.count(owner, on: laptopID, in: computers(false)), AgentsCount(total: 2, needs: 0))
+        let below = AgentsRoster.delegatedAcross(below: ThreadRef(hostID: laptopID, threadID: owner.id), in: computers(false))
+        let rows = AgentsRoster.rows(owner: owner, on: laptopID, below: below, delegations: [], agents: [],
+                                     place: { AgentsRoster.Place(projects: [], computer: $0 == laptopID ? "This laptop" : "forge", models: [], reachable: $0 == laptopID) })
+        for id in ["running", "asking"] {
+            let row = try XCTUnwrap(rows.first { $0.threadID == id })
+            XCTAssertEqual(row.status, ComputerStatus.unreachable.words)
+            XCTAssertEqual(row.tone, .quiet)
+            XCTAssertNil(row.waitingFor)
+            XCTAssertEqual(row.hostID, forgeID, "It still opens on forge, which says it cannot be reached")
+        }
+    }
+
     func testTheTopBarCountsBothLevelsAndTheAgentsAndSaysWhatWaitsOnYou() throws {
         let owner = try thread("owner", #", "subagentSummary":{"total":2,"working":1,"completed":1,"failed":0,"interrupted":0,"unknown":0}"#)
         let review = try thread("review", #", "delegatedBy":"owner""#, status: "running", requests: permission)

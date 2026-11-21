@@ -50,6 +50,7 @@ import { PictureMaker } from './pictureMaker'
 import { FilesService } from '../main/files/service'
 import { MODEL_VISUAL_KIND } from '../shared/models3d'
 import { SOUND_VISUAL_KIND } from '../shared/sounds'
+import { phoneSendsFor } from './phoneSends'
 
 /** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
 declare const __SOTTO_RELEASED_HOST__: boolean | undefined
@@ -417,7 +418,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           ...(pluginAccountCopies ? { onClientRevoked: (clientId: string) => { void pluginAccountCopies.forgetDesktop(clientId).catch(() => options.log?.('plugin-account-copies-not-forgotten')) } } : {}),
           desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
             // Phones reach only the tailnet listener; the one with the administrative routes counts every client a desktop.
-            ...(options.compressPhones === false ? { compressPhones: false } : {}) },
+            ...(options.compressPhones === false ? { compressPhones: false } : {}), phoneSends: phoneSendsFor(directory) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,

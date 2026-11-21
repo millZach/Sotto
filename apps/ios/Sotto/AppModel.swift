@@ -5234,8 +5234,21 @@ extension AppModel {
     private func countAgents(_ ref: ThreadRef) -> AgentsCount? {
         guard offersAgentsView(ref.hostID), let threads = live[ref.hostID]?.shell?.host.threads,
               let owner = threads.first(where: { $0.id == ref.threadID }) else { return nil }
-        return AgentsRoster.count(owner, in: threads, failuresSeen: offersFailuresSeen(ref.hostID))
+        return AgentsRoster.count(owner, on: ref.hostID, in: agentComputers(first: ref.hostID))
     }
+    /// Every computer's threads as it last shared them, the thread's own computer first, so a thread that delegated to
+    /// another computer finds its delegated threads there (#2750).
+    func agentComputers(first hostID: String) -> [AgentsRoster.ComputerThreads] {
+        let shared = live.compactMap { id, computer in
+            computer.shell.map { AgentsRoster.ComputerThreads(hostID: id, threads: $0.host.threads, failuresSeen: computer.features.contains("failure-seen"),
+                                                              reachable: computer.status == .online) }
+        }
+        return shared.sorted { one, other in one.hostID == hostID ? other.hostID != hostID : other.hostID == hostID ? false : one.hostID < other.hostID }
+    }
+    /// Whether the phone can reach a computer now, so its delegated threads are current rather than as it last shared them.
+    func reachable(_ hostID: String) -> Bool { live[hostID]?.status == .online }
+    /// A computer's model catalog as it last shared it, for a delegated thread's model on that computer.
+    func threadModels(_ hostID: String) -> [ThreadModel] { live[hostID]?.shell?.host.models ?? [] }
     /// Whether the thread's computer says which failures a client has shown (`failure-seen`), so an unseen one can say
     /// Needs attention.
     func offersFailuresSeen(_ hostID: String) -> Bool { live[hostID]?.features.contains("failure-seen") == true }
@@ -5243,7 +5256,8 @@ extension AppModel {
     func agentsSource(_ ref: ThreadRef) -> AgentsSource? {
         guard offersAgentsView(ref.hostID), let host = live[ref.hostID]?.shell?.host,
               let owner = host.threads.first(where: { $0.id == ref.threadID }) else { return nil }
-        return AgentsSource(owner: owner, threads: host.threads, models: host.models ?? [], failuresSeen: offersFailuresSeen(ref.hostID))
+        return AgentsSource(owner: owner, threads: host.threads, models: host.models ?? [], failuresSeen: offersFailuresSeen(ref.hostID),
+                            computers: agentComputers(first: ref.hostID))
     }
     /// What delegation's record on the thread's computer says of its delegated threads. A thread with none isn't asked.
     func readDelegations(_ ref: ThreadRef) async throws -> ThreadDelegations {
@@ -5346,6 +5360,8 @@ struct AgentsSource {
     let models: [ThreadModel]
     /// Whether the computer says which failures a client has shown (`failure-seen`).
     let failuresSeen: Bool
+    /// Every computer's threads, the owner's own first, for the delegated threads that run on another computer (#2750).
+    let computers: [AgentsRoster.ComputerThreads]
 }
 
 // MARK: - A thread's settings from its reply box (ADR-0166)
