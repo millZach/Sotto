@@ -20,6 +20,13 @@ November 20, 2026, on the Windows laptop, for [ADR-0211](../adr/0211-antigravity
 - **Resume.** A new adapter over the same folder resumed the session with `session/resume`, which replayed nothing, and answered "What single word did you reply with first?" with `pong`.
 - **Steering.** A second prompt sent while `agy` counted to 40 was taken into the running turn, which ended with `steered`.
 
+## The row and the model menu in the app
+
+On forge (Omarchy), `npx playwright test tests/e2e/antigravity-provider.spec.ts` drove the built app over the fake `agy` (`SOTTO_E2E_ANTIGRAVITY_ROOT`): Antigravity's row in Settings › Providers shows design B's four-way sign-in method choice, each method with its own steps; Gemini Enterprise's Sign in waits for a project and a location; both key fields are masked. Connected with a Google account, a new thread's model menu opens on Antigravity's makers, Google and Anthropic, with **Makers** to step back and the foot "Every model here runs through Antigravity, on your Google account", and the permission menu lists Antigravity's four modes. Text contrast was at least 4.5:1 at 1600×1000, 1280×800 and 820×560 in light and dark with reduced motion, and nothing was clipped at 820×560. `tests/e2e/cursor-provider.spec.ts` still passed beside it.
+
+- [The row at 820×560, dark](../../artifacts/antigravity-provider/row-820-dark.png), [light](../../artifacts/antigravity-provider/row-820-light.png); [at 1280×800, dark](../../artifacts/antigravity-provider/row-1280-dark.png), [light](../../artifacts/antigravity-provider/row-1280-light.png).
+- [The model menu at 820×560, dark](../../artifacts/antigravity-provider/models-820-dark.png), [light](../../artifacts/antigravity-provider/models-820-light.png); [at 1280×800, dark](../../artifacts/antigravity-provider/models-1280-dark.png), [light](../../artifacts/antigravity-provider/models-1280-light.png).
+
 ## Not checked live
 
 Gemini Enterprise, a Gemini API key and Agent Platform (no such account here), a paired host, the phones, and Watcher on a live `agy` (the fake client covers Watcher's tools and instructions in `tests/integration/watcherOnAntigravity.test.ts`).

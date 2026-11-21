@@ -269,7 +269,9 @@ export interface AgentRuntimeOptions {
    */
   ownServers?: () => Promise<readonly OwnServer[]>
   /** Antigravity's sign-in and where its program is, read from Settings and the credential store before each start. */
-  antigravity?: { readonly signIn?: () => Promise<AntigravitySignIn>; readonly lookup?: () => Promise<AntigravityLookup> }
+  antigravity?: { readonly signIn?: () => Promise<AntigravitySignIn>; readonly lookup?: () => Promise<AntigravityLookup>
+    /** An end-to-end run's fake `agy`, started in place of finding the real one. */
+    readonly program?: { readonly executable: string; readonly args: readonly string[] } }
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -395,6 +397,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
     // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
     antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia, usageEnabled: options.usageEnabled === true,
+      ...(options.antigravity?.program ? { executable: options.antigravity.program.executable, executableArgs: options.antigravity.program.args } : {}),
       // The sign-in Settings chose, with the key from the credential store only for the two methods that take one (ADR-0211).
       signIn: options.antigravity?.signIn ?? (async () => {
         const configuration = agentControl.configuration(), method = configuration.antigravitySignInMethod
