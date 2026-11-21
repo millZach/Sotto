@@ -224,6 +224,8 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     /// What an opened agent's task and result were read for: its run, its revision and its status. When it changes, they
     /// are read again.
     public var detailsKey: String? = nil
+    /// The computer a delegated thread runs on, where that is not the sheet's own thread's (#2750): its row opens it there.
+    public var hostID: String? = nil
 
     /// Whether the row's "Delegated by" line adds that Watcher watches it through that thread (#1217, Zach's pick B). Only
     /// a row below a thread the sheet's own thread delegated to has the line, and Watcher, which talks only to the thread
@@ -360,14 +362,93 @@ public enum AgentsRoster {
         return result
     }
 
+    /// One computer's threads as the phone holds them, for delegations that cross computers (#2750).
+    public struct ComputerThreads: Sendable {
+        public let hostID: String
+        public let threads: [ThreadSummary]
+        public init(hostID: String, threads: [ThreadSummary]) { self.hostID = hostID; self.threads = threads }
+    }
+    /// One delegated thread below a thread, on whichever of the phone's computers runs it: 1 under it, 2 under one of its
+    /// delegated threads, `by`.
+    public struct BelowAcross: Sendable {
+        public let thread: ThreadSummary
+        public let hostID: String
+        public let level: Int
+        public let by: ThreadSummary?
+        public init(thread: ThreadSummary, hostID: String, level: Int, by: ThreadSummary?) { self.thread = thread; self.hostID = hostID; self.level = level; self.by = by }
+    }
+    /// What a computer gives a delegated thread's row: its projects and models, and its name.
+    public struct Place: Sendable {
+        public let projects: [Project]
+        public let computer: String?
+        public let models: [ThreadModel]
+        public init(projects: [Project], computer: String?, models: [ThreadModel]) { self.projects = projects; self.computer = computer; self.models = models }
+    }
+
+    /// The delegated threads below `owner`, two levels, on whichever of the phone's computers they run (#2750), as the
+    /// desktop's Tools › Agents finds them across machines. A `delegatedBy` link names its thread three ways: a bare ID on
+    /// the thread's own computer; `host:<hostId>:<id>`, as a desktop names a paired host's thread that delegated to one of
+    /// its own; and `relay:<client>:<caller>`, as a host names a desktop's thread that delegated to one of its own, which is
+    /// found by its ID on another of the phone's computers. A link that names nothing the phone holds names no one here.
+    public static func delegatedAcross(below owner: ThreadRef, in computers: [ComputerThreads]) -> [BelowAcross] {
+        var holders: [String: [String]] = [:]
+        for computer in computers { for thread in computer.threads { holders[thread.id, default: []].append(computer.hostID) } }
+        var children: [String: [(thread: ThreadSummary, hostID: String)]] = [:]
+        for computer in computers {
+            for thread in computer.threads {
+                guard let link = thread.delegatedBy, let parent = delegatingRef(link, on: computer.hostID, holders: holders),
+                      parent != ThreadRef(hostID: computer.hostID, threadID: thread.id) else { continue }
+                children[parent.id, default: []].append((thread: thread, hostID: computer.hostID))
+            }
+        }
+        let first = (children[owner.id] ?? []).filter { ThreadRef(hostID: $0.hostID, threadID: $0.thread.id) != owner }
+        let firstIDs = Set(first.map { ThreadRef(hostID: $0.hostID, threadID: $0.thread.id).id })
+        var result: [BelowAcross] = []
+        for item in first {
+            result.append(BelowAcross(thread: item.thread, hostID: item.hostID, level: 1, by: nil))
+            for child in children[ThreadRef(hostID: item.hostID, threadID: item.thread.id).id] ?? [] {
+                let ref = ThreadRef(hostID: child.hostID, threadID: child.thread.id)
+                if ref == owner || firstIDs.contains(ref.id) { continue }
+                result.append(BelowAcross(thread: child.thread, hostID: child.hostID, level: 2, by: item.thread))
+            }
+        }
+        return result
+    }
+    /// The thread a `delegatedBy` link names, by the computer that holds it; `holders` lists each thread ID's computers.
+    static func delegatingRef(_ link: String, on hostID: String, holders: [String: [String]]) -> ThreadRef? {
+        if let keyed = hostKeyed(link) { return keyed }
+        guard link.hasPrefix("relay:") else { return ThreadRef(hostID: hostID, threadID: link) }
+        let rest = link.dropFirst("relay:".count)
+        guard let colon = rest.firstIndex(of: ":") else { return nil }
+        let caller = String(rest[rest.index(after: colon)...])
+        if let keyed = hostKeyed(caller) { return keyed }
+        guard let holder = holders[caller]?.first(where: { $0 != hostID }) else { return nil }
+        return ThreadRef(hostID: holder, threadID: caller)
+    }
+    /// `host:<hostId>:<id>`, a client's key for another computer's thread, as that computer's ID and the thread's own.
+    private static func hostKeyed(_ key: String) -> ThreadRef? {
+        guard key.hasPrefix("host:") else { return nil }
+        let rest = key.dropFirst("host:".count)
+        guard let colon = rest.firstIndex(of: ":") else { return nil }
+        let host = String(rest[..<colon]), id = String(rest[rest.index(after: colon)...])
+        guard UUID(uuidString: host) != nil, !id.isEmpty else { return nil }
+        return ThreadRef(hostID: host, threadID: id)
+    }
+
     /// What the thread list says of a thread's agents, as one value: when it changes, the sheet reads them again. Each
     /// delegated thread's status, requests, background work, monitors and own agents are in it, so one whose outcome moves
     /// from Background work to Answered while it stays idle and asks nothing is read again, as when its last monitor
     /// ends (`watcherTurnOutcome` in src/main/agents/watcherOutcomes.ts). The thread's own agent counts are in it too.
     public static func refreshSignal(_ owner: ThreadSummary, in threads: [ThreadSummary]) -> String {
+        refreshSignal(owner, below: delegated(below: owner.id, in: threads).map(\.thread))
+    }
+    /// The same value, with the delegated threads on every one of the phone's computers (#2750).
+    public static func refreshSignal(_ owner: ThreadSummary, on hostID: String, in computers: [ComputerThreads]) -> String {
+        refreshSignal(owner, below: delegatedAcross(below: ThreadRef(hostID: hostID, threadID: owner.id), in: computers).map(\.thread))
+    }
+    private static func refreshSignal(_ owner: ThreadSummary, below threads: [ThreadSummary]) -> String {
         func agents(_ summary: SubagentSummary?) -> String { summary.map { "\($0.total)/\($0.working)/\($0.unknown)" } ?? "" }
-        let below = delegated(below: owner.id, in: threads).map { item in
-            let thread = item.thread
+        let below = threads.map { thread in
             let background = (thread.backgroundWork ?? []).map(\.type).joined(separator: ",")
             return [thread.id, thread.status, String(thread.requests.count), background, String(thread.monitoring?.count ?? 0),
                     agents(thread.subagentSummary)].joined(separator: ":")
@@ -387,10 +468,16 @@ public enum AgentsRoster {
     /// The top bar's count, from the thread list alone: delegated threads, both levels, and the provider's sub-agents.
     /// Nil when the thread has neither, so the control is not there.
     public static func count(_ owner: ThreadSummary, in threads: [ThreadSummary], failuresSeen: Bool = true) -> AgentsCount? {
-        let below = delegated(below: owner.id, in: threads)
+        count(owner, below: delegated(below: owner.id, in: threads).map(\.thread), failuresSeen: failuresSeen)
+    }
+    /// The same count, with the delegated threads on every one of the phone's computers (#2750).
+    public static func count(_ owner: ThreadSummary, on hostID: String, in computers: [ComputerThreads], failuresSeen: Bool = true) -> AgentsCount? {
+        count(owner, below: delegatedAcross(below: ThreadRef(hostID: hostID, threadID: owner.id), in: computers).map(\.thread), failuresSeen: failuresSeen)
+    }
+    private static func count(_ owner: ThreadSummary, below: [ThreadSummary], failuresSeen: Bool) -> AgentsCount? {
         let total = below.count + (owner.subagentSummary?.total ?? 0)
         guard total > 0 else { return nil }
-        return AgentsCount(total: total, needs: below.filter { needsYou($0.thread, failuresSeen: failuresSeen) }.count)
+        return AgentsCount(total: total, needs: below.filter { needsYou($0, failuresSeen: failuresSeen) }.count)
     }
 
     /// The sheet's rows: the delegated threads and the sub-agents in one list, newest start first. Each delegated thread
@@ -399,9 +486,25 @@ public enum AgentsRoster {
     /// computer's and `computer` its name, for where each delegated thread runs.
     public static func rows(owner: ThreadSummary, threads: [ThreadSummary], delegations: [DelegatedThreadRecord]?, agents: [SubagentRow],
                             models: [ThreadModel] = [], failuresSeen: Bool = true, projects: [Project] = [], computer: String? = nil) -> [AgentsRow] {
+        let below = delegated(below: owner.id, in: threads).map { BelowAcross(thread: $0.thread, hostID: "", level: $0.level, by: $0.by) }
+        return rows(owner: owner, on: "", below: below, delegations: delegations, agents: agents, models: models, failuresSeen: failuresSeen,
+                    place: { _ in Place(projects: projects, computer: computer, models: models) })
+    }
+    /// The same rows, with the delegated threads on whichever of the phone's computers runs them (#2750). Delegation's record
+    /// on the sheet's own computer knows only its own threads, so a row on another computer shows what the thread list says
+    /// of it, Working while its turn runs, and no outcome otherwise, never a guess; it names its own computer and opens there.
+    public static func rows(owner: ThreadSummary, on hostID: String, below: [BelowAcross], delegations: [DelegatedThreadRecord]?, agents: [SubagentRow],
+                            models: [ThreadModel] = [], failuresSeen: Bool = true, place: (String) -> Place) -> [AgentsRow] {
         let quiet = ThreadGroups.isSettled(owner)
         let records = Dictionary((delegations ?? []).map { ($0.thread, $0) }, uniquingKeysWith: { first, _ in first })
-        let projectTitles = Dictionary(projects.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        var places: [String: (place: Place, titles: [String: String])] = [:]
+        func placed(_ host: String) -> (place: Place, titles: [String: String]) {
+            if let known = places[host] { return known }
+            let found = place(host)
+            let made = (place: found, titles: Dictionary(found.projects.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first }))
+            places[host] = made
+            return made
+        }
         // Each block is a delegated thread with its own, or a sub-agent with the agents under it, and keeps its order.
         var blocks: [Block] = []
         var family: [AgentsRow] = []
@@ -411,10 +514,13 @@ public enum AgentsRoster {
             blocks.append(Block(start: head.startedAt, index: blocks.count, rows: [head] + below))
             family = []
         }
-        for item in delegated(below: owner.id, in: threads) {
+        for item in below {
             if item.level == 1 { closeFamily() }
-            family.append(threadRow(item.thread, level: item.level, by: item.by, record: records[item.thread.id], read: delegations != nil, quiet: quiet,
-                                    models: models, failuresSeen: failuresSeen, project: projectTitles[item.thread.projectId], computer: computer))
+            let here = item.hostID == hostID, at = placed(item.hostID)
+            var row = threadRow(item.thread, level: item.level, by: item.by, record: here ? records[item.thread.id] : nil, read: here && delegations != nil, quiet: quiet,
+                                models: at.place.models, failuresSeen: failuresSeen, project: at.titles[item.thread.projectId], computer: at.place.computer)
+            if !here { row.hostID = item.hostID }
+            family.append(row)
         }
         closeFamily()
         var agentBlock: [AgentsRow] = []
