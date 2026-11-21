@@ -11,6 +11,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   connectEngineClient,
   createEngineEndpoint,
+  decodeRpcValue,
+  encodeRpcValue,
   encodeEngineFrame,
   EngineFrameDecoder,
   generateEngineToken,
@@ -44,6 +46,29 @@ describe('EngineFrameDecoder and auth tokens (ADR-0210)', () => {
     expect(verifyEngineToken(token, 'short')).toBe(false)
     expect(verifyEngineToken(token, 12345)).toBe(false)
     expect(verifyEngineToken('', '')).toBe(false)
+  })
+})
+
+describe('encodeRpcValue and decodeRpcValue (ADR-0210)', () => {
+  it('round-trips Uint8Array and Buffer values nested inside the args array through JSON', () => {
+    const png = new Uint8Array([137, 80, 78, 71])
+    const stage = { threadId: 't', name: 'a.png', mimeType: 'image/png', bytes: png }
+    const args = ['agent:attachmentStage', 'window', [stage, { list: [Buffer.from([4, 5])] }]]
+    const wire = JSON.parse(JSON.stringify(encodeRpcValue(args))) as unknown
+    const decoded = decodeRpcValue(wire) as [string, string, [{ bytes: Uint8Array; name: string }, { list: Uint8Array[] }]]
+    expect(decoded[2][0].name).toBe('a.png')
+    expect(decoded[2][0].bytes).toBeInstanceOf(Uint8Array)
+    expect([...decoded[2][0].bytes]).toEqual([137, 80, 78, 71])
+    expect(decoded[2][1].list[0]).toBeInstanceOf(Uint8Array)
+    expect([...decoded[2][1].list[0]!]).toEqual([4, 5])
+    // Encoding never changes the caller's own arguments.
+    expect(stage.bytes).toBe(png)
+  })
+
+  it('returns values with no binary inside unchanged and by reference', () => {
+    const state = { threads: [{ id: 'a', title: 'x', when: new Date(0) }], count: 1, none: null }
+    expect(encodeRpcValue(state)).toBe(state)
+    expect(decodeRpcValue(state)).toBe(state)
   })
 })
 

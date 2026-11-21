@@ -341,7 +341,7 @@ export class EngineRpcConnection {
     if (this.closed) return
     this.closed = true
     if (!this.socket.destroyed) this.socket.destroy()
-    const rejection = error ?? new Error('Sotto\'s background engine stopped. Restart Sotto to continue.')
+    const rejection = new Error('Sotto\'s background engine stopped. Restart Sotto to continue.', error ? { cause: error } : undefined)
     for (const entry of this.pending.values()) {
       if (entry.timer) clearTimeout(entry.timer)
       entry.reject(rejection)
