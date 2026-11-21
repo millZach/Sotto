@@ -21,6 +21,9 @@ import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResu
  * to a loopback port Sotto remembers. Anything else on those ports is left alone; when other apps hold both,
  * the Phones page says so. The setting is removed when phone access turns off and when Sotto quits, and put
  * back at the next start on the Serve port it was last on while that port is free, since phones keep its address.
+ * A setting of Sotto's that quitting could not remove is taken up as it stands at the next start, and one that already
+ * carries the listener is never written again: Tailscale refuses every change while it holds an entry this account may
+ * not change, such as a root-only path, and phone access must not go down for someone else's entry.
  *
  * Pairing codes are issued here, from the Phones page, and nowhere else. The listener's administrative
  * routes are off: the desktop administers it in-process, so no admin token exists on disk or on the wire.
@@ -406,6 +409,10 @@ export class PhoneAccess {
   productEventAnswers(): ProductEventPermission[] { return this.listenerStopped ? [] : this.listener?.productEventAnswers() ?? [] }
 
   private async reconcile(): Promise<void> {
+    // Pending cleanup of a setting the listener is wanted on again is taken up rather than removed first: turnOn reuses a
+    // setting of Sotto's as it stands. Removing it first meant a refused removal kept the port answering every phone
+    // with a reset until it went through. An unreadable record still cleans up first, since it cannot say what is Sotto's.
+    if (this.phase === 'cleanup-failed' && !this.listenerStopped && !this.recordUncertain && this.listenerWanted()) { await this.turnOn(); return }
     if (this.phase === 'cleanup-failed' || this.listenerStopped) {
       await this.turnOff()
       if (this.phase === 'cleanup-failed') return
@@ -434,8 +441,9 @@ export class PhoneAccess {
     this.tailscaleCheck = { status: 'ok', hostName: status.hostName, dnsName: status.dnsName }
     this.publish()
     let owners: { port: PhoneAccessServePort; owner: ReturnType<typeof servePortOwner> }[]
+    let config: ServeConfig
     try {
-      const config = await this.options.tailscale.serveStatus()
+      config = await this.options.tailscale.serveStatus()
       // The port phones last used comes first: they keep its address, so a restart must not move them while it is free.
       const last = servePortOf(this.record)
       const ports = [last, ...PHONE_ACCESS_SERVE_PORTS.filter(port => port !== last)]
@@ -451,6 +459,8 @@ export class PhoneAccess {
     if (!this.listener) {
       // Paired phones that cannot be read are never replaced: the listener stays shut until they can be.
       if (!await this.loadPairing()) { await this.failServe('listener'); return }
+      // The placeholder holding the saved port while cleanup was pending gives it back, so the listener can take it.
+      await this.releasePort()
       try { this.listener = await this.listen() }
       catch { this.options.log?.('phone-access-listener-failed'); await this.failServe('listener'); return }
     }
@@ -458,8 +468,14 @@ export class PhoneAccess {
     const port = this.listener.descriptor.port
     if (!await this.save(onPort({ port, mapped: true }, servePort))) { await this.failServe('record'); return }
     if (this.listenerStopped || !this.listenerWanted()) { await this.turnOff(); return }
-    let result: ServeResult
-    try { result = await this.options.tailscale.serve(servePort, port) } catch { result = { ok: false, reason: 'failed' } }
+    // A setting of Sotto's that already carries this listener is left as it is. Every Serve change writes Tailscale's whole
+    // setting, which it refuses while it holds an entry this account may not change, so an unneeded write could fail on
+    // someone else's entry.
+    const carried = owner === 'ours' && servePortOwner(config, servePort, [port]) === 'ours'
+    let result: ServeResult = { ok: true }
+    if (!carried) {
+      try { result = await this.options.tailscale.serve(servePort, port) } catch { result = { ok: false, reason: 'failed' } }
+    }
     if (!result.ok) {
       this.options.log?.(result.reason === 'not-enabled' ? 'phone-access-serve-not-enabled' : result.reason === 'denied' ? 'phone-access-serve-denied' : 'phone-access-serve-failed')
       this.enableUrl = result.reason === 'not-enabled' ? result.enableUrl : undefined
