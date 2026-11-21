@@ -2106,7 +2106,7 @@ export class DesktopHostRouter {
     void _mode
     const own = local.configuration
     return { ...state, configuration: { ...configuration, newThreadModelId: modelInForce(local.host.models, defaultNewThreadModelId(own, local.host.models, local.reasoningAccounts)),
-      newThreadReasoningEffort: own.newThreadReasoningEffort, ...(own.newThreadRuntimeMode !== undefined ? { newThreadRuntimeMode: own.newThreadRuntimeMode } : {}) } }
+      newThreadReasoningEffort: own.newThreadReasoningEffort, newThreadSpeed: own.newThreadSpeed ?? null, ...(own.newThreadRuntimeMode !== undefined ? { newThreadRuntimeMode: own.newThreadRuntimeMode } : {}) } }
   }
   /**
    * Early start (#769) goes to the thread's own host and changes nothing here. It asks for nothing the user must know

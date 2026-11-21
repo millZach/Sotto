@@ -6,6 +6,8 @@ Accepted October 26, 2026, at Zach's request. It goes straight to stable and is 
 
 Amended October 29, 2026, at Drake's request: Speed includes Fast and Ultra fast, and worker roles may choose it (ADR-0091).
 
+Amended November 21, 2026, at Drake’s request. Settings → Threads lets the user choose the starting speed for New thread.
+
 ## Context
 
 Claude Code and Codex can each answer faster for more money. Claude Code calls it fast mode: up to 2.5x faster output at twice the price per token, on Opus 5.5, Opus 5 and Opus 4.8 as of 2.1.310 ([fast mode](https://code.claude.com/docs/en/fast-mode)). Codex calls it the Fast service tier, id `priority`, offered per model in `model/list` as of codex-cli 0.164.0 and described there in Codex's own words, such as "2x speed, increased usage". Some Codex models even list Fast as their own default tier, and a user's Codex config can set one too.
@@ -14,7 +16,7 @@ Sotto had no way to ask for either, so a thread ran at whatever speed the client
 
 ## Decision
 
-**1. Speed is the user's choice, per thread.** Standard is the default. A thread may choose Fast or Ultra fast where its model offers them. It stays as the user leaves it. A worker started by role takes that role's speed unless the request names one; other new threads start at Standard.
+**1. Speed is the user's choice, per thread.** Standard is the default. A thread may choose Fast or Ultra fast where its model offers them. It stays as the user leaves it. A thread opened with New thread takes this computer’s saved speed where its project’s model offers it, including on a connected host. A model without the saved tier starts at Standard. Settings keeps the preference until the user changes it. A worker started by role takes that role’s speed unless the request names one.
 
 **2. The thread keeps the choice, and the model decides whether it runs.** `AgentThread.speed` is `fast` or `ultrafast`, saved with the thread; absent means Standard. `fastMode: true` remains a compatibility alias for `fast` in saved threads, older hosts and phone clients. A named speed wins over the alias; Ultra fast never sets that alias. A change names `speed: null` to select Standard. A thread moved to a model without its chosen speed keeps the choice and runs at Standard; moved back, it uses that speed again, unless Claude Code refuses Fast (decision 4). Explicitly selecting a speed the model does not offer is refused. Watcher’s first composer also keeps a speed chosen before switching models when it creates the thread, including with worker roles off. A fork or continued agent starts at Standard.
 

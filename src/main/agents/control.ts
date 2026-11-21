@@ -2589,7 +2589,7 @@ export class AgentControl {
     configuration.enabledProviders = enabledThreadProviders(configuration).filter(item => this.providerAvailable(item))
     if (held(configuration.defaultModelId)) configuration.defaultModelId = ''
     if (held(configuration.newThreadModelId)) {
-      configuration.newThreadModelId = ''; configuration.newThreadReasoningEffort = ''; delete configuration.newThreadRuntimeMode
+      configuration.newThreadModelId = ''; configuration.newThreadReasoningEffort = ''; delete configuration.newThreadSpeed; delete configuration.newThreadRuntimeMode
     }
   }
   private parseSaved(input: unknown): Saved {

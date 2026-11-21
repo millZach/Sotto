@@ -5,13 +5,14 @@ import { defaultNewThreadModelId, hostForThread, type AgentCommand, type AgentMo
 import type { AppSettings } from '../../../shared/settings'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { modelInForce } from '../../../shared/modelLineup'
+import { fitSpeed } from '../../../shared/workerRoles'
 import { hostNewThreadPermission, nearestReasoningEffort } from '../../../shared/newThreadDefaults'
 import { whyNotDynamic } from '../../../shared/dynamicThreads'
 import { whyNotRouted } from '../../../shared/modelRouter'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
 import type { LaterWords } from './interfaceWords'
-import { pendingSettingsStore, threadSpeed, unconfirmedKinds } from './pendingSettings'
+import { pendingSettingsStore, speedPatch, threadSpeed, unconfirmedKinds } from './pendingSettings'
 
 /** A creation on its way, handed over the moment it is issued so the thread can be shown without waiting. */
 export interface ThreadCreationStart {
@@ -60,7 +61,7 @@ export async function projectWorkingCopy(state: AgentState, project: AgentProjec
  */
 export function unusedNewThread(state: AgentState, project: AgentProject, startsDynamic = false,
   submitted: readonly { readonly threadId: string }[] = [], startsRouted = false): AgentThread | undefined {
-  const { modelId, selectedModel, reasoningEffort, permission } = newThreadOptions(state, project)
+  const { modelId, selectedModel, reasoningEffort, speed, permission } = newThreadOptions(state, project)
   if (state.configuration.newThreadReasoningEffort && reasoningEffort === undefined) return undefined
   if (state.configuration.newThreadRuntimeMode && permission.runtimeMode === undefined && permission.providerMode === undefined) return undefined
   return state.host.threads.find(thread => thread.projectId === project.id && thread.titleSource === 'default' && thread.status === 'idle'
@@ -69,8 +70,7 @@ export function unusedNewThread(state: AgentState, project: AgentProject, starts
     && thread.modelId === modelId && (reasoningEffort === undefined || (thread.reasoningEffort ?? selectedModel?.defaultReasoningEffort) === reasoningEffort)
     && (permission.runtimeMode === undefined || thread.runtimeMode === permission.runtimeMode)
     && (permission.providerMode === undefined || thread.providerMode === permission.providerMode)
-    // A new thread starts at Standard speed (ADR-0143), so one the user chose a faster speed for is not reused as new.
-    && threadSpeed(thread) === null
+    && threadSpeed(thread) === speed
     && (thread.dynamic === true) === (startsDynamic && whyNotDynamic(thread) === undefined)
     && (thread.routed === true) === (startsRouted && whyNotRouted(thread) === undefined)
     && (thread.summary?.messageCount ?? thread.messages.length) === 0
@@ -135,7 +135,8 @@ export function newThreadOptionsOn(state: AgentState, hostId: string | undefined
   }
   const mayAnswer = !remote || state.host.clientHosts?.find(item => item.hostId === hostId)?.mayAnswer === true
   const permission = hostNewThreadPermission(selectedModel, configuration.newThreadRuntimeMode, mayAnswer)
-  return { modelId, selectedModel, sentEffort, reasoningEffort: sentEffort ?? selectedModel?.defaultReasoningEffort, permission }
+  const speed = fitSpeed(configuration.newThreadSpeed, selectedModel)
+  return { modelId, selectedModel, speed, sentEffort, reasoningEffort: sentEffort ?? selectedModel?.defaultReasoningEffort, permission }
 }
 function newThreadOptions(state: AgentState, project: AgentProject) { return newThreadOptionsOn(state, projectHostId(state, project)) }
 
@@ -148,7 +149,7 @@ function newThreadOptions(state: AgentState, project: AgentProject) { return new
 export async function beginNewThread(state: AgentState, command: (command: AgentCommand) => Promise<{ readonly error: string | null } | null>, project: AgentProject,
   /** Settings for the working-copy default; the popup, which has no `window.sotto`, passes its own reader (ADR-0181). */
   readSettings?: () => Promise<AppSettings>, modelRouterEnabled = false): Promise<ThreadCreationStart | { readonly error: LaterWords }> {
-  const { modelId, selectedModel, sentEffort, reasoningEffort, permission } = newThreadOptions(state, project)
+  const { modelId, selectedModel, sentEffort, reasoningEffort, speed, permission } = newThreadOptions(state, project)
   if (!modelId) return { error: msg`No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.` }
   let workingCopy: 'independent' | 'shared'
   let settings: AppSettings | undefined
@@ -163,7 +164,7 @@ export async function beginNewThread(state: AgentState, command: (command: Agent
   const title = 'New thread'
   const draft = draftThread({ id: threadId, projectId: project.id, title, modelId, workingCopy, ...worktreeChoices,
     ...(selectedModel?.providerId ? { providerId: selectedModel.providerId } : {}),
-    reasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode, host: draftHost(state, project) })
+    reasoningEffort, speed, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode, host: draftHost(state, project) })
   // Main drops the mark where the Owl feature is off, and a chip reads it through the same gate.
   const dynamic = settings?.dynamicThreads?.newThreads === true && whyNotDynamic(draft) === undefined
   const overseen = dynamic ? { ...draft, dynamic: true as const } : draft
@@ -172,7 +173,7 @@ export async function beginNewThread(state: AgentState, command: (command: Agent
   const thread = routed ? { ...overseen, routed: true as const } : overseen
   // The defaults go with the creation, since a remote host would otherwise start the thread on its own (ADR-0074).
   // A provider's own permission profiles (Devin) are left to the host, which starts on the first, as before.
-  const chosen = { ...(sentEffort !== undefined ? { reasoningEffort: sentEffort } : {}),
+  const chosen = { ...(speed ? speedPatch(speed, selectedModel) : {}), ...(sentEffort !== undefined ? { reasoningEffort: sentEffort } : {}),
     ...(state.configuration.newThreadRuntimeMode && permission.runtimeMode ? { runtimeMode: permission.runtimeMode } : {}) }
   const created = command({ type: 'create-thread', threadId, projectId: project.id, title, modelId, titleSource: 'default', workingCopy, ...worktreeChoices, ...chosen, ...(dynamic ? { dynamic: true as const } : {}), ...(routed ? { routed: true as const } : {}) })
     .then(result => result === null ? UNCONFIRMED_CREATION : result.error, () => UNCONFIRMED_CREATION)
