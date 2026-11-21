@@ -147,12 +147,20 @@ test('Tools › Agents lists a detached run in its own section, counts it, and s
         const overflow = await tools.evaluate(element => [...element.querySelectorAll<HTMLElement>('.subagents-roster, .subagents-runs, .delegated-work__row')]
           .filter(item => item.scrollWidth > item.clientWidth + 1).map(item => item.className))
         expect(overflow, `${appearance} ${width}x${height}`).toEqual([])
-        for (const part of ['.subagents-section__head', '.delegated-work__kind', '.delegated-work__name > :last-child', '.delegated-work__state', '.delegated-work__stop', '.delegated-work__meta', '.delegated-work__line', '.delegated-work__command summary']) {
+        for (const part of ['.subagents-section__head', '.delegated-work__name > :last-child', '.delegated-work__state', '.delegated-work__stop', '.delegated-work__meta', '.delegated-work__line', '.delegated-work__command summary']) {
           expect(await elementContrast(tools.locator(part).first()), `${part}, ${appearance} ${width}x${height}`).toBeGreaterThanOrEqual(4.5)
         }
         await capture(launched, `agents-detached-run-${appearance}-${width}x${height}`)
       }
     }
+
+    // Reduced motion: the section reads the same with the Working ring held still.
+    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark', reducedMotion: 'on' }))
+    await resizeContentWindow(launched, 1280, 800, [700, 500])
+    if (!await tools.isVisible()) await toggleTools(pane(page))
+    await expect(row).toBeVisible()
+    await capture(launched, 'agents-detached-run-dark-reduced-motion-1280x800')
+    await page.evaluate(() => window.sotto!.updateSettings({ reducedMotion: 'system' }))
 
     // Stop reaches main from the Agents row too. A desktop journey looks for no runs, so nothing was stopped.
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))

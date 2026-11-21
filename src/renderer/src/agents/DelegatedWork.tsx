@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bot, FlaskConical, GitFork, Laptop, MoreHorizontal, Search, Server, ShieldCheck, Sparkle, SquareTerminal, type LucideIcon } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
@@ -307,6 +307,17 @@ function BackgroundWorkRow({ work }: { readonly work: AgentBackgroundWork }): Re
  * where nothing may stop one, and then the row has no Stop.
  */
 export const DetachedRunStopContext = createContext<((runId: string) => Promise<string | null>) | null>(null)
+
+/**
+ * Stop for one of a thread's detached runs, wherever its row stands (under the last reply, in Tools › Agents): the host
+ * that runs the thread looks again and ends that process alone. Resolves to why it did not, or null once it did.
+ */
+export function useDetachedRunStop(command: AgentConnection['command'] | undefined, threadId: string | undefined): (runId: string) => Promise<string | null> {
+  const { t } = useLingui()
+  const unreached = t`Sotto could not reach the computer that runs this thread. The run may still be running. Try Stop again once that computer is connected.`
+  return useCallback((runId: string): Promise<string | null> => !command || threadId === undefined ? Promise.resolve(unreached)
+    : command({ type: 'stop-detached-run', threadId, runId }).then(result => result === null ? unreached : result.error, () => unreached), [command, threadId, unreached])
+}
 
 /** How long a run has been going, counted in its own element every second so the transcript is not redrawn for a clock. */
 function RunningFor({ startedAt }: { readonly startedAt: string }): ReactNode {

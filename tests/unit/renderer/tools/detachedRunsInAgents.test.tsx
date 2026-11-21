@@ -52,13 +52,13 @@ function stateWith(work: AgentBackgroundWork[] | undefined): AgentState {
   return state
 }
 
-function setup(state: AgentState, rows: SubagentRow[] = [agent], answer: AgentState | null = state) {
+function setup(state: AgentState, rows: SubagentRow[] = [agent], answer: AgentState | null = state, subagents: SubagentsBridge = agentsBridge(rows)) {
   vi.stubGlobal('sotto', { delegations })
   const store = new ToolsPanelStore()
   const command = vi.fn(async () => answer)
-  render(<ToolsPanel focusedThreadId={THREAD} state={state} command={command} subagents={agentsBridge(rows)} store={store} />)
+  const view = render(<ToolsPanel focusedThreadId={THREAD} state={state} command={command} subagents={subagents} store={store} />)
   act(() => { store.setOpen(true); store.setSurface('agents') })
-  return { command }
+  return { command, rerender: (next: AgentState) => view.rerender(<ToolsPanel focusedThreadId={THREAD} state={next} command={command} subagents={subagents} store={store} />) }
 }
 const panel = (): HTMLElement => screen.getByRole('complementary', { name: 'Tools' })
 const runs = (): HTMLElement => within(panel()).getByRole('region', { name: 'Detached runs' })
@@ -99,6 +99,27 @@ describe('detached runs in Tools › Agents', () => {
     fireEvent.click(await within(runs()).findByRole('button', { name: 'Stop the detached run Codex run' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'stop-detached-run', threadId: THREAD, runId: RUN }))
     expect(await within(runs()).findByRole('alert')).toHaveTextContent('That detached run has already ended. Nothing was stopped.')
+  })
+
+  it('still says the agents are loading while a run is listed above them', async () => {
+    owl(false)
+    const pending = { ...agentsBridge([agent]), page: vi.fn(() => new Promise<never>(() => undefined)) } as SubagentsBridge
+    setup(stateWith([run]), [agent], null, pending)
+    expect(await within(panel()).findByRole('region', { name: 'Detached runs' })).toBeInTheDocument()
+    expect(within(panel()).getByText('Loading agents…')).toBeInTheDocument()
+  })
+
+  it('hands focus on when the run whose Stop has it ends', async () => {
+    owl(false)
+    const state = stateWith([run])
+    const { rerender } = setup(state)
+    const stop = await within(runs()).findByRole('button', { name: 'Stop the detached run Codex run' })
+    act(() => { stop.focus() })
+    expect(stop).toHaveFocus()
+    rerender(stateWith(undefined))
+    await waitFor(() => expect(within(panel()).queryByRole('region', { name: 'Detached runs' })).toBeNull())
+    expect(document.activeElement).not.toBe(document.body)
+    expect(panel().contains(document.activeElement)).toBe(true)
   })
 
   it('leaves the pane as it was for a thread with no detached run', async () => {

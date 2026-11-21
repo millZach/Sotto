@@ -139,4 +139,6 @@
    thread's last reply, on a card like the roster's. A heading over the roster only while the section is there. */
 .subagents-section__head { margin: 2px 4px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 600; line-height: 20px; }
 .subagents-runs { margin-bottom: 18px; }
+/* The heading says what they are, so a row leaves out its own Detached run word (variant 2), and its name has the room. */
+.subagents-runs .delegated-work__kind { display: none; }
 .subagents-runs > .delegated-work { margin: 0; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-card); }

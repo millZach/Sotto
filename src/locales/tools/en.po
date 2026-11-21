@@ -3640,10 +3640,6 @@ msgstr "Sotto could not download this file. Nothing was saved. Try again."
 msgid "Sotto could not open this file. Nothing was opened."
 msgstr "Sotto could not open this file. Nothing was opened."
 
-#: src/renderer/src/tools/ToolsPanel.tsx
-msgid "Sotto could not reach the computer that runs this thread. The run may still be running."
-msgstr "Sotto could not reach the computer that runs this thread. The run may still be running."
-
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Sotto could not read this file. Nothing was opened. Try again."
 msgstr "Sotto could not read this file. Nothing was opened. Try again."

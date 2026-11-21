@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, Laptop, Server, Unplug, Users } from 'lucide-react'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
@@ -322,11 +322,27 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   const runsTitle = runCount ? plural(runCount, { one: '# detached run', other: '# detached runs' }) : null
   const withRuns = (title: string): string => runsTitle ? `${title} · ${runsTitle}` : title
   // Beside delegated threads, the count names both and says what needs you (variant B of the roster prototype).
-  const counted = families.length ? rosterCounts(delegatedRows, { ...state.summary, working }) : null
-  const counts = counted ? { ...counted, title: withRuns(counted.title) } : null
+  const rosterLine = families.length ? rosterCounts(delegatedRows, { ...state.summary, working }) : null
+  const counts = rosterLine ? { ...rosterLine, title: withRuns(rosterLine.title) } : null
   const blocks = useMemo(() => families.length ? mixedRoster(roster, families) : null, [families, roster])
   const grouped = useMemo(() => groups?.map(group => ({ group, blocks: mixedRoster(group.own ? roster : [], group.families) })).filter(item => item.blocks.length) ?? null, [groups, roster])
   const headingId = useId()
+  // A run that ends while the keyboard is on its row hands focus on: to the next run's Stop, else the first row below,
+  // else the Agents tab, so focus never falls to the page (as a waiting check's row hands it on, #1312).
+  const runsSection = useRef<HTMLElement>(null)
+  const focusInRuns = useRef(false)
+  useEffect(() => {
+    const track = (): void => { focusInRuns.current = runsSection.current?.contains(document.activeElement) === true }
+    document.addEventListener('focusin', track)
+    return () => document.removeEventListener('focusin', track)
+  }, [])
+  useLayoutEffect(() => {
+    if (!focusInRuns.current || runsSection.current?.contains(document.activeElement)) return
+    focusInRuns.current = false
+    const next = runsSection.current?.querySelector<HTMLElement>('.delegated-work__stop:not(:disabled)')
+      ?? surface.current?.querySelector<HTMLElement>('.subagent-head') ?? document.getElementById('tools-tab-agents')
+    next?.focus()
+  }, [runs])
   const rosterShown = roster.length > 0 || blocks !== null || waitingChecks.length > 0
   const live = delegation?.liveClock !== false
   const onOpenThread = delegation?.open
@@ -351,14 +367,14 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
         detail={total > 0 || runCount ? working ? plural(working, { other: '# working' }) : unknown ? t`Activity not confirmed` : t`None working` : null} />}
     <div className="subagents-roster">
       {open ? <WorkflowPage key={`${state.resetVersion}:${open.id}`} threadId={threadId} row={open} agents={pageAgents} bridge={bridge} /> : <>
-        {runCount ? <section className="subagents-runs" aria-labelledby={`${headingId}-runs`}>
+        {runCount ? <section ref={runsSection} className="subagents-runs" aria-labelledby={`${headingId}-runs`}>
           <h3 className="subagents-section__head" id={`${headingId}-runs`}>{t({ message: 'Detached runs', comment: 'Heading over the agent runs a thread started and left running, which Sotto found.' })}</h3>
           <DetachedRunStopContext.Provider value={stopRun ?? null}><ul className="delegated-work">{runs!.map(work => <DetachedRunRow key={work.id} work={work} />)}</ul></DetachedRunStopContext.Provider>
         </section> : null}
         {runCount && rosterShown ? <h3 className="subagents-section__head">{t({ message: 'Agents and delegated threads', comment: 'Heading over a thread’s agents and delegated threads, under its detached runs.' })}</h3> : null}
         {waitingChecks.length && onOpenThread ? <ul className="subagents-list" data-mixed="" aria-label={t`Checks waiting their turn`}>{waitingChecks.map(waiting => <WaitingCheckRow
           key={`check:${waiting.check.id}`} waiting={waiting} machine={checkMachineName(delegation?.state, waiting, t`This computer`, t`Remote host`)} threadOf={threadOf} onLeave={checkRowLeft} />)}</ul> : null}
-        {!roster.length && !blocks && !state.error && !waitingChecks.length && !runCount ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
+        {!roster.length && !blocks && !state.error && !waitingChecks.length && (!runCount || state.loading) ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
         {grouped && onOpenThread
           // A heading per machine with its count, and that machine's delegated threads under it (#1310, variant B).
           ? <>
