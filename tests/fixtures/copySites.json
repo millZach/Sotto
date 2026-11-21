@@ -49,7 +49,7 @@
   "src/main/agents/hostService.ts": {
     "shell()": 3
   },
-  "src/main/agents/ipc.ts": {
+  "src/main/agents/ipcCore.ts": {
     "shell()": 1
   },
   "src/main/agents/muse.ts": {

@@ -5,6 +5,7 @@ import { lingui } from '@lingui/vite-plugin'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { build as buildVite, type Plugin } from 'vite'
 import { STORE_WORKERS, storeWorkerBuild } from './scripts/store-worker-build.mjs'
+import { HOST_BUNDLED_PACKAGES } from './scripts/release-external-dependencies.mjs'
 
 // Preview code is inert unless the renderer was built with this exact test-only gate.
 const visualPreviewEnvironment = process.env.SOTTO_VISUAL_PREVIEW === '1' ? '1' : '0'
@@ -98,6 +99,18 @@ function headlessHostBuild(): Plugin {
 function storeWorkerBesideMain(): Plugin {
   return { name: 'sotto-store-worker', async closeBundle() {
     for (const worker of STORE_WORKERS) await buildVite(storeWorkerBuild({ root: __dirname, outDir: resolve(__dirname, 'out/main'), worker }))
+    await buildVite({
+      root: __dirname, configFile: false, logLevel: 'warn',
+      ssr: { noExternal: [...HOST_BUNDLED_PACKAGES] },
+      build: {
+        ssr: true, target: 'node24', outDir: resolve(__dirname, 'out/main'), emptyOutDir: false, minify: false, copyPublicDir: false,
+        rollupOptions: {
+          input: { pictureWorker: resolve(__dirname, 'src/host/pictureWorker.ts') },
+          external: id => isBuiltin(id),
+          output: { format: 'cjs', entryFileNames: '[name].js' },
+        },
+      },
+    })
   } }
 }
 
@@ -117,6 +130,8 @@ export default defineConfig({
       hangWatchdogWorker: resolve(__dirname, 'src/main/performance/hangWatchdogWorker.ts'),
       // Parakeet runs in this utility process, so letting go of the model gives its memory back (`parakeetHelper.ts`).
       parakeetHelper: resolve(__dirname, 'src/main/asr/parakeetHelper.ts'),
+      // The Electron-free desktop engine runs in its own child process behind `out-of-process-engine` (ADR-0210).
+      engineProcess: resolve(__dirname, 'src/main/engine/engineProcess.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production
