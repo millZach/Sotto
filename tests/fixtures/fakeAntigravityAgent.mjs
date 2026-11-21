@@ -246,6 +246,10 @@ function run(command) {
     send({ id, method: 'elicitation/create', params: { sessionId, toolCallId, mode: 'form', message: command.questions.length === 1 ? 'The agent has a question.' : `The agent has ${command.questions.length} questions.`,
       requestedSchema: { type: 'object', properties } } })
   }
+  if (command.type === 'mcp-permission') {
+    ask(sessionId, { toolCallId: randomUUID(), kind: 'other', title: `Run ${command.tool}`, status: 'pending' },
+      [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }, { optionId: 'deny', name: 'Deny', kind: 'reject_once' }])
+  }
   if (command.type === 'question') {
     ask(sessionId, { toolCallId: `interaction_${randomUUID().slice(0, 8)}`, title: command.text, kind: 'other', status: 'pending' },
       [{ optionId: 'Blue', name: 'Blue', kind: 'allow_once' }, { optionId: 'Red', name: 'Red', kind: 'allow_once' }])

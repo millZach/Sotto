@@ -99,9 +99,9 @@ run_posture() {
     recorder=$!
     sleep 2
     touch "$root/grabbing"; grab "$display" & grabber=$!
-    # Upright, only the pages whose top and rail it changes: the Threads page, a thread and Watcher.
+    # Upright, only the pages whose top and rail it changes: the Threads page, a thread, Watcher and Owlets.
     if [ "$posture" = upright ]; then
-        set -- -only-testing:SottoUITests/DuoCaptureTests/testThreadsPage -only-testing:SottoUITests/DuoCaptureTests/testThreadReading -only-testing:SottoUITests/DuoCaptureTests/testWatcher
+        set -- -only-testing:SottoUITests/DuoCaptureTests/testThreadsPage -only-testing:SottoUITests/DuoCaptureTests/testThreadReading -only-testing:SottoUITests/DuoCaptureTests/testWatcher -only-testing:SottoUITests/DuoCaptureTests/testOwlets
     else
         set -- -only-testing:SottoUITests/DuoCaptureTests
     fi

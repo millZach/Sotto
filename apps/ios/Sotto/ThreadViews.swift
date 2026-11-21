@@ -44,7 +44,7 @@ struct ThreadView: View {
         .pageGround()
         // With no bar over it, the page's own ground keeps its words from the clock and battery.
         .overlay(alignment: .top) { if barless { StatusBarFade() } }
-        .navigationTitle(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+        .navigationTitle(thread?.shownTitle ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { barTitle }
@@ -53,7 +53,8 @@ struct ThreadView: View {
                     if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { agentsOpen = true } }
                     barPill
                     if model.watchHost(for: ref) != nil, thread.map(ThreadGroups.offersWatch) ?? true { WatchToggle(ref: ref, title: thread?.title) }
-                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
+                    // An owlet's ••• always has Edit owlet (Zach's pick A, November 21, 2026).
+                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil || thread?.owlet != nil { ThreadMenu(ref: ref) }
                 }
                 // Where the bar is short, iOS gives the group its smallest size, which squeezed Agents' and Watch's words
                 // to nothing; held at its own size, the title gives way instead.
@@ -94,7 +95,7 @@ struct ThreadView: View {
     }
 
     private var barTitle: some View {
-        Text(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+        Text(thread?.shownTitle ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
             .font(.sotto(.body, .semibold))
             .foregroundStyle(Palette.ink)
             .lineLimit(1)
@@ -437,6 +438,8 @@ struct ThreadMenu: View {
     @State private var acted = 0
     @State private var showingPullRequest = false
     @State private var showingCard = false
+    /// Edit owlet, from an owlet's ••• (ADR-0213).
+    @State private var editingOwlet = false
     /// Whether the rail stands on the left, as Settings can put it sideways, so the card opens toward the page.
     @State private var railOnLeft = false
     @Environment(\.sottoTheme) private var theme
@@ -487,10 +490,17 @@ struct ThreadMenu: View {
                 PullRequestSheet(ref: ref, url: url, number: number).overThread()
             }
         }
+        .duoSheet(isPresented: $editingOwlet, onDismiss: { model.creationFeedback = nil }) {
+            OwletSetupSheet(editing: ref, opened: { _ in }).overThread()
+        }
     }
 
-    /// What the thread can do: compact its context, and settle or restore it.
+    /// What the thread can do: change the owlet it is, compact its context, and settle or restore it.
     @ViewBuilder private var actions: some View {
+        if model.thread(ref)?.owlet != nil {
+            Button { editingOwlet = true } label: { Label("Edit owlet", systemImage: "pencil") }
+                .accessibilityIdentifier("thread-edit-owlet")
+        }
         if model.compactionOffered(ref) {
             let held = model.compactionHeld(ref)
             Button { acted += 1; Task { await model.compact(ref) } } label: {
@@ -521,7 +531,7 @@ struct ThreadMenu: View {
         let place = model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
         let card = VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: Space.s1) {
-                Text(verbatim: thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+                Text(verbatim: thread?.shownTitle ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
                     .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, Space.s1)
@@ -551,7 +561,7 @@ struct ThreadMenu: View {
                 }
                 .accessibilityLabel(GitChipRow.spokenPullRequest(pullRequest, rollup: checks))
             }
-            if model.compactionOffered(ref) || model.shelfAction(ref) != nil { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            if model.compactionOffered(ref) || model.shelfAction(ref) != nil || thread?.owlet != nil { Rectangle().fill(Palette.hairline).frame(height: 1) }
             cardActions
         }
         .frame(width: 292, alignment: .leading)
@@ -577,6 +587,12 @@ struct ThreadMenu: View {
 
     /// The same actions as `actions`, as the card's rows.
     @ViewBuilder private var cardActions: some View {
+        if model.thread(ref)?.owlet != nil {
+            cardRow(String(localized: "Edit owlet"), detail: nil, icon: "pencil", identifier: "thread-edit-owlet") {
+                // The sheet can't rise while the card is still going.
+                Task { try? await Task.sleep(nanoseconds: 350_000_000); editingOwlet = true }
+            }
+        }
         if model.compactionOffered(ref) {
             let held = model.compactionHeld(ref)
             cardRow(String(localized: "Compact context"), detail: held ?? String(localized: "Summarize earlier messages to free room"), enabled: held == nil) {
@@ -1459,7 +1475,7 @@ private struct ThreadHero: View, Equatable {
         let _ = BenchProbe.body("ThreadHero")
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
-            Text(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+            Text(thread?.shownTitle ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
                 .font(.sotto(.display, .bold))
                 .headingTracking(-0.6)
                 .foregroundStyle(Palette.ink)
@@ -1467,6 +1483,13 @@ private struct ThreadHero: View, Equatable {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("thread-title")
                 .background(edgeReader(\.maxY, titleMoved))
+            // An owlet's role, in the user's words, under its name (ADR-0213).
+            if let role = thread?.owlet?.role, !role.isEmpty {
+                Text(verbatim: role).font(.sotto(.body)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Space.s1)
+                    .accessibilityIdentifier("thread-owlet-role")
+            }
             HStack(spacing: 5) {
                 ProviderMarks(providerID: thread?.providerId, watched: watched)
                 Text(place).lineLimit(1).truncationMode(.middle)
@@ -1516,8 +1539,10 @@ extension AppModel {
     /// Where a thread runs, as every row and card says it (#1861): provider · project · computer, the project only where
     /// this iPhone lists the thread. The caller names the provider and computer, since Watcher's records name them for
     /// threads this iPhone may not list.
+    /// An owlet's project is its own folder, named as the desktop names it, `Owlets/Tawny` (ADR-0213).
     func placeLine(_ ref: ThreadRef, provider: String, computer: String) -> String {
-        [provider, projectTitle(ref), computer].compactMap { $0 }.joined(separator: " · ")
+        let project = thread(ref)?.owlet != nil ? projectTitle(ref).map(Owlets.folderLabel) : projectTitle(ref)
+        return [provider, project, computer].compactMap { $0 }.joined(separator: " · ")
     }
 }
 

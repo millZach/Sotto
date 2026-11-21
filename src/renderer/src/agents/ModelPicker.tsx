@@ -152,7 +152,7 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
 /** Interactive rows inside the picker's list (models, Legacy row, and OpenCode/Cursor source rows), skipping controls inside an expanded inline model card. */
 const LISTBOX_OPTIONS = '[role="option"]:not(:disabled), .model-picker__legacy, :scope > button:not(:disabled)'
 
-export function ModelPicker({ foot, suffix, shownName, models, modelId, current = resolveModel(models, modelId), disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card, effort, open: controlledOpen, onOpenChange, initialFocus = 'search', returnFocusTo, dialogId: givenDialogId }: {
+export function ModelPicker({ foot, suffix, shownName, models, modelId, current = resolveModel(models, modelId), disabled, onChange, note, unavailable = noUnavailable, availableFavoritesOnly = false, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card, effort, open: controlledOpen, onOpenChange, initialFocus = 'search', returnFocusTo, dialogId: givenDialogId }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** The model on the chip when a saved choice can be absent from the menu. */
   readonly current?: AgentModel | undefined
@@ -160,6 +160,8 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
   readonly note?: string | undefined
   readonly unavailable?: readonly UnavailablePickerProvider[] | undefined
+  /** Watcher role menus list only favorites the role can choose. */
+  readonly availableFavoritesOnly?: boolean
   readonly continueOn?: PickerContinuation | undefined
   /** The chip's accessible name, where it chooses something other than this thread's own model. */
   readonly label?: string | undefined
@@ -231,13 +233,13 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
   }, [cardShown, cardFocused])
   const favoritesOn = useOwlFeature('model-favorites')
   const stored = useModelFavorites()
-  // Only the favorites of providers this menu offers: a menu that lists some providers (continuing a thread, a worker role)
-  // leaves the rest out rather than calling them unavailable.
+  const liveModels = useMemo(() => new Map(models.filter(model => !model.hiddenFromMenu).map(model => [favoriteKey(model), model])), [models])
   const favorites = useMemo(() => {
     if (!favoritesOn) return noFavorites
+    if (availableFavoritesOnly) return stored.filter(favorite => liveModels.get(favoriteKey(favorite))?.ready)
     const offered = new Set([...models.map(model => model.provider), ...unavailable.map(item => item.name)])
     return stored.filter(favorite => offered.has(favorite.provider))
-  }, [favoritesOn, stored, models, unavailable])
+  }, [favoritesOn, availableFavoritesOnly, stored, liveModels, models, unavailable])
   const [provider, setProvider] = useState('')
   /** Whether Favorites is the rail's chosen tile, which it is only while the menu has a rail. */
   const [onFavorites, setOnFavorites] = useState(() => favorites.length > 0)
@@ -278,7 +280,6 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
   const selectedProvider = favoritesPane ? undefined : groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   /** The rail's tiles by name, Favorites first where it has one. */
   const tiles = useMemo(() => [...(favoritesTile ? [FAVORITES] : []), ...groups.map(group => group.name)], [favoritesTile, groups])
-  const liveModels = useMemo(() => new Map(models.filter(model => !model.hiddenFromMenu).map(model => [favoriteKey(model), model])), [models])
   const matchesQuery = (model: AgentModel): boolean => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())
   const filtered = selectedProvider?.models.filter(matchesQuery) ?? []
   // Legacy models are found by a search; otherwise they wait under the Legacy row until it is opened.

@@ -151,6 +151,15 @@ export function antigravityPending(wireId: string | number, method: string, para
 
 /** Tool kinds that change files, which Allow edits answers. */
 const EDIT_KINDS = new Set(['edit', 'delete', 'move'])
+
+/** agy's MCP call has kind "other" and a title made from its native tool name. Commands and questions also carry titles. */
+export function antigravityWatcherAdmission(titles: ReadonlySet<string> | undefined, pending: AntigravityPending): string | undefined {
+  if (pending.kind !== 'permission' || !pending.permission) return undefined
+  const { kind, title } = pending.permission.toolCall
+  if (kind !== 'other' || !title || !titles?.has(title)) return undefined
+  return pending.request.permissionChoices?.find(choice => choice.kind === 'allow-once')?.id
+}
+
 /**
  * The option Sotto answers with for the thread's mode, or undefined when the user answers. As T3's policy: Allow edits
  * allows a file change once; Full access allows anything once. Ask for approval and Auto leave every request to the
