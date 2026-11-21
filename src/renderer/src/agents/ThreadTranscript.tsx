@@ -1350,8 +1350,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // amendment). This computer keeps long bodies back from the window too (#2737), and is always there to ask.
   const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : t`this computer`
   const bodyHostConnected = thread.remoteHost !== true || (state.connections?.find(item => item.hostId === thread.hostId)?.connected ?? thread.clientConnected !== false)
-  const bodyHost = useMemo<ActivityBodyHost>(() => ({ threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected }),
-    [thread.id, bodyHostName, bodyHostConnected])
+  const bodyHostRemote = thread.remoteHost === true
+  const bodyHost = useMemo<ActivityBodyHost>(() => ({ threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected, remote: bodyHostRemote }),
+    [thread.id, bodyHostName, bodyHostConnected, bodyHostRemote])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
   // The folder the thread works in, so an opened command says where it ran only when that was somewhere else. A string,
   // so the steps redraw only when the folder itself changes.

@@ -16,7 +16,7 @@ const wholeEdit: AgentActivity = { id: 'edit', turnId: 't1', sequence: 2, kind: 
 const sentEdit = cutActivityBodies(wholeEdit)
 
 const fetchBody = vi.fn<(request: { threadId: string; activityId: string }) => Promise<AgentActivity | null>>()
-const host = (connected = true): ActivityBodyHost => ({ threadId: 'remote:thread', hostName: 'forge', connected })
+const host = (connected = true): ActivityBodyHost => ({ threadId: 'remote:thread', hostName: 'forge', connected, remote: true })
 const group = (records: AgentActivity[]): ActivityGroup => ({ key: 'g', turnId: 't1', anchorMessageId: 'm1', records })
 function rows(records: AgentActivity[], connected = true) {
   const draw = (items: AgentActivity[], online: boolean) => <ActivityBodyContext.Provider value={host(online)}>
@@ -192,7 +192,7 @@ describe('cut activity bodies on a remote thread (ADR-0025, October 18 amendment
   it('reads a cut row of this computer’s thread whole from main, named as this computer (#2737)', async () => {
     const user = userEvent.setup()
     answers({ test: wholeTest })
-    render(<ActivityBodyContext.Provider value={{ threadId: 'thread', hostName: 'this computer', connected: true }}>
+    render(<ActivityBodyContext.Provider value={{ threadId: 'thread', hostName: 'this computer', connected: true, remote: false }}>
       <ActivityGroupView group={group([sentTest])} live threadRunning={false} connected provider="Claude Code" />
     </ActivityBodyContext.Provider>)
     await user.click(screen.getByRole('button', { name: /npm test|Bash/u }))

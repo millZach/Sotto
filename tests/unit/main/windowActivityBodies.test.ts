@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { serialize } from 'node:v8'
+import { getHeapStatistics, serialize, setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { WindowActivityBodies, windowHistories } from '../../../src/main/agents/windowActivityBodies'
 import { ACTIVITY_BODY_LIMIT, utf8Bytes } from '../../../src/shared/activityBodies'
@@ -110,6 +111,31 @@ describe("this computer's histories as the main window is sent them (#2737)", ()
     const item = sent.activityDeltas[0]!
     expect('record' in item && item.record.cut?.output).toBe(utf8Bytes(whole.output!))
     expect('record' in item && item.record.output!.endsWith('\ntail')).toBe(true)
+  })
+
+  it('sends an append to a record a change cut, before any whole read, as the record cut again', () => {
+    // Bug Bot on #2753, N1: which records the window holds cut is known for a thread its history was never read for.
+    let whole = record({ output: long(400) })
+    const bodies = new WindowActivityBodies(() => whole)
+    bodies.update(delta([{ record: whole }]))
+    whole = { ...whole, output: `${whole.output}\ntail` }
+    const item = (bodies.update(delta([{ id: 'build', appendOutput: '\ntail' }])) as AgentThreadDetailDelta).activityDeltas[0]!
+    expect('record' in item && item.record.cut?.output).toBe(utf8Bytes(whole.output!))
+  })
+
+  it('keeps its cuts without keeping the bodies they were cut from', () => {
+    // Bug Bot on #2753, L2: a cut is a slice, and a slice keeps its whole body alive. Fifty 1 MB outputs cut and forgotten
+    // leave about 100 KB of cuts, not 50 MB of bodies.
+    setFlagsFromString('--expose-gc')
+    const gc = runInNewContext('gc') as () => void
+    const bodies = new WindowActivityBodies(() => null)
+    const used = (): number => { gc(); gc(); return getHeapStatistics().used_heap_size }
+    const start = used()
+    ;(() => {
+      const records = Array.from({ length: 50 }, (_, index) => record({ id: `r${index}`, sequence: index, output: `${index} `.padEnd(1 << 20, 'x').replace(/x{1000}/gu, line => `${line}\n`) }))
+      bodies.detail(history(records))
+    })()
+    expect(used() - start).toBeLessThan(10 * 1024 * 1024)
   })
 
   it('reads the history again when a record an append to a cut record names is gone', () => {

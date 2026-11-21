@@ -18,9 +18,16 @@ export interface ActivityBodyHost {
   /** The host's name as the window shows it. */
   readonly hostName: string
   readonly connected: boolean
+  /** Whether the thread is on a paired host; false for this computer's threads, whose bodies main keeps (#2737). */
+  readonly remote: boolean
 }
 export const ActivityBodyContext = createContext<ActivityBodyHost | null>(null)
 export const useActivityBodyHost = (): ActivityBodyHost | null => useContext(ActivityBodyContext)
+/** The paired host a transcript's thread is on, for what that host holds; null for this computer's threads. */
+export const usePairedHost = (): ActivityBodyHost | null => {
+  const host = useContext(ActivityBodyContext)
+  return host?.remote === true ? host : null
+}
 
 type Fetch = (request: { readonly threadId: string; readonly activityId: string }) => Promise<AgentActivity | null>
 type Entry = { readonly status: 'loading' } | { readonly status: 'loaded'; readonly record: AgentActivity; readonly bytes: number } | { readonly status: 'failed' }

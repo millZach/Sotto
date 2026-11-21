@@ -40,23 +40,28 @@ function keptWhole(record: AgentActivity): boolean {
  *
  * Each read of a history hands over fresh copies of its records, so what a cut left of each record's bodies is kept by
  * its ID and signature for the threads sent most recently, and a thread opened again is not cut again. Only the bodies
- * are kept: every other field comes from the record as it is now.
+ * are kept, each a string of its own rather than a slice that would keep the whole body alive with it: every other field
+ * comes from the record as it is now. Which records the window holds cut is kept apart from the bodies, for every thread
+ * it was sent, so an append to one is never joined to a cut body.
  */
 export class WindowActivityBodies {
-  /** By thread, then record: what the window was sent of each record it holds cut. */
+  /** By thread, then record: what the window was sent of each record it holds cut, for the threads sent most recently. */
   private readonly kept = new Map<string, Map<string, KeptCut>>()
+  /** By thread: the records the window holds cut. IDs alone, so it is kept for every thread the window was sent. */
+  private readonly held = new Map<string, Set<string>>()
 
   constructor(private readonly wholeRecord: (threadId: string, activityId: string) => AgentActivity | null) {}
 
   /** A thread's history whole, its records' bodies over the limit cut. */
   detail(detail: AgentThreadDetail | null): AgentThreadDetail | null {
     if (detail === null) return null
+    this.held.delete(detail.threadId)
     if (detail.activities === undefined) { this.kept.delete(detail.threadId); return detail }
     const before = this.kept.get(detail.threadId)
     const kept = new Map<string, KeptCut>()
     let changed = false
     const activities = detail.activities.map(record => {
-      const sent = this.record(record, before, kept)
+      const sent = this.record(detail.threadId, record, before, kept)
       if (sent !== record) changed = true
       return sent
     })
@@ -68,34 +73,44 @@ export class WindowActivityBodies {
   update(update: AgentThreadDetailUpdate): AgentThreadDetailUpdate | null {
     if (!isAgentThreadDetailDelta(update)) return this.detail(update)
     if (update.activityDeltas.length === 0) return update
-    const kept = this.kept.get(update.threadId)
+    const threadId = update.threadId
+    const kept = this.kept.get(threadId)
     let changed = false
     const activityDeltas: AgentActivityDelta[] = []
     for (const item of update.activityDeltas) {
       if ('record' in item) {
-        const record = this.record(item.record, kept, kept)
+        const record = this.record(threadId, item.record, kept, kept)
         if (record !== item.record) changed = true
         activityDeltas.push(record === item.record ? item : { record })
       } else if ('removed' in item) {
         kept?.delete(item.id)
+        this.held.get(threadId)?.delete(item.id)
         activityDeltas.push(item)
-      } else if (kept?.has(item.id)) {
+      } else if (this.held.get(threadId)?.has(item.id)) {
         // Appends are made only for a running record, which is never cut; this holds if one ever is.
-        const whole = this.wholeRecord(update.threadId, item.id)
+        const whole = this.wholeRecord(threadId, item.id)
         if (whole === null) return null
         changed = true
-        activityDeltas.push({ record: this.record(whole, kept, kept) })
+        activityDeltas.push({ record: this.record(threadId, whole, kept, kept) })
       } else activityDeltas.push(item)
     }
     return changed ? { ...update, activityDeltas } : update
   }
 
   /** A record as the window is sent it: cut, from `before` when its signature has not moved, and noted in `after`. */
-  private record(record: AgentActivity, before: Map<string, KeptCut> | undefined, after: Map<string, KeptCut> | undefined): AgentActivity {
+  private record(threadId: string, record: AgentActivity, before: Map<string, KeptCut> | undefined, after: Map<string, KeptCut> | undefined): AgentActivity {
+    const sent = this.sent(record, before, after)
+    let held = this.held.get(threadId)
+    if (sent !== record) { if (!held) this.held.set(threadId, held = new Set()); held.add(record.id) }
+    else if (held?.delete(record.id) && held.size === 0) this.held.delete(threadId)
+    return sent
+  }
+
+  private sent(record: AgentActivity, before: Map<string, KeptCut> | undefined, after: Map<string, KeptCut> | undefined): AgentActivity {
     if (keptWhole(record)) { after?.delete(record.id); return record }
     const signature = agentActivitySignature(record)
-    const held = before?.get(record.id)
-    if (held?.signature === signature) { after?.set(record.id, held); return laid(record, held) }
+    const kept = before?.get(record.id)
+    if (kept?.signature === signature) { after?.set(record.id, kept); return laid(record, kept) }
     const sent = cutActivityBodies(record)
     if (sent === record) { after?.delete(record.id); return record }
     after?.set(record.id, keptCut(record, sent, signature))
@@ -113,14 +128,21 @@ export class WindowActivityBodies {
   }
 }
 
+/**
+ * A cut body as a string of its own. A cut is a slice of its body, and V8 keeps the whole body alive behind a slice, so a
+ * kept cut would hold every body it was cut from (Bug Bot on #2753: 931 MB kept for 3 MB of cuts). UTF-16 keeps every
+ * code unit as it was, a lone surrogate included.
+ */
+const own = (value: string): string => Buffer.from(value, 'utf16le').toString('utf16le')
+
 function keptCut(record: AgentActivity, sent: AgentActivity, signature: string): KeptCut {
   let diffs: Map<number, string> | undefined
   if (sent.changes !== record.changes) sent.changes?.forEach((change, index) => {
-    if (change !== record.changes![index]) (diffs ??= new Map()).set(index, change.diff!)
+    if (change !== record.changes![index]) (diffs ??= new Map()).set(index, own(change.diff!))
   })
   return { signature, cut: sent.cut,
-    ...sent.output !== record.output ? { output: sent.output } : {},
-    ...sent.text !== record.text ? { text: sent.text } : {},
+    ...sent.output !== record.output && sent.output !== undefined ? { output: own(sent.output) } : {},
+    ...sent.text !== record.text && sent.text !== undefined ? { text: own(sent.text) } : {},
     ...diffs ? { diffs } : {} }
 }
 
