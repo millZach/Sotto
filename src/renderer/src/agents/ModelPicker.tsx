@@ -10,6 +10,8 @@ import { isTopEffort } from '../../../shared/topEffort'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAnchoredMenu } from './anchoredMenu'
 import { effortLabel } from './EffortPicker'
+import './threadChips.css'
+import './modelPicker.css'
 import { InlineModelCard, type CombinedEffort } from './EffortGauge'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
@@ -17,8 +19,6 @@ import { SPEED_STANDARD } from './pendingSettings'
 import { ProviderMark } from './ProviderMark'
 import { AddOwnServerDialog, OwnServerMenuEntry } from './OwnModelServers'
 import { favoriteKey, toggleModelFavorite, useModelFavorites, type ModelFavorite } from './modelFavorites'
-import './threadChips.css'
-import './modelPicker.css'
 
 /** How far a touchpad moves, in pixels, to step the provider rail once; a mouse notch is more than this. */
 const RAIL_WHEEL_STEP = 40
