@@ -100,7 +100,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (frame.method === 'initialize') {
     if (p.clientCapabilities?.fs?.writeTextFile !== false || p.clientCapabilities?.terminal !== false) violation('Sotto offers no file or terminal capability')
     const ready = () => send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1,
-      agentCapabilities: { loadSession: true, mcpCapabilities: { http: script.httpMcp !== false }, promptCapabilities: { image: script.images === true, audio: false, embeddedContext: true },
+      agentCapabilities: { loadSession: true, ...(script.httpMcp === false ? { mcpCapabilities: { http: false } } : {}), promptCapabilities: { image: script.images === true, audio: false, embeddedContext: true },
         sessionCapabilities: { resume: {}, close: {}, load: {}, list: {} }, auth: { logout: {} }, _meta: { antigravity: { tier: true, systemPrompt: { append: script.noAppend !== true } } } },
       agentInfo: { name: 'Antigravity ACP Server', version },
       authMethods: [{ id: 'oauth-personal', name: 'Log in with Google' }, { id: 'oauth-business', name: 'Log in with Gemini Enterprise' },

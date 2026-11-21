@@ -188,6 +188,24 @@ describe('Antigravity ACP adapter', () => {
     expect(await readdir(join(f.root, 'antigravity', 'scratch')).catch(() => [])).toEqual([])
   })
 
+  it('hands Sotto’s tools to agy, which advertises no MCP capability yet takes HTTP servers, and none when agy says it cannot', async () => {
+    const tools = [{ name: 'sotto_probe', definitions: [], mcpServer: async () => ({ name: 'sotto_probe', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }) }]
+    const servers = async () => (await f!.requests()).filter(record => record.method === 'session/new' && record.params?.cwd === f!.root).map(record => (record.params?.mcpServers as { name: string }[]).map(server => server.name))
+    for (const httpMcp of [undefined, false]) {
+      await f?.cleanup()
+      f = await antigravityFixture()
+      if (httpMcp === false) await f.script({ httpMcp })
+      f.host.useThreadTools(tools)
+      await f.host.connect()
+      await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+      const id = randomUUID()
+      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Tools' })
+      f.host.observeThreads?.([id])
+      await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+      await expect.poll(servers).toEqual([httpMcp === false ? [] : ['sotto_probe']])
+    }
+  })
+
   it('lists agy’s commands as skills', async () => {
     const id = await open()
     await expect.poll(async () => (await f!.host.listThreadSkills!(id)).skills.map(skill => skill.invocation)).toEqual(['/plan'])

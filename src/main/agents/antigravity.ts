@@ -543,7 +543,9 @@ export class AntigravityAcpHost implements ProviderHost {
         if (frame.method && frame.id !== undefined) void rpc.reply(frame.id, antigravityDecline()).catch(() => undefined)
       }, () => undefined)
       const client = await this.handshake(probe, signIn)
-      this.httpToolServers = client.agentCapabilities.mcpCapabilities?.http === true
+      // agy 1.5.13 advertises no mcpCapabilities, yet takes HTTP MCP servers in session/new and calls them, as T3 hands them
+      // over (checked live, November 21, 2026). So Sotto's tools go to agy unless it says it cannot take them.
+      this.httpToolServers = client.agentCapabilities.mcpCapabilities?.http !== false
       this.appendsSystemPrompt = client.agentCapabilities._meta?.antigravity?.systemPrompt?.append === true
       const images = client.agentCapabilities.promptCapabilities?.image === true
       let settings: AntigravitySessionSettings = {}
