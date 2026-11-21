@@ -55,7 +55,7 @@ async function mount(status: Partial<AgentProviderStatus>, { method = 'oauth-per
 describe('Antigravity’s provider row (variant B)', () => {
   it('draws Sotto’s arrow on its badge and offers the four sign-in methods, saving a new one through configure', async () => {
     const { command, header, details } = await mount(signedOut)
-    expect(header.querySelector('.provider-badge[data-provider="antigravity"] svg.provider-mark path')?.getAttribute('d')).toBe('M12 3L20 11H15V21H9V11H4Z')
+    expect(header.querySelector('.provider-badge[data-provider="antigravity"] svg.provider-mark path')?.getAttribute('d')).toBe('M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z')
     // The row signs in itself, so the header offers no Sign in and repeats no sentence about connecting again.
     expect(within(header.closest('.provider-row__head') as HTMLElement).queryByRole('button', { name: 'Sign in to Antigravity' })).toBeNull()
     expect(screen.queryByText(/then connect it again/u)).toBeNull()

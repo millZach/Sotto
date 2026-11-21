@@ -29,6 +29,7 @@ November 20, 2026. Zach asked: "add antigravity as a provider for Sotto. Please 
 7. **Watcher and short text both run on Antigravity.**
 8. **The live check runs on the laptop:** install `agy` there, Zach signs in once.
 9. **Design B, sign in on the row** (from the design drafts, tag `prototype/antigravity-provider`): Cursor's row shape, with a four-way sign-in method choice and numbered steps inline in the opened row, and the model menu grouped by model maker (Google, Anthropic, OpenAI) as Cursor's is.
+10. **The mark is Antigravity's official logo** (November 21, 2026, over the three marks drawn for Sotto in tag `prototype/antigravity-mark`): Google's arch from antigravity.google, in one colour as T3 Code draws it, on Google's blue.
 
 ## Where T3 and Sotto part (asked on the question cards)
 
