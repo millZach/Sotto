@@ -1585,7 +1585,10 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // `hostId` is the desktop window's alone: the connected host whose own settings the patch changes, which the router
   // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
-    claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional(), newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
+    claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional(), newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional(),
+    // Antigravity's sign-in settings carry defaults, which a partial patch would otherwise fill in (ADR-0211).
+    antigravitySignInMethod: z.enum(ANTIGRAVITY_SIGN_IN_METHODS).optional(), antigravityProject: z.string().max(256).optional(), antigravityLocation: z.string().max(64).optional(),
+    antigravityBinaryPath: z.string().max(4_096).optional() }), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'antigravity']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
   // `hostId` on a provider command is the desktop window's alone, like Update all's: Settings > Providers names this
