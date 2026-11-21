@@ -10,15 +10,11 @@
 import { execFile } from 'node:child_process'
 import { readdir, readFile, readlink } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { MAX_DETACHED_RUN_COMMAND, MAX_MONITOR_LABEL } from '../../shared/agentMonitoring'
+import { MAX_DETACHED_RUN_COMMAND, MAX_MONITOR_LABEL, RUN_MARKS, type RunMark, type RunMarkName } from '../../shared/agentMonitoring'
 
-/**
- * The environment variables that name the provider session a process was started from. `HERMES_SESSION_KEY` is the ACP
- * session Hermes binds for the commands it runs (#2637); no Hermes client is an agent client a thread detaches with it.
- */
-export const RUN_MARKS = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'HERMES_SESSION_KEY'] as const
-export type RunMarkName = typeof RUN_MARKS[number]
-export interface RunMark { readonly name: RunMarkName; readonly value: string }
+// The names an environment is read for, and a mark as read, live with the schema a host reports them by (#2749).
+export { RUN_MARKS }
+export type { RunMark, RunMarkName }
 
 /** Any process the table lists: enough to walk its parents. */
 export interface ListedProcess {

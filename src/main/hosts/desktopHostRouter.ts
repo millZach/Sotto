@@ -26,6 +26,7 @@ import type { ThreadVideoPart } from '../agents/threadMediaScheme'
 import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaWindowRequest, type AgentThreadMediaPartRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
+import type { DetachedRunElsewhere } from '../../shared/agentMonitoring'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { DESKTOP_WINDOW_CLIENT_ID, desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
@@ -58,7 +59,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   subscribeBrowserFrames?(listener: (frame: HostBrowserFrame) => void): () => void
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'supportsPluginElevenLabsSpending' | 'sharePluginElevenLabsSpending' | 'subscribePluginElevenLabsSpending' | 'supportsPluginMeshyModels' | 'pluginMeshyModels' | 'supportsPluginElevenLabsSounds' | 'pluginElevenLabsSounds' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsBringBack' | 'threadPrompts' | 'threadWords' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'supportsDetachedRunsElsewhere' | 'detachedRunsElsewhere' | 'subscribeDetachedRunsElsewhere' | 'lookForDetachedRuns' | 'stopDetachedRunElsewhere' | 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'supportsPluginElevenLabsSpending' | 'sharePluginElevenLabsSpending' | 'subscribePluginElevenLabsSpending' | 'supportsPluginMeshyModels' | 'pluginMeshyModels' | 'supportsPluginElevenLabsSounds' | 'pluginElevenLabsSounds' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsBringBack' | 'threadPrompts' | 'threadWords' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -382,6 +383,7 @@ export class DesktopHostRouter {
   private readonly frameListeners = new Set<(frame: HostBrowserFrame) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly checkListeners = new Set<() => void>()
+  private readonly runsElsewhereListeners = new Set<(hostId: string, machine: string, runs: readonly DetachedRunElsewhere[]) => void>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   /** What each remote host's suggestions were told to the window as, by window key, so a connection that goes lets them go. */
   private readonly toldNextPrompts = new Map<string, Map<string, string>>()
@@ -666,6 +668,18 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeDelegationViews) off.push(connection.service.subscribeDelegationViews(change => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.delegations.heard(connection.hostId, change)
     }))
+    // The detached runs a host found with marks none of its threads owns (#2749), for this computer's own threads to claim:
+    // what it reports now and each report after, and none once this connection is gone.
+    const subscribeRuns = connection.service.subscribeDetachedRunsElsewhere?.bind(connection.service)
+    const readRuns = connection.service.detachedRunsElsewhere?.bind(connection.service)
+    if (connection.kind === 'remote' && subscribeRuns && readRuns) {
+      const report = (): void => { if (this.hosts.get(connection.hostId)?.connection === connection) this.runsElsewhereChanged(connection.hostId, connection.name, readRuns()) }
+      off.push(subscribeRuns(report))
+      off.push(() => this.runsElsewhereChanged(connection.hostId, connection.name, []))
+      // What it reports already, as it joins: the router follows a connection before it lists it.
+      const already = readRuns()
+      if (already.length) this.runsElsewhereChanged(connection.hostId, connection.name, already)
+    }
     if (connection.kind === 'remote' && connection.service.subscribeCheckQueue) off.push(connection.service.subscribeCheckQueue(() => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.checksChanged()
     }))
@@ -787,6 +801,36 @@ export class DesktopHostRouter {
         ...check.by !== undefined ? { by: hostEntityKey(hostId, check.by) } : {} })) })
     }
     return machines
+  }
+  /**
+   * Hears what each connected host reports of the detached runs it found with marks none of its threads owns (#2749), with
+   * the name this computer gives that host; an empty list once the host is gone. Returns the way to stop.
+   */
+  subscribeDetachedRunsElsewhere(listener: (hostId: string, machine: string, runs: readonly DetachedRunElsewhere[]) => void): () => void {
+    this.runsElsewhereListeners.add(listener)
+    return () => { this.runsElsewhereListeners.delete(listener) }
+  }
+  private runsElsewhereChanged(hostId: string, machine: string, runs: readonly DetachedRunElsewhere[]): void {
+    for (const listener of [...this.runsElsewhereListeners]) { try { listener(hostId, machine, runs) } catch { /* A listener's failure is its own. */ } }
+  }
+  /** Asks every connected host that reports runs from elsewhere to look again: a turn on this computer just ended (#2749). */
+  lookForDetachedRunsElsewhere(): void {
+    for (const { connection } of this.hosts.values()) {
+      if (connection.kind !== 'remote' || connection.available?.() === false || connection.service.supportsDetachedRunsElsewhere !== true) continue
+      void Promise.resolve().then(() => connection.service.lookForDetachedRuns?.()).catch(() => undefined)
+    }
+  }
+  /**
+   * Stops a run a host reported, on that host, because the user pressed its Stop (#2749). Throws the words to show when it
+   * did not stop, or when the host is not connected.
+   */
+  async stopDetachedRunElsewhere(hostId: string, runId: string): Promise<void> {
+    const connection = this.hosts.get(hostId)?.connection
+    if (!connection || connection.available?.() === false || !connection.service.stopDetachedRunElsewhere) {
+      throw new Error(t`Sotto could not reach the computer that runs this detached run. It may still be running. Try Stop again once that computer is connected.`)
+    }
+    const why = await connection.service.stopDetachedRunElsewhere(runId)
+    if (why !== null) throw new Error(why)
   }
   /** Hears a connected host's check queue change, or a host with one leave. Returns the way to stop. */
   subscribeCheckQueues(listener: () => void): () => void {

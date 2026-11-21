@@ -1,3 +1,5 @@
+import type { DetachedRunElsewhere } from '../../shared/agentMonitoring'
+import type { DetachedRunWatch } from './detachedRuns'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { AgentThreadWords } from '../../shared/threadWords'
 import { startHandoverPrefix } from '../../shared/threadStarts'
@@ -236,6 +238,17 @@ export interface HostService {
   readonly supportsCheckQueueViews?: boolean
   checkQueue?(): readonly CheckQueueEntry[] | undefined
   subscribeCheckQueue?(listener: () => void): () => void
+  /**
+   * The detached runs found on this machine with a mark none of its threads owns (`detached-runs-elsewhere`, #2749), for
+   * its recorded desktops: one a desktop's thread started here, as over ssh. `lookForDetachedRuns` looks again a few
+   * seconds from now; `stopDetachedRunElsewhere` ends one, by the user's Stop on a desktop, answering null once it ended
+   * or why it did not. Present only where this machine looks for detached runs.
+   */
+  readonly supportsDetachedRunsElsewhere?: boolean
+  detachedRunsElsewhere?(): readonly DetachedRunElsewhere[]
+  subscribeDetachedRunsElsewhere?(listener: () => void): () => void
+  lookForDetachedRuns?(): void
+  stopDetachedRunElsewhere?(runId: string): Promise<string | null>
   /**
    * The next prompts the host holds for its threads (`next-prompts`, ADR-0132, ADR-0173), by its own thread IDs, and each
    * change, a let-go one with `prompt` null. On a desktop's connection to a host, what the host last pushed, and
@@ -583,6 +596,8 @@ export class LocalHostService implements HostService {
     delegationViews?: DelegationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
     checks?: CheckQueue
+    /** The watch for detached runs (ADR-0204), present only where this machine looks for them: its runs from elsewhere (#2749). */
+    detachedRuns?: Pick<DetachedRunWatch, 'foreignRuns' | 'subscribeForeign' | 'turnEnded' | 'stopForeign'>
     /** The next prompts this host builds for its threads (ADR-0173), present only while its `next-prompt` Owl answer is on. */
     nextPrompts?: { list(): readonly NextPromptEntry[]; subscribe(listener: (entry: NextPromptEntry) => void): () => void }
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
@@ -675,6 +690,14 @@ export class LocalHostService implements HostService {
   }
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
+  }
+  get supportsDetachedRunsElsewhere(): boolean { return this.options.detachedRuns !== undefined }
+  detachedRunsElsewhere(): readonly DetachedRunElsewhere[] { return this.options.detachedRuns?.foreignRuns() ?? [] }
+  subscribeDetachedRunsElsewhere(listener: () => void): () => void { return this.options.detachedRuns?.subscribeForeign(listener) ?? (() => undefined) }
+  lookForDetachedRuns(): void { this.options.detachedRuns?.turnEnded() }
+  async stopDetachedRunElsewhere(runId: string): Promise<string | null> {
+    if (!this.options.detachedRuns) return 'This computer is not looking for detached runs. Nothing was stopped.'
+    try { await this.options.detachedRuns.stopForeign(runId); return null } catch (error) { return error instanceof Error ? error.message : 'Sotto could not stop that detached run. It may still be running.' }
   }
   get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }
   /** The queue's own view, taken only after it changed, so a read copies nothing. */

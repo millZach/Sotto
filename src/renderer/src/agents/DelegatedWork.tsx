@@ -346,7 +346,9 @@ export function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork })
   const run = work.run
   if (!run) return null
   const kindWord = BACKGROUND_WORK_LABELS['detached-run']
-  const label = work.label
+  // A run a thread started on another machine, which that machine found and reported (#2749), says where it runs.
+  const machine = run.machine
+  const label = machine === undefined ? work.label : t({ message: `${work.label} on ${machine}`, comment: 'A detached run on another machine: {0} is its name, such as "Codex run"; {machine} is the machine, such as forge.' })
   const model = run.model ? run.effort ? `${run.model}, ${run.effort}` : run.model : run.effort
   // The open command answers Escape: it closes, and focus goes back to its summary.
   const closeOnEscape = (event: React.KeyboardEvent<HTMLDetailsElement>): void => {
@@ -379,7 +381,9 @@ export function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork })
       {run.folder ? <><span aria-hidden="true">·</span><span className="delegated-work__folder" title={run.folder}>{run.folder}</span></> : null}
       {work.startedAt ? <><span aria-hidden="true">·</span><RunningFor startedAt={work.startedAt} /></> : null}
     </p>
-    <p id={lineId} className="delegated-work__line"><Trans>Started from this thread and left running after its turn. Sotto found it running; its provider does not report it.</Trans></p>
+    <p id={lineId} className="delegated-work__line">{machine === undefined
+      ? <Trans>Started from this thread and left running after its turn. Sotto found it running; its provider does not report it.</Trans>
+      : <Trans>Started from this thread on {machine} and left running there. Sotto on {machine} found it running; its provider does not report it.</Trans>}</p>
     <details className="delegated-work__command" onKeyDown={closeOnEscape}><summary className="tt-focusable">{t({ message: 'Command', comment: 'Shows the command a detached run was started with.' })}</summary><code>{run.command}</code></details>
     {why ? <p className="delegated-work__why tt-paragraph" role="alert">{why}</p> : null}
   </li>

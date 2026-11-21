@@ -1291,6 +1291,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
   })
+  // Detached runs a thread here started on a paired host, as over ssh (#2749): that host reports the runs it found with marks
+  // it does not own, this computer's watch claims the ones its own threads' marks name, a turn ending here asks each host to
+  // look again, and Stop on one goes to the host that found it.
+  const detachedRunWatch = localRuntime.detachedRuns
+  if (detachedRunWatch) {
+    detachedRunWatch.useElsewhere({ look: () => hostRouter.lookForDetachedRunsElsewhere(), stop: (hostId, runId) => hostRouter.stopDetachedRunElsewhere(hostId, runId) })
+    hostRouter.subscribeDetachedRunsElsewhere((hostId, machine, runs) => detachedRunWatch.setElsewhere(hostId, machine, runs))
+  }
   quitHandles.hostRouter = hostRouter
   // The window's panes show their threads only while it has the focus (ADR-0046), on this computer's host and on every
   // remote host that keeps what is shown (ADR-0092).

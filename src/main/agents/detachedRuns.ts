@@ -9,7 +9,7 @@
  */
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { MAX_BACKGROUND_WORK, MAX_DETACHED_RUNS, type AgentBackgroundWork } from '../../shared/agentMonitoring'
+import { MAX_BACKGROUND_WORK, MAX_DETACHED_RUNS, MAX_DETACHED_RUNS_ELSEWHERE, type AgentBackgroundWork, type DetachedRunElsewhere } from '../../shared/agentMonitoring'
 import { descendsFrom, runWords, shownCommand, type AgentProcess, type ProcessTable, type RunMark, type ScanProcesses } from './detachedRunScan'
 
 /** How long after Sotto starts it first looks: long enough for the threads to load. */
@@ -42,9 +42,21 @@ export interface DetachedRunWatchOptions {
   readonly followMs?: number
   /** Ends a process and what it started; the real one signals, and on Windows runs taskkill. */
   readonly end?: (pid: number) => Promise<boolean>
+  /**
+   * The desktop's reach into its paired hosts for runs its threads started there (#2749): `look` asks each to look again,
+   * as a turn ending here may have started one, and `stop` ends one there, through that host's own look-again rule.
+   */
+  readonly elsewhere?: {
+    readonly look: () => void
+    readonly stop: (hostId: string, runId: string) => Promise<void>
+  }
 }
 
 interface RunRecord { readonly threadId: string; readonly pid: number; readonly work: AgentBackgroundWork }
+/** A run found here that carries a mark no thread here owns (#2749): what a desktop may know it by, and what was read. */
+interface ForeignRecord { readonly pid: number; readonly run: DetachedRunElsewhere }
+/** A run a paired host reported, as this desktop's own thread's (#2749). */
+interface RemoteRecord { readonly threadId: string; readonly hostId: string }
 
 /** A run's ID: the same for one process for as long as it runs, and never the same for another that takes its number. */
 function runId(process: AgentProcess): string {
@@ -110,6 +122,16 @@ export class DetachedRunWatch {
   private readonly byThread = new Map<string, AgentBackgroundWork[]>()
   private readonly records = new Map<string, RunRecord>()
   private readonly listeners = new Set<(threadIds: readonly string[]) => void>()
+  /** Runs found here that no thread here owns, by run ID, for the desktops that may (#2749). */
+  private foreign = new Map<string, ForeignRecord>()
+  private readonly foreignListeners = new Set<() => void>()
+  /** What each paired host reported, as it reported it (#2749). */
+  private readonly reported = new Map<string, { readonly machine: string; readonly runs: readonly DetachedRunElsewhere[] }>()
+  /** Where each reported run this desktop's threads own belongs. */
+  private remoteRecords = new Map<string, RemoteRecord>()
+  /** Each thread's runs as `runsFor` gives them: its own, then those its paired hosts found, within the list's limit. */
+  private shown = new Map<string, AgentBackgroundWork[]>()
+  private elsewhere: DetachedRunWatchOptions['elsewhere']
   private timer: ReturnType<typeof setTimeout> | undefined
   private dueAt = Number.POSITIVE_INFINITY
   private looking: Promise<boolean> | undefined
@@ -117,14 +139,59 @@ export class DetachedRunWatch {
   private unownedLooks = 0
   private closed = false
 
-  constructor(private readonly options: DetachedRunWatchOptions) {}
+  constructor(private readonly options: DetachedRunWatchOptions) { this.elsewhere = options.elsewhere }
+
+  /** Gives a desktop's watch its reach into the paired hosts once they are known, after it was built (#2749). */
+  useElsewhere(elsewhere: NonNullable<DetachedRunWatchOptions['elsewhere']>): void { this.elsewhere = elsewhere }
 
   /** Starts looking, once, a while after Sotto starts. */
   start(): void { this.schedule(DETACHED_RUN_FIRST_LOOK_MS) }
-  /** A turn ended somewhere: a run it cut loose would be running by now. */
-  turnEnded(): void { this.schedule(DETACHED_RUN_AFTER_TURN_MS) }
-  /** This thread's detached runs as background work, or undefined when it has none. */
-  runsFor(threadId: string): readonly AgentBackgroundWork[] | undefined { return this.byThread.get(threadId) }
+  /**
+   * A turn ended somewhere: a run it cut loose would be running by now. A desktop asks its paired hosts to look too, since
+   * the turn may have started one there (#2749).
+   */
+  turnEnded(): void { this.schedule(DETACHED_RUN_AFTER_TURN_MS); this.elsewhere?.look() }
+  /** This thread's detached runs as background work, its own and any its paired hosts found, or undefined when it has none. */
+  runsFor(threadId: string): readonly AgentBackgroundWork[] | undefined { return this.shown.get(threadId) }
+
+  /**
+   * The runs found here that carry a mark no thread here owns (#2749), for a host to send its desktops. A desktop whose own
+   * adapter knows a mark shows the run as that thread's; the rest ignore it.
+   */
+  foreignRuns(): readonly DetachedRunElsewhere[] { return [...this.foreign.values()].map(record => record.run) }
+  /**
+   * Told after a look that changed the foreign runs. While anything listens the watch follows them until they end, as it
+   * follows its own threads' runs; with nothing listening, as on a desktop, it looks for them only a few times.
+   */
+  subscribeForeign(listener: () => void): () => void {
+    this.foreignListeners.add(listener)
+    if (this.foreign.size) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
+    return () => { this.foreignListeners.delete(listener) }
+  }
+  /**
+   * Stops a run found here that no thread here owns, because a desktop's user pressed its Stop (#2749): the same look-again
+   * rule as `stop`, so a process that ended, or another that took its number, is never signalled.
+   */
+  async stopForeign(id: string): Promise<void> {
+    if (!this.foreign.has(id)) throw new Error(DETACHED_RUN_ENDED)
+    if (!await this.lookNow()) throw new Error(DETACHED_RUN_UNCHECKED)
+    const record = this.foreign.get(id)
+    if (!record) throw new Error(DETACHED_RUN_ENDED)
+    const ended = await (this.options.end ?? endRun)(record.pid)
+    await this.lookNow()
+    if (!ended && this.foreign.has(id)) throw new Error(DETACHED_RUN_NOT_STOPPED)
+  }
+
+  /**
+   * What a paired host reported of the runs it found with marks it does not own (#2749), named by the machine this desktop
+   * calls it. Each one a mark of this desktop's own threads names is shown as that thread's run; an empty list clears the
+   * host, as when it goes away.
+   */
+  setElsewhere(hostId: string, machine: string, runs: readonly DetachedRunElsewhere[]): void {
+    if (runs.length) this.reported.set(hostId, { machine, runs: runs.slice(0, MAX_DETACHED_RUNS_ELSEWHERE) })
+    else if (!this.reported.delete(hostId)) return
+    this.refreshShown()
+  }
   /** Told the threads whose runs changed, after each look that changed any. */
   subscribe(listener: (threadIds: readonly string[]) => void): () => void {
     this.listeners.add(listener)
@@ -136,6 +203,13 @@ export class DetachedRunWatch {
    * that took its number, is never signalled. Throws with words to show when the run is gone or would not stop.
    */
   async stop(threadId: string, id: string): Promise<void> {
+    // A run a paired host reported is stopped there, by that host's own look-again rule (#2749).
+    const remote = this.remoteRecords.get(id)
+    if (remote) {
+      if (remote.threadId !== threadId || !this.elsewhere) throw new Error(DETACHED_RUN_ENDED)
+      await this.elsewhere.stop(remote.hostId, id)
+      return
+    }
     if (this.records.get(id)?.threadId !== threadId) throw new Error(DETACHED_RUN_ENDED)
     // Only a look that read the table now may vouch for the process: one that failed leaves the old records standing.
     if (!await this.lookNow()) throw new Error(DETACHED_RUN_UNCHECKED)
@@ -151,6 +225,7 @@ export class DetachedRunWatch {
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
     this.listeners.clear()
+    this.foreignListeners.clear()
   }
 
   /** Looks now, after any look already under way; true when it read the process table. */
@@ -206,16 +281,65 @@ export class DetachedRunWatch {
       found.set(threadId, kept.map(record => record.work))
       for (const record of kept) records.set(record.work.id, record)
     }
-    const changed = new Set<string>()
-    for (const [threadId, list] of found) if (JSON.stringify(this.byThread.get(threadId)) !== JSON.stringify(list)) changed.add(threadId)
-    for (const threadId of this.byThread.keys()) if (!found.has(threadId)) changed.add(threadId)
     this.byThread.clear(); for (const [threadId, list] of found) this.byThread.set(threadId, list)
     this.records.clear(); for (const [id, record] of records) this.records.set(id, record)
-    const unowned = table.agents.some(agent => agent.marks.length > 0 && !owned.has(agent.pid))
+    // Marked clients no thread here owns, each counted once at the top, as a thread's own are (#2749).
+    const unownedPids = new Set(table.agents.filter(agent => agent.marks.length > 0 && !owned.has(agent.pid)).map(agent => agent.pid))
+    const foreign: ForeignRecord[] = []
+    for (const agent of table.agents) {
+      if (!unownedPids.has(agent.pid) || this.underAny(table, agent.pid, unownedPids)) continue
+      foreign.push({ pid: agent.pid, run: { marks: agent.marks.map(mark => ({ name: mark.name, value: mark.value })), work: detachedRunWork(agent) } })
+    }
+    // The oldest are reported, the same ones at every look.
+    const kept = foreign.sort((a, b) => (a.run.work.startedAt ?? '').localeCompare(b.run.work.startedAt ?? '') || a.run.work.id.localeCompare(b.run.work.id))
+      .slice(0, MAX_DETACHED_RUNS_ELSEWHERE)
+    const foreignChanged = JSON.stringify(this.foreignRuns()) !== JSON.stringify(kept.map(record => record.run))
+    this.foreign = new Map(kept.map(record => [record.run.work.id, record]))
+    const unowned = unownedPids.size > 0
     this.unownedLooks = unowned ? this.unownedLooks + 1 : 0
-    if (this.records.size || (unowned && this.unownedLooks <= UNOWNED_LOOKS_RETRIED)) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
-    if (changed.size) for (const listener of [...this.listeners]) listener([...changed])
+    const following = this.foreign.size > 0 && this.foreignListeners.size > 0
+    if (this.records.size || following || (unowned && this.unownedLooks <= UNOWNED_LOOKS_RETRIED)) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
+    this.refreshShown()
+    if (foreignChanged) for (const listener of [...this.foreignListeners]) listener()
     return true
+  }
+
+  /**
+   * Rebuilds each thread's runs from its own and those its paired hosts reported, asking the adapters again which thread
+   * each reported mark names, since a session a run names may load after the report came. Tells the listeners which
+   * threads' runs changed. Runs on a look or a report, never on a thread's update.
+   */
+  private refreshShown(): void {
+    const remoteRecords = new Map<string, RemoteRecord>()
+    const remote = new Map<string, AgentBackgroundWork[]>()
+    for (const [hostId, { machine, runs }] of this.reported) {
+      for (const { marks, work } of runs) {
+        const threadId = marks.map(mark => this.options.owner(mark)).find(id => id !== undefined)
+        if (!threadId || !work.run || this.records.has(work.id) || remoteRecords.has(work.id)) continue
+        remoteRecords.set(work.id, { threadId, hostId })
+        remote.set(threadId, [...remote.get(threadId) ?? [], { ...work, run: { ...work.run, machine } }])
+      }
+    }
+    const shown = new Map<string, AgentBackgroundWork[]>()
+    for (const threadId of new Set([...this.byThread.keys(), ...remote.keys()])) {
+      shown.set(threadId, [...this.byThread.get(threadId) ?? [], ...remote.get(threadId) ?? []].slice(0, MAX_DETACHED_RUNS))
+    }
+    const changed = new Set<string>()
+    for (const [threadId, list] of shown) if (JSON.stringify(this.shown.get(threadId)) !== JSON.stringify(list)) changed.add(threadId)
+    for (const threadId of this.shown.keys()) if (!shown.has(threadId)) changed.add(threadId)
+    this.shown = shown
+    this.remoteRecords = remoteRecords
+    if (changed.size) for (const listener of [...this.listeners]) listener([...changed])
+  }
+
+  /** Whether one of `pids` started this process, up its parents: a client a marked client started counts once, at the top. */
+  private underAny(table: ProcessTable, pid: number, pids: ReadonlySet<number>): boolean {
+    let parentPid = table.processes.get(pid)?.parentPid
+    for (let steps = 0; parentPid !== undefined && steps < 16; steps++) {
+      if (pids.has(parentPid)) return true
+      parentPid = table.processes.get(parentPid)?.parentPid
+    }
+    return false
   }
 
   private underAnotherRun(table: ProcessTable, pid: number, threadId: string, owned: ReadonlyMap<number, string>): boolean {
