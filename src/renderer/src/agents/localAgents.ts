@@ -1,8 +1,8 @@
-import { PROVIDER_LABELS, providerIdSchema, type AgentProject, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../shared/agents'
+import { PROVIDER_LABELS, ACTIVE_PROVIDERS, type AgentProject, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../shared/agents'
 import { projectOnHost } from './projectFolders'
 
 /** The providers in the order setup lists them. */
-export const SETUP_PROVIDERS: readonly ProviderId[] = providerIdSchema.options
+export const SETUP_PROVIDERS: readonly ProviderId[] = ACTIVE_PROVIDERS
 
 /** Main's state as it is now; a cached shell from the last run says nothing about this one. */
 export function liveAgentState(state: AgentState | null | undefined): AgentState | null {

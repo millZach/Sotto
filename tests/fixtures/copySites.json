@@ -69,10 +69,6 @@
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
-  "src/main/agents/pi.ts": {
-    "cloneHostSnapshot(": 1,
-    "cloneActivitySnapshot(": 1
-  },
   "src/main/agents/providerRetirement.ts": {
     "structuredClone(": 1
   },

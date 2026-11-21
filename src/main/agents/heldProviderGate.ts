@@ -215,9 +215,9 @@ export class HeldProviderHost implements ProviderHost {
   constructor(private readonly provider: ProviderId) {
     this.snapshotValue = { ...structuredClone(EMPTY_AGENT_HOST), name: PROVIDER_LABELS[provider] }
   }
-  async connect(): Promise<AgentHostSnapshot> { throw new Error(`${PROVIDER_LABELS[this.provider]} is available in Sotto Owl; it is not in this build.`) }
+  async connect(): Promise<AgentHostSnapshot> { throw new Error(this.provider === 'pi' ? heldProviderRefusal('pi') : `${PROVIDER_LABELS[this.provider]} is available in Sotto Owl; it is not in this build.`) }
   async snapshot(): Promise<AgentHostSnapshot> { return structuredClone(this.snapshotValue) }
-  async execute(): Promise<AgentHostResult> { throw new Error(`${PROVIDER_LABELS[this.provider]} is available in Sotto Owl.`) }
+  async execute(): Promise<AgentHostResult> { throw new Error(this.provider === 'pi' ? heldProviderRefusal('pi') : `${PROVIDER_LABELS[this.provider]} is available in Sotto Owl.`) }
   subscribe(): () => void { return () => undefined }
   disconnect(): void { /* Nothing was started. */ }
 }
