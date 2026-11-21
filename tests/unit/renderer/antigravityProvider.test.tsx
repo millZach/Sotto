@@ -133,7 +133,7 @@ describe('Antigravity’s provider row (variant B)', () => {
 
   it('installs agy from the row when it is missing, showing how far it has got, with Cancel install', async () => {
     let finish: (done: { ok: boolean }) => void = () => undefined
-    const account = accountBridge({ install: vi.fn(() => new Promise(resolve => { finish = resolve })) })
+    const account = accountBridge({ install: vi.fn(() => new Promise<{ ok: boolean }>(resolve => { finish = resolve })) })
     const { details, header } = await mount({ connection: 'error', problem: 'not-installed', error: 'agy is not installed.' }, { account })
     expect(within(header.closest('.provider-row__head') as HTMLElement).queryByRole('button', { name: 'Open the Antigravity install guide' })).toBeNull()
     fireEvent.click(within(details).getByRole('button', { name: 'Download and install Antigravity’s agy from Google' }))
