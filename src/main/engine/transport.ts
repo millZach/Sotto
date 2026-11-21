@@ -32,17 +32,72 @@ function isEncodedBinaryBox(value: unknown): value is EncodedBinaryBox {
   return typeof value === 'object' && value !== null && (value as { __sottoBin?: unknown }).__sottoBin === 1 && typeof (value as { b64?: unknown }).b64 === 'string'
 }
 
-/** Encodes a top-level Uint8Array/Buffer for JSON transport without walking nested object trees. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+/**
+ * Recursively boxes Uint8Array/Buffer values at any depth for JSON RPC transport (ADR-0210).
+ * Uses copy-on-write so payloads without binary data incur zero allocations.
+ */
 export function encodeRpcValue(value: unknown): unknown {
   if (value instanceof Uint8Array) {
     return { __sottoBin: 1, b64: Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString('base64') } satisfies EncodedBinaryBox
   }
+  if (Array.isArray(value)) {
+    let copy: unknown[] | undefined
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i]
+      const encoded = encodeRpcValue(item)
+      if (encoded !== item) {
+        copy ??= value.slice()
+        copy[i] = encoded
+      }
+    }
+    return copy ?? value
+  }
+  if (isPlainObject(value)) {
+    let copy: Record<string, unknown> | undefined
+    for (const [key, entry] of Object.entries(value)) {
+      const encoded = encodeRpcValue(entry)
+      if (encoded !== entry) {
+        copy ??= { ...value }
+        copy[key] = encoded
+      }
+    }
+    return copy ?? value
+  }
   return value
 }
 
-/** Decodes a top-level binary box back to Uint8Array. */
+/** Recursively restores boxed Uint8Array values at any depth (copy-on-write when none are present). */
 export function decodeRpcValue(value: unknown): unknown {
   if (isEncodedBinaryBox(value)) return new Uint8Array(Buffer.from(value.b64, 'base64'))
+  if (Array.isArray(value)) {
+    let copy: unknown[] | undefined
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i]
+      const decoded = decodeRpcValue(item)
+      if (decoded !== item) {
+        copy ??= value.slice()
+        copy[i] = decoded
+      }
+    }
+    return copy ?? value
+  }
+  if (isPlainObject(value)) {
+    let copy: Record<string, unknown> | undefined
+    for (const [key, entry] of Object.entries(value)) {
+      const decoded = decodeRpcValue(entry)
+      if (decoded !== entry) {
+        copy ??= { ...value }
+        copy[key] = decoded
+      }
+    }
+    return copy ?? value
+  }
   return value
 }
 

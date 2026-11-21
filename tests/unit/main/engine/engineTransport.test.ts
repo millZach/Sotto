@@ -73,6 +73,12 @@ describe('EngineTransport server/client over OS named pipe or UDS (ADR-0210)', (
       serverConn.onPush((event, payload) => pushes.push({ event, payload }))
       clientConn.onRequest(async (method, args) => {
         if (method === 'echoBin') return new Uint8Array([1, 2, 3, 4])
+        if (method === 'engine:invokeIpc') {
+          const [channel, role, ipcArgs] = args as [string, string, unknown[]]
+          const payload = ipcArgs[0] as { threadId: string; name: string; mimeType: string; bytes: Uint8Array }
+          if (!(payload.bytes instanceof Uint8Array)) throw new Error('NESTED_BYTES_NOT_UINT8ARRAY')
+          return { channel, role, mimeType: payload.mimeType, bytes: new Uint8Array([...payload.bytes, 99]) }
+        }
         if (method === 'fail') throw Object.assign(new Error('boom'), { code: 'E_BOOM' })
         if (method === 'reverse') return await clientConn.request('shell:greet', [args[0]])
         throw new Error(`unexpected ${method}`)
@@ -89,6 +95,17 @@ describe('EngineTransport server/client over OS named pipe or UDS (ADR-0210)', (
       const bin = await serverConn.request<Uint8Array>('echoBin')
       expect(bin).toBeInstanceOf(Uint8Array)
       expect([...bin]).toEqual([1, 2, 3, 4])
+
+      // Nested Uint8Array preservation inside engine:invokeIpc args and return object (ADR-0031 attachment staging).
+      const nestedInput = { threadId: 't1', name: 'shot.png', mimeType: 'image/png', bytes: new Uint8Array([137, 80, 78, 71]) }
+      const nestedResult = await serverConn.request<{ channel: string; role: string; mimeType: string; bytes: Uint8Array }>(
+        'engine:invokeIpc',
+        ['agent:attachment-stage', 'main', [nestedInput]],
+      )
+      expect(nestedResult.channel).toBe('agent:attachment-stage')
+      expect(nestedResult.mimeType).toBe('image/png')
+      expect(nestedResult.bytes).toBeInstanceOf(Uint8Array)
+      expect([...nestedResult.bytes]).toEqual([137, 80, 78, 71, 99])
 
       // Error serialization preserves message and code.
       await expect(serverConn.request('fail')).rejects.toMatchObject({ message: 'boom', code: 'E_BOOM' })
