@@ -898,10 +898,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useWorkerRoles(roles: WorkerRoleSource): void {
-    // An owlet is told its name and role at each launch (ADR-0210).
-    const owlet = (threadId: string): string | undefined => { const own = this.threadById(threadId)?.owlet; return own && this.owletsEnabled ? owletInstructions(own) : undefined }
-    if (!this.dynamicThreads) { this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener), owlet }); return }
-    this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener), owlet,
+    if (!this.dynamicThreads) { this.inner.useWorkerRoles?.(roles); return }
+    this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
       overseer: threadId => {
         const thread = this.threadById(threadId)
         if (!thread || !isDynamicThread(thread, this.dynamicThreads)) return undefined
@@ -2985,6 +2983,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.streamingPublishCostEnabled = streamingPublishCostEnabled
     this.councilEnabled = councilEnabled
     this.owletsEnabled = owletsEnabled
+    // An owlet is told its name and role at each launch (ADR-0210), on every host that has Owlets, worker roles or none.
+    if (owletsEnabled) inner.useOwletInstructions?.(threadId => { const own = this.threadById(threadId)?.owlet; return own ? owletInstructions(own) : undefined })
     this.held = heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
@@ -5673,10 +5673,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.thread(threadId)
     if (!thread.owlet) throw new Error('This thread is not an owlet. Nothing changed.')
     if (thread.owlet.name !== owlet.name || thread.owlet.role !== owlet.role || thread.title !== owlet.name) {
+      const previous = { owlet: thread.owlet, title: thread.title, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
       const touched = this.touched(thread)
       touched.owlet = { name: owlet.name, role: owlet.role }
       touched.title = owlet.name; touched.titleSource = 'user'; delete touched.titledFromFirstMessage
-      this.dirty = true; await this.flush(); this.publish()
+      this.dirty = true
+      // A save that fails leaves the owlet as it was, so the next save cannot keep a change the user was told failed.
+      try { await this.flush() }
+      catch (error) {
+        const restored = this.touched(this.thread(threadId))
+        Object.assign(restored, { owlet: previous.owlet, title: previous.title, titleSource: previous.titleSource })
+        if (previous.titledFromFirstMessage) restored.titledFromFirstMessage = true
+        throw error
+      }
+      this.publish()
       // Its next launch is told its new name and role.
       await this.inner.threadInstructionsChanged?.(threadId, thread.providerId)
     }

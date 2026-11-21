@@ -371,6 +371,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   private workerRoles: WorkerRoleSource | undefined
   useWorkerRoles(roles: WorkerRoleSource): void { this.workerRoles = roles }
+  private owletInstructions: ((threadId: string) => string | undefined) | undefined
+  useOwletInstructions(read: (threadId: string) => string | undefined): void { this.owletInstructions = read }
   /** A launch's role agents and the instructions that name them, or nothing while worker roles are off. */
   private subagentRoles(threadMode: AgentRuntimeMode, canDelegate: boolean) {
     if (!this.workerRoles) return undefined
@@ -1716,7 +1718,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const memoryOff = inOwletFolder(this.options.userDataPath, alias.cwd)
     // An owlet's name and role go first in its system prompt (ADR-0210).
-    const owlet = profile || alias.councilJudge ? undefined : this.workerRoles?.owlet?.(id)
+    const owlet = profile || alias.councilJudge ? undefined : this.owletInstructions?.(id)
     const asks = profile ? undefined : CLAUDE_QUESTIONS
     const questions = [asks, ...this.options.markdownLinks === true ? [MARKDOWN_LINK_INSTRUCTIONS] : []].filter(Boolean).join('\n\n')
     // The flag takes a list, so another option follows it.

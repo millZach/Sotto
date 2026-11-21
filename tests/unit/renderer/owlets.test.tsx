@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentModel, AgentState } from '../../../src/shared/agents'
 import { appRooms, layoutFor, roomFor } from '../../../src/renderer/src/components/AppShell'
 import { withoutOwlets } from '../../../src/shared/owletVisibility'
-import { owletInstructions } from '../../../src/shared/owlets'
+import { owletInstructions, owletNameProblem, sameOwletName } from '../../../src/shared/owlets'
 import { owletOrder } from '../../../src/renderer/src/features/owlets/OwletsView'
 import { owletLook } from '../../../src/renderer/src/features/owlets/OwletMark'
 import { OwletSetup, owletHomes, owletModels } from '../../../src/renderer/src/features/owlets/OwletSetup'
@@ -58,6 +58,15 @@ describe('owletInstructions', () => {
     expect(told).toContain("Your role, in the user's words: Keeps my inbox")
     expect(told).toContain('you never answer your own')
     expect(owletInstructions({ name: 'Elf', role: '' })).not.toContain('Your role')
+  })
+})
+
+describe('owlet names', () => {
+  it('takes letters written with marks, and one Unicode form for two spellings of a name', () => {
+    for (const name of ['राम', 'தமிழ்', 'తెలుగు', 'বাংলা', 'Cafe\u0301', 'Tawny Owl']) expect(owletNameProblem(name)).toBeUndefined()
+    expect(sameOwletName('Cafe\u0301', 'Caf\u00e9')).toBe(true)
+    expect(owletNameProblem('\u0301ab')).toBe('characters')
+    expect(owletNameProblem('con')).toBe('characters')
   })
 })
 

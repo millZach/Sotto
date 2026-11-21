@@ -408,6 +408,8 @@ export class CodexAppServerHost implements ProviderHost {
   /** The widest permission a thread's role files were written for at its load (#1042). */
   private readonly roleModes = new Map<string, AgentRuntimeMode>()
   /** Worker roles on (#1042): role files written at each load, and written again when Settings change. */
+  private owletInstructions: ((threadId: string) => string | undefined) | undefined
+  useOwletInstructions(read: (threadId: string) => string | undefined): void { this.owletInstructions = read }
   useWorkerRoles(roles: WorkerRoleSource): void {
     this.workerRoles = roles
     roles.onChange(() => { void this.roleFiles.rewrite(roles.table(), this.state.models).catch(() => undefined) })
@@ -420,10 +422,11 @@ export class CodexAppServerHost implements ProviderHost {
    */
   private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<LaunchRoles> {
     this.roleModes.delete(id)
-    if (!this.workerRoles || this.watcherProfiles.has(id) || this.councilJudges.has(id)) return { instructions: undefined, widest: undefined }
-    // An owlet's name and role go first, whatever else the launch is told (ADR-0210).
-    const owlet = this.workerRoles.owlet?.(id)
+    if (this.watcherProfiles.has(id) || this.councilJudges.has(id)) return { instructions: undefined, widest: undefined }
+    // An owlet's name and role go first, whatever else the launch is told, worker roles or none (ADR-0210).
+    const owlet = this.owletInstructions?.(id)
     const told = (instructions: string | undefined): string | undefined => [owlet, instructions].filter(Boolean).join('\n\n') || undefined
+    if (!this.workerRoles) return { instructions: told(undefined), widest: undefined }
     const overseer = this.workerRoles.overseer?.(id)
     if (overseer) return { instructions: told(overseer), widest: undefined }
     const table = this.workerRoles.table()

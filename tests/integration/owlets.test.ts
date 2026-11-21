@@ -3,7 +3,7 @@
 // Making one moves no selection; a provider's own update and a restart keep the mark; with the Owl feature off nothing
 // makes or changes one, and a saved owlet is kept whole and shown nowhere.
 import { randomUUID } from 'node:crypto'
-import { stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -95,6 +95,29 @@ it('keeps an owlet on Claude Code or Codex before its first message', async () =
   const codex = f.control.shell().host.models.find(item => item.providerId === 'codex')!.id
   expect((await f.control.commandShell({ type: 'configure-thread', threadId, modelId: codex })).error).toBeNull()
   expect(f.thread(threadId)?.providerId).toBe('codex')
+})
+
+it('tells the provider an owlet\'s name and role by its own session, and its new ones after an edit', async () => {
+  const f = await fixture()
+  const { threadId } = await f.make('Tawny')
+  expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic request' })).error).toBeNull()
+  const session = f.workspace.registry.byThread(threadId)!.sessionId
+  expect(f.workspace.adapters.claude.owletInstructions?.(session)).toContain('You are Tawny, an owlet')
+  expect(f.workspace.adapters.claude.owletInstructions?.(session)).toContain("Your role, in the user's words: Keeps my inbox")
+  expect(f.workspace.adapters.claude.owletInstructions?.('another-session')).toBeUndefined()
+})
+
+it('refuses a model that is not ready before it makes the folder, and keeps a folder no owlet holds out of view', async () => {
+  const f = await fixture()
+  const model = f.control.shell().host.models.find(item => item.providerId === 'claude')!
+  const refused = await f.control.commandShell({ type: 'create-owlet', threadId: randomUUID(), name: 'Elf', role: '', modelId: model.id, reasoningEffort: 'ultra' })
+  expect(refused.error).toContain('That model or its options are not ready')
+  await expect(stat(join(f.workspace.root, 'owlets', 'Elf'))).rejects.toThrow()
+  // A folder whose owlet's thread was never made, as a stop part way leaves it, is not offered as a project.
+  const path = join(f.workspace.root, 'owlets', 'Barn')
+  await mkdir(path, { recursive: true })
+  expect((await f.control.commandShell({ type: 'create-project', provider: 'claude', title: 'Barn', path, useExisting: true })).error).toBeNull()
+  expect(f.control.shell().host.projects.some(project => project.path === path)).toBe(false)
 })
 
 it('makes and changes nothing with the Owl feature off', async () => {

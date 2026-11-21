@@ -57,8 +57,6 @@ export interface WorkerRoleSource {
   overseer?(threadId: string): string | undefined
   /** The note a thread's next message must carry (ADR-0191). Present where Dynamic threads are on, so a launch can ready its channel. */
   overseerNote?(threadId: string): string | undefined
-  /** What an owlet is told of itself at each launch, its name and role (ADR-0210), or undefined for any other thread. */
-  owlet?(threadId: string): string | undefined
   /** Called after the user's Settings change; returns what stops it. */
   onChange(listener: () => void): () => void
 }
@@ -337,6 +335,11 @@ export interface ProviderHost {
    * the table when a thread launches, and one that keeps files from it writes them again when Settings change.
    */
   useWorkerRoles?(roles: WorkerRoleSource): void
+  /**
+   * What an owlet is told of itself at each launch, its name and role (ADR-0210), by Sotto thread ID; undefined for any other
+   * thread. Given where Owlets are on, whatever else a launch is told.
+   */
+  useOwletInstructions?(read: (threadId: string) => string | undefined): void
   /**
    * Inject Sotto's scoped tool servers before connecting: the host setup tools, which only a host setup thread is
    * given (ADR-0035), and the visual tool (ADR-0056). Each launch offers every one that answers for its thread.

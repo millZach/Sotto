@@ -38,6 +38,7 @@ export function owletRefusalWords(sentence: string): string {
     case 'taken': return interfaceI18n._(msg`An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed.`)
     case 'provider': return interfaceI18n._(msg`An owlet runs on Claude Code or Codex, whose own memory Sotto turns off. Choose one of their models. Nothing was changed.`)
     case 'exists': return interfaceI18n._(msg`This owlet already exists. Nothing was changed.`)
+    case 'model': return interfaceI18n._(msg`That model or its options are not ready on that computer. Choose a ready model. Nothing was made.`)
     case 'notOwlet': return interfaceI18n._(msg`This thread is not an owlet. Nothing was changed.`)
     case 'unavailable': return interfaceI18n._(msg`Owlets are unavailable on this computer. Update Sotto there. Nothing was changed.`)
     case 'noProject': return interfaceI18n._(msg`The owlet's folder did not appear as a project. Its folder was kept. Try again.`)

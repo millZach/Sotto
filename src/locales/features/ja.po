@@ -7062,6 +7062,10 @@ msgstr ""
 msgid "That look could not be saved. Your previous look is still on. Choose it again to retry."
 msgstr ""
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "That model or its options are not ready on that computer. Choose a ready model. Nothing was made."
+msgstr ""
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
 msgstr ""

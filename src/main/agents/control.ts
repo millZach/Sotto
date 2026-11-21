@@ -1,5 +1,6 @@
 import type { ThreadMediaStore } from './threadMedia'
-import { changeOwlet, makeOwlet, withoutOwletThreads } from './owlets'
+import { dormantProviderConfigurationSchema, parkedChoices, type DormantProviderConfiguration } from './parkedChoices'
+import { changeOwlet, makeOwlet, owletsRoot, strayOwletFolder, withoutOwletThreads } from './owlets'
 import { atomicDraftDigest } from './draftDigest'
 import { OWLET_REFUSALS, OWLETS_HELD, type AgentOwlet } from '../../shared/owlets'
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
@@ -283,14 +284,6 @@ const savedReceiptsSchema = z.array(agentDeliveryReceiptsSchema.element).max(MAX
 /** A dormant legacy singleton can be parked while stable uses its ordinary composer. */
 const dormantLegacyDraftSchema = z.object({ draft: z.string(), draftThreadId: z.string(), draftRequestId: z.string().nullable(),
   draftAttachments: savedAttachmentsSchema, manualDraftId: z.uuid().nullable(), composing: z.boolean() })
-/**
- * A held provider's choices, parked while stable uses an available provider; ordinary choices remain editable. Only
- * what was parked is read back: the configuration's defaults would otherwise fill in a provider and an effort it never had.
- */
-const dormantProviderConfigurationSchema = agentConfigurationSchema.pick({ defaultModelId: true, newThreadModelId: true }).partial().extend({
-  provider: providerIdSchema.optional(), newThreadReasoningEffort: agentConfigurationSchema.shape.newThreadReasoningEffort.unwrap().optional(),
-  enabled: z.boolean().optional(), newThreadRuntimeMode: agentConfigurationSchema.shape.newThreadRuntimeMode.nullable() })
-type DormantProviderConfiguration = z.infer<typeof dormantProviderConfigurationSchema>
 const savedSchema = z.object({
   watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema),
   providerUpgrade: providerUpgradeSchema.nullable().default(null),
@@ -1982,6 +1975,7 @@ export class AgentControl {
   watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
   /** Watcher's own workspace folder, and each project folder as `resolve` spells it, worked out once rather than on every shell. */
   private watcherFolder: string | undefined
+  private owletsFolder: string | undefined
   private readonly resolvedProjectPaths = new Map<string, string>()
   private hideWatcher(state: AgentState): void {
     const folder = this.watcherFolder ??= resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
@@ -1995,7 +1989,8 @@ export class AgentControl {
     }
     // A list that loses nothing is kept as it is, so a broadcast shares the part of the last one that has not changed.
     const kept = <T>(list: readonly T[], keep: (item: T) => boolean): T[] => (list.every(keep) ? list : list.filter(keep)) as T[]
-    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder)
+    const owlets = this.owletsFolder ??= owletsRoot(this.dependencies.directory)
+    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder && !strayOwletFolder(owlets, resolved(project.path), project.id, state.host.threads))
     if (!this.threadAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
@@ -2563,7 +2558,7 @@ export class AgentControl {
     const configuration = this.state.configuration
     let parks = false
     for (const provider of this.held) {
-      const held = parked.get(provider), dormant = this.parkedChoices(configuration, provider, held)
+      const held = parked.get(provider), dormant = parkedChoices(configuration, provider, held)
       if (held || Object.keys(dormant).length) parks = true
       if (Object.keys(dormant).length) this.dormantProviderConfigurations.set(provider, dormant)
     }
@@ -2586,18 +2581,6 @@ export class AgentControl {
       else configuration.newThreadRuntimeMode = newThreadRuntimeMode
     }
     if (enabled) configuration.enabledProviders = [...new Set([...enabledThreadProviders(configuration), provider])]
-  }
-  /** A held provider's choices in the saved configuration, over what it already had parked. */
-  private parkedChoices(configuration: AgentConfiguration, provider: ProviderId, held: DormantProviderConfiguration | undefined): DormantProviderConfiguration {
-    const dormant = { ...held }
-    if (configuration.provider === provider) dormant.provider = provider
-    if (enabledThreadProviders(configuration).includes(provider)) dormant.enabled = true
-    if (parsePublicProviderEntityId(configuration.defaultModelId)?.provider === provider) dormant.defaultModelId = configuration.defaultModelId
-    if (parsePublicProviderEntityId(configuration.newThreadModelId)?.provider === provider) {
-      dormant.newThreadModelId = configuration.newThreadModelId; dormant.newThreadReasoningEffort = configuration.newThreadReasoningEffort
-      dormant.newThreadRuntimeMode = configuration.newThreadRuntimeMode ?? null
-    }
-    return dormant
   }
   /** Held providers' choices move aside, so stable uses an available provider and nothing of the held ones is lost. */
   private parkHeldChoices(configuration: AgentConfiguration): void {
@@ -3593,7 +3576,7 @@ export class AgentControl {
   }
   /** An owlet's name and role, in its thread's own lane (ADR-0210). */
   private async setOwlet(command: Extract<AgentCommand, { type: 'set-owlet' }>): Promise<void> {
-    this.acceptSnapshot(await changeOwlet(this.dependencies.owletsEnabled === true, this.state.host, this.dependencies.host, command))
+    this.acceptSnapshot(await changeOwlet(this.dependencies.owletsEnabled === true, this.state.host, this.dependencies.host, command, this.owletsMaking))
   }
   /** In the thread's own lane, as Dynamic's mark is (ADR-0207). Turned off, the thread's last pick goes with it. */
   private async setThreadRouted(command: Extract<AgentCommand, { type: 'set-thread-routed' }>): Promise<void> {

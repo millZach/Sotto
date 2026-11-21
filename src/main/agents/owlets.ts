@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { agentCommandSchema, type AgentCommand, type AgentHostSnapshot, type AgentModel } from '../../shared/agents'
 import { agentOwletSchema, OWLET_REFUSALS, OWLETS_FOLDER, owletNameProblem, owletProviderAllowed, sameOwletName, type AgentOwlet } from '../../shared/owlets'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -32,6 +32,8 @@ type OwletChange = Extract<AgentCommand, { type: 'set-owlet' }>
 type Snapshot = Pick<AgentHostSnapshot, 'threads' | 'projects'>
 
 const refuse = (why: keyof typeof OWLET_REFUSALS): never => { throw new Error(OWLET_REFUSALS[why]) }
+/** How a name is held in `making`, folded as `sameOwletName` folds it. */
+const owletNameKey = (name: string): string => name.trim().normalize('NFC').toLocaleLowerCase()
 
 /** The name and role a command gives, checked, or an error that says what to change. Nothing is made. */
 function owletOf(name: string, role: string): AgentOwlet {
@@ -57,6 +59,9 @@ export function checkOwletCreate(snapshot: Snapshot & Pick<AgentHostSnapshot, 'm
   assertNameFree(snapshot, owlet.name, undefined, true)
   const model = resolveModel(snapshot.models, command.modelId)
   if (!model || !owletProviderAllowed(model.providerId)) return refuse('provider')
+  // What the thread's own creation would refuse, refused before the folder and its project are made.
+  if (!model.ready || command.reasoningEffort !== undefined && !(model.reasoningEfforts ?? []).includes(command.reasoningEffort)
+    || command.runtimeMode !== undefined && model.runtimeModes !== undefined && !model.runtimeModes.includes(command.runtimeMode)) refuse('model')
   return { owlet, model }
 }
 
@@ -98,7 +103,7 @@ export async function makeOwlet(maker: OwletMaker, command: OwletCreate): Promis
     if (!maker.enabled) refuse('off')
     const { owlet, model } = checkOwletCreate(maker.host(), command)
     maker.permit(model)
-    const key = owlet.name.toLocaleLowerCase()
+    const key = owletNameKey(owlet.name)
     if (maker.making.has(key)) refuse('taken')
     maker.making.add(key)
     try { await makeIt(maker, command, owlet, model) } finally { maker.making.delete(key) }
@@ -118,11 +123,26 @@ async function makeIt(maker: OwletMaker, command: OwletCreate, owlet: AgentOwlet
 }
 
 /** An owlet's new name and role on its thread (ADR-0210), in the thread's own lane; throws with what to tell the user. */
-export async function changeOwlet(enabled: boolean, snapshot: Snapshot, host: Pick<AgentHost, 'setThreadOwlet'>, command: OwletChange): Promise<AgentHostSnapshot> {
+export async function changeOwlet(enabled: boolean, snapshot: Snapshot, host: Pick<AgentHost, 'setThreadOwlet'>, command: OwletChange, making: Set<string>): Promise<AgentHostSnapshot> {
   if (!enabled) refuse('off')
   const owlet = checkOwletChange(snapshot, command)
   if (!host.setThreadOwlet) return refuse('unavailable')
-  return host.setThreadOwlet(command.threadId, owlet)
+  // A new name is held while it is saved, as a new owlet's is, so a rename and a create can't take one name at once.
+  const current = snapshot.threads.find(thread => thread.id === command.threadId)?.owlet
+  if (!current || sameOwletName(current.name, owlet.name)) return host.setThreadOwlet(command.threadId, owlet)
+  const key = owletNameKey(owlet.name)
+  if (making.has(key)) refuse('taken')
+  making.add(key)
+  try { return await host.setThreadOwlet(command.threadId, owlet) } finally { making.delete(key) }
+}
+
+/**
+ * Whether a project is an owlet's folder that no owlet holds, as one whose owlet's thread could not be made is (ADR-0210):
+ * kept out of view like Watcher's own folder. `root` is `owletsRoot`, resolved once; `path` is resolved.
+ */
+export function strayOwletFolder(root: string, path: string, projectId: string, threads: readonly { readonly projectId: string; readonly owlet?: AgentOwlet | undefined }[]): boolean {
+  const fold = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
+  return fold(path).startsWith(fold(root) + sep) && !threads.some(thread => thread.owlet !== undefined && thread.projectId === projectId)
 }
 
 /**

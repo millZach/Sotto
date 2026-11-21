@@ -25,14 +25,15 @@ export const owletProviderAllowed = (provider: ProviderId | undefined): boolean 
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/iu
 /**
  * Why a name can't be an owlet's, or undefined when it can. The name is also its folder's, so it keeps to letters,
- * numbers, spaces, hyphens and apostrophes that every computer's file system takes. A window says each in its own words.
+ * numbers (with the marks some scripts write letters with), spaces, hyphens and apostrophes that every computer's file
+ * system takes, in one Unicode form (NFC), so two spellings of one name are one name. A window says each in its own words.
  */
 export type OwletNameProblem = 'empty' | 'long' | 'characters'
 export function owletNameProblem(name: string): OwletNameProblem | undefined {
-  const trimmed = name.trim()
+  const trimmed = name.trim().normalize('NFC')
   if (!trimmed) return 'empty'
   if (trimmed.length > OWLET_NAME_MAX) return 'long'
-  if (!/^[\p{L}\p{N}][\p{L}\p{N} '-]*$/u.test(trimmed) || WINDOWS_RESERVED.test(trimmed)) return 'characters'
+  if (!/^[\p{L}\p{N}][\p{L}\p{M}\p{N} '-]*$/u.test(trimmed) || WINDOWS_RESERVED.test(trimmed)) return 'characters'
   return undefined
 }
 
@@ -49,6 +50,7 @@ export const OWLET_REFUSALS = {
   taken: 'An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed.',
   provider: 'An owlet runs on Claude Code or Codex, whose own memory Sotto turns off. Choose one of their models. Nothing was changed.',
   exists: 'This owlet already exists. Nothing was changed.',
+  model: 'That model or its options are not ready on that computer. Choose a ready model. Nothing was made.',
   notOwlet: 'This thread is not an owlet. Nothing was changed.',
   unavailable: 'Owlets are unavailable on this computer. Update Sotto there. Nothing was changed.',
   noProject: 'The owlet\'s folder did not appear as a project. Its folder was kept. Try again.',
@@ -58,9 +60,9 @@ export type OwletRefusal = keyof typeof OWLET_REFUSALS
 /** What a command naming an owlet's thread is told where Owlets are off: the thread is dormant. */
 export const OWLETS_HELD = 'Owlets are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
 /** Two owlets on one computer can't share a name, because they would share a folder. */
-export const sameOwletName = (a: string, b: string): boolean => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase()
+export const sameOwletName = (a: string, b: string): boolean => a.trim().normalize('NFC').toLocaleLowerCase() === b.trim().normalize('NFC').toLocaleLowerCase()
 
-const owletNameSchema = z.string().max(OWLET_NAME_MAX * 2).refine(name => owletNameProblem(name) === undefined).transform(name => name.trim())
+const owletNameSchema = z.string().max(OWLET_NAME_MAX * 2).refine(name => owletNameProblem(name) === undefined).transform(name => name.trim().normalize('NFC'))
 const owletRoleSchema = z.string().max(OWLET_ROLE_MAX * 2).transform(role => role.trim()).refine(role => role.length <= OWLET_ROLE_MAX)
 
 /** What makes a thread an owlet: its name and its role, in the user's words. Sotto's record, kept on the thread. */
