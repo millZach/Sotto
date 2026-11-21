@@ -1,7 +1,7 @@
 import { msg } from '@lingui/core/macro'
 
 import { hostEntityKey, parseHostEntityKey, projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
-import { defaultNewThreadModelId, hostForThread, type AgentCommand, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
+import { defaultNewThreadModelId, hostForThread, type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { AppSettings } from '../../../shared/settings'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { modelInForce } from '../../../shared/modelLineup'
@@ -78,12 +78,15 @@ export function unusedNewThread(state: AgentState, project: AgentProject, starts
 }
 
 /**
- * The catalog the new-thread defaults are chosen from: this computer's own host's, where they are kept, or the
- * selected host's when no local host runs (ADR-0074).
+ * New-thread defaults and worker roles use this computer’s host, or the selected host when no local host runs (ADR-0074).
  */
-export function newThreadDefaultsCatalog(state: AgentState): AgentModel[] {
+export function newThreadDefaultsHost(state: AgentState): AgentHostSnapshot {
   const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
-  return local === undefined ? state.host.models : hostForThread(state.host, { hostId: local }).models
+  return local === undefined ? state.host : hostForThread(state.host, { hostId: local })
+}
+
+export function newThreadDefaultsCatalog(state: AgentState): AgentModel[] {
+  return newThreadDefaultsHost(state).models
 }
 
 /**

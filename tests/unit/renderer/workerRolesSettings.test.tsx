@@ -37,8 +37,7 @@ function state(claudeReady = true, devin = false): AgentState {
           ? { ...item, speeds: [{ id: 'fast' as const, name: 'Fast', description: '2x speed, increased usage' }, { id: 'ultrafast' as const, name: 'Ultrafast', description: '4x speed, highest usage' }] } : item) },
     topLevel: { activeThreadId: null, activeProjectId: null } })
 }
-function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, devin = false) {
-  const agents = state(claudeReady, devin)
+function show(workerRoles: AppSettings['workerRoles'] = {}, agents = state()) {
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(agents, vi.fn(async () => agents)))
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   const open = vi.fn()
@@ -77,8 +76,25 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(chosen.update).toHaveBeenLastCalledWith({ workerRoles: {} })
   })
 
+  it.each(['Building', 'Orchestrating'])('only offers models that can start a thread in %s', role => {
+    const agents = state(true, true)
+    const muse = { id: publicProviderEntityId('muse', 'model', 'wonder'), name: 'Muse Wonder', provider: 'Muse', providerId: 'muse' as const, ready: true }
+    agents.host.models.push(muse, { ...model('claude', 'internal', 'Internal model', []), hiddenFromMenu: true },
+      model('claude', 'unready', 'Unready model', [], false))
+    agents.host.providers!.push({ id: 'muse', name: 'Muse', version: '', connection: 'disconnected', capabilities: caps },
+      { id: 'devin', name: 'Devin', version: '', connection: 'connected', capabilities: { ...caps, threads: false } })
+    const { update } = show({}, agents)
+    fireEvent.click(within(card(role)).getByRole('combobox', { name: /model/u }))
+    expect(screen.getAllByRole('tab').map(tab => tab.getAttribute('aria-label')).sort()).toEqual(['Claude Code', 'Codex'])
+    expect(screen.getByRole('option', { name: 'Sonnet 5.5' })).toBeEnabled()
+    expect(screen.queryByRole('option', { name: 'Internal model' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'Unready model' })).toBeNull()
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it('keeps a choice whose provider is away and says what starts meanwhile, and Reset puts the default back', () => {
-    const { update } = show({ building: { modelId: publicProviderEntityId('claude', 'model', 'sonnet'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } }, false)
+    const { update } = show({ building: { modelId: publicProviderEntityId('claude', 'model', 'sonnet'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } }, state(false))
+    expect(within(card('Building')).getByRole('combobox', { name: /model/u })).toHaveTextContent('Sonnet 5.5')
     expect(within(card('Building')).getByText('Your choice, not available')).toBeInTheDocument()
     expect(within(card('Building')).getByText('Your choice, Sonnet 5.5, stays. Claude Code is not connected, so until it is, workers start on GPT-6.1 Sol, the next default.')).toBeInTheDocument()
     expect(within(card('UI')).getByText('Next default')).toBeInTheDocument()
@@ -122,7 +138,7 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
   })
 
   it('lists every provider for Orchestrating, saying why Watcher cannot run on one yet, beside a drawing of its composer', () => {
-    show({}, true, true)
+    show({}, state(true, true))
     const orchestrating = card('Orchestrating')
     fireEvent.click(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
     fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))

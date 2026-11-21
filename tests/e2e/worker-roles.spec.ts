@@ -124,6 +124,17 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
       await resizeWindow(launched, 1280, 800)
       await openRoles(page)
 
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      const dialog = page.getByRole('dialog', { name: 'Choose model' })
+      for (const role of ['Building', 'UI', 'Research', 'Code review', 'Computer use', 'Orchestrating']) {
+        await card(page, role).getByRole('combobox', { name: /model/u }).click()
+        await expect(dialog.getByRole('tab', { name: 'Claude Code' })).toBeVisible()
+        await expect(dialog.getByRole('tab', { name: 'Codex' })).toBeVisible()
+        await expect(dialog.getByRole('tab', { name: 'Muse' })).toHaveCount(0)
+        if (role === 'Building') await capture(launched, 'roles-building-available-models')
+        await page.keyboard.press('Escape')
+      }
+
       // Each role on its default with Claude Code and Codex connected. Muse is not set up, so Code review is on its next.
       expect(await fields(page, 'Orchestrating')).toEqual(['Opus 5.5', 'High', 'Standard only', 'Ask for approval'])
       expect(await fields(page, 'Building')).toEqual(['Opus 5.5', 'XHigh', 'Standard only', 'Allow edits'])
@@ -163,7 +174,6 @@ test('Settings, under Watcher, gives each kind of work its model, and a delegati
       const model = building.getByRole('combobox', { name: /^Choose Building’s model\. Now Opus 5\.5/u })
       await model.focus()
       await page.keyboard.press('Enter')
-      const dialog = page.getByRole('dialog', { name: 'Choose model' })
       await expect(dialog.getByRole('textbox', { name: 'Search models' })).toBeFocused()
       await page.keyboard.press('Escape')
       await expect(dialog).toHaveCount(0)

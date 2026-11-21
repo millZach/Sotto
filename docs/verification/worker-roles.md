@@ -2,6 +2,12 @@
 
 October 16, 2026. Branch `feat/worker-roles`, from `0b15b3ca5` on `origin/main`. Records [ADR-0091](../adr/0091-worker-roles-say-what-each-kind-of-work-starts-on.md), the prototype's variant C as Zach picked it, checked in the built app on Windows 11.
 
+## Model availability on November 21, 2026
+
+The built app on Apple silicon macOS used an isolated profile with Claude Code and Codex connected through the native test fixtures. All six role menus showed Claude Code and Codex. Muse was disconnected and its tab was absent. Building kept its saved Sonnet 5.5 choice when Claude Code disconnected and showed it as available again on reconnect. The keyboard selection, Escape, light and dark layouts, and text contrast passed at the three window sizes with reduced motion enabled. [Building’s model picker at 1280×800](../../artifacts/worker-roles/roles-building-available-models.png)
+
+The renderer regression also gave Muse a cached ready model while disconnected and Devin a connected client unable to start threads. Before the fix, Building and Orchestrating both listed those two providers. Both cases pass with the composer’s availability check.
+
 ## What was run
 
 `tests/e2e/worker-roles.spec.ts` launches the built app on the Owl track with the real Claude Code and Codex adapters over the fake CLIs. The fake Claude Code lists Opus 5.5, Sonnet 5.5 and Haiku 5.5; the fake Codex lists GPT-6.1 Sol, GPT-6 Astra and GPT-6 Luna. Muse and Grok Build are not set up. No new-thread default permission is chosen, so the ceiling is Ask for approval.

@@ -3,7 +3,7 @@ import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, R
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { enabledThreadProviders, hostForThread, PROVIDER_LABELS, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread, type ProviderId } from '../../../../shared/agents'
+import { enabledThreadProviders, PROVIDER_LABELS, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread, type ProviderId } from '../../../../shared/agents'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import type { SottoPlatform } from '../../../../shared/platform'
@@ -15,10 +15,10 @@ import { useOptionalAgents, type AgentConnection } from '../../agents/AgentConte
 import { shownWords, type LaterWords } from './laterWords'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
 import { ModelPicker } from '../../agents/ModelPicker'
-import { newThreadDefaultsCatalog } from '../../agents/newThread'
+import { newThreadDefaultsHost } from '../../agents/newThread'
 import { pendingSettingsStore, settingValues, speedPatch, SPEED_STANDARD, usePendingSettings } from '../../agents/pendingSettings'
 import { ProviderMark } from '../../agents/ProviderMark'
-import { offeredSpeeds, speedChoices, speedName } from '../../agents/ThreadOptions'
+import { canCreateWith, offeredSpeeds, speedChoices, speedName } from '../../agents/ThreadOptions'
 import { ChoiceChip } from '../../agents/ChoiceChip'
 import { effortChoices, RUNTIME_LABELS, watcherPermissionFixedReason } from '../../agents/permissionPresentation'
 import { useOptionalApp } from '../../state/AppContext'
@@ -102,7 +102,9 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   // Worker counts are part of Worker swarms (Owl): stable shows none, and keeps a row's saved counts whole.
   const swarms = useOwlFeature('worker-swarms')
   // This computer's catalog: the roles, like the new-thread defaults, are this computer's own (ADR-0074).
-  const catalog = useMemo(() => newThreadDefaultsCatalog(state), [state])
+  const host = useMemo(() => newThreadDefaultsHost(state), [state])
+  const catalog = host.models
+  const availableModels = useMemo(() => host.models.filter(model => canCreateWith(host, model)), [host])
   const choices = settings.workerRoles
   const [said, setSaid] = useState<Said | null>(null)
   const room = useWatcherRoom()
@@ -146,8 +148,6 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     else if (next.reasoningEffort && next.reasoningEffort !== effortNow) pendingSettingsStore.press(watcher.id, 'effort', next.reasoningEffort, patch, command, now, effortNow)
     else if (supportedSpeed && speed !== speedNow) pendingSettingsStore.press(watcher.id, 'fast', speed, patch, command, now, speedNow)
   }
-  const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
-  const host = local === undefined ? state.host : hostForThread(state.host, { hostId: local })
   // Set up: turned on, or turned off by the user since (it is still installed and signed in), or trying to connect.
   const setUp = new Set([...enabledThreadProviders(state.configuration), ...state.configuration.disconnectedProviders ?? []])
   const providerOf = (id: ProviderId): ProviderState => host.providers?.find(provider => provider.id === id)?.connection === 'connected'
@@ -204,7 +204,6 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     const before = was.watcher ?? (saved ? { modelId: saved.modelId, reasoningEffort: saved.reasoningEffort, speed: saved.speed ?? null } : null)
     if (before) void applyToWatcher(before)
   }
-  const anyConnected = catalog.some(model => model.ready)
   const away = [...new Set(reads.flatMap(read => statusOf(read, providerOf) === 'moved' ? awayBefore(read, providerOf)
     : statusOf(read, providerOf) === 'away' && read.choice ? [resolveModel(catalog, read.choice.modelId)?.providerId].filter((id): id is ProviderId => id !== undefined && providerOf(id) === 'off') : []))]
   const movedCount = reads.filter(read => ['moved', 'away'].includes(statusOf(read, providerOf))).length
@@ -224,7 +223,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
       {swarms ? <>{' '}<Trans>Workers is how many Watcher starts for one request: usually the first number, never more than Up to unless you name a count.</Trans></> : null}</p>
     {said ? <p className="worker-roles__said tt-paragraph" role="status"><span>{shownWords(said.text)}</span>
       <button type="button" className="tt-focusable" onClick={() => undo(said)}><Trans>Undo</Trans></button></p> : null}
-    {!anyConnected ? <div className="worker-roles__empty">
+    {availableModels.length === 0 ? <div className="worker-roles__empty">
       <p className="tt-paragraph"><Trans>No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost.</Trans></p>
       <button type="button" className="worker-roles__open tt-focusable" onClick={() => onOpenSection('settings-providers')}><Trans>Open Providers</Trans></button>
     </div> : <>
@@ -233,9 +232,9 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
         other: `${providers} are not connected, so ${plural(movedCount, { one: '# role starts new work on its next default', other: '# roles start new work on their next default' })} until they connect. Nothing you chose has changed.`,
       })}</p> : null}
       <div className="worker-roles__grid">
-        {orchestrating ? <OrchestratingCard read={orchestrating} state={state} watcher={watcher} chosen={watcherChosen} refusal={watcherRefusal} catalog={catalog} providerOf={providerOf}
+        {orchestrating ? <OrchestratingCard read={orchestrating} state={state} watcher={watcher} chosen={watcherChosen} refusal={watcherRefusal} catalog={catalog} availableModels={availableModels} providerOf={providerOf}
           onRow={patch => setRow(orchestrating, patch)} onReset={() => reset(orchestrating)} /> : null}
-        {workers.map(read => <RoleCard key={read.role.id} read={read} catalog={catalog} providerOf={providerOf} ceiling={ceiling} platform={platform} swarms={swarms} counts={read.role.id === 'orchestrating' ? undefined : workerCounts(read.role.id, choices)}
+        {workers.map(read => <RoleCard key={read.role.id} read={read} catalog={catalog} availableModels={availableModels} providerOf={providerOf} ceiling={ceiling} platform={platform} swarms={swarms} counts={read.role.id === 'orchestrating' ? undefined : workerCounts(read.role.id, choices)}
           onRow={patch => setRow(read, patch)} onReset={() => reset(read)} onOpenAgents={() => onOpenSection('settings-agents')} />)}
       </div>
     </>}
@@ -326,8 +325,9 @@ function Defaults({ read, catalog, providerOf }: { readonly read: RoleInForce; r
 }
 
 /** One worker role: a model, an effort and a permission, the notes that hold, and its defaults in order. */
-function RoleCard({ read, catalog, providerOf, ceiling, platform, swarms, counts, onRow, onReset, onOpenAgents }: {
+function RoleCard({ read, catalog, availableModels, providerOf, ceiling, platform, swarms, counts, onRow, onReset, onOpenAgents }: {
   readonly read: RoleInForce; readonly catalog: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
+  readonly availableModels: AgentModel[]
   readonly ceiling: AgentRuntimeMode; readonly platform: SottoPlatform
   /** Worker swarms is on, so the card offers its Workers counts. */
   readonly swarms: boolean
@@ -374,7 +374,7 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, swarms, counts
     <p className="worker-role__what tt-paragraph">{role.what}</p>
     {shown ? <div className="worker-role__fields">
       <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">{t({ message: 'Model', comment: 'A worker role field: the model it runs on' })}</span>
-        <ModelPicker models={[...catalog]} modelId={shown.modelId} disabled={false} label={status === 'away' ? t`Choose ${roleName}’s model. Now ${name}, not available` : t`Choose ${roleName}’s model. Now ${name}`}
+        <ModelPicker models={availableModels} modelId={shown.modelId} current={model} disabled={false} label={status === 'away' ? t`Choose ${roleName}’s model. Now ${name}, not available` : t`Choose ${roleName}’s model. Now ${name}`}
           note={!read.fallback ? undefined : defaultEffort ? t`${defaultModelName} at ${defaultEffort} is ${roleName}’s default.` : t`${defaultModelName} is ${roleName}’s default.`}
           onChange={id => onRow({ modelId: chosenModelId(catalog, id, shown.modelId) })} /></div>
       <div className="worker-role__field"><span aria-hidden="true">{t({ message: 'Effort', comment: 'A worker role field: the model\'s reasoning effort' })}</span>
@@ -467,7 +467,7 @@ const MODE_LINES: Record<AgentRuntimeMode, MessageDescriptor> = {
  * offers the last one's handover, ADR-0073), and either place saves the role for the next Watcher. Its permissions are
  * Watcher's own mode, chosen in either place too, and Reset leaves them as they are.
  */
-function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, providerOf, onRow, onReset }: {
+function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, availableModels, providerOf, onRow, onReset }: {
   readonly read: RoleInForce; readonly state: AgentState
   /** The running Watcher's thread, once there is one. */
   readonly watcher: AgentThread | undefined
@@ -475,6 +475,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   readonly chosen: boolean
   /** Why the last change could not start a new Watcher: main's words, or Sotto's own when it could not ask. */
   readonly refusal: LaterWords | null
+  readonly availableModels: AgentModel[]
   readonly catalog: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
   readonly onRow: (patch: RowPatch) => void; readonly onReset: () => void
 }): ReactNode {
@@ -520,10 +521,9 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   const defaultModelName = fallback?.model.name ?? ''
   const defaultEffort = fallback?.reasoningEffort ? effortLabel(fallback.reasoningEffort) : ''
   const mirrorMode = room?.state?.runtimeMode ?? room?.state?.currentOptions?.runtimeMode ?? 'approval-required'
-  // Every provider's models are offered; a provider Watcher does not run on keeps its tile, saying why, as the
-  // composer's picker says why a provider cannot take a choice now.
-  const watcherModels = catalog.filter(item => watcherProviderOf(item) !== null)
-  const refused = [...new Map(catalog.filter(item => watcherProviderOf(item) === null).map(item => {
+  // A connected provider that can start workers but cannot run Watcher keeps its explanation (ADR-0091).
+  const watcherModels = availableModels.filter(item => watcherProviderOf(item) !== null)
+  const refused = [...new Map(availableModels.filter(item => watcherProviderOf(item) === null).map(item => {
     const provider = item.providerId ? PROVIDER_LABELS[item.providerId] : item.provider
     return [item.provider, { name: item.provider, providerId: item.providerId, reason: t`Watcher can’t run on ${provider} yet.` }]
   })).values()]
@@ -533,7 +533,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
       <p className="worker-role__what tt-paragraph">{role.what}</p>
       {shown ? <div className="worker-role__fields">
         <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">{t({ message: 'Model', comment: 'A worker role field: the model it runs on' })}</span>
-          <ModelPicker models={watcherModels} modelId={shown.modelId} disabled={fixedReason !== undefined} label={t`Choose Watcher’s model. Now ${name}`} unavailable={refused}
+          <ModelPicker models={watcherModels} modelId={shown.modelId} current={model} disabled={fixedReason !== undefined} label={t`Choose Watcher’s model. Now ${name}`} unavailable={refused}
             note={watcher ? t`Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history.`
               : t`Watcher’s model: the same choice as the model chip under its composer. Watcher runs on ${watcherProviders}.`}
             onChange={id => choose(chosenModelId(catalog, id, shown.modelId), undefined)} /></div>

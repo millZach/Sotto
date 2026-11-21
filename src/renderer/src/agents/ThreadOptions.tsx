@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { Zap } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread } from '../../../shared/agents'
+import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentHostSnapshot, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import { fitSpeed } from '../../../shared/workerRoles'
 import type { AgentConnection } from './AgentContext'
@@ -74,10 +74,10 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
 }
 
 /** Whether a provider can create threads now; hosts without per-provider status answer for themselves. */
-function canCreateWith(state: AgentState, model: AgentModel): boolean {
+export function canCreateWith(host: AgentHostSnapshot, model: AgentModel): boolean {
   if (model.hiddenFromMenu) return false
-  const status = state.host.providers?.find(provider => provider.id === model.providerId)
-  return model.ready && (status ? status.connection === 'connected' && status.capabilities.threads : state.host.connected && state.host.capabilities.threads)
+  const status = host.providers?.find(provider => provider.id === model.providerId)
+  return model.ready && (status ? status.connection === 'connected' && status.capabilities.threads : host.connected && host.capabilities.threads)
 }
 
 /**
@@ -88,17 +88,17 @@ function canCreateWith(state: AgentState, model: AgentModel): boolean {
  * between the providers whose own memory Sotto turns off.
  */
 function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider = false): { readonly models: AgentModel[]; readonly locked: boolean } {
-  state = { ...state, host: hostForThread(state.host, thread) }
+  const host = hostForThread(state.host, thread)
   if (thread.nativeSessionStarted === false) {
-    const own = catalogEntry(state.host.models, thread.modelId)
+    const own = catalogEntry(host.models, thread.modelId)
     const provider = thread.providerId ?? (own ? own.providerId ?? providerKey(own.provider) : undefined)
-    const models = state.host.models.filter(model => model === own || canCreateWith(state, model))
+    const models = host.models.filter(model => model === own || canCreateWith(host, model))
       .filter(model => !sameProvider || provider === undefined || (model.providerId ?? providerKey(model.provider)) === provider)
       // An owlet stays on a provider whose own memory Sotto turns off (ADR-0213).
       .filter(model => thread.owlet === undefined || model === own || owletProviderAllowed(model.providerId))
     return { models, locked: false }
   }
-  return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
+  return { models: host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
 }
 
 /**
@@ -271,7 +271,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const orchestrating = watcher ? saveOrchestrating : null
   const open = watcher ? room?.open ?? null : null
   const settle = room?.settle
-  const others = open === null ? [] : state.host.models.filter(model => model.ready && canCreateWith(state, model)
+  const others = open === null ? [] : state.host.models.filter(model => canCreateWith(state.host, model)
     && watcherProviderOf(model) !== null && watcherProviderOf(model) !== thread.providerId)
   // A started thread keeps its provider; another provider's model is a new thread that continues this one (ADR-0089).
   const continuing = !watcher && locked && continueOffer !== undefined ? continueOffer : undefined
