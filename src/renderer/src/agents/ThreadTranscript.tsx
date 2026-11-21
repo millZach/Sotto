@@ -61,7 +61,7 @@ import { isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadAct
 import type { AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
-import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, DetachedRunStopContext, StillWorking, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
+import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, DetachedRunStopContext, StillWorking, useDetachedRunStop, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { finishedDelegation } from './delegationWords'
 import { MessageScrubber } from './MessageScrubber'
@@ -1035,9 +1035,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const ornamentAllowed = threadOrnamentAllowed(thread, row.connected)
   const backgroundAgents = useShared(useMemo(() => stillWorkingAgents(thread.backgroundWork, ornamentAllowed), [ornamentAllowed, thread.backgroundWork]))
   // Stop on a detached run's row (#2476): the host that runs the thread looks again and ends that process alone.
-  const unreached = t`Sotto could not reach the computer that runs this thread. The run may still be running.`
-  const stopDetachedRun = useMemo(() => (runId: string): Promise<string | null> => command({ type: 'stop-detached-run', threadId: thread.id, runId })
-    .then(result => result === null ? unreached : result.error, () => unreached), [command, thread.id, unreached])
+  const stopDetachedRun = useDetachedRunStop(command, thread.id)
   const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? t`The thread that delegated`
   const briefs = useMemo<DelegatedBriefs | undefined>(() => {
     const ids = new Set(delegations.received.map(view => view.briefMessageId))

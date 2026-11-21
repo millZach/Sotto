@@ -8676,8 +8676,8 @@ msgstr ""
 msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadTranscript.tsx
-msgid "Sotto could not reach the computer that runs this thread. The run may still be running."
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Sotto could not reach the computer that runs this thread. The run may still be running. Try Stop again once that computer is connected."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts

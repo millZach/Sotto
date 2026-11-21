@@ -367,6 +367,10 @@ msgstr ""
 msgid "{reveal}: working folder"
 msgstr ""
 
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{runCount, plural, one {# detached run} other {# detached runs}}"
+msgstr ""
+
 #. A count of a pull request's checks: running or queued.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "{runningCount} running"
@@ -638,6 +642,11 @@ msgstr ""
 #: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/toolsPanelStore.ts
 msgid "Agents"
+msgstr ""
+
+#. Heading over a thread’s agents and delegated threads, under its detached runs.
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Agents and delegated threads"
 msgstr ""
 
 #: src/renderer/src/tools/ToolsToggle.tsx
@@ -1512,6 +1521,11 @@ msgstr ""
 #. A pull request's description, which folds away.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Description"
+msgstr ""
+
+#. Heading over the agent runs a thread started and left running, which Sotto found.
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Detached runs"
 msgstr ""
 
 #: src/renderer/src/tools/IPhoneSurface.tsx

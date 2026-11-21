@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bot, FlaskConical, GitFork, Laptop, MoreHorizontal, Search, Server, ShieldCheck, Sparkle, SquareTerminal, type LucideIcon } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
@@ -308,6 +308,17 @@ function BackgroundWorkRow({ work }: { readonly work: AgentBackgroundWork }): Re
  */
 export const DetachedRunStopContext = createContext<((runId: string) => Promise<string | null>) | null>(null)
 
+/**
+ * Stop for one of a thread's detached runs, wherever its row stands (under the last reply, in Tools › Agents): the host
+ * that runs the thread looks again and ends that process alone. Resolves to why it did not, or null once it did.
+ */
+export function useDetachedRunStop(command: AgentConnection['command'] | undefined, threadId: string | undefined): (runId: string) => Promise<string | null> {
+  const { t } = useLingui()
+  const unreached = t`Sotto could not reach the computer that runs this thread. The run may still be running. Try Stop again once that computer is connected.`
+  return useCallback((runId: string): Promise<string | null> => !command || threadId === undefined ? Promise.resolve(unreached)
+    : command({ type: 'stop-detached-run', threadId, runId }).then(result => result === null ? unreached : result.error, () => unreached), [command, threadId, unreached])
+}
+
 /** How long a run has been going, counted in its own element every second so the transcript is not redrawn for a clock. */
 function RunningFor({ startedAt }: { readonly startedAt: string }): ReactNode {
   const { t } = useLingui()
@@ -326,7 +337,7 @@ function RunningFor({ startedAt }: { readonly startedAt: string }): ReactNode {
  * them the client, the model and effort its command names, the folder it works in and how long it has run; then why it
  * is here, and its command behind a disclosure. It is not a Sotto thread, so it opens nothing, and it goes when it ends.
  */
-function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork }): ReactNode {
+export function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork }): ReactNode {
   const { t } = useLingui()
   const stop = useContext(DetachedRunStopContext)
   const [stopping, setStopping] = useState(false)
