@@ -245,6 +245,12 @@ export class SocketHostService implements HostService {
    */
   private readonly lateDetails = new Map<string, string>()
   /**
+   * Each thread's whole read still on its way here, until its answer is held. A delta that arrives with the answer is
+   * handled first, since the answer is held only once its promise settles, so it waits for the read rather than reading
+   * the thread again (#1990).
+   */
+  private readonly reads = new Map<string, Promise<unknown>>()
+  /**
    * The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3
    * amendment), and once a shell naming it has been read, that reading frozen and owned (`certified`). A later shell naming
    * the same revision is read without its catalog and handed the certified one, so no push or answer reads the catalog
@@ -452,7 +458,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -758,6 +764,8 @@ export class SocketHostService implements HostService {
     const held = this.details.get(threadId)
     if (held && delta.revision <= held.revision) return
     const applied = held ? applyAgentThreadDetailDelta(held, delta) : null
+    const reading = applied === null ? this.reads.get(threadId) : undefined
+    if (reading) { void reading.then(() => { this.applyDelta(threadId, delta) }, () => { this.behind.add(threadId); this.resync(threadId) }); return }
     if (applied === null) { this.behind.add(threadId); this.resync(threadId); return }
     this.details.set(threadId, applied)
     for (const listener of this.detailListeners) listener(structuredClone(delta))
@@ -980,7 +988,19 @@ export class SocketHostService implements HostService {
     const state = this.read(protocolAgentStateSchema, await this.call({ op: 'check-answer', answer }))
     this.sameGeneration(generation); this.publish(state)
   }
-  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { if (!this.threadAvailable(threadId)) return null; const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
+  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> {
+    if (!this.threadAvailable(threadId)) return null
+    const generation = this.generation
+    // The answer itself is what a waiting delta waits on, so the read takes no more turns to settle than it did: what
+    // follows a failed read, such as a resync's end, happens when it did (#1990). Its own continuation holds the answer
+    // before a waiting delta's, which was made after it.
+    const answer = this.call({ op: 'detail', threadId })
+    this.reads.set(threadId, answer)
+    let result: unknown
+    try { result = await answer } finally { if (this.reads.get(threadId) === answer) this.reads.delete(threadId) }
+    const detail = this.read(agentThreadDetailResultSchema, result); this.sameGeneration(generation); this.cacheDetail(threadId, detail)
+    return this.threadDetail(threadId)
+  }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
   /** `shown`: false while this desktop's window is behind another app (ADR-0092); absent, its threads are shown. */

@@ -134,7 +134,9 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  *
  * `held` is the revision of each observed thread's detail the client holds, as far as what it was sent says: set by a
  * whole detail that went, moved on by a delta that followed it, and dropped by a push that could not go or a delta that
- * did not follow it. `opening` is each observed thread still owed its first whole detail. `sentAhead` holds each whole
+ * did not follow it. `opening` is each observed thread still owed its first whole detail. `readAhead` is, for a desktop
+ * whose hello accepted `detail-read-held`, each thread it read whole while not following it, at the revision it was
+ * answered and with a digest of what it was sent, so the observe that follows sends it again only when it changed (#1990). `sentAhead` holds each whole
  * detail this client was sent while that copy was still waiting out the coalescing window, so it is not sent again (#700).
  *
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
@@ -150,7 +152,15 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
  * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
  */
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+/** A thread a desktop read whole while not following it: the revision it was answered and a digest of what it was sent. */
+interface ReadAhead { readonly revision: number; readonly digest: string }
+/** How many such reads a desktop's socket remembers, the newest kept: a click reads one thread at a time. */
+const READ_AHEAD_LIMIT = 16
+/** What a client was sent of a thread's history, but for its revision, as a digest that tells two copies apart byte for byte. */
+function sentDigest(detail: AgentThreadDetail): string {
+  return createHash('sha256').update(JSON.stringify({ ...detail, revision: 0 })).digest('base64')
+}
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -532,6 +542,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
+    // So is a read held for the observe after it (#1990).
+    && (feature !== 'detail-read-held' || options.admin !== false || options.tailnet !== undefined)
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
     && (feature !== 'agents-view' || service.supportsAgentsView === true)
     // Branch moves (ADR-0105 decision 8) only where the host's Owl answer turns on cross-machine work, for recorded desktops.
@@ -1109,6 +1121,31 @@ export async function startSocketServer(options: SocketServerOptions) {
     else peer.held.delete(threadId)
   }
   const detail = (peer: Peer, threadId: string): void => { sendWhole(peer, threadId, service.threadDetail(threadId)) }
+  /** Remembers a thread a desktop read whole while not following it (`detail-read-held`, #1990), the newest last. */
+  const readAheadOf = (peer: Peer, threadId: string, read: AgentThreadDetail): void => {
+    peer.readAhead.delete(threadId)
+    peer.readAhead.set(threadId, { revision: read.revision, digest: sentDigest(read) })
+    for (const oldest of peer.readAhead.keys()) { if (peer.readAhead.size <= READ_AHEAD_LIMIT) break; peer.readAhead.delete(oldest) }
+  }
+  /**
+   * Holds an observed thread the client read whole just before as it stands, and says whether it did, so its whole is not
+   * sent again (#1990): what it would be sent now is what it was answered, byte for byte but for the revision. At the same revision it
+   * holds it already; at a later one, which the host's own revisions can reach with nothing changed, it is told so by a
+   * delta that changes nothing, from the revision it read to this one. Either way the pushes after it follow it.
+   */
+  const holdAsRead = (peer: Peer, threadId: string, whole: AgentThreadDetail | null): boolean => {
+    const read = peer.readAhead.get(threadId)
+    // A whole older than the read is never compared: the read stays remembered, and the caller sends the thread as it is.
+    if (!read || !whole || whole.revision < read.revision) return false
+    peer.readAhead.delete(threadId)
+    const sent = forPeer(peer, whole)
+    if (!sent || sentDigest(sent) !== read.digest) return false
+    if (whole.revision !== read.revision && !push(peer, { v: 1, event: 'detail-delta', threadId,
+      delta: { threadId, baseRevision: read.revision, revision: whole.revision, messageDeltas: [], activityDeltas: [] } })) return false
+    peer.opening.delete(threadId)
+    peer.held.set(threadId, whole.revision)
+    return true
+  }
   /**
    * Pushes a desktop Watcher's projection, whose revision differs from the last one it was written. To a desktop that
    * accepted `watcher-progress`, a projection whose record part and evidence are those of the last one written to it goes
@@ -1246,7 +1283,18 @@ export async function startSocketServer(options: SocketServerOptions) {
     const held = peer.held.get(threadId)
     // A whole no newer than what the client holds is what it holds already, since a revision names what the thread holds,
     // and goes no second time (#2699): one the service published again, as a read made while recovering from a delta can.
-    if (!isAgentThreadDetailDelta(update)) { if (!peer.sentAhead.has(update) && !(held !== undefined && update.revision <= held)) sendWhole(peer, threadId, update); return }
+    if (!isAgentThreadDetailDelta(update)) {
+      if (peer.sentAhead.has(update) || held !== undefined && update.revision <= held) return
+      // The whole an observe publishes goes no second time either to a client that read it just before (#1990). One older
+      // than that read is left to the observe, which compares the thread as it is then, as a waiting one older than the
+      // read is: sent, it would have the client held at a revision older than the one it holds.
+      if (peer.opening.has(threadId)) {
+        const read = peer.readAhead.get(threadId)
+        if (read && update.revision < read.revision) return
+        if (holdAsRead(peer, threadId, update)) return
+      }
+      sendWhole(peer, threadId, update); return
+    }
     if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return
     if (!peer.deltas) { sendWhole(peer, threadId, made.whole()); return }
     // A delta that starts before the revision the client holds, and ends past it, goes as the thread whole instead (#2700):
@@ -1888,6 +1936,9 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
         peer.pictureEdges = (request.accepts?.includes('thread-media-edge') ?? false) && offers(peer, 'thread-media-edge')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
+        // A read counts toward the observe after it only with deltas, which carry the revision it moved to (#1990).
+        peer.readHeld = peer.deltas && (request.accepts?.includes('detail-read-held') ?? false) && offers(peer, 'detail-read-held')
+        peer.readAhead.clear()
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
         peer.watcherPhone = (request.accepts?.includes('watcher-phone') ?? false) && offers(peer, 'watcher-phone')
@@ -2051,8 +2102,12 @@ export async function startSocketServer(options: SocketServerOptions) {
           await peer.frames.drained(); if (peer.frames.isClosed) break
           if (!peer.opening.has(id)) continue
           // A copy still waiting is sent now in its place, so the thread is neither read again nor sent twice.
-          const offered = waiting.get(id)
-          if (offered) { peer.sentAhead.add(offered); sendWhole(peer, id, offered) } else detail(peer, id)
+          // One older than a read the client made since is not offered: the thread as it is now is compared instead.
+          const read = peer.readAhead.get(id)
+          const offered = read && waiting.get(id) && waiting.get(id)!.revision < read.revision ? undefined : waiting.get(id)
+          const whole = offered ?? service.threadDetail(id)
+          if (offered) peer.sentAhead.add(offered)
+          if (!holdAsRead(peer, id, whole)) sendWhole(peer, id, whole)
         }
         await peer.frames.drained()
         return null
@@ -2571,6 +2626,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           // A thread read whole is held at that revision, and the deltas that follow it apply.
           const read = response.result as AgentThreadDetail | null
           if (read && peer.observed.has(request.threadId) && !peer.opening.has(request.threadId)) peer.held.set(request.threadId, read.revision)
+          else if (read && request.op === 'detail' && peer.readHeld && !peer.stepWindows) readAheadOf(peer, request.threadId, read)
         } else if (request.op === 'hello' || (request.op === 'events' && !request.threadId)) {
           if (request.op === 'hello') peer.ready = true
           // The queue as it stands follows the hello's answer; each change follows it.
@@ -2709,7 +2765,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), readHeld: false, readAhead: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
