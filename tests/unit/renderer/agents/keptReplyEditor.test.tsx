@@ -1,10 +1,11 @@
 import { NOW, renderThreads, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
 import React from 'react'
-import { act } from '@testing-library/react'
+import { act, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { ThreadsView } from '../../../../src/renderer/src/agents/ThreadsView'
 import { assignPaneEditorSlots } from '../../../../src/renderer/src/agents/paneEditor'
+import { SplitLayoutStore, openBeside } from '../../../../src/renderer/src/agents/splitLayout'
 import type { PromptEditorElement } from '../../../../src/renderer/src/agents/promptSelection'
 import type { AgentState } from '../../../../src/shared/agents'
 
@@ -60,5 +61,19 @@ describe('the pane grid’s kept reply editors (#2746)', () => {
     expect(editor.can().undo()).toBe(true)
     expect(editor.state.selection.from).toBe(caret)
     expect(destroyed).not.toHaveBeenCalled()
+  })
+
+  it('hands a pane its focus when its kept editor is focused, as the composer’s own editor did', () => {
+    const state = stateFixture()
+    const [one, two] = state.host.threads.filter(thread => thread.kind === undefined)
+    const layoutStore = new SplitLayoutStore()
+    layoutStore.set(openBeside(layoutStore.get(), one!.id, two!.id))
+    const view = renderThreads({ ...state, activeThreadId: one!.id })
+    act(() => { view.rerender(<ThreadsView now={NOW} layoutStore={layoutStore} paneAreaWidth={1200} paneAreaHeight={800} />) })
+    const second = document.querySelector<PromptEditorElement>(`.thread-pane[data-thread-id="${two!.id}"] .prompt-editor`)!
+    view.command.mockClear()
+    // The pane hears its editor's focus through React's tree, which an editor drawn from outside the pane would not reach.
+    act(() => { fireEvent.focusIn(second) })
+    expect(view.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread', threadId: two!.id }))
   })
 })
