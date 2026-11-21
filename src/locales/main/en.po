@@ -576,6 +576,10 @@ msgstr "another version"
 msgid "Answer the request to open this page first."
 msgstr "Answer the request to open this page first."
 
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Antigravity’s key is kept on this computer, which is not running its own threads. Nothing was saved."
+msgstr "Antigravity’s key is kept on this computer, which is not running its own threads. Nothing was saved."
+
 #: src/main/agents/nextPromptIpc.ts
 msgid "Ask for Watcher's first message from the main Sotto window."
 msgstr "Ask for Watcher's first message from the main Sotto window."
