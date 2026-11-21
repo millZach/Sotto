@@ -41,6 +41,7 @@ import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 import type { AntigravityRuntime } from './antigravityInstall'
+import { antigravitySignInChanged, guardAntigravityPath, restartAntigravity } from './antigravitySignIn'
 import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
 import { desktopWindowClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
 import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadHistorySource, ThreadReadPurpose } from './host'
@@ -457,9 +458,6 @@ function connectionRefusal(snapshot: AgentHostSnapshot, provider: ProviderId | u
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
-
-/** What `agy` signs in with, each read when it starts (ADR-0212). */
-const ANTIGRAVITY_SIGN_IN_FIELDS = ['antigravitySignInMethod', 'antigravityProject', 'antigravityLocation', 'antigravityBinaryPath'] as const
 
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'bring-changes-back', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
@@ -2846,12 +2844,8 @@ export class AgentControl {
   antigravityRuntime(): AntigravityRuntime | undefined { return this.clients.antigravity }
   /** Tests wait on this; it goes when they move to the module. */
   get clientChecks(): number { return this.clientUpdates.checksWaiting }
-  /** A connected Antigravity starts again on a new sign-in: a running `agy` keeps the one it started with (ADR-0212). */
-  private restartAntigravity(): void {
-    if (this.state.host.providers?.find(status => status.id === 'antigravity')?.connection !== 'connected') return
-    this.dependencies.host.disconnect('antigravity')
-    void this.commandShell({ type: 'connect', provider: 'antigravity', notice: false }).catch(() => undefined)
-  }
+  /** A connected Antigravity starts again on a new sign-in (ADR-0212). */
+  private restartAntigravity(): void { restartAntigravity(this.state, this.dependencies.host, () => this.commandShell({ type: 'connect', provider: 'antigravity', notice: false })) }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
     this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available(), antigravity: vault.has('antigravity') }
@@ -4737,7 +4731,7 @@ export class AgentControl {
         // back on, which grants nothing, and is refused turning it off whatever its answer policy (ADR-0079).
         if (command.patch.museDisableSandbox === true && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
         // Antigravity's binary path names a program this machine starts, so only this machine's own Settings set it (ADR-0212).
-        if (command.patch.antigravityBinaryPath !== undefined && command.patch.antigravityBinaryPath !== this.state.configuration.antigravityBinaryPath && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
+        guardAntigravityPath(command.patch, this.state.configuration, client)
         const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
         let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })
         const before = this.state.configuration
@@ -4753,7 +4747,7 @@ export class AgentControl {
           if (command.patch.disconnectedProviders === undefined) next = withTurnedOff(next, turnedOff(before, removed, next.enabledProviders ?? []))
         }
         this.state.configuration = next
-        if (ANTIGRAVITY_SIGN_IN_FIELDS.some(field => next[field] !== before[field])) this.restartAntigravity()
+        if (antigravitySignInChanged(before, next)) this.restartAntigravity()
         // The newly chosen account's models and efforts fill Settings; check it without holding up the save.
         if (next.reasoning !== before.reasoning && isSubscriptionReasoning(next.reasoning)) void this.checkReasoning(next.reasoning).then(() => this.publish())
         this.scheduleProviderReconnects()
