@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
@@ -179,6 +179,13 @@ describe('Antigravity ACP adapter', () => {
     expect((await f!.host.snapshot()).connected).toBe(false)
     expect((await f!.requests()).some(record => record.method === 'logout')).toBe(true)
     expect((await f!.host.snapshot()).threads.map(thread => thread.id)).toContain(id)
+  })
+
+  it('removes its scratch folder even when agy cannot be started at all', async () => {
+    // A NUL in the program's name makes Node refuse the start at once, the way Windows refuses a batch file without a shell.
+    f = await antigravityFixture(undefined, undefined, {}, { executable: 'agy\u0000' })
+    await expect(f.host.signOut()).rejects.toThrow('Antigravity could not sign out.')
+    expect(await readdir(join(f.root, 'antigravity', 'scratch')).catch(() => [])).toEqual([])
   })
 
   it('lists agy’s commands as skills', async () => {

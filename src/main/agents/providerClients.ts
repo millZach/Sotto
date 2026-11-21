@@ -954,7 +954,7 @@ export class ProviderClients {
  * Where each client is installed, asked of the same discovery the adapters use, so the update check
  * cannot disagree with the connection about which binary it means.
  */
-export async function locateClient(provider: ProviderId, options: { readonly antigravityDirectory?: string } = {}): Promise<string | undefined> {
+export async function locateClient(provider: ProviderId, options: { readonly antigravityDirectory?: string; readonly antigravityBinaryPath?: string } = {}): Promise<string | undefined> {
   switch (provider) {
     case 'claude': return (await findClaudeExecutable()) ?? undefined
     case 'codex': return (await findCodexExecutable()) ?? undefined
@@ -968,7 +968,9 @@ export async function locateClient(provider: ProviderId, options: { readonly ant
     case 'hermes': return findHermesExecutable()
     case 'antigravity': {
       const directory = options.antigravityDirectory
-      return findAntigravityExecutable(process.env, directory ? { managed: () => managedAntigravityExecutable(directory) } : {})
+      // Settings' binary path first, as the adapter looks (ADR-0211), so the update card names the agy threads run.
+      return findAntigravityExecutable(process.env, { ...(directory ? { managed: () => managedAntigravityExecutable(directory) } : {}),
+        ...(options.antigravityBinaryPath ? { binaryPath: options.antigravityBinaryPath } : {}) })
     }
   }
 }

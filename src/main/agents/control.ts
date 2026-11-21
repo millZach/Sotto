@@ -462,6 +462,9 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 
+/** What `agy` signs in with, each read when it starts (ADR-0211). */
+const ANTIGRAVITY_SIGN_IN_FIELDS = ['antigravitySignInMethod', 'antigravityProject', 'antigravityLocation', 'antigravityBinaryPath'] as const
+
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'bring-changes-back', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
 type GitCommand = Extract<AgentCommand, { type: (typeof GIT_COMMAND_TYPES)[number] }>
 const isGitCommand = (command: AgentCommand): command is GitCommand => (GIT_COMMAND_TYPES as readonly string[]).includes(command.type)
@@ -2849,6 +2852,12 @@ export class AgentControl {
   antigravityRuntime(): AntigravityRuntime | undefined { return this.clients.antigravity }
   /** Tests wait on this; it goes when they move to the module. */
   get clientChecks(): number { return this.clientUpdates.checksWaiting }
+  /** A connected Antigravity starts again on a new sign-in: a running `agy` keeps the one it started with (ADR-0211). */
+  private restartAntigravity(): void {
+    if (this.state.host.providers?.find(status => status.id === 'antigravity')?.connection !== 'connected') return
+    this.dependencies.host.disconnect('antigravity')
+    void this.commandShell({ type: 'connect', provider: 'antigravity', notice: false }).catch(() => undefined)
+  }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
     this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available(), antigravity: vault.has('antigravity') }
@@ -4738,13 +4747,17 @@ export class AgentControl {
           if (command.patch.disconnectedProviders === undefined) next = withTurnedOff(next, turnedOff(before, removed, next.enabledProviders ?? []))
         }
         this.state.configuration = next
+        if (ANTIGRAVITY_SIGN_IN_FIELDS.some(field => next[field] !== before[field])) this.restartAntigravity()
         // The newly chosen account's models and efforts fill Settings; check it without holding up the save.
         if (next.reasoning !== before.reasoning && isSubscriptionReasoning(next.reasoning)) void this.checkReasoning(next.reasoning).then(() => this.publish())
         this.scheduleProviderReconnects()
         if (command.patch.enabled === false && !this.dependencies.host.concurrentProviders) this.disconnect()
         return
       }
-      case 'credential': await this.dependencies.credentials.set(command.slot, command.value.trim()); this.updateCredentials(); return
+      case 'credential':
+        await this.dependencies.credentials.set(command.slot, command.value.trim()); this.updateCredentials()
+        if (command.slot === 'antigravity') this.restartAntigravity()
+        return
       case 'connect': {
         if (command.provider) {
           this.state.configuration.enabledProviders = [...new Set([...enabledThreadProviders(this.state.configuration), command.provider])]

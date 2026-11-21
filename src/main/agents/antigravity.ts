@@ -535,12 +535,13 @@ export class AntigravityAcpHost implements ProviderHost {
    */
   private async readCatalog(executable: string, signIn: AntigravitySignIn, generation: number): Promise<string | undefined> {
     const scratch = join(this.folders.scratch, randomUUID())
-    await mkdir(scratch, { recursive: true })
-    const probe = this.spawn(executable, antigravityArguments(this.folders), scratch, signIn, (frame, rpc) => {
-      if (frame.method && frame.id !== undefined) void rpc.reply(frame.id, antigravityDecline()).catch(() => undefined)
-    }, () => undefined)
+    let probe: AntigravityRpc | undefined
     let sessionId: string | undefined
     try {
+      await mkdir(scratch, { recursive: true })
+      probe = this.spawn(executable, antigravityArguments(this.folders), scratch, signIn, (frame, rpc) => {
+        if (frame.method && frame.id !== undefined) void rpc.reply(frame.id, antigravityDecline()).catch(() => undefined)
+      }, () => undefined)
       const client = await this.handshake(probe, signIn)
       this.httpToolServers = client.agentCapabilities.mcpCapabilities?.http === true
       this.appendsSystemPrompt = client.agentCapabilities._meta?.antigravity?.systemPrompt?.append === true
@@ -565,7 +566,8 @@ export class AntigravityAcpHost implements ProviderHost {
       this.state.models = facts.map(entry => entry.model)
       return client.agentInfo?.version
     } finally {
-      probe.close(); await probe.closed
+      // The scratch folder goes even when `agy` could not be started at all.
+      if (probe) { probe.close(); await probe.closed }
       await this.removeScratchSession(scratch, sessionId)
     }
   }
@@ -590,14 +592,18 @@ export class AntigravityAcpHost implements ProviderHost {
     const signIn = await this.signInNow()
     await writeAntigravitySettings(this.folders, signIn)
     const scratch = join(this.folders.scratch, randomUUID())
-    await mkdir(scratch, { recursive: true })
-    const rpc = this.spawn(executable, antigravityArguments(this.folders), scratch, signIn, (frame, process) => {
-      if (frame.method && frame.id !== undefined) void process.reply(frame.id, antigravityDecline()).catch(() => undefined)
-    }, () => undefined)
+    let rpc: AntigravityRpc | undefined
     try {
+      await mkdir(scratch, { recursive: true })
+      rpc = this.spawn(executable, antigravityArguments(this.folders), scratch, signIn, (frame, process) => {
+        if (frame.method && frame.id !== undefined) void process.reply(frame.id, antigravityDecline()).catch(() => undefined)
+      }, () => undefined)
       await this.sendInitialize(rpc, () => undefined)
       return await work(rpc, signIn)
-    } finally { rpc.close(); await rpc.closed; await this.removeScratchSession(scratch, undefined) }
+    } finally {
+      if (rpc) { rpc.close(); await rpc.closed }
+      await this.removeScratchSession(scratch, undefined)
+    }
   }
   /**
    * Gemini Enterprise's sign-in, as T3 runs it: ACP `authenticate` with `oauth-business`, which `agy` finishes in a

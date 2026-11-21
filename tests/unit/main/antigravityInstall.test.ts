@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  AntigravityRuntime, antigravityRuntimeFolder, describeAntigravityProgress, leaseAntigravityRuntime, managedAntigravityExecutable, systemTar,
+  AntigravityRuntime, antigravityRuntimeFolder, describeAntigravityProgress, leaseAntigravityRuntime, managedAntigravityExecutable, removeDownloadedAntigravity, systemTar,
   type AntigravityInstallProgress,
 } from '../../../src/main/agents/antigravityInstall'
 import {
@@ -169,6 +169,22 @@ function tarGz(files: Readonly<Record<string, Buffer>>): Buffer {
   blocks.push(Buffer.alloc(1024))
   return gzipSync(Buffer.concat(blocks))
 }
+
+describe('Remove downloaded on Antigravity\'s row', () => {
+  const removing = (kept: string[] = []) => ({ remove: async () => ({ removed: ['1.5.13'], kept }) })
+  it('disconnects Antigravity when no other agy is left to start, rather than keep a path that is gone', async () => {
+    const disconnect = vi.fn(async () => undefined)
+    const said = await removeDownloadedAntigravity(removing(), { clientUpdated: async () => { throw new Error('gone') } }, disconnect)
+    expect(disconnect).toHaveBeenCalledOnce()
+    expect(said).toBe('Removed the Antigravity Sotto downloaded. Sotto found no other agy, so Antigravity is disconnected. Your threads are kept. Install Antigravity again to connect it.')
+  })
+  it('stays connected when threads move to another agy, or a running thread still holds the removed one', async () => {
+    const disconnect = vi.fn(async () => undefined)
+    await removeDownloadedAntigravity(removing(), { clientUpdated: async () => undefined }, disconnect)
+    await removeDownloadedAntigravity(removing(['1.5.13']), { clientUpdated: async () => { throw new Error('gone') } }, disconnect)
+    expect(disconnect).not.toHaveBeenCalled()
+  })
+})
 
 describe('unpacking with this computer\'s tar', () => {
   const linuxRuntime = (fetchImpl: ReturnType<typeof fakeGoogle>['fetchImpl']): AntigravityRuntime =>

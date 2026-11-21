@@ -28,7 +28,8 @@ import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { AntigravityAcpHost } from './antigravity'
-import { describeAntigravityProgress, describeAntigravityRemoval, managedAntigravityExecutable } from './antigravityInstall'
+import { describeAntigravityProgress, managedAntigravityExecutable, removeDownloadedAntigravity } from './antigravityInstall'
+import { withAntigravityBinaryPath } from './antigravityLookup'
 import type { AntigravitySignIn } from './antigravityRpc'
 import type { AntigravityLookup } from './antigravityLookup'
 import { MuseMspHost } from './muse'
@@ -553,8 +554,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     // Antigravity's lookup also asks for the copy Sotto downloaded under this directory.
-    locateClient: options.locateClient ?? (provider => locateClient(provider, { antigravityDirectory: directory })),
-    ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
+    locateClient: options.locateClient ?? (provider => locateClient(provider, { antigravityDirectory: directory, antigravityBinaryPath: agentControl.configuration().antigravityBinaryPath })),
+    ...(options.installedProviders ? { installedProviders: async () => withAntigravityBinaryPath(await options.installedProviders!(), agentControl.configuration().antigravityBinaryPath) } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeCommandSummary: commandSummaryWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
@@ -1083,10 +1084,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     removeDownloaded: async (): Promise<string> => {
       const runtime = agentControl.antigravityRuntime()
       if (!runtime) return 'There is no downloaded Antigravity to remove.'
-      const removed = describeAntigravityRemoval(await runtime.remove())
-      // Threads move off the removed copy as they would after an update: each new process finds agy again.
-      await antigravityHost.clientUpdated().catch(() => undefined)
-      return removed
+      return removeDownloadedAntigravity(runtime, antigravityHost, () => agentControl.command({ type: 'disconnect', provider: 'antigravity' }))
     },
   } : undefined
   idleCompaction.start()

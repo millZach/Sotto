@@ -425,6 +425,21 @@ export class AntigravityRuntime {
   }
 }
 
+/**
+ * Remove downloaded, from Antigravity's row: the copy goes and connected threads move to another `agy` as after an
+ * update. When there is no other and no thread still holds the removed copy, Antigravity disconnects, since its next
+ * start would name a program that is gone.
+ */
+export async function removeDownloadedAntigravity(runtime: Pick<AntigravityRuntime, 'remove'>, host: { clientUpdated(): Promise<void> },
+  disconnect: () => Promise<unknown>): Promise<string> {
+  const result = await runtime.remove()
+  const said = describeAntigravityRemoval(result)
+  const moved = await host.clientUpdated().then(() => true, () => false)
+  if (moved || result.kept.length || !result.removed.length) return said
+  await disconnect()
+  return `${said} Sotto found no other agy, so Antigravity is disconnected. Your threads are kept. Install Antigravity again to connect it.`
+}
+
 /** What a removal did, in plain words. */
 export function describeAntigravityRemoval(result: AntigravityRemoveResult): string {
   if (!result.removed.length && !result.kept.length) return 'Sotto had no downloaded Antigravity to remove.'
