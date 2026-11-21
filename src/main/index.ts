@@ -1278,7 +1278,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   await cascadedSettles?.load()
   // What crosses to the main window, made before the router so each command reply is numbered as the router builds it (#306).
   const agentStateBroadcaster = new AgentStateBroadcaster()
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { replyBuilt: agentStateBroadcaster.replyBuilt, watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { replyBuilt: agentStateBroadcaster.replyBuilt, watcherEnabled, owletsEnabled: owlFeatures.owlets, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     ...babysittingRetired ? { babysittingRetired: true } : {},
     // What the user's Stop on a thread here left on other machines, which the window says once the cancels answer (#1316 part 3).
     ...crossMachineEnabled && 'delegation' in localRuntime && localRuntime.delegation ? { stopsLeft: (threadId: string) => localRuntime.delegation?.stopsLeft(threadId) } : {},

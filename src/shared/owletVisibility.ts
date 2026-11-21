@@ -1,5 +1,5 @@
-import type { AgentState } from '../../../../shared/agents'
-import { withoutThreads } from '../../../../shared/watcherVisibility'
+import type { AgentState } from './agents'
+import { withoutThreads } from './watcherVisibility'
 
 /**
  * The state with every owlet left out (ADR-0210): its thread, its drafts and deliveries, and its folder's project, so the

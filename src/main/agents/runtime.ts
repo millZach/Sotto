@@ -425,7 +425,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, { historyEnabled: options.historyEnabled, watcherEnabled: options.watcherEnabled ?? false,
-    heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false })
+    heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false, owletsEnabled: options.owletsEnabled === true })
   if (detachedRuns) agentHost.watchDetachedRuns(detachedRuns)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
@@ -960,7 +960,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+  const hostService = new LocalHostService({ control: agentControl, owlets: options.owletsEnabled === true, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
     ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {
       nextPromptListeners.add(listener)

@@ -193,6 +193,8 @@ const capital = (name: string): string => name.charAt(0).toUpperCase() + name.sl
  */
 export const THREAD_MOVE_WORDS = {
   watcher: 'Watcher stays on This computer.',
+  /** An owlet lives on one computer (ADR-0210); moving one is not part of the first slice. */
+  owlet: 'An owlet stays on the computer it was made on.',
   delegated: 'A delegated thread stays with the thread that delegated it.',
   delegating: 'Threads this one delegated to are still working. Move it once they finish.',
   running: 'A turn is running. Move it once the turn ends, or stop it.',
@@ -285,9 +287,10 @@ export interface MoveEligibility {
  * nothing to hand over stay too. Uncommitted work is read from the folder's last Git status here; the branch's own check
  * refuses it again as the move runs.
  */
-export function threadMoveRefusal(thread: Pick<AgentThread, 'kind' | 'archivedAt' | 'status' | 'lastTurn' | 'requests' | 'delegatedBy' | 'worktree'
+export function threadMoveRefusal(thread: Pick<AgentThread, 'kind' | 'owlet' | 'archivedAt' | 'status' | 'lastTurn' | 'requests' | 'delegatedBy' | 'worktree'
   | 'messages' | 'summary' | 'nativeSessionStarted'>, context: MoveEligibility): string | null {
   if (thread.kind === 'watcher' || thread.kind === 'watcher-history') return THREAD_MOVE_WORDS.watcher
+  if (thread.owlet !== undefined) return THREAD_MOVE_WORDS.owlet
   if (isThreadArchived(thread)) return THREAD_MOVE_WORDS.archived
   if (context.movingTo !== undefined) return THREAD_MOVE_WORDS.moving(context.movingTo)
   if (context.fenced === true) return THREAD_MOVE_WORDS.fenced

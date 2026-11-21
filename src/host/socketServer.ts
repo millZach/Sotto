@@ -1,4 +1,5 @@
 import { startsThread } from '../shared/threadStarts'
+import { withoutOwlets } from '../shared/owletVisibility'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
 import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
@@ -673,7 +674,22 @@ export async function startSocketServer(options: SocketServerOptions) {
     return provider !== undefined && peer.unknownProviders.has(provider)
   }
   /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
-  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
+  // A phone is shown no owlet (ADR-0210) until the iPhone has an Owlets page of its own: each shell's owlets, found once.
+  const owletIds = new WeakMap<AgentState, ReadonlySet<string>>()
+  const owletsIn = (state: AgentState): ReadonlySet<string> => {
+    let ids = owletIds.get(state)
+    if (!ids) owletIds.set(state, ids = new Set(state.host.threads.filter(thread => thread.owlet !== undefined).map(thread => thread.id)))
+    return ids
+  }
+  /** The owlets in the newest shell built, which a phone's reads of one thread are kept from. */
+  let knownOwlets: ReadonlySet<string> = new Set()
+  const phoneShellsWithoutOwlets = new WeakMap<AgentState, AgentState>()
+  const withoutOwletsForPhone = (state: AgentState): AgentState => {
+    let shown = phoneShellsWithoutOwlets.get(state)
+    if (!shown) phoneShellsWithoutOwlets.set(state, shown = withoutOwlets(state))
+    return shown
+  }
+  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? '') || knownOwlets.has(threadId))
   const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
   /**
    * `hiddenThread` for many threads at once, as a search names them: Watcher's phone exclusions read once, and each
@@ -785,8 +801,9 @@ export async function startSocketServer(options: SocketServerOptions) {
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
   /** `whole` is set only by a `settled-threads` read, which pages through the threads a phone's list leaves out. */
   const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
+    knownOwlets = owletsIn(read)
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
-    const visible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original), false) : original
+    const visible = isPhonePeer(peer) ? withoutOwletsForPhone(visibleWatcherState(forPhone(original), false)) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
@@ -1554,8 +1571,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (result.checkoutHold) checkoutHold = result.checkoutHold
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
-          // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is.
-          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
+          // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is, and so is
+          // an owlet's, which its setup shows (ADR-0210).
+          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'create-owlet' || input.type === 'set-owlet' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null
             if (!receipt.answerDelivered) receipt.error = { code: 'unavailable', message: errors.unavailable }

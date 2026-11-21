@@ -1,5 +1,4 @@
 import { focusedComposerField } from './promptSelection'
-import { withoutOwlets } from '../features/owlets/owletVisibility'
 import { useThreadWords } from './useThreadWords'
 import { Marked } from '../components/marks'
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -13,10 +12,10 @@ import { PageWindowControls } from '../components/WindowControls'
 import { useOptionalApp } from '../state/AppContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
-import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
+import { threadsPageState } from './watcherVisibility'
 import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents, type AgentConnection } from './AgentContext'
-import { creationErrorWords, draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
+import { creationErrorWords, draftThreads, gateOnCreation, useDraftThreads } from './draftThreads'
 import { shownWords, type LaterWords } from './interfaceWords'
 import { EMPTY_NEEDS_YOU, organizeWorkspace, threadDescriber, useWordsRevision, type ThreadRow } from './threadFacts'
 import { useContinueEnabled } from './continuations'
@@ -164,8 +163,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const publishedRef = useRef(published)
   // Watcher's room keeps the current Watcher; this page lists and selects only the other threads.
   const roomWatcher = useRoomWatcherThreadId()
-  // Owlets live on their own page (ADR-0210), so this one lists and selects none of them either.
-  const state = useMemo(() => withoutOwlets(withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher)),
+  const state = useMemo(() => threadsPageState(published, drafts, watcherEnabled, roomWatcher),
     [published, drafts, watcherEnabled, roomWatcher])
   const command = useMemo(() => gateOnCreation(agents.command), [agents.command])
   useEffect(() => { publishedRef.current = published; draftThreads.reconcile(published) }, [published])

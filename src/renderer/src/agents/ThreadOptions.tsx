@@ -1,4 +1,5 @@
 import { nearestModelEffort } from '../../../shared/reasoningEfforts'
+import { owletProviderAllowed } from '../../../shared/owlets'
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Zap } from 'lucide-react'
@@ -82,7 +83,8 @@ function canCreateWith(state: AgentState, model: AgentModel): boolean {
  * The models a thread may use. Before its first send (`nativeSessionStarted === false`) any ready model
  * from a connected provider that can create threads is a choice; once a native session exists (or its
  * start is unknown) the thread stays with its own provider. `sameProvider` keeps it there from the start:
- * Watcher's provider is chosen when it is created, and changing it is another Watcher (ADR-0073).
+ * Watcher's provider is chosen when it is created, and changing it is another Watcher (ADR-0073). An owlet may move only
+ * between the providers whose own memory Sotto turns off.
  */
 function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider = false): { readonly models: AgentModel[]; readonly locked: boolean } {
   state = { ...state, host: hostForThread(state.host, thread) }
@@ -91,6 +93,8 @@ function threadModelChoices(state: AgentState, thread: AgentThread, sameProvider
     const provider = thread.providerId ?? (own ? own.providerId ?? providerKey(own.provider) : undefined)
     const models = state.host.models.filter(model => model === own || canCreateWith(state, model))
       .filter(model => !sameProvider || provider === undefined || (model.providerId ?? providerKey(model.provider)) === provider)
+      // An owlet stays on a provider whose own memory Sotto turns off (ADR-0210).
+      .filter(model => thread.owlet === undefined || model === own || owletProviderAllowed(model.providerId))
     return { models, locked: false }
   }
   return { models: state.host.models.filter(model => !thread.providerId || model.providerId === thread.providerId), locked: true }
@@ -537,8 +541,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {quiet?.shieldSlot ? createPortal(permissions, quiet.shieldSlot) : permissions}
-      {/* Before the first send, Watch puts the new thread under a standing watch once it is sent (Watcher only). */}
-      {!watcher && !quiet && thread.nativeSessionStarted === false ? <WatchOnSendToggle threadId={thread.id} /> : null}
+      {/* Before the first send, Watch puts the new thread under a standing watch once it is sent (Watcher only); never an owlet's (ADR-0210). */}
+      {!watcher && !quiet && thread.nativeSessionStarted === false && thread.owlet === undefined ? <WatchOnSendToggle threadId={thread.id} /> : null}
     </div>
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? t({ message: `Starting a new Watcher on ${replacingName}…`, comment: '{replacingName} is a provider\'s name.' }) : caption}</span>

@@ -1,7 +1,7 @@
 import type { ThreadMediaStore } from './threadMedia'
 import { changeOwlet, makeOwlet, withoutOwletThreads } from './owlets'
 import { atomicDraftDigest } from './draftDigest'
-import type { AgentOwlet } from '../../shared/owlets'
+import { OWLET_REFUSALS, OWLETS_HELD, type AgentOwlet } from '../../shared/owlets'
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
 import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { clonePlainData, freezePlainData } from './cloneHostSnapshot'
@@ -530,6 +530,7 @@ export class AgentControl {
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   /** A `create-project` or `create-thread` that `create-owlet` runs (ADR-0210): the owlet a thread is made as, or true for its project. */
   private readonly owletStarts = new WeakMap<object, AgentOwlet | true>()
+  private readonly owletsMaking = new Set<string>()
   /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
   private readonly delegationOrigins = new WeakSet<object>()
   /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
@@ -924,7 +925,7 @@ export class AgentControl {
   private threadAvailable(id: string | null | undefined): boolean { return !id || !this.dormantThreadIds.has(id) && !this.dormantOwletIds.has(id) }
   private dormantRefusal(id: string | null | undefined): string {
     if (id && this.dormantWatcherIds.has(id)) return 'Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
-    if (id && this.dormantOwletIds.has(id)) return 'Owlets are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
+    if (id && this.dormantOwletIds.has(id)) return OWLETS_HELD
     return heldProviderRefusal((id ? this.dormantThreadProviders.get(id) : undefined) ?? firstHeldProvider(this.held))
   }
   private providerAvailable(provider: string): boolean { return !this.held.has(provider as ProviderId) }
@@ -1259,7 +1260,7 @@ export class AgentControl {
       }
     }
 
-    if (this.dependencies.watcherEnabled !== true || this.held.size) {
+    if (this.dependencies.watcherEnabled !== true || this.held.size || this.dependencies.owletsEnabled !== true) {
       // The workspace retains special kinds that its public snapshots omit. They must be known before saved work is normalized.
       await this.dependencies.host.initialize?.()
       const dormant = this.dependencies.host.dormantThreadIds?.()
@@ -1268,6 +1269,7 @@ export class AgentControl {
       // The workspace's snapshot already omits these threads, so their providers come from the host that hid them.
       for (const [id, provider] of this.dependencies.host.dormantThreadProviders?.() ?? []) this.dormantThreadProviders.set(id, provider)
       if (this.dependencies.watcherEnabled !== true) for (const id of this.dependencies.host.watcherThreadIds?.() ?? []) this.dormantWatcherIds.add(id)
+      for (const id of this.dependencies.host.dormantOwletIds?.() ?? []) this.dormantOwletIds.add(id)
       const snapshot = this.dependencies.host.workspaceSnapshot?.()
       if (snapshot) this.shownSnapshot(snapshot)
     }
@@ -3460,7 +3462,6 @@ export class AgentControl {
     restart.onChanged = () => { if (!this.disposed) this.publish() }
   }
   get supportsThreadSnooze(): boolean { return this.threadSnoozes.enabled }
-  get supportsOwlets(): boolean { return this.dependencies.owletsEnabled === true }
   /** The thread with its shared snooze and scheduled restart while their features are on. */
   private restartMark<T extends AgentThread>(thread: T): T { return this.threadSnoozes.publish(this.limitRestart ? this.limitRestart.publish(thread) : thread) }
   /** The user's Don't restart (ADR-0144), from this computer's window or a paired client: the thread waits for them. */
@@ -3585,10 +3586,10 @@ export class AgentControl {
     return makeOwlet({ enabled: this.dependencies.owletsEnabled === true, directory: this.dependencies.directory, host: () => this.state.host,
       permit: model => this.guardThreadPermission(client, command, model),
       admit: async (next, owlet) => {
-        if (this.disposed) throw new Error('Sotto is stopping. Nothing more was made.')
+        if (this.disposed) throw new Error(OWLET_REFUSALS.stopping)
         this.owletStarts.set(next, owlet ?? true)
         return (await this.admitCommandShell(next, client)).error
-      } }, command).then(error => ({ ...this.reply(), error }))
+      }, making: this.owletsMaking }, command).then(error => ({ ...this.reply(), error }))
   }
   /** An owlet's name and role, in its thread's own lane (ADR-0210). */
   private async setOwlet(command: Extract<AgentCommand, { type: 'set-owlet' }>): Promise<void> {

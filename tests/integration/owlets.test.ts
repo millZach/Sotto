@@ -22,7 +22,7 @@ async function control(workspace: Awaited<ReturnType<typeof workspaceFixture>>, 
 }
 
 async function fixture(owletsEnabled = true) {
-  const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
+  const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false, owletsEnabled })
   cleanups.push(workspace.remove)
   const f = await control(workspace, owletsEnabled)
   const model = (provider: 'claude' | 'codex' | 'grok') => f.control.shell().host.models.find(item => item.providerId === provider)!.id
@@ -53,9 +53,9 @@ it('makes its folder, the project there and its one thread, and moves no selecti
 it('refuses a second owlet of the same name, a provider whose memory it cannot turn off, and a name no folder takes', async () => {
   const f = await fixture()
   expect((await f.make('Tawny')).shell.error).toBeNull()
-  expect((await f.make('tawny')).shell.error).toContain('already called tawny')
+  expect((await f.make('tawny')).shell.error).toContain('has that name, or a folder by that name')
   const grok = await f.make('Scops', 'grok')
-  expect(grok.shell.error).toContain('An owlet runs on Claude Code or Codex.')
+  expect(grok.shell.error).toContain('An owlet runs on Claude Code or Codex,')
   expect(f.thread(grok.threadId)).toBeUndefined()
   expect((await f.make('Elf/../../x')).shell.error).toContain('Use letters, numbers, spaces and hyphens')
   expect((await f.make('Codex owl', 'codex')).shell.error).toBeNull()
@@ -69,7 +69,7 @@ it('changes its name and role, keeping its folder, and refuses a name another ow
   await f.make('Scops')
   expect((await f.control.commandShell({ type: 'set-owlet', threadId, name: 'Tawny Owl', role: 'Keeps the receipts' })).error).toBeNull()
   expect(f.thread(threadId)).toMatchObject({ owlet: { name: 'Tawny Owl', role: 'Keeps the receipts' }, title: 'Tawny Owl', titleSource: 'user', projectId })
-  expect((await f.control.commandShell({ type: 'set-owlet', threadId, name: 'Scops' })).error).toContain('already called Scops')
+  expect((await f.control.commandShell({ type: 'set-owlet', threadId, name: 'Scops' })).error).toContain('has that name')
   expect(f.thread(threadId)?.owlet?.name).toBe('Tawny Owl')
   // A provider's own update keeps Sotto's record.
   f.workspace.adapters.claude.emit()
@@ -77,10 +77,30 @@ it('changes its name and role, keeping its folder, and refuses a name another ow
   expect(f.thread(threadId)?.owlet?.name).toBe('Tawny Owl')
 })
 
+it('never gives a new owlet the folder a renamed one still keeps', async () => {
+  const f = await fixture()
+  const { threadId } = await f.make('Tawny')
+  expect((await f.control.commandShell({ type: 'set-owlet', threadId, name: 'Barn' })).error).toBeNull()
+  const again = await f.make('Tawny')
+  expect(again.shell.error).toContain('or a folder by that name')
+  expect(f.thread(again.threadId)).toBeUndefined()
+})
+
+it('keeps an owlet on Claude Code or Codex before its first message', async () => {
+  const f = await fixture()
+  const { threadId } = await f.make('Tawny')
+  const grok = f.control.shell().host.models.find(item => item.providerId === 'grok')!.id
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId, modelId: grok })).error).toContain('An owlet runs on Claude Code or Codex')
+  expect(f.thread(threadId)?.providerId).toBe('claude')
+  const codex = f.control.shell().host.models.find(item => item.providerId === 'codex')!.id
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId, modelId: codex })).error).toBeNull()
+  expect(f.thread(threadId)?.providerId).toBe('codex')
+})
+
 it('makes and changes nothing with the Owl feature off', async () => {
   const f = await fixture(false)
   const { shell, threadId } = await f.make('Tawny')
-  expect(shell.error).toBe('Owlets are available in Sotto Owl. Nothing was made.')
+  expect(shell.error).toBe('Owlets are available in Sotto Owl. Nothing was changed.')
   expect(f.thread(threadId)).toBeUndefined()
   await expect(stat(join(f.workspace.root, 'owlets', 'Tawny'))).rejects.toThrow()
 })
@@ -90,7 +110,7 @@ it('keeps an owlet through a restart, and keeps it whole but shown nowhere once 
   const { threadId } = await f.make('Tawny')
   f.control.dispose(); await f.control.closed(); await f.workspace.stop()
   const reopen = async (enabled: boolean) => {
-    const workspace = await workspaceFixture(f.workspace.root, { history: true, watcherEnabled: false, adapters: f.workspace.adapters })
+    const workspace = await workspaceFixture(f.workspace.root, { history: true, watcherEnabled: false, owletsEnabled: enabled, adapters: f.workspace.adapters })
     return { workspace, f: await control(workspace, enabled) }
   }
   const off = await reopen(false)

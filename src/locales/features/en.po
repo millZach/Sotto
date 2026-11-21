@@ -1428,6 +1428,14 @@ msgstr "An owlet lives on one computer. If that computer is asleep, it can't run
 msgid "An owlet on this computer already has that name."
 msgstr "An owlet on this computer already has that name."
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed."
+msgstr "An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "An owlet runs on Claude Code or Codex, whose own memory Sotto turns off. Choose one of their models. Nothing was changed."
+msgstr "An owlet runs on Claude Code or Codex, whose own memory Sotto turns off. Choose one of their models. Nothing was changed."
+
 #: src/renderer/src/features/usage/UsageCharts.tsx
 msgid "an unreported number of"
 msgstr "an unreported number of"
@@ -2989,6 +2997,14 @@ msgstr "Git working folder"
 msgid "Give F9 to Sotto"
 msgstr "Give F9 to Sotto"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Give the owlet a name."
+msgstr "Give the owlet a name."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Give the owlet a name. Nothing was changed."
+msgstr "Give the owlet a name. Nothing was changed."
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "giving its review"
 msgstr "giving its review"
@@ -3507,6 +3523,18 @@ msgstr "Keep local history is off, so it holds only what Sotto kept since it las
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Keep local history was off, so it held only what Sotto had kept since it last started."
 msgstr "Keep local history was off, so it held only what Sotto had kept since it last started."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Keep the name to 40 characters."
+msgstr "Keep the name to 40 characters."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Keep the name to 40 characters. Nothing was changed."
+msgstr "Keep the name to 40 characters. Nothing was changed."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Keep the role to 200 characters. Nothing was changed."
+msgstr "Keep the role to 200 characters. Nothing was changed."
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Keep transcript"
@@ -4631,8 +4659,8 @@ msgstr "Omarchy in both columns of Settings › Appearance, with Match Linux."
 msgid "Omarchy setup"
 msgstr "Omarchy setup"
 
-#. An owlet's home computer, such as "On forge".
-#. placeholder {0}: owletHomeName(state, row.thread.hostId)
+#. An owlet's home computer, such as "On forge" or "On this computer".
+#. placeholder {0}: owletHomeName(state, row.thread.hostId, true)
 #: src/renderer/src/features/owlets/OwletsView.tsx
 msgid "On {0}"
 msgstr "On {0}"
@@ -4894,6 +4922,14 @@ msgstr "Owlet"
 #: src/renderer/src/features/owlets/OwletsView.tsx
 msgid "Owlets"
 msgstr "Owlets"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Owlets are available in Sotto Owl. Nothing was changed."
+msgstr "Owlets are available in Sotto Owl. Nothing was changed."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Owlets are unavailable on this computer. Update Sotto there. Nothing was changed."
+msgstr "Owlets are unavailable on this computer. Update Sotto there. Nothing was changed."
 
 #: src/renderer/src/components/AppShell.tsx
 msgid "Pages"
@@ -6433,6 +6469,10 @@ msgstr "Sotto is clipboard first: successful text is always copied. Automatic pa
 msgid "Sotto is set up in Omarchy."
 msgstr "Sotto is set up in Omarchy."
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Sotto is stopping. Nothing more was made."
+msgstr "Sotto is stopping. Nothing more was made."
+
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto looks for new releases on GitHub and installs them itself."
 msgstr "Sotto looks for new releases on GitHub and installs them itself."
@@ -7221,6 +7261,10 @@ msgstr "The owl in the bar"
 msgid "The owl watches a thread until you press it again."
 msgstr "The owl watches a thread until you press it again."
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "The owlet's folder did not appear as a project. Its folder was kept. Try again."
+msgstr "The owlet's folder did not appear as a project. Its folder was kept. Try again."
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "The projects you left out are not here, as they are not on {name}'s desks."
 msgstr "The projects you left out are not here, as they are not on {name}'s desks."
@@ -7340,8 +7384,10 @@ msgstr "This build cannot reach Watcher yet. Nothing was started. A later Sotto 
 msgid "This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are."
 msgstr "This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are."
 
+#. An owlet's home computer inside a sentence, when it is the one the window runs on, as in "Its folder is on this computer".
 #. This computer, in the middle of a sentence
 #: src/renderer/src/features/models3d/ModelsPage.tsx
+#: src/renderer/src/features/owlets/OwletSetup.tsx
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "this computer"
@@ -7416,6 +7462,10 @@ msgstr "This model does not read images"
 msgid "This month"
 msgstr "This month"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "This owlet already exists. Nothing was changed."
+msgstr "This owlet already exists. Nothing was changed."
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "This permanently removes every saved transcript, and the numbers the Dictate room counts, from this computer. Your settings are unchanged."
 msgstr "This permanently removes every saved transcript, and the numbers the Dictate room counts, from this computer. Your settings are unchanged."
@@ -7423,6 +7473,10 @@ msgstr "This permanently removes every saved transcript, and the numbers the Dic
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "This removes the transcript and its numbers from this computer. It cannot be undone."
 msgstr "This removes the transcript and its numbers from this computer. It cannot be undone."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "This thread is not an owlet. Nothing was changed."
+msgstr "This thread is not an owlet. Nothing was changed."
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "This thread is waiting for {waitsOn} to answer about its move. Nothing was lost."
@@ -7915,6 +7969,14 @@ msgstr "Usage views"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Use another model"
 msgstr "Use another model"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Use letters, numbers, spaces and hyphens in the name."
+msgstr "Use letters, numbers, spaces and hyphens in the name."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Use letters, numbers, spaces and hyphens in the name. Nothing was changed."
+msgstr "Use letters, numbers, spaces and hyphens in the name. Nothing was changed."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Use not reported"

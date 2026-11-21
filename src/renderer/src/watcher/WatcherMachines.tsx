@@ -30,9 +30,9 @@ const PANEL_MIN_HEIGHT = 160
 const NO_THREADS: readonly AgentThread[] = []
 const NO_PROJECTS: readonly AgentProject[] = []
 
-/** The threads working on one machine, as its panel lists them: who started each, and its title. */
+/** The threads working on one machine, as its panel lists them: who started each, and its title. Never an owlet's (ADR-0210). */
 function workingOn(entry: MachineEntry, threads: readonly AgentThread[]): readonly AgentThread[] {
-  return threads.filter(thread => thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && isThreadTurnRunning(thread)
+  return threads.filter(thread => thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.owlet === undefined && isThreadTurnRunning(thread)
     && (entry.thisComputer ? thread.remoteHost !== true : thread.remoteHost === true && thread.hostId === entry.hostId))
 }
 

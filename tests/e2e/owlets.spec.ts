@@ -122,17 +122,20 @@ test('makes an owlet on the Owlets page, opens its thread, renames it, and keeps
       await expect.poll(async () => (await fakeClaudeLaunches(join(root, 'claude'))).length, { timeout: 30_000 }).toBeGreaterThan(0)
       const [launch] = await fakeClaudeLaunches(join(root, 'claude'))
       expect(JSON.parse(launch!.args[launch!.args.lastIndexOf('--settings') + 1]!)).toMatchObject({ autoMemoryEnabled: false })
+      expect(launch!.args[launch!.args.indexOf('--append-system-prompt') + 1]).toContain('You are Tawny, an owlet')
       await writeProviderAction(join(root, 'claude', `control-${launch!.session}.json`), { type: 'permission', text: 'Send the reply to Pat' })
       await expect(list.getByRole('heading', { name: /Needs you/u })).toBeVisible({ timeout: 30_000 })
       await shot('needs-dark-1280')
 
       await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light' }))
       await shot('page-light-1280')
+      await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
       await resizeWindow(launched, 820, 560)
       await shot('page-dark-820')
-      await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
+      await page.emulateMedia({ reducedMotion: 'reduce' })
       await resizeWindow(launched, 1600, 1000)
-      await shot('page-dark-1600')
+      await shot('page-dark-1600-reduced-motion')
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
 
       // The Threads page lists the ordinary thread and none of the owlets or their folders.
       await page.getByRole('tab', { name: 'Threads', exact: true }).first().click()

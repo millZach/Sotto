@@ -161,15 +161,15 @@ export function splitClosingLines(text: string): { readonly body: string; readon
 export const POPUP_THREADS_LISTED = 5
 
 /**
- * The threads the list offers, newest first: open ones the sidebar would show at its top level. Never Watcher's own, one
- * nothing was sent to yet, one that lives under the thread that delegated to it, or one in a settled project. Read on a
+ * The threads the list offers, newest first: open ones the sidebar would show at its top level. Never Watcher's own, an
+ * owlet's (ADR-0210), one nothing was sent to yet, one that lives under the thread that delegated to it, or one in a settled project. Read on a
  * press, so copying is fine.
  */
 export function recentThreads(threads: readonly AgentThread[], projects: readonly AgentProject[]): readonly AgentThread[] {
   const at = (thread: AgentThread): number => Date.parse(thread.summary?.lastMessageAt ?? thread.updatedAt ?? '') || 0
   return threads.filter(thread => {
     const project = projects.find(item => item.id === thread.projectId)
-    return thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.delegatedBy === undefined
+    return thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.owlet === undefined && thread.delegatedBy === undefined
       && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, project) && !isUnsentThread(thread, project)
   }).toSorted((one, other) => at(other) - at(one)).slice(0, POPUP_THREADS_LISTED)
 }

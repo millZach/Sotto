@@ -452,7 +452,6 @@ export function desktopPopupClient(user: string = localUser()): ClientIdentity {
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */
 export interface LocalHostControl {
   readonly supportsThreadSnooze?: boolean
-  readonly supportsOwlets?: boolean
   get(): AgentState
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
@@ -531,7 +530,7 @@ export class LocalHostService implements HostService {
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
   /** `facts` reads this machine's report, the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
+  constructor(private readonly options: { control: LocalHostControl; owlets?: boolean; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
@@ -703,7 +702,8 @@ export class LocalHostService implements HostService {
     return this.options.agentsView.delegations?.(threadId, this.view().host.threads) ?? { threadId, threads: [] }
   }
   get supportsThreadSnooze(): boolean { return this.control.supportsThreadSnooze === true }
-  get supportsOwlets(): boolean { return this.control.supportsOwlets === true }
+  /** Owlets' Owl answer on this host (ADR-0210), so it lists `owlets`. */
+  get supportsOwlets(): boolean { return this.options.owlets === true }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
   get supportsBringBack(): boolean { return this.options.bringBack === true }

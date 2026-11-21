@@ -421,13 +421,16 @@ export class CodexAppServerHost implements ProviderHost {
   private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<LaunchRoles> {
     this.roleModes.delete(id)
     if (!this.workerRoles || this.watcherProfiles.has(id) || this.councilJudges.has(id)) return { instructions: undefined, widest: undefined }
+    // An owlet's name and role go first, whatever else the launch is told (ADR-0210).
+    const owlet = this.workerRoles.owlet?.(id)
+    const told = (instructions: string | undefined): string | undefined => [owlet, instructions].filter(Boolean).join('\n\n') || undefined
     const overseer = this.workerRoles.overseer?.(id)
-    if (overseer) return { instructions: overseer, widest: undefined }
+    if (overseer) return { instructions: told(overseer), widest: undefined }
     const table = this.workerRoles.table()
     const written = codexTakesRoles(this.state.version) ? await this.roleFiles.write(table, mode, this.state.models) : undefined
     if (written) config.agents = written.agents
     const canDelegate = DELEGATE_MCP_SERVER in ((config.mcp_servers as Record<string, unknown> | undefined) ?? {})
-    return { instructions: subagentRoleInstructions(table, { provider: 'codex', agents: written?.kinds ?? new Set(), agentTool: 'codex', canDelegate }), widest: written?.widest }
+    return { instructions: told(subagentRoleInstructions(table, { provider: 'codex', agents: written?.kinds ?? new Set(), agentTool: 'codex', canDelegate })), widest: written?.widest }
   }
   /** The thread's app-server holds it with role files written for `widest` (#1042). */
   private recordLoadedRoles(id: string, widest: AgentRuntimeMode | undefined): void { if (widest) this.roleModes.set(id, widest) }

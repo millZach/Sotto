@@ -57,6 +57,8 @@ export interface WorkerRoleSource {
   overseer?(threadId: string): string | undefined
   /** The note a thread's next message must carry (ADR-0191). Present where Dynamic threads are on, so a launch can ready its channel. */
   overseerNote?(threadId: string): string | undefined
+  /** What an owlet is told of itself at each launch, its name and role (ADR-0210), or undefined for any other thread. */
+  owlet?(threadId: string): string | undefined
   /** Called after the user's Settings change; returns what stops it. */
   onChange(listener: () => void): () => void
 }
@@ -513,6 +515,8 @@ export interface AgentHost extends ProviderHost {
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
   setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
+  /** The owlets kept out of view where Owlets are off (ADR-0210), so a command naming one is told why. */
+  dormantOwletIds?(): readonly string[]
   /** An owlet's new name and role (ADR-0210): Sotto's own record on the thread. The provider is not told. */
   setThreadOwlet?(threadId: string, owlet: AgentOwlet): Promise<AgentHostSnapshot>
   /** Model routing on or off for a thread (ADR-0207): Sotto's own mark, which its next send reads. */

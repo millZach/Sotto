@@ -5,7 +5,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentModel, AgentState } from '../../../src/shared/agents'
 import { appRooms, layoutFor, roomFor } from '../../../src/renderer/src/components/AppShell'
-import { withoutOwlets } from '../../../src/renderer/src/features/owlets/owletVisibility'
+import { withoutOwlets } from '../../../src/shared/owletVisibility'
+import { owletInstructions } from '../../../src/shared/owlets'
 import { owletOrder } from '../../../src/renderer/src/features/owlets/OwletsView'
 import { owletLook } from '../../../src/renderer/src/features/owlets/OwletMark'
 import { OwletSetup, owletHomes, owletModels } from '../../../src/renderer/src/features/owlets/OwletSetup'
@@ -50,6 +51,16 @@ describe('withoutOwlets', () => {
   })
 })
 
+describe('owletInstructions', () => {
+  it('tells an owlet its name and the role in the user\'s words, and that it answers no card of its own', () => {
+    const told = owletInstructions({ name: 'Tawny', role: 'Keeps my inbox' })
+    expect(told).toContain('You are Tawny, an owlet')
+    expect(told).toContain("Your role, in the user's words: Keeps my inbox")
+    expect(told).toContain('you never answer your own')
+    expect(owletInstructions({ name: 'Elf', role: '' })).not.toContain('Your role')
+  })
+})
+
 describe('the rows', () => {
   it('gives each owlet the same face in every window, whatever its host calls it, and lists the newest first', () => {
     const id = '5f0c3a9e-8d2b-4c71-9a10-2b3c4d5e6f70'
@@ -91,13 +102,13 @@ describe('OwletSetup', () => {
   })
 
   it('shows the refusal its home computer gives, and makes nothing more', async () => {
-    const command = vi.fn(async () => ({ ...state(), error: 'An owlet on this computer is already called Tawny. Choose another name. Nothing was changed.' }))
+    const command = vi.fn(async () => ({ ...state(), error: 'An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed.' }))
     const made = vi.fn()
     render(<OwletSetup state={state()} command={command} onClose={() => undefined} onMade={made} />)
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Owl two' } })
     fireEvent.click(screen.getByRole('button', { name: 'Make owlet' }))
     expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(screen.getByRole('alert').textContent).toContain('already called Tawny')
+    expect(screen.getByRole('alert').textContent).toContain('or a folder by that name')
     expect(made).not.toHaveBeenCalled()
   })
 })

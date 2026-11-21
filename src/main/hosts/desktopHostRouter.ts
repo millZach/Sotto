@@ -1,4 +1,5 @@
 import { KeptThumbnails, MEDIA_TILE_DEFAULT_SCALE } from '../agents/mediaThumbnail'
+import { withoutOwlets } from '../../shared/owletVisibility'
 import type { HostBrowserFrame, HostBrowserMethod, HostBrowserRequest, HostBrowserResult, HostBrowserThreadRequest } from '../../shared/hostBrowser'
 import type { BrowserEvent } from '../../shared/browser'
 import { t } from '@lingui/core/macro'
@@ -19,7 +20,7 @@ import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../..
 import { HOST_CANNOT_STAGE_VIDEOS, PROVIDER_RESULT_UNCONFIRMED, mediaTileScale, type AgentAttachmentFileUpload, type AgentAttachmentStageFileRequest, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import { modelInForce } from '../../shared/modelLineup'
 import { ProjectAdditionUnconfirmed, type WatcherHostControl, type WatcherHostRead, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
-import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
+import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, owletsHeldWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { ThreadVideoPart } from '../agents/threadMediaScheme'
@@ -429,6 +430,8 @@ export class DesktopHostRouter {
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
   private readonly held: HeldProviders
+  /** Where Owlets are off here (ADR-0210), the owlets a paired Owl host keeps, by host and thread, so nothing here reaches one. */
+  private readonly heldOwlets = new Set<string>()
   /** What the window's Settles did to delegated threads elsewhere (#1316 part 3, Owl `cross-machine-work`). */
   private readonly cascadedSettles: CascadedSettles
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
@@ -444,7 +447,7 @@ export class DesktopHostRouter {
   private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
-  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean; owletsEnabled?: boolean;
     /** The providers held to Owl on this run; absent holds every one. */
     heldProviders?: HeldProviders; streamingPublishCost?: boolean
     /** Told the window's keys of threads a paired host deleted, so what this computer kept of them goes too (ADR-0140). */
@@ -621,8 +624,14 @@ export class DesktopHostRouter {
   private visibleProvider(provider: ProviderId): ProviderId {
     return this.held.has(provider) ? providerIdSchema.options.find(item => !this.held.has(item)) ?? 'codex' : provider
   }
+  /** A host's owlets left out where Owlets are off here, as stable keeps a held feature out of view (ADR-0072, ADR-0210). */
+  private withoutHeldOwlets(state: AgentState, hostId: string): AgentState {
+    if (this.options.owletsEnabled === true || !state.host.threads.some(thread => thread.owlet !== undefined)) return state
+    for (const thread of state.host.threads) if (thread.owlet !== undefined) this.heldOwlets.add(`${hostId} ${thread.id}`)
+    return withoutOwlets(state)
+  }
   private visibleState(state: AgentState, hostId: string): AgentState {
-    const watched = visibleWatcherState(state, this.options.watcherEnabled === true)
+    const watched = this.withoutHeldOwlets(visibleWatcherState(state, this.options.watcherEnabled === true), hostId)
     if (!this.held.size) return watched
     const held = this.held
     const hidden = this.rememberDormantProviderThreads(state, hostId)
@@ -2000,6 +2009,8 @@ export class DesktopHostRouter {
     const view = command.type === 'send' || command.type === 'compose' ? commandView(connection.service) : undefined
     const defaultThread = view ? view.draftThreadId ?? view.activeThreadId ?? undefined : undefined
     if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(watcherDisabledWords())
+    if (this.options.owletsEnabled !== true && (command.type === 'create-owlet' || command.type === 'set-owlet'
+      || threadId !== undefined && this.heldOwlets.has(`${connection.hostId} ${threadId}`))) throw new Error(owletsHeldWords())
     return { connection, command }
   }
   /**

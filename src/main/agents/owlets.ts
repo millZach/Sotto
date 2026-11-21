@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { agentCommandSchema, type AgentCommand, type AgentHostSnapshot, type AgentModel } from '../../shared/agents'
-import { agentOwletSchema, OWLETS_FOLDER, OWLETS_PER_HOST_MAX, owletNameProblem, owletProviderAllowed, sameOwletName, type AgentOwlet } from '../../shared/owlets'
+import { agentOwletSchema, OWLET_REFUSALS, OWLETS_FOLDER, owletNameProblem, owletProviderAllowed, sameOwletName, type AgentOwlet } from '../../shared/owlets'
 import { resolveModel } from '../../shared/modelCatalog'
 import { projectFolderKey } from './projectFolders'
 import type { AgentHost } from './host'
@@ -29,39 +29,42 @@ export function inOwletFolder(directory: string, folder: string | undefined): bo
 
 type OwletCreate = Extract<AgentCommand, { type: 'create-owlet' }>
 type OwletChange = Extract<AgentCommand, { type: 'set-owlet' }>
+type Snapshot = Pick<AgentHostSnapshot, 'threads' | 'projects'>
+
+const refuse = (why: keyof typeof OWLET_REFUSALS): never => { throw new Error(OWLET_REFUSALS[why]) }
 
 /** The name and role a command gives, checked, or an error that says what to change. Nothing is made. */
 function owletOf(name: string, role: string): AgentOwlet {
   const problem = owletNameProblem(name)
-  if (problem) throw new Error(`${problem} Nothing was changed.`)
+  if (problem) refuse(problem)
   const parsed = agentOwletSchema.safeParse({ name, role })
-  if (!parsed.success) throw new Error('Keep the role to 200 characters. Nothing was changed.')
-  return parsed.data
+  return parsed.success ? parsed.data : refuse('role')
 }
 
-function assertNameFree(snapshot: Pick<AgentHostSnapshot, 'threads'>, name: string, except?: string): void {
-  if (snapshot.threads.some(thread => thread.id !== except && thread.owlet && sameOwletName(thread.owlet.name, name))) {
-    throw new Error(`An owlet on this computer is already called ${name}. Choose another name. Nothing was changed.`)
-  }
+/** The name an owlet's folder was made with: its project's, which a rename leaves as it was. */
+const folderName = (snapshot: Snapshot, projectId: string): string => snapshot.projects.find(project => project.id === projectId)?.title ?? ''
+
+/** A name no other owlet here has; for a new owlet, no other owlet's folder has it either, since a rename keeps the folder. */
+function assertNameFree(snapshot: Snapshot, name: string, except?: string, folder = false): void {
+  if (snapshot.threads.some(thread => thread.id !== except && thread.owlet
+    && (sameOwletName(thread.owlet.name, name) || folder && sameOwletName(folderName(snapshot, thread.projectId), name)))) refuse('taken')
 }
 
 /** A new owlet's record and model, once the command passes every check that needs no folder. */
-export function checkOwletCreate(snapshot: Pick<AgentHostSnapshot, 'threads' | 'models'>, command: OwletCreate): { owlet: AgentOwlet; model: AgentModel } {
+export function checkOwletCreate(snapshot: Snapshot & Pick<AgentHostSnapshot, 'models'>, command: OwletCreate): { owlet: AgentOwlet; model: AgentModel } {
   const owlet = owletOf(command.name, command.role)
-  if (snapshot.threads.some(thread => thread.id === command.threadId)) throw new Error('This owlet already exists. Nothing was made.')
-  if (snapshot.threads.filter(thread => thread.owlet).length >= OWLETS_PER_HOST_MAX) throw new Error(`This computer has ${OWLETS_PER_HOST_MAX} owlets, the most it keeps. Nothing was made.`)
-  assertNameFree(snapshot, owlet.name)
+  if (snapshot.threads.some(thread => thread.id === command.threadId)) refuse('exists')
+  assertNameFree(snapshot, owlet.name, undefined, true)
   const model = resolveModel(snapshot.models, command.modelId)
-  if (!model || !owletProviderAllowed(model.providerId)) throw new Error('An owlet runs on Claude Code or Codex. Choose one of their models. Nothing was made.')
+  if (!model || !owletProviderAllowed(model.providerId)) return refuse('provider')
   return { owlet, model }
 }
 
 /** An owlet's changed name and role, keeping what the command leaves out. */
-export function checkOwletChange(snapshot: Pick<AgentHostSnapshot, 'threads'>, command: OwletChange): AgentOwlet {
-  const thread = snapshot.threads.find(item => item.id === command.threadId)
-  if (!thread?.owlet) throw new Error('This thread is not an owlet. Nothing changed.')
-  const owlet = owletOf(command.name ?? thread.owlet.name, command.role ?? thread.owlet.role)
-  assertNameFree(snapshot, owlet.name, thread.id)
+export function checkOwletChange(snapshot: Snapshot, command: OwletChange): AgentOwlet {
+  const current = snapshot.threads.find(item => item.id === command.threadId)?.owlet ?? refuse('notOwlet')
+  const owlet = owletOf(command.name ?? current.name, command.role ?? current.role)
+  assertNameFree(snapshot, owlet.name, command.threadId)
   return owlet
 }
 
@@ -77,11 +80,13 @@ export interface OwletMaker {
   readonly enabled: boolean
   /** The host's data folder, where `owlets` is. */
   readonly directory: string
-  host(): Pick<AgentHostSnapshot, 'threads' | 'models' | 'projects'>
+  host(): Snapshot & Pick<AgentHostSnapshot, 'models'>
   /** Throws when the user who asked may not start a thread in the mode the command names. */
   permit(model: AgentModel): void
   /** Runs one of the owlet's own commands as the user's, quietly; resolves with its refusal, or null. */
   admit(command: AgentCommand, owlet?: AgentOwlet): Promise<string | null>
+  /** The names of the owlets being made on this host now, folded as `sameOwletName` folds them, so two made at once can't share one. */
+  readonly making: Set<string>
 }
 
 /**
@@ -90,27 +95,42 @@ export interface OwletMaker {
  */
 export async function makeOwlet(maker: OwletMaker, command: OwletCreate): Promise<string | null> {
   try {
-    if (!maker.enabled) throw new Error('Owlets are available in Sotto Owl. Nothing was made.')
+    if (!maker.enabled) refuse('off')
     const { owlet, model } = checkOwletCreate(maker.host(), command)
     maker.permit(model)
-    const admit = async (next: AgentCommand, made?: AgentOwlet): Promise<void> => { const refused = await maker.admit(next, made); if (refused) throw new Error(refused) }
-    const path = await makeOwletFolder(maker.directory, owlet.name)
-    await admit(agentCommandSchema.parse({ type: 'create-project', provider: model.providerId, title: owlet.name, path, useExisting: true }))
-    const project = maker.host().projects.find(item => projectFolderKey(item.path) === projectFolderKey(path) && (!item.providerId || item.providerId === model.providerId))
-    if (!project) throw new Error('The owlet\'s folder did not appear as a project. Its folder was kept. Try again.')
-    await admit(agentCommandSchema.parse({ type: 'create-thread', threadId: command.threadId, projectId: project.id, title: owlet.name, titleSource: 'user', modelId: command.modelId,
-      workingCopy: 'shared', ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}),
-      ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}), ...(command.providerMode ? { providerMode: command.providerMode } : {}) }), owlet)
+    const key = owlet.name.toLocaleLowerCase()
+    if (maker.making.has(key)) refuse('taken')
+    maker.making.add(key)
+    try { await makeIt(maker, command, owlet, model) } finally { maker.making.delete(key) }
     return null
   } catch (error) { return error instanceof Error ? error.message : 'The owlet could not be made.' }
 }
 
+async function makeIt(maker: OwletMaker, command: OwletCreate, owlet: AgentOwlet, model: AgentModel): Promise<void> {
+  const admit = async (next: AgentCommand, made?: AgentOwlet): Promise<void> => { const refused = await maker.admit(next, made); if (refused) throw new Error(refused) }
+  const path = await makeOwletFolder(maker.directory, owlet.name)
+  await admit(agentCommandSchema.parse({ type: 'create-project', provider: model.providerId, title: owlet.name, path, useExisting: true }))
+  const project = maker.host().projects.find(item => projectFolderKey(item.path) === projectFolderKey(path) && (!item.providerId || item.providerId === model.providerId))
+  if (!project) refuse('noProject')
+  await admit(agentCommandSchema.parse({ type: 'create-thread', threadId: command.threadId, projectId: project!.id, title: owlet.name, titleSource: 'user', modelId: command.modelId,
+    workingCopy: 'shared', ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}),
+    ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}), ...(command.providerMode ? { providerMode: command.providerMode } : {}) }), owlet)
+}
+
 /** An owlet's new name and role on its thread (ADR-0210), in the thread's own lane; throws with what to tell the user. */
-export async function changeOwlet(enabled: boolean, snapshot: Pick<AgentHostSnapshot, 'threads'>, host: Pick<AgentHost, 'setThreadOwlet'>, command: OwletChange): Promise<AgentHostSnapshot> {
-  if (!enabled) throw new Error('Owlets are available in Sotto Owl. Nothing changed.')
+export async function changeOwlet(enabled: boolean, snapshot: Snapshot, host: Pick<AgentHost, 'setThreadOwlet'>, command: OwletChange): Promise<AgentHostSnapshot> {
+  if (!enabled) refuse('off')
   const owlet = checkOwletChange(snapshot, command)
-  if (!host.setThreadOwlet) throw new Error('Owlets are unavailable on this computer. Nothing changed.')
+  if (!host.setThreadOwlet) return refuse('unavailable')
   return host.setThreadOwlet(command.threadId, owlet)
+}
+
+/**
+ * Whether a model change keeps an owlet on a provider whose own memory Sotto turns off (ADR-0210, decision 5): throws with
+ * what to tell the user when it would not.
+ */
+export function assertOwletModel(thread: { readonly owlet?: AgentOwlet | undefined }, model: AgentModel | undefined): void {
+  if (thread.owlet && !owletProviderAllowed(model?.providerId)) refuse('provider')
 }
 
 /**
@@ -120,5 +140,9 @@ export async function changeOwlet(enabled: boolean, snapshot: Pick<AgentHostSnap
 export function withoutOwletThreads(snapshot: AgentHostSnapshot, dormant: Set<string>): AgentHostSnapshot {
   let some = false
   for (const thread of snapshot.threads) if (thread.owlet) { some = true; dormant.add(thread.id) }
-  return some ? { ...snapshot, threads: snapshot.threads.filter(thread => !thread.owlet) } : snapshot
+  if (!some) return snapshot
+  // An owlet's folder goes with it; a project another thread works in stays.
+  const threads = snapshot.threads.filter(thread => !thread.owlet), kept = new Set(threads.map(thread => thread.projectId))
+  const gone = new Set(snapshot.threads.filter(thread => thread.owlet && !kept.has(thread.projectId)).map(thread => thread.projectId))
+  return { ...snapshot, threads, projects: snapshot.projects.filter(project => !gone.has(project.id)) }
 }

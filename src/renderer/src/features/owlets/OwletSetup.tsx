@@ -4,7 +4,8 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { hostForThread, type AgentCommand, type AgentModel, type AgentRuntimeMode, type AgentState } from '../../../../shared/agents'
 import { hostEntityKey } from '../../../../shared/clientIdentity'
-import { OWLET_NAME_MAX, OWLET_ROLE_MAX, owletFolderLabel, owletNameProblem, owletProviderAllowed, sameOwletName } from '../../../../shared/owlets'
+import { OWLET_NAME_MAX, OWLET_REFUSALS, OWLET_ROLE_MAX, OWLETS_HELD, owletFolderLabel, owletNameProblem, owletProviderAllowed, sameOwletName, type OwletNameProblem, type OwletRefusal } from '../../../../shared/owlets'
+import { inInterfaceLanguage, owletsHeldWords } from '../../../../shared/interfaceWords'
 import { agentRuntimeModeSchema } from '../../../../shared/agents'
 import { Button } from '../../components/Button'
 import { Field } from '../../components/Field'
@@ -14,6 +15,36 @@ import { useOptionalApp } from '../../state/AppContext'
 import { newThreadOptionsOn } from '../../agents/newThread'
 import { RUNTIME_LABELS } from '../../agents/permissionPresentation'
 import type { ThreadRow } from '../../agents/threadFacts'
+
+/** What is wrong with a name, as the setup says it beside the field. */
+function nameProblemWords(problem: OwletNameProblem): string {
+  switch (problem) {
+    case 'empty': return interfaceI18n._(msg`Give the owlet a name.`)
+    case 'long': return interfaceI18n._(msg`Keep the name to 40 characters.`)
+    case 'characters': return interfaceI18n._(msg`Use letters, numbers, spaces and hyphens in the name.`)
+  }
+}
+
+/** A host's refusal of an owlet command (`OWLET_REFUSALS`), in the interface language; any other text as it came. */
+export function owletRefusalWords(sentence: string): string {
+  if (sentence === OWLETS_HELD) return owletsHeldWords()
+  const why = (Object.keys(OWLET_REFUSALS) as OwletRefusal[]).find(key => OWLET_REFUSALS[key] === sentence)
+  switch (why) {
+    case 'off': return interfaceI18n._(msg`Owlets are available in Sotto Owl. Nothing was changed.`)
+    case 'empty': return interfaceI18n._(msg`Give the owlet a name. Nothing was changed.`)
+    case 'long': return interfaceI18n._(msg`Keep the name to 40 characters. Nothing was changed.`)
+    case 'characters': return interfaceI18n._(msg`Use letters, numbers, spaces and hyphens in the name. Nothing was changed.`)
+    case 'role': return interfaceI18n._(msg`Keep the role to 200 characters. Nothing was changed.`)
+    case 'taken': return interfaceI18n._(msg`An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed.`)
+    case 'provider': return interfaceI18n._(msg`An owlet runs on Claude Code or Codex, whose own memory Sotto turns off. Choose one of their models. Nothing was changed.`)
+    case 'exists': return interfaceI18n._(msg`This owlet already exists. Nothing was changed.`)
+    case 'notOwlet': return interfaceI18n._(msg`This thread is not an owlet. Nothing was changed.`)
+    case 'unavailable': return interfaceI18n._(msg`Owlets are unavailable on this computer. Update Sotto there. Nothing was changed.`)
+    case 'noProject': return interfaceI18n._(msg`The owlet's folder did not appear as a project. Its folder was kept. Try again.`)
+    case 'stopping': return interfaceI18n._(msg`Sotto is stopping. Nothing more was made.`)
+    case undefined: return inInterfaceLanguage(sentence)
+  }
+}
 
 /** A computer an owlet can live on: this computer or a connected paired host that makes owlets (`owlets`, ADR-0210). */
 export interface OwletHome { readonly hostId: string; readonly name: string }
@@ -77,7 +108,8 @@ export function OwletSetup({ state, command, owlet, onClose, onMade }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const nameProblem = name.trim() === '' ? undefined : owletNameProblem(name)
+  const problem = name.trim() === '' ? undefined : owletNameProblem(name)
+  const nameProblem = problem === undefined ? undefined : nameProblemWords(problem)
   const taken = name.trim() !== '' && state.host.threads.some(thread => thread.id !== owlet?.thread.id && thread.owlet !== undefined && thread.hostId === (hostId || undefined)
     && sameOwletName(thread.owlet.name, name))
   const nameError = nameProblem ?? (taken ? t`An owlet on this computer already has that name.` : undefined)
@@ -95,7 +127,7 @@ export function OwletSetup({ state, command, owlet, onClose, onMade }: {
       .catch(() => null)
     setBusy(false)
     if (result === null) { setError(t`Sotto did not hear back, so the owlet may or may not have been made. Check the list before trying again.`); return }
-    if (result.error) { setError(result.error); return }
+    if (result.error) { setError(owletRefusalWords(result.error)); return }
     if (editing) onClose(); else onMade(threadId)
   }
 

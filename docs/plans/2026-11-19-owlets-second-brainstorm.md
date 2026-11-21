@@ -107,6 +107,7 @@ The agent stopped before it wrote its report, so its last round of checks was no
 - **Building** (November 20): "I am fine with you starting to build go for it". The first slice is built in this thread, the desktop first and the iPhone second (ADR-0210).
 - **Threads page, folder and providers** (asked while building): "Only on Owlets (suggested)", "In Sotto's data folder (suggested)" and "Only where it's off (suggested)".
 - **The owlet mark** (asked with `docs/prototypes/owlet-mark/` open): "Draw it now (suggested)", then "C · Each its own face (suggested)".
+- **Plugin accounts in setup** (after the spec review): "Link for now (suggested)". **A limit on owlets**: "Drop the limit (suggested)".
 
 ## Suggested first slice
 

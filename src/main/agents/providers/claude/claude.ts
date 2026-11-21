@@ -1715,12 +1715,14 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     const roles = profile || overseer || alias.councilJudge ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const memoryOff = inOwletFolder(this.options.userDataPath, alias.cwd)
+    // An owlet's name and role go first in its system prompt (ADR-0210).
+    const owlet = profile || alias.councilJudge ? undefined : this.workerRoles?.owlet?.(id)
     const asks = profile ? undefined : CLAUDE_QUESTIONS
     const questions = [asks, ...this.options.markdownLinks === true ? [MARKDOWN_LINK_INSTRUCTIONS] : []].filter(Boolean).join('\n\n')
     // The flag takes a list, so another option follows it.
     const args = [...(this.options.args ?? []), ...(alias.councilJudge ? COUNCIL_JUDGE_CLAUDE_ARGS : toolArguments), ...(profile ? WATCHER_CLOSED_TOOLS : []), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? [questions, profile.instructions ?? WATCHER_SYSTEM_PROMPT].filter(Boolean).join('\n\n') : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
+      '--append-system-prompt', profile ? [questions, profile.instructions ?? WATCHER_SYSTEM_PROMPT].filter(Boolean).join('\n\n') : [owlet, questions, overseer ?? roles?.instructions].filter(Boolean).join('\n\n'),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode, memoryOff)]
     let runtime: Runtime

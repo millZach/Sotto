@@ -1,5 +1,6 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
-import type { AgentOwlet } from '../../shared/owlets'
+import { OWLETS_HELD, owletInstructions, type AgentOwlet } from '../../shared/owlets'
+import { assertOwletModel } from './owlets'
 import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { whyNotRouted } from '../../shared/modelRouter'
@@ -373,6 +374,8 @@ export interface WorkspaceOptions {
   /** The built worker by default; null explicitly writes on main. */
   readonly storeWorker?: string | StoreWorkerOptions | null
   readonly councilEnabled?: boolean
+  /** Owlets' Owl answer (ADR-0210): off, an owlet's thread is dormant, kept whole and out of view, history clearing included. */
+  readonly owletsEnabled?: boolean
 }
 /**
  * What each thread babysits as `workspace.json` keeps it (ADR-0061 decision 10): on the thread's record, the published
@@ -519,7 +522,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly preservedDormantThreads = new Map<string, AgentThread>()
   private readonly retainedWatcherIds = new Set<string>()
   private visible(thread: AgentThread): boolean {
-    return (this.councilEnabled || !thread.councilJudge) && (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
+    return (this.councilEnabled || !thread.councilJudge) && (this.owletsEnabled || thread.owlet === undefined) && (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
       && heldProviderOfThreadRecord(thread, this.held) === undefined
   }
   /**
@@ -591,7 +594,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return (this.watcherEnabled || !this.retainedWatcherIds.has(id)) && (!thread || this.visible(thread))
   }
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
-    if (this.watcherEnabled && !this.held.size) return snapshot
+    // A run with Owlets off copies the list only while an owlet is in it.
+    if (this.watcherEnabled && !this.held.size && (this.owletsEnabled || !snapshot.threads.some(thread => thread.owlet !== undefined))) return snapshot
     return { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)),
       ...(this.held.size ? catalogWithoutHeld(snapshot, this.held) : {}) }
   }
@@ -894,8 +898,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useWorkerRoles(roles: WorkerRoleSource): void {
-    if (!this.dynamicThreads) { this.inner.useWorkerRoles?.(roles); return }
-    this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
+    // An owlet is told its name and role at each launch (ADR-0210).
+    const owlet = (threadId: string): string | undefined => { const own = this.threadById(threadId)?.owlet; return own && this.owletsEnabled ? owletInstructions(own) : undefined }
+    if (!this.dynamicThreads) { this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener), owlet }); return }
+    this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener), owlet,
       overseer: threadId => {
         const thread = this.threadById(threadId)
         if (!thread || !isDynamicThread(thread, this.dynamicThreads)) return undefined
@@ -2965,18 +2971,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly watcherEnabled: boolean
   private readonly streamingPublishCostEnabled: boolean
   private readonly councilEnabled: boolean
+  private readonly owletsEnabled: boolean
 
   constructor(private readonly inner: ProviderHost, private readonly directory: string, {
     historyEnabled = () => true, worktreeRefreshDelayMs = WORKTREE_REFRESH_DELAY_MS, watcherEnabled = false,
     heldProviders = heldProvidersOf({}), streamingPublishCostEnabled = false,
     storeWriter = (store: ThreadStore) => new ThreadStoreWriterOnWorker(store), storeWorker = BUILT_STORE_WORKER,
-    councilEnabled = false,
+    councilEnabled = false, owletsEnabled = false,
   }: WorkspaceOptions = {}) {
     this.historyEnabled = historyEnabled
     this.worktreeRefreshDelayMs = worktreeRefreshDelayMs
     this.watcherEnabled = watcherEnabled
     this.streamingPublishCostEnabled = streamingPublishCostEnabled
     this.councilEnabled = councilEnabled
+    this.owletsEnabled = owletsEnabled
     this.held = heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
@@ -4597,6 +4605,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   dormantThreadIds(): readonly string[] {
     return [...new Set([...(this.watcherEnabled ? [] : this.retainedWatcherIds), ...this.state.snapshot.threads.filter(thread => !this.visible(thread)).map(thread => thread.id)])]
   }
+  /** The owlets this run keeps out of view because Owlets are off on it (ADR-0210). */
+  dormantOwletIds(): readonly string[] { return this.owletsEnabled ? [] : this.state.snapshot.threads.filter(thread => thread.owlet !== undefined).map(thread => thread.id) }
   dormantThreadProviders(): ReadonlyMap<string, ProviderId> {
     const providers = new Map<string, ProviderId>()
     for (const thread of this.state.snapshot.threads) {
@@ -5667,6 +5677,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       touched.owlet = { name: owlet.name, role: owlet.role }
       touched.title = owlet.name; touched.titleSource = 'user'; delete touched.titledFromFirstMessage
       this.dirty = true; await this.flush(); this.publish()
+      // Its next launch is told its new name and role.
+      await this.inner.threadInstructionsChanged?.(threadId, thread.providerId)
     }
     return this.workspaceSnapshot()
   }
@@ -5699,6 +5711,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private refuseDormantThread(thread: AgentThread): never {
     const held = heldProviderOfThreadRecord(thread, this.held)
     if (held) throw new Error(heldProviderRefusal(held))
+    if (thread.owlet && !this.owletsEnabled) throw new Error(OWLETS_HELD)
     throw new WatcherProfileRefusal(WATCHER_DISABLED)
   }
   /** Starts working-copy setup, or returns the setup already running for this thread.
@@ -6072,6 +6085,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       validateThreadOptions(this.state.snapshot, command, thread.modelId)
       const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)!
       this.requireCreation(model.providerId)
+      assertOwletModel(thread, model)
       const previous = structuredClone(thread)
       this.touch(thread.id)
       if (command.modelId !== undefined) {
