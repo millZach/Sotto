@@ -5292,7 +5292,7 @@ export class WatcherService implements WatcherControlHooks {
     }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input, { ticket, settleGuard })
     this.active.set(admitted.operation.id, running)
-    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.providerRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); this.releaseWorkerStarts(); if (admitted.operation.target.hostId !== this.hostId() && this.view().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
+    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); this.releaseWorkerStarts(); if (admitted.operation.target.hostId !== this.hostId() && this.view().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
   }
   /**
    * `ticket`: the place a check took in this machine's queue when it was asked for (#1312). `resumed`: a check whose turn
@@ -5461,7 +5461,9 @@ export class WatcherService implements WatcherControlHooks {
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
-    return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true)
+    // The provider's words answer this call and no other, however the operation was started or resumed.
+    try { return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true) }
+    finally { this.providerRefusals.delete(operation.id) }
   }
   queueFailed(operationIds: ReadonlySet<string>): void {
     // Never throws: the queue has already removed or failed the items, and its caller still has to save and publish that.

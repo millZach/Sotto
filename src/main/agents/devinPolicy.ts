@@ -364,7 +364,9 @@ export function verifyDevinSkillShow(stdout: string, skill: string): string {
  * and `permissions` approve tools while an inline skill runs, added to the session's own permissions, and `model`,
  * `agent` and `subagent` change what runs the skill. `skills show` prints only the first of those, so the file is read.
  */
-const SKILL_FIELDS = new Set(['name', 'description', 'argument-hint', 'triggers'])
+// `disable-model-invocation` only keeps Devin's model from running the skill by itself, so the user's slash is the one way
+// it runs (#2778).
+const SKILL_FIELDS = new Set(['name', 'description', 'argument-hint', 'triggers', 'disable-model-invocation'])
 const MAX_SKILL_BYTES = 256 * 1024
 /**
  * A skill file whose frontmatter, if it has one, sets only `SKILL_FIELDS`. A line at the top of the frontmatter that is
@@ -452,6 +454,18 @@ export async function assertDevinSkillOnlyPlugins(executable: string, argsPrefix
     const base = verifyDevinSkillShow(await nativeList(executable, [...argsPrefix, 'skills', 'show', skill], environment, cwd), skill)
     verifyDevinSkillFile(await readSkillFile(base))
   })
+}
+
+const SKILL_REFUSAL = 'Sotto could not confirm that this Devin skill leaves every tool call asking, so nothing was sent. A skill Sotto runs sets only its name, description, argument hint, triggers and whether Devin’s model may run it. Remove the slash, or change the skill’s frontmatter.'
+/**
+ * A skill a prompt starts with is checked as a plugin's skills are, the moment it is asked for: its details and its own
+ * file, whose frontmatter must grant nothing (ADR-0017). argsPrefix must include --config and the owned profile.
+ */
+export async function assertDevinSkillGrantsNothing(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, skill: string, cwd?: string): Promise<void> {
+  try {
+    const base = verifyDevinSkillShow(await nativeList(executable, [...argsPrefix, 'skills', 'show', skill], environment, cwd), skill)
+    verifyDevinSkillFile(await readSkillFile(base))
+  } catch (error) { throw new Error(SKILL_REFUSAL, { cause: error }) }
 }
 
 /** Runs `read` over the items a few at a time and gives the results in order; the first refusal, in order, is thrown. */

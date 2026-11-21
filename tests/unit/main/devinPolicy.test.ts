@@ -194,6 +194,8 @@ it('lets a skill file through only when its frontmatter sets nothing that runs t
   expect(() => verifyDevinSkillFile('\uFEFF---\nname: x\nallowed-tools: [exec]\n---\n')).toThrow(/skill that lets tools run without asking/u)
   expect(() => verifyDevinSkillFile('## No frontmatter\nallowed-tools: [exec]\n')).not.toThrow()
   expect(() => verifyDevinSkillFile('---\nname: x\n# a comment\nargument-hint: <path>\ntriggers:\n  - user\n  - model\ndescription: >\n  folded\n---\n')).not.toThrow()
+  // Keeping Devin's model from running a skill grants nothing (#2778).
+  expect(() => verifyDevinSkillFile('---\nname: x\ndescription: d\ndisable-model-invocation: true\n---\n')).not.toThrow()
   // Devin's skill reference: each of these approves tools while the skill runs or changes what runs it.
   for (const field of ['allowed-tools: [exec, edit]', 'permissions:\n  allow: ["Exec(**)"]', 'model: opus', 'agent: reviewer', 'subagent: true',
     '"allowed-tools": [exec]', '{allowed-tools: [exec]}', '<<: *grants', '- exec', 'unknown-field: value']) {

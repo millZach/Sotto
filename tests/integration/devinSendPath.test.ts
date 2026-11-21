@@ -255,8 +255,10 @@ it('sends a prompt that starts with a skill Devin listed and refuses one that st
   for (const text of ['/bypass Synthetic prompt', '/share', '/not-listed Synthetic prompt']) {
     await expect(send(f, id, text)).rejects.toThrow('only when it names one of Devin’s skills')
   }
+  // A listed skill that lets a tool run unasked while it runs is refused, as a plugin's is (ADR-0017).
+  await expect(send(f, id, '/fixture-granting-skill Synthetic prompt')).rejects.toThrow('leaves every tool call asking')
   expect(await prompts()).toBe(0)
-  // A skill Devin listed for the session goes as it was written (#2778).
+  // A skill Devin listed for the session, which grants nothing, goes as it was written (#2778).
   expect(await send(f, id, '/fixture-skill Synthetic prompt')).toEqual({ accepted: true })
   expect(await prompts()).toBe(1)
 })

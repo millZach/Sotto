@@ -28,7 +28,7 @@ import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpTool
 import { markSendStage } from './sendStages'
 import type { ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal } from './watcherProfile'
-import { prepareDevinPolicy, verifyDevinPolicy, assertDevinIntegrationsAllowed, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
+import { prepareDevinPolicy, verifyDevinPolicy, assertDevinIntegrationsAllowed, assertDevinSkillGrantsNothing, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRefusal, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -193,6 +193,7 @@ const LEADING_SLASH_WORD = /^\s*\/([a-z][\w:.-]*)(?:\s|$)/iu
 /** How long a send that starts with a slash word waits for a session that has not listed its commands yet. */
 const SKILLS_LISTED_MS = 5_000
 const SLASH_REFUSED = 'Devin runs a slash word at the start of a prompt only when it names one of Devin’s skills, and this one does not. Nothing was sent. Remove the slash, or start with a skill Devin lists.'
+const SKILLS_UNLISTED = 'Devin did not list its skills for this thread in time, so Sotto could not check the slash word this prompt starts with. Nothing was sent. Try again, or remove the slash.'
 /** How long a send waits on its thread's own stream before it also reads the replay for its dispatch identity. */
 const ACCEPTANCE_GRACE_MS = 1_500
 /** The read pace of a held thread with a prompt Devin has not yet shown it took, and the replay fallback's pace. */
@@ -1312,7 +1313,13 @@ export class DevinAcpHost implements ProviderHost {
         connection.skillsListed.push(done)
       })
       checkConnection()
-      if (!listed()?.has(slashWord)) throw new Error(SLASH_REFUSED)
+      const skills = listed()
+      if (!skills) throw new Error(SKILLS_UNLISTED)
+      if (!skills.has(slashWord)) throw new Error(SLASH_REFUSED)
+      // A skill can grant tools while it runs, so it runs only when its frontmatter grants nothing (ADR-0017).
+      await assertDevinSkillGrantsNothing(this.executable, [...(this.options.args ?? []), '--config', connection.profile.path],
+        devinEnvironment(this.options.environment), slashWord, alias.cwd)
+      checkConnection()
     }
     const previous = alias.origins.find(origin => origin.commandId === command.commandId || origin.messageId === command.messageId)
     if (previous) {
