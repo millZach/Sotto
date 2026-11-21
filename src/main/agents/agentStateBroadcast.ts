@@ -364,6 +364,11 @@ export class AgentStateBroadcaster {
    * built later. A reply built before it is older than the window's state, whichever of the two carried that state.
    */
   private newest = 0
+  /**
+   * The main window's last whole read (`readWhole`): the number its answer named and its records by ID, until a complete
+   * list delivered after it has marked the records it repeats from it.
+   */
+  private read: { readonly revision: number; readonly records: ReadonlyMap<string, AgentThread> } | null = null
 
   /** Encodes `state` for the main window and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
@@ -378,7 +383,8 @@ export class AgentStateBroadcaster {
       return { revision, models: models as AgentModel[] }
     })
     const threads = this.threads.encode(state.host.threads, state.host)
-    const whole: CompleteAgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: threads.payload } }
+    const listed = this.withRepeats(threads.payload)
+    const whole: CompleteAgentStateBroadcast = { ...encoded, host: { ...encoded.host, threads: listed } }
     // Measured from the broadcast the window last applied, which it holds the parts of: what did not change is left out.
     const parts = this.parts
     const payload = threads.payload.base !== null && parts?.revision === threads.payload.base ? withKeptParts(whole, parts) : whole
@@ -387,6 +393,8 @@ export class AgentStateBroadcaster {
       if (threads.payload.revision > this.newest) this.newest = threads.payload.revision
       for (const [key, revision] of confirmed) this.sent.set(key, revision)
       threads.commit()
+      // A complete list delivered has marked what it repeats from the read; every broadcast after is measured from it.
+      if (listed.base === null) this.read = null
       // The parts go with the threads' base: a read while this was delivered leaves neither.
       this.parts = this.threads.baseRevision === threads.payload.revision ? { revision: threads.payload.revision, top: whole, host: whole.host } : null
     }
@@ -401,6 +409,35 @@ export class AgentStateBroadcaster {
    * An arrow property, so `registerAgentIpc` can be handed it on its own.
    */
   readonly windowRead = (): void => { this.threads.reset(); this.parts = null }
+
+  /**
+   * The main window read the whole state (`AGENT_GET`): `windowRead`, and `state`, the state it is answered with, named by
+   * a number of its own (`readRevision`). The next broadcast still lists every record, so it can be taken in whatever
+   * order it and the answer reach the window, but it marks the records whose content is the same as the read's
+   * (`AgentThreadsBroadcast.repeats`), and a page holding the read keeps its own copies of those rather than taking 1,070
+   * records in anew, as the owner's window did after each of 26 whole reads in a minute on November 20, 2026 (#2733). An
+   * arrow property, so `registerAgentIpc` can be handed it on its own.
+   */
+  readonly readWhole = (state: AgentState): AgentState => {
+    this.windowRead()
+    const records = new Map<string, AgentThread>()
+    for (const thread of state.host.threads) records.set(thread.id, thread)
+    const revision = this.threads.take()
+    this.read = { revision, records }
+    return { ...state, readRevision: revision }
+  }
+
+  /** A complete list after the main window's whole read, with the positions whose record has the read's content marked. */
+  private withRepeats(threads: AgentThreadsBroadcast): AgentThreadsBroadcast {
+    const read = this.read
+    if (read === null || threads.base !== null) return threads
+    const positions: number[] = []
+    threads.changed.forEach((thread, position) => {
+      const sent = read.records.get(thread.id)
+      if (sent !== undefined && samePlainData(sent, thread)) positions.push(position)
+    })
+    return positions.length ? { ...threads, repeats: { read: read.revision, positions } } : threads
+  }
 
   /**
    * The router built `state` to answer a command (#306): it takes the next thread revision now, which its reply carries
@@ -448,7 +485,7 @@ export class AgentStateBroadcaster {
    */
   readonly encodeChangedThreadRecordsReceipt = (state: AgentState): AgentCommandChangedThreadRecordsReceipt => {
     const receipt = this.encodeReceipt(state)
-    return { ...receipt, host: { ...receipt.host, threads: this.threads.peek(state.host.threads, state.host, this.taken.get(state.host)) } }
+    return { ...receipt, host: { ...receipt.host, threads: this.withRepeats(this.threads.peek(state.host.threads, state.host, this.taken.get(state.host))) } }
   }
 
   /** `state` with `host.models` and every `host.clientHosts[].models` replaced by what `catalog` makes of it. */

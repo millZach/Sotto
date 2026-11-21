@@ -416,6 +416,11 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * first, as Grok does, is turned round there and nowhere else.
    */
   ownServer: z.literal(true).optional(), hiddenFromMenu: z.literal(true).optional(), reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
+  /**
+   * The provider said this model has no effort levels, so its effort chip is held and says so. Only Devin says it, once it
+   * has read the model's levels; a model with no levels and no mark, such as one not read yet, shows no chip.
+   */
+  noReasoningEfforts: z.literal(true).optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
    * Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four.
@@ -897,6 +902,8 @@ export const agentCapabilitiesSchema = z.object({
   configureThread: z.boolean().optional(), skills: z.boolean().optional(),
   /** False when a started thread can change only its permission mode, not its model or reasoning. */
   configureThreadModel: z.boolean().optional(),
+  /** True where a started thread keeps its model but can still change its effort, as a Devin thread can. */
+  configureThreadEffort: z.boolean().optional(),
   steer: z.boolean().optional(),
   compact: z.boolean().optional(),
 })
@@ -1250,6 +1257,11 @@ export const agentStateSchema = z.object({
    */
   unconfirmedSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   /**
+   * On the main window's whole read of the state: the number main gave the read, which the complete broadcast after it
+   * names to mark the records it repeats from it (`AgentThreadsBroadcast.repeats`, #2733). The page keeps it to itself.
+   */
+  readRevision: z.number().int().nonnegative().optional(),
+  /**
    * The choice kept for each thread's next turn (CONTEXT.md **Next-turn choice**, ADR-0192): what the user pressed on its
    * chips while it worked, only where it differs from what the thread runs on. Main sends it once the thread rests, before
    * its queue sends anything, and nothing of it reaches the provider before. Absent when none waits.
@@ -1301,6 +1313,12 @@ export interface AgentThreadsBroadcast {
   removed?: string[]
   /** Every thread's Sotto ID in order, when the order or the threads differ from `base`'s. Absent when they do not. */
   order?: string[]
+  /**
+   * On a complete list (`base` null) after the main window read the whole state: the read it follows (`readRevision`)
+   * and the positions in `changed` whose record is the same as that read's. A page holding that read keeps its own
+   * copies of those records rather than taking them in anew; one that does not takes the list as it is (#2733).
+   */
+  repeats?: { read: number; positions: number[] }
 }
 /** A part of the shell a broadcast may keep: any field but its host (ADR-0028, October 30 kept parts). */
 export type KeptPart = Exclude<keyof AgentState, 'host'>
@@ -1372,7 +1390,9 @@ export type AgentCommandReceipt = z.infer<typeof agentCommandReceiptSchema>
  * each changed record against the thread schema, as it checked every record of a whole reply.
  */
 export const agentChangedThreadRecordsSchema = z.object({ revision: z.number().int().nonnegative(), base: z.number().int().nonnegative().nullable(),
-  changed: z.array(agentThreadSchema), removed: z.array(z.string()).optional(), order: z.array(z.string()).optional() }).strict()
+  changed: z.array(agentThreadSchema), removed: z.array(z.string()).optional(), order: z.array(z.string()).optional(),
+  /** As on a broadcast's complete list after a whole read (`AgentThreadsBroadcast.repeats`, #2733). */
+  repeats: z.object({ read: z.number().int().nonnegative(), positions: z.array(z.number().int().nonnegative()) }).strict().optional() }).strict()
 export type AgentChangedThreadRecords = z.infer<typeof agentChangedThreadRecordsSchema>
 /** A command receipt whose threads are the changes since the window's last broadcast (`agentChangedThreadRecordsSchema`). */
 export const agentCommandChangedThreadRecordsReceiptSchema = agentCommandReceiptSchema.extend({

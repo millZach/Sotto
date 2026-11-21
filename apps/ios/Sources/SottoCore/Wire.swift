@@ -271,6 +271,8 @@ public struct ProviderCapabilities: Decodable, Equatable, Sendable {
     /// permissions. Older computers send neither, and their threads' chips stay off the reply box (ADR-0166).
     public var configureThread: Bool? = nil
     public var configureThreadModel: Bool? = nil
+    /// Whether a started thread whose model stays can still change its effort, as a Devin thread can.
+    public var configureThreadEffort: Bool? = nil
 }
 public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let hostId: String?; public let projectId: String; public let title: String

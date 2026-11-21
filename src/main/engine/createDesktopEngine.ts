@@ -1252,6 +1252,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     encodeReceipt: agentStateBroadcaster.encodeReceipt,
     encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt,
     windowRead: agentStateBroadcaster.windowRead,
+    readWhole: agentStateBroadcaster.readWhole,
     popupObserves: threadIds => { popupFeed?.observe(threadIds); shellBridge.onPopupObserved?.(threadIds) },
     popupShown: () => popupShown,
     workingCopyOptions: projectId => {

@@ -468,6 +468,8 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
     /// started thread's permissions alone.
     public let fixed: ThreadSettings.FixedReason?
     public let modelFixed: Bool
+    /// Whether the effort is held with the model: true unless the provider changes a started thread's effort in place (Devin).
+    public let effortFixed: Bool
     /// Whether this iPhone may choose a mode that lets the thread act without asking.
     public let mayAnswer: Bool
     /// A permission change still waiting on the agent, which marks its chip; and the line saying what is in force.
@@ -543,17 +545,18 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
             efforts: model.reasoningEfforts ?? [], effort: pending.value(.effort) ?? unpressed.effort,
             speeds: speeds, speed: speeds.contains { $0.id == chosenSpeed } ? chosenSpeed : ThreadSettings.standard,
             permissions: model.permissions, permission: pending.value(.permissions) ?? unpressed.permissions,
-            fixed: fixed, modelFixed: capabilities?.configureThreadModel == false, mayAnswer: mayAnswer,
+            fixed: fixed, modelFixed: capabilities?.configureThreadModel == false,
+            effortFixed: capabilities?.configureThreadModel == false && capabilities?.configureThreadEffort != true, mayAnswer: mayAnswer,
             permissionPending: pendingPermission, caption: caption, notices: notices, drawn: drawn, unpressed: unpressed)
     }
 
     /// Why the effort stays as it is, where the agent keeps a started thread's model and effort (Grok, #228); nil where
     /// the effort can change or the model offers no levels. The sheet's Effort row shows it, a lock in place of its menu.
-    public var effortFixedReason: String? { modelFixed && !efforts.isEmpty ? ThreadSettingWords.effortFixed(provider: provider) : nil }
+    public var effortFixedReason: String? { effortFixed && !efforts.isEmpty ? ThreadSettingWords.effortFixed(provider: provider) : nil }
     /// Whether a chip of this kind can be pressed now.
     public func pressable(_ kind: ThreadSettingKind) -> Bool {
         guard fixed == nil else { return false }
-        return !(modelFixed && (kind == .model || kind == .effort))
+        return !(modelFixed && kind == .model) && !(effortFixed && kind == .effort)
     }
     /// Whether Try again can send a refused change now: its chip can be pressed, and a permission mode that grants only where
     /// this iPhone may still answer.

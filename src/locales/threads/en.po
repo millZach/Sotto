@@ -1096,6 +1096,11 @@ msgstr "{provider} no longer offers {from}, so this thread now uses {to}."
 msgid "{provider} no longer shows this question. {delivery}"
 msgstr "{provider} no longer shows this question. {delivery}"
 
+#. Why a model's reasoning effort chip opens nothing. {provider} is a provider's name, such as Devin; {model} is a model's name, such as Claude Opus 4.6.
+#: src/renderer/src/agents/FixedEffortChip.tsx
+msgid "{provider} offers no effort levels for {model}. It runs at the model’s own setting."
+msgstr "{provider} offers no effort levels for {model}. It runs at the model’s own setting."
+
 #. {provider} is the name of the provider, such as Codex.
 #: src/renderer/src/agents/FailedTurnNotice.tsx
 msgid "{provider} reported an error on this thread."
@@ -8671,9 +8676,9 @@ msgstr "Sotto could not reach its own side of this. Nothing was changed. Try aga
 msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
 msgstr "Sotto could not reach its own side of this. Nothing was saved. Try again."
 
-#: src/renderer/src/agents/ThreadTranscript.tsx
-msgid "Sotto could not reach the computer that runs this thread. The run may still be running."
-msgstr "Sotto could not reach the computer that runs this thread. The run may still be running."
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Sotto could not reach the computer that runs this thread. The run may still be running. Try Stop again once that computer is connected."
+msgstr "Sotto could not reach the computer that runs this thread. The run may still be running. Try Stop again once that computer is connected."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not read it again on {machine} just now. It reads it again when {machine} says it changed."
@@ -9649,6 +9654,7 @@ msgstr "The project subdirectory is not on the branch this worker starts from. N
 msgid "the provider"
 msgstr "the provider"
 
+#. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.

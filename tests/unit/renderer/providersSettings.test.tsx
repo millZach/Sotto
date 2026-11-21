@@ -3,7 +3,7 @@ import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentBridge, type AgentState, type ProviderId } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentBridge, type AgentModel, type AgentState, type ProviderId } from '../../../src/shared/agents'
 import { HELD_PROVIDER_ENTRIES } from '../../../src/shared/heldProviders'
 import { useAgentConnection, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ProvidersSettings } from '../../../src/renderer/src/features/settings/ProvidersSettings'
@@ -335,6 +335,38 @@ describe('independent provider settings', () => {
     render(<ThreadOptions thread={thread} state={state} command={vi.fn(async () => state)} />)
     expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).not.toBeDisabled()
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+  })
+  /** A started Devin thread on a model changed by `model`, its provider keeping the model but not the effort. */
+  function devinThread(model: Partial<AgentModel>) {
+    const state = fixture()
+    state.host.providers!.find(provider => provider.id === 'devin')!.capabilities = { ...caps, configureThreadModel: false, configureThreadEffort: true }
+    state.host.models = state.host.models.map(entry => entry.providerId === 'devin' ? { ...entry, ...model } : entry)
+    const thread = { ...state.host.threads[0]!, id: 'devin-thread', providerId: 'devin' as const, modelId: 'devin:same-native-model', ...(model.reasoningEfforts?.length ? { reasoningEffort: 'high' } : {}) }
+    state.host.threads = [thread]
+    return { state, thread, command: vi.fn(async () => state) }
+  }
+  it('lets a started Devin thread change its effort while its model stays', async () => {
+    const { state, thread, command } = devinThread({ reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium' })
+    render(<ThreadOptions thread={thread} state={state} command={command} />)
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).not.toBeDisabled()
+    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull()
+  })
+  it.each([false, true])('says a Devin model with no effort levels has none to choose (quiet %s)', quietComposer => {
+    const { state, thread, command } = devinThread({ reasoningEfforts: [], noReasoningEfforts: true })
+    render(<ThreadOptions thread={thread} state={state} command={command} {...(quietComposer ? { quiet: { effortScore: 0 } } : {})} />)
+    const chip = screen.getByRole('button', { name: 'Thread reasoning, Provider default' })
+    expect(chip).toHaveAttribute('aria-disabled', 'true')
+    expect(chip).toHaveAccessibleDescription('Devin offers no effort levels for devin model. It runs at the model’s own setting.')
+    fireEvent.click(chip)
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveAttribute('data-shown')
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('shows no effort chip for a Devin model whose levels are not read yet', () => {
+    const { state, thread, command } = devinThread({})
+    render(<ThreadOptions thread={thread} state={state} command={command} />)
+    expect(screen.queryByRole('combobox', { name: 'Thread reasoning' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Thread reasoning/u })).toBeNull()
   })
   it.each([undefined, 'grok'] as const)('does not queue a healthy send behind provider connection %s in the renderer', async provider => {
     const state = fixture()

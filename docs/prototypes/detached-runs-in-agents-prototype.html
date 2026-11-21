@@ -1,0 +1,200 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Zach asked for detached runs (ADR-0204) to show in Tools › Agents as well as under the last reply,
+  including a run a laptop thread started on forge over ssh. How should a detached run sit in the roster beside
+  the provider's own agents and the delegated threads?
+
+  Live example, November 20, 2026: laptop thread "GT3 RS Dopamine beat-synced showroom video" (Claude Code, Fable)
+  ran its x-video skill, which started an Astra builder on forge (`codex exec`, GPT-6.2 Astra, max) and detached
+  it. Beside it the thread has one finished Claude subagent and one delegated thread on this computer.
+
+  Three variants on ?variant=1..3 (bar, or Left/Right arrows):
+   1 In the list      a row like any other, newest first, under its machine's heading; Detached run in its kind line;
+                      Stop on the row
+   2 Own section      a "Detached runs" section above the list, each row with Stop; agents and threads below as today
+   3 One line         a single line above the list ("1 detached run on forge · Working 2 h 15 min"), which opens
+                      to the rows with Stop
+
+  Bar extras: Light, Ended (the run finishes). URL: variant=N, theme=light, ended=1.
+
+  Picked: 2, Own section (Zach, 2026-11-20), straight to stable, with runs on another machine found too.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - detached runs in Tools › Agents, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-error: oklch(0.72 0.17 22); --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265); --tt-selected: oklch(0.3 0.04 183);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-error: oklch(0.52 0.18 25); --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85); --tt-selected: oklch(0.88 0.04 183);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; border-radius: 4px; }
+
+/* prototype bar: deliberately not Sotto */
+.pbar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: #ffde59; color: #111; box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); font: 600 13px/1 system-ui, sans-serif; }
+.pbar button { border: 0; background: rgb(0 0 0 / 0.08); color: #111; border-radius: 999px; padding: 6px 10px; cursor: pointer; font: inherit; }
+.pbar button[aria-pressed='true'] { background: #111; color: #ffde59; }
+.pbar .lab { min-width: 220px; text-align: center; }
+
+/* window: thread on the left, Tools on the right */
+.win { display: grid; grid-template-columns: minmax(0, 1fr) 460px 64px; height: 100%; }
+.thread { padding: 18px 28px; overflow: hidden; border-right: 1px solid var(--tt-hairline); }
+.thread h2 { font-size: 15px; margin: 0 0 18px; font-weight: 600; }
+.msg { background: var(--tt-message); border-radius: 12px; padding: 10px 14px; max-width: 520px; margin-left: auto; margin-bottom: 14px; color: var(--tt-text); }
+.reply { color: var(--tt-text-2); max-width: 560px; margin-bottom: 10px; }
+.still { color: var(--tt-text-muted); font-size: 12.5px; margin-top: 14px; }
+.tools { background: var(--tt-surface); display: flex; flex-direction: column; min-height: 0; }
+.chrome { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--tt-hairline); }
+.chrome b { font-weight: 600; } .chrome span { color: var(--tt-text-muted); font-size: 13px; }
+.roster { overflow: auto; padding: 10px 12px 80px; }
+.rail { background: var(--tt-surface); border-left: 1px solid var(--tt-hairline); display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 14px; font-size: 10.5px; color: var(--tt-text-muted); }
+.rail .on { color: var(--tt-text); background: var(--tt-selected); border-radius: 8px; padding: 6px 6px; }
+
+.machine { margin: 8px 0 14px; }
+.mhead { display: flex; align-items: baseline; gap: 8px; padding: 4px 4px 6px; }
+.mhead h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.mhead span { color: var(--tt-text-muted); font-size: 12.5px; }
+.list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-elevated); }
+.list > li + li { border-top: 1px solid var(--tt-hairline); }
+.row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 12px; align-items: start; }
+.row .ico { color: var(--tt-text-muted); font-size: 13px; line-height: 20px; text-align: center; }
+.title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kind { color: var(--tt-text-muted); font-size: 12px; font-weight: 400; margin-left: 6px; }
+.desc { color: var(--tt-text-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { color: var(--tt-text-muted); font-size: 12px; }
+.right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.st { font-size: 12.5px; color: var(--tt-text-2); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.st.working { color: var(--tt-accent-text); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.btn { border: 1px solid var(--tt-field-border); background: transparent; border-radius: 8px; padding: 2px 10px; font-size: 12.5px; cursor: pointer; }
+.btn:hover { background: var(--tt-hover); }
+.link { border: 0; background: none; color: var(--tt-accent-text); padding: 0; cursor: pointer; font-size: 12.5px; }
+.note { color: var(--tt-text-muted); font-size: 12.5px; padding: 0 4px 8px; }
+.section-head { font-size: 12px; font-weight: 600; color: var(--tt-text-muted); text-transform: none; padding: 6px 4px 6px; }
+.cmd { grid-column: 2 / 4; font: 12px/1.45 ui-monospace, 'Cascadia Mono', monospace; color: var(--tt-text-2); background: var(--tt-surface-sunken); border-radius: 8px; padding: 6px 8px; white-space: pre-wrap; word-break: break-all; }
+.oneline { display: flex; align-items: center; gap: 10px; border: 1px solid var(--tt-hairline); border-radius: 12px; padding: 8px 12px; background: var(--tt-surface-elevated); margin: 4px 0 12px; width: 100%; text-align: left; cursor: pointer; }
+.oneline .grow { flex: 1; }
+.state { position: fixed; bottom: 20px; left: 14px; font: 11px/1.4 ui-monospace, monospace; color: #111; background: #ffde59; padding: 4px 8px; border-radius: 6px; opacity: .85; }
+</style>
+</head>
+<body>
+<div class="win">
+  <main class="thread">
+    <h2>GT3 RS Dopamine beat-synced showroom video</h2>
+    <div class="msg">Make the GT3 RS burst through the showroom glass right on the drop. Astra builds it on forge.</div>
+    <p class="reply">The brief is on forge and the Astra builder is working through steps 5 to 7. I'll pass its progress lines on as they come, and check its review frames when it stops.</p>
+    <p class="still" id="still"></p>
+  </main>
+  <aside class="tools" aria-label="Tools">
+    <div class="chrome"><b id="count"></b><span id="detail"></span></div>
+    <div class="roster" id="roster"></div>
+  </aside>
+  <nav class="rail" aria-hidden="true"><div>Browser</div><div>Terminal</div><div>Files</div><div>Changes</div><div>PR</div><div class="on">Agents</div></nav>
+</div>
+<div class="state" id="state"></div>
+<div class="pbar" role="toolbar" aria-label="Prototype">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="lab" id="lab"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <button id="light" aria-pressed="false">Light</button>
+  <button id="ended" aria-pressed="false">Ended</button>
+</div>
+<script>
+const VARIANTS = { 1: 'In the list', 2: 'Own section', 3: 'One line' }
+const params = new URLSearchParams(location.search)
+let variant = Number(params.get('variant')) || 1, light = params.get('theme') === 'light', ended = params.get('ended') === '1', open = false
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+const run = () => ({
+  title: 'Codex run', kind: 'Detached run', machine: 'forge',
+  desc: 'Started from this thread over ssh and left running on forge. Sotto found it there; its provider does not report it.',
+  meta: 'Codex · GPT-6.2 Astra · Max · ~/algo-attack/dopamine-gt3rs', status: ended ? 'Ended' : 'Working', time: ended ? 'Ran 2 h 41 min' : '2 h 15 min',
+  cmd: 'codex exec --json -m gpt-6-astra -c model_reasoning_effort=max --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C ~/algo-attack/dopamine-gt3rs …',
+})
+const agent = { title: 'Check the drop timing against the song', kind: 'Agent', desc: 'Find the beat the glass breaks on in Dopamine.wav', meta: 'Claude Fable 5.2 · 4:58 pm', status: 'Completed', time: 'Took 3 min' }
+const thread = { title: 'GT3 RS start and rev sound', kind: 'Thread', desc: 'Make a start-up and rev sound for the GT3 RS cold open.', meta: 'Codex · Building · GPT-6.1 Sol · Low · 3:37 pm', status: 'Answered', time: 'Took 12 min', open: true }
+
+function row(item, opts = {}) {
+  const icon = item.kind === 'Detached run' ? '›_' : item.kind === 'Thread' ? '◫' : '◎'
+  const working = item.status === 'Working'
+  const action = item.kind === 'Detached run' && !ended ? `<button class="btn" aria-label="Stop ${esc(item.title)} on forge">Stop</button>`
+    : item.open ? '<button class="link">Open as thread</button>' : ''
+  return `<li><div class="row"><span class="ico" aria-hidden="true">${icon}</span>
+    <div><div class="title">${esc(item.title)}${opts.kind === false ? '' : `<span class="kind">${esc(item.kind)}</span>`}</div>
+      <div class="desc">${esc(item.desc)}</div><div class="meta">${esc(item.meta)}</div></div>
+    <div class="right"><span class="st ${working ? 'working' : ''}">${working ? '<span class="dot"></span>' : ''}${esc(item.status)}</span><span class="time">${esc(item.time)}</span>${action}</div>
+    ${item.cmd && opts.cmd !== false ? `<details class="cmd"><summary>Command</summary>${esc(item.cmd)}</details>` : ''}</div></li>`
+}
+function machine(name, count, rows) {
+  return `<section class="machine" aria-label="${esc(name)}"><div class="mhead"><h3>${esc(name)}</h3><span>${esc(count)}</span></div><ul class="list">${rows.join('')}</ul></section>`
+}
+
+function render() {
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  const r = run()
+  document.getElementById('still').textContent = ended ? '' : 'Still working after this reply: Codex run on forge · Working 2 h 15 min · Stop'
+  document.getElementById('count').textContent = '1 delegated thread · 1 agent · 1 detached run'
+  document.getElementById('detail').textContent = ended ? 'None working' : '1 working'
+  let html = ''
+  if (variant === 1) {
+    html = machine('This computer', '1 thread · 1 agent', [row(agent), row(thread)])
+      + machine('forge', ended ? '1 detached run' : '1 detached run · 1 working', [row(r)])
+  } else if (variant === 2) {
+    html = `<div class="section-head">Detached runs</div><ul class="list" style="margin-bottom:14px">${row({ ...r, title: 'Codex run on forge' }, { kind: false })}</ul>`
+      + `<div class="section-head">Agents and delegated threads</div><ul class="list">${row(agent)}${row(thread)}</ul>`
+  } else {
+    html = `<button class="oneline" aria-expanded="${open}" id="toggle"><span aria-hidden="true">›_</span><span class="grow">1 detached run on forge</span><span class="st ${ended ? '' : 'working'}">${ended ? 'Ended' : '<span class="dot"></span>Working 2 h 15 min'}</span><span aria-hidden="true">${open ? '▴' : '▾'}</span></button>`
+      + (open ? `<ul class="list" style="margin-bottom:14px">${row(r)}</ul>` : '')
+      + `<ul class="list">${row(agent)}${row(thread)}</ul>`
+  }
+  document.getElementById('roster').innerHTML = html
+  document.getElementById('toggle')?.addEventListener('click', () => { open = !open; render() })
+  document.getElementById('lab').textContent = `${variant} — ${VARIANTS[variant]}`
+  document.getElementById('light').setAttribute('aria-pressed', String(light))
+  document.getElementById('ended').setAttribute('aria-pressed', String(ended))
+  document.getElementById('state').textContent = `variant=${variant} theme=${light ? 'light' : 'dark'} ended=${ended ? 1 : 0}`
+  const url = new URL(location.href); url.searchParams.set('variant', variant)
+  light ? url.searchParams.set('theme', 'light') : url.searchParams.delete('theme')
+  ended ? url.searchParams.set('ended', '1') : url.searchParams.delete('ended')
+  history.replaceState(null, '', url)
+}
+const step = d => { variant = ((variant - 1 + d + 3) % 3) + 1; open = false; render() }
+document.getElementById('prev').onclick = () => step(-1)
+document.getElementById('next').onclick = () => step(1)
+document.getElementById('light').onclick = () => { light = !light; render() }
+document.getElementById('ended').onclick = () => { ended = !ended; render() }
+addEventListener('keydown', e => { if (e.target.closest?.('input,textarea,[contenteditable]')) return; if (e.key === 'ArrowLeft') step(-1); if (e.key === 'ArrowRight') step(1) })
+render()
+</script>
+</body>
+</html>

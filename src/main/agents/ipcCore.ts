@@ -31,6 +31,11 @@ export interface AgentIpcOptions {
   /** Told when the window reads the whole state, before it is read: `AgentStateBroadcaster.windowRead`, so the next
    * broadcast lists every thread record (issue #1330). */
   readonly windowRead?: () => void
+  /**
+   * Answers the main window's read of the whole state with the number the broadcast after it names to mark the records it
+   * repeats: `AgentStateBroadcaster.readWhole`. Where given, it stands in for `windowRead` (#2733).
+   */
+  readonly readWhole?: (state: AgentState) => AgentState
   /** Told which threads the popup observes before the host hears it (ADR-0181), so main forwards it their records. */
   readonly popupObserves?: (threadIds: readonly string[]) => void
   /** Whether the popup is on screen: a hidden one observes nothing, whatever it asks while it hides. */
@@ -68,7 +73,7 @@ export function registerAgentIpcCore(
   senders: () => readonly TrustedIpcSender[],
   options: AgentIpcOptions,
 ): () => void {
-  const { workingCopyOptions, encodeReceipt, encodeChangedThreadRecordsReceipt, windowRead, popupObserves, popupShown, chooseProjectDirectory } = options
+  const { workingCopyOptions, encodeReceipt, encodeChangedThreadRecordsReceipt, windowRead, readWhole, popupObserves, popupShown, chooseProjectDirectory } = options
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     const [projectId] = workingCopyOptionsArguments.parse(args)
@@ -93,8 +98,9 @@ export function registerAgentIpcCore(
     if (role === null) throw new Error('AGENT_SENDER_REJECTED')
     // A window that reads the whole state holds nothing the next broadcast's threads could be measured from. The popup is
     // sent no broadcast, so its read leaves the main window's as it was.
-    if (role === 'main') windowRead?.()
-    return control.shell()
+    if (role === 'main' && !readWhole) windowRead?.()
+    const shell = control.shell()
+    return role === 'main' && readWhole ? readWhole(shell) : shell
   })
   ipc.handle(AGENT_THREAD_DETAIL_GET, (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main', 'popup'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
