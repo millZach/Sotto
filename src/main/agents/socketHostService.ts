@@ -1135,6 +1135,7 @@ export class SocketHostService implements HostService {
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     if ((admitted.type === 'delete-thread' || admitted.type === 'preview-delete-thread') && !this.supportsThreadDelete) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     if (admitted.type === 'create-project' && admitted.gitInit && !this.supportsProjectGitInit) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    if (admitted.type === 'reclaim-thread-worktree' && admitted.afterSettle) this.offers('settle-worktree-cleanup')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {

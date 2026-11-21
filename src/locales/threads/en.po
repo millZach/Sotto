@@ -8399,8 +8399,8 @@ msgstr "Settled {title}"
 
 #. A toast after the user settled a thread and Sotto removed its worktree folder; {title} is the thread's name.
 #: src/renderer/src/agents/SettleToast.tsx
-msgid "Settled {title} and removed its worktree. The branch is kept."
-msgstr "Settled {title} and removed its worktree. The branch is kept."
+msgid "Settled {title} and removed its worktree. Its commits are kept."
+msgstr "Settled {title} and removed its worktree. Its commits are kept."
 
 #. A toast while a cleanup rule removes a settled thread's worktree folder; {title} is the thread's name.
 #: src/renderer/src/agents/SettleToast.tsx

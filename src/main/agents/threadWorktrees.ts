@@ -1505,7 +1505,7 @@ export class ThreadWorktrees {
    * output among its ignored files. Uncommitted work goes only after the user's answer. A detached
    * folder is put back on its commit.
    */
-  async reclaim(metadata: AgentWorktree, options: WorktreeReclaimOptions = {}): Promise<AgentWorktree> {
+  async reclaim(metadata: AgentWorktree, options: WorktreeReclaimOptions = {}, canRemove?: () => boolean): Promise<AgentWorktree> {
     if (metadata.mode !== 'independent' || metadata.reused) throw new Error('Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.')
     const allocationRoot = join(await realpath(this.directory), this.home.folder)
     if (!metadata.path || pathKey(dirname(metadata.path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(metadata.path))) throw new Error('This folder is outside Sotto’s reserved worktree folder. Nothing was changed.')
@@ -1559,10 +1559,12 @@ export class ThreadWorktrees {
         // Nothing is deleted until Git holds the folder locked for Sotto's removal: from here on, a removal cut off by a
         // crash, a quit or a file kept in use is one Sotto recognises and finishes (#1297). The checks above covered
         // submodules, nested work and uncommitted changes, which is what Git's own clean check would have asked about.
+        if (canRemove && !canRemove()) return undefined
         if (registration) await writeFile(join(registration, REMOVAL_RECORD), JSON.stringify({ nestedWorktrees }))
         await this.git(metadata.repositoryRoot!, ['worktree', 'lock', '--reason', REMOVING_LOCK_REASON, '--', facts.path])
         return nestedWorktrees
       })
+      if (!nestedWorktrees) return metadata
       // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
       try { await this.removeLocked(metadata.repositoryRoot!, facts.path, identity!, nestedWorktrees) }
       catch (error) { throw unfinishedRemoval(error) }
