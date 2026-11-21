@@ -371,7 +371,9 @@ const MAX_SKILL_BYTES = 256 * 1024
 /**
  * A skill file whose frontmatter, if it has one, sets only `SKILL_FIELDS`. A line at the top of the frontmatter that is
  * not one of those fields, written plainly, is refused, so a quoted, flowed or merged key is refused rather than read.
- * Lines indented under a field, list items and comments belong to it. The file is never kept or put in an error.
+ * Lines indented under a field, list items and comments belong to it. An indented line before the first field belongs to
+ * none: YAML reads a frontmatter indented as a whole as top-level keys, so it is refused rather than skipped (#2781). The
+ * file is never kept or put in an error.
  */
 export function verifyDevinSkillFile(text: string): void {
   const lines = text.replace(/^\uFEFF/u, '').split(/\r?\n/u)
@@ -379,8 +381,11 @@ export function verifyDevinSkillFile(text: string): void {
   if (start < 0 || lines[start]!.trimEnd() !== '---') return
   const end = lines.findIndex((line, index) => index > start && line.trimEnd() === '---')
   if (end < 0) throw new Error(PLUGIN_REFUSAL)
+  let underField = false
   for (const line of lines.slice(start + 1, end)) {
-    if (line.trim() === '' || /^\s/u.test(line) || /^#/u.test(line)) continue
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue
+    if (/^\s/u.test(line)) { if (!underField) throw new Error(PLUGIN_REFUSAL); continue }
+    underField = true
     const field = /^([A-Za-z][A-Za-z0-9_-]*):(?:\s|$)/u.exec(line)?.[1]
     if (!field || !SKILL_FIELDS.has(field)) throw new Error(PLUGIN_REFUSAL)
   }

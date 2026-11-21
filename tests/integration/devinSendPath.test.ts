@@ -259,6 +259,13 @@ it('sends a prompt that starts with a skill Devin listed and refuses one that st
   await expect(send(f, id, '/fixture-granting-skill Synthetic prompt')).rejects.toThrow('leaves every tool call asking')
   expect(await prompts()).toBe(0)
   // A skill Devin listed for the session, which grants nothing, goes as it was written (#2778).
-  expect(await send(f, id, '/fixture-skill Synthetic prompt')).toEqual({ accepted: true })
+  const skillSend = { type: 'send' as const, commandId: randomUUID(), messageId: randomUUID(), threadId: id, text: '/fixture-skill Synthetic prompt' }
+  expect(await f.host.execute(skillSend)).toEqual({ accepted: true })
+  expect(await prompts()).toBe(1)
+  // A retry of that same send is reconciled from the history, not checked again as a new prompt (#2781).
+  const shows = async (): Promise<number> => (await f!.driver.requests()).filter(record => record.method === 'fixture/spawn' && record.params?.kind === 'skills').length
+  const shown = await shows()
+  expect((await f.host.execute(skillSend)).accepted).toBe(true)
+  expect(await shows()).toBe(shown)
   expect(await prompts()).toBe(1)
 })

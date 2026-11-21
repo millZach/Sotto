@@ -21,8 +21,8 @@ const olderThan = target => {
  return false
 }
 // The user's own skills a session lists, each with the frontmatter its file sets past its name and description: one
-// that only keeps the model from running it, and one that lets a tool run unasked while it runs.
-const LISTED_SKILLS = { 'fixture-skill': 'disable-model-invocation: true\n', 'fixture-granting-skill': 'allowed-tools: Exec\n' }
+// that only keeps the model from running it, one that lets a tool run unasked while it runs, and one named as Devin's own `share`.
+const LISTED_SKILLS = { 'fixture-skill': 'disable-model-invocation: true\n', 'fixture-granting-skill': 'allowed-tools: Exec\n', share: '' }
 // Every process Sotto starts says what it is, so a test can count the processes a send costs.
 record({ method: 'fixture/spawn', params: { kind: process.argv.includes('--version') ? 'version' : process.argv.includes('plugins') ? 'plugins'
  : process.argv.includes('skills') ? 'skills' : process.argv.includes('mcp') ? 'mcp' : 'acp' } })

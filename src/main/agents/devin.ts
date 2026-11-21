@@ -1027,8 +1027,11 @@ export class DevinAcpHost implements ProviderHost {
       if (update?.sessionUpdate === 'available_commands_update' && typeof params?.sessionId === 'string') {
         // A list that does not read is no skills, so a slash word is refused rather than guessed at.
         const commands = commandsSchema.safeParse(update.availableCommands)
-        connection.skills = { sessionId: params.sessionId, names: new Set(commands.success
-          ? commands.data.flatMap(command => command._meta?.['cognition.ai/category'] === DEVIN_SKILL_CATEGORY ? [command.name] : []) : []) }
+        const listed = commands.success ? commands.data : []
+        const isSkill = (command: (typeof listed)[number]): boolean => command._meta?.['cognition.ai/category'] === DEVIN_SKILL_CATEGORY
+        // A skill named as one of Devin's own commands, such as `share`, may run the command instead, so it is not one.
+        const own = new Set(listed.flatMap(command => isSkill(command) ? [] : [command.name]))
+        connection.skills = { sessionId: params.sessionId, names: new Set(listed.flatMap(command => isSkill(command) && !own.has(command.name) ? [command.name] : [])) }
         for (const wake of connection.skillsListed.splice(0)) wake()
         return
       }
@@ -1302,6 +1305,14 @@ export class DevinAcpHost implements ProviderHost {
     validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     if (command.skills?.length) throw new Error('Devin skill selection is not supported.')
     verifyFileMentions(command.text, command.files)
+    // A retry of a send Sotto already dispatched is reconciled from the history, never checked again as a new prompt:
+    // a check that failed now would say nothing was sent of a turn Devin may have taken (#2781).
+    const previous = alias.origins.find(origin => origin.commandId === command.commandId || origin.messageId === command.messageId)
+    if (previous) {
+      if (previous.digest !== digest(command.text) || previous.messageId !== command.messageId || previous.commandId !== command.commandId) throw new Error('This Devin dispatch identity is already in use.')
+      await this.readHistory(id)
+      return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
+    }
     // A slash word Devin reads ahead of the prompt runs only when it names a skill the session listed. Devin's own
     // commands change its settings or send the session elsewhere outside Sotto's permissions, so they are refused.
     const slashWord = LEADING_SLASH_WORD.exec(command.text)?.[1]
@@ -1322,12 +1333,6 @@ export class DevinAcpHost implements ProviderHost {
       await assertDevinSkillGrantsNothing(this.executable, [...(this.options.args ?? []), '--config', connection.profile.path],
         devinEnvironment(this.options.environment), slashWord, alias.cwd)
       checkConnection()
-    }
-    const previous = alias.origins.find(origin => origin.commandId === command.commandId || origin.messageId === command.messageId)
-    if (previous) {
-      if (previous.digest !== digest(command.text) || previous.messageId !== command.messageId || previous.commandId !== command.commandId) throw new Error('This Devin dispatch identity is already in use.')
-      await this.readHistory(id)
-      return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
     }
     // Devin reads no images, so every attachment here is a file: saved into the thread's folder and named in a note after
     // the user's words (ADR-0131). The origin's digest is the words alone, as the replay is read without the note.
