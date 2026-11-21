@@ -255,6 +255,23 @@ import UIKit
         }
     }
 
+    /// Owlets (ADR-0213): the tab's list, and an owlet's thread with the owlets beside it unfolded (Zach's pick A,
+    /// November 21, 2026), upright from the rail's sidebar button.
+    func testOwlets() {
+        for light in [false, true] {
+            launch(["--ui-owlets", "--ui-open-owlets"], light: light)
+            _ = byID("owlet-search").waitForExistence(timeout: 20)
+            shot("owlets", light: light)
+            if !light {
+                if tapIfThere(app.buttons["owlet-\(laptop)/owlet-scops"]) {
+                    shot("owlet-thread")
+                    if posture == "upright", tapIfThere(app.buttons["duo-sidebar"]) { shot("owlet-sidebar") }
+                }
+            }
+            app.terminate()
+        }
+    }
+
     /// Computers, Settings and New thread.
     func testOtherPages() {
         for light in [false, true] {

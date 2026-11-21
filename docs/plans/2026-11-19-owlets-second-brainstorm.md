@@ -108,6 +108,7 @@ The agent stopped before it wrote its report, so its last round of checks was no
 - **Threads page, folder and providers** (asked while building): "Only on Owlets (suggested)", "In Sotto's data folder (suggested)" and "Only where it's off (suggested)".
 - **The owlet mark** (asked with `docs/prototypes/owlet-mark/` open): "Draw it now (suggested)", then "C · Each its own face (suggested)".
 - **Plugin accounts in setup** (after the spec review): "Link for now (suggested)". **A limit on owlets**: "Drop the limit (suggested)".
+- **The iPhone** (November 21, asked with `docs/prototypes/owlets-iphone/` open): "A · After Threads (Recommended)" for the tab, "A · In the ••• menu (Recommended)" for Edit owlet, and "A · The owlets (Recommended)" for the iPhone Duo's sidebar beside an owlet.
 
 ## Suggested first slice
 
