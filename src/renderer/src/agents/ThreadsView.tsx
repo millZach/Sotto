@@ -1,4 +1,5 @@
 import { focusedComposerField } from './promptSelection'
+import { withoutOwlets } from '../features/owlets/owletVisibility'
 import { useThreadWords } from './useThreadWords'
 import { Marked } from '../components/marks'
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -163,7 +164,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const publishedRef = useRef(published)
   // Watcher's room keeps the current Watcher; this page lists and selects only the other threads.
   const roomWatcher = useRoomWatcherThreadId()
-  const state = useMemo(() => withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher),
+  // Owlets live on their own page (ADR-0210), so this one lists and selects none of them either.
+  const state = useMemo(() => withoutOwlets(withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher)),
     [published, drafts, watcherEnabled, roomWatcher])
   const command = useMemo(() => gateOnCreation(agents.command), [agents.command])
   useEffect(() => { publishedRef.current = published; draftThreads.reconcile(published) }, [published])

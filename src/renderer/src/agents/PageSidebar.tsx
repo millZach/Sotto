@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { withoutOwlets } from '../features/owlets/owletVisibility'
 import { useThreadWords } from './useThreadWords'
 import { useLingui } from '@lingui/react/macro'
 import { useOwlFeature } from '../state/owlFeature'
@@ -43,7 +44,8 @@ export function PageSidebar({ now: fixedNow }: {
   const published = agents.state
   // Watcher's room keeps the current Watcher; this page lists and selects only the other threads.
   const roomWatcher = useRoomWatcherThreadId()
-  const state = useMemo(() => withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher),
+  // Owlets live on their own page (ADR-0210), so this one lists and selects none of them either.
+  const state = useMemo(() => withoutOwlets(withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher)),
     [published, drafts, watcherEnabled, roomWatcher])
   // Rows and folders carry words in the interface language, so a change of language or of its messages describes them
   // again. Otherwise the describer describes only the threads an update changed and hands back the rest as they were.

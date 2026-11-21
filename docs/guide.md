@@ -19,6 +19,7 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Troubleshooting](#troubleshooting)
 - [Watcher](#watcher)
 - [Usage](#usage)
+- [Owlets](#owlets)
 - [Update all](#update-all)
 - [Resume threads after a restart](#resume-threads-after-a-restart)
 - [Restart stopped threads](#restart-stopped-threads)
@@ -1306,6 +1307,23 @@ Ask Watcher to watch a thread, or every active thread. Watching sends nothing to
 For a thread under a standing watch on Watcher's own computer, a new instruction you give Watcher after your direct turn finishes can send work to it when Sotto can establish that order, including an instruction you queue while Watcher is still working. One you steer into Watcher's running turn stays part of that turn's request; leave it queued for it to start its own. If you give Watcher that instruction while your direct message is still queued and Sotto cannot identify its later echo, you may need to repeat the instruction after your turn finishes. Earlier requests stay fenced. On a thread Watcher works with only for one request, your own message takes it back from that request; a message you send Watcher after it can reach the thread again, steering only while your own turn there runs. A watch saved by an older build may lack that ordering evidence; its standing-watch continuation remains available, or Stop watching and Watch establishes a new assignment. On a paired computer, use its resumed standing watch; a new request alone does not clear its earlier takeover. A finished parent with sub-agents, background work or monitoring confirmed working is listed under Working in All threads. It gets no quiet news: its finish, held for that work, tells Watcher after twenty minutes that the thread is idle, and Watcher hears again when the work ends. Only a thread whose own turn is running gets quiet news, and a change in its recorded counts restarts the twenty-minute wait. Agents whose state is unknown after a restart keep work unsettled but are not assumed to be making progress.
 
 Watcher is instructed to give changing work to workers. If its own turn edits files, Sotto keeps a mark with that reply naming the files and its reason. Without the defined reason line it says It gave no reason. Changes made by another thread in a shared checkout are not attributed to Watcher. The mark follows Keep local history, like the reply itself.
+
+## Owlets
+
+An **owlet** is a helper you name and give a role, such as Tawny, who keeps your inbox. It is a Sotto Owl preview. Open **Owlets** from the room switch, after Threads.
+
+**New owlet** asks for:
+
+- **Name** and **Role**, in your own words. The name is also its folder's, so it keeps to letters, numbers, spaces and hyphens, and two owlets on one computer can't share one.
+- **Home computer**: this computer, or a paired host on Sotto Owl. An owlet lives there, and while that computer sleeps, it can't run.
+- **Model**: Claude Code or Codex. Sotto turns off their own memory in the owlet's folder, so nothing the owlet reads is kept where your other threads would find it. Until owlets keep notes of their own, an owlet remembers only its chat.
+- **Permission mode**, as for any thread. It asks you about everything else, and never answers its own cards.
+
+Sotto makes the owlet's folder, shown as `Owlets/<name>`, in Sotto's data folder on its home computer, and one thread there. Every time you talk to the owlet is more turns in that one thread, with the same tools and cards as any thread. Change its model and permission mode on its thread's chips, and its name and role with **Edit owlet** (the pencil in its header). A renamed owlet keeps its folder's first name. It can use the plugin accounts kept for every project; to give it one kept to chosen projects, choose its folder for that account in **Settings → Plugins**.
+
+The sidebar lists every owlet, newest first, each wearing a small owl with a face of its own, with its home computer and what it last did. One waiting on you leads the list under **Needs you**, and one with news you haven't seen carries a dot. Owlets send no notifications, Watcher neither sees nor steers them, and the Threads page lists none of them.
+
+For now an owlet runs only when you talk to it. Schedules and events, such as a CI run going red or new mail, come later.
 
 ## Usage
 

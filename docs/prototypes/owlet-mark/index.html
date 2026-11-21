@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owlet mark · four variants</title>
+<style>
+/* A throwaway prototype for the owlet's own mark (ADR-0210). Made-up owlets; nothing here is Sotto's code. */
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('figtree-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+:root {
+  --canvas: oklch(0.16 0.004 75); --sidebar: oklch(0.14 0.004 75); --card: oklch(0.185 0.008 265); --inset: oklch(0.215 0.008 265);
+  --text: oklch(0.985 0.005 280); --text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265)); --muted: oklch(0.72 0.014 265);
+  --hairline: oklch(0.305 0.02 265); --accent: oklch(0.714403 0.104089 183.092); --accent-text: oklch(0.83 0.08 183); --on-accent: oklch(0.16 0.012 190);
+  --attention: oklch(0.829017 0.171221 81.038); --hover: color-mix(in srgb, oklch(0.985 0.005 280) 6%, transparent);
+  --selected: oklch(0.265 0.035 188); --selected-border: color-mix(in srgb, oklch(0.714403 0.104089 183.092) 30%, oklch(0.42 0.02 265));
+  --font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif; color-scheme: dark;
+}
+:root[data-theme='light'] {
+  --canvas: oklch(0.978 0.004 85); --sidebar: oklch(0.955 0.008 85); --card: color-mix(in oklab, oklch(0.978 0.004 85) 93%, oklch(0.235 0.014 75)); --inset: oklch(0.99 0.003 85);
+  --text: oklch(0.235 0.014 75); --text-2: oklch(0.34 0.014 75); --muted: oklch(0.45 0.014 75); --hairline: oklch(0.86 0.012 80);
+  --accent: oklch(0.53 0.095 186); --accent-text: oklch(0.4 0.08 186); --on-accent: oklch(0.99 0.003 85); --attention: oklch(0.45 0.14 50);
+  --hover: color-mix(in srgb, oklch(0.235 0.014 75) 6%, transparent); --selected: color-mix(in oklab, oklch(0.92 0.03 186) 65%, oklch(0.93 0.005 85)); --selected-border: transparent;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--canvas); color: var(--text); font: 14px/1.4 var(--font); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 18px; border-bottom: 1px solid var(--hairline); }
+.top h1 { margin: 0 auto 0 0; font-size: 15px; font-weight: 650; }
+.switch { display: inline-flex; border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+.switch button { padding: 6px 12px; border: 0; background: transparent; cursor: pointer; }
+.switch button[aria-pressed='true'] { background: var(--selected); color: var(--text); font-weight: 600; }
+.wrap { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: calc(100vh - 56px); }
+@media (max-width: 720px) { .wrap { grid-template-columns: 1fr; } }
+.side { background: var(--sidebar); border-right: 1px solid var(--hairline); padding: 10px 6px; }
+.side h2 { margin: 6px 10px 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.side h2[data-tone='needs'] { color: var(--attention); }
+ul { list-style: none; margin: 0 0 10px; padding: 0; }
+.row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 10px; row-gap: 1px; align-items: center; width: 100%;
+  padding: 7px 10px 7px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; color: var(--text-2); }
+.row:hover { background: var(--hover); }
+.row[aria-current='page'] { background: var(--selected); border-color: var(--selected-border); }
+.mark { grid-row: 1 / 3; position: relative; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--inset); color: var(--text); }
+.mark svg { display: block; }
+.mark .letter { position: absolute; right: -3px; bottom: -3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 4px; background: var(--accent); color: var(--on-accent); font-size: 9px; font-weight: 750; line-height: 13px; text-align: center; }
+.name { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.name b { color: var(--text); font-weight: 500; white-space: nowrap; }
+.name span { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.when { color: var(--muted); font-size: 12px; }
+.when[data-tone='needs'] { color: var(--attention); }
+.last { grid-column: 2 / 4; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+main { padding: 22px 26px 40px; }
+.about { max-width: 640px; margin: 0 0 22px; color: var(--text-2); }
+.about h2 { margin: 0 0 6px; color: var(--text); font-size: 18px; }
+.big { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 26px; }
+.big figure { display: grid; justify-items: center; gap: 8px; margin: 0; padding: 14px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--card); min-width: 108px; }
+.big figcaption { color: var(--muted); font-size: 12px; }
+.big .tile { display: grid; place-items: center; width: 72px; height: 72px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--inset); color: var(--text); position: relative; }
+.big .tile .letter { position: absolute; right: -6px; bottom: -6px; min-width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: var(--on-accent); font-size: 15px; font-weight: 750; line-height: 26px; text-align: center; }
+.big .watcher { color: var(--muted); }
+h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.sizes { display: flex; align-items: end; gap: 16px; margin-bottom: 26px; color: var(--text); }
+.note { max-width: 640px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>The owlet mark</h1>
+  <div class="switch" role="group" aria-label="Mark variant" id="variants"></div>
+  <div class="switch" role="group" aria-label="Theme"><button type="button" data-theme="dark">Dark</button><button type="button" data-theme="light">Light</button></div>
+</header>
+<div class="wrap">
+  <nav class="side" aria-label="Owlets" id="side"></nav>
+  <main>
+    <section class="about" id="about"></section>
+    <h3>Large, beside Watcher's owl</h3>
+    <div class="big" id="big"></div>
+    <h3>At 16, 20, 24 and 32 pixels</h3>
+    <div class="sizes" id="sizes"></div>
+    <p class="note">Every variant is drawn in lines, in the colour of whatever holds it, with no ear tufts, so it never reads as Watcher's filled, tufted owl. Colour comes from the theme alone. Made-up owlets; ?mark=A, B, C or D and &amp;theme=light pick a view.</p>
+  </main>
+</div>
+<script>
+const OWLETS = [
+  { name: 'Tawny', role: 'Keeps my inbox', home: 'This computer', last: 'Wants to send a reply to Pat', needs: true, when: 'Needs you' },
+  { name: 'Scops', role: 'Keeps the repos tidy', home: 'forge', last: 'Main is green again', when: '9 min' },
+  { name: 'Elf', role: 'Morning brief', home: 'forge', last: 'Wrote today’s brief', when: '7:31 am' },
+  { name: 'Barn', role: 'Receipts', home: 'This computer', last: 'Filed three receipts', when: 'Yesterday' },
+  { name: 'Little', role: 'Watches CI', home: 'forge', last: 'Nothing new', when: 'Mon' },
+  { name: 'Snowy', role: 'Release notes', home: 'This computer', last: 'Not run yet', when: '' },
+  { name: 'Pygmy', role: 'Triage new issues', home: 'forge', last: 'Labelled four issues', when: 'Sun' },
+  { name: 'Hawk', role: 'Reads the newsletters', home: 'This computer', last: 'Two worth reading', when: 'Sat' },
+]
+const WATCHER = 'M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.54 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8ZM1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95ZM9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z'
+const svg = (size, inner, stroke = 1.75) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`
+// The owlet: a round body whose head dips a little in the middle, as an owl's brows do, two big eyes and a small beak.
+// No ear tufts and no fill, so it never reads as Watcher's tufted, filled owl.
+const BODY = '<path d="M5 10.4C5 6.4 7.3 3.6 9.9 3.6c1 0 1.7.6 2.1 1.3.4-.7 1.1-1.3 2.1-1.3 2.6 0 4.9 2.8 4.9 6.8v4.4c0 3.7-3.1 6.1-7 6.1s-7-2.4-7-6.1z"/>'
+const RINGS = (r = 2.5) => `<circle cx="9.3" cy="10.4" r="${r}"/><circle cx="14.7" cy="10.4" r="${r}"/>`
+const PUPILS = (dx = 0, r = 1) => `<circle cx="${9.3 + dx}" cy="10.4" r="${r}" fill="currentColor" stroke="none"/><circle cx="${14.7 + dx}" cy="10.4" r="${r}" fill="currentColor" stroke="none"/>`
+const BEAK = '<path d="M11.2 13.6h1.6L12 14.9z" fill="currentColor" stroke-width="1"/>'
+const OWLET = BODY + RINGS() + PUPILS() + BEAK
+const chick = size => svg(size, OWLET, 1.6)
+const perched = size => svg(size, `<g transform="translate(2.6 0) scale(.78)">${OWLET}</g><path d="M2.5 20.6h19M10.6 18.6v2M13.4 18.6v2"/>`, 1.6)
+// C: the same owlet, with each owlet's own eyes and chest, picked from its name so it is always the same one.
+const FACES = [
+  RINGS() + PUPILS(),
+  RINGS() + PUPILS(.8, .9),
+  RINGS() + PUPILS(0, 1.6),
+  '<path d="M7 11.2c.6-1.2 1.4-1.8 2.3-1.8s1.7.6 2.3 1.8M12.4 11.2c.6-1.2 1.4-1.8 2.3-1.8s1.7.6 2.3 1.8"/>',
+  RINGS() + '<path d="M6.8 10.4h5M12.2 10.4h5"/>',
+]
+const CHESTS = ['', '<path d="M10.5 17.6h.01M12 18.3h.01M13.5 17.6h.01" stroke-width="1.9"/>', '<path d="M10.6 17.4l1.4.9 1.4-.9"/>']
+const hash = text => [...text].reduce((value, char) => (value * 31 + char.codePointAt(0)) >>> 0, 7)
+const ownFace = (size, name) => { const h = hash(name), face = FACES[h % FACES.length], chest = CHESTS[Math.floor(h / FACES.length) % CHESTS.length]
+  return svg(size, BODY + face + BEAK + chest, 1.6) }
+const VARIANTS = {
+  A: { title: 'A · One round owlet', about: 'Every owlet wears the same small owl: a round body whose head dips a little in the middle, as an owl\u2019s brows do, two big eyes and a small beak, and no ear tufts. Quiet, and the same for all, so the name and role do the telling apart.', mark: (size) => chick(size) },
+  B: { title: 'B · Owlet with its letter', about: 'The same round owl, with the owlet’s first letter on a small accent tag at the tile’s corner, so two owlets tell apart at a glance even before you read the name.', mark: (size) => chick(size), letter: true },
+  C: { title: 'C · Each its own face', about: 'The same round owl, with a face of its own for each owlet: round, glancing, wide, smiling or sleepy eyes, and now and then a mark on its chest, chosen from its name so it never changes.', mark: (size, name) => ownFace(size, name) },
+  D: { title: 'D · Owlet on its branch', about: 'A smaller round owl sitting on a branch with its feet showing, as the Owlets room’s icon sits its two owls on one. The same for every owlet.', mark: (size) => perched(size) },
+}
+const params = new URLSearchParams(location.search)
+let variant = VARIANTS[params.get('mark')] ? params.get('mark') : 'A'
+let theme = params.get('theme') === 'light' ? 'light' : 'dark'
+let current = 'Tawny'
+const esc = text => text.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+function markOf(owlet, size, tile = 'mark') {
+  const v = VARIANTS[variant]
+  return `<span class="${tile}" aria-hidden="true">${v.mark(size, owlet.name)}${v.letter ? `<span class="letter">${esc([...owlet.name][0].toUpperCase())}</span>` : ''}</span>`
+}
+function row(owlet) {
+  return `<li><button type="button" class="row" ${owlet.name === current ? 'aria-current="page"' : ''} data-name="${esc(owlet.name)}">${markOf(owlet, 22)}
+    <span class="name"><b>${esc(owlet.name)}</b><span>${esc(owlet.role)}</span></span>
+    <span class="when" ${owlet.needs ? 'data-tone="needs"' : ''}>${esc(owlet.when)}</span>
+    <span class="last">${esc(owlet.home)} · ${esc(owlet.last)}</span></button></li>`
+}
+function draw() {
+  document.documentElement.dataset.theme = theme
+  document.getElementById('variants').innerHTML = Object.keys(VARIANTS).map(key => `<button type="button" data-variant="${key}" aria-pressed="${key === variant}">${key}</button>`).join('')
+  document.querySelectorAll('[data-theme]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.theme === theme)))
+  const needs = OWLETS.filter(o => o.needs), rest = OWLETS.filter(o => !o.needs)
+  document.getElementById('side').innerHTML = `<h2 data-tone="needs">Needs you ${needs.length}</h2><ul>${needs.map(row).join('')}</ul><ul>${rest.map(row).join('')}</ul>`
+  const v = VARIANTS[variant]
+  document.getElementById('about').innerHTML = `<h2>${esc(v.title)}</h2><p>${esc(v.about)}</p>`
+  document.getElementById('big').innerHTML = OWLETS.slice(0, 4).map(o => `<figure>${markOf(o, 52, 'tile')}<figcaption>${esc(o.name)}</figcaption></figure>`).join('')
+    + `<figure><span class="tile watcher" aria-hidden="true"><svg width="48" height="48" viewBox="0 0 16 16" fill="currentColor"><path d="${WATCHER}" fill-rule="evenodd"/></svg></span><figcaption>Watcher's owl</figcaption></figure>`
+  document.getElementById('sizes').innerHTML = [16, 20, 24, 32].map(size => VARIANTS[variant].mark(size, 'Tawny')).join('')
+  history.replaceState(null, '', `?mark=${variant}${theme === 'light' ? '&theme=light' : ''}`)
+}
+document.addEventListener('click', event => {
+  const target = event.target.closest('button'); if (!target) return
+  if (target.dataset.variant) variant = target.dataset.variant
+  else if (target.dataset.theme) theme = target.dataset.theme
+  else if (target.dataset.name) current = target.dataset.name
+  draw()
+})
+draw()
+</script>
+</body>
+</html>

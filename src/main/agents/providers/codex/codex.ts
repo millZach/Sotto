@@ -1,4 +1,5 @@
 import type { MediaCapture, MediaFileCapture } from '../../threadMedia'
+import { inOwletFolder } from '../../owlets'
 import { preserveLegacyAliases } from '../../legacyAliases'
 import { sameMessageContent } from '../../../../shared/threadEvents'
 import { browserCodexConfig, type BrowserAgentTools } from '../../browserAgentServer'
@@ -350,7 +351,8 @@ export class CodexAppServerHost implements ProviderHost {
     const model = resolveModel(this.state.models, modelId)
     return model?.speeds?.length || model?.fastMode ? { serviceTier: 'default' } : {}
   }
-  private async threadConfiguration(id: string, effort?: string) {
+  /** `cwd` is the thread's working folder, its alias's once it has one; in an owlet's folder Codex's memories are off (ADR-0210). */
+  private async threadConfiguration(id: string, effort?: string, cwd = this.aliases[id]?.cwd) {
     if (this.councilJudges.has(id)) return { config: effort ? { model_reasoning_effort: effort } : {} }
     const generation = this.generation
     const profile = await this.checkLaunchProfile(id)
@@ -358,6 +360,7 @@ export class CodexAppServerHost implements ProviderHost {
     const configuration = await threadConfig(profile ? undefined : this.browserTools, id, effort,
       profile ? watcherThreadTools(this.threadTools) : this.threadTools, Boolean(profile))
     if (!profile) await this.addComputerUseHelper(configuration.config)
+    if (inOwletFolder(this.options.userDataPath, cwd)) configuration.config['features.memories'] = false
     if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (profile) {
       configuration.config.mcp_servers = { ...(configuration.config.mcp_servers as Record<string, unknown> | undefined),
@@ -432,9 +435,9 @@ export class CodexAppServerHost implements ProviderHost {
    * A new thread's configuration and role table, once its own app-server has started for a start or a fork. Setup that
    * fails lets that app-server go at once, rather than leaving it for the reaper (#1133).
    */
-  private async newThreadSetup(id: string, effort: string | undefined, mode: AgentRuntimeMode): Promise<{ configuration: { config: Record<string, unknown> }; roles: LaunchRoles }> {
+  private async newThreadSetup(id: string, effort: string | undefined, mode: AgentRuntimeMode, cwd: string): Promise<{ configuration: { config: Record<string, unknown> }; roles: LaunchRoles }> {
     try {
-      const configuration = await this.threadConfiguration(id, effort)
+      const configuration = await this.threadConfiguration(id, effort, cwd)
       return { configuration, roles: await this.launchRoles(id, mode, configuration.config) }
     } catch (error) { this.creating.delete(id); this.stopSession(id); throw error }
   }
@@ -1880,7 +1883,7 @@ export class CodexAppServerHost implements ProviderHost {
     } catch (error) { this.creating.delete(request.threadId); throw error }
     this.worked(request.threadId)
     // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
-    const { configuration, roles } = await this.newThreadSetup(request.threadId, request.reasoningEffort, request.runtimeMode ?? 'auto-accept-edits')
+    const { configuration, roles } = await this.newThreadSetup(request.threadId, request.reasoningEffort, request.runtimeMode ?? 'auto-accept-edits', cwd)
     try {
       // A copy is a new thread, so it starts at standard speed whatever its source ran (ADR-0143).
       const tier = this.serviceTier(request.modelId, null)
@@ -1987,7 +1990,7 @@ export class CodexAppServerHost implements ProviderHost {
         try { server = await this.runtimeServer(command.threadId) }
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.worked(command.threadId)
-        const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits')
+        const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits', cwd)
         const speed = speedAfterChange(command)
         const tier = this.serviceTier(command.modelId, speed)
         let judgeStartRefusal: unknown

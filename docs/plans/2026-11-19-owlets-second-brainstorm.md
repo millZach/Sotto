@@ -59,7 +59,6 @@ The agent stopped before it wrote its report, so its last round of checks was no
 - **Sending a lapsed change later.** A run while away ends with the card lapsed and says what it wanted to send. How the user sends it later is open; telling the owlet "send it", which asks again on a new card, is one idea.
 - **Events beyond the first three.** CI goes red, a new issue or comment, and new mail are in. Vercel deploy failures were left out; nothing else has been decided.
 - **Full access with new mail.** Zach kept "Whatever the owlet is set to", so a Full access owlet started by a stranger's email runs shell commands without asking. The notes' mail rule covers only Sotto's own tool, not the provider's file and shell tools. Worth a second look before events ship.
-- **The owlet mark.** Owlets get a drawing of their own, kept clearly apart from Watcher's room owls. Nobody has drawn it yet.
 - **The glossary entry.** "Owlet" has to be told apart from Owl features and the Owl track in `CONTEXT.md`.
 
 ## Zach's answers
@@ -104,6 +103,10 @@ The agent stopped before it wrote its report, so its last round of checks was no
 - **Watcher:** "Fully separate". Watcher neither sees nor steers owlet threads, and owlets aren't in Watcher's room.
 - **Sidebar rows** (asked with R1, R2 and R3 open): "I like R2, so that is what I would choose". Each row shows the owlet's own mark, its name with its role beside it, and under them its home computer and either what just happened or its next run. Newest first, as Recent is on the Threads page.
 - **The provider's own memory in owlet folders:** "Off in owlet folders (suggested)". Claude Code's auto memory, Codex's memories and any other provider memory are off in an owlet's folder from the first slice. Until the notes come, an owlet remembers only its chat, and nothing it reads reaches other threads through a provider's shared memory.
+
+- **Building** (November 20): "I am fine with you starting to build go for it". The first slice is built in this thread, the desktop first and the iPhone second (ADR-0210).
+- **Threads page, folder and providers** (asked while building): "Only on Owlets (suggested)", "In Sotto's data folder (suggested)" and "Only where it's off (suggested)".
+- **The owlet mark** (asked with `docs/prototypes/owlet-mark/` open): "Draw it now (suggested)", then "C · Each its own face (suggested)".
 
 ## Suggested first slice
 

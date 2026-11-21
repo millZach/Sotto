@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { owletFolderLabel } from '../../../shared/owlets'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
 import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, GitFork, Pencil, Plug, Shrink, X } from 'lucide-react'
@@ -396,8 +397,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   }, [worktreeReady, thread.id, command])
   const { settle: settleThread, dialog: settleDialog } = useSettleThread(command)
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
+  // An owlet's folder is named as Sotto made it (ADR-0210); any other thread's crumb is its project, or its provider.
+  const crumb = thread.owlet !== undefined ? owletFolderLabel(row.project?.title ?? thread.owlet.name) : row.project?.title ?? row.provider
   const naming: PaneMenuItem[] = [
-    ...(!isThreadArchived(thread) && !renaming ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
+    // An owlet's name is its owlet's, changed with Edit owlet (ADR-0210).
+    ...(!isThreadArchived(thread) && !renaming && thread.owlet === undefined ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
   ]
   // Open beside leads the layout rows; the pane area's rows follow it.
   const beside: PaneMenuItem | undefined = onOpenBeside ? { id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside } : undefined
@@ -491,7 +495,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           : <h2 title={thread.title}>{thread.title}</h2>}
         {/* What is left of the row after the name: the project and the working copy, then the branch controls, each giving way whole as this box narrows. */}
         <span className="thread-workspace__where" ref={whereFit}>
-        <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span title={row.project?.title ?? row.provider}>{row.project?.title ?? row.provider}</span>{workingCopy}
+        <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span title={crumb}>{crumb}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
@@ -506,7 +510,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
-        {thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
+        {thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined || thread.owlet !== undefined ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
         {/* The Council, in this pane's drawer, for a thread on this computer (ADR-0177; Owl only). */}
         {terminal && !thread.remoteHost ? <PaneCouncilToggle threadId={thread.id} /> : null}
         {tools ? <ToolsToggle threadId={thread.id} focused={focused} state={state} /> : null}

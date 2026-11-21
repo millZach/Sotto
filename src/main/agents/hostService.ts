@@ -279,6 +279,8 @@ export interface HostService {
   readonly supportsFailureSeen?: boolean
   /** The Owl host owns snoozes and accepts snooze-thread (ADR-0175). */
   readonly supportsThreadSnooze?: boolean
+  /** The host makes and changes owlets (ADR-0210): its Owl answer is on. */
+  readonly supportsOwlets?: boolean
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
   /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
@@ -450,6 +452,7 @@ export function desktopPopupClient(user: string = localUser()): ClientIdentity {
 /** What `LocalHostService` needs of the coordinator: the client-facing half of `AgentControl`. */
 export interface LocalHostControl {
   readonly supportsThreadSnooze?: boolean
+  readonly supportsOwlets?: boolean
   get(): AgentState
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
@@ -700,6 +703,7 @@ export class LocalHostService implements HostService {
     return this.options.agentsView.delegations?.(threadId, this.view().host.threads) ?? { threadId, threads: [] }
   }
   get supportsThreadSnooze(): boolean { return this.control.supportsThreadSnooze === true }
+  get supportsOwlets(): boolean { return this.control.supportsOwlets === true }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
   get supportsBringBack(): boolean { return this.options.bringBack === true }

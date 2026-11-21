@@ -410,6 +410,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const delegation = service.supportsHostDelegation === true && desktopRecords
   const usageReads = service.supportsUsage === true && service.usageRead !== undefined
   const features = HOST_FEATURES.filter(feature => (feature !== 'thread-snooze' || service.supportsThreadSnooze === true)
+    && (feature !== 'owlets' || service.supportsOwlets === true)
     && (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)

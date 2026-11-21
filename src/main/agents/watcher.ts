@@ -1,4 +1,5 @@
 import { sendOutcome } from './sendOutcome'
+import { inOwletFolder, owletsRoot } from './owlets'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, posix, relative, resolve, win32 } from 'node:path'
@@ -1138,7 +1139,7 @@ export class WatcherService implements WatcherControlHooks {
     const fold = (value: string) => process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value
     const real = async (value: string) => fold(await realpath(value).catch(() => resolve(value)))
     const target = await real(path)
-    for (const own of [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')]) {
+    for (const own of [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup'), owletsRoot(this.options.directory)]) {
       const between = relative(await real(own), target)
       if (between === '' || !between.startsWith('..') && !isAbsolute(between)) return true
     }
@@ -1148,7 +1149,8 @@ export class WatcherService implements WatcherControlHooks {
     const snapshot = this.owningSnapshot(target.hostId)
     if (!snapshot) refuse('HOST_DISCONNECTED', 'That host is disconnected. Reconnect it before continuing.', true)
     const thread = this.owningThread(target.hostId, target.threadId)
-    if (!thread) refuse('UNKNOWN_TARGET', 'That thread is unavailable. Read the thread list again.')
+    // An owlet's thread is kept apart from Watcher (ADR-0210), so to Watcher it is no thread at all.
+    if (!thread || thread.owlet) refuse('UNKNOWN_TARGET', 'That thread is unavailable. Read the thread list again.')
     return thread
   }
   private checkCaller(threadId: string): void {
@@ -1645,10 +1647,10 @@ export class WatcherService implements WatcherControlHooks {
   }
   private reservedProject(path: string): boolean {
     const normalized = (value: string) => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
-    return [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')].some(folder => normalized(path) === normalized(folder))
+    return [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')].some(folder => normalized(path) === normalized(folder)) || inOwletFolder(this.options.directory, path)
   }
   private protectedThread(thread: AgentThread): boolean {
-    return Boolean(thread.kind && thread.kind !== 'project' || this.owningSnapshot(thread.hostId ?? this.hostId())?.projects.some(project => project.id === thread.projectId && this.reservedProject(project.path)))
+    return Boolean(thread.kind && thread.kind !== 'project' || thread.owlet || this.owningSnapshot(thread.hostId ?? this.hostId())?.projects.some(project => project.id === thread.projectId && this.reservedProject(project.path)))
   }
   private protect(thread: AgentThread): void {
     if (this.protectedThread(thread)) refuse('RESERVED_THREAD', 'This thread has a special job and cannot be directed by Watcher.')

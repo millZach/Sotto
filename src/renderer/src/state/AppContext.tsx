@@ -52,7 +52,8 @@ export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
 /** `watcher` is Watcher's room, reachable only while the Watcher gate is on. */
 /** 3D models are a Settings page now (ADR-0141, November 16, 2026), not a navigation of their own. */
-export type AppNavigation = 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+/** `owlets` is the Owlets page (ADR-0210), reachable only while its Owl feature is on. */
+export type AppNavigation = 'home' | 'usage' | 'watcher' | 'threads' | 'owlets' | 'memory' | 'settings' | 'help'
 
 /** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */
 export interface SettingsRequest {

@@ -48,7 +48,8 @@ export function isWatcherWorkActive(thread: AgentThread): boolean {
 /** The same projection can serve a roster and a sidebar without changing either reader's marks. */
 export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
   observations: ReadonlyMap<string, WatcherObservation> = new Map()): WatcherOverviewRow[] {
-  return state.host.threads.filter(thread => thread.kind !== 'watcher' && thread.kind !== 'watcher-history').map(thread => {
+  // Owlets are kept apart from Watcher (ADR-0210): it neither sees nor steers them.
+  return state.host.threads.filter(thread => thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.owlet === undefined).map(thread => {
     const observation = observations.get(watcherObservationKey(thread))
     const available = thread.clientConnected !== false && hostForThread(state.host, thread).connected && isThreadProviderConnected(state.host, thread)
     const freshness = !available || observation?.fresh === false ? 'stale' : observation ? 'fresh' : 'unknown'

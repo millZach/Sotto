@@ -1,4 +1,5 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
+import type { AgentOwlet } from '../../shared/owlets'
 import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { whyNotRouted } from '../../shared/modelRouter'
@@ -1704,7 +1705,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether an agent in this thread is offered `sotto_watcher`: an ordinary thread this host holds, on a provider that takes Sotto's tools. */
   admitsTellWatcher(threadId: string): boolean {
     const thread = this.threadById(threadId)
-    return thread !== undefined && this.visible(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && threadTakesSottoTools(thread)
+    // An owlet is kept apart from Watcher both ways (ADR-0210), so it has no way to message it either.
+    return thread !== undefined && this.visible(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.owlet === undefined && threadTakesSottoTools(thread)
   }
   /** Whether an agent in this thread is offered `sotto_plugins` (ADR-0205): a thread this host holds, Watcher among them, on a provider that takes Sotto's tools. */
   admitsPluginTools(threadId: string): boolean {
@@ -4993,6 +4995,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.councilJudge ? { councilJudge: true as const } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
       ...(old?.routed ? { routed: old.routed } : {}),
+      ...(old?.owlet ? { owlet: old.owlet } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
       ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? dynamicSessionAfterCompaction(old.dynamicSession) : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
@@ -5654,6 +5657,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return this.workspaceSnapshot()
   }
+  /** An owlet's new name and role (ADR-0210). Its thread takes the name as a hand-given title; the provider is not told. */
+  async setThreadOwlet(threadId: string, owlet: AgentOwlet): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    if (!thread.owlet) throw new Error('This thread is not an owlet. Nothing changed.')
+    if (thread.owlet.name !== owlet.name || thread.owlet.role !== owlet.role || thread.title !== owlet.name) {
+      const touched = this.touched(thread)
+      touched.owlet = { name: owlet.name, role: owlet.role }
+      touched.title = owlet.name; touched.titleSource = 'user'; delete touched.titledFromFirstMessage
+      this.dirty = true; await this.flush(); this.publish()
+    }
+    return this.workspaceSnapshot()
+  }
   async renameThread(threadId: string, title: string, source: ThreadRenameSource = 'user'): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
@@ -6003,6 +6019,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         ...(commandProfile ? { kind: 'watcher' } : {}),
         ...(command.councilJudge ? { councilJudge: true as const } : {}),
+        ...(command.owlet ? { owlet: { ...command.owlet } } : {}),
         titleSource: command.titleSource ?? 'default',
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),

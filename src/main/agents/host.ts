@@ -1,3 +1,4 @@
+import type { AgentOwlet } from '../../shared/owlets'
 import type { BringBackAway, WorktreeMadeFrom } from '../../shared/bringChangesBack'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -70,7 +71,9 @@ export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
   | ({ readonly type: 'create-thread'; readonly dynamic?: true; readonly routed?: true; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true
     /** Main-only Watcher creation metadata, never accepted by the public command schema. */
-    readonly keptSpeed?: true; readonly councilJudge?: true } & AgentThreadOptions)
+    readonly keptSpeed?: true; readonly councilJudge?: true
+    /** An owlet's name and role (ADR-0210): main's own `create-owlet` only, never accepted by the public `create-thread`. */
+    readonly owlet?: AgentOwlet } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string
     /** The caller keeps history from the host's events, so the result's snapshot may leave every thread's messages out (`ThreadReadPurpose`, #368). */
     readonly historyFromEvents?: boolean } & AgentThreadOptions)
@@ -510,6 +513,8 @@ export interface AgentHost extends ProviderHost {
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
   setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
+  /** An owlet's new name and role (ADR-0210): Sotto's own record on the thread. The provider is not told. */
+  setThreadOwlet?(threadId: string, owlet: AgentOwlet): Promise<AgentHostSnapshot>
   /** Model routing on or off for a thread (ADR-0207): Sotto's own mark, which its next send reads. */
   setThreadRouted?(threadId: string, routed: boolean): Promise<AgentHostSnapshot>
   /**

@@ -89,7 +89,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null ? 'threads' : app.navigation
-  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
+  const rooms = appRooms({ watcher: useWatcherEnabled(), owlets: useOwlFeature('owlets'), dictation: useDictationOn() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   const { t } = useLingui()
   if (rooms.length < 2) return null
@@ -313,6 +313,8 @@ export interface SidebarFrameProps {
    * so it covers no row; on the collapsed rail it stands beside the rail's foot.
    */
   readonly toast?: ReactNode
+  /** Add project in the top row; false where the page makes its own folders, as the Owlets page does (ADR-0210). */
+  readonly projectActions?: boolean
 }
 
 /**
@@ -320,7 +322,7 @@ export interface SidebarFrameProps {
  * list, and the foot. The top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
  * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
-export function SidebarFrame({ state, command, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title, children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch, toast }: SidebarFrameProps): ReactNode {
+export function SidebarFrame({ state, command, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title, children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch, toast, projectActions = true }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
   const { t } = useLingui()
   const heading = title === undefined ? t`Threads` : title
@@ -411,7 +413,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {sky ? <OwlSky /> : null}
     <SidebarTop platform={platform ?? app?.platform}>
       {heading === null ? null : <h1 className="tt-visually-hidden">{heading}</h1>}
-      <Button variant="ghost" iconOnly data-setup="add-project" aria-label={t`Add project`} title={t`Add project`} disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
+      {projectActions ? <Button variant="ghost" iconOnly data-setup="add-project" aria-label={t`Add project`} title={t`Add project`} disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button> : null}
       <Button variant="ghost" className="thread-nav__new" data-tour="sidebar-new" data-setup="new-thread" aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} aria-hidden="true" /><span aria-hidden="true">{newLabel}</span></Button>
       <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label={t`Collapse sidebar`} title={chordTitle(t`Collapse sidebar`)}
         aria-keyshortcuts={chord?.label.keys} onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>

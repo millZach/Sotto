@@ -273,6 +273,7 @@ describe('main-window theme tokens', () => {
     const owned = [
       'src/renderer/src/styles/seeThrough.css',
       'src/renderer/src/features/settings/dynamicThreads.css',
+      'src/renderer/src/features/owlets/owlets.css',
       'src/renderer/src/features/productEvents/productEvents.css',
       'src/renderer/src/features/omarchy/omarchySetup.css',
       'src/renderer/src/features/setup/setupWalk.css',

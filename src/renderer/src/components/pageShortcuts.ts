@@ -8,8 +8,8 @@ import { useDictationOn } from '../state/dictationFeature'
 import { useOwlFeature } from '../state/owlFeature'
 import { useWatcherEnabled } from '../state/watcherFeature'
 
-/** The rooms the switch flips between; Watcher's only while its gate is on. */
-export type AppRoom = 'dictate' | 'watcher' | 'threads'
+/** The rooms the switch flips between; Watcher's and Owlets' only while their gates are on. */
+export type AppRoom = 'dictate' | 'watcher' | 'threads' | 'owlets'
 
 /**
  * The room a switch press opened, so the switch in the page that opens can take focus back: each page draws its
