@@ -4,10 +4,17 @@ import type { AntigravityRuntimeMode } from './antigravityModels'
 import { permissionValue, questionValues } from './nativeRequests'
 
 /**
- * What Antigravity asks, as Sotto shows it and answers it (the research note, "Permissions"). Everything arrives as
- * `session/request_permission`. A request whose tool call ID starts `interaction_` is `agy`'s own fixed-choice question,
- * answered with the chosen option's ID, never an approval. Every other request is a permission, allowed once or rejected.
- * Sotto never answers `allow_always`, which would save a rule in Sotto's Antigravity folder for every later thread.
+ * What Antigravity asks, as Sotto shows it and answers it (the research note, "Permissions"). A permission arrives as
+ * `session/request_permission`, allowed once or rejected; Sotto never answers `allow_always`, which would save a rule in
+ * Sotto's Antigravity folder for every later thread. A request whose tool call ID starts `interaction_` is a fixed-choice
+ * question as T3 Code reads one, answered with the chosen option's ID, never an approval.
+ *
+ * `agy`'s own `ask_question` tool asks through ACP's `elicitation/create`, which 1.5.14 sends only to a client that
+ * offers `elicitation.form`, and otherwise writes the question into its reply as text (parity slice 4, probed November
+ * 21, 2026). Its form holds one field per question, `q1`, `q2` and on: a string with `oneOf` choices for one answer, an
+ * array whose `items.anyOf` are the choices for several, and beside each an optional `q1_other` for the user's own words.
+ * Each becomes one question on the card, its own words as the question's free text. A form of any other shape is refused,
+ * and `agy` asks in text instead.
  *
  * A thread on Allow edits or Full access has its requests answered by Sotto by that mode, as T3 Code answers them
  * (`antigravityAutoAnswer`; Zach's choice, November 20, 2026, recorded in the ADR as an amendment to ADR-0004): edits on
@@ -15,6 +22,7 @@ import { permissionValue, questionValues } from './nativeRequests'
  */
 
 export const ANTIGRAVITY_PERMISSION = 'session/request_permission'
+export const ANTIGRAVITY_QUESTION = 'elicitation/create'
 const TEXT_LIMIT = 20_000
 const QUESTION_PREFIX = 'interaction_'
 
@@ -27,13 +35,28 @@ const permissionSchema = z.object({
 })
 export type AntigravityPermission = z.infer<typeof permissionSchema>
 
+const choiceSchema = z.object({ const: z.string().min(1).max(512), title: z.string().max(TEXT_LIMIT) })
+const choices = z.array(choiceSchema).min(1).max(64)
+const oneSchema = z.object({ type: z.literal('string'), title: z.string().max(TEXT_LIMIT).optional(), oneOf: choices })
+const severalSchema = z.object({ type: z.literal('array'), title: z.string().max(TEXT_LIMIT).optional(), items: z.object({ anyOf: choices }) })
+const wordsSchema = z.object({ type: z.literal('string'), title: z.string().max(TEXT_LIMIT).optional(), description: z.string().max(TEXT_LIMIT).optional() })
+const formSchema = z.object({
+  sessionId: z.string().min(1), toolCallId: z.string().min(1).max(512).optional(), mode: z.literal('form'), message: z.string().max(TEXT_LIMIT).optional(),
+  requestedSchema: z.object({ type: z.literal('object'), properties: z.record(z.string().min(1).max(64), z.unknown()), required: z.array(z.string()).optional() }),
+})
+/** One of `agy`'s questions: its field, whether it takes several choices, and its field for the user's own words. */
+interface AntigravityFormQuestion { readonly key: string; readonly several: boolean; readonly other?: string }
+
 export interface AntigravityPending {
   readonly wireId: string | number
   readonly threadId: string
   readonly kind: 'permission' | 'question'
   readonly toolCallId: string
   readonly request: AgentRequest
-  readonly permission: AntigravityPermission
+  /** A permission, or a question as T3 reads one; absent for `agy`'s own form. */
+  readonly permission?: AntigravityPermission
+  /** `agy`'s own form (`elicitation/create`): its questions, answered with `accept` and their fields, or declined. */
+  readonly form?: readonly AntigravityFormQuestion[]
   answering?: boolean
 }
 
@@ -64,8 +87,36 @@ const contentText = (content: readonly unknown[] | null | undefined): string[] =
   return part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
 })
 
+/** `agy`'s form as one card, or undefined for a form of another shape, which Sotto refuses so that `agy` asks in text. */
+function antigravityForm(wireId: string | number, params: unknown, threadId: string): AntigravityPending | undefined {
+  const parsed = formSchema.safeParse(params)
+  if (!parsed.success) return undefined
+  const properties = parsed.data.requestedSchema.properties, keys = Object.keys(properties)
+  const form: AntigravityFormQuestion[] = [], questions: NonNullable<AgentRequest['questions']> = []
+  for (const key of keys) {
+    if (/^q\d+_other$/u.test(key)) { if (!keys.includes(key.slice(0, -'_other'.length)) || !wordsSchema.safeParse(properties[key]).success) return undefined; continue }
+    if (!/^q\d+$/u.test(key)) return undefined
+    const one = oneSchema.safeParse(properties[key]), several = one.success ? undefined : severalSchema.safeParse(properties[key])
+    const field = one.success ? { title: one.data.title, choices: one.data.oneOf } : several?.success ? { title: several.data.title, choices: several.data.items.anyOf } : undefined
+    if (!field) return undefined
+    const ids = new Set(field.choices.map(choice => choice.const))
+    if (ids.size !== field.choices.length) return undefined
+    const other = keys.includes(`${key}_other`) ? `${key}_other` : undefined
+    form.push({ key, several: !one.success, ...(other ? { other } : {}) })
+    questions.push({ id: key, question: bounded(field.title?.trim() || 'Choose an option.'),
+      options: field.choices.map(choice => ({ id: choice.const, label: bounded(choice.title.trim() || choice.const, 512) })),
+      multiSelect: !one.success, allowFreeText: other !== undefined, required: true })
+  }
+  if (!questions.length || questions.length > 20) return undefined
+  const text = questions.length === 1 ? questions[0]!.question : bounded(parsed.data.message?.trim() || 'Antigravity has questions.')
+  return { wireId, threadId, kind: 'question', toolCallId: parsed.data.toolCallId ?? '', form, request: { id: `antigravity-request-${JSON.stringify(wireId)}`,
+    kind: 'question', text, options: questions.length === 1 ? questions[0]!.options : [], questions, skippable: true,
+    ...(parsed.data.toolCallId ? { context: { toolCallId: parsed.data.toolCallId } } : {}) } }
+}
+
 /** One request `agy` sent, as Sotto shows it, or undefined for one Sotto does not read. The Sotto ID is the adapter's to give. */
 export function antigravityPending(wireId: string | number, method: string, params: unknown, threadId: string): AntigravityPending | undefined {
+  if (method === ANTIGRAVITY_QUESTION) return antigravityForm(wireId, params, threadId)
   if (method !== ANTIGRAVITY_PERMISSION) return undefined
   const parsed = permissionSchema.safeParse(params)
   if (!parsed.success) return undefined
@@ -104,7 +155,7 @@ const EDIT_KINDS = new Set(['edit', 'delete', 'move'])
  * user, since `agy`'s Auto has already reviewed what it asks about. A question is never answered for the user.
  */
 export function antigravityAutoAnswer(mode: AntigravityRuntimeMode, pending: AntigravityPending): string | undefined {
-  if (pending.kind !== 'permission') return undefined
+  if (pending.kind !== 'permission' || !pending.permission) return undefined
   const once = pending.permission.options.find(option => option.kind === 'allow_once' && option.optionId.trim())
   if (!once) return undefined
   if (mode === 'full-access') return once.optionId
@@ -112,8 +163,13 @@ export function antigravityAutoAnswer(mode: AntigravityRuntimeMode, pending: Ant
   return undefined
 }
 
-/** The answer to send for the user's reply: a permission allowed once or rejected, a question with its one chosen option. */
-export function antigravityAnswer(pending: AntigravityPending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string): unknown {
+/**
+ * The answer to send for the user's reply: a permission allowed once or rejected, a question with its one chosen option,
+ * or `agy`'s form with each question's choices and words, or declined when the user skipped it.
+ */
+export function antigravityAnswer(pending: AntigravityPending, answer: string, approved?: boolean, questionAnswers?: AgentQuestionAnswers, permissionChoice?: string, skipped?: boolean): unknown {
+  if (pending.form) return formAnswer(pending, pending.form, answer, questionAnswers, skipped)
+  if (!pending.permission) throw new Error('That Antigravity request is no longer waiting.')
   const options = pending.permission.options
   if (pending.kind === 'permission') {
     if (permissionChoice) return { outcome: { outcome: 'selected', optionId: permissionValue(pending.request, permissionChoice, approved) } }
@@ -136,5 +192,28 @@ export function antigravityAnswer(pending: AntigravityPending, answer: string, a
   return { outcome: { outcome: 'selected', optionId: chosen[0] } }
 }
 
+/** `agy`'s form answered: `accept` with each question's chosen option IDs and words, or `decline` for a skipped card. */
+function formAnswer(pending: AntigravityPending, form: readonly AntigravityFormQuestion[], answer: string, questionAnswers?: AgentQuestionAnswers, skipped?: boolean): unknown {
+  if (skipped) return { action: 'decline' }
+  let supplied = questionAnswers
+  const only = pending.request.questions?.length === 1 ? pending.request.questions[0] : undefined
+  if (!supplied && only) {
+    // Words alone, as a phone or a thread answers: one of its options by name, else its own words where it takes them.
+    const words = answer.trim(), match = only.options.filter(option => option.label.toLowerCase() === words.toLowerCase() || option.id === words)
+    if (match.length === 1) supplied = { [only.id]: { optionIds: [match[0]!.id] } }
+    else if (words && only.allowFreeText) supplied = { [only.id]: { optionIds: [], text: words } }
+  }
+  if (!supplied) throw new Error('Answer each of Antigravity’s questions.')
+  questionValues(pending.request, supplied)
+  const content: Record<string, string | string[]> = {}
+  for (const question of form) {
+    const given = supplied[question.key]
+    if (!given) continue
+    if (given.optionIds.length) content[question.key] = question.several ? [...given.optionIds] : given.optionIds[0]!
+    if (question.other && given.text?.trim()) content[question.other] = given.text.trim()
+  }
+  return { action: 'accept', content }
+}
+
 /** What a request is answered when the user did not answer it: the thread stopped, or Sotto disconnected. It grants nothing. */
-export function antigravityDecline(): unknown { return { outcome: { outcome: 'cancelled' } } }
+export function antigravityDecline(pending?: AntigravityPending): unknown { return pending?.form ? { action: 'cancel' } : { outcome: { outcome: 'cancelled' } } }

@@ -414,7 +414,7 @@ export class AntigravityAcpHost implements ProviderHost {
     this.connections.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.log.release(id); this.reaper.forget(id)
     for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) {
       this.pending.delete(requestId)
-      if (!pending.answering) void pending.connection.rpc.reply(pending.wireId, antigravityDecline()).catch(() => undefined)
+      if (!pending.answering) void pending.connection.rpc.reply(pending.wireId, antigravityDecline(pending)).catch(() => undefined)
     }
     const thread = this.threads.get(id)
     if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason; this.changed(id) }
@@ -598,9 +598,12 @@ export class AntigravityAcpHost implements ProviderHost {
         ...['', '-wal', '-shm', '-journal'].map(suffix => rm(join(this.folders.appData, 'conversations', `${safe}.db${suffix}`), { force: true }))] : []),
     ].map(work => work.catch(() => undefined)))
   }
-  /** ACP `initialize`: no file or terminal capability, Sotto's name, and the start's own deadline, since `agy` unpacks itself first. */
+  /**
+   * ACP `initialize`: no file or terminal capability, forms for `agy`'s own questions (`antigravityRequests.ts`), Sotto's
+   * name, and the start's own deadline, since `agy` unpacks itself first.
+   */
   private sendInitialize(rpc: AntigravityRpc, read: (value: unknown) => void): Promise<void> {
-    return rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+    return rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, elicitation: { form: {} } },
       clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }, read, false, this.options.startTimeoutMs ?? 90_000)
   }
   /** One `agy acp` of its own, for a sign-in or a sign-out, in a scratch folder: initialized, then handed to `work`, then closed. */
@@ -809,7 +812,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!frame.method || frame.id === undefined) return
     if (this.connections.get(id) !== connection) { connection.rpc.refuse(frame.id); return }
     this.taken(id)
-    if (frame.method === 'session/request_permission' && alias.antigravitySessionId && params?.sessionId !== alias.antigravitySessionId) { connection.rpc.refuse(frame.id); return }
+    if ((frame.method === 'session/request_permission' || frame.method === 'elicitation/create') && alias.antigravitySessionId && params?.sessionId !== alias.antigravitySessionId) { connection.rpc.refuse(frame.id); return }
     const asked = antigravityPending(frame.id, frame.method, frame.params, id)
     if (!asked) {
       connection.rpc.refuse(frame.id)
@@ -824,7 +827,7 @@ export class AntigravityAcpHost implements ProviderHost {
       if (this.connections.get(id) !== connection || connection.closing) return
     }
     const index = this.indexOf(id, alias)
-    if (index.wasAnswered(requestId) || this.pending.size >= 128) { void connection.rpc.reply(frame.id, antigravityDecline()).catch(() => undefined); return }
+    if (index.wasAnswered(requestId) || this.pending.size >= 128) { void connection.rpc.reply(frame.id, antigravityDecline(pending)).catch(() => undefined); return }
     // Allow edits and Full access answer by the thread's mode, as T3 does (the ADR). Watcher's thread never does: its
     // approvals are always the user's (ADR-0073).
     const automatic = connection.watcher ? undefined : antigravityAutoAnswer(alias.runtimeMode, pending)
@@ -1256,7 +1259,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!pending || pending.threadId !== command.threadId) throw new Error('That Antigravity request is no longer waiting.')
     if (profile) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
     if (pending.connection !== connection || pending.answering) return { accepted: false, uncertain: true }
-    const result = antigravityAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
+    const result = antigravityAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice, command.skipped)
     pending.answering = true
     const index = this.indexOf(command.threadId, alias)
     index.answer(pending.request.id)
@@ -1269,7 +1272,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private async interrupt(id: string, alias: Alias, watcherGuard?: () => void): Promise<AgentHostResult> {
     const connection = this.connections.get(id)
     if (!watcherGuard) for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id && !pending.answering) {
-      this.removeRequest(requestId); await pending.connection.rpc.reply(pending.wireId, antigravityDecline()).catch(() => undefined)
+      this.removeRequest(requestId); await pending.connection.rpc.reply(pending.wireId, antigravityDecline(pending)).catch(() => undefined)
     }
     watcherGuard?.()
     if (connection) connection.rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.antigravitySessionId } })
@@ -1363,7 +1366,7 @@ export class AntigravityAcpHost implements ProviderHost {
   disconnect(): void {
     this.generation++; this.reaper.dispose()
     for (const pending of this.pending.values()) if (!pending.answering) {
-      try { pending.connection.rpc.write({ jsonrpc: '2.0', id: pending.wireId, result: antigravityDecline() }) } catch { /* A closed pipe grants nothing. */ }
+      try { pending.connection.rpc.write({ jsonrpc: '2.0', id: pending.wireId, result: antigravityDecline(pending) }) } catch { /* A closed pipe grants nothing. */ }
     }
     this.pending.clear()
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
