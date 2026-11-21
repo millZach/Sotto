@@ -246,6 +246,7 @@ base. Only the main window may send a command, and only it is broadcast to, so t
 
 **The preload still checks what crosses.** The changed records are parsed against the thread schema, as every record of
 a whole reply was, and the base, revision, removals and order structurally (`agentCommandChangedThreadRecordsReceiptSchema`).
+Superseded by the November 20, 2026 amendment below: the answer is checked for its shape, and its catalogs by their schema.
 
 **The page puts the threads back from the broadcast it holds, and moves nothing it holds.** The subscription's
 reassembly (`createThreadReassembly`) reads the reply's changed records against its held records with `peek` and keeps them
@@ -533,3 +534,7 @@ from 73,305 bytes to 1,882. With three threads streaming, from 204,323 to 7,146 
 push as the push before had them fell from 44 to 7 to a desktop and from 41 to 7 to a phone. The window was broadcast the
 same bytes as before, so the desktop's client put back the same state. The host's process used 1,409 to 1,565 ms of CPU
 for the stretch against 1,929 to 2,471 ms (`docs/perf/2026-11-10-socket-kept-parts.md`).
+
+## November 20, 2026 amendment: the preload checks a command's answer for its shape (#2733)
+
+The preload no longer parses a command's answer, a thread's history the window asks for, or a whole read of the state, with their whole schemas. Both are the state channels' own payloads, which already reach the window checked for their shape alone (`trustedState`, `src/preload/index.ts`), and parsing them cost the owner's window about 2 s a minute while they switched threads on November 20: up to 8 ms in Node for one history of 2,000 activity records, much more in the window. An answer and a whole read must still be objects with a `host`, a history one with a `threadId` or null, and each model catalog in an answer is still parsed by `agentModelCatalogRevisionSchema`, so an answer carrying a catalog whole rather than its revision is refused as before (`tests/unit/preload/agentStateForwarding.test.ts`). What a paired host sends is parsed in main, where it arrives (`socketHostService.ts`), before any of it reaches a window.
