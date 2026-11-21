@@ -1081,12 +1081,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     for (const oldest of peer.readAhead.keys()) { if (peer.readAhead.size <= READ_AHEAD_LIMIT) break; peer.readAhead.delete(oldest) }
   }
   /**
-   * Whether an observed thread the client read whole just before is held as it stands, so its whole is not sent again
-   * (#1990): what it would be sent now is what it was answered, byte for byte but for the revision. At the same revision it
+   * Holds an observed thread the client read whole just before as it stands, and says whether it did, so its whole is not
+   * sent again (#1990): what it would be sent now is what it was answered, byte for byte but for the revision. At the same revision it
    * holds it already; at a later one, which the host's own revisions can reach with nothing changed, it is told so by a
    * delta that changes nothing, from the revision it read to this one. Either way the pushes after it follow it.
    */
-  const heldFromRead = (peer: Peer, threadId: string, whole: AgentThreadDetail | null): boolean => {
+  const holdAsRead = (peer: Peer, threadId: string, whole: AgentThreadDetail | null): boolean => {
     const read = peer.readAhead.get(threadId)
     peer.readAhead.delete(threadId)
     if (!read || !whole || whole.revision < read.revision) return false
@@ -1233,7 +1233,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!isAgentThreadDetailDelta(update)) {
       if (peer.sentAhead.has(update) || held !== undefined && update.revision <= held) return
       // The whole an observe publishes goes no second time either to a client that read it just before (#1990).
-      if (peer.opening.has(threadId) && heldFromRead(peer, threadId, update)) return
+      if (peer.opening.has(threadId) && holdAsRead(peer, threadId, update)) return
       sendWhole(peer, threadId, update); return
     }
     if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return
@@ -2046,7 +2046,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           const offered = waiting.get(id)
           const whole = offered ?? service.threadDetail(id)
           if (offered) peer.sentAhead.add(offered)
-          if (!heldFromRead(peer, id, whole)) sendWhole(peer, id, whole)
+          if (!holdAsRead(peer, id, whole)) sendWhole(peer, id, whole)
         }
         await peer.frames.drained()
         return null

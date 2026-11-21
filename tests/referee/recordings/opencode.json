@@ -27,7 +27,7 @@
        "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
        "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress",
        "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies",
-       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words"
+       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "detail-read-held"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -73,7 +73,7 @@
        "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
        "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress",
        "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies",
-       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words"
+       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "detail-read-held"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -119,7 +119,7 @@
        "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
        "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress",
        "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies",
-       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words"
+       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "detail-read-held"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -148,10 +148,10 @@
    "by": "desktop",
    "sent": {
     "accepts": [
-     "client-liveness", "detail-delta", "message-aliases", "client-updates", "client-update-not-listed", "answer-receipts", "usage-history",
-     "usage-muse-opencode", "model-catalog-revision", "host-update", "activity-bodies", "changed-thread-records", "kept-parts",
-     "plugin-meshy-spending", "plugin-elevenlabs-spending", "provider-opencode", "provider-cursor", "provider-deepseek", "provider-pi",
-     "provider-hermes"
+     "client-liveness", "detail-delta", "detail-read-held", "message-aliases", "client-updates", "client-update-not-listed",
+     "answer-receipts", "usage-history", "usage-muse-opencode", "model-catalog-revision", "host-update", "activity-bodies",
+     "changed-thread-records", "kept-parts", "plugin-meshy-spending", "plugin-elevenlabs-spending", "provider-opencode", "provider-cursor",
+     "provider-deepseek", "provider-pi", "provider-hermes"
     ],
     "afterSeq": 9007199254740991,
     "id": "desktop-1",
@@ -180,7 +180,7 @@
          "pull-request-confirmation", "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts",
          "reply-thread-records", "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events",
          "command-changed-thread-records", "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi",
-         "provider-hermes", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+         "provider-hermes", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "detail-read-held"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -750,7 +750,7 @@
          "pull-request-confirmation", "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts",
          "reply-thread-records", "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events",
          "command-changed-thread-records", "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi",
-         "provider-hermes", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+         "provider-hermes", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "detail-read-held"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -1276,7 +1276,7 @@
          "pull-request-confirmation", "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts",
          "reply-thread-records", "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events",
          "command-changed-thread-records", "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi",
-         "provider-hermes", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+         "provider-hermes", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "detail-read-held"
         ],
         "hasMore": false,
         "hostId": "<id:1>",

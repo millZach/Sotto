@@ -83,8 +83,8 @@ async function clickBytes(history: AgentThreadDetail, accepts: readonly string[]
     peer.stream.on('data', (chunk: Buffer) => { bytes += chunk.length })
     const read = await peer.call('read', { op: 'detail', threadId: THREAD })
     await peer.call('observe', { op: 'observe', threadIds: [THREAD] })
-    // A push the observe's publish sends after its answer still belongs to the click.
-    await new Promise(resolve => setTimeout(resolve, 200))
+    // The observe's whole is the first update on its thread's publishing lane, which goes at once, inside the observe and
+    // ahead of its answer on the same socket: by the answer, the click has sent all it sends.
     const copies = [read.result, ...peer.messages.filter(message => message.event === 'detail' && message.threadId === THREAD).map(message => message.detail)]
     return { bytes, wholes: copies.filter(copy => (copy as AgentThreadDetail).messages.length > 0).length }
   } finally { peer.frames.close(); await server.close() }

@@ -144,6 +144,8 @@ export function diffAgentThreadDetail(base: AgentThreadDetail,
 const FEW_RECORDS = 8
 export function applyAgentThreadDetailDelta(base: AgentThreadDetail, delta: AgentThreadDetailDelta): AgentThreadDetail | null {
   if (delta.threadId !== base.threadId || delta.baseRevision !== base.revision) return null
+  // Whether older messages wait in the store is not something a delta says, so it stands as the detail held it (#1990).
+  const kept = base.earlierAvailable === undefined ? {} : { earlierAvailable: base.earlierAvailable }
   const messages = [...base.messages]
   const positions = new Map(messages.map((message, position) => [message.id, position]))
   for (const item of delta.messageDeltas) {
@@ -159,11 +161,11 @@ export function applyAgentThreadDetailDelta(base: AgentThreadDetail, delta: Agen
     else messages[position] = item.message
   }
   if (base.activities === undefined) {
-    return delta.activityDeltas.length > 0 ? null : { threadId: base.threadId, revision: delta.revision, messages }
+    return delta.activityDeltas.length > 0 ? null : { threadId: base.threadId, revision: delta.revision, ...kept, messages }
   }
   // A delta with no record in it keeps the records the detail holds, the same list, when that list is frozen: one a caller
   // could still write into is copied as before, so no detail ever shares a list it does not own.
-  if (delta.activityDeltas.length === 0 && Object.isFrozen(base.activities)) return { threadId: base.threadId, revision: delta.revision, messages, activities: base.activities }
+  if (delta.activityDeltas.length === 0 && Object.isFrozen(base.activities)) return { threadId: base.threadId, revision: delta.revision, ...kept, messages, activities: base.activities }
   // A few records, as a streaming tool's output gives them, are found from the end, where a thread's activity changes:
   // the same places the map below gives them, without reading every record of a long thread into it (#1248).
   if (delta.activityDeltas.length <= FEW_RECORDS) {
@@ -178,7 +180,7 @@ export function applyAgentThreadDetailDelta(base: AgentThreadDetail, delta: Agen
       else if (position >= 0) activities[position] = item.record
       else activities.push(item.record)
     }
-    return { threadId: base.threadId, revision: delta.revision, messages, activities }
+    return { threadId: base.threadId, revision: delta.revision, ...kept, messages, activities }
   }
   // Insertion order is the record order, and re-setting a key keeps its place: an updated record stays
   // where it was and a new one lands at the end, which is how the coordinator keeps activity itself.
@@ -191,7 +193,7 @@ export function applyAgentThreadDetailDelta(base: AgentThreadDetail, delta: Agen
       records.set(item.id, grown(held, item.appendOutput, item.appendText))
     } else records.set(item.record.id, item.record)
   }
-  return { threadId: base.threadId, revision: delta.revision, messages, activities: [...records.values()] }
+  return { threadId: base.threadId, revision: delta.revision, ...kept, messages, activities: [...records.values()] }
 }
 
 /**
