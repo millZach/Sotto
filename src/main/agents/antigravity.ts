@@ -1110,8 +1110,8 @@ export class AntigravityAcpHost implements ProviderHost {
     const superseded = (): boolean => generation !== this.generation || this.turns.get(id) !== turn || serial !== turn.prompts
     void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: blocks }, value => {
       // A steered prompt's answer still carries the tokens its part of the turn spent.
-      const counted = generation === this.generation && this.threads.has(id) && countAntigravityAnswer(this.thread(id), value)
-      if (superseded()) { if (counted) this.emit(); return }
+      const counted = generation === this.generation && this.threads.has(id) && countAntigravityAnswer(this.thread(id), value, !superseded())
+      if (superseded()) { if (counted) this.emit(true); return }
       const stop = promptAnswerSchema.parse(value).stopReason
       this.endTurn(id, stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
         stop === 'refusal' ? 'Antigravity refused this turn, or the account reached its limit. Nothing else was lost.' : undefined)

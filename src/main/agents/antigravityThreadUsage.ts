@@ -29,7 +29,7 @@ export function antigravityAnswerTokens(answer: unknown): UsageTokens | undefine
     ...(cachedReadTokens !== undefined ? { cached: cachedReadTokens } : {}), ...(cachedWriteTokens !== undefined ? { cacheWrite: cachedWriteTokens } : {}) }
 }
 
-const add = (before: UsageTokens | undefined, tokens: UsageTokens): UsageTokens => {
+const addToTotal = (before: UsageTokens | undefined, tokens: UsageTokens): UsageTokens => {
   const sum: UsageTokens = { ...before }
   for (const field of ['input', 'output', 'cached', 'cacheWrite'] as const) {
     if (tokens[field] !== undefined) sum[field] = (before?.[field] ?? 0) + tokens[field]
@@ -37,12 +37,15 @@ const add = (before: UsageTokens | undefined, tokens: UsageTokens): UsageTokens 
   return sum
 }
 
-/** A turn's answer: its tokens become the thread's latest and are added to its total. Whether anything changed. */
-export function countAntigravityAnswer(thread: AgentThread, answer: unknown): boolean {
+/**
+ * A prompt's answer: its tokens are added to the thread's total, and become its latest unless a steer has since sent a
+ * newer prompt, whose answer may already have come. Whether anything changed.
+ */
+export function countAntigravityAnswer(thread: AgentThread, answer: unknown, newest: boolean): boolean {
   const tokens = antigravityAnswerTokens(answer)
   if (!tokens) return false
   const now = new Date().toISOString()
-  thread.usage = { rateVersions: [], partial: true, ...thread.usage, latest: tokens, total: add(thread.usage?.total, tokens), updatedAt: now }
+  thread.usage = { rateVersions: [], partial: true, ...thread.usage, ...(newest ? { latest: tokens } : {}), total: addToTotal(thread.usage?.total, tokens), updatedAt: now }
   return true
 }
 
