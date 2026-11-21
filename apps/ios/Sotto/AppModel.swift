@@ -1845,6 +1845,9 @@ struct RailAsk: Equatable {
         // The Agents journey: the working thread's delegated threads and its provider's agents (ADR-0103).
         let agents = arguments.contains("--ui-agents")
         if agents { addFixtureAgents(to: &threads, laptop: laptop, at: at) }
+        // The Owlets journeys: the laptop makes owlets and keeps four (ADR-0213), one asking to send an email.
+        let owlets = arguments.contains("--ui-owlets")
+        if owlets { addFixtureOwlets(to: &threads, laptop: laptop, at: at) }
         // The working thread's own conversation: a review reply in Markdown and a follow-up, with the agent's steps
         // between them by time, the last one still running.
         let conversation: [[String: Any]] = [
@@ -1898,7 +1901,8 @@ struct RailAsk: Equatable {
             computers.append(SavedComputer(address: "https://fixture.invalid.ts.net", pairing: pairing, reportedName: name))
             let shellObject: [String: Any] = ["hostId": host, "host": ["hostId": host, "name": name,
                 "threads": threads[host] ?? [], "projects": [["id": "sotto", "title": "Sotto", "path": "D:\\Talk to Text Application"],
-                    ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
+                    ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]]
+                    + (owlets && host == laptop ? Self.fixtureOwletProjects : []),
                 "models": settingThreads ? Self.fixtureSettingModels(modes) : [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
                     "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]]
                     // Watcher's box lists another provider Watcher runs on, whose model starts a new Watcher, with an older
@@ -1918,6 +1922,7 @@ struct RailAsk: Equatable {
             // The paste and share journeys: the laptop keeps files, for a thread and for Watcher.
             if arguments.contains("--ui-files") && host == laptop { features += [FileLimits.stagingFeature, WatcherWire.filesFeature] }
             if fixturePictures && host == laptop { features += [Photos.threadMediaFeature] }
+            if owlets && host == laptop { features += [Owlets.feature] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         // The share journey: a link and a PDF wait in the inbox, as the share extension leaves them.
@@ -1972,6 +1977,41 @@ struct RailAsk: Equatable {
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
         if arguments.contains("--ui-feedback-computer-unreadable") { feedback = String(localized: "Recovered the saved computer list.") + " " + Self.pairingWarning(1) }
+    }
+    /// The fixture's owlets (ADR-0213), each in a folder of its own: Tawny asks to send an email, Scops finished while nothing
+    /// showed it, Elf ran yesterday and Barn has never run.
+    private static let fixtureOwletRows: [(id: String, name: String, role: String, provider: String, minutes: Int?)] = [
+        ("owlet-tawny", "Tawny", "Keeps my inbox", "claude", 3),
+        ("owlet-scops", "Scops", "Repo upkeep", "codex", 20),
+        ("owlet-elf", "Elf", "Morning brief", "claude", 1440),
+        ("owlet-barn", "Barn", "Receipts", "codex", nil)
+    ]
+    private static var fixtureOwletProjects: [[String: Any]] {
+        fixtureOwletRows.map { ["id": $0.id + "-folder", "title": $0.name, "path": "C:\\Users\\zach\\AppData\\Roaming\\sotto\\owlets\\" + $0.name] }
+    }
+    private func addFixtureOwlets(to threads: inout [String: [[String: Any]]], laptop: String, at: (Double) -> String) {
+        for owlet in Self.fixtureOwletRows {
+            var row: [String: Any] = ["id": owlet.id, "hostId": laptop, "projectId": owlet.id + "-folder", "title": owlet.name,
+                "providerId": owlet.provider, "modelId": "fixture-model", "status": "idle", "requests": [[String: Any]](),
+                "owlet": ["name": owlet.name, "role": owlet.role], "nativeSessionStarted": owlet.minutes != nil]
+            if let minutes = owlet.minutes { row["summary"] = ["lastMessageAt": at(Double(minutes * 60))] }
+            if owlet.id == "owlet-tawny" {
+                row["requests"] = [["id": "tawny-send", "kind": "permission", "text": "Wants to send an email to Dana Lee: “Thursday works, see you at 2.”",
+                                    "options": [[String: Any]]()]]
+            }
+            if owlet.id == "owlet-scops" { row["finishedUnread"] = true }
+            threads[laptop, default: []].append(row)
+            let messages: [[String: Any]] = owlet.minutes == nil ? [] : owlet.id == "owlet-tawny" ? [
+                ["id": "ask", "role": "user", "text": "Anything from Dana that needs an answer today?", "createdAt": at(Double(6 * 60))],
+                ["id": "found", "role": "assistant", "text": "One: she asks whether Thursday still works. I drafted a short yes and asked to send it.", "createdAt": at(Double(3 * 60))]
+            ] : [
+                ["id": "ask", "role": "user", "text": owlet.id == "owlet-scops" ? "Bump the dev dependencies that have patch releases." : "Write today’s brief.", "createdAt": at(Double((owlet.minutes ?? 0) * 60 + 300))],
+                ["id": "done", "role": "assistant", "text": owlet.id == "owlet-scops" ? "Bumped three dev dependencies. Typecheck and the unit tests pass." : "Today’s brief is in brief.md: two meetings, one review due.", "createdAt": at(Double((owlet.minutes ?? 0) * 60))]
+            ]
+            // Invalid fixed test data should fail loudly in the simulator, never become an empty thread.
+            fixtureDetails[laptop + "/" + owlet.id] = try! JSONDecoder().decode(ThreadDetail.self, from: JSONSerialization.data(withJSONObject:
+                ["threadId": owlet.id, "revision": 1, "messages": messages, "activities": [[String: Any]]()] as [String: Any]))
+        }
     }
     /// A reply going as from a computer: it is on its way for a moment, then the thread's update holds it and the computer's
     /// list confirms it, in the order `--ui-send-order` names (`message-first`, `confirm-first` or `together`), as the two
@@ -2828,6 +2868,18 @@ struct RailAsk: Equatable {
     // MARK: What was said in the threads, for Threads' search
 
     func offersThreadWords(_ hostID: String) -> Bool { live[hostID]?.features.contains(Wire.threadWordsFeature) == true }
+    /// Whether this computer makes owlets now (ADR-0213): its Owl answer for Owlets is on, so it lists `owlets`.
+    func offersOwlets(_ hostID: String) -> Bool { live[hostID]?.features.contains(Owlets.feature) == true }
+    /// The computers an owlet can be made on, in the order they were added.
+    var owletHostIDs: [String] { computers.map(\.hostID).filter(offersOwlets) }
+    /// Whether the Owlets tab shows: a computer makes owlets, or one this iPhone reads still lists one.
+    var owletsShown: Bool { !owletHostIDs.isEmpty || lists.contains { $0.threads.contains { $0.owlet != nil } } }
+    /// The owlets as the Owlets tab lists them.
+    func owletList(query: String = "") -> OwletList { OwletList(lists, query: query) }
+    /// The Owlets tab's badge: the owlets waiting on the user, as its Needs you lists them.
+    var owletsBadge: Int { OwletList(lists).needsYouCount }
+    /// The models an owlet can be made with on this computer: Claude Code's and Codex's that are ready there.
+    func owletModels(_ hostID: String) -> [ThreadModel] { creationModels(hostID).filter { Owlets.providerAllowed($0.providerId) } }
     /// The computers Threads' search asks what was said in their threads: admitted by the strip, reachable, offering the read.
     func threadWordsSources(show: ComputerFilter) -> [String] {
         computers.map(\.hostID).filter { show.admits($0) && online($0) && offersThreadWords($0) }
@@ -4734,8 +4786,8 @@ struct RailAsk: Equatable {
             }
             return
         }
-        // A phone-minted Sotto ID identifies this exact creation even after its receipt expired.
-        if item.kind == "create-thread", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
+        // A phone-minted Sotto ID identifies this exact creation even after its receipt expired; an owlet's too.
+        if item.kind == "create-thread" || item.kind == "create-owlet", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
             try forgetMarker(item.id)
             return
         }
@@ -4885,7 +4937,11 @@ struct RailAsk: Equatable {
         NewThreads.catalogUnion(computers.compactMap { online($0.hostID) ? live[$0.hostID]?.shell?.host : nil })
     }
     func projects(_ hostID: String) -> [Project] {
-        (live[hostID]?.shell?.host.projects ?? []).filter { $0.workspaceSettledAt == nil }
+        guard let host = live[hostID]?.shell?.host else { return [] }
+        // An owlet's folder is its own, so New thread never offers it (ADR-0213); a project another thread works in stays.
+        var owletFolders = Set(host.threads.filter { $0.owlet != nil }.map(\.projectId))
+        owletFolders.subtract(host.threads.filter { $0.owlet == nil }.map(\.projectId))
+        return host.projects.filter { $0.workspaceSettledAt == nil && !owletFolders.contains($0.id) }
     }
     func canBrowseFolders(_ hostID: String) -> Bool { online(hostID) && live[hostID]?.features.contains("host-folders") == true }
     func folders(_ hostID: String, path: JSONValue? = nil) async throws -> FolderResult {
@@ -4993,6 +5049,108 @@ struct RailAsk: Equatable {
             }
             return ref
         } catch { creationFeedback = error.localizedDescription; return nil }
+    }
+    /// A new owlet on its home computer (ADR-0213): the computer makes its folder, the project there and its one thread,
+    /// whose ID this iPhone mints, so a lost acknowledgement is never sent again and the list says whether it was made.
+    func createOwlet(on hostID: String, name: String, role: String, modelID: String, effort: String, permissionID: String) async -> ThreadRef? {
+        #if DEBUG && os(iOS)
+        if isUIFixture {
+            guard let model = owletModels(hostID).first(where: { $0.id == modelID }) else { return nil }
+            let threadID = UUID().uuidString.lowercased()
+            do {
+                _ = try Commands.createOwlet(threadID: threadID, name: name, role: role, model: model, effort: effort,
+                                             permissionID: permissionID, mayAnswer: mayAnswer(hostID))
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                changeFixtureHost(hostID) { host in
+                    // Only this debug simulator fixture changes its records without a computer.
+                    host["threads"] = (host["threads"] as? [[String: Any]] ?? []) + [["id": threadID, "projectId": threadID + "-folder", "title": trimmed,
+                        "providerId": model.providerId ?? "codex", "modelId": model.id, "status": "idle", "requests": [[String: Any]](),
+                        "owlet": ["name": trimmed, "role": role.trimmingCharacters(in: .whitespacesAndNewlines)], "nativeSessionStarted": false]]
+                    host["projects"] = (host["projects"] as? [[String: Any]] ?? []) + [["id": threadID + "-folder", "title": trimmed, "path": "owlets/" + trimmed]]
+                }
+                fixtureDetails[hostID + "/" + threadID] = try JSONDecoder().decode(ThreadDetail.self, from: JSONSerialization.data(withJSONObject: ["threadId": threadID, "revision": 1, "messages": [[String: Any]]()] as [String: Any]))
+                return ThreadRef(hostID: hostID, threadID: threadID)
+            } catch { creationFeedback = error.localizedDescription; return nil }
+        }
+        #endif
+        guard creatingHostID == nil, storageReady, online(hostID), offersOwlets(hostID),
+              !pendingCreations.contains(where: { $0.hostID == hostID }), let computer = computer(hostID),
+              let epoch = generations[hostID] else { return nil }
+        creatingHostID = hostID; creationFeedback = nil
+        defer { creatingHostID = nil }
+        let threadID = UUID().uuidString.lowercased()
+        do {
+            guard let model = owletModels(hostID).first(where: { $0.id == modelID }) else {
+                throw ClientError.rejected(String(localized: "That model is no longer ready on this computer. Choose another.", comment: "Said in New owlet when the chosen model went away"))
+            }
+            let command = try Commands.createOwlet(threadID: threadID, name: name, role: role, model: model, effort: effort,
+                                                   permissionID: permissionID, mayAnswer: mayAnswer(hostID))
+            let marker = PendingOperation(hostID: hostID, clientID: computer.pairing.clientId, threadID: threadID, kind: "create-owlet")
+            try remember(marker)
+            _ = await dispatch(command, operation: marker)
+            let ref = ThreadRef(hostID: hostID, threadID: threadID)
+            guard generations[hostID] == epoch, online(hostID), thread(ref) != nil,
+                  !pending.contains(where: { $0.id == marker.id }) else {
+                creationFeedback = owletResultWords(hostID)
+                return nil
+            }
+            return ref
+        } catch { creationFeedback = error.localizedDescription; return nil }
+    }
+    #if DEBUG && os(iOS)
+    /// Changes one of the fixture's computers' records and shows them, as its computer's update would.
+    private func changeFixtureHost(_ hostID: String, _ change: (inout [String: Any]) -> Void) {
+        guard var root = fixtureShells[hostID], var host = root["host"] as? [String: Any] else { return }
+        change(&host)
+        root["host"] = host
+        guard let next = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: root)) else { return }
+        fixtureShells[hostID] = root
+        update(hostID) { $0.shell = next }
+    }
+    #endif
+    /// What became of an owlet that wasn't made.
+    private func owletResultWords(_ hostID: String) -> String {
+        if pendingCreations.contains(where: { $0.hostID == hostID }) {
+            return (creationFeedback.map { $0 + " " } ?? "") + String(localized: "Sotto did not hear back from \(name(hostID)), so the owlet may or may not have been made. Nothing was resent. Check the list before trying again.", comment: "%@ is the computer's name")
+        }
+        return creationFeedback ?? feedback ?? String(localized: "The owlet was not made. Try again.")
+    }
+    /// An owlet's new name, role or both. Its folder keeps the name it was made with. Nil when its computer took it, or
+    /// what to tell the user.
+    func setOwlet(_ ref: ThreadRef, name: String?, role: String?) async -> String? {
+        #if DEBUG && os(iOS)
+        if isUIFixture {
+            guard (try? Commands.setOwlet(threadID: ref.threadID, name: name, role: role)) != nil else {
+                return String(localized: "Use letters, numbers, spaces and hyphens in the name. Nothing was changed.")
+            }
+            changeFixtureHost(ref.hostID) { host in
+                guard var rows = host["threads"] as? [[String: Any]], let index = rows.firstIndex(where: { ($0["id"] as? String) == ref.threadID }),
+                      var owlet = rows[index]["owlet"] as? [String: Any] else { return }
+                if let name { owlet["name"] = name.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if let role { owlet["role"] = role.trimmingCharacters(in: .whitespacesAndNewlines) }
+                rows[index]["owlet"] = owlet
+                host["threads"] = rows
+            }
+            return nil
+        }
+        #endif
+        guard online(ref.hostID), offersOwlets(ref.hostID), let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else {
+            return String(localized: "This owlet’s computer can’t be reached. Nothing was changed.")
+        }
+        do {
+            let command = try Commands.setOwlet(threadID: ref.threadID, name: name, role: role)
+            let result = try await connection.callReceived(["op": .string("command"), "command": command], as: Shell.self, id: UUID().uuidString.lowercased())
+            guard generations[ref.hostID] == epoch else { return String(localized: "Sotto did not hear back, so the owlet may or may not have changed. Check it before trying again.") }
+            try applyShell(result.value, from: ref.hostID, sequence: result.sequence, reconcileAnswers: false)
+            // A computer that makes owlets answers set-owlet with its own refusal or none, so a refusal said twice is still one.
+            return result.value.error
+        } catch let refusal as HostRefusal {
+            return refusal.localizedDescription
+        } catch ClientError.invalidRequest {
+            return String(localized: "Use letters, numbers, spaces and hyphens in the name. Nothing was changed.")
+        } catch {
+            return String(localized: "Sotto did not hear back, so the owlet may or may not have changed. Check it before trying again.")
+        }
     }
     /// What became of a project's registration (`project`) or a thread's creation that didn't finish.
     private func creationResultWords(_ hostID: String, project: Bool) -> String {

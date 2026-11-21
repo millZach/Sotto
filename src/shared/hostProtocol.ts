@@ -236,7 +236,9 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * message, for the message scrubber (ADR-0109). Only a desktop is offered it. A desktop whose host does not list it marks
  * the messages the window holds, and sends no `throughMessageId`.
  * `owlets`: the host makes and changes owlets (ADR-0213), taking `create-owlet` and `set-owlet`: its Owl answer for Owlets is
- * on. A desktop offers a host as an owlet's home computer only when it lists it.
+ * on. A desktop offers a host as an owlet's home computer only when it lists it. A phone whose hello accepts it is sent the
+ * owlets' threads and projects for its Owlets tab; a phone that does not is sent none of them, in its shell, its thread
+ * records or a search.
  * `thread-words`: the host answers `thread-words` with the threads whose messages hold a search's words, from its thread
  * store, for Search threads (Zach's picks of November 19, 2026): the user's messages and the agents' replies, wake-ups
  * left out, each with a quote of its newest match. For a phone whose hello accepts it, its `settled-threads` search

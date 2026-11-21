@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Owlets on the iPhone, prototype</title>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not wired to anything. Every press changes this page only.
+
+  Owlets on the iPhone (ADR-0213, the first slice's second part). The list rows (R2), the Needs you card, the thread a
+  press opens, the + for a new owlet and the setup sheet follow the sidebar prototype Zach picked R2 from
+  (docs/prototypes/owlets-sidebar/) and the desktop as it merged in #2742. Three choices the docs don't settle, each
+  with variants on this one page:
+
+    ?q=tabs  Where the Owlets tab sits.             A after Threads · B after Watcher
+    ?q=edit  Where Edit owlet lives in its thread.  A in the ••• menu · B a pencil in the bar · C an About sheet
+    ?q=duo   The unfolded Duo held sideways, an owlet open: what the sidebar beside it lists.
+                                                    A the owlets · B the threads, as today · C no sidebar on Owlets
+
+  &v=A|B|C picks the variant, &theme=light for light, &small=1 for a small iPhone (375 wide). The bar at the bottom
+  does the same.
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('figtree-latin-ext.woff2') format('woff2'); unicode-range: U+0100-02BA, U+1E00-1EFF; }
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.16 0.004 75); --sidebar: oklch(0.14 0.004 75); --card: oklch(0.185 0.008 265); --overlay: oklch(0.215 0.008 265);
+  --bubble: oklch(0.215 0.006 75); --text: oklch(0.985 0.005 280); --muted: oklch(0.72 0.014 265); --hairline: oklch(0.305 0.02 265);
+  --accent: oklch(0.714 0.104 183); --accent-text: oklch(0.83 0.08 183); --on-accent: oklch(0.16 0.012 190); --accent-surface: oklch(0.265 0.035 188);
+  --warning: oklch(0.829 0.171 81); --scrim: rgb(0 0 0 / 55%); --fill-soft: color-mix(in srgb, oklch(0.985 0.005 280) 8%, transparent);
+  --desk: oklch(0.1 0.004 75);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85); --sidebar: oklch(0.955 0.008 85); --card: oklch(0.95 0.006 85); --overlay: oklch(0.99 0.003 85);
+  --bubble: oklch(0.93 0.012 85); --text: oklch(0.235 0.014 75); --muted: oklch(0.45 0.014 75); --hairline: oklch(0.86 0.012 80);
+  --accent: oklch(0.53 0.095 186); --accent-text: oklch(0.4 0.08 186); --on-accent: oklch(0.99 0.003 85); --accent-surface: oklch(0.9 0.035 186);
+  --warning: oklch(0.6 0.15 60); --scrim: rgb(0 0 0 / 30%); --fill-soft: color-mix(in srgb, oklch(0.235 0.014 75) 7%, transparent);
+  --desk: oklch(0.88 0.006 85);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--desk); color: var(--text); font: 16px/1.4 'Figtree', system-ui, sans-serif; }
+body { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 12px 170px; }
+.ask { max-width: 760px; text-align: center; color: var(--muted); font-size: 15px; margin: 0; }
+.ask strong { color: var(--text); }
+.stage { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+.shot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.shot > span { color: var(--muted); font-size: 13px; }
+.phone { position: relative; width: 390px; height: 844px; border-radius: 46px; overflow: hidden; background: var(--canvas); border: 1px solid var(--hairline); box-shadow: 0 20px 60px rgb(0 0 0 / 40%); display: flex; flex-direction: column; }
+.phone[data-small] { width: 375px; height: 667px; border-radius: 24px; }
+.status { height: 50px; flex: none; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 30px 6px; font-size: 15px; font-weight: 600; }
+.phone[data-small] .status { height: 22px; padding: 0 12px 2px; font-size: 12px; }
+.page { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.head { display: flex; align-items: center; gap: 10px; padding: 6px 20px 10px; }
+.head h1 { margin: 0; font-size: 30px; font-weight: 700; flex: 1; }
+.round { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--hairline); background: var(--fill-soft); display: grid; place-items: center; color: var(--text); }
+.search { margin: 0 16px 10px; height: 40px; border-radius: 20px; background: var(--card); color: var(--muted); display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 16px; }
+.needs { margin: 0 16px 12px; padding: 10px 14px; border-radius: 16px; background: var(--card); border: 1px solid var(--hairline); }
+.needs h2 { margin: 0 0 6px; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.needs h2 b { background: var(--warning); color: oklch(0.16 0.004 75); border-radius: 9px; font-size: 12px; padding: 0 6px; }
+.needs p { margin: 0; font-size: 15px; color: var(--muted); }
+.section { padding: 4px 22px 4px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+.row { display: grid; grid-template-columns: 34px 1fr auto; column-gap: 12px; row-gap: 2px; padding: 10px 20px 10px 18px; align-items: center; }
+.row[data-on] { background: var(--accent-surface); }
+.row .mark { grid-row: span 2; color: var(--text); }
+.row .name { font-weight: 600; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .name i { font-style: normal; font-weight: 400; color: var(--muted); font-size: 15px; margin-left: 6px; }
+.row .end { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.row .end .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.row .end.need { color: var(--warning); font-weight: 600; }
+.row .last { grid-column: 2 / 4; font-size: 15px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tabs { flex: none; display: flex; padding: 6px 8px 26px; border-top: 1px solid var(--hairline); background: var(--canvas); }
+.phone[data-small] .tabs { padding-bottom: 6px; }
+.tab { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; font-weight: 500; color: var(--muted); position: relative; }
+.tab[data-on] { color: var(--accent-text); }
+.tab b { position: absolute; top: -4px; left: calc(50% + 6px); background: var(--warning); color: oklch(0.16 0.004 75); font-size: 11px; border-radius: 9px; padding: 0 5px; }
+.tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tab[data-new]::after { content: ''; position: absolute; inset: -4px 2px; border: 1.5px dashed var(--accent); border-radius: 10px; }
+.bar { display: flex; align-items: center; gap: 6px; padding: 4px 10px 8px; border-bottom: 1px solid var(--hairline); }
+.bar .title { flex: 1; text-align: center; min-width: 0; }
+.bar .title strong { display: block; font-size: 16px; }
+.bar .title span { display: block; font-size: 12px; color: var(--muted); }
+.ib { width: 44px; height: 44px; display: grid; place-items: center; color: var(--text); position: relative; }
+.ib .round { width: 32px; height: 32px; }
+.ib[data-hl] .round { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+.facts { margin: 8px 16px 0; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.facts .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+.chat { flex: 1; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+.you { align-self: flex-end; max-width: 78%; background: var(--bubble); border-radius: 18px; padding: 9px 14px; font-size: 16px; }
+.agent { font-size: 16px; line-height: 1.45; }
+.card { border: 1px solid var(--hairline); background: var(--card); border-radius: 16px; padding: 12px 14px; }
+.card h3 { margin: 0 0 4px; font-size: 16px; }
+.card p { margin: 0 0 10px; font-size: 15px; color: var(--muted); }
+.btns { display: flex; gap: 8px; }
+.btn { flex: 1; min-height: 40px; border-radius: 10px; border: 1px solid var(--hairline); background: var(--fill-soft); color: var(--text); font: inherit; font-size: 15px; font-weight: 600; }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.composer { flex: none; margin: 0 12px 30px; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 16px; border-radius: 24px; background: var(--card); border: 1px solid var(--hairline); color: var(--muted); }
+.composer > span:first-child { flex: 1; }
+.composer .send { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); }
+.scrim { position: absolute; inset: 0; background: var(--scrim); }
+.menu { position: absolute; top: 96px; right: 14px; width: 250px; background: var(--overlay); border-radius: 14px; border: 1px solid var(--hairline); box-shadow: 0 18px 50px rgb(0 0 0 / 45%); overflow: hidden; }
+.menu div { padding: 11px 16px; border-bottom: 1px solid var(--hairline); font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+.menu div small { display: block; color: var(--muted); font-size: 13px; }
+.menu div:last-child { border-bottom: 0; }
+.menu div[data-hl] { background: var(--accent-surface); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--overlay); border-radius: 18px 18px 0 0; padding: 8px 0 30px; box-shadow: 0 -10px 40px rgb(0 0 0 / 35%); }
+.grab { width: 36px; height: 5px; border-radius: 3px; background: var(--hairline); margin: 0 auto 6px; }
+.sheet .shead { display: flex; align-items: center; gap: 10px; padding: 6px 18px 10px; }
+.sheet .shead h2 { margin: 0; flex: 1; font-size: 18px; }
+.sheet dl { margin: 0; padding: 0 18px; display: grid; grid-template-columns: 96px 1fr; gap: 10px 12px; font-size: 15px; }
+.sheet dt { color: var(--muted); }
+.sheet dd { margin: 0; }
+.sheet .foot { padding: 16px 18px 0; display: flex; }
+.duo { position: relative; width: 1100px; height: 700px; border-radius: 34px; overflow: hidden; background: var(--canvas); border: 1px solid var(--hairline); box-shadow: 0 20px 60px rgb(0 0 0 / 40%); display: flex; }
+.duo .side { width: 330px; flex: none; background: var(--sidebar); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; padding-top: 18px; }
+.duo .side h2 { margin: 0; padding: 4px 18px 10px; font-size: 22px; }
+.duo .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.duo .rail { width: 78px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 0 18px; }
+.duo .rail .tpill { margin-top: auto; background: var(--card); border: 1px solid var(--hairline); border-radius: 34px; padding: 8px 5px 5px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.duo .rail .tname2 { font-size: 11px; font-weight: 600; max-width: 56px; overflow: hidden; text-overflow: ellipsis; }
+.duo .rail .pill { background: var(--card); border: 1px solid var(--hairline); border-radius: 40px; padding: 5px; display: flex; flex-direction: column; gap: 2px; }
+.duo .rail .tile { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); position: relative; }
+.duo .rail .tile[data-on] { background: var(--accent-surface); color: var(--accent-text); }
+.duo .rail .tile[data-new]::after { content: ''; position: absolute; inset: 1px; border: 1.5px dashed var(--accent); border-radius: 50%; }
+.duo .composer { margin-bottom: 18px; }
+.duo .tname { font-size: 15px; color: var(--muted); padding: 2px 18px 10px; }
+.note { max-width: 760px; color: var(--muted); font-size: 14px; text-align: center; margin: 0; }
+.switch { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; background: var(--overlay); border: 1px solid var(--hairline); border-radius: 18px; padding: 8px 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 40%); max-width: calc(100vw - 20px); }
+.switch a { color: var(--text); text-decoration: none; padding: 6px 10px; border-radius: 10px; font-size: 14px; border: 1px solid transparent; }
+.switch a[aria-current] { background: var(--accent); color: var(--on-accent); }
+.switch .sep { width: 1px; height: 22px; background: var(--hairline); margin: 0 4px; }
+@media (max-width: 820px) { .duo { transform: scale(calc((100vw - 24px) / 1100px)); transform-origin: top center; margin-bottom: calc(700px * ((100vw - 24px) / 1100px) - 700px); } }
+</style>
+</head>
+<body>
+<p class="ask" id="ask"></p>
+<p class="note" id="note"></p>
+<div class="stage" id="stage"></div>
+<nav class="switch" id="switch" aria-label="Prototype controls"></nav>
+<script>
+const P = new URLSearchParams(location.search);
+const Q = ['tabs', 'edit', 'duo'].includes(P.get('q')) ? P.get('q') : 'tabs';
+const VARIANTS = { tabs: ['A', 'B'], edit: ['A', 'B', 'C'], duo: ['A', 'B', 'C'] };
+const V = VARIANTS[Q].includes(P.get('v')) ? P.get('v') : 'A';
+const LIGHT = P.get('theme') === 'light';
+const SMALL = P.get('small') === '1';
+if (LIGHT) document.documentElement.dataset.theme = 'light';
+
+const BODY = 'M5 10.4C5 6.4 7.3 3.6 9.9 3.6c1 0 1.7.6 2.1 1.3.4-.7 1.1-1.3 2.1-1.3 2.6 0 4.9 2.8 4.9 6.8v4.4c0 3.7-3.1 6.1-7 6.1s-7-2.4-7-6.1z';
+const rings = '<circle cx="9.3" cy="10.4" r="2.5"/><circle cx="14.7" cy="10.4" r="2.5"/>';
+const pupils = (dx = 0, r = 1) => `<circle cx="${9.3 + dx}" cy="10.4" r="${r}" fill="currentColor" stroke="none"/><circle cx="${14.7 + dx}" cy="10.4" r="${r}" fill="currentColor" stroke="none"/>`;
+const FACES = [rings + pupils(), rings + pupils(0.8, 0.9), rings + pupils(0, 1.6), '<path d="M7 11.2c.6-1.2 1.4-1.8 2.3-1.8s1.7.6 2.3 1.8M12.4 11.2c.6-1.2 1.4-1.8 2.3-1.8s1.7.6 2.3 1.8"/>', rings + '<path d="M6.8 10.4h5M12.2 10.4h5"/>'];
+const CHESTS = ['', '<path d="M10.5 17.6h.01M12 18.3h.01M13.5 17.6h.01" stroke-width="1.9"/>', '<path d="M10.6 17.4l1.4.9 1.4-.9"/>'];
+const mark = (face, chest, size = 30) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${BODY}"/>${FACES[face]}<path d="M11.2 13.6h1.6L12 14.9z" fill="currentColor" stroke-width="1"/>${CHESTS[chest]}</svg>`;
+const sym = {
+  bubbles: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+  watcher: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l3 3h6l3-3v9c0 4-3 7-6 7s-6-3-6-7z"/><circle cx="9.5" cy="11" r="1.6" fill="var(--canvas)"/><circle cx="14.5" cy="11" r="1.6" fill="var(--canvas)"/></svg>',
+  owlets: mark(0, 0, 24),
+  computers: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4"/></svg>',
+  settings: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  plus: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  dots: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  pencil: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg>',
+  sidebar: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>',
+  search: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>',
+};
+const OWLETS = [
+  { name: 'Tawny', role: 'Keeps my inbox', home: 'This computer', last: 'Asks to send a reply', need: true, face: 0, chest: 1, when: '' },
+  { name: 'Scops', role: 'Repo upkeep', home: 'forge', last: 'Bumped three dev dependencies', unread: true, face: 3, chest: 0, when: '9:12' },
+  { name: 'Elf', role: 'Morning brief', home: 'forge', last: 'Wrote today’s brief', face: 1, chest: 2, when: 'Yesterday' },
+  { name: 'Barn', role: 'Receipts', home: 'This computer', last: 'Not run yet', face: 4, chest: 1, when: 'Mon' },
+];
+const THREADS = ['Fix the Duo rail spacing', 'Owlets on the iPhone', 'Release 0.1.51', 'Thread word search follow-ups', 'Watcher gaps'];
+
+function tabs(order, on) {
+  const all = { threads: ['Threads', sym.bubbles, 2], watcher: ['Watcher', sym.watcher, 0], owlets: ['Owlets', sym.owlets, 1], computers: ['Computers', sym.computers, 0], settings: ['Settings', sym.settings, 0] };
+  return `<div class="tabs">${order.map((id) => `<div class="tab"${id === on ? ' data-on' : ''}${id === 'owlets' ? ' data-new' : ''}>${all[id][1]}<span>${all[id][0]}</span>${all[id][2] ? `<b>${all[id][2]}</b>` : ''}</div>`).join('')}</div>`;
+}
+function row(o, on) {
+  const end = o.need ? '<span class="end need">Needs you</span>' : `<span class="end">${o.unread ? '<i class="dot"></i>' : ''}${o.when}</span>`;
+  return `<div class="row"${on ? ' data-on' : ''}><span class="mark">${mark(o.face, o.chest, 32)}</span><span class="name">${o.name}<i>${o.role}</i></span>${end}<span class="last">${o.home} · ${o.last}</span></div>`;
+}
+function list(on) {
+  return `<div class="head"><h1>Owlets</h1><span class="round">${sym.plus}</span></div>
+    <div class="search">${sym.search}Search owlets</div>
+    <div class="needs"><h2>Needs you <b>1</b></h2><p>Tawny asks to send a reply to Dana</p></div>
+    <div class="section">NEWEST FIRST</div>
+    ${OWLETS.map((o) => row(o, on === o.name)).join('')}`;
+}
+const phone = (inner, label) => `<div class="shot"><div class="phone"${SMALL ? ' data-small' : ''}><div class="status"><span>9:41</span><span>●●● ▮</span></div>${inner}</div><span>${label}</span></div>`;
+function thread(o, opts = {}) {
+  const right = opts.pencil ? `<span class="ib" data-hl><span class="round">${sym.pencil}</span></span><span class="ib"><span class="round">${sym.dots}</span></span>` : `<span class="ib"${opts.dotsHl ? ' data-hl' : ''}><span class="round">${sym.dots}</span></span>`;
+  const bar = opts.bar === false ? '' : `<div class="bar"><span class="ib">${sym.back}</span><div class="title"><strong>${o.name}</strong><span>${o.role}</span></div>${right}</div>`;
+  return `<div class="page">${bar}
+    ${opts.facts === false ? '' : `<div class="facts"><span>On ${o.home === 'This computer' ? 'this computer' : o.home}</span><span class="mono">Owlets/${o.name}</span></div>`}
+    <div class="chat"><div class="you">Anything from Dana that needs an answer today?</div>
+      <div class="agent">One: she asks whether Thursday still works. I drafted a short yes.</div>
+      <div class="card"><h3>Send this email?</h3><p>To Dana Lee · “Thursday works, see you at 2.”</p><div class="btns"><button class="btn">Don’t send</button><button class="btn primary">Send</button></div></div></div>
+    <div class="composer"><span>Message ${o.name}</span><span class="send"></span></div></div>`;
+}
+const T = OWLETS[0];
+let ask = '', note = '', shots = '';
+if (Q === 'tabs') {
+  ask = '<strong>Where does the Owlets tab sit?</strong> The tab shows only while a paired computer offers owlets, as Watcher’s does.';
+  const order = V === 'A' ? ['threads', 'owlets', 'watcher', 'computers', 'settings'] : ['threads', 'watcher', 'owlets', 'computers', 'settings'];
+  shots = phone(`<div class="page">${list()}</div>${tabs(order, 'owlets')}`, V === 'A' ? 'A · after Threads, as the ADR says “beside Threads”' : 'B · after Watcher, as the sidebar prototype drew it');
+  note = V === 'A' ? 'Threads · Owlets · Watcher · Computers · Settings. Owlets sit next to the threads they are, and Watcher keeps its own corner. On the desktop the rooms run Watcher, Threads, Owlets, so Owlets follows Threads on both.' : 'Threads · Watcher · Owlets · Computers · Settings. The order the sidebar prototype drew. Watcher stays where it is today, second.';
+  note += ' Five tabs on a small iPhone: try &small=1.';
+} else if (Q === 'edit') {
+  ask = '<strong>Where does Edit owlet live in an owlet’s thread?</strong> Edit changes its name and role, as on the desktop; its model and permission mode change in the thread, as any thread’s.';
+  if (V === 'A') {
+    shots = phone(thread(T, { dotsHl: true }) + `<div class="scrim"></div><div class="menu"><div data-hl>Edit owlet ${sym.pencil}</div><div><span>Compact context<small>Summarize earlier messages to free room</small></span></div><div>Settle</div></div>`, 'A · Edit owlet in the thread’s ••• menu (menu open)') + phone(thread(T), 'A · the thread, menu closed');
+    note = 'The thread page keeps its bar as it is; the ••• menu every thread has gains Edit owlet at its top. A line under the bar says where it lives and its folder, as the desktop’s does.';
+  } else if (V === 'B') {
+    shots = phone(thread(T, { pencil: true }), 'B · a pencil in the bar, beside •••');
+    note = 'As the desktop’s pane has its pencil: one press opens Edit. The bar has one more button than a thread’s.';
+  } else {
+    shots = phone(thread(T, { dotsHl: true, facts: false }) + `<div class="scrim"></div><div class="sheet"><div class="grab"></div><div class="shead">${mark(T.face, T.chest, 32)}<h2>${T.name}</h2><span class="round">✕</span></div>
+      <dl><dt>Role</dt><dd>${T.role}</dd><dt>Home</dt><dd>This computer</dd><dt>Folder</dt><dd>Owlets/${T.name}</dd><dt>Model</dt><dd>Claude Opus 5.5</dd><dt>Permissions</dt><dd>Ask first</dd></dl>
+      <div class="foot"><button class="btn">${sym.pencil} Edit</button></div></div>`, 'C · ••• opens an About sheet, Edit at its foot');
+    note = 'As the sidebar prototype drew it: ••• opens a sheet of what the owlet is, with Edit at its foot. The thread loses the line under its bar, and its other actions (compact, settle) move into the sheet too.';
+  }
+} else {
+  ask = '<strong>The iPhone Duo unfolded, held sideways, an owlet open: what does the sidebar beside it list?</strong> Upright, the same list comes over the page as a drawer.';
+  const rail = (sidebarBtn = true) => `<div class="rail" style="padding-top:22px">${sidebarBtn ? `<span class="round">${sym.sidebar}</span>` : ''}<div class="tpill"><span class="tname2">${T.name}</span><span class="tile">${sym.dots}</span></div>
+    <div class="pill">${['bubbles', 'owlets', 'watcher', 'computers', 'settings'].map((k) => `<span class="tile"${k === 'owlets' ? ' data-on data-new' : ''}>${sym[k]}</span>`).join('')}</div></div>`;
+  const main = `<div class="main" style="padding-top:22px">${thread(T, { bar: false })}</div>`;
+  let side = '';
+  if (V === 'A') side = `<div class="side"><h2>Owlets</h2>${OWLETS.map((o) => row(o, o.name === 'Tawny')).join('')}</div>`;
+  if (V === 'B') side = `<div class="side"><h2>Threads</h2>${THREADS.map((t) => `<div class="row" style="grid-template-columns:1fr auto"><span class="name" style="font-weight:500">${t}</span><span class="end">9:0${THREADS.indexOf(t)}</span></div>`).join('')}</div>`;
+  shots = `<div class="shot"><div class="duo">${side}${main}${rail(V !== 'C')}</div><span>${{ A: 'A · the owlets, as the desktop’s Owlets page has them', B: 'B · the threads, as beside any thread today', C: 'C · no sidebar on the Owlets tab' }[V]}</span></div>`;
+  note = { A: 'Beside an owlet the sidebar lists the owlets, so another owlet is one press away, as on the desktop’s Owlets page. On the Threads and Watcher tabs it stays the threads.', B: 'The sidebar is always the threads. Choosing one there leaves Owlets for the Threads tab.', C: 'The Owlets tab has no sidebar and no sidebar button; the list is a Back away, as on any other iPhone.' }[V];
+  note += ' The rail’s pill has five tiles in every variant; where Owlets sits in it follows the tab question.';
+}
+document.getElementById('ask').innerHTML = ask;
+document.getElementById('stage').innerHTML = shots;
+document.getElementById('note').textContent = note;
+const link = (q, v, extra = {}) => { const p = new URLSearchParams({ q, v }); if (LIGHT) p.set('theme', 'light'); if (SMALL) p.set('small', '1'); for (const [k, x] of Object.entries(extra)) { if (x === null) p.delete(k); else p.set(k, x); } return '?' + p; };
+document.getElementById('switch').innerHTML = [['tabs', 'Tab'], ['edit', 'Edit'], ['duo', 'Duo']].map(([q, label]) => VARIANTS[q].map((v) => `<a href="${link(q, v)}"${q === Q && v === V ? ' aria-current="page"' : ''}>${label} ${v}</a>`).join('')).join('<span class="sep"></span>')
+  + `<span class="sep"></span><a href="${link(Q, V, { theme: LIGHT ? null : 'light' })}">${LIGHT ? 'Dark' : 'Light'}</a><a href="${link(Q, V, { small: SMALL ? null : '1' })}">${SMALL ? 'Large iPhone' : 'Small iPhone'}</a>`;
+</script>
+</body>
+</html>
