@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { startSocketServer } from '../../src/host/socketServer'
 import type { HostService } from '../../src/main/agents/hostService'
-import type { DetachedRunElsewhere } from '../../src/shared/agentMonitoring'
+import type { DetachedRunElsewhere, RunMark } from '../../src/shared/agentMonitoring'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -16,7 +16,7 @@ const run: DetachedRunElsewhere = {
     run: { client: 'Codex', model: 'gpt-6-astra', effort: 'max', folder: '/home/zach/algo-attack/dopamine-gt3rs', command: 'codex exec --json -m gpt-6-astra …' } },
 }
 
-function reportingHost(found: { runs: readonly DetachedRunElsewhere[] }, listeners: Set<() => void>, look: () => void, stop: (runId: string) => Promise<string | null>): HostService {
+function reportingHost(found: { runs: readonly DetachedRunElsewhere[] }, listeners: Set<() => void>, look: () => void, stop: (runId: string, mark: RunMark) => Promise<string | null>): HostService {
   const base = fixture.host.service
   return {
     shell: () => base.shell(), state: () => base.state(), threadDetail: id => base.threadDetail(id), events: () => [],
@@ -41,6 +41,8 @@ describe('detached runs from elsewhere over the socket (#2749)', () => {
     known.add(paired.clientId)
     const desktop = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
     try {
+      // The host follows such runs only while a desktop that takes them is connected (Bug Bot on #2759, L2).
+      expect(listeners.size).toBe(0)
       const hello = await desktop.call('hello', { op: 'hello', accepts: ['detached-runs-elsewhere'] }) as { result: { features: string[] } }
       expect(hello.result.features).toContain('detached-runs-elsewhere')
       await expect.poll(() => pushes(desktop.messages).length).toBe(1)
@@ -52,10 +54,13 @@ describe('detached runs from elsewhere over the socket (#2749)', () => {
 
       expect(await desktop.call('look', { op: 'detached-runs-look' })).toMatchObject({ ok: true })
       expect(look).toHaveBeenCalledTimes(1)
-      expect(await desktop.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN })).toMatchObject({ ok: true, result: { error: null } })
-      expect(stop).toHaveBeenCalledWith(RUN)
+      expect(await desktop.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN, mark: run.marks[0] })).toMatchObject({ ok: true, result: { error: null } })
+      expect(stop).toHaveBeenCalledWith(RUN, run.marks[0])
       const other = '1c6e7b62-9d3f-5a4b-8e52-7f8a9b0c1d2e'
-      expect(await desktop.call('stop-ended', { op: 'detached-run-elsewhere-stop', runId: other })).toMatchObject({ ok: true, result: { error: 'That detached run has already ended. Nothing was stopped.' } })
+      expect(await desktop.call('stop-ended', { op: 'detached-run-elsewhere-stop', runId: other, mark: run.marks[0] })).toMatchObject({ ok: true, result: { error: 'That detached run has already ended. Nothing was stopped.' } })
+      expect(listeners.size).toBe(1)
+      desktop.frames.close()
+      await expect.poll(() => listeners.size).toBe(0)
     } finally { desktop.frames.close(); await server.close() }
   })
 
@@ -73,7 +78,7 @@ describe('detached runs from elsewhere over the socket (#2749)', () => {
     try {
       await quiet.call('hello', { op: 'hello', accepts: [] })
       expect(await quiet.call('look', { op: 'detached-runs-look' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
-      expect(await quiet.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(await quiet.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN, mark: run.marks[0] })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
       expect(stop).not.toHaveBeenCalled()
       await desktop.call('hello', { op: 'hello', accepts: ['detached-runs-elsewhere'] })
       await expect.poll(() => pushes(desktop.messages).length).toBe(1)
@@ -83,7 +88,7 @@ describe('detached runs from elsewhere over the socket (#2749)', () => {
       for (const listener of listeners) listener()
       await desktop.call('shell', { op: 'shell' })
       expect(pushes(desktop.messages)).toHaveLength(1)
-      expect(await desktop.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(await desktop.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN, mark: run.marks[0] })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
       expect(stop).not.toHaveBeenCalled()
     } finally { quiet.frames.close(); desktop.frames.close(); await server.close() }
   })
@@ -102,7 +107,7 @@ describe('detached runs from elsewhere over the socket (#2749)', () => {
       await stranger.call('shell', { op: 'shell' })
       expect(pushes(stranger.messages)).toEqual([])
       expect(await stranger.call('look', { op: 'detached-runs-look' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
-      expect(await stranger.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(await stranger.call('stop', { op: 'detached-run-elsewhere-stop', runId: RUN, mark: run.marks[0] })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
       expect(look).not.toHaveBeenCalled()
       expect(stop).not.toHaveBeenCalled()
     } finally { stranger.frames.close(); await server.close() }

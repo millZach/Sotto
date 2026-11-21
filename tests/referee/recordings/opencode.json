@@ -27,7 +27,7 @@
        "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
        "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress",
        "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies",
-       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words"
+       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "detached-runs-elsewhere"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -73,7 +73,7 @@
        "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
        "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress",
        "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies",
-       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words"
+       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "detached-runs-elsewhere"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -119,7 +119,7 @@
        "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
        "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress",
        "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies",
-       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words"
+       "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "detached-runs-elsewhere"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",

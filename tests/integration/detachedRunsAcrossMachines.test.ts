@@ -46,7 +46,7 @@ it('finds a run left with another machine\'s thread\'s session, shows it as that
   // The laptop: its own thread's session; Stop goes to the host that reported the run.
   const laptop = new DetachedRunWatch({ scan: async () => ({ processes: new Map(), agents: [] }), rootPid: process.pid,
     owner: mark => mark.value === session ? 'gt3rs-thread' : undefined,
-    elsewhere: { look: () => forge.turnEnded(), stop: async (hostId, runId) => { expect(hostId).toBe(FORGE); await forge.stopForeign(runId) } } })
+    elsewhere: { look: () => forge.turnEnded(), stop: async (hostId, runId, mark) => { expect(hostId).toBe(FORGE); await forge.stopForeign(runId, mark) } } })
   cleanup.push(() => laptop.close())
   laptop.setElsewhere(FORGE, 'forge', reported)
   const shown = laptop.runsFor('gt3rs-thread')!

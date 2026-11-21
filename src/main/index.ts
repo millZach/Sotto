@@ -1296,7 +1296,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // look again, and Stop on one goes to the host that found it.
   const detachedRunWatch = localRuntime.detachedRuns
   if (detachedRunWatch) {
-    detachedRunWatch.useElsewhere({ look: () => hostRouter.lookForDetachedRunsElsewhere(), stop: (hostId, runId) => hostRouter.stopDetachedRunElsewhere(hostId, runId) })
+    detachedRunWatch.useElsewhere({ look: () => hostRouter.lookForDetachedRunsElsewhere(), stop: (hostId, runId, mark) => hostRouter.stopDetachedRunElsewhere(hostId, runId, mark) })
     hostRouter.subscribeDetachedRunsElsewhere((hostId, machine, runs) => detachedRunWatch.setElsewhere(hostId, machine, runs))
   }
   quitHandles.hostRouter = hostRouter

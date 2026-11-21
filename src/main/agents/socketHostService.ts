@@ -33,7 +33,7 @@ import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostF
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { withKeptPartsPutBack, type HeldParts } from '../../shared/keptParts'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, hostThreadWordsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
-import { detachedRunElsewhereStopSchema, type DetachedRunElsewhere } from '../../shared/agentMonitoring'
+import { detachedRunElsewhereStopSchema, type DetachedRunElsewhere, type RunMark } from '../../shared/agentMonitoring'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
 import type { BrowserEvent } from '../../shared/browser'
@@ -504,8 +504,8 @@ export class SocketHostService implements HostService {
     if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
     // A queue read on a closed connection is not current: the machine's panel says nothing of it until the host pushes again.
     if (this.checks !== undefined) { this.checks = undefined; this.checksChanged() }
-    // Nor are the runs it reported: they stay running there, and show again once it reports them on the next connection.
-    if (this.runsElsewhere.length) this.runsElsewhereChanged([])
+    // The runs it reported stay as it last reported them: they run on there, and the thread is not called at rest while
+    // its host is away. The host's next report replaces them, and the router lets them go when the host is removed.
   }
   private runsElsewhereChanged(runs: readonly DetachedRunElsewhere[]): void {
     this.runsElsewhere = runs
@@ -1933,9 +1933,9 @@ export class SocketHostService implements HostService {
     await this.call({ op: 'detached-runs-look' })
   }
   /** Stops a run the host reported, by its ID, after the host looks again and finds the same process: null once it ended, or why not. */
-  async stopDetachedRunElsewhere(runId: string): Promise<string | null> {
+  async stopDetachedRunElsewhere(runId: string, mark: RunMark): Promise<string | null> {
     this.offers('detached-runs-elsewhere')
-    return this.read(detachedRunElsewhereStopSchema, await this.call({ op: 'detached-run-elsewhere-stop', runId })).error
+    return this.read(detachedRunElsewhereStopSchema, await this.call({ op: 'detached-run-elsewhere-stop', runId, mark })).error
   }
   /** The host lists `check-queue-views` and this desktop accepted it (#1312): it pushes its own check queue. */
   get supportsCheckQueueViews(): boolean { return this.options.crossMachineEnabled === true && this.features.includes('check-queue-views') }

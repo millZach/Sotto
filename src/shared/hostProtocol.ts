@@ -4,7 +4,7 @@ import { nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptEntry } 
 import { tellWatcherAnswerSchema, watcherTellPushSchema, type WatcherTellPush } from './tellWatcher'
 import { delegationRelayAskSchema, delegationRelayNewsSchema, delegationRemoteAskSchema, DELEGATION_REMOTE_CALLER_MAX, relayedRepliesSchema, type DelegationRelayAsk } from './delegationRelay'
 import { z } from 'zod'
-import { detachedRunsElsewhereSchema, type DetachedRunElsewhere } from './agentMonitoring'
+import { detachedRunsElsewhereSchema, runMarkSchema, type DetachedRunElsewhere } from './agentMonitoring'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhonePreviewSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, watcherPhoneOpenSchema, watcherPhoneCurrentSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, watcherHostProgressSchema } from './watcherHost'
 import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, AGENT_MAX_VIDEO_BYTES, agentMimeTypeSchema, isVideoAttachment, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, agentThreadMediaRequestSchema, agentThreadMediaPartRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
@@ -790,7 +790,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
    * there may have started one here, and stops one it reported, by the user's Stop, with the host's own look-again rule.
    */
   z.object({ ...base, op: z.literal('detached-runs-look') }).strict(),
-  z.object({ ...base, op: z.literal('detached-run-elsewhere-stop'), runId: z.uuid() }).strict(),
+  z.object({ ...base, op: z.literal('detached-run-elsewhere-stop'), runId: z.uuid(), mark: runMarkSchema }).strict(),
   /** The GitHub repository of each of the host's projects, read on request and never pushed (#1032). */
   z.object({ ...base, op: z.literal('project-origins') }).strict(),
   /** A copy of a GitHub repository set up on the host for a worker placed there (#1690). */

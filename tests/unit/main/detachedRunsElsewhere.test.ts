@@ -71,10 +71,13 @@ describe('a host reports the runs it finds that none of its threads owns', () =>
     watch.subscribeForeign(() => undefined)
     await watch.lookNow()
     const id = watch.foreignRuns()[0]!.work.id
-    await watch.stopForeign(id)
+    // A desktop that names none of the run's own marks may not stop it.
+    await expect(watch.stopForeign(id, mark('another-desktop-session'))).rejects.toThrow(DETACHED_RUN_ENDED)
+    expect(end).not.toHaveBeenCalled()
+    await watch.stopForeign(id, mark())
     expect(end).toHaveBeenCalledWith(2445800)
     expect(watch.foreignRuns()).toEqual([])
-    await expect(watch.stopForeign(id)).rejects.toThrow(DETACHED_RUN_ENDED)
+    await expect(watch.stopForeign(id, mark())).rejects.toThrow(DETACHED_RUN_ENDED)
   })
 })
 
@@ -119,7 +122,7 @@ describe('a desktop shows a run a paired host found as its own thread\'s', () =>
     await expect(watch.stop('some-other-thread', id)).rejects.toThrow(DETACHED_RUN_ENDED)
     expect(stop).not.toHaveBeenCalled()
     await watch.stop('gt3rs-thread', id)
-    expect(stop).toHaveBeenCalledWith(FORGE, runs[0]!.work.id)
+    expect(stop).toHaveBeenCalledWith(FORGE, runs[0]!.work.id, mark())
   })
 
   it('asks the adapters about a mark once, not at every report, and lists a thread\'s oldest runs whichever machine runs them', async () => {
@@ -140,6 +143,35 @@ describe('a desktop shows a run a paired host found as its own thread\'s', () =>
     const listed = watch.runsFor('gt3rs-thread')!
     expect(listed).toHaveLength(16)
     expect(listed.map(work => work.startedAt)).toEqual([...many].reverse().slice(0, 16).map(run => run.work.startedAt))
+  })
+
+  it('follows a run to its thread again at its next look, when the thread its mark named moves or goes', async () => {
+    let owner: string | undefined = 'gt3rs-thread'
+    const watch = new DetachedRunWatch({ scan: computer([]).scan, rootPid: SOTTO, owner: item => item.value === LAPTOP_SESSION ? owner : undefined })
+    cleanup.push(() => watch.close())
+    watch.setElsewhere(FORGE, 'forge', await reported())
+    expect(watch.runsFor('gt3rs-thread')).toHaveLength(1)
+    owner = 'continued-thread'
+    await watch.lookNow()
+    expect(watch.runsFor('gt3rs-thread')).toBeUndefined()
+    expect(watch.runsFor('continued-thread')).toHaveLength(1)
+  })
+
+  it('names the machine as a run\'s detail takes it, and lists a run its own once when a host shares its processes', async () => {
+    const shared = computer([codex(2445800, 1, [mark()])])
+    const watch = new DetachedRunWatch({ scan: shared.scan, rootPid: SOTTO, owner: item => item.value === LAPTOP_SESSION ? 'gt3rs-thread' : undefined })
+    cleanup.push(() => watch.close())
+    await watch.lookNow()
+    expect(watch.runsFor('gt3rs-thread')).toHaveLength(1)
+    // The same process, reported by a host on this same computer: still one run, the desktop's own.
+    watch.setElsewhere(FORGE, 'forge\u200d', await reported())
+    expect(watch.runsFor('gt3rs-thread')).toHaveLength(1)
+    expect(watch.runsFor('gt3rs-thread')![0]!.run?.machine).toBeUndefined()
+    shared.set([])
+    await watch.lookNow()
+    const named = watch.runsFor('gt3rs-thread')!
+    expect(named[0]!.run?.machine).toBe('forge')
+    expect(agentBackgroundWorkSchema.safeParse(named).success).toBe(true)
   })
 
   it('asks its paired hosts to look again when one of its own turns ends', () => {

@@ -1398,10 +1398,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!takesRunsElsewhere(peer) || peer.frames.isClosed || !service.detachedRunsElsewhere) return
     push(peer, { v: 1, event: 'detached-runs-elsewhere', runs: [...service.detachedRunsElsewhere()] })
   }
-  const unsubscribeRunsElsewhere = service.subscribeDetachedRunsElsewhere?.(() => {
-    if (closing) return
-    for (const peer of peers) if (peer.ready && peer.runsElsewhere) pushRunsElsewhere(peer)
-  })
+  // Followed only while a desktop that takes them is connected, so a host with none looks no more than it did before (#2749).
+  let unsubscribeRunsElsewhere: (() => void) | undefined
+  const followRunsElsewhere = (): void => {
+    const wanted = !closing && [...peers].some(peer => peer.runsElsewhere === true && !peer.frames.isClosed)
+    if (wanted && !unsubscribeRunsElsewhere) unsubscribeRunsElsewhere = service.subscribeDetachedRunsElsewhere?.(() => {
+      if (closing) return
+      for (const peer of peers) if (peer.ready && peer.runsElsewhere) pushRunsElsewhere(peer)
+    })
+    else if (!wanted && unsubscribeRunsElsewhere) { unsubscribeRunsElsewhere(); unsubscribeRunsElsewhere = undefined }
+  }
   const unsubscribeChecks = service.subscribeCheckQueue?.(() => {
     if (closing) return
     for (const peer of peers) if (peer.ready && peer.checkQueueViews) pushChecks(peer)
@@ -1862,6 +1868,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.delegationViews = (request.accepts?.includes('delegation-views') ?? false) && offers(peer, 'delegation-views')
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
         peer.runsElsewhere = (request.accepts?.includes('detached-runs-elsewhere') ?? false) && offers(peer, 'detached-runs-elsewhere')
+        followRunsElsewhere()
         peer.meshySpendingAsked = request.accepts?.includes('plugin-meshy-spending') ?? false
         peer.meshySpending = peer.meshySpendingAsked && offers(peer, 'plugin-meshy-spending')
         peer.elevenLabsSpendingAsked = request.accepts?.includes('plugin-elevenlabs-spending') ?? false
@@ -2102,7 +2109,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'detached-run-elsewhere-stop': {
         if (!offers(peer, 'detached-runs-elsewhere') || !takesRunsElsewhere(peer) || !service.stopDetachedRunElsewhere) throw new Refusal('invalid_request')
         // The host ends only a run it reports now, as this desktop was sent it, after it looks again (`stopForeign`).
-        return { error: await service.stopDetachedRunElsewhere(request.runId) }
+        return { error: await service.stopDetachedRunElsewhere(request.runId, request.mark) }
       }
       case 'host-facts': {
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
@@ -2676,7 +2683,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); followRunsElsewhere(); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }

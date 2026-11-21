@@ -76,7 +76,7 @@ export type AgentBackgroundWork = z.infer<typeof agentBackgroundWorkSchema>[numb
 export const RUN_MARKS = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'HERMES_SESSION_KEY'] as const
 export type RunMarkName = typeof RUN_MARKS[number]
 export interface RunMark { readonly name: RunMarkName; readonly value: string }
-const runMarkSchema = z.object({ name: z.enum(RUN_MARKS), value: z.string().min(1).max(512).refine(value => !/[\p{Cc}\p{Cf}]/u.test(value)) }).strict()
+export const runMarkSchema = z.object({ name: z.enum(RUN_MARKS), value: z.string().min(1).max(512).refine(value => !/[\p{Cc}\p{Cf}]/u.test(value)) }).strict()
 
 /** The most runs from elsewhere one host reports at a time; past it the rest still run, unreported. */
 export const MAX_DETACHED_RUNS_ELSEWHERE = 64

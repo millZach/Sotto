@@ -26,7 +26,7 @@ import type { ThreadVideoPart } from '../agents/threadMediaScheme'
 import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaWindowRequest, type AgentThreadMediaPartRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
-import type { DetachedRunElsewhere } from '../../shared/agentMonitoring'
+import type { DetachedRunElsewhere, RunMark } from '../../shared/agentMonitoring'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { DESKTOP_WINDOW_CLIENT_ID, desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
@@ -383,6 +383,7 @@ export class DesktopHostRouter {
   private readonly frameListeners = new Set<(frame: HostBrowserFrame) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly checkListeners = new Set<() => void>()
+  private readonly looksInFlight = new Set<string>()
   private readonly runsElsewhereListeners = new Set<(hostId: string, machine: string, runs: readonly DetachedRunElsewhere[]) => void>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   /** What each remote host's suggestions were told to the window as, by window key, so a connection that goes lets them go. */
@@ -677,7 +678,6 @@ export class DesktopHostRouter {
       const current = (): DesktopHostConnection | undefined => { const listed = this.hosts.get(connection.hostId)?.connection; return listed?.service === connection.service ? listed : undefined }
       const report = (): void => { const listed = current(); if (listed) this.runsElsewhereChanged(connection.hostId, listed.name, readRuns()) }
       off.push(subscribeRuns(report))
-      off.push(() => this.runsElsewhereChanged(connection.hostId, current()?.name ?? connection.name, []))
       // What it reports already, as it joins: the router follows a connection before it lists it.
       const already = readRuns()
       if (already.length) this.runsElsewhereChanged(connection.hostId, connection.name, already)
@@ -768,6 +768,8 @@ export class DesktopHostRouter {
     if (value) this.delegations.lostHost(hostId); else this.delegations.taken(hostId)
   }
   remove(hostId: string): void {
+    // Its runs from elsewhere leave this computer's threads with it; while it is only away they stay as last reported.
+    if (this.hosts.get(hostId)?.connection.kind === 'remote') this.runsElsewhereChanged(hostId, this.hosts.get(hostId)!.connection.name, [])
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId); this.watcherSnapshots.delete(hostId); this.watcherRoomInputs.delete(hostId)
     this.built.delete(hostId)
@@ -821,19 +823,22 @@ export class DesktopHostRouter {
   lookForDetachedRunsElsewhere(): void {
     for (const { connection } of this.hosts.values()) {
       if (connection.kind !== 'remote' || connection.available?.() === false || connection.service.supportsDetachedRunsElsewhere !== true) continue
-      void Promise.resolve().then(() => connection.service.lookForDetachedRuns?.()).catch(() => undefined)
+      // One ask in flight per host: turns ending close together share it, and a slow host is not sent a queue of them.
+      if (this.looksInFlight.has(connection.hostId)) continue
+      this.looksInFlight.add(connection.hostId)
+      void Promise.resolve().then(() => connection.service.lookForDetachedRuns?.()).catch(() => undefined).finally(() => this.looksInFlight.delete(connection.hostId))
     }
   }
   /**
    * Stops a run a host reported, on that host, because the user pressed its Stop (#2749). Throws the words to show when it
    * did not stop, or when the host is not connected.
    */
-  async stopDetachedRunElsewhere(hostId: string, runId: string): Promise<void> {
+  async stopDetachedRunElsewhere(hostId: string, runId: string, mark: RunMark): Promise<void> {
     const connection = this.hosts.get(hostId)?.connection
     if (!connection || connection.available?.() === false || !connection.service.stopDetachedRunElsewhere) {
       throw new Error(t`Sotto could not reach the computer that runs this detached run. It may still be running. Try Stop again once that computer is connected.`)
     }
-    const why = await connection.service.stopDetachedRunElsewhere(runId)
+    const why = await connection.service.stopDetachedRunElsewhere(runId, mark)
     if (why !== null) throw new Error(why)
   }
   /** Hears a connected host's check queue change, or a host with one leave. Returns the way to stop. */

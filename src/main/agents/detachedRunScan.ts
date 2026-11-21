@@ -92,7 +92,7 @@ export function splitCommandLine(line: string): string[] {
   return out
 }
 
-const SECRET_FLAG = /(key|token|secret|password|passwd|credential|auth)/iu
+const SECRET_FLAG = /(key|token|secret|password|passwd|credential|auth|(?:^|[_-])pat(?:$|[_-]))/iu
 /** A flag's value, as `--flag value` or `--flag=value`. */
 function flagValue(argv: readonly string[], names: readonly string[]): string | undefined {
   for (let at = 1; at < argv.length; at++) {
@@ -121,6 +121,10 @@ const shown = (value: string | undefined): string | undefined => {
 /** Flags whose value can carry a credential whatever the flag is called: a request header, settings, an environment. */
 const SECRET_VALUE_FLAGS = new Set(['--header', '-H', '--mcp-config', '--settings', '--env'])
 const BEARER = /\b(bearer|basic)\s+\S+/giu
+/** A URL's user and password (`https://user:pass@host`), which a run's command may carry to a repository or a service (#2749). */
+const URL_USER = /(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/giu
+/** Values shaped like the access tokens services hand out, wherever they stand, a prompt's words included (#2749). */
+const TOKEN_SHAPE = /\b(?:gh[pousr]_|github_pat_|sk-|sk_live_|xox[abporse]-|AKIA)[A-Za-z0-9_-]{8,}/gu
 /**
  * One argument as a row shows it, with what could be a credential left out: inline JSON, such as an MCP configuration
  * whose servers carry keys in their environment; a bearer or basic credential anywhere in it; and the value of any
@@ -130,7 +134,7 @@ function shownArgument(arg: string): string {
   if (/^\s*[{[]/u.test(arg)) return '{…}'
   const equals = arg.indexOf('=')
   if (equals > 0 && SECRET_FLAG.test(arg.slice(0, equals))) return `${arg.slice(0, equals)}=…`
-  return arg.replace(BEARER, '$1 …')
+  return arg.replace(BEARER, '$1 …').replace(URL_USER, '$1…@').replace(TOKEN_SHAPE, '…')
 }
 
 /**

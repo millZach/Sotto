@@ -48,7 +48,8 @@ export interface DetachedRunWatchOptions {
    */
   readonly elsewhere?: {
     readonly look: () => void
-    readonly stop: (hostId: string, runId: string) => Promise<void>
+    /** `mark` is the run's mark that names this desktop's thread, which the host checks the run carries (#2749). */
+    readonly stop: (hostId: string, runId: string, mark: RunMark) => Promise<void>
   }
 }
 
@@ -56,7 +57,7 @@ interface RunRecord { readonly threadId: string; readonly pid: number; readonly 
 /** A run found here that carries a mark no thread here owns (#2749): what a desktop may know it by, and what was read. */
 interface ForeignRecord { readonly pid: number; readonly run: DetachedRunElsewhere }
 /** A run a paired host reported, as this desktop's own thread's (#2749): the host's own ID for it, for its Stop there. */
-interface RemoteRecord { readonly threadId: string; readonly hostId: string; readonly runId: string }
+interface RemoteRecord { readonly threadId: string; readonly hostId: string; readonly runId: string; readonly mark: RunMark }
 
 /** A run's ID: the same for one process for as long as it runs, and never the same for another that takes its number. */
 function runId(process: AgentProcess): string {
@@ -199,9 +200,11 @@ export class DetachedRunWatch {
    * Stops a run found here that no thread here owns, because a desktop's user pressed its Stop (#2749): the same look-again
    * rule as `stop`, so a process that ended, or another that took its number, is never signalled.
    */
-  async stopForeign(id: string): Promise<void> {
-    if (!this.foreign.has(id)) throw new Error(DETACHED_RUN_ENDED)
-    await this.endChecked(() => this.foreign.get(id)?.pid)
+  async stopForeign(id: string, mark: RunMark): Promise<void> {
+    // Only a desktop that names one of the run's own marks may stop it: the one whose thread started it (#2749).
+    const carries = (): boolean => this.foreign.get(id)?.run.marks.some(own => own.name === mark.name && own.value === mark.value) === true
+    if (!carries()) throw new Error(DETACHED_RUN_ENDED)
+    await this.endChecked(() => carries() ? this.foreign.get(id)?.pid : undefined)
   }
   /**
    * Ends the process `find` names after a fresh look, and looks again after: a look that could not read the table vouches
@@ -222,7 +225,9 @@ export class DetachedRunWatch {
    * host, as when it goes away.
    */
   setElsewhere(hostId: string, machine: string, runs: readonly DetachedRunElsewhere[]): void {
-    if (runs.length) this.reported.set(hostId, { machine, runs: runs.slice(0, MAX_DETACHED_RUNS_ELSEWHERE) })
+    // The name the desktop gives the host, as a run's detail takes it: no control or format characters.
+    const named = machine.replace(/[\p{Cc}\p{Cf}]/gu, ' ').trim().slice(0, 240) || 'another computer'
+    if (runs.length) this.reported.set(hostId, { machine: named, runs: runs.slice(0, MAX_DETACHED_RUNS_ELSEWHERE) })
     else if (!this.reported.delete(hostId)) return
     this.refreshShown()
   }
@@ -241,7 +246,7 @@ export class DetachedRunWatch {
     const remote = this.remoteRecords.get(id)
     if (remote) {
       if (remote.threadId !== threadId || !this.elsewhere) throw new Error(DETACHED_RUN_ENDED)
-      await this.elsewhere.stop(remote.hostId, remote.runId)
+      await this.elsewhere.stop(remote.hostId, remote.runId, remote.mark)
       return
     }
     if (this.records.get(id)?.threadId !== threadId) throw new Error(DETACHED_RUN_ENDED)
@@ -332,6 +337,8 @@ export class DetachedRunWatch {
     this.unownedLooks = unowned ? this.unownedLooks + 1 : 0
     const following = this.foreign.size > 0 && this.foreignListeners.size > 0
     if (this.records.size || following || (unowned && this.unownedLooks <= UNOWNED_LOOKS_RETRIED)) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
+    // A look asks the adapters about every reported mark again, so a run follows its thread when it moves or goes.
+    this.owners.clear()
     this.refreshShown()
     if (foreignChanged) for (const listener of [...this.foreignListeners]) listener()
     return true
@@ -346,7 +353,7 @@ export class DetachedRunWatch {
     const remoteRecords = new Map<string, RemoteRecord>()
     const remote = new Map<string, AgentBackgroundWork[]>()
     const named = new Set<string>()
-    const owner = (mark: DetachedRunElsewhere['marks'][number]): string | undefined => {
+    const ownerOf = (mark: DetachedRunElsewhere['marks'][number]): string | undefined => {
       const key = `${mark.name}\0${mark.value}`
       named.add(key)
       // A mark no thread here named is asked again, since its session may load after the report came; a named one is kept.
@@ -358,11 +365,13 @@ export class DetachedRunWatch {
     }
     for (const [hostId, { machine, runs }] of this.reported) {
       for (const { marks, work } of runs) {
-        const threadId = marks.map(owner).find(id => id !== undefined)
-        if (!threadId || !work.run) continue
+        const named = marks.map(mark => ({ mark, threadId: ownerOf(mark) })).find(item => item.threadId !== undefined)
+        if (!named?.threadId || !work.run) continue
+        const threadId = named.threadId
         const id = reportedRunId(hostId, work.id)
-        if (remoteRecords.has(id)) continue
-        remoteRecords.set(id, { threadId, hostId, runId: work.id })
+        // A host that shares this computer's processes reports this desktop's own run too: it is listed once, as its own.
+        if (remoteRecords.has(id) || this.byThread.get(threadId)?.some(own => own.startedAt === work.startedAt && own.run?.command === work.run?.command)) continue
+        remoteRecords.set(id, { threadId, hostId, runId: work.id, mark: named.mark })
         remote.set(threadId, [...remote.get(threadId) ?? [], { ...work, id, run: { ...work.run, machine } }])
       }
     }

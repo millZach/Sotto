@@ -1,4 +1,4 @@
-import type { DetachedRunElsewhere } from '../../shared/agentMonitoring'
+import type { DetachedRunElsewhere, RunMark } from '../../shared/agentMonitoring'
 import { DETACHED_RUN_NOT_STOPPED, type DetachedRunWatch } from './detachedRuns'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { AgentThreadWords } from '../../shared/threadWords'
@@ -248,7 +248,7 @@ export interface HostService {
   detachedRunsElsewhere?(): readonly DetachedRunElsewhere[]
   subscribeDetachedRunsElsewhere?(listener: () => void): () => void
   lookForDetachedRuns?(): void
-  stopDetachedRunElsewhere?(runId: string): Promise<string | null>
+  stopDetachedRunElsewhere?(runId: string, mark: RunMark): Promise<string | null>
   /**
    * The next prompts the host holds for its threads (`next-prompts`, ADR-0132, ADR-0173), by its own thread IDs, and each
    * change, a let-go one with `prompt` null. On a desktop's connection to a host, what the host last pushed, and
@@ -695,10 +695,10 @@ export class LocalHostService implements HostService {
   detachedRunsElsewhere(): readonly DetachedRunElsewhere[] { return this.options.detachedRuns?.foreignRuns() ?? [] }
   subscribeDetachedRunsElsewhere(listener: () => void): () => void { return this.options.detachedRuns?.subscribeForeign(listener) ?? (() => undefined) }
   lookForDetachedRuns(): void { this.options.detachedRuns?.turnEnded() }
-  async stopDetachedRunElsewhere(runId: string): Promise<string | null> {
+  async stopDetachedRunElsewhere(runId: string, mark: RunMark): Promise<string | null> {
     if (!this.options.detachedRuns) return DETACHED_RUN_NOT_STOPPED
     // Only a run it reports now, and only the same process: the watch's own words say why not.
-    try { await this.options.detachedRuns.stopForeign(runId); return null } catch (error) { return error instanceof Error ? error.message : DETACHED_RUN_NOT_STOPPED }
+    try { await this.options.detachedRuns.stopForeign(runId, mark); return null } catch (error) { return error instanceof Error ? error.message : DETACHED_RUN_NOT_STOPPED }
   }
   get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }
   /** The queue's own view, taken only after it changed, so a read copies nothing. */
