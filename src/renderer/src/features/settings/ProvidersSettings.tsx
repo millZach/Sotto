@@ -32,7 +32,7 @@ function problemWord(problem: string | undefined): string | undefined {
   return problem === 'signed-out' ? t`Not signed in` : problem === 'not-installed' ? t`Not installed` : problem === 'too-old' ? t`Too old to use` : problem === 'cannot-start' ? t`Can't be started` : undefined
 }
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi' }
+const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi', antigravity: 'Antigravity' }
 
 /**
  * What the update switch says it checks, by where each client's published version is read: Muse's own release feed and

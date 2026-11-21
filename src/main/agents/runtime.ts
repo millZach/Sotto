@@ -386,6 +386,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
+    antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new HeldProviderHost('antigravity')),
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
       : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
@@ -405,6 +406,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
     opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
     cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+    antigravity: new SottoThreadHost('antigravity', providers.antigravity!, threadRegistry!),
     pi: new SottoThreadHost('pi', providers.pi!, threadRegistry!),
     hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
     deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),

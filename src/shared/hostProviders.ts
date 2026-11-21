@@ -57,7 +57,7 @@ export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
  * the host's own OpenCode over the host connection (`opencode-sign-in`, #1107).
  */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: 'device-code', pi: null,
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: 'device-code', pi: null, antigravity: null,
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
@@ -85,6 +85,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   pi: 'https://github.com/earendil-works/pi',
   hermes: 'https://github.com/NousResearch/hermes-agent',
   deepseek: 'https://github.com/deepseek-ai/deepseek-harness',
+  antigravity: 'https://antigravity.google/docs/cli',
 }
 
 /**
@@ -94,7 +95,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
  * versions printed on `claude.ai`, and Cursor's `https://cursor.com/loginDeepControl`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
  */
 export const PROVIDER_SIGN_IN_PAGES: Readonly<Record<ProviderId, readonly string[]>> = {
-  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [], cursor: ['cursor.com'], deepseek: [], hermes: ['auth.openai.com'], pi: [],
+  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [], cursor: ['cursor.com'], deepseek: [], hermes: ['auth.openai.com'], pi: [], antigravity: ['accounts.google.com'],
 }
 export function isProviderSignInPage(provider: ProviderId, value: string): boolean {
   if (value.length > 4096 || /\s/u.test(value)) return false

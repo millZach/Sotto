@@ -60,7 +60,7 @@ const EXPIRES = /expires in (\d{1,2}) minutes?/iu
 
 /** The client's own sign-in, never an API key: Codex's and Grok Build's device codes, Claude Code's subscription only, and Cursor's page. */
 export const PROVIDER_SIGN_IN_ARGS: Readonly<Record<ProviderId, readonly string[] | null>> = {
-  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: ['login'], deepseek: null, hermes: ['auth', 'add', 'openai-codex', '--type', 'oauth', '--no-browser'], pi: null,
+  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: ['login'], deepseek: null, hermes: ['auth', 'add', 'openai-codex', '--type', 'oauth', '--no-browser'], pi: null, antigravity: null,
 }
 
 async function hermesAccountCommand(hermesHome: string, args: readonly string[]): Promise<SignInCommand | undefined> {

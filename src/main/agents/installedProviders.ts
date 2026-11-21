@@ -10,6 +10,7 @@ import { findMuseExecutable } from './museRpc'
 import { findOpenCodeExecutable } from './opencodeServer'
 import { findCursorExecutable } from './cursorRpc'
 import { findPiExecutable } from './piRpc'
+import { findAntigravityExecutable } from './antigravityLookup'
 import { findHermesExecutable } from './hermesRpc'
 import { findDeepSeekExecutable } from './deepseekRpc'
 
@@ -28,6 +29,7 @@ export async function detectInstalledProviders(options: { heldProviders?: HeldPr
     deepseek: findDeepSeekExecutable,
     hermes: findHermesExecutable,
     pi: findPiExecutable,
+    antigravity: findAntigravityExecutable,
   }
   const ids = providerIdSchema.options.filter(id => !held.has(id))
   const found = await Promise.all(ids.map(id => finders[id]()))
