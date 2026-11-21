@@ -1,0 +1,1296 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE. Not shipped, not tested, not wired to anything.
+     Question: how should Antigravity (Google's agy CLI) sign in on its Settings › Providers row, and how should a
+     thread's model menu show the account's models and thinking levels?
+     Sotto offers all four of agy's sign-ins, as T3 Code does: Google account (default), Gemini Enterprise,
+     Gemini API key and Agent Platform (Vertex AI). Keys stay in Sotto's credential store and are never shown back.
+     A = Sign in in a dialog (method choice in the row; Sotto's sign-in dialog for the two Google page methods,
+         keys connect from the row; one flat model list).
+     B = Sign in on the row (Cursor's row shape; segmented method choice, steps per method; the menu groups
+         models by maker and opens on the makers).
+     C = T3 Code's account row (all four methods live; models by family with Thinking docked beside them).
+     Switch with ?variant=A|B|C, the bar at the bottom, or the Left and Right arrow keys. Optional: ?theme=light.
+     Antigravity's mark (a rising chevron over a dot) and its colour token --tt-provider-antigravity are PLACEHOLDERS,
+     drawn for this draft, not Google's logo. Cursor's cube mark is the earlier Cursor draft's placeholder.
+     Colours are --tt-* tokens copied from src/renderer/src/styles/tokens.css (Sotto theme, both modes, Contrast 100%).
+     No network: no web fonts, no CDNs. Every sign-in step, page and code check is fake; type "wrong" in a code or key to see
+     it refused. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Antigravity as a thread provider (prototype)</title>
+<style>
+/* ---- Tokens, copied from tokens.css (theme roles, then the --tt-* derivations at Contrast 100%). ---- */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-error: oklch(0.655108 0.221148 23.473);
+  --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-error-surface: oklch(0.29 0.04 20);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-code-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-terminal-scrollbar: oklch(0.315 0.008 265);
+
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-field: var(--theme-surface);
+  --tt-card: var(--theme-surface-raised);
+  --tt-card-inset: var(--theme-canvas);
+  --tt-card-selected: color-mix(in oklab, var(--theme-accent-surface) 65%, var(--tt-card));
+  --tt-segment-on: var(--theme-surface-overlay);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 76%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-border-faint: var(--theme-border);
+  --tt-panel-border: var(--tt-border-faint);
+  --tt-field-border: var(--theme-input);
+  --tt-border: color-mix(in oklab, var(--theme-input) 25%, var(--theme-muted-foreground));
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-hover-strong: var(--theme-accent-surface);
+  --tt-warning: var(--theme-warning-foreground);
+  --tt-error: var(--theme-error-foreground);
+  --tt-error-text: var(--tt-error);
+  --tt-error-surface: var(--theme-error-surface);
+  --tt-code-bg: var(--theme-code-background);
+  --tt-code-text: var(--theme-code-foreground);
+  --tt-code-border: var(--tt-hairline);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-surface: var(--theme-accent-surface);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-accent-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 45%, var(--tt-field-border));
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-activity: var(--tt-accent-text);
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-cursor: #f2b9c9;
+  --tt-provider-cursor-badge: #f2b9c9;
+  --tt-provider-ink: #080b0a;
+  /* PLACEHOLDER: Antigravity's colour, a pale lime no other provider wears. Not in tokens.css. */
+  --tt-provider-antigravity: #cfe38f;
+  --tt-provider-antigravity-badge: #cfe38f;
+  --tt-effort-a: var(--theme-warning);
+  --tt-effort-fill-cool: var(--tt-text-muted);
+  --tt-effort-track: color-mix(in srgb, var(--tt-text) 7%, var(--tt-surface-elevated));
+  --tt-effort-thumb: var(--tt-text);
+  --tt-effort-ink: color-mix(in oklab, var(--tt-warning) 70%, var(--tt-text));
+  --tt-backdrop: rgb(0 0 0 / 38%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  /* The scale (ADR-0169). */
+  --tt-type-micro: 11px; --tt-type-caption: 12px; --tt-type-small: 13px; --tt-type-body: 14px; --tt-type-reading: 15px;
+  --tt-type-lead: 16px; --tt-type-heading: 18px; --tt-type-figure: 22px;
+  --tt-radius-mark: 2px; --tt-radius-tag: 4px; --tt-radius-control: 6px; --tt-radius-row: 8px; --tt-radius-inset: 10px;
+  --tt-radius-card: 14px; --tt-radius-overlay: 20px;
+  --tt-radius-sm: var(--tt-radius-control); --tt-radius-md: var(--tt-radius-inset); --tt-radius-lg: var(--tt-radius-card);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* Hit areas: the app's sizes at a desk, 44px on a phone or a coarse pointer. */
+  --hit: 34px;
+  --hit-row: 32px;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-error: oklch(0.637823 0.237287 25.436);
+  --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-error-surface: oklch(0.94 0.02 25);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-code-background: oklch(0.96 0.005 85);
+  --theme-code-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-terminal-scrollbar: oklch(0.84 0.01 85);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas));
+  --tt-segment-on: var(--theme-surface);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-provider-codex: #c9ced6;
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-cursor: #94405a;
+  --tt-provider-cursor-badge: #eaaabd;
+  --tt-provider-ink: #0b0d0c;
+  /* PLACEHOLDER, light: a dark olive mark on light surfaces, the pale lime on badges. */
+  --tt-provider-antigravity: #56661a;
+  --tt-provider-antigravity-badge: #cbe07f;
+  --tt-effort-fill-cool: color-mix(in srgb, var(--tt-text-muted) 40%, var(--tt-surface-elevated));
+  --tt-effort-thumb: var(--tt-surface);
+  --tt-backdrop: rgb(20 24 22 / 22%);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+}
+@media (max-width: 640px), (pointer: coarse) { :root { --hit: 44px; --hit-row: 44px; } }
+
+/* ---- Page ---- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { min-width: 320px; background: var(--tt-canvas); color: var(--tt-text); font: var(--tt-type-body)/1.5 var(--tt-font-ui); -webkit-font-smoothing: antialiased; padding-bottom: 104px; overflow-x: hidden; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.i { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.mark { flex: none; fill: currentColor; }
+.mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
+.mark[data-provider='antigravity'] { color: var(--tt-provider-antigravity); }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+code { font-family: var(--tt-font-mono); font-size: .92em; }
+
+.page { max-width: 1280px; margin: 0 auto; padding: 0 16px; }
+.top { position: relative; padding: 22px 0 6px; }
+.top__eyebrow { margin: 0 0 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; letter-spacing: .02em; }
+.top h1 { margin: 0 64px 8px 0; font-size: var(--tt-type-figure); font-weight: 600; letter-spacing: -.3px; line-height: 1.25; }
+.top p { max-width: 66em; margin: 0 0 6px; color: var(--tt-text-2); font-size: var(--tt-type-body); }
+.top p.fine { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.theme-toggle { position: absolute; top: 16px; right: 0; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-surface); color: var(--tt-text-2); }
+.theme-toggle:hover { color: var(--tt-text); }
+
+/* The two surfaces: side by side on a wide screen, stacked below it. */
+.duo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 32px; }
+@media (min-width: 1100px) { .duo { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); align-items: start; } }
+.sec { margin-top: 26px; min-width: 0; }
+.sec > h2 { margin: 0 0 4px; color: var(--tt-text-2); font-size: var(--tt-type-body); font-weight: 600; }
+.sec > .sec__note { max-width: 60em; margin: 0 0 14px; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
+
+/* Prototype-only controls: dashed, labelled, never part of the design. */
+.proto { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 14px; padding: 6px 8px; border: 1px dashed var(--tt-border); border-radius: var(--tt-radius-control); }
+.proto > span { margin-right: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.proto button { min-height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.proto button:hover { color: var(--tt-text); background: var(--tt-hover); }
+.proto button[aria-pressed='true'] { background: var(--tt-segment-on); color: var(--tt-text); border-color: var(--tt-field-border); }
+@media (max-width: 640px), (pointer: coarse) { .proto button { min-height: 44px; } }
+
+/* ---- Buttons (global.css): soft squares, the primary is the text colour's plate. ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: var(--hit); padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-surface); color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; line-height: 1.2; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.btn:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.btn:disabled { cursor: not-allowed; opacity: .45; }
+.btn--primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.btn--primary:hover:not(:disabled) { border-color: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.12); }
+.btn--ghost { border-color: transparent; background: transparent; color: var(--tt-text-muted); }
+.btn--ghost:hover:not(:disabled) { border-color: transparent; color: var(--tt-text); background: var(--tt-hover); }
+.btn--icon { width: var(--hit); padding: 0; }
+.field { width: 100%; min-width: 0; min-height: var(--hit); padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-field); color: var(--tt-text); font-size: var(--tt-type-body); }
+.field::placeholder { color: var(--tt-text-faint); }
+.field[aria-invalid='true'] { border-color: var(--tt-error); }
+select.field { padding-right: 28px; }
+.toggle { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: var(--tt-radius-control); background: transparent; }
+.toggle:disabled { cursor: not-allowed; }
+.toggle:disabled .toggle__track { opacity: .5; }
+.toggle__track { position: relative; width: 36px; height: 20px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); transition: background-color 120ms ease, border-color 120ms ease; }
+.toggle__thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: var(--tt-radius-mark); background: var(--tt-text-muted); transition: transform 120ms ease; }
+.toggle[aria-checked='true'] .toggle__track { border-color: var(--tt-accent); background: var(--tt-accent); }
+.toggle[aria-checked='true'] .toggle__thumb { background: var(--tt-on-accent); transform: translateX(16px); }
+
+/* ---- Settings › Providers (providers.css): one card, a row per provider, one row open at a time. ---- */
+.providers-settings { min-width: 0; container: providers / inline-size; }
+.providers-list { margin: 6px 0 0; padding: 0; list-style: none; border-radius: var(--tt-radius-lg); background: var(--tt-card); overflow: hidden; }
+.provider-row + .provider-row { border-top: 2px solid var(--tt-card-inset); }
+.provider-row__head { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; align-items: center; column-gap: 10px; padding-right: 16px; transition: background 160ms ease; }
+.provider-row__head:has(.provider-row__trigger:hover) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
+.provider-row__trigger { display: grid; grid-template-columns: 16px 28px minmax(0, 1fr) 132px 64px; align-items: center; column-gap: 12px; min-width: 0; min-height: 62px; padding: 12px 8px 12px 14px; border: 0; border-radius: 0; background: transparent; color: var(--tt-text); text-align: left; }
+.provider-row__trigger:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; border-radius: var(--tt-radius-lg); }
+.provider-row__chevron { color: var(--tt-text-muted); transition: transform 160ms ease; }
+.provider-row[data-open='true'] .provider-row__chevron { transform: rotate(90deg); }
+.provider-row__name, .provider-row__meta { display: contents; }
+.provider-row__name strong { min-width: 0; overflow: hidden; font-size: var(--tt-type-reading); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.provider-row__status { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
+.provider-row__status i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.provider-row__status:is([data-status='connected'], [data-status='busy']) { color: var(--tt-accent-text); }
+.provider-row__status[data-status='error'] { color: var(--tt-error-text); }
+.provider-row__status[data-status='busy'] i { animation: provider-busy 1s ease-in-out infinite; }
+.provider-row__version { min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.provider-badge { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: var(--tt-radius-row); background: var(--provider-badge, var(--tt-card-inset)); color: var(--tt-provider-ink); }
+.provider-badge .mark { width: 17px; height: 17px; color: var(--tt-provider-ink); }
+.provider-badge[data-provider='codex'] { --provider-badge: var(--tt-provider-codex); }
+.provider-badge[data-provider='claude'] { --provider-badge: var(--tt-provider-claude); }
+.provider-badge[data-provider='cursor'] { --provider-badge: var(--tt-provider-cursor-badge); }
+.provider-badge[data-provider='antigravity'] { --provider-badge: var(--tt-provider-antigravity-badge); }
+.provider-row__head .provider-row__act { justify-self: end; min-height: 32px; padding: 5px 12px; font-size: var(--tt-type-small); white-space: nowrap; }
+@media (max-width: 640px), (pointer: coarse) { .provider-row__head .provider-row__act { min-height: 44px; } }
+.provider-row__head .toggle { justify-self: end; }
+.provider-row__panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px 36px; padding: 4px 22px 22px 84px; animation: provider-arrive 160ms ease both; }
+.provider-row__column { display: grid; align-content: start; gap: 20px; min-width: 0; }
+.provider-row__column h4 { margin: 0 0 6px; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.provider-row__column p { margin: 0; max-width: 36em; color: var(--tt-text-muted); font-size: var(--tt-type-body); line-height: 1.6; overflow-wrap: anywhere; }
+.provider-connection, .provider-client { display: grid; gap: 12px; min-width: 0; }
+.provider-client__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.provider-row__column p.lead { color: var(--tt-text); }
+.provider-row__column p.live { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: var(--tt-type-small); }
+.live > i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--tt-accent-text); }
+.live[data-wait] > i { animation: provider-busy 1s ease-in-out infinite; }
+.provider-row__column p.notice { margin-top: 10px; color: var(--tt-text); }
+.provider-row__column p.perror, .perror { margin: 14px 0 0; padding: 12px 14px; border-radius: var(--tt-radius-sm); background: var(--tt-error-surface); color: var(--tt-error-text); font-size: var(--tt-type-body); line-height: 1.6; }
+.provider-support { color: var(--tt-text-muted); font-size: var(--tt-type-body); line-height: 1.6; }
+.provider-support summary { display: flex; align-items: center; width: fit-content; max-width: 100%; min-height: var(--hit-row); color: var(--tt-text); cursor: pointer; }
+.provider-support summary:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
+.provider-row__column .provider-support p { margin: 10px 0 0; }
+.provider-row__empty { margin: 0; padding: 0 22px 18px 84px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+
+/* A provider's models: a small field naming how many, which opens the list under it (ProviderModelList). */
+.pml__trigger { display: inline-flex; align-items: center; gap: 8px; min-height: var(--hit); padding: 6px 10px 6px 12px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-field); color: var(--tt-text); font-size: var(--tt-type-small); white-space: nowrap; }
+.pml__trigger:hover { background: var(--tt-hover); }
+.pml__trigger[aria-expanded='true'] { border-color: var(--tt-accent); }
+.pml__trigger svg { color: var(--tt-text-muted); }
+.pml { width: min(100%, 380px); margin: 0; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated); list-style: none; }
+.pml h5 { margin: 8px 10px 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.pml h5:first-child { margin-top: 4px; }
+.pml li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; padding: 6px 10px; border-radius: var(--tt-radius-row); color: var(--tt-text); font-size: var(--tt-type-small); }
+.pml li > span { display: grid; gap: 2px; min-width: 0; }
+.pml li b { font-weight: 500; }
+.pml li small { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.pml__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-accent-text); font-size: var(--tt-type-micro); white-space: nowrap; }
+
+/* B: the row's own steps (CursorConnection's shape, with a paste field). Numbers are 4px tags. */
+.steps { display: grid; gap: 14px; margin: 12px 0 0; padding: 0; list-style: none; }
+.steps > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
+.steps__n { display: grid; place-items: center; width: 22px; height: 22px; margin-top: 1px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; }
+.steps > li > div { display: grid; gap: 8px; min-width: 0; }
+.provider-row__column .steps p { color: var(--tt-text); }
+.steps .btn { justify-self: start; }
+.paste { display: grid; gap: 6px; min-width: 0; }
+.paste label { color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.paste__row { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.paste__row .field { flex: 1 1 200px; }
+.provider-row__column .paste .hint, .paste .hint { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; }
+
+/* C: T3 Code's account section, as label and value rows. */
+.acct { display: grid; gap: 0; border-top: 2px solid var(--tt-card-inset); }
+.acct__row { display: grid; grid-template-columns: 11em minmax(0, 1fr); gap: 8px 18px; align-items: start; padding: 14px 0; border-bottom: 2px solid var(--tt-card-inset); }
+.acct__label { padding-top: 7px; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.acct__value { display: grid; gap: 8px; min-width: 0; }
+.provider-row__column .acct__value p { font-size: var(--tt-type-small); }
+.provider-row__column .acct__value p.acct__state { padding-top: 6px; color: var(--tt-text); font-size: var(--tt-type-body); }
+.acct__line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.acct__line > p { flex: 1 1 12em; }
+.acct__value select.field { max-width: 280px; }
+
+@container providers (width < 600px) {
+  .provider-row__head { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .provider-row__trigger { grid-template-columns: 16px 28px minmax(0, 1fr); }
+  .provider-row__name { display: grid; gap: 3px; min-width: 0; }
+  .provider-row__meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .acct__row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .acct__label { padding-top: 0; }
+}
+@container providers (width < 430px) {
+  .provider-row__head { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'trigger toggle' 'act act'; padding-right: 12px; }
+  .provider-row__trigger { grid-area: trigger; padding-left: 10px; column-gap: 10px; }
+  .provider-row__head .toggle { grid-area: toggle; }
+  .provider-row__slot { display: none; }
+  .provider-row__head:has(.provider-row__act) { grid-template-areas: 'trigger trigger' 'act toggle'; }
+  .provider-row__head:has(.provider-row__act) .toggle { margin: -6px 0 12px; }
+  .provider-row__head .provider-row__act { grid-area: act; justify-self: start; margin: -6px 0 12px 64px; }
+  .provider-row__panel { padding: 4px 14px 18px; }
+  .provider-row__empty { padding: 0 14px 16px; }
+}
+
+/* ---- Sotto's sign-in dialog (HostsModal + hostProviderSignIn), in its paste-code shape. ---- */
+dialog.dlg { width: min(460px, calc(100vw - 24px)); max-height: calc(100vh - 24px); margin: auto; padding: 20px 20px 16px; overflow: auto; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-overlay); background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 24px 64px var(--tt-shadow-color); }
+dialog.dlg::backdrop { background: var(--tt-backdrop); }
+.dlg h2 { margin: 0 0 4px; font-size: var(--tt-type-lead); font-weight: 600; }
+.sign { display: grid; gap: 12px; margin-top: 10px; }
+.sign p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); line-height: 1.55; }
+.sign__row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.sign__quiet { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.notice { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 10px 12px; border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); font-size: var(--tt-type-small); }
+.notice p { margin: 0; color: var(--tt-text); }
+.notice > svg { flex: none; margin-top: 2px; color: var(--tt-accent-text); }
+.notice--error { border-left-color: var(--tt-error); }
+.notice--done { border-left-color: var(--tt-success); }
+.notice--done > svg { color: var(--tt-success); }
+.spin { animation: spin 900ms linear infinite; }
+.dlg__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.dlg__actions .btn { min-height: 36px; }
+@media (max-width: 640px), (pointer: coarse) { .dlg__actions .btn { min-height: 44px; } }
+
+/* ---- Composer and its text-button chips (threadChips.css). ---- */
+.composer { max-width: 760px; padding: 12px 14px 8px; border-radius: var(--tt-radius-card); background: var(--tt-card); }
+.composer textarea { display: block; width: 100%; min-height: 60px; padding: 2px 0; border: 0; outline: 0; resize: vertical; background: transparent; color: var(--tt-text); font-size: var(--tt-type-reading); line-height: 1.5; }
+.composer textarea::placeholder { color: var(--tt-text-muted); }
+.composer:focus-within:has(textarea:focus-visible) { box-shadow: 0 0 0 2px var(--tt-focus-ring); }
+.composer__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 5px; max-width: 320px; min-width: 0; height: 28px; min-height: var(--hit-row); padding: 0 7px; border: 1px solid transparent; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-small); white-space: nowrap; }
+.chip > svg.i:last-child { width: 13px; height: 13px; opacity: .7; }
+button.chip:hover, .chip[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.chip--model { color: var(--tt-text-2); }
+.chip .mark { width: 13px; height: 13px; }
+.chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip__suffix { color: var(--tt-accent-text); }
+.chip[data-effort-top='true'] > span { color: var(--tt-effort-ink); font-weight: 500; }
+.chip--static { cursor: default; }
+.chip--static svg.i { width: 13px; height: 13px; }
+.send { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--tt-pill); color: var(--tt-pill-ink); }
+.send:disabled { opacity: .35; cursor: not-allowed; }
+@media (max-width: 640px), (pointer: coarse) { .send { width: 44px; height: 44px; } }
+.slot { display: grid; gap: 12px; max-width: 760px; margin-top: 8px; }
+.slot:empty { display: none; }
+
+/* ---- The model menu (modelPicker.css): a rail of marks, then the panel. ---- */
+.mm { container: menu / inline-size; display: grid; grid-template-columns: 52px minmax(0, 1fr); width: min(336px, 100%); height: 392px; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-card); background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.mm--c { width: min(470px, 100%); }
+@media (max-width: 640px), (pointer: coarse) { .mm { grid-template-columns: 58px minmax(0, 1fr); height: 460px; } }
+.mm__rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--tt-hairline); background: var(--tt-surface); overflow-y: auto; scrollbar-width: none; }
+.mm__rail > button { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: var(--tt-radius-inset); background: transparent; }
+@media (max-width: 640px), (pointer: coarse) { .mm__rail > button { width: 44px; height: 44px; } }
+.mm__rail > button .mark { width: 18px; height: 18px; opacity: .75; }
+.mm__rail > button:hover { background: var(--tt-hover); }
+.mm__rail > button:hover .mark, .mm__rail > button[aria-selected='true'] .mark { opacity: 1; }
+.mm__rail > button[aria-selected='true'] { background: var(--tt-selected); }
+.mm__rail > button[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 var(--tt-radius-mark) var(--tt-radius-mark) 0; background: var(--tt-activity); }
+.mm__panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: inherit; }
+.mm__search { display: flex; flex: none; align-items: center; gap: 8px; height: 42px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
+.mm__search input { flex: 1; min-width: 0; padding: 4px 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: var(--tt-type-small); }
+.mm__search input::placeholder { color: var(--tt-text-faint); }
+.mm__search:has(input:focus-visible) { box-shadow: inset 0 -2px 0 var(--tt-focus-ring); }
+.mm__search button { display: grid; place-items: center; flex: none; width: var(--hit); height: 34px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); }
+.mm__search button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.mm__list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; background: inherit; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.mm__list--grouped { padding-top: 0; }
+.mm__list--grouped > [role='group'] { background: inherit; }
+.mm__opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: var(--hit-row); padding: 6px 10px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: left; scroll-margin: 34px 0 6px; }
+.mm__opt:hover, .mm__opt:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.mm__opt:focus-visible, .mm__maker:focus-visible, .mm__lvl:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); outline: 0; }
+.mm__opt[aria-selected='true'] { color: var(--tt-activity); }
+.mm__opt > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
+.mm__opt small { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.mm__opt > svg { color: var(--tt-activity); }
+.mm__maker { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 7px 8px 7px 10px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); text-align: left; }
+.mm__maker:hover, .mm__maker:focus-visible { background: var(--tt-hover); color: var(--tt-text); }
+.mm__maker > span { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.mm__maker b { overflow: hidden; font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.mm__maker small { overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
+.mm__maker[aria-current='true'] b { color: var(--tt-activity); }
+.mm__maker > svg { color: var(--tt-text-muted); }
+.mm__step { display: flex; flex: none; align-items: center; gap: 6px; height: 38px; padding: 0 12px 0 4px; border-bottom: 1px solid var(--tt-hairline); }
+.mm__step button { display: inline-flex; align-items: center; gap: 2px; height: 30px; min-height: var(--hit-row); padding: 0 8px 0 4px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.mm__step button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.mm__step b { min-width: 0; overflow: hidden; font-size: var(--tt-type-small); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.mm__step span { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.mm__group { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; padding: 10px 16px 4px; background: var(--tt-surface-elevated); color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.mm__group span { margin-left: auto; font-weight: 500; }
+.mm__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.mm__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
+/* C: Thinking docked beside the list, as T3 Code's picker has it; under the list in a narrow menu. */
+.mm__body { display: grid; grid-template-columns: minmax(0, 1fr) 118px; flex: 1; min-height: 0; }
+.mm__body > .mm__list { min-height: 0; }
+.mm__think { display: flex; flex-direction: column; gap: 4px; min-height: 0; padding: 8px 6px; border-left: 1px solid var(--tt-hairline); background: var(--tt-surface); }
+.mm__think-h { margin: 2px 6px 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.mm__think [role='radiogroup'] { display: grid; gap: 2px; }
+.mm__lvl { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-height: var(--hit-row); padding: 6px 8px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: left; }
+.mm__lvl:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.mm__lvl[aria-checked='true'] { background: var(--tt-selected); color: var(--tt-text); }
+.mm__lvl[aria-checked='true'][data-e='high'] { color: var(--tt-effort-ink); }
+.mm__lvl:disabled { cursor: default; opacity: .45; }
+.mm__think-note { margin: auto 6px 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; overflow-wrap: anywhere; }
+@container menu (width < 400px) {
+  .mm__body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .mm__think { border-left: 0; border-top: 1px solid var(--tt-hairline); }
+  .mm__think [role='radiogroup'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mm__lvl { justify-content: center; }
+  .mm__think-note { margin-top: 2px; }
+}
+
+/* ---- The effort card (effortPicker.css): word, line, track, and its three stops. ---- */
+.eff { width: min(292px, 100%); padding: 12px 14px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-card); background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.eff__word { margin: 0; font-size: var(--tt-type-reading); font-weight: 600; }
+.eff__word[data-top='true'] { color: var(--tt-effort-ink); }
+.eff__line { margin: 1px 0 0; min-height: 18px; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.45; }
+.eff__track { position: relative; height: 26px; margin: 12px 13px 10px; }
+.eff__pill { position: absolute; left: -13px; right: -13px; top: 2px; height: 22px; border-radius: var(--tt-radius-mark); background: var(--tt-effort-track); overflow: hidden; }
+.eff__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--tt-radius-mark); background: color-mix(in srgb, var(--tt-effort-a) var(--heat), var(--tt-effort-fill-cool)); transition: width 160ms ease; }
+.eff__thumb { position: absolute; top: 0; width: 26px; height: 26px; border-radius: var(--tt-radius-tag); background: var(--tt-effort-thumb); border: 1px solid var(--tt-border); transform: translateX(-50%); transition: left 160ms ease; }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: var(--tt-radius-control); background: var(--tt-card-inset); }
+.seg button { min-height: var(--hit-row); border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.seg button:hover { color: var(--tt-text); }
+.seg button[aria-checked='true'] { background: var(--tt-segment-on); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.seg button:disabled { cursor: not-allowed; opacity: .55; }
+
+/* ---- The four sign-in methods: method choice, fields, saved key. ---- */
+.form { display: grid; gap: 14px; min-width: 0; max-width: 38em; }
+.provider-connection > div > .form { margin-top: 16px; }
+.fld { display: grid; gap: 6px; min-width: 0; }
+.fld > label, .fld__l { color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.fld > select.field { max-width: 280px; }
+.fld2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.provider-row__column p.hint, p.hint { margin: 0; max-width: 38em; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; }
+.seg.seg--method { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.seg.seg--two { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 26em; }
+.seg.seg--method button, .seg.seg--two button { padding: 6px 8px; line-height: 1.25; }
+.keysaved { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; padding: 6px 6px 6px 12px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-field); }
+.provider-row__column .keysaved p { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.keysaved p svg { color: var(--tt-success); }
+.btn--proto { justify-self: start; border-style: dashed; border-color: var(--tt-border); background: transparent; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+@container providers (width < 560px) {
+  .seg.seg--method { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fld2 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---- The variant bar: the prototype's own, inverted so it never reads as part of the design. ---- */
+.switcher { position: fixed; left: 50%; bottom: 12px; z-index: 50; display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 16px); padding: 6px; border: 2px dashed var(--tt-accent); border-radius: var(--tt-radius-inset); background: var(--tt-text); color: var(--tt-canvas); box-shadow: 0 8px 28px var(--tt-shadow-color); transform: translateX(-50%); }
+.switcher button { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 0; border-radius: var(--tt-radius-control); background: color-mix(in srgb, var(--tt-canvas) 12%, var(--tt-text)); color: var(--tt-canvas); font-size: var(--tt-type-heading); }
+.switcher button:hover { background: color-mix(in srgb, var(--tt-canvas) 22%, var(--tt-text)); }
+.switcher button:focus-visible { outline: 2px solid var(--tt-canvas); outline-offset: 2px; }
+.switcher__label { min-width: 0; padding: 0 8px; line-height: 1.25; text-align: center; }
+.switcher__label b { display: block; overflow: hidden; font-size: var(--tt-type-body); text-overflow: ellipsis; white-space: nowrap; }
+.switcher__label small { display: block; font-size: var(--tt-type-micro); opacity: .8; }
+
+@keyframes provider-arrive { from { opacity: .4; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+@keyframes provider-busy { 50% { opacity: .25; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6Z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/></symbol>
+  <!-- PLACEHOLDER mark for Antigravity, drawn for this draft: a rising chevron over a floating dot. Not Google's logo. -->
+  <symbol id="m-antigravity" viewBox="0 0 24 24"><path d="M4.5 20 12 4.5 19.5 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="16.4" r="2.4"/></symbol>
+  <symbol id="m-cursor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 2.5 20.5 7.25v9.5L12 21.5 3.5 16.75v-9.5Z"/><path d="M3.5 7.25 12 12l8.5-4.75M12 12v9.5"/></g></symbol>
+  <symbol id="m-codex" viewBox="0 0 256 260"><path d="M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"/></symbol>
+  <symbol id="m-claude" viewBox="0 0 256 257"><path d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></symbol>
+</svg>
+
+<main class="page">
+  <header class="top">
+    <p class="top__eyebrow">Throwaway prototype · Antigravity as a thread provider</p>
+    <h1>How Antigravity signs in, and how its models are picked</h1>
+    <p>Three answers. Each shows the same two surfaces: Antigravity’s row in Settings › Providers, and a thread’s composer with its model menu open on Antigravity’s models. Switch with the bar at the bottom, <code>?variant=A|B|C</code>, or the Left and Right keys.</p>
+    <p class="fine">Nothing here reaches the network. Every sign-in, Google page and key check is fake: any code or key works, and one with “wrong” in it is refused. Gemini Enterprise’s browser step finishes with a dashed Prototype button. Antigravity’s mark and colour are placeholders drawn for this draft.</p>
+    <button type="button" class="theme-toggle" id="theme-toggle"></button>
+  </header>
+
+  <div class="duo">
+    <section class="sec" aria-labelledby="s1-h">
+      <h2 id="s1-h">Settings › Providers</h2>
+      <p class="sec__note" id="s1-note"></p>
+      <div class="proto" role="group" aria-label="Prototype: Antigravity’s state">
+        <span>Prototype · state</span>
+        <button type="button" data-state="notinstalled">Not installed</button>
+        <button type="button" data-state="signedout">Signed out</button>
+        <button type="button" data-state="signing">Signing in</button>
+        <button type="button" data-state="connected">Connected</button>
+      </div>
+      <div id="providers" class="providers-settings"></div>
+    </section>
+
+    <section class="sec" aria-labelledby="s2-h">
+      <h2 id="s2-h">A thread’s composer</h2>
+      <p class="sec__note" id="s2-note"></p>
+      <div id="composer"></div>
+    </section>
+  </div>
+</main>
+
+<dialog class="dlg" id="dlg" aria-labelledby="dlg-title"></dialog>
+
+<nav class="switcher" aria-label="Prototype: variant">
+  <button type="button" id="v-prev" aria-label="Previous variant">←</button>
+  <div class="switcher__label" aria-live="polite"><b id="v-label"></b><small>Prototype variant</small></div>
+  <button type="button" id="v-next" aria-label="Next variant">→</button>
+</nav>
+
+<script>
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ic = (n, cls = 'i') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const mk = (p, size) => `<svg class="mark" data-provider="${p}" width="${size}" height="${size}" aria-hidden="true"><use href="#m-${p}"/></svg>`;
+const count = n => `${n} model${n === 1 ? '' : 's'}`;
+
+/* Re-render a region and put the focus on the element with the given data-k, or back on the one that had it. */
+function paint(root, html, focusKey) {
+  const active = document.activeElement;
+  const had = root.contains(active) ? active?.dataset?.k : undefined;
+  const caret = active && active.tagName === 'INPUT' && root.contains(active) ? active.selectionStart : null;
+  root.innerHTML = html;
+  const want = focusKey && root.querySelector(`[data-k="${CSS.escape(focusKey)}"]`) ? focusKey : had;
+  if (!want) return;
+  const el = root.querySelector(`[data-k="${CSS.escape(want)}"]`);
+  if (el && !el.disabled) {
+    el.focus({ preventScroll: !focusKey });
+    if (want === had && caret !== null && el.setSelectionRange) el.setSelectionRange(caret, caret);
+  }
+}
+
+/* ---------------- Data ---------------- */
+/* The account's models, named as agy gives them, in agy's order. Gemini models take thinking levels. */
+const MODELS = [
+  { id: 'gemini-4-carbon', n: 'Gemini 4 Carbon', maker: 'Google', fam: 'Gemini 4', think: true },
+  { id: 'gemini-4-argon', n: 'Gemini 4 Argon', maker: 'Google', fam: 'Gemini 4', think: true },
+  { id: 'gemini-3.8-flash', n: 'Gemini 3.8 Flash', maker: 'Google', fam: 'Gemini 3.8', think: true, def: true },
+  { id: 'gemini-3.1-pro', n: 'Gemini 3.1 Pro', maker: 'Google', fam: 'Gemini 3.1', think: true },
+  { id: 'claude-sonnet-5.5', n: 'Claude Sonnet 5.5', maker: 'Anthropic', fam: 'Claude' },
+  { id: 'claude-opus-5.5', n: 'Claude Opus 5.5', maker: 'Anthropic', fam: 'Claude' },
+  { id: 'gpt-oss-120b', n: 'GPT-OSS 120B', maker: 'OpenAI', fam: 'GPT-OSS' },
+];
+const MAKERS = ['Google', 'Anthropic', 'OpenAI'];
+const FAMILIES = ['Gemini 4', 'Gemini 3.8', 'Gemini 3.1', 'Claude', 'GPT-OSS'];
+const EFFORTS = [
+  { id: 'low', n: 'Low', line: 'Answers quickly and thinks little.', at: 0 },
+  { id: 'medium', n: 'Medium', line: 'Thinks a while before it answers.', at: 50 },
+  { id: 'high', n: 'High', line: 'Thinks longest. Slower, and uses more of your limits.', at: 100 },
+];
+const OTHERS = [
+  { id: 'codex', n: 'Codex', v: '0.142.0' },
+  { id: 'claude', n: 'Claude Code', v: '2.3.4' },
+  { id: 'cursor', n: 'Cursor', v: '2026.11.12' },
+];
+const RAIL = [...OTHERS, { id: 'antigravity', n: 'Antigravity' }];
+const S2_A = 'One flat list of the account’s models, in the order agy gives them, as T3 Code shows them. Effort stays the composer’s own chip, shown for Gemini models only.';
+const VARIANTS = [
+  { key: 'A', name: 'Sign in in a dialog',
+    s1: 'The row holds a Sign-in method choice and the fields that method needs. Sign in, in the row’s header, opens Sotto’s sign-in dialog for the two Google page methods; the two key methods connect from the row.',
+    s2: S2_A },
+  { key: 'B', name: 'Sign in on the row',
+    s1: 'Cursor’s row shape: everything happens inside the opened row. The method is a segmented choice, and each method has its own numbered steps. Escape while it waits cancels.',
+    s2: 'Models grouped by maker, as Cursor’s menu groups them. The menu opens on the makers; search looks through all of them. Effort stays the composer’s own chip.' },
+  { key: 'C', name: 'T3 Code’s account row',
+    s1: 'T3 Code’s account section with all four methods live, as label and value rows: Sign in for the two Google methods, Connect for the two key methods.',
+    s2: 'Models listed by family, with Thinking docked beside the list, as T3 Code’s picker has it. There is no effort chip: the model chip names the thinking level.' },
+];
+const model = id => MODELS.find(m => m.id === id);
+const effort = id => EFFORTS.find(e => e.id === id);
+const NOT_INSTALLED = 'Antigravity’s CLI, agy, is not installed on this computer. Install it with Google’s guide, then connect again. Sotto works with agy 1.5.0 or newer.';
+const REFUSED = 'agy did not accept that code. Nothing was signed in. Open the page again for a new code.';
+const KEY_REFUSED = 'Google did not accept that key. Nothing was saved. Check the key and paste it again.';
+/* agy's four sign-ins, as T3 Code offers them. The first two use a Google page; the last two connect from the row. */
+const METHODS = [
+  { id: 'google', n: 'Google account', page: true, line: 'Sign in with Google in your browser, then paste back the code Google shows.' },
+  { id: 'enterprise', n: 'Gemini Enterprise', page: true, line: 'Your organisation’s Gemini Enterprise: its Google Cloud project and location, then a Google sign-in in your browser. No code to paste.' },
+  { id: 'apikey', n: 'Gemini API key', key: 'Gemini API key', line: 'A key from Google AI Studio.' },
+  { id: 'vertex', n: 'Agent Platform', key: 'Agent Platform API key', line: 'Vertex AI on Google Cloud, with an API key or a Google Cloud project and location.' },
+];
+const method = id => METHODS.find(m => m.id === id);
+const VTX = [{ id: 'key', n: 'API key' }, { id: 'project', n: 'Project and location' }];
+const STORE = 'The key stays on this computer, in Sotto’s credential store. Sotto hands it to agy and never shows it again.';
+const VTX_PROJECT = 'agy uses the Google Cloud sign-in already on this computer for that project.';
+
+/* ---------------- State ---------------- */
+const fresh = () => ({ stage: null, method: null, opened: false, code: '', err: null, again: false });
+const S = {
+  variant: 'A', row: 'signedout', enabled: true, open: 'antigravity', others: { codex: true, claude: true, cursor: true },
+  method: 'google', vtx: 'key', conn: null, connVtx: 'key',
+  f: { project: '', location: '', key: '', vkey: '' }, saved: { apikey: false, vertex: false }, replace: false, keyErr: null,
+  sign: fresh(), notice: null, busy: null, checking: false, list: false,
+  menu: { open: true, rail: 'antigravity', maker: null, query: '' }, eff: false,
+  chosen: 'gemini-3.8-flash', effort: 'medium',
+};
+const timers = [];
+const later = (ms, f) => timers.push(setTimeout(f, ms));
+const clearLater = () => { timers.forEach(clearTimeout); timers.length = 0; };
+const isPage = id => !!method(id)?.page;
+const keyF = id => (id === 'apikey' ? 'key' : 'vkey');
+const usesKey = id => id === 'apikey' || (id === 'vertex' && S.vtx === 'key');
+const connKey = () => S.conn === 'apikey' || (S.conn === 'vertex' && S.connVtx === 'key');
+const usesCloud = id => id === 'enterprise' || (id === 'vertex' && S.vtx === 'project');
+function readyFor(id) {
+  const has = k => !!S.f[k].trim();
+  if (id === 'google') return true;
+  if (usesCloud(id)) return has('project') && has('location');
+  return has(keyF(id)) || (S.saved[id] && !S.replace);
+}
+/* Antigravity is connected with the method on screen (and, for Agent Platform, the same way). */
+const connectedHere = () => S.row === 'connected' && S.conn === S.method && (S.method !== 'vertex' || S.connVtx === S.vtx);
+const mName = (id, vtx) => id === 'vertex' ? `Agent Platform with ${vtx === 'key' ? 'an API key' : 'a project and location'}` : method(id).n;
+function applyChoice(f, v) {
+  if (f === 'method') S.method = v; else if (f === 'vtx') S.vtx = v; else return;
+  S.keyErr = null; S.replace = false;
+}
+
+/* ---------------- Settings › Providers ---------------- */
+function toggleHTML(id, name, checked, disabled) {
+  return `<button type="button" class="toggle" role="switch" data-act="toggle" data-p="${id}" data-k="t:${id}" aria-checked="${checked}" aria-label="Enable ${esc(name)}"${disabled ? ' disabled' : ''}><span class="toggle__track"><span class="toggle__thumb"></span></span></button>`;
+}
+function rowHead(id, name, statusWord, status, version, act, toggle) {
+  const isOpen = S.open === id;
+  return `<div class="provider-row__head">
+    <button type="button" class="provider-row__trigger" data-act="row" data-p="${id}" data-k="row:${id}" data-provider-trigger aria-label="${esc(name)}" aria-expanded="${isOpen}"${isOpen ? ` aria-controls="panel-${id}"` : ''} aria-describedby="meta-${id}">
+      <svg class="i provider-row__chevron" aria-hidden="true"><use href="#i-right"/></svg>
+      <span class="provider-badge" data-provider="${id}">${mk(id, 17)}</span>
+      <span class="provider-row__name"><strong>${esc(name)}</strong>
+        <span class="provider-row__meta" id="meta-${id}"><small class="provider-row__status" data-status="${status}"><i aria-hidden="true"></i>${statusWord}</small><span class="provider-row__version">${version}</span></span>
+      </span>
+    </button>
+    ${act}
+    ${toggle}
+  </div>`;
+}
+function otherRow(p) {
+  const on = S.others[p.id], isOpen = S.open === p.id;
+  return `<li class="provider-row" data-open="${isOpen}">
+    ${rowHead(p.id, p.n, on ? 'Connected' : 'Disabled', on ? 'connected' : 'off', p.v, '<span class="provider-row__slot"></span>', toggleHTML(p.id, p.n, on, false))}
+    ${isOpen ? `<div id="panel-${p.id}" role="region" aria-label="${esc(p.n)} details"><p class="provider-row__empty">Prototype: only Antigravity’s row is drawn.</p></div>` : ''}
+  </li>`;
+}
+
+function agStatus() {
+  if (!S.enabled) return ['Disabled', 'off'];
+  if (S.busy === 'refresh') return ['Refreshing…', 'busy'];
+  if (S.row === 'notinstalled') return ['Not installed', 'error'];
+  if (S.row === 'signedout') return ['Not signed in', 'error'];
+  if (S.row === 'signing') {
+    if (S.sign.stage === 'checking') return ['Checking…', 'busy'];
+    return S.variant === 'A' ? ['Not signed in', 'error'] : ['Signing in…', 'busy'];
+  }
+  return ['Connected', 'connected'];
+}
+const SLOT = '<span class="provider-row__slot"></span>';
+const btn = (label, act, key, { kind = '', aria = '', disabled = false, icon = '', ready = '', cls = '' } = {}) =>
+  `<button type="button" class="btn${kind ? ` btn--${kind}` : ''}${cls ? ` ${cls}` : ''}" data-act="${act}" data-k="${key}"${aria ? ` aria-label="${esc(aria)}"` : ''}${ready ? ` data-ready="${ready}"` : ''}${disabled ? ' disabled' : ''}>${icon}${label}</button>`;
+/* A's header: Install guide, or Sign in for the two Google page methods once their fields are filled. */
+function agAct() {
+  if (!S.enabled) return SLOT;
+  if (S.row === 'notinstalled' && S.variant !== 'B')
+    return btn(`${ic('ext')}Install guide`, 'guide', 'ag:act', { kind: 'ghost', cls: 'provider-row__act', aria: 'Open the Antigravity install guide' });
+  if (S.variant === 'A' && S.row !== 'notinstalled' && isPage(S.method) && !connectedHere() && S.sign.stage !== 'checking')
+    return btn('Sign in', 'signin', 'ag:act', { cls: 'provider-row__act', aria: `Sign in to Antigravity with ${method(S.method).n}`, disabled: !readyFor(S.method), ready: S.method });
+  return SLOT;
+}
+/* The page's own Connect, Retry or Disconnect, as every row has today. */
+function connectButtons(withRefresh) {
+  if (!S.enabled) return btn('Connect', 'enable', 'ag:enable', { kind: 'primary', aria: 'Connect Antigravity' });
+  if (S.row === 'connected') return btn('Disconnect', 'disconnect', 'ag:disconnect', { aria: 'Disconnect Antigravity' })
+    + (withRefresh ? `<button type="button" class="btn btn--ghost btn--icon" data-act="refresh" data-k="ag:refresh" aria-label="Refresh Antigravity">${ic('refresh')}</button>` : '');
+  return btn('Retry connection', 'retry', 'ag:retry', { aria: 'Retry Antigravity' });
+}
+const signOutBtn = () => btn('Sign out of Antigravity', 'signout', 'ag:signout', { kind: 'ghost', aria: 'Sign out of Antigravity on this computer' });
+const noticeHTML = () => S.notice ? `<p class="notice" role="status">${esc(S.notice)}</p>` : '<p class="vh" role="status"></p>';
+const SIGNED_OUT = 'Sotto runs agy with a folder of its own. Choose how it signs in: a Google account, Gemini Enterprise, a Gemini API key or Agent Platform.';
+const OWN = ', in Sotto’s own Antigravity folder. The agy you run yourself, and its sign-in, stay as they are.';
+function connText() {
+  const where = `${esc(S.f.project)} in ${esc(S.f.location)}`;
+  if (S.conn === 'enterprise') return `Signed in to Gemini Enterprise for ${where}${OWN}`;
+  if (S.conn === 'apikey') return `Connected with a Gemini API key${OWN}`;
+  if (S.conn === 'vertex') return `Connected to Agent Platform ${S.connVtx === 'key' ? 'with an API key' : `for ${where}`}${OWN}`;
+  return `Signed in with your Google account${OWN}`;
+}
+/* Shown when the method on screen is not the one Antigravity is connected with now. */
+const otherNote = () => S.row === 'connected' && !connectedHere()
+  ? `<p class="hint">Connected with ${esc(mName(S.conn, S.connVtx))} now. Connecting with ${esc(mName(S.method, S.vtx))} replaces it.</p>` : '';
+const busyRow = () => S.row === 'signing';
+function inputHTML(id, f, ph, { type = 'text', desc = '', invalid = false, label = '' } = {}) {
+  return `<input id="${id}" class="field" type="${type}" data-f="${f}" data-k="f:${f}" value="${esc(S.f[f])}" placeholder="${esc(ph)}" autocomplete="off" spellcheck="false"${label ? ` aria-label="${esc(label)}"` : ''}${desc ? ` aria-describedby="${desc}"` : ''}${invalid ? ' aria-invalid="true"' : ''}${busyRow() ? ' disabled' : ''}>`;
+}
+const fld = (id, label, f, ph) => `<div class="fld"><label for="${id}">${label}</label>${inputHTML(id, f, ph)}</div>`;
+const cloudFields = p => `<div class="fld2">${fld(`${p}-project`, 'Google Cloud project', 'project', 'my-project-id')}${fld(`${p}-location`, 'Location', 'location', 'us-central1')}</div>`;
+const methodOptions = () => METHODS.map(m => `<option value="${m.id}"${S.method === m.id ? ' selected' : ''}>${m.n}</option>`).join('');
+const vtxOptions = () => VTX.map(x => `<option value="${x.id}"${S.vtx === x.id ? ' selected' : ''}>${x.n}</option>`).join('');
+const selectHTML = (id, f, opts, desc) => `<select id="${id}" class="field" data-f="${f}" data-k="f:${f}"${desc ? ` aria-describedby="${desc}"` : ''}${busyRow() || S.row === 'notinstalled' ? ' disabled' : ''}>${opts}</select>`;
+const checking = () => S.sign.stage === 'checking';
+const connectBtn = (aria, label = 'Connect') => btn(checking() ? 'Checking…' : label, 'connect', 'ag:connect',
+  { kind: 'primary', disabled: checking() || !readyFor(S.method), ready: checking() ? '' : S.method, aria: checking() ? '' : aria });
+
+/* The key, masked. Once saved it is never shown back: "Key saved" with Replace. */
+function keyHTML(id, { label = true } = {}) {
+  const m = method(S.method), f = keyF(S.method);
+  if (S.saved[S.method] && !S.replace) {
+    const here = connectedHere();
+    return `<div class="keysaved"><p>${ic('check')}Key saved</p><div class="provider-client__actions">${here ? '' : connectBtn(`Connect Antigravity with the saved ${m.key}`)}${btn('Replace', 'replace', 'ag:replace', { aria: `Replace the saved ${m.key}`, disabled: checking() })}${btn('Remove key', 'removekey', 'ag:removekey', { kind: 'ghost', aria: `Remove the saved ${m.key} from this computer`, disabled: checking() })}</div></div><p class="hint">${STORE}</p>`;
+  }
+  return `<div class="fld">${label ? `<label for="${id}">${m.key}</label>` : ''}<div class="paste__row">${inputHTML(id, f, S.replace ? 'Paste the new key' : 'Paste the key', { type: 'password', desc: `${id}-hint`, invalid: !!S.keyErr, label: label ? '' : m.key })}${connectBtn(`Connect Antigravity with this ${m.key}`)}${S.replace && !checking() ? btn('Keep the saved key', 'keep', 'ag:keep', { kind: 'ghost' }) : ''}</div><p class="hint" id="${id}-hint">${STORE}</p>${S.keyErr ? `<p class="perror" role="alert">${esc(S.keyErr)}</p>` : ''}</div>`;
+}
+const vtxProjectConnect = () => connectedHere() ? '' : `<div class="provider-client__actions">${connectBtn('Connect Antigravity to Agent Platform with this project and location')}</div>`;
+
+/* A: a Sign-in method choice and that method's fields in the row. Sign in, in the header, opens the dialog for the two Google page methods. */
+function methodFieldsA() {
+  const m = S.method;
+  let out = `<div class="fld"><label for="method-a">Sign-in method</label>${selectHTML('method-a', 'method', methodOptions(), 'method-a-line')}<p class="hint" id="method-a-line">${method(m).line}</p></div>`;
+  if (m === 'google') out += connectedHere() ? '' : '<p class="hint">Sign in, at the top of this row, opens Sotto’s sign-in dialog.</p>';
+  else if (m === 'enterprise') out += cloudFields('a') + (connectedHere() ? '' : '<p class="hint">Fill in both, then Sign in, at the top of this row, opens Sotto’s sign-in dialog.</p>');
+  else if (m === 'apikey') out += keyHTML('key-a');
+  else {
+    out += `<div class="fld"><label for="vtx-a">Connect with</label>${selectHTML('vtx-a', 'vtx', vtxOptions())}</div>`;
+    out += S.vtx === 'key' ? keyHTML('vkey-a') : `${cloudFields('a')}<p class="hint">${VTX_PROJECT}</p>${vtxProjectConnect()}`;
+  }
+  return `<div class="form">${out}${otherNote()}</div>`;
+}
+function connA() {
+  let p, form = '';
+  if (S.row === 'notinstalled') p = NOT_INSTALLED;
+  else { p = S.row === 'connected' ? connText() : SIGNED_OUT; if (S.enabled) form = methodFieldsA(); }
+  const acts = connectButtons(true) + (S.row === 'connected' && S.enabled && !connKey() ? signOutBtn() : '');
+  return `<div class="provider-connection"><div><h4>Local connection</h4><p>${p}</p>${noticeHTML()}</div>${form}<div class="provider-client__actions">${acts}</div></div>`;
+}
+
+/* B: Cursor's shape. The method is a segmented choice, and each method has its own steps in the row. */
+const segHTML = (act, items, cur, labelAttr, cls, dis) => `<div class="seg ${cls}" role="radiogroup" ${labelAttr}>${items.map(x => `<button type="button" role="radio" data-act="${act}" data-v="${x.id}" data-k="${act}:${x.id}" aria-checked="${cur === x.id}" tabindex="${cur === x.id ? 0 : -1}"${dis ? ' disabled' : ''}>${x.n}</button>`).join('')}</div>`;
+const stepLi = (n, inner) => `<li><span class="steps__n" aria-hidden="true">${n}</span><div>${inner}</div></li>`;
+const live = text => `<p class="live" data-wait role="status"><i aria-hidden="true"></i>${text}</p>`;
+const againBtn = () => btn('Open the page again', 'again', 'ag:again', { aria: 'Open Google’s sign-in page in your browser again' });
+const protoDone = key => btn('Prototype: finish in the browser', 'browserdone', key, { kind: 'proto' });
+function stepsB() {
+  const m = S.method, st = S.sign.stage, signing = S.row === 'signing' && !checking();
+  if (signing && st === 'starting') return `<p class="lead">Starting Google sign-in…</p>${live('Waiting for agy.')}`;
+  if (signing && st === 'finishing') return `<p class="lead">Signed in with Google. Connecting Antigravity…</p>${live('Checking the sign-in and reading your models.')}`;
+  if (signing && S.sign.method === 'google') return `<p class="lead">Finish signing in with Google in your browser, then bring the code back here.</p>
+      <ol class="steps">
+        ${stepLi(1, `<p>Sign in with your Google account on accounts.google.com. The page opened in your browser.</p>${againBtn()}`)}
+        ${stepLi(2, '<p>Google then lands on an antigravity.google page that shows a code. Copy the code, or the page’s whole address.</p>')}
+        ${stepLi(3, pasteField('Code from the Antigravity page', 'Finish sign-in', 'ag:code', 'ag:finish'))}
+      </ol>${live(`${S.sign.again ? 'Opened the page again. ' : ''}Waiting for the code.`)}`;
+  if (signing) return `<p class="lead">Finish signing in with Google in your browser.</p>
+      <ol class="steps">
+        ${stepLi(1, `<p>Sign in on accounts.google.com with the account your organisation uses for Gemini Enterprise. The page opened in your browser.</p>${againBtn()}`)}
+        ${stepLi(2, `<p>Google tells agy when you are done, for ${esc(S.f.project)} in ${esc(S.f.location)}. There is no code to paste.</p>${protoDone('ag:browser')}`)}
+      </ol>${live(`${S.sign.again ? 'Opened the page again. ' : ''}Waiting for Google.`)}`;
+  if (connectedHere()) return usesKey(m) ? keyHTML(`${keyF(m)}-b`) : '';
+  if (m === 'google') return `<ol class="steps">${stepLi(1, `<p>Sign in with your Google account in your browser.</p>${btn('Sign in', 'signin', 'ag:signin', { kind: 'primary', aria: 'Sign in to Antigravity with Google in your browser' })}`)}${stepLi(2, '<p>Google then shows a code on an antigravity.google page. Paste it here to finish.</p>')}</ol>`;
+  if (m === 'enterprise') return `<ol class="steps">${stepLi(1, `<p>Enter your organisation’s Google Cloud project and location.</p>${cloudFields('b')}`)}${stepLi(2, `<p>Sign in with Google in your browser. Google tells agy when you are done; there is no code to paste.</p>${btn('Sign in', 'signin', 'ag:signin', { kind: 'primary', disabled: !readyFor('enterprise'), ready: 'enterprise', aria: 'Sign in to Gemini Enterprise with Google in your browser' })}`)}</ol>`;
+  if (m === 'apikey') return `<ol class="steps">${stepLi(1, '<p>Make a key in Google AI Studio, under API keys.</p>')}${stepLi(2, keyHTML('key-b'))}</ol>`;
+  const sub = segHTML('vtx', VTX, S.vtx, 'aria-label="Connect Agent Platform with"', 'seg--two', busyRow());
+  return `<ol class="steps">${stepLi(1, `<p>Choose how Agent Platform connects.</p>${sub}`)}${stepLi(2, S.vtx === 'key' ? keyHTML('vkey-b') : `${cloudFields('b')}<p class="hint">${VTX_PROJECT}</p>${vtxProjectConnect()}`)}</ol>`;
+}
+function pasteField(label, finishLabel, key, finishKey) {
+  const id = `code-${S.variant}`;
+  return `<div class="paste">
+    <label for="${id}">${label}</label>
+    <div class="paste__row"><input id="${id}" class="field" data-k="${key}" data-code value="${esc(S.sign.code)}" placeholder="Paste the code or the page’s address" autocomplete="off" spellcheck="false" aria-describedby="${id}-hint"${S.sign.err ? ' aria-invalid="true"' : ''}>
+    ${btn(finishLabel, 'finish', finishKey, { kind: 'primary', disabled: !S.sign.code.trim() })}</div>
+    <p class="hint" id="${id}-hint">Paste the code, or the whole address of that page. Sotto hands it to agy and keeps nothing.</p>
+    ${S.sign.err ? `<p class="perror" role="alert">${esc(S.sign.err)}</p>` : ''}
+  </div>`;
+}
+function connB() {
+  let body = '', acts = '';
+  if (S.row === 'notinstalled') {
+    body = `<p>${NOT_INSTALLED}</p>`;
+    acts = btn('Install guide', 'guide', 'ag:guide', { kind: 'primary', aria: 'Open Google’s agy install guide in your browser' }) + connectButtons(false);
+  } else if (!S.enabled) {
+    body = `<p>${S.row === 'connected' ? connText() : SIGNED_OUT}</p>`; acts = connectButtons(false);
+  } else {
+    const signing = S.row === 'signing' && !checking();
+    body = `<p>${S.row === 'connected' ? connText() : SIGNED_OUT}</p>
+      <div class="form"><div class="fld"><span class="fld__l" id="method-b">Sign-in method</span>${segHTML('method', METHODS, S.method, 'aria-labelledby="method-b" aria-describedby="method-b-line"', 'seg--method', busyRow())}<p class="hint" id="method-b-line">${method(S.method).line}</p></div>${otherNote()}${stepsB()}</div>`;
+    if (signing) acts = S.sign.stage === 'finishing' ? '' : btn('Cancel', 'cancel', 'ag:cancel', { kind: 'ghost', aria: 'Cancel signing in to Antigravity' });
+    else if (S.row === 'connected') acts = connectButtons(false) + (connKey() ? '' : signOutBtn());
+  }
+  return `<div class="provider-connection"><div><h4>Local connection</h4>${body}${noticeHTML()}</div>${acts ? `<div class="provider-client__actions">${acts}</div>` : ''}</div>`;
+}
+
+/* C: T3 Code's account section, as label and value rows, with all four methods live. */
+function accountC() {
+  const m = S.method, st = S.sign.stage, signing = S.row === 'signing' && !checking();
+  const row = (label, forId, value) => `<div class="acct__row">${forId ? `<label class="acct__label" for="${forId}">${label}</label>` : `<span class="acct__label">${label}</span>`}<div class="acct__value">${value}</div></div>`;
+  let rows = row('Sign-in method', 'method-c', `${selectHTML('method-c', 'method', methodOptions(), 'method-c-note')}<p id="method-c-note">${method(m).line}</p>${otherNote()}`);
+  const live = S.row !== 'notinstalled' && S.enabled;
+  if (live && m === 'vertex') rows += row('Connect with', 'vtx-c', selectHTML('vtx-c', 'vtx', vtxOptions()));
+  if (live && usesCloud(m)) rows += row('Google Cloud project', 'c-project', inputHTML('c-project', 'project', 'my-project-id')) + row('Location', 'c-location', inputHTML('c-location', 'location', 'us-central1'));
+  if (live && usesKey(m)) rows += row(method(m).key, S.saved[m] && !S.replace ? '' : 'key-c', keyHTML('key-c', { label: false }));
+  let state = '', acts = '', extra = '';
+  const cancel = btn('Cancel', 'cancel', 'ag:cancel', { kind: 'ghost', aria: 'Cancel signing in to Antigravity' });
+  const wait = t => `<p class="acct__state live" data-wait role="status"><i aria-hidden="true"></i>${t}</p>`;
+  if (S.row === 'notinstalled') {
+    state = `<p>${NOT_INSTALLED}</p>`;
+    acts = btn('Install guide', 'guide', 'ag:guide', { kind: 'primary', aria: 'Open Google’s agy install guide in your browser' }) + connectButtons(false);
+  } else if (!S.enabled) {
+    state = '<p class="acct__state">Antigravity is off.</p>'; acts = connectButtons(false);
+  } else if (signing && st === 'starting') {
+    state = wait('Starting Google sign-in.'); acts = cancel;
+  } else if (signing && st === 'finishing') {
+    state = wait('Checking the sign-in and reading your models.');
+  } else if (signing && S.sign.method === 'google') {
+    state = `<p class="acct__state">Sign in with Google in your browser.</p><p>${S.sign.again ? 'Opened the page again. ' : ''}Google then shows a code on an antigravity.google page.</p>`;
+    acts = againBtn() + cancel;
+  } else if (signing) {
+    state = `<p class="acct__state">Sign in with Google in your browser.</p><p>${S.sign.again ? 'Opened the page again. ' : ''}Google tells agy when you are done. There is no code to paste.</p>`;
+    acts = againBtn() + cancel; extra = `<div>${protoDone('ag:browser')}</div>`;
+  } else if (checking()) {
+    state = wait(usesKey(m) ? 'Checking the key with Google.' : 'Checking the project with Google.');
+  } else if (connectedHere()) {
+    state = `<p class="acct__state">${isPage(m) ? 'Signed in.' : 'Connected.'}</p>`;
+    acts = isPage(m) ? btn('Change account', 'change', 'ag:change', { aria: 'Sign in to Antigravity with another Google account' }) + btn('Sign out', 'signout', 'ag:signout', { kind: 'ghost', aria: 'Sign out of Antigravity on this computer' })
+      : usesKey(m) ? '' : btn('Sign out', 'signout', 'ag:signout', { kind: 'ghost', aria: 'Forget Antigravity’s Agent Platform project on this computer' });
+  } else if (isPage(m)) {
+    state = '<p class="acct__state">Not signed in.</p>';
+    acts = btn('Sign in', 'signin', 'ag:signin', { kind: 'primary', disabled: !readyFor(m), ready: m, aria: `Sign in to Antigravity with ${method(m).n} in your browser` });
+  } else {
+    state = '<p class="acct__state">Not connected.</p>';
+    acts = usesKey(m) ? '' : connectBtn('Connect Antigravity to Agent Platform with this project and location');
+  }
+  rows += `<div class="acct__row"><span class="acct__label" id="acct-c">Account</span><div class="acct__value" role="group" aria-labelledby="acct-c">
+      <div class="acct__line"><div>${state}</div>${acts ? `<div class="provider-client__actions">${acts}</div>` : ''}</div>${extra}${noticeHTML()}
+    </div></div>`;
+  if (signing && S.sign.method === 'google' && st !== 'starting') rows += `<div class="acct__row"><label class="acct__label" for="code-C">Code from the Antigravity page</label><div class="acct__value">
+      <div class="paste__row"><input id="code-C" class="field" data-k="ag:code" data-code value="${esc(S.sign.code)}" placeholder="Paste the code or the page’s address" autocomplete="off" spellcheck="false" aria-describedby="code-C-hint"${S.sign.err ? ' aria-invalid="true"' : ''}${st === 'finishing' ? ' disabled' : ''}>
+      ${btn(st === 'finishing' ? 'Connecting…' : 'Connect', 'finish', 'ag:finish', { kind: 'primary', disabled: !S.sign.code.trim() || st === 'finishing' })}</div>
+      <p class="hint" id="code-C-hint">The code, or the whole address of that page. Sotto hands it to agy and keeps nothing.</p>
+      ${S.sign.err ? `<p class="perror" role="alert">${esc(S.sign.err)}</p>` : ''}
+    </div></div>`;
+  return `<div class="provider-connection"><div><h4>Sign-in</h4></div><div class="acct">${rows}</div></div>`;
+}
+
+/* The row’s Models: a small field naming how many, opening the list under it. B keeps makers, C families. */
+function modelsBlock() {
+  const ready = S.row === 'connected' && S.enabled;
+  const line = ready ? 'The models Antigravity lists for this sign-in now.' : 'Connect Antigravity to load its models.';
+  let list = '';
+  if (ready && S.list) {
+    const li = m => `<li><span><b>${esc(m.n)}</b><small>${m.think ? 'Thinking: Low, Medium, High' : 'No thinking levels'}</small></span>${m.def ? '<span class="pml__tag">agy’s default</span>' : ''}</li>`;
+    const groups = S.variant === 'B' ? MAKERS.map(g => [g, MODELS.filter(m => m.maker === g)])
+      : S.variant === 'C' ? FAMILIES.map(g => [g, MODELS.filter(m => m.fam === g)]) : [[null, MODELS]];
+    list = `<div class="pml" id="pml" role="region" aria-label="Antigravity’s models">${groups.map(([g, ms]) => `${g ? `<h5>${g}</h5>` : ''}<ul style="margin:0;padding:0;list-style:none">${ms.map(li).join('')}</ul>`).join('')}</div>`;
+  }
+  const trigger = ready ? `<button type="button" class="pml__trigger" data-act="list" data-k="ag:models" aria-expanded="${S.list}" aria-controls="pml" aria-label="Antigravity’s models: ${MODELS.length}. ${S.list ? 'Hides the list.' : 'Shows the list.'}">${count(MODELS.length)}${ic(S.list ? 'up' : 'down')}</button>` : '';
+  return `<div class="provider-client"><div><h4>Models</h4><p>${line}</p></div>${trigger ? `<div class="provider-client__actions">${trigger}</div>` : ''}${list}</div>`;
+}
+function clientBlock() {
+  const line = S.checking ? 'Checking the published version…' : S.row === 'notinstalled' ? 'Connect this provider to read its installed version.' : '1.5.12 is installed, and that is what is published.';
+  return `<div class="provider-client"><div><h4>Installed client</h4><p role="status">${line}</p></div><div class="provider-client__actions">${btn(S.checking ? 'Checking…' : 'Check again', 'check', 'ag:check', { disabled: S.checking })}</div></div>`;
+}
+const SUPPORT = `<details class="provider-support"><summary>Threads with Antigravity</summary><p>Replies, images, steering, approvals, questions and thinking levels, on the models Antigravity lists for how it signed in. Change models and permissions in a thread.</p><p>Sotto runs agy with a folder of its own, so the agy you run yourself keeps its settings and sign-in. Which permission modes, hosts and phones, and whether Watcher runs on Antigravity, are not decided yet.</p></details>`;
+
+function agRow() {
+  const [word, status] = agStatus(), isOpen = S.open === 'antigravity';
+  const version = S.row === 'notinstalled' ? '' : '1.5.12';
+  const toggle = toggleHTML('antigravity', 'Antigravity', S.enabled, S.row === 'signing' && (S.variant !== 'A' || checking()));
+  const conn = S.variant === 'C' ? accountC() : S.variant === 'B' ? connB() : connA();
+  return `<li class="provider-row" data-open="${isOpen}" data-row="antigravity">
+    ${rowHead('antigravity', 'Antigravity', word, status, version, agAct(), toggle)}
+    ${isOpen ? `<div id="panel-antigravity" role="region" aria-label="Antigravity details" class="provider-row__panel"><div class="provider-row__column">${conn}${modelsBlock()}${clientBlock()}${SUPPORT}</div></div>` : ''}
+  </li>`;
+}
+const providersHTML = () => `<ul class="providers-list" aria-label="Thread providers">${OTHERS.map(otherRow).join('')}${agRow()}</ul>`;
+
+/* ---------------- A’s sign-in dialog ---------------- */
+const dlg = $('#dlg');
+const HOST = 'This computer';
+/* Two shapes: paste-code for a Google account, and waiting on the browser for Gemini Enterprise. */
+function dialogHTML() {
+  const st = S.sign.stage, opened = S.sign.opened, ent = S.sign.method === 'enterprise';
+  const spin = text => `<div class="notice" role="status">${ic('loader', 'i spin')}<p>${text}</p></div>`;
+  let body, foot;
+  if (st === 'starting') body = spin(`Starting Antigravity’s sign-in on ${HOST}…`);
+  else if (st === 'finishing') body = spin(ent ? `Google says you are signed in. Connecting Antigravity on ${HOST}…` : `Finishing sign-in on ${HOST}, then connecting Antigravity…`);
+  else if (st === 'connected') body = `<div class="notice notice--done" role="status">${ic('check')}<p>Antigravity is signed in${ent ? ' to Gemini Enterprise' : ''} and connected on ${HOST}.</p></div>`;
+  else if (st === 'refused') body = `<div class="notice notice--error" role="alert"><p>Antigravity did not accept that code, so ${HOST} is still not signed in. Open the sign-in page again for a new code.</p></div>`;
+  else {
+    const open = btn(opened ? 'Open sign-in page again' : 'Open sign-in page', 'd-open', 'd:open', { kind: opened ? '' : 'primary', aria: opened ? 'Open Google’s sign-in page in your browser again' : 'Open Google’s sign-in page in your browser' });
+    const quiet = opened ? '<span class="sign__quiet">Opened accounts.google.com in your browser.</span>' : '';
+    body = ent
+      ? `<div class="sign">
+        <p>Gemini Enterprise signs in with Google in this computer’s browser, for ${esc(S.f.project)} in ${esc(S.f.location)}. Google tells Antigravity when you are done, so there is no code to paste.</p>
+        <div class="sign__row">${open}${quiet}</div>
+        ${opened ? `${spin('Waiting for Google. This moves on by itself once you finish in the browser.')}<div class="sign__row">${protoDone('d:browser')}</div>` : ''}
+      </div>`
+      : `<div class="sign">
+        <p>Antigravity signs in with your Google account in this computer’s browser. Google then shows a code on an antigravity.google page to bring back here.</p>
+        <div class="sign__row">${open}${quiet}</div>
+        ${opened ? `<div class="paste"><label for="code-d">Code from the page</label>
+          <div class="paste__row"><input id="code-d" class="field" data-k="d:code" data-code value="${esc(S.sign.code)}" placeholder="Paste the code" autocomplete="off" spellcheck="false" aria-describedby="code-d-hint">
+          ${btn('Finish sign-in', 'finish', 'd:finish', { kind: 'primary', disabled: !S.sign.code.trim() })}</div>
+          <p class="hint" id="code-d-hint">Sotto hands the code to Antigravity on ${HOST} and keeps nothing.</p></div>` : ''}
+      </div>`;
+  }
+  if (st === 'connected') foot = btn('Done', 'd-close', 'd:done', { kind: 'primary' });
+  else if (st === 'refused') foot = btn('Close', 'd-close', 'd:close') + btn('Try again', 'd-again', 'd:again', { kind: 'primary' });
+  else foot = btn('Cancel', 'd-close', 'd:cancel', { aria: 'Cancel signing in to Antigravity' });
+  return `<h2 id="dlg-title">Sign in to Antigravity on ${HOST}</h2>${body}<div class="dlg__actions">${foot}</div>`;
+}
+const renderDialog = key => { if (dlg.open) paint(dlg, dialogHTML(), key); };
+function dialogStart() {
+  const m = S.sign.method;
+  S.sign = fresh(); S.sign.method = m; S.sign.stage = 'starting';
+  renderDialog('d:cancel');
+  later(700, () => { S.sign.stage = 'page'; renderDialog('d:open'); });
+}
+function openDialog() {
+  dlg.innerHTML = dialogHTML();
+  dlg.showModal();
+  dialogStart();
+}
+function closeDialog() {
+  clearLater();
+  if (dlg.open) dlg.close();
+  if (S.row !== 'connected') S.row = 'signedout';
+  S.sign = fresh();
+  render(S.row === 'connected' ? 'row:antigravity' : 'ag:act');
+}
+dlg.addEventListener('cancel', e => { e.preventDefault(); closeDialog(); });
+
+/* ---------------- Sign-in flow (fake) ---------------- */
+/* The two Google page methods: agy opens Google's page. A uses the dialog; B and C stay in the row. */
+function startSignIn() {
+  clearLater(); S.notice = null; S.list = false; S.keyErr = null; S.replace = false;
+  if (!readyFor(S.method)) return;
+  S.row = 'signing'; S.enabled = true; S.open = 'antigravity';
+  S.sign = fresh(); S.sign.stage = 'starting'; S.sign.method = S.method;
+  if (S.variant === 'A') { render(); openDialog(); return; }
+  render('ag:cancel');
+  later(700, () => { S.sign.stage = 'page'; S.sign.opened = true; render(S.variant === 'C' && S.sign.method === 'google' ? 'ag:code' : 'ag:again'); });
+}
+function submitCode() {
+  const code = S.sign.code.trim();
+  if (!code || S.sign.stage !== 'page' || S.sign.method !== 'google') return;
+  if (/wrong/i.test(code)) {
+    S.sign.code = '';
+    if (S.variant === 'A') { S.sign.stage = 'refused'; renderDialog('d:again'); return; }
+    S.sign.err = REFUSED; render('ag:code'); return;
+  }
+  finishSignIn();
+}
+function finishSignIn() {
+  S.sign.err = null; S.sign.stage = 'finishing';
+  if (S.variant === 'A') renderDialog(); else render();
+  later(1300, () => {
+    S.row = 'connected'; S.conn = S.sign.method; S.list = false;
+    if (S.variant === 'A') { S.sign.stage = 'connected'; renderDialog('d:done'); render(); return; }
+    S.sign = fresh();
+    render(S.variant === 'C' ? 'ag:change' : 'ag:disconnect');
+  });
+}
+/* The two key methods (and Agent Platform's project) connect from the row: agy checks with Google, no page. */
+function connectRow() {
+  const m = S.method;
+  if (!readyFor(m) || S.row === 'signing') return;
+  clearLater(); S.notice = null; S.keyErr = null; S.list = false;
+  const f = usesKey(m) ? keyF(m) : null;
+  if (f && /wrong/i.test(S.f[f])) { S.f[f] = ''; S.keyErr = KEY_REFUSED; render(`f:${f}`); return; }
+  S.sign = fresh(); S.sign.method = m; S.sign.stage = 'checking'; S.row = 'signing';
+  render();
+  later(1000, () => {
+    S.row = 'connected'; S.conn = m; S.connVtx = S.vtx; S.sign = fresh();
+    if (f) { S.saved[m] = true; S.f[f] = ''; }
+    S.replace = false;
+    render(f ? 'ag:replace' : S.variant === 'C' ? 'ag:signout' : 'ag:disconnect');
+  });
+}
+function setRow(state) {
+  clearLater(); if (dlg.open) dlg.close();
+  S.enabled = true; S.notice = null; S.list = false; S.busy = null; S.open = 'antigravity'; S.sign = fresh(); S.keyErr = null; S.replace = false;
+  const m = S.method;
+  if ((state === 'signing' || state === 'connected') && usesCloud(m)) { S.f.project ||= 'acme-agents'; S.f.location ||= 'us-central1'; }
+  if (state === 'signing') {
+    if (isPage(m)) { startSignIn(); return; }
+    if (!S.f[keyF(m)] && usesKey(m) && !S.saved[m]) S.f[keyF(m)] = 'prototype-key';
+    S.row = 'signedout'; connectRow(); return;
+  }
+  if (state === 'connected') { S.conn = m; S.connVtx = S.vtx; if (usesKey(m)) S.saved[m] = true; }
+  S.row = state; render();
+}
+
+/* ---------------- Composer and model menu ---------------- */
+function optHTML(m, first) {
+  const sel = S.chosen === m.id;
+  return `<button type="button" role="option" class="mm__opt" data-item data-act="pick" data-id="${m.id}" data-k="o:${m.id}" aria-selected="${sel}" tabindex="${sel || first ? 0 : -1}"><span>${esc(m.n)}${m.def ? '<small>agy’s default</small>' : ''}</span>${sel ? ic('check') : ''}</button>`;
+}
+/* Only one option in a list is reached by Tab: the chosen one, or the first when the chosen one is not in it. */
+const listOpts = ms => ms.map((m, i) => optHTML(m, i === 0 && !ms.some(x => x.id === S.chosen))).join('');
+function groupedList(groups, label) {
+  const shown = groups.filter(([, ms]) => ms.length), all = shown.flatMap(([, ms]) => ms);
+  const hasChosen = all.some(m => m.id === S.chosen);
+  return `<div class="mm__list mm__list--grouped" role="listbox" aria-label="${esc(label)}">${shown.map(([g, ms], gi) => {
+    const slug = g.replace(/\W+/g, '-');
+    return `<div role="group" aria-labelledby="g-${slug}"><div class="mm__group" id="g-${slug}">${esc(g)}<span>${ms.length}</span></div>${ms.map((m, i) => optHTML(m, !hasChosen && gi === 0 && i === 0)).join('')}</div>`;
+  }).join('')}</div>`;
+}
+function menuBody() {
+  const v = S.variant, q = S.menu.query.trim().toLowerCase();
+  const hit = m => !q || `${m.n} ${m.maker} ${m.fam}`.toLowerCase().includes(q);
+  const found = MODELS.filter(hit);
+  const none = '<p class="mm__empty" role="status">No Antigravity model matches.</p>';
+  if (v === 'A') return found.length ? `<div class="mm__list" role="listbox" aria-label="Antigravity’s models">${listOpts(found)}</div>` : none;
+  if (v === 'B') {
+    if (q) return found.length ? groupedList(MAKERS.map(g => [g, found.filter(m => m.maker === g)]), 'Antigravity models that match') : none;
+    if (!S.menu.maker) {
+      const chosenMaker = model(S.chosen).maker;
+      return `<div class="mm__list" role="group" aria-label="Model makers">${MAKERS.map(g => {
+        const n = MODELS.filter(m => m.maker === g).length;
+        return `<button type="button" class="mm__maker" data-item data-act="maker" data-maker="${g}" data-k="mk:${g}" aria-current="${chosenMaker === g}" aria-label="${g}, ${count(n)}${chosenMaker === g ? ', holds the thread’s model' : ''}. Shows its models."><span><b>${g}</b><small>${count(n)}</small></span>${ic('right')}</button>`;
+      }).join('')}</div>`;
+    }
+    const ms = MODELS.filter(m => m.maker === S.menu.maker);
+    return `<div class="mm__step"><button type="button" data-act="back" data-k="m:back" aria-label="Back to the model makers">${ic('left')}Makers</button><b>${S.menu.maker}</b><span>${count(ms.length)}</span></div>
+      <div class="mm__list" role="listbox" aria-label="${S.menu.maker} models in Antigravity">${listOpts(ms)}</div>`;
+  }
+  const m = model(S.chosen);
+  const list = found.length ? groupedList(FAMILIES.map(g => [g, found.filter(x => x.fam === g)]), 'Antigravity’s models, by family') : none;
+  const levels = EFFORTS.map(e => {
+    const on = m.think && S.effort === e.id;
+    return `<button type="button" role="radio" class="mm__lvl" data-act="lvl" data-e="${e.id}" data-k="l:${e.id}" aria-checked="${on}" tabindex="${on ? 0 : -1}"${m.think ? '' : ' disabled'}>${e.n}${on ? ic('check') : ''}</button>`;
+  }).join('');
+  return `<div class="mm__body">${list}<div class="mm__think"><p class="mm__think-h" id="think-h">Thinking</p><div role="radiogroup" aria-labelledby="think-h" aria-describedby="think-note">${levels}</div><p class="mm__think-note" id="think-note">${m.think ? `For ${esc(m.n)}.` : `agy offers no thinking levels for ${esc(m.n)}.`}</p></div></div>`;
+}
+function menuHTML() {
+  const M = S.menu;
+  const rail = RAIL.map(p => `<button type="button" role="tab" data-act="rail" data-p="${p.id}" data-k="r:${p.id}" aria-selected="${M.rail === p.id}" tabindex="${M.rail === p.id ? 0 : -1}" aria-label="${esc(p.n)}" title="${esc(p.n)}">${mk(p.id, 18)}</button>`).join('');
+  const panel = M.rail !== 'antigravity'
+    ? '<p class="mm__empty">Prototype: only Antigravity’s models are drawn. Choose its mark, at the foot of the rail.</p>'
+    : `<div class="mm__search">${ic('search')}<input type="text" data-k="m:q" aria-label="Search Antigravity’s models" placeholder="Search Antigravity" value="${esc(M.query)}" autocomplete="off" spellcheck="false">${M.query ? `<button type="button" data-act="clearq" data-k="m:clear" aria-label="Clear the search">${ic('x')}</button>` : ''}</div>
+      ${menuBody()}
+      <p class="mm__note">Models Antigravity lists for this sign-in.${S.variant === 'C' ? ' Thinking applies to the chosen model.' : ''}</p>`;
+  return `<div class="mm mm--${S.variant.toLowerCase()}" role="dialog" aria-label="Choose a model" id="model-menu">
+    <div class="mm__rail" role="tablist" aria-orientation="vertical" aria-label="Providers">${rail}</div>
+    <div class="mm__panel">${panel}</div>
+  </div>`;
+}
+function effHTML() {
+  const e = effort(S.effort);
+  const heat = e.at;
+  return `<div class="eff" role="dialog" aria-label="Reasoning effort" id="eff-card">
+    <p class="eff__word" data-top="${e.id === 'high'}">${e.n}</p>
+    <p class="eff__line">${esc(e.line)}</p>
+    <div class="eff__track" aria-hidden="true"><div class="eff__pill"><div class="eff__fill" style="--heat:${heat}%;width:calc(${heat}% + 13px)"></div></div><div class="eff__thumb" style="left:${heat}%"></div></div>
+    <div class="seg" role="radiogroup" aria-label="Reasoning effort">${EFFORTS.map(x => `<button type="button" role="radio" data-act="lvl" data-e="${x.id}" data-k="e:${x.id}" aria-checked="${S.effort === x.id}" tabindex="${S.effort === x.id ? 0 : -1}">${x.n}</button>`).join('')}</div>
+  </div>`;
+}
+let draft = '';
+function composerHTML() {
+  const m = model(S.chosen), e = effort(S.effort), v = S.variant;
+  const suffix = v === 'C' && m.think;
+  const chip = `<button type="button" class="chip chip--model" data-act="menu" data-k="c:model" aria-haspopup="dialog" aria-expanded="${S.menu.open}"${S.menu.open ? ' aria-controls="model-menu"' : ''} aria-label="Thread model: ${esc(m.n)}${suffix ? `, ${e.n} thinking` : ''}, in Antigravity. Opens the model menu.">${mk('antigravity', 13)}<span class="chip__name">${esc(m.n)}</span>${suffix ? `<span class="chip__suffix">${e.n}</span>` : ''}${ic('down')}</button>`;
+  const effChip = v !== 'C' && m.think ? `<button type="button" class="chip" data-act="eff" data-k="c:eff" aria-haspopup="dialog" aria-expanded="${S.eff}"${S.eff ? ' aria-controls="eff-card"' : ''} aria-label="Thread reasoning: ${e.n}. Opens the effort control." data-effort-top="${S.effort === 'high'}"><span>${e.n}</span>${ic('down')}</button>` : '';
+  const perm = `<span class="chip chip--static">${ic('shield')}Ask for approval</span>`;
+  return `<div class="composer"><label class="vh" for="ta">Message to the thread</label><textarea id="ta" data-k="c:ta" placeholder="Ask Antigravity to change something">${esc(draft)}</textarea>
+    <div class="composer__foot"><div class="chips">${chip}${effChip}${perm}</div><button type="button" class="send" data-k="c:send" aria-label="Send"${draft.trim() ? '' : ' disabled'}>${ic('up')}</button></div></div>
+    <div class="slot">${S.menu.open ? menuHTML() : ''}${S.eff ? effHTML() : ''}</div>`;
+}
+function openMenu(open) {
+  S.eff = false; S.menu.open = open;
+  if (open) Object.assign(S.menu, { rail: 'antigravity', maker: null, query: '' });
+}
+
+/* ---------------- Render ---------------- */
+function render(key) {
+  const v = VARIANTS.find(x => x.key === S.variant);
+  $('#s1-note').textContent = v.s1;
+  $('#s2-note').textContent = v.s2;
+  document.querySelectorAll('[data-state]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.state === S.row)));
+  paint($('#providers'), providersHTML(), key);
+  paint($('#composer'), composerHTML(), key);
+}
+
+/* ---------------- Events ---------------- */
+document.querySelectorAll('[data-state]').forEach(b => b.addEventListener('click', () => setRow(b.dataset.state)));
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b || b.disabled) return;
+  const act = b.dataset.act;
+  switch (act) {
+    case 'row': S.open = S.open === b.dataset.p ? null : b.dataset.p; S.list = false; render(`row:${b.dataset.p}`); break;
+    case 'toggle':
+      if (b.dataset.p === 'antigravity') { S.enabled = !S.enabled; S.notice = null; S.list = false; if (S.row === 'signing') { clearLater(); S.row = 'signedout'; S.sign = fresh(); } }
+      else S.others[b.dataset.p] = !S.others[b.dataset.p];
+      render(`t:${b.dataset.p}`); break;
+    case 'signin': case 'change': startSignIn(); break;
+    case 'guide': S.notice = 'Prototype: this opens Google’s agy install guide in your browser.'; render(b.dataset.k); break;
+    case 'retry': S.notice = S.row === 'notinstalled' ? 'agy is still not installed on this computer.' : 'Antigravity is still not signed in. Sign in first.'; render(b.dataset.k); break;
+    case 'enable': S.enabled = true; S.notice = null; render(S.row === 'connected' ? 'ag:disconnect' : 'row:antigravity'); break;
+    case 'disconnect': S.enabled = false; S.list = false; S.notice = null; render('ag:enable'); break;
+    case 'refresh': S.busy = 'refresh'; render(b.dataset.k); later(900, () => { S.busy = null; render(); }); break;
+    case 'method': case 'vtx': applyChoice(act, b.dataset.v); render(b.dataset.k); break;
+    case 'connect': connectRow(); break;
+    case 'replace': S.replace = true; S.keyErr = null; render(`f:${keyF(S.method)}`); break;
+    case 'keep': S.replace = false; S.f[keyF(S.method)] = ''; S.keyErr = null; render('ag:replace'); break;
+    case 'removekey': {
+      const m = S.method; S.saved[m] = false; S.replace = false; S.f[keyF(m)] = '';
+      if (S.row === 'connected' && connectedHere()) { S.row = 'signedout'; S.conn = null; }
+      S.notice = `Removed the ${method(m).key} from this computer.`; render(`f:${keyF(m)}`); break;
+    }
+    case 'browserdone': if (S.sign.stage === 'page' && S.sign.method === 'enterprise') finishSignIn(); break;
+    case 'signout': clearLater(); S.row = 'signedout'; S.conn = null; S.list = false; S.notice = 'Signed out of Antigravity on this computer.'; render(S.variant === 'A' ? 'ag:act' : 'ag:signin'); break;
+    case 'again': S.sign.again = true; render(b.dataset.k); break;
+    case 'cancel': clearLater(); S.row = 'signedout'; S.sign = fresh(); render(S.variant === 'A' ? 'ag:act' : 'ag:signin'); break;
+    case 'finish': submitCode(); break;
+    case 'list': S.list = !S.list; render('ag:models'); break;
+    case 'check': S.checking = true; render(b.dataset.k); later(900, () => { S.checking = false; render(); }); break;
+    case 'd-open': S.sign.opened = true; renderDialog('d:code'); break;
+    case 'd-close': closeDialog(); break;
+    case 'd-again': dialogStart(); break;
+    case 'menu': openMenu(!S.menu.open); render(S.menu.open ? 'm:q' : 'c:model'); break;
+    case 'eff': S.menu.open = false; S.eff = !S.eff; render(S.eff ? `e:${S.effort}` : 'c:eff'); break;
+    case 'rail': S.menu.rail = b.dataset.p; S.menu.maker = null; S.menu.query = ''; render(`r:${b.dataset.p}`); break;
+    case 'clearq': S.menu.query = ''; render('m:q'); break;
+    case 'maker': {
+      S.menu.maker = b.dataset.maker;
+      const ms = MODELS.filter(m => m.maker === S.menu.maker);
+      render(`o:${(ms.find(m => m.id === S.chosen) ?? ms[0]).id}`); break;
+    }
+    case 'back': { const was = S.menu.maker; S.menu.maker = null; render(`mk:${was}`); break; }
+    case 'pick':
+      S.chosen = b.dataset.id;
+      if (S.variant === 'C') render(`o:${S.chosen}`);
+      else { S.menu.open = false; render('c:model'); }
+      break;
+    case 'lvl': S.effort = b.dataset.e; render(`${b.closest('.eff') ? 'e' : 'l'}:${S.effort}`); break;
+  }
+});
+
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.matches('[data-code]')) {
+    S.sign.code = t.value;
+    const finish = t.closest('.paste__row')?.querySelector('[data-act="finish"]');
+    if (finish && S.sign.stage === 'page') finish.disabled = !t.value.trim();
+  } else if (t.tagName === 'SELECT' && t.dataset.f) { applyChoice(t.dataset.f, t.value); render(t.dataset.k); }
+  else if (t.dataset.f) {
+    S.f[t.dataset.f] = t.value;
+    document.querySelectorAll('[data-ready]').forEach(x => { x.disabled = !readyFor(x.dataset.ready); });
+  } else if (t.dataset.k === 'm:q') { S.menu.query = t.value; render(); }
+  else if (t.id === 'ta') { draft = t.value; const s = $('[data-k="c:send"]'); if (s) s.disabled = !draft.trim(); }
+});
+
+/* Clicking outside the composer closes its open menu or card, as the app's anchored menus do. */
+document.addEventListener('pointerdown', e => {
+  if ((S.menu.open || S.eff) && !e.target.closest('#composer') && !e.target.closest('.switcher')) { S.menu.open = false; S.eff = false; render(); }
+});
+
+function moveIn(items, at, key) {
+  if (!items.length) return null;
+  if (key === 'Home') return items[0];
+  if (key === 'End') return items[items.length - 1];
+  const step = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : -1;
+  return items[(at + step + items.length) % items.length];
+}
+
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (t.matches('[data-code]') && e.key === 'Enter') { e.preventDefault(); submitCode(); return; }
+  if (t.matches('input[data-f]') && e.key === 'Enter' && (usesKey(S.method) || S.method === 'vertex')) { e.preventDefault(); connectRow(); return; }
+
+  if (e.key === 'Escape') {
+    if (t.closest('dialog')) return; // The dialog's own cancel event closes it.
+    if ((S.menu.open || S.eff) && (t.closest('#composer') || t === document.body)) { const k = S.eff ? 'c:eff' : 'c:model'; S.menu.open = false; S.eff = false; e.preventDefault(); render(k); return; }
+    if (t.closest('#providers')) {
+      if (S.list && t.closest('[data-row="antigravity"]')) { S.list = false; e.preventDefault(); render('ag:models'); return; }
+      if (S.replace && t.closest('[data-row="antigravity"]')) { S.replace = false; S.f[keyF(S.method)] = ''; S.keyErr = null; e.preventDefault(); render('ag:replace'); return; }
+      if (S.row === 'signing' && S.variant !== 'A' && S.sign.stage !== 'finishing' && !checking()) { clearLater(); S.row = 'signedout'; S.sign = fresh(); e.preventDefault(); render('ag:signin'); return; }
+      if (S.open) { const was = S.open; S.open = null; S.list = false; e.preventDefault(); render(`row:${was}`); return; }
+    }
+    return;
+  }
+
+  const nav = ['ArrowUp', 'ArrowDown', 'Home', 'End'];
+  // Provider rows: Up and Down move between headers.
+  if (t.matches('[data-provider-trigger]') && nav.includes(e.key)) {
+    const items = [...document.querySelectorAll('[data-provider-trigger]')];
+    e.preventDefault(); moveIn(items, items.indexOf(t), e.key)?.focus(); return;
+  }
+  // The search line: Down goes to the first model or maker.
+  if (t.dataset.k === 'm:q' && e.key === 'ArrowDown') { e.preventDefault(); $('#composer .mm__list [data-item]')?.focus(); return; }
+  // A list of models or makers.
+  const list = t.closest('.mm__list');
+  if (list && t.matches('[data-item]') && nav.includes(e.key)) {
+    const items = [...list.querySelectorAll('[data-item]')];
+    e.preventDefault(); moveIn(items, items.indexOf(t), e.key)?.focus(); return;
+  }
+  // The provider rail: Up and Down choose the next provider.
+  if (t.closest('.mm__rail') && nav.includes(e.key)) {
+    const at = RAIL.findIndex(p => p.id === S.menu.rail);
+    const next = moveIn(RAIL, at, e.key);
+    e.preventDefault(); S.menu.rail = next.id; S.menu.maker = null; S.menu.query = ''; render(`r:${next.id}`); return;
+  }
+  // Thinking and effort levels: arrows move and choose.
+  const group = t.closest('[role="radiogroup"]');
+  if (group && [...nav, 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    const items = [...group.querySelectorAll('[role="radio"]:not(:disabled)')];
+    const next = moveIn(items, items.indexOf(t), e.key);
+    if (!next) return;
+    e.preventDefault();
+    if (next.dataset.act === 'lvl') { S.effort = next.dataset.e; render(`${group.closest('.eff') ? 'e' : 'l'}:${S.effort}`); }
+    else { applyChoice(next.dataset.act, next.dataset.v); render(next.dataset.k); }
+    return;
+  }
+});
+
+/* ---------------- Theme and variant bar ---------------- */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  const b = $('#theme-toggle');
+  b.innerHTML = ic(t === 'dark' ? 'sun' : 'moon');
+  b.setAttribute('aria-label', t === 'dark' ? 'Use the light theme' : 'Use the dark theme');
+  b.title = b.getAttribute('aria-label');
+}
+$('#theme-toggle').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+setTheme(new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark');
+
+function setVariant(k) {
+  S.variant = k;
+  const v = VARIANTS.find(x => x.key === k);
+  $('#v-label').textContent = `${v.key} — ${v.name}`;
+  const u = new URL(location.href); u.searchParams.set('variant', k); history.replaceState(null, '', u);
+  clearLater(); if (dlg.open) dlg.close();
+  S.sign = fresh(); S.notice = null; S.list = false; S.busy = null; S.enabled = true; S.open = 'antigravity'; S.keyErr = null; S.replace = false;
+  if (S.row === 'signing') S.row = S.conn ? 'connected' : 'signedout';
+  openMenu(true);
+  render();
+}
+const step = d => { const i = VARIANTS.findIndex(x => x.key === S.variant); setVariant(VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length].key); };
+$('#v-prev').addEventListener('click', () => step(-1));
+$('#v-next').addEventListener('click', () => step(1));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.defaultPrevented) return;
+  if (e.target.closest('input, textarea, select, [contenteditable], [role="radiogroup"], [role="tablist"], [role="listbox"], .mm__list, dialog')) return;
+  e.preventDefault(); step(e.key === 'ArrowLeft' ? -1 : 1);
+});
+let first = (new URLSearchParams(location.search).get('variant') || 'A').toUpperCase();
+if (!VARIANTS.some(v => v.key === first)) first = 'A';
+setVariant(first);
+/* Optional deep links: ?method=google|enterprise|apikey|vertex, &vtx=key|project, &row=notinstalled|signedout|signing|connected. */
+{
+  const q = new URLSearchParams(location.search);
+  if (method(q.get('method'))) S.method = q.get('method');
+  if (VTX.some(x => x.id === q.get('vtx'))) S.vtx = q.get('vtx');
+  if (['notinstalled', 'signedout', 'signing', 'connected'].includes(q.get('row'))) { S.menu.open = false; setRow(q.get('row')); } else render();
+}
+</script>
+</body>
+</html>
