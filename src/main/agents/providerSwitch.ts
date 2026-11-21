@@ -180,6 +180,9 @@ export class ConfiguredProviderHost implements ProviderHost {
   useWorkerRoles(roles: WorkerRoleSource): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useWorkerRoles?.(roles)
   }
+  useOwletInstructions(read: (threadId: string) => string | undefined): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useOwletInstructions?.(read)
+  }
   useThreadHistory(source: ThreadHistorySource): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useThreadHistory?.(source)
   }

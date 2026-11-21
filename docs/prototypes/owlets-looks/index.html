@@ -1,0 +1,2463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Owlets looks, prototype</title>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything. Every press changes memory only,
+  and the page asks no other host for anything: the font is the file beside it.
+
+  Question: how should Owlets look? Owlets are Sotto's own named helpers, its version of Grok Bot or
+  Hermes Agent. Three looks, A, B and C, each after one reference, for Zach to pick from or take parts of
+  (his ask on November 19, 2026: "three prototypes with how owlets will look. Use Grok Bot, Devin bots,
+  and Hermes bots as examples").
+
+  The looks differ in what they put first and in how an owlet is organised:
+    A  after Grok Bot        Computers and screens. Owlets are grouped by the computer they live on, and
+                             each has a screen you can watch. Open one for its chat beside its screen.
+    B  after Devin Bots      Outcomes and Needs you. An owlet owns an outcome. The page opens on every
+                             card waiting for you; an owlet opens on its work, grouped by where it stands.
+    C  after Hermes Agent    One long chat and its pages. The owlets sit on a branch. Each has one chat
+                             that never ends, its runs as tabs beside it, and routines docked next to it.
+
+  The same four owlets, two changes waiting and reports are in all three (the sample data at the top of the script).
+  One file on purpose, with the Figtree files beside it: the repository's lint reads every .js file, and this is not product code.
+
+  The bar: look (← → cycle), jump to a screen, theme, window size, start again. Under 700px wide the window
+  frame goes, the page is the iPhone app, and the caption is its short form until More is pressed. Add &bare=1 to any link to drop the bar and the caption.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:,">
+<style>
+/* ==================== Shared: tokens, the prototype’s own controls, the window and phone chrome, and the parts every look draws the same way ==================== */
+/*
+ * PROTOTYPE — throwaway. Shared tokens, the prototype's own controls, the window and phone chrome,
+ * and the parts every look draws the same way (buttons, the change card, a report, a message).
+ * Each look's own layout follows under its own heading, further down.
+ *
+ * Colours are the Sotto theme's two halves from src/shared/themes/palettes.ts, by role.
+ */
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('figtree-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('figtree-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-raised: oklch(0.185 0.008 265);
+  --tt-overlay: oklch(0.215 0.008 265);
+  --tt-card: var(--tt-raised);
+  --tt-well: var(--tt-canvas);
+  --tt-sidebar: oklch(0.235 0.003 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-muted: oklch(0.72 0.014 265);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.42 0.02 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-accent-surface: oklch(0.32 0.05 185);
+  --tt-accent-wash: color-mix(in srgb, oklch(0.714403 0.104089 183.092) 14%, transparent);
+  --tt-message: oklch(0.205 0.014 265);
+  --tt-warning-text: oklch(0.829017 0.171221 81.038);
+  --tt-warning-surface: oklch(0.315 0.032 80);
+  --tt-error-text: oklch(0.702184 0.189226 22.228);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-hover: color-mix(in srgb, oklch(0.985 0.005 280) 7%, transparent);
+  --tt-selected: color-mix(in oklab, oklch(0.714403 0.104089 183.092) 20%, oklch(0.185 0.008 265));
+  --tt-scrim: rgb(0 0 0 / 55%);
+  --tt-shadow: 0 18px 50px rgb(0 0 0 / 55%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-raised: oklch(0.955 0.006 85);
+  --tt-overlay: oklch(0.99 0.003 85);
+  --tt-card: color-mix(in oklab, oklch(0.978 0.004 85) 95%, oklch(0.235 0.014 75));
+  --tt-well: var(--tt-canvas);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.34 0.014 75);
+  --tt-muted: oklch(0.47 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.72 0.016 80);
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-text: oklch(0.42 0.08 186);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-accent-surface: oklch(0.92 0.03 186);
+  --tt-accent-wash: color-mix(in srgb, oklch(0.53 0.095 186) 12%, transparent);
+  --tt-message: oklch(0.93 0.012 85);
+  --tt-warning-text: oklch(0.47 0.14 50);
+  --tt-warning-surface: oklch(0.955 0.018 80);
+  --tt-error-text: oklch(0.48 0.2 28);
+  --tt-success: oklch(0.45 0.12 160);
+  --tt-hover: color-mix(in srgb, oklch(0.235 0.014 75) 7%, transparent);
+  --tt-selected: color-mix(in oklab, oklch(0.53 0.095 186) 16%, oklch(0.955 0.006 85));
+  --tt-scrim: rgb(0 0 0 / 30%);
+  --tt-shadow: 0 18px 50px rgb(0 0 0 / 18%);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: #16171b; font-family: var(--tt-font); -webkit-text-size-adjust: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+h1, h2, h3, h4, p, ul, ol, dl, dd, pre { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ============ the prototype's own controls: not part of any look ============ */
+.stage { height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(440px, 1fr); justify-items: center; gap: 8px; padding: 10px 12px 78px; }
+.cap { max-width: 1180px; width: 100%; font: 13px/1.45 system-ui, sans-serif; color: #cfd1d9; }
+.cap strong { color: #fff; }
+.cap .cap__rule { color: #a9acb8; }
+.bar { position: fixed; left: 0; right: 0; bottom: 12px; margin: 0 auto; width: max-content; z-index: 90; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; padding: 8px; max-width: calc(100vw - 16px); background: #0d0e11; color: #eee; border: 1px solid #454752; border-radius: 12px; font: 13px system-ui, sans-serif; box-shadow: 0 6px 24px rgb(0 0 0 / 50%); }
+.bar button, .bar select { min-height: 36px; padding: 4px 10px; border-radius: 8px; border: 1px solid #454752; background: #1b1c21; color: #eee; font: inherit; }
+.bar .lab { min-width: 172px; text-align: center; font-weight: 600; padding: 0 4px; }
+.bar :focus-visible { outline: 2px solid #7fe0d0; outline-offset: 1px; }
+.bar .sep { width: 1px; align-self: stretch; background: #454752; margin: 0 2px; }
+.cap__more { border: 0; background: none; padding: 0 2px; color: #7fe0d0; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.cap__more:focus-visible { outline: 2px solid #7fe0d0; outline-offset: 2px; }
+
+.win { position: relative; width: 100%; height: 100%; min-height: 440px; background: var(--tt-canvas); color: var(--tt-text); font-size: 14px; line-height: 1.45; border: 1px solid #000; overflow: hidden; display: flex; flex-direction: column; container-type: inline-size; container-name: win; }
+.stage[data-size='1600x1000'] .win { width: 1600px; height: 1000px; }
+.stage[data-size='1280x800'] .win { width: 1280px; height: 800px; }
+.stage[data-size='820x560'] .win { width: 820px; height: 560px; }
+.stage[data-size='390x844'] .win { width: 390px; height: 844px; border-radius: 34px; border: 0; box-shadow: 0 0 0 9px #050506, 0 0 0 10px #3a3b42; margin: 10px 0; }
+.stage:not([data-size='fit']) { justify-items: start; overflow-x: auto; }
+.stage:not([data-size='fit']) .win { justify-self: center; flex: none; }
+.stage:not([data-size='fit']) { grid-template-rows: auto auto; height: auto; min-height: 100dvh; align-content: start; }
+
+/* bare: the window is the whole viewport, for checking a look at an exact size */
+body[data-bare='true'] .stage { padding: 0; gap: 0; grid-template-rows: 1fr; min-height: 100dvh; height: 100dvh; }
+body[data-bare='true'] .cap, body[data-bare='true'] .bar { display: none; }
+body[data-bare='true'] .win { width: 100vw; height: 100dvh; min-height: 0; border: 0; border-radius: 0; box-shadow: none; margin: 0; }
+
+@media (max-width: 700px) {
+  .stage, .stage:not([data-size='fit']) { padding: 0; gap: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; justify-items: stretch; }
+  .stage .win, .stage[data-size] .win { width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; box-shadow: none; margin: 0; }
+  .top { display: flex; flex-direction: column; min-width: 0; background: #0d0e11; border-bottom: 1px solid #454752; }
+  .bar { position: static; margin: 0; width: auto; max-width: none; border: 0; border-radius: 0; box-shadow: none; padding: 6px 8px 4px; justify-content: flex-start; flex-wrap: nowrap; min-width: 0; }
+  .bar button, .bar select { min-height: 44px; min-width: 44px; flex: none; font-size: 16px; }
+  .bar .lab { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .bar .size, .bar .sep, .bar .reset { display: none; }
+  .bar .jump { width: 104px; }
+  .cap { padding: 0 10px 8px; font-size: 12px; line-height: 1.4; max-width: none; }
+  body[data-bare='true'] .top { display: none; }
+  body[data-bare='true'] .stage { grid-template-rows: minmax(0, 1fr); }
+}
+.top { width: 100%; display: flex; justify-content: center; }
+
+/* ============ focus, text helpers ============ */
+.win :focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; border-radius: 6px; }
+.muted { color: var(--tt-muted); }
+.t2 { color: var(--tt-text-2); }
+.small { font-size: 13px; }
+.xs { font-size: 12px; }
+.mono { font-family: var(--tt-mono); font-size: 0.92em; }
+.grow { flex: 1; min-width: 0; }
+.clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrap { overflow-wrap: anywhere; }
+
+/* ============ window chrome: one room under a thin strip ============ */
+.strip { flex: none; height: 36px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 10px; color: var(--tt-muted); font-size: 13px; }
+.strip__mark { display: flex; align-items: center; gap: 8px; color: var(--tt-text-2); font-weight: 600; }
+.strip__mark svg { width: 18px; height: 18px; }
+.switch { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--tt-surface); }
+.switch span { padding: 3px 12px; border-radius: 7px; }
+.switch .on { background: var(--tt-overlay); color: var(--tt-text); font-weight: 600; }
+.strip__ctl { justify-self: end; display: flex; gap: 16px; padding-right: 4px; font-size: 13px; }
+.room { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+@container win (max-width: 900px) { .strip__mark span { display: none; } }
+
+/* ============ phone chrome: the iPhone app's page over its tab bar ============ */
+.win[data-phone='true'] { font-size: 16px; line-height: 1.4; }
+.ph { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ph__body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ph__tabs { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); padding: 6px 8px max(8px, env(safe-area-inset-bottom)); background: var(--tt-surface); border-top: 1px solid var(--tt-hairline); }
+.ph__tabs span { display: grid; justify-items: center; gap: 2px; font-size: 11px; color: var(--tt-muted); padding: 4px 0; }
+.ph__tabs span svg { width: 22px; height: 22px; }
+.ph__tabs .on { color: var(--tt-accent-text); font-weight: 600; }
+.ph__nav { flex: none; display: flex; align-items: center; gap: 6px; min-height: 52px; padding: 6px 10px; }
+.ph__nav h1 { font-size: 17px; font-weight: 650; }
+.ph__meta { flex: none; display: flex; gap: 10px; align-items: center; padding: 0 16px 8px; font-size: 13px; color: var(--tt-muted); min-width: 0; }
+.ph__big { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+.ph__scroll { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+
+/* ============ shared parts ============ */
+.btn { min-height: 32px; padding: 5px 14px; border-radius: 8px; border: 1px solid var(--tt-field-border); background: transparent; font-size: 13px; font-weight: 550; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn:hover { background: var(--tt-hover); }
+.btn--primary { background: var(--tt-accent); color: var(--tt-on-accent); border-color: transparent; font-weight: 650; }
+.btn--primary:hover { background: var(--tt-accent); filter: brightness(1.08); }
+.btn--quiet { border-color: transparent; color: var(--tt-text-2); }
+.btn--link { border: 0; padding: 0; min-height: 0; color: var(--tt-accent-text); text-decoration: underline; text-underline-offset: 2px; background: none; font-weight: 500; white-space: normal; text-align: left; }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.win[data-phone='true'] .btn { min-height: 44px; font-size: 15px; padding: 8px 16px; border-radius: 10px; }
+.win[data-phone='true'] .btn--link { min-height: 0; padding: 0; }
+.iconbtn { width: 32px; height: 32px; border-radius: 8px; border: 0; background: transparent; display: inline-grid; place-items: center; color: var(--tt-text-2); flex: none; }
+.iconbtn:hover { background: var(--tt-hover); }
+.iconbtn svg { width: 18px; height: 18px; }
+.win[data-phone='true'] .iconbtn { width: 44px; height: 44px; }
+.win[data-phone='true'] .iconbtn svg { width: 22px; height: 22px; }
+
+.owltag { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--tt-hairline); color: var(--tt-muted); vertical-align: middle; letter-spacing: 0; }
+.idea { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1.3; padding: 1px 6px; border-radius: 999px; border: 1px dashed var(--tt-field-border); color: var(--tt-muted); vertical-align: 1px; white-space: nowrap; }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--tt-muted); }
+.chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-field-border); flex: none; }
+.chip--working { color: var(--tt-accent-text); }
+.chip--working i { background: var(--tt-accent); animation: pulse 1.6s ease-in-out infinite; }
+.chip--needs { color: var(--tt-warning-text); }
+.chip--needs i { background: var(--tt-warning-text); border-radius: 2px; transform: rotate(45deg); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+.owl { flex: none; display: block; }
+.owl .b { fill: color-mix(in oklab, var(--tt-text) 26%, var(--tt-canvas)); }
+.owl .f { fill: color-mix(in oklab, var(--tt-text) 44%, var(--tt-canvas)); }
+.owl .e { fill: var(--tt-canvas); }
+.owl .p { fill: var(--tt-text); }
+.owl .k { fill: var(--tt-warning-text); }
+.owl .z { stroke: var(--tt-text-2); stroke-width: 1.6; fill: none; stroke-linecap: round; }
+.owl[data-state='working'] .p { fill: var(--tt-accent); }
+
+.card { background: var(--tt-card); border-radius: 14px; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 13px; }
+.kv dt { color: var(--tt-muted); }
+.kv dd { overflow-wrap: anywhere; }
+
+/* the change card: what will be sent, in full, and the two answers */
+.req { background: var(--tt-card); border-radius: 14px; padding: 14px 16px 12px; display: grid; gap: 10px; box-shadow: inset 3px 0 0 var(--tt-warning-text); }
+.req h3 { font-size: 15px; font-weight: 650; }
+.req__by { font-size: 13px; color: var(--tt-muted); margin-top: 1px; }
+.req__body { font-family: var(--tt-font); font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--tt-well); border-radius: 10px; padding: 10px 12px; color: var(--tt-text); }
+.req__note { font-size: 13px; color: var(--tt-text-2); }
+.req__foot { font-size: 12px; color: var(--tt-muted); }
+.req--q { box-shadow: inset 3px 0 0 var(--tt-accent); }
+.req__opts { display: grid; gap: 6px; }
+.opt { display: grid; gap: 1px; text-align: left; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--tt-field-border); background: var(--tt-well); min-height: 44px; }
+.opt:hover { background: var(--tt-hover); }
+.opt strong { font-weight: 600; font-size: 14px; }
+.opt span { font-size: 13px; color: var(--tt-muted); }
+.opt em { font-style: normal; font-size: 12px; color: var(--tt-accent-text); font-weight: 600; }
+.answered { font-size: 13px; color: var(--tt-text-2); padding: 8px 12px; border-radius: 10px; background: var(--tt-card); display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.win[data-phone='true'] .req h3 { font-size: 17px; }
+.win[data-phone='true'] .req__body { font-size: 16px; }
+.win[data-phone='true'] .req .btnrow .btn { flex: 1 1 140px; }
+
+/* a report from a run */
+.report { background: var(--tt-card); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; }
+.report__label { font-size: 12px; font-weight: 600; color: var(--tt-accent-text); }
+.report h3 { font-size: 16px; font-weight: 650; }
+.report__meta { font-size: 13px; color: var(--tt-muted); }
+.report__sum { font-size: 14px; color: var(--tt-text); }
+.report h4 { font-size: 13px; font-weight: 600; color: var(--tt-muted); margin-bottom: 4px; }
+.report li { position: relative; padding: 2px 0 2px 14px; font-size: 14px; overflow-wrap: anywhere; }
+.report li::before { content: ''; position: absolute; left: 2px; top: 0.72em; width: 4px; height: 4px; border-radius: 50%; background: var(--tt-muted); }
+.report__did { font-size: 13px; color: var(--tt-text-2); border-top: 1px solid var(--tt-well); padding-top: 8px; display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.report__did b { font-weight: 600; color: var(--tt-muted); }
+.win[data-phone='true'] .report li, .win[data-phone='true'] .report__sum { font-size: 16px; }
+
+/* a conversation */
+.talk { display: grid; gap: 14px; align-content: start; }
+.msg p { overflow-wrap: anywhere; }
+.msg--you { justify-self: end; max-width: 86%; background: var(--tt-message); border-radius: 14px; padding: 8px 12px; }
+.msg--owl .msg__who { font-size: 13px; font-weight: 650; color: var(--tt-text-2); margin-bottom: 2px; }
+.msg__who span, .msg__at { font-weight: 400; font-size: 12px; color: var(--tt-muted); margin-left: 6px; }
+.msg--you .msg__at { display: block; margin: 2px 0 0; text-align: right; }
+.msg__noted { font-size: 12px; color: var(--tt-muted); margin-top: 4px; }
+.day { text-align: center; font-size: 12px; color: var(--tt-muted); }
+.steps { display: grid; gap: 2px; font-size: 13px; color: var(--tt-muted); }
+.steps li { display: flex; gap: 8px; align-items: baseline; }
+.steps li::before { content: ''; flex: none; width: 5px; height: 5px; border-radius: 50%; border: 1px solid var(--tt-muted); transform: translateY(-1px); }
+.steps li.live { color: var(--tt-accent-text); }
+.steps li.live::before { background: var(--tt-accent); border-color: var(--tt-accent); animation: pulse 1.6s ease-in-out infinite; }
+.composer { display: flex; align-items: center; gap: 6px; background: var(--tt-card); border-radius: 14px; padding: 6px 6px 6px 14px; }
+.composer input { flex: 1; min-width: 0; min-height: 32px; border: 0; background: transparent; outline-offset: 4px; }
+.composer input::placeholder { color: var(--tt-muted); opacity: 1; }
+.win[data-phone='true'] .composer input { min-height: 40px; font-size: 16px; }
+
+/* a switch, a field */
+.sw { flex: none; position: relative; width: 36px; height: 20px; border-radius: 10px; border: 1px solid var(--tt-field-border); background: var(--tt-well); padding: 0; }
+.sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-muted); transition: transform 0.12s; }
+.sw[aria-checked='true'] { background: var(--tt-accent); border-color: transparent; }
+.sw[aria-checked='true']::after { transform: translateX(16px); background: var(--tt-on-accent); }
+.win[data-phone='true'] .sw { width: 50px; height: 30px; border-radius: 15px; }
+.win[data-phone='true'] .sw::after { width: 24px; height: 24px; }
+.win[data-phone='true'] .sw[aria-checked='true']::after { transform: translateX(20px); }
+.field { display: grid; gap: 4px; }
+.field > label, .field > .lbl { font-size: 13px; font-weight: 600; color: var(--tt-text-2); }
+.field .hint { font-size: 12px; color: var(--tt-muted); }
+.inp, .field input[type='text'], .field textarea, .field select { min-height: 34px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--tt-field-border); background: var(--tt-well); font-size: 14px; width: 100%; }
+.field textarea { resize: vertical; min-height: 76px; line-height: 1.45; }
+.win[data-phone='true'] .inp, .win[data-phone='true'] .field input[type='text'], .win[data-phone='true'] .field textarea, .win[data-phone='true'] .field select { min-height: 44px; font-size: 16px; }
+.pick { display: grid; gap: 6px; }
+.pick--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pick--auto { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+.pick label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--tt-field-border); background: var(--tt-well); min-height: 44px; cursor: pointer; }
+.pick label:has(input:checked) { border-color: var(--tt-accent); background: var(--tt-selected); }
+.pick label:has(input:focus-visible) { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.pick input { margin: 3px 0 0; accent-color: var(--tt-accent); flex: none; }
+.pick input:focus-visible { outline: none; }
+.pick strong { display: block; font-weight: 600; font-size: 14px; }
+.pick label > span > span { display: block; font-size: 12px; color: var(--tt-muted); }
+.pick label[data-off='true'] { opacity: 1; border-style: dashed; cursor: default; }
+.pick label[data-off='true'] strong { color: var(--tt-muted); }
+
+/* layers: anything that opens over the room. Escape closes it. */
+.layer { position: absolute; inset: 0; z-index: 40; background: var(--tt-scrim); display: flex; }
+.dialog { margin: auto; width: min(560px, calc(100% - 24px)); max-height: calc(100% - 24px); background: var(--tt-overlay); border-radius: 16px; box-shadow: var(--tt-shadow); display: flex; flex-direction: column; overflow: hidden; }
+.sheet { margin-left: auto; width: min(440px, 100%); height: 100%; background: var(--tt-overlay); box-shadow: var(--tt-shadow); display: flex; flex-direction: column; }
+.layer__head { flex: none; display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+.layer__head h2 { font-size: 17px; font-weight: 650; flex: 1; min-width: 0; }
+.layer__body { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 16px; display: grid; gap: 14px; align-content: start; }
+.layer__foot { flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--tt-hairline); flex-wrap: wrap; }
+.win[data-phone='true'] .layer { align-items: flex-end; }
+.win[data-phone='true'] .dialog, .win[data-phone='true'] .sheet { margin: 0; width: 100%; height: auto; max-height: 92%; border-radius: 18px 18px 0 0; }
+.win[data-phone='true'] .dialog.is-full, .win[data-phone='true'] .sheet.is-full { height: 100%; max-height: 100%; border-radius: 0; }
+
+.sec-h { font-size: 13px; font-weight: 600; color: var(--tt-muted); }
+.rows > * + * { border-top: 1px solid var(--tt-well); }
+.spark { display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; }
+.spark i { width: 4px; border-radius: 1px; background: var(--tt-field-border); min-height: 2px; }
+.spark i.on { background: var(--tt-accent); }
+.meter { height: 6px; border-radius: 3px; background: var(--tt-well); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--tt-accent); border-radius: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* ==================== Look A ==================== */
+/* PROTOTYPE — look A, after Grok Bot: computers and screens. */
+
+.a-page { flex: 1; min-height: 0; overflow: auto; padding: 14px 28px 28px; }
+.a-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.a-head h1 { font-size: 26px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+.a-head p { margin-top: 4px; max-width: 64ch; }
+.a-homes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap: 16px; align-items: start; }
+.a-home { background: var(--tt-card); border-radius: 16px; }
+.a-home > header { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; flex-wrap: wrap; }
+.a-home > header svg { width: 20px; height: 20px; color: var(--tt-text-2); flex: none; }
+.a-home h2 { font-size: 16px; font-weight: 650; }
+.a-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 10px; padding: 0 12px 12px; }
+.a-tile { text-align: left; border: 0; background: var(--tt-well); border-radius: 12px; padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; min-width: 0; }
+.a-tile:hover { box-shadow: 0 0 0 1px var(--tt-field-border); }
+.a-tile__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.a-tile__who strong { font-size: 15px; font-weight: 650; display: block; }
+.a-tile__who .muted { font-size: 13px; display: block; }
+.a-tile__meta { font-size: 13px; color: var(--tt-muted); display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
+.a-shared { border-top: 1px solid var(--tt-well); padding: 10px 16px 12px; font-size: 13px; display: grid; gap: 4px; color: var(--tt-text-2); }
+.a-shared b { font-weight: 600; color: var(--tt-muted); margin-right: 6px; }
+
+/* a screen: what the owlet has open */
+.a-screen { background: var(--tt-surface); border: 1px solid var(--tt-hairline); border-radius: 10px; font-size: 12px; overflow: hidden; display: flex; flex-direction: column; color: var(--tt-text-2); }
+.a-screen__bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 9px; border-bottom: 1px solid var(--tt-hairline); font-weight: 600; }
+.a-screen__body { flex: 1; min-height: 0; padding: 7px 9px; }
+.a-screen__body > * + * { margin-top: 3px; }
+.a-screen__sub { color: var(--tt-muted); margin-bottom: 2px; }
+.a-srow { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) auto; gap: 8px; padding: 2px 5px; border-radius: 5px; }
+.a-srow > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a-srow b { font-weight: 600; color: var(--tt-text); }
+.a-srow i { font-style: normal; color: var(--tt-muted); }
+.a-srow.mark { background: var(--tt-accent-wash); }
+.a-srow.mark i { color: var(--tt-accent-text); font-weight: 600; }
+.a-log { font-family: var(--tt-mono); font-size: 11.5px; line-height: 1.5; white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--tt-text-2); }
+.a-log.bad { color: var(--tt-error-text); }
+.a-asleep { flex: 1; min-height: 0; display: grid; place-items: center; align-content: center; gap: 4px; text-align: center; color: var(--tt-muted); padding: 4px 8px; }
+.a-screen__foot { padding: 5px 9px; border-top: 1px solid var(--tt-hairline); color: var(--tt-muted); display: flex; align-items: center; gap: 6px; min-width: 0; }
+.a-screen__foot.live { color: var(--tt-accent-text); }
+.a-screen__foot.live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-accent); animation: pulse 1.6s ease-in-out infinite; }
+.a-screen--mini { height: 128px; }
+/* a small screen shows the two lines that matter; a wide window has room for all of them */
+.a-screen--mini .a-screen__body--rows > :nth-child(n + 4) { display: none; }
+.a-screen--mini .a-screen__body--log > :nth-child(2), .a-screen--mini .a-screen__body--log > :nth-child(3), .a-screen--mini .a-screen__body--log > :nth-child(n + 6) { display: none; }
+@container win (min-width: 1200px) {
+  .a-screen--mini { height: 198px; }
+  .a-screen--mini .a-screen__body--rows > .a-srow { display: grid; }
+  .a-screen--mini .a-screen__body--log > .a-log { display: block; }
+}
+.a-screen--mini .a-srow { grid-template-columns: minmax(0, 1fr) auto; }
+.a-screen--mini .a-srow span { display: none; }
+.a-screen--big { min-height: 236px; font-size: 13px; }
+.a-screen--big .a-screen__bar { padding: 7px 11px; }
+.a-screen--big .a-screen__body { padding: 10px 11px; }
+.a-screen--big .a-screen__body > * + * { margin-top: 5px; }
+.a-screen--big .a-log { font-size: 12px; }
+.a-screen--big .a-screen__foot { padding: 7px 11px; }
+
+/* one owlet open: its chat beside its screen */
+.a-open { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.a-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px 10px; border-bottom: 1px solid var(--tt-hairline); flex-wrap: wrap; }
+.a-bar h1 { font-size: 18px; font-weight: 650; }
+.a-bar h1 span { font-weight: 400; color: var(--tt-muted); margin-left: 6px; font-size: 15px; }
+.a-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(330px, 36%, 500px); }
+.a-chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.a-chat__scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px; }
+.a-col { max-width: 700px; margin: 0 auto; }
+.a-chat__foot { flex: none; padding: 0 20px 14px; }
+.a-side { border-left: 1px solid var(--tt-hairline); display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--tt-surface); }
+.a-tabs { flex: none; display: flex; gap: 4px; padding: 10px 12px 0; }
+.a-tabs button { border: 0; background: transparent; color: var(--tt-muted); padding: 5px 12px; border-radius: 8px; font-size: 13px; font-weight: 550; min-height: 32px; }
+.a-tabs button[aria-selected='true'] { background: var(--tt-card); color: var(--tt-text); font-weight: 650; }
+.a-panel { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 18px; display: grid; gap: 14px; align-content: start; }
+.a-panel .a-screen { background: var(--tt-canvas); }
+.a-block { display: grid; gap: 6px; }
+.a-block .card { padding: 2px 12px; }
+.a-line { display: flex; gap: 10px; align-items: center; padding: 8px 0; min-width: 0; }
+.a-line strong { font-weight: 600; display: block; }
+.a-line .muted { font-size: 13px; display: block; }
+.a-rt { padding: 12px; display: grid; gap: 8px; }
+.a-rt__top { display: flex; gap: 10px; align-items: center; }
+.a-rt__top strong { font-size: 15px; font-weight: 650; }
+.a-hist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 5px 0; font-size: 13px; border-top: 1px solid var(--tt-well); }
+.a-hist li span:nth-child(3) { grid-column: 1 / -1; color: var(--tt-muted); }
+.a-hist li span:nth-child(2) { color: var(--tt-text-2); font-weight: 600; font-size: 12px; }
+.a-showscreen { display: none; }
+@container win (max-width: 999px) {
+  .a-split { grid-template-columns: minmax(0, 1fr); }
+  .a-split > .a-side { display: none; }
+  .a-showscreen { display: inline-flex; }
+  .a-page { padding: 10px 18px 22px; }
+}
+.sheet .a-side { border: 0; background: transparent; flex: 1; }
+
+/* the new-owlet dialog */
+.looks { display: flex; gap: 8px; flex-wrap: wrap; }
+.looks label { position: relative; width: 52px; height: 52px; border-radius: 12px; background: var(--tt-well); border: 1px solid var(--tt-field-border); display: grid; place-items: center; cursor: pointer; }
+.looks input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.looks label:has(input:checked) { border-color: var(--tt-accent); background: var(--tt-selected); }
+.looks label:has(input:focus-visible) { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.a-form { display: grid; gap: 14px; }
+.a-form__two { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; }
+.field--sub { margin-top: 8px; }
+
+/* phone */
+.a-psec { padding: 4px 12px 10px; }
+.a-psec > h2 { font-size: 13px; font-weight: 600; color: var(--tt-muted); padding: 10px 6px 6px; display: flex; gap: 8px; align-items: center; }
+.a-psec > h2 svg { width: 16px; height: 16px; }
+.a-psec .card { overflow: hidden; }
+.a-prow { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) 84px; gap: 12px; align-items: center; padding: 10px 12px; border: 0; background: transparent; text-align: left; min-height: 72px; }
+.a-prow strong { font-size: 17px; font-weight: 650; }
+.a-prow .who span { color: var(--tt-muted); font-size: 14px; margin-left: 6px; }
+.a-prow .line { display: block; font-size: 14px; color: var(--tt-muted); }
+.a-thumb { width: 84px; height: 54px; border-radius: 8px; border: 1px solid var(--tt-hairline); background: var(--tt-well); display: grid; align-content: center; gap: 5px; padding: 0 10px; }
+.a-thumb i { height: 4px; border-radius: 2px; background: var(--tt-field-border); }
+.a-thumb i:nth-child(1) { width: 55%; }
+.a-thumb i:nth-child(3) { width: 80%; }
+.a-thumb i:nth-child(4) { width: 65%; }
+.a-thumb--rows i.hi { background: var(--tt-warning-text); }
+.a-thumb--log i.hi { background: var(--tt-accent); animation: pulse 1.6s ease-in-out infinite; }
+.a-thumb--asleep { justify-items: center; }
+.a-pshare { font-size: 13px; color: var(--tt-muted); padding: 8px 6px 0; }
+.a-phwho { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; text-align: left; min-height: 44px; padding: 2px 4px; border-radius: 10px; }
+.a-phwho strong { font-size: 17px; font-weight: 650; display: block; line-height: 1.2; }
+.a-phwho .sub { font-size: 13px; color: var(--tt-muted); display: block; }
+.a-phchat { padding: 10px 14px 14px; }
+.a-phfoot { flex: none; padding: 6px 10px 8px; }
+
+/* ==================== Look B ==================== */
+/* PROTOTYPE — look B, after Devin Bots: outcomes and Needs you. */
+
+.b-page { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 34%, 440px); }
+.b-main { min-height: 0; overflow: auto; padding: 12px 28px 28px; }
+.b-main > .b-in { max-width: 760px; margin: 0 auto; display: grid; gap: 22px; }
+.b-title { font-size: 26px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+.b-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.b-h h2 { font-size: 17px; font-weight: 650; }
+.b-h .count { font-size: 13px; font-weight: 650; color: var(--tt-warning-text); }
+.b-h p { font-size: 13px; color: var(--tt-muted); }
+.b-items { display: grid; gap: 14px; }
+.b-item { display: grid; gap: 6px; }
+.b-from { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--tt-muted); flex-wrap: wrap; }
+.b-from button { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 2px 6px 2px 2px; border-radius: 8px; color: var(--tt-text); font-weight: 650; font-size: 14px; min-height: 28px; }
+.b-from button:hover { background: var(--tt-hover); }
+.b-from button span { font-weight: 400; color: var(--tt-muted); }
+.b-kind { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tt-muted); }
+.b-none { padding: 16px; color: var(--tt-text-2); }
+.b-reps { overflow: hidden; }
+.b-rep > button { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; text-align: left; border: 0; background: none; padding: 10px 14px; min-height: 56px; }
+.b-rep > button:hover { background: var(--tt-hover); }
+.b-rep strong { font-weight: 650; display: block; }
+.b-rep .sub { font-size: 13px; color: var(--tt-muted); display: block; }
+.b-rep .chev { width: 8px; height: 8px; border-right: 1.5px solid var(--tt-muted); border-bottom: 1.5px solid var(--tt-muted); transform: rotate(45deg); margin: 0 6px 4px; }
+.b-rep > button[aria-expanded='true'] .chev { transform: rotate(-135deg); margin-bottom: -2px; }
+.b-rep .report { background: transparent; padding: 2px 14px 14px 54px; }
+
+.b-side { min-height: 0; overflow: auto; background: var(--tt-surface); border-left: 1px solid var(--tt-hairline); padding: 14px 14px 22px; display: grid; gap: 10px; align-content: start; }
+.b-side__h { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; }
+.b-side__h h2 { font-size: 15px; font-weight: 650; flex: 1; }
+.b-own { text-align: left; border: 0; background: var(--tt-card); border-radius: 14px; padding: 12px 14px; display: grid; gap: 6px; width: 100%; }
+.b-own:hover { box-shadow: 0 0 0 1px var(--tt-field-border); }
+.b-own__top { display: flex; align-items: center; gap: 8px; }
+.b-own__top strong { font-size: 15px; font-weight: 650; }
+.b-own__top .muted { font-size: 13px; }
+.b-own__what { font-size: 14px; color: var(--tt-text); }
+.b-own__meta { font-size: 13px; color: var(--tt-muted); display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; }
+.b-counts { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--tt-muted); align-items: center; }
+.b-counts b { font-weight: 650; color: var(--tt-text-2); }
+.b-counts .n-needs b, .b-counts .n-needs { color: var(--tt-warning-text); }
+.b-counts .n-working b, .b-counts .n-working { color: var(--tt-accent-text); }
+
+/* one owlet open: what it owns, then its work by where it stands */
+.b-open { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.b-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px 4px; flex-wrap: wrap; }
+.b-bar h1 { font-size: 18px; font-weight: 650; }
+.b-bar h1 span { font-weight: 400; color: var(--tt-muted); margin-left: 6px; font-size: 15px; }
+.b-owns { flex: none; padding: 4px 22px 10px 62px; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.b-owns .lab { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tt-muted); }
+.b-owns p { font-size: 17px; font-weight: 550; flex: 1; min-width: min(280px, 100%); }
+.b-tabs { flex: none; display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--tt-hairline); overflow-x: auto; scrollbar-width: none; }
+.b-tabs button { border: 0; background: none; color: var(--tt-muted); padding: 8px 12px; font-size: 14px; font-weight: 550; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; min-height: 36px; }
+.b-tabs button[aria-selected='true'] { color: var(--tt-text); border-bottom-color: var(--tt-accent); font-weight: 650; }
+.b-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 22px 18px; }
+.b-body > .b-in { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
+.b-body > .b-in.narrow { max-width: 760px; }
+.b-away { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 16px; }
+.b-away .lab { font-size: 12px; font-weight: 600; color: var(--tt-accent-text); grid-column: 1 / -1; }
+.b-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.b-group h3 { font-size: 13px; font-weight: 650; color: var(--tt-text-2); display: flex; gap: 8px; align-items: center; padding: 0 4px 8px; }
+.b-group h3 .n { font-weight: 600; color: var(--tt-muted); }
+.b-group[data-g='needs'] h3 { color: var(--tt-warning-text); }
+.b-group[data-g='working'] h3 { color: var(--tt-accent-text); }
+.b-stack { display: grid; gap: 8px; }
+.b-work { width: 100%; text-align: left; border: 0; background: var(--tt-card); border-radius: 12px; padding: 10px 12px; display: grid; gap: 3px; min-height: 60px; align-content: start; }
+.b-work:hover { box-shadow: 0 0 0 1px var(--tt-field-border); }
+.b-work strong { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.b-work span { font-size: 13px; color: var(--tt-muted); overflow-wrap: anywhere; }
+.b-group[data-g='needs'] .b-work { box-shadow: inset 3px 0 0 var(--tt-warning-text); }
+.b-group[data-g='needs'] .b-work:hover { box-shadow: inset 3px 0 0 var(--tt-warning-text), 0 0 0 1px var(--tt-field-border); }
+.b-group[data-g='working'] .b-work { box-shadow: inset 3px 0 0 var(--tt-accent); }
+.b-empty { font-size: 13px; color: var(--tt-muted); padding: 10px 12px; border: 1px dashed var(--tt-hairline); border-radius: 12px; }
+.b-say { flex: none; padding: 8px 22px 14px; border-top: 1px solid var(--tt-hairline); }
+.b-say > div { max-width: 760px; margin: 0 auto; display: grid; gap: 6px; }
+.b-say .last { font-size: 13px; color: var(--tt-muted); }
+.b-say .last b { color: var(--tt-text-2); font-weight: 650; }
+.b-set { padding: 4px 14px; }
+.b-setrow { display: flex; gap: 12px; align-items: center; padding: 10px 0; min-width: 0; flex-wrap: wrap; }
+.b-setrow strong { font-weight: 600; display: block; }
+.b-setrow .sub { font-size: 13px; color: var(--tt-muted); display: block; }
+.b-lines li { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; }
+.b-lines li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+@container win (max-width: 1000px) {
+  .b-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .b-main { padding: 10px 18px 22px; }
+  .b-owns { padding-left: 22px; }
+}
+
+/* setup: a page of grouped settings, started from a template */
+.b-setup { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.b-setup__scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 22px 18px; }
+.b-setup__grid { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; align-items: start; }
+.b-setup__grid.one { grid-template-columns: minmax(0, 760px); justify-content: center; }
+.b-setup__cards { display: grid; gap: 14px; }
+.b-setup .card { padding: 14px 16px; display: grid; gap: 12px; }
+.b-setup .card > h2 { font-size: 15px; font-weight: 650; }
+.b-setup #f-outcome { min-height: 56px; }
+.b-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.b-setup__foot { flex: none; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 22px 12px; border-top: 1px solid var(--tt-hairline); }
+@container win (max-width: 900px) {
+  .b-setup__grid { grid-template-columns: minmax(0, 1fr); }
+  .b-tpl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .b-two { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* phone */
+.b-seg { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 0 12px 6px; padding: 2px; border-radius: 10px; background: var(--tt-card); }
+.b-seg button { border: 0; background: none; min-height: 40px; border-radius: 8px; font-size: 15px; font-weight: 550; color: var(--tt-muted); }
+.b-seg button[aria-selected='true'] { background: var(--tt-overlay); color: var(--tt-text); font-weight: 650; }
+.b-seg .count { color: var(--tt-warning-text); margin-left: 4px; }
+.b-phpad { padding: 8px 12px 18px; display: grid; gap: 18px; align-content: start; }
+.b-phpad .b-own { background: var(--tt-card); }
+.win[data-phone='true'] .b-rep .report { padding-left: 14px; }
+.win[data-phone='true'] .b-owns { padding: 0 14px 8px; }
+.win[data-phone='true'] .b-owns p { font-size: 18px; }
+.win[data-phone='true'] .b-tabs { padding: 0 6px; }
+.win[data-phone='true'] .b-tabs button { min-height: 44px; font-size: 15px; }
+.win[data-phone='true'] .b-body { padding: 12px 12px 16px; }
+.win[data-phone='true'] .b-board { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.win[data-phone='true'] .b-work strong { font-size: 16px; }
+.win[data-phone='true'] .b-work span { font-size: 14px; }
+.win[data-phone='true'] .b-say { padding: 6px 10px 8px; }
+.win[data-phone='true'] .b-away { grid-template-columns: minmax(0, 1fr); }
+.win[data-phone='true'] .b-setup__scroll { padding: 0 12px 16px; }
+.win[data-phone='true'] .b-setup__foot { padding: 8px 12px 10px; }
+.win[data-phone='true'] .b-setup__foot .btn { flex: 1; }
+
+
+.win[data-phone='true'] .b-tpl { grid-template-columns: minmax(0, 1fr); }
+
+/* ==================== Look C ==================== */
+/* PROTOTYPE — look C, after Hermes Agent's Bot Mode: one long chat and its pages. Drawn as a sibling of Watcher's room: owls in text characters on a branch. */
+
+.c-ascii { font-family: var(--tt-mono); font-weight: 600; white-space: pre; line-height: 1.12; color: var(--tt-text-2); margin: 0; }
+.c-ascii .eye { color: var(--tt-text); }
+.c-ascii[data-state='working'] .eye { color: var(--tt-accent); }
+.c-ascii[data-state='idle'] .eye { color: var(--tt-muted); }
+.c-ascii .mark { color: var(--tt-warning-text); }
+.c-ascii .zz { color: var(--tt-muted); font-weight: 400; }
+.c-twig { display: block; width: 100%; overflow: hidden; white-space: nowrap; font-family: var(--tt-mono); line-height: 1; color: color-mix(in oklab, var(--tt-muted) 70%, var(--tt-canvas)); user-select: none; }
+
+/* the page: the branch */
+.c-page { flex: 1; min-height: 0; overflow: auto; padding: 14px 28px 28px; display: flex; flex-direction: column; }
+.c-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.c-head h1 { font-size: 26px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+.c-head p { margin-top: 4px; max-width: 64ch; }
+.c-scene { position: relative; flex: none; }
+.c-sky { position: relative; flex: 3 1 90px; min-height: 56px; max-height: 330px; margin-top: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; pointer-events: none; user-select: none; }
+.c-sky pre { margin: 0; font-family: var(--tt-mono); font-size: 13px; line-height: 1.55; white-space: pre; color: color-mix(in oklab, var(--tt-muted) 60%, var(--tt-canvas)); }
+.c-sky b { color: var(--tt-accent); font-weight: 400; }
+.c-moon { position: absolute; right: 9%; bottom: 26px; font-family: var(--tt-mono); font-size: 22px; line-height: 1; color: var(--tt-accent); }
+.c-row { position: relative; display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); }
+.c-bird { border: 0; background: none; padding: 10px 0 16px; border-radius: 16px; display: grid; justify-items: center; align-content: start; gap: 3px; text-align: center; min-width: 0; }
+.c-bird:hover { background: var(--tt-hover); }
+.c-bird .c-ascii { font-size: 19px; }
+.c-bird .c-twig { font-size: 19px; margin-bottom: 12px; }
+.c-bird > span:not(.c-twig) { padding: 0 12px; max-width: 100%; }
+.c-name { font-size: 18px; font-weight: 650; }
+.c-title { font-size: 14px; color: var(--tt-muted); }
+.c-where { font-size: 13px; color: var(--tt-muted); }
+.c-said { font-size: 13px; color: var(--tt-text-2); margin-top: 6px; overflow-wrap: anywhere; }
+.c-said i { font-style: normal; color: var(--tt-muted); }
+.c-chips { display: flex; flex-wrap: wrap; gap: 2px 10px; justify-content: center; margin: 2px 0; }
+.c-key { flex: 1 1 40px; align-content: end; padding-top: 22px; font-size: 13px; color: var(--tt-muted); display: flex; flex-wrap: wrap; gap: 4px 22px; justify-content: center; }
+.c-key .c-ascii { display: inline; font-size: 13px; }
+
+/* one owlet: its chat, its runs as tabs beside it, its routines docked */
+.c-open { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.c-strip { flex: none; display: flex; align-items: center; gap: 4px; padding: 2px 12px 6px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--tt-hairline); }
+.c-strip .c-perch { border: 0; background: none; display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 10px; min-height: 34px; color: var(--tt-text-2); font-weight: 550; white-space: nowrap; }
+.c-strip .c-perch:hover { background: var(--tt-hover); }
+.c-strip .c-perch[aria-current='true'] { background: var(--tt-card); color: var(--tt-text); font-weight: 650; }
+.c-strip .c-ascii { font-size: 13px; }
+.c-who { flex: none; display: flex; align-items: center; gap: 4px 12px; padding: 8px 20px 6px; flex-wrap: wrap; min-height: 48px; }
+.c-who .c-ascii { font-size: 13px; }
+.c-who h1 { font-size: 20px; font-weight: 650; }
+.c-who h1 span { font-weight: 400; color: var(--tt-muted); margin-left: 8px; font-size: 15px; }
+.c-tabs { flex: none; display: flex; align-items: flex-end; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--tt-hairline); overflow-x: auto; scrollbar-width: none; }
+.c-tabs [role='tab'] { border: 0; background: none; color: var(--tt-muted); padding: 7px 14px; border-radius: 10px 10px 0 0; font-size: 14px; font-weight: 550; white-space: nowrap; min-height: 36px; display: inline-flex; gap: 8px; align-items: center; }
+.c-tabs [role='tab'][aria-selected='true'] { background: var(--tt-card); color: var(--tt-text); font-weight: 650; }
+.c-tabs [role='tab'] .pin { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-accent); }
+.c-tabs .grow { flex: 1; }
+.c-tabs .c-dockbtn { margin: 0 0 4px 8px; }
+.c-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.c-body.is-wide { grid-template-columns: minmax(0, 1fr); }
+.c-chat { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.c-chat__scroll { flex: 1; min-height: 0; overflow: auto; padding: 18px 20px; position: relative; z-index: 1; }
+.c-col { max-width: 680px; margin: 0 auto; }
+.c-chat__foot { flex: none; padding: 0 20px 14px; position: relative; z-index: 1; }
+.c-margin { position: absolute; top: 0; bottom: 0; width: calc((100% - 760px) / 2); overflow: hidden; margin: 0; font-family: var(--tt-mono); font-size: 13px; line-height: 2.1; white-space: pre; color: color-mix(in oklab, var(--tt-muted) 55%, var(--tt-canvas)); pointer-events: none; user-select: none; }
+.c-margin b { color: var(--tt-accent); font-weight: 400; }
+.c-margin--l { left: 0; padding-left: 18px; }
+.c-margin--r { right: 0; text-align: right; padding-right: 18px; }
+.c-runhead { font-size: 13px; color: var(--tt-muted); margin-bottom: 12px; }
+.c-run { display: grid; gap: 14px; }
+.c-dock { border-left: 1px solid var(--tt-hairline); background: var(--tt-surface); min-height: 0; overflow: auto; padding: 12px 14px 18px; display: grid; gap: 12px; align-content: start; }
+.c-dock__h { display: flex; align-items: center; gap: 8px; }
+.c-dock__h h2 { font-size: 15px; font-weight: 650; flex: 1; }
+.c-rt { padding: 12px; display: grid; gap: 6px; }
+.c-rt__top { display: flex; gap: 10px; align-items: center; }
+.c-rt__top strong { font-size: 15px; font-weight: 650; flex: 1; min-width: 0; }
+.c-words { font-family: var(--tt-mono); font-size: 13px; background: var(--tt-well); border-radius: 8px; padding: 6px 10px; color: var(--tt-text); overflow-wrap: anywhere; }
+.c-quiet { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--tt-text-2); padding-top: 2px; }
+.c-quiet span { flex: 1; min-width: 0; }
+.c-about { display: grid; gap: 8px; }
+.c-about .card { padding: 2px 12px; }
+.c-pgline { display: grid; gap: 2px; padding: 8px 0; font-size: 13px; }
+.c-pgline strong { font-weight: 600; font-size: 14px; }
+.c-pgline .muted { overflow-wrap: anywhere; }
+.sheet .c-dock { border: 0; background: transparent; flex: 1; }
+@container win (max-width: 999px) {
+  .c-body { grid-template-columns: minmax(0, 1fr); }
+  .c-body > .c-dock { display: none; }
+  .c-margin { display: none; }
+  .c-page { padding: 10px 14px 20px; }
+  .c-bird .c-ascii, .c-bird .c-twig { font-size: 16px; }
+}
+@container win (min-width: 1000px) {
+  .c-tabs .c-dockbtn[data-wide='open'] { display: none; }
+}
+
+/* its pages: what an owlet is, as pages you can read and change */
+.c-book { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.c-book__bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px 10px; border-bottom: 1px solid var(--tt-hairline); flex-wrap: wrap; }
+.c-book__bar h1 { font-size: 18px; font-weight: 650; }
+.c-book__body { flex: 1; min-height: 0; display: grid; grid-template-columns: 200px minmax(0, 1fr); }
+.c-index { padding: 14px 10px; display: grid; gap: 2px; align-content: start; overflow: auto; border-right: 1px solid var(--tt-hairline); }
+.c-index button { border: 0; background: none; text-align: left; padding: 6px 10px; border-radius: 8px; color: var(--tt-text-2); min-height: 32px; display: flex; gap: 8px; align-items: baseline; }
+.c-index button:hover { background: var(--tt-hover); }
+.c-index button i { font-style: normal; font-family: var(--tt-mono); font-size: 12px; color: var(--tt-muted); }
+.c-pages { min-height: 0; overflow: auto; padding: 16px 22px 28px; scroll-behavior: smooth; }
+.c-pages > div { max-width: 720px; margin: 0 auto; display: grid; gap: 14px; }
+.c-pg { background: var(--tt-card); border-radius: 14px; padding: 16px 18px; display: grid; gap: 12px; scroll-margin-top: 12px; }
+.c-pg > header { display: flex; align-items: baseline; gap: 10px; }
+.c-pg > header h2 { font-size: 16px; font-weight: 650; flex: 1; }
+.c-pg > header .no { font-family: var(--tt-mono); font-size: 12px; color: var(--tt-muted); }
+.c-pg .c-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.c-lines li { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--tt-well); }
+.c-lines li:first-child { border-top: 0; }
+.c-lines li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.c-lines .who { font-size: 12px; color: var(--tt-muted); flex: none; width: 92px; }
+.c-looks { display: flex; gap: 8px; flex-wrap: wrap; }
+.c-looks label { position: relative; padding: 8px 12px 6px; border-radius: 12px; background: var(--tt-well); border: 1px solid var(--tt-field-border); cursor: pointer; display: grid; }
+.c-looks input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.c-looks label:has(input:checked) { border-color: var(--tt-accent); background: var(--tt-selected); }
+.c-looks label:has(input:focus-visible) { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.c-looks .c-ascii { font-size: 13px; }
+@container win (max-width: 900px) {
+  .c-book__body { grid-template-columns: minmax(0, 1fr); }
+  .c-index { display: none; }
+}
+
+/* phone */
+.c-plist { padding: 4px 12px 16px; display: grid; gap: 8px; }
+.c-prow { width: 100%; border: 0; background: var(--tt-card); border-radius: 14px; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 12px 12px 6px; text-align: left; min-height: 96px; }
+.c-prow .perch { display: grid; justify-items: center; }
+.c-prow .c-ascii { font-size: 15px; }
+.c-prow .c-twig { font-size: 15px; }
+.c-prow .info { display: grid; gap: 1px; min-width: 0; }
+.c-prow .c-name { font-size: 18px; }
+.c-prow .c-name span { font-weight: 400; color: var(--tt-muted); font-size: 15px; margin-left: 6px; }
+.c-prow .c-said { margin-top: 2px; font-size: 14px; }
+.win[data-phone='true'] .c-who { padding: 4px 10px 6px; gap: 6px; flex-wrap: nowrap; }
+.win[data-phone='true'] .c-tabs { padding: 0 8px; }
+.win[data-phone='true'] .c-tabs [role='tab'] { min-height: 44px; font-size: 15px; }
+.win[data-phone='true'] .c-chat__scroll { padding: 12px 14px 14px; }
+.win[data-phone='true'] .c-chat__foot { padding: 6px 10px 8px; }
+.win[data-phone='true'] .c-pages { padding: 10px 12px 20px; }
+.win[data-phone='true'] .c-pg .c-two { grid-template-columns: minmax(0, 1fr); }
+.c-phname { flex: 1; min-width: 0; border: 0; background: none; text-align: left; padding: 2px 4px; border-radius: 10px; min-height: 44px; display: grid; align-content: center; }
+.c-phname strong { font-size: 17px; font-weight: 650; line-height: 1.2; }
+.c-phname .sub { font-size: 13px; color: var(--tt-muted); }
+</style>
+</head>
+<body>
+<div class="stage" id="stage" data-size="fit">
+  <div class="top">
+    <div class="bar" role="toolbar" aria-label="Prototype controls">
+      <button type="button" id="prev" aria-label="Show the previous look">‹</button>
+      <span class="lab" id="lab" aria-live="polite"></span>
+      <button type="button" id="next" aria-label="Show the next look">›</button>
+      <span class="sep"></span>
+      <select id="jump" class="jump" aria-label="Jump to a screen of this look">
+        <option value="">Jump to…</option>
+        <option value="page">The Owlets page</option>
+        <option value="owlet">One owlet open</option>
+        <option value="change">A change waiting</option>
+        <option value="setup">Set one up</option>
+        <option value="edit">Edit one</option>
+      </select>
+      <button type="button" id="theme"></button>
+      <select id="size" class="size" aria-label="Window size">
+        <option value="fit">Fit this window</option>
+        <option value="1600x1000">1600 × 1000</option>
+        <option value="1280x800">1280 × 800</option>
+        <option value="820x560">820 × 560, the smallest</option>
+        <option value="390x844">iPhone, 390 × 844</option>
+      </select>
+      <button type="button" id="reset" class="reset" aria-label="Start again: put every card back">Start again</button>
+    </div>
+    <p class="cap" id="cap"></p>
+  </div>
+  <div class="win" id="win"></div>
+</div>
+<p class="vh" role="status" aria-live="polite" id="toast"></p>
+<script>
+'use strict';
+
+/* ==================== Sample data ==================== */
+/*
+ * PROTOTYPE — throwaway sample data for the three Owlets looks. Every name, address, repository and
+ * number here is made up. Nothing is read from or sent to anywhere.
+ *
+ * The same four owlets, the same two changes waiting and the same reports are drawn by all three
+ * looks, so the looks can be compared on what they put first and not on what they were given.
+ */
+
+const COMPUTERS = {
+  here: {
+    id: 'here',
+    name: 'This computer',
+    kind: 'The desktop you are on',
+    state: 'On',
+    accounts: ['proton-work', 'gmail-personal', 'github-here', 'vercel-work'],
+    models: ['Haiku 4.5', 'Fable 5.2', 'Opus 5.5', 'GPT-6 Luna'],
+    skills: ['Sort an inbox', 'Draft a reply in your voice', 'List receipts'],
+  },
+  forge: {
+    id: 'forge',
+    name: 'forge',
+    kind: 'Paired host, always on',
+    state: 'Connected',
+    accounts: ['gmail-personal', 'github-forge', 'vercel-work'],
+    models: ['Fable 5.2', 'GPT-6 Luna', 'GPT-6 Sol', 'Grok 4.7'],
+    skills: ['Read a red CI run', 'First reply to an issue', 'Write the morning brief'],
+  },
+};
+
+const ACCOUNTS = {
+  'proton-work': { plugin: 'Proton Mail', name: 'Work', kind: 'mail', note: 'Stays on this computer, where Proton Mail Bridge runs.' },
+  'gmail-personal': { plugin: 'Gmail', name: 'Personal', kind: 'mail', note: 'Added here and copied to forge.' },
+  'github-here': { plugin: 'GitHub', name: 'sample-dev', kind: 'github', note: 'gh’s own sign-in on this computer.' },
+  'github-forge': { plugin: 'GitHub', name: 'sample-dev', kind: 'github', note: 'gh’s own sign-in on forge.' },
+  'vercel-work': { plugin: 'Vercel', name: 'Work', kind: 'vercel', note: 'Added here and copied to forge.' },
+};
+
+/* What an account lets an owlet do, in the words the Plugins page uses. */
+const ACCOUNT_RULES = {
+  mail: ['Reads after you say yes once', 'Every email asks you'],
+  github: ['Reads without asking', 'Every comment and issue asks you'],
+  vercel: ['Reads without asking', 'Every deploy change asks you'],
+};
+
+const CHANGES = {
+  'mail-mara': {
+    id: 'mail-mara',
+    kind: 'mail',
+    owlet: 'tawny',
+    title: 'Send an email as Work',
+    short: 'Reply to Mara at Harbor Supply',
+    account: 'Proton Mail · Work',
+    asked: '8:52 am',
+    waited: '9 min',
+    rows: [
+      ['To', 'mara@harborsupply.example'],
+      ['Subject', 'Re: Thursday’s site visit'],
+    ],
+    body: 'Hi Mara,\n\nFriday at 10 works for me. I’ll bring the revised drawings.\n\nSee you then,\nSam',
+    allow: 'Send the email',
+    deny: 'Don’t send it',
+    allowed: 'You allowed it. The email went from Work at 9:01 am.',
+    denied: 'You said no. Nothing was sent.',
+  },
+  'comment-214': {
+    id: 'comment-214',
+    kind: 'comment',
+    owlet: 'scops',
+    title: 'Post a comment on issue #214',
+    short: 'First reply to issue #214',
+    account: 'GitHub · sample-dev, gh on forge',
+    asked: '2:41 am',
+    waited: '6 h 20 min',
+    rows: [
+      ['On', 'sample-co/ferry · #214 Export fails on files over 2 GB'],
+      ['As', 'sample-dev'],
+    ],
+    body: 'Thanks for the report. This looks like the failure our CI is showing: the exporter reads the whole file into memory, so files over 2 GB time out.\n\nA fix is in review in #209. Which version are you on, and how large was the file?',
+    allow: 'Post the comment',
+    deny: 'Don’t post it',
+    allowed: 'You allowed it. The comment is on #214, posted as sample-dev.',
+    denied: 'You said no. Nothing was posted.',
+  },
+};
+
+const QUESTIONS = {
+  'q-red-main': {
+    id: 'q-red-main',
+    owlet: 'scops',
+    title: 'Scops asks',
+    short: 'Open an issue for the red main?',
+    asked: '2:41 am',
+    text: 'main has been red since 2:14 am and nobody has an issue for it. Should I write one?',
+    options: [
+      { id: 'open', label: 'Write the issue', note: 'I’ll show you every word before it is opened.', recommended: true },
+      { id: 'leave', label: 'Leave it with me', note: 'I’ll keep watching and say when it is green.' },
+    ],
+  },
+};
+
+const OWLETS = [
+  {
+    id: 'tawny',
+    name: 'Tawny',
+    look: 'round',
+    title: 'Inbox',
+    role: 'Read the Work mailbox. Tell me what needs a reply and what can wait. Draft replies in my voice: short and plain. Never send anything without asking me.',
+    outcome: 'No message in Work waits more than a day for an answer.',
+    home: 'here',
+    model: 'Haiku 4.5',
+    status: 'needs',
+    line: 'Wants to send a reply to Mara',
+    last: 'Here is the reply. Nothing is sent until you allow it.',
+    lastAt: '8:52 am',
+    accounts: ['proton-work'],
+    change: 'mail-mara',
+    days: [1, 1, 2, 1, 1, 0, 0, 1, 1, 1, 2, 1, 1, 1],
+    routines: [
+      {
+        id: 'sweep',
+        name: 'Evening sweep',
+        when: 'Every day at 6:00 pm',
+        words: 'every day at 6pm',
+        instruction: 'Read what came in since the last sweep. List what needs a reply. Draft the easy ones.',
+        next: 'Today, 6:00 pm',
+        on: true,
+        history: [
+          ['Yesterday, 6:00 pm', 'Finished', '14 read. 2 need a reply.'],
+          ['Tuesday, 6:00 pm', 'Finished', '9 read. Nothing needs you.'],
+          ['Monday, 6:00 pm', 'Finished', '22 read. 3 need a reply.'],
+        ],
+      },
+    ],
+    report: {
+      title: 'Evening sweep',
+      when: 'Yesterday, 6:00 pm',
+      tab: 'Yesterday 6:00 pm',
+      on: 'This computer',
+      took: '2 min',
+      summary: '14 new messages in Work since noon. Two need a reply from you. The rest can wait.',
+      groups: [
+        {
+          h: 'Needs a reply',
+          items: [
+            'Mara at Harbor Supply asks to move Thursday’s site visit to Friday at 10. I can draft a reply when you say what to tell her.',
+            'Jonas at Pine & Co. sent the revised quote and wants a yes or no by Monday. That one is yours to decide.',
+          ],
+        },
+        { h: 'Can wait', items: ['8 newsletters and 4 receipts.'] },
+      ],
+      steps: ['Searched Work for mail since Wednesday noon', 'Read 14 messages', 'Sorted them into two groups', 'Wrote this report'],
+      did: ['Read 14 messages in Work', 'Wrote nothing to anyone', 'Sent nothing'],
+    },
+    chat: [
+      { who: 'report' },
+      { who: 'you', at: '8:52 am', text: 'Tell Mara Friday at 10 works. I’ll bring the revised drawings.' },
+      { who: 'steps', items: ['Read Mara’s message again', 'Wrote a reply'] },
+      { who: 'owlet', at: '8:52 am', text: 'Here is the reply. Nothing is sent until you allow it.' },
+      { who: 'change', id: 'mail-mara' },
+    ],
+    screen: {
+      title: 'Proton Mail · Work',
+      sub: 'Inbox, since Wednesday noon · 14 messages',
+      rows: [
+        { a: 'Mara · Harbor Supply', b: 'Thursday’s site visit', c: 'Reply written', mark: true },
+        { a: 'Jonas · Pine & Co.', b: 'Revised quote', c: 'Yours to decide' },
+        { a: 'Harbor Weekly', b: 'This week at the yard', c: 'Can wait' },
+        { a: 'Parcel desk', b: 'Receipt 20418', c: 'Can wait' },
+      ],
+      foot: 'Waiting for your answer before it sends.',
+    },
+    work: {
+      working: [],
+      needs: [{ t: 'Reply to Mara at Harbor Supply', s: 'An email is ready to send', change: 'mail-mara' }],
+      next: [{ t: 'Evening sweep', s: 'Today, 6:00 pm · on its routine' }],
+      done: [
+        { t: 'Evening sweep', s: 'Yesterday, 6:00 pm · 14 read, 2 need a reply', report: true },
+        { t: 'Evening sweep', s: 'Tuesday · 9 read, nothing needs you' },
+        { t: 'Reply to the surveyor', s: 'Tuesday · you allowed the email' },
+      ],
+    },
+    memory: {
+      you: ['Signs emails “Sam”.', 'Likes replies under five lines.'],
+      learned: ['Harbor Supply and Pine & Co. are suppliers. Their mail usually needs an answer.', 'Newsletters never need a reply.'],
+      used: 412,
+    },
+    skills: [{ name: 'Sort an inbox', by: 'Written by Tawny on Monday', state: 'kept' }, { name: 'Draft a reply in your voice', by: 'Written by Tawny on Tuesday', state: 'new' }],
+    limit: { cap: 10, spent: 1.9 },
+  },
+  {
+    id: 'scops',
+    name: 'Scops',
+    look: 'tufts',
+    title: 'Repo upkeep',
+    role: 'Watch CI on main and new issues in sample-co/ferry. When main goes red, find out why and tell me. Give every new issue a first reply within a day. Ask before you post anything.',
+    outcome: 'main stays green, and every new issue gets a first reply within a day.',
+    home: 'forge',
+    model: 'Fable 5.2',
+    status: 'working',
+    line: 'Reading the log of CI run 4131',
+    last: 'main is still red after the 8:40 push. I’m reading the new run now.',
+    lastAt: '8:44 am',
+    accounts: ['github-forge'],
+    change: 'comment-214',
+    question: 'q-red-main',
+    days: [2, 3, 1, 2, 4, 1, 0, 2, 3, 2, 1, 3, 2, 5],
+    routines: [
+      { id: 'red', name: 'Watch main', when: 'When CI on main goes red', words: 'when CI on main goes red', event: true, instruction: 'Read the failing run. Say which test failed and whether it failed before.', next: 'Waits for a red run', on: true,
+        history: [['Today, 8:40 am', 'Running', 'Reading run 4131.'], ['Today, 2:14 am', 'Finished', 'One test timed out twice.'], ['Friday, 4:02 pm', 'Finished', 'A one-off. Green on the next run.']] },
+      { id: 'issues', name: 'New issues', when: 'When a new issue opens', words: 'when a new issue opens', event: true, instruction: 'Read the issue. Write a first reply and ask me before posting it.', next: 'Waits for an issue', on: true,
+        history: [['Today, 2:33 am', 'Waiting for you', 'A reply to #214 is ready.'], ['Yesterday, 2:10 am', 'Finished', 'Replied to #213 after you allowed it.']] },
+      { id: 'deps', name: 'Dependency check', when: 'Every Monday at 9:00 am', words: 'every monday 9am', instruction: 'List dependencies with updates. Change nothing.', next: 'Monday, 9:00 am', on: true,
+        history: [['Monday, 9:00 am', 'Finished', '2 updates listed.']] },
+    ],
+    report: {
+      title: 'Overnight on main',
+      when: 'Last night, 2:14 am to 2:41 am',
+      tab: 'Last night 2:14 am',
+      on: 'forge',
+      took: '27 min',
+      summary: 'main went red at 2:14 am. One test, export-large-file, timed out, and it timed out on the two runs before that as well. A new issue, #214, describes the same failure.',
+      groups: [
+        {
+          h: 'What happened',
+          items: [
+            '2:14 am. CI run 4127 on main failed. One test timed out: export-large-file.',
+            '2:19 am. The same test failed in runs 4125 and 4126, so it is not a one-off.',
+            '2:33 am. New issue #214, “Export fails on files over 2 GB”, matches it.',
+            '2:41 am. I wrote a first reply for #214. It is waiting for you.',
+          ],
+        },
+      ],
+      steps: ['Read CI run 4127', 'Read CI runs 4125 and 4126', 'Read issue #214', 'Read pull request #209', 'Wrote a comment and asked you'],
+      did: ['Read 3 CI runs, 1 issue and 1 pull request', 'Wrote 1 comment, not posted', 'Changed nothing'],
+    },
+    chat: [
+      { who: 'report' },
+      { who: 'change', id: 'comment-214' },
+      { who: 'question', id: 'q-red-main' },
+      { who: 'steps', items: ['Saw the 8:40 am push to main', 'Reading the log of CI run 4131'], live: true },
+      { who: 'owlet', at: '8:44 am', text: 'main is still red after the 8:40 push. I’m reading the new run now.' },
+    ],
+    screen: {
+      title: 'GitHub · sample-co/ferry',
+      sub: 'CI run 4131 · main · failed',
+      log: ['✓ build            1 m 12 s', '✓ unit             3 m 40 s', '✗ export-large-file  timed out after 120 s', '  reading fixture big-2400mb.bin', '  heap grew past 2 GB before the first write'],
+      foot: 'Reading the log.',
+      live: true,
+    },
+    work: {
+      working: [{ t: 'Red main: CI run 4131', s: 'Reading the failing test’s log · started 8:40 am by a red run' }],
+      needs: [
+        { t: 'First reply to issue #214', s: 'A comment is ready to post', change: 'comment-214' },
+        { t: 'Open an issue for the red main?', s: 'A question for you', question: 'q-red-main' },
+      ],
+      next: [
+        { t: 'First reply to issue #215', s: 'Opened 8:31 am · due within a day' },
+        { t: 'Dependency check', s: 'Monday, 9:00 am · on its routine' },
+      ],
+      done: [
+        { t: 'Overnight on main', s: 'Last night, 2:41 am · main red, #214 matches', report: true },
+        { t: 'First reply to issue #213', s: 'Yesterday · you allowed the comment' },
+        { t: 'Dependency check', s: 'Monday · 2 updates listed, nothing changed' },
+      ],
+    },
+    memory: {
+      you: ['Wants the failing test named first.'],
+      learned: ['export-large-file needs the 2.4 GB fixture and is slow on a cold runner.', 'Issues about export go to the same cause until #209 merges.'],
+      used: 1364,
+    },
+    skills: [{ name: 'Read a red CI run', by: 'Written by Scops last week', state: 'kept' }, { name: 'First reply to an issue', by: 'Written by Scops on Tuesday', state: 'kept' }],
+    limit: { cap: 20, spent: 6.4 },
+  },
+  {
+    id: 'elf',
+    name: 'Elf',
+    look: 'small',
+    title: 'Morning brief',
+    role: 'Each weekday morning, tell me what changed overnight: pull requests, CI, new issues, and mail that looks like it needs me. One page. Start with what needs me.',
+    outcome: 'By 7:30 each weekday, one page says what needs you.',
+    home: 'forge',
+    model: 'GPT-6 Luna',
+    status: 'idle',
+    line: 'Ran at 7:30 am. Next on Friday at 7:30 am',
+    last: 'Morning brief: three things need you.',
+    lastAt: '7:33 am',
+    accounts: ['github-forge', 'gmail-personal'],
+    days: [1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1],
+    routines: [
+      {
+        id: 'brief',
+        name: 'Morning brief',
+        when: 'Weekdays at 7:30 am',
+        words: 'weekdays at 7:30am',
+        instruction: 'Read what changed since yesterday’s brief. Write one page. Start with what needs me.',
+        next: 'Friday, 7:30 am',
+        on: true,
+        history: [
+          ['Today, 7:30 am', 'Finished', 'Three things need you.'],
+          ['Yesterday, 7:30 am', 'Finished', 'One thing needs you.'],
+          ['Tuesday, 7:30 am', 'Finished', 'Nothing needs you.'],
+        ],
+      },
+    ],
+    report: {
+      title: 'Morning brief',
+      when: 'Today, 7:30 am',
+      tab: 'Today 7:30 am',
+      on: 'forge',
+      took: '3 min',
+      summary: 'Three things need you. Everything else moved on its own.',
+      groups: [
+        {
+          h: 'Needs you',
+          items: [
+            'main has been red since 2:14 am. Scops has the details and a question for you.',
+            'Mara at Harbor Supply asked to move Thursday’s visit to Friday at 10. Tawny read it last night.',
+            'Pull request #209 has two approvals and is waiting for your merge.',
+          ],
+        },
+        { h: 'Moved overnight', items: ['#207 and #211 merged.', 'Two new issues: #213, a question, and #214, export fails over 2 GB.', 'ferry-web finished deploying at 1:02 am.'] },
+        { h: 'Mail in Personal', items: ['6 new. One looks like it needs you: the dentist asks you to confirm Tuesday at 3:00 pm.'] },
+      ],
+      steps: ['Read 9 pull requests', 'Read 4 CI runs', 'Read 2 new issues', 'Searched Personal for mail since yesterday 7:30 am', 'Read 6 subjects and 1 message', 'Wrote the brief'],
+      did: ['Read 9 pull requests, 4 CI runs and 2 issues', 'Read 6 subjects and 1 message in Personal', 'Sent nothing'],
+    },
+    chat: [
+      { who: 'day', text: 'Yesterday' },
+      { who: 'you', at: '7:41 am', text: 'Leave dependency bumps out of the brief.' },
+      { who: 'owlet', at: '7:41 am', text: 'I will. I wrote that down, so tomorrow’s brief leaves them out.', noted: 'Wrote a line in its memory' },
+      { who: 'day', text: 'Today' },
+      { who: 'report' },
+    ],
+    screen: { title: 'forge', sub: 'Asleep', asleep: 'Asleep until Friday at 7:30 am.', foot: 'Wrote the morning brief at 7:33 am.' },
+    work: {
+      working: [],
+      needs: [],
+      next: [{ t: 'Morning brief', s: 'Friday, 7:30 am · on its routine' }],
+      done: [
+        { t: 'Morning brief', s: 'Today, 7:30 am · three things need you', report: true },
+        { t: 'Morning brief', s: 'Yesterday · one thing needs you' },
+        { t: 'Morning brief', s: 'Tuesday · nothing needs you' },
+      ],
+    },
+    memory: {
+      you: ['Reads the brief on a phone, so one screen is best.', 'Wants what needs an answer first.'],
+      learned: ['Leave dependency bumps out of the brief.', 'A red main is always worth a line.'],
+      used: 596,
+    },
+    skills: [{ name: 'Write the morning brief', by: 'Written by Elf on Tuesday', state: 'new' }],
+    limit: { cap: 15, spent: 3.1 },
+  },
+  {
+    id: 'barn',
+    name: 'Barn',
+    look: 'heart',
+    title: 'Receipts',
+    role: 'Find receipts in Personal mail and list them with their amounts when I ask.',
+    outcome: 'Receipts are listed whenever you ask.',
+    home: 'here',
+    model: 'Haiku 4.5',
+    status: 'idle',
+    line: 'Last asked on Monday',
+    last: '23 receipts in October, $1,284.60 in all.',
+    lastAt: 'Monday',
+    accounts: ['gmail-personal'],
+    days: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    routines: [],
+    report: {
+      title: 'October’s receipts',
+      when: 'Monday, 4:12 pm',
+      tab: 'Monday 4:12 pm',
+      on: 'This computer',
+      took: '1 min',
+      summary: '23 receipts in October, $1,284.60 in all. The list is saved as receipts-october.md.',
+      groups: [{ h: 'Largest', items: ['Pine & Co., $412.00, October 9.', 'Harbor Supply, $268.40, October 21.', 'Parcel desk, $96.10, October 3.'] }],
+      steps: ['Searched Personal for receipts in October', 'Read 23 messages', 'Wrote receipts-october.md'],
+      did: ['Read 23 messages in Personal', 'Saved 1 file in its folder', 'Sent nothing'],
+    },
+    chat: [
+      { who: 'day', text: 'Monday' },
+      { who: 'you', at: '4:11 pm', text: 'List October’s receipts.' },
+      { who: 'report' },
+    ],
+    screen: { title: 'This computer', sub: 'Asleep', asleep: 'Asleep. It runs when you ask.', foot: 'Listed October’s receipts on Monday.' },
+    work: {
+      working: [],
+      needs: [],
+      next: [],
+      done: [{ t: 'October’s receipts', s: 'Monday · 23 receipts, $1,284.60', report: true }],
+    },
+    memory: { you: [], learned: ['Receipts from Parcel desk come as attachments.'], used: 58 },
+    skills: [{ name: 'List receipts', by: 'Written by Barn on Monday', state: 'kept' }],
+    limit: { cap: 5, spent: 0.2 },
+  },
+];
+
+const STATUS = {
+  working: { label: 'Working', word: 'working' },
+  needs: { label: 'Needs you', word: 'needs you' },
+  idle: { label: 'Idle', word: 'idle' },
+};
+
+const TEMPLATES = [
+  { id: 'inbox', name: 'Inbox', title: 'Inbox', outcome: 'No message in one mailbox waits more than a day for an answer.', role: 'Read one mailbox. Tell me what needs a reply and what can wait. Draft replies in my voice. Never send without asking me.', when: 'every day at 6pm' },
+  { id: 'brief', name: 'Morning brief', title: 'Morning brief', outcome: 'By 7:30 each weekday, one page says what needs you.', role: 'Each weekday morning, tell me what changed overnight. One page. Start with what needs me.', when: 'weekdays at 7:30am' },
+  { id: 'repo', name: 'Repo upkeep', title: 'Repo upkeep', outcome: 'main stays green, and every new issue gets a first reply within a day.', role: 'Watch CI on main and new issues. Say what broke and why. Ask before you post anything.', when: 'when CI on main goes red' },
+  { id: 'blank', name: 'Start from nothing', title: '', outcome: '', role: '', when: '' },
+];
+
+/* ==================== Shared: state, the URL, the bar, and the parts every look draws the same way ==================== */
+/*
+ * PROTOTYPE — throwaway. State, the URL, the prototype's bar, and the parts every look draws the
+ * same way. Each look registers itself in VARIANTS under its own heading below and owns its whole room.
+ *
+ * URL: ?variant=A|B|C &screen=page|owlet|setup &owlet=<id> &tab=<id> &open=<layer> &theme=dark|light
+ *      &size=fit|1600x1000|1280x800|820x560|390x844 &at=end &bare=1 (no bar or caption: the window is the viewport)
+ */
+
+const VARIANTS = {};
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const owletById = (id) => OWLETS.find((o) => o.id === id);
+
+const Q = new URLSearchParams(location.search);
+const S = {
+  variant: ['A', 'B', 'C'].includes((Q.get('variant') || '').toUpperCase()) ? Q.get('variant').toUpperCase() : 'A',
+  screen: ['page', 'owlet', 'setup'].includes(Q.get('screen')) ? Q.get('screen') : 'page',
+  owlet: owletById(Q.get('owlet')) ? Q.get('owlet') : null,
+  tab: Q.get('tab'),
+  open: Q.get('open'),
+  at: Q.get('at'),
+  edit: owletById(Q.get('edit')) ? Q.get('edit') : null,
+  theme: Q.get('theme') === 'light' ? 'light' : 'dark',
+  size: ['fit', '1600x1000', '1280x800', '820x560', '390x844'].includes(Q.get('size')) ? Q.get('size') : 'fit',
+  bare: Q.has('bare'),
+  more: false,
+  answers: {},
+  sent: {},
+  flags: {},
+  form: null,
+  toast: '',
+  opener: null,
+};
+
+/* ---------- small drawings ---------- */
+const ICONS = {
+  back: '<path d="M15 5l-7 7 7 7"/>',
+  next: '<path d="M9 5l7 7-7 7"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  stop: '<rect x="7" y="7" width="10" height="10" rx="1.5"/>',
+  screen: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 21h6M12 17v4"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  play: '<path d="M8 5.5v13l10-6.5z"/>',
+  page: '<path d="M7 3.5h7l4 4V20a.5.5 0 01-.5.5h-10A.5.5 0 017 20z"/><path d="M14 3.5v4h4M10 12h5M10 15.5h5"/>',
+  send: '<path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/>',
+  list: '<path d="M8 7h11M8 12h11M8 17h11"/><circle cx="4.5" cy="7" r=".6"/><circle cx="4.5" cy="12" r=".6"/><circle cx="4.5" cy="17" r=".6"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  owl: '<path d="M5 5l3.5 2.5c1-.5 2.2-.8 3.5-.8s2.5.3 3.5.8L19 5v9c0 4-3 6.5-7 6.5S5 18 5 14z"/><circle cx="9.2" cy="12" r="2"/><circle cx="14.8" cy="12" r="2"/>',
+  pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  home: '<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2.5 19.5h19"/>',
+};
+const ic = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+
+/* An owlet's face. The shape is its look; the eyes say what it is doing. Colour is the theme's. */
+function owl(look, state, size = 28) {
+  const heads = {
+    round: 'M4 17c0-8 5-13 12-13s12 5 12 13-5 12-12 12S4 25 4 17z',
+    tufts: 'M4 4l6.5 4.5c1.7-.7 3.5-1 5.5-1s3.8.3 5.5 1L28 4v14c0 7-5 11-12 11S4 25 4 18z',
+    small: 'M6 18c0-7 4-11.5 10-11.5S26 11 26 18s-4 10.5-10 10.5S6 25 6 18z',
+    heart: 'M16 7.5c3.5-4.5 12-3 12 6C28 22 22 28 16 29 10 28 4 22 4 13.5c0-9 8.5-10.5 12-6z',
+  };
+  const r = look === 'small' ? 5.2 : 4.7;
+  const eyes =
+    state === 'idle'
+      ? '<path class="z" d="M8 16.5q3 2.6 6 0M18 16.5q3 2.6 6 0"/>'
+      : `<circle class="e" cx="11" cy="16" r="${r}"/><circle class="e" cx="21" cy="16" r="${r}"/><circle class="p" cx="11" cy="16" r="${state === 'needs' ? 2.7 : 2.2}"/><circle class="p" cx="21" cy="16" r="${state === 'needs' ? 2.7 : 2.2}"/>`;
+  const badge = state === 'needs' ? '<path class="k" d="M27 1.5l3.5 3.5L27 8.5 23.5 5z"/>' : '';
+  return `<svg class="owl" data-state="${state}" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><path class="b" d="${heads[look] || heads.round}"/>${eyes}<path class="f" d="M14.4 20h3.2L16 23.2z"/>${badge}</svg>`;
+}
+
+/* ---------- what an owlet is doing, given what has been answered in this sitting ---------- */
+const pendingOf = (o) => [o.change, o.question].filter((id) => id && !S.answers[id]);
+function statusOf(o) {
+  if (o.status === 'working') return 'working';
+  if (o.status === 'needs') return pendingOf(o).length ? 'needs' : 'idle';
+  return 'idle';
+}
+function lineOf(o) {
+  const st = statusOf(o);
+  if (o.status === 'needs' && st === 'idle') return 'Nothing is waiting';
+  return o.line;
+}
+const chip = (o) => {
+  const st = statusOf(o);
+  return `<span class="chip chip--${st}"><i></i>${STATUS[st].label}</span>`;
+};
+const needsNote = (o) => {
+  const n = pendingOf(o).length;
+  return o.status === 'working' && n ? `<span class="chip chip--needs"><i></i>${n} need${n === 1 ? 's' : ''} you</span>` : '';
+};
+const homeName = (o) => COMPUTERS[o.home].name;
+const acctLabel = (id) => `${ACCOUNTS[id].plugin} · ${ACCOUNTS[id].name}`;
+const idea = (text = 'Idea') => `<span class="idea">${esc(text)}</span>`;
+const spark = (days) => {
+  const max = Math.max(1, ...days);
+  return `<span class="spark" aria-hidden="true">${days.map((d) => `<i class="${d ? 'on' : ''}" style="height:${d ? Math.round(4 + (d / max) * 14) : 2}px"></i>`).join('')}</span>`;
+};
+
+/* ---------- the change card: every word that will be sent, and the two answers ---------- */
+function changeCard(id, foot = '') {
+  const c = CHANGES[id];
+  const o = owletById(c.owlet);
+  const a = S.answers[id];
+  if (a) {
+    return `<p class="answered" tabindex="-1" data-key="ans-${id}"><span>${esc(a === 'allowed' ? c.allowed : c.denied)}</span><button class="btn--link" data-act="unanswer" data-id="${id}" data-key="un-${id}">Show the card again (prototype)</button></p>`;
+  }
+  return `<section class="req" aria-labelledby="req-${id}" data-req="${id}">
+    <div><h3 id="req-${id}">${esc(c.title)}</h3>
+    <p class="req__by">${esc(o.name)} asks, on ${esc(homeName(o))} · ${esc(c.asked)} · with ${esc(c.account)}</p></div>
+    <dl class="kv">${c.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    <pre class="req__body">${esc(c.body)}</pre>
+    <p class="req__note">${c.kind === 'mail' ? 'Nothing is sent' : 'Nothing is posted'} until you press ${esc(c.allow)}. Only you can answer this.</p>
+    <div class="btnrow"><button class="btn btn--primary" data-act="allow" data-id="${id}" data-key="allow-${id}">${esc(c.allow)}</button><button class="btn" data-act="deny" data-id="${id}" data-key="deny-${id}">${esc(c.deny)}</button></div>
+    ${foot ? `<p class="req__foot">${foot}</p>` : ''}
+  </section>`;
+}
+
+function questionCard(id) {
+  const q = QUESTIONS[id];
+  const a = S.answers[id];
+  if (a) {
+    const picked = q.options.find((x) => x.id === a);
+    return `<p class="answered" tabindex="-1" data-key="ans-${id}"><span>${picked ? `You answered: ${esc(picked.label)}.` : 'You skipped this question.'}</span><button class="btn--link" data-act="unanswer" data-id="${id}" data-key="un-${id}">Show the card again (prototype)</button></p>`;
+  }
+  return `<section class="req req--q" aria-labelledby="req-${id}" data-req="${id}">
+    <div><h3 id="req-${id}">${esc(q.title)}</h3><p class="req__by">On ${esc(homeName(owletById(q.owlet)))} · ${esc(q.asked)}</p></div>
+    <p>${esc(q.text)}</p>
+    <div class="req__opts">${q.options
+      .map((x) => `<button class="opt" data-act="answer" data-id="${id}" data-opt="${x.id}" data-key="opt-${id}-${x.id}"><strong>${esc(x.label)}</strong><span>${esc(x.note)}</span>${x.recommended ? `<em>${esc(owletById(q.owlet).name)} suggests this</em>` : ''}</button>`)
+      .join('')}</div>
+    <div class="btnrow"><button class="btn btn--quiet" data-act="answer" data-id="${id}" data-opt="skipped" data-key="skip-${id}">Skip</button></div>
+  </section>`;
+}
+
+/* ---------- a report from a run ---------- */
+function reportCard(o, opts = {}) {
+  const r = o.report;
+  return `<article class="report" aria-label="Report: ${esc(r.title)}">
+    <div>${opts.label === false ? '' : `<p class="report__label">${esc(opts.label || 'While you were away')}</p>`}
+    <h3>${esc(r.title)}</h3>
+    <p class="report__meta">${esc(r.when)} · ran on ${esc(r.on)} · took ${esc(r.took)}</p></div>
+    <p class="report__sum">${esc(r.summary)}</p>
+    ${r.groups.map((g) => `<div><h4>${esc(g.h)}</h4><ul>${g.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}
+    <p class="report__did"><b>What it did</b>${r.did.map((d) => `<span>${esc(d)}</span>`).join('')}</p>
+    ${opts.after || ''}
+  </article>`;
+}
+
+/* ---------- a conversation, from the owlet's sample chat plus anything typed in this sitting ---------- */
+function talk(o, opts = {}) {
+  const parts = o.chat.map((m) => {
+    if (m.who === 'day') return `<p class="day">${esc(m.text)}</p>`;
+    if (m.who === 'you') return `<div class="msg msg--you"><p>${esc(m.text)}</p><span class="msg__at">${esc(m.at)}</span></div>`;
+    if (m.who === 'owlet') return `<div class="msg msg--owl"><p class="msg__who">${esc(o.name)}<span>${esc(m.at)}</span></p><p>${esc(m.text)}</p>${m.noted ? `<p class="msg__noted">${esc(m.noted)} ${idea()}</p>` : ''}</div>`;
+    if (m.who === 'steps') return `<ul class="steps" aria-label="Steps">${m.items.map((s, i) => `<li class="${m.live && i === m.items.length - 1 ? 'live' : ''}">${esc(s)}</li>`).join('')}</ul>`;
+    if (m.who === 'report') return reportCard(o, opts.report || {});
+    if (m.who === 'change') return changeCard(m.id, opts.changeFoot || '');
+    if (m.who === 'question') return questionCard(m.id);
+    return '';
+  });
+  (S.sent[o.id] || []).forEach((t) => {
+    parts.push(`<div class="msg msg--you"><p>${esc(t)}</p><span class="msg__at">Now</span></div>`);
+    parts.push(`<div class="msg msg--owl"><p class="msg__who">${esc(o.name)}<span>Now</span></p><p class="muted">This is a prototype, so ${esc(o.name)} has no answer. Nothing left this page.</p></div>`);
+  });
+  return `<div class="talk">${parts.join('')}</div>`;
+}
+const composer = (o, label) =>
+  `<form class="composer" data-form="say" data-owlet="${o.id}"><input type="text" name="say" autocomplete="off" aria-label="${esc(label || `Message ${o.name}`)}" placeholder="${esc(label || `Message ${o.name}`)}" data-key="say-${o.id}"><button class="btn btn--primary" type="submit" aria-label="Send the message to ${esc(o.name)}" data-key="send-${o.id}">${ic('send')}<span>Send</span></button></form>`;
+
+/* ---------- the setup form's sample state, shared so each look lays it out its own way ---------- */
+function formFor(id) {
+  const o = id ? owletById(id) : null;
+  if (S.form && S.form.id === (id || 'new')) return S.form;
+  S.form = o
+    ? { id, name: o.name, look: o.look, title: o.title, role: o.role, outcome: o.outcome, home: o.home, model: o.model, accounts: [...o.accounts], runs: o.routines.length ? 'routine' : 'asked', words: o.routines[0] ? o.routines[0].words : '', template: null, cap: String(o.limit.cap) }
+    : { id: 'new', name: '', look: 'round', title: '', role: '', outcome: '', home: 'here', model: COMPUTERS.here.models[0], accounts: [], runs: 'asked', words: '', template: 'blank', cap: '10' };
+  return S.form;
+}
+/* What the plain words of a schedule are read as. A fixed table: the prototype only shows the idea. */
+function readSchedule(words) {
+  const w = (words || '').trim().toLowerCase();
+  const table = {
+    'weekdays at 7:30am': ['Monday to Friday at 7:30 am', 'Friday, 7:30 am'],
+    'every day at 6pm': ['Every day at 6:00 pm', 'Today, 6:00 pm'],
+    'every monday 9am': ['Every Monday at 9:00 am', 'Monday, 9:00 am'],
+    'when ci on main goes red': ['Each time CI on main goes red', 'Waits for a red run'],
+    'when a new issue opens': ['Each time a new issue opens', 'Waits for an issue'],
+  };
+  if (!w) return null;
+  return table[w] || ['Sotto would say here how it read your words', 'and when the next run is'];
+}
+
+/* ---------- state, URL, render ---------- */
+function syncUrl() {
+  const u = new URL(location.href);
+  const put = (k, v, dflt) => (v == null || v === dflt ? u.searchParams.delete(k) : u.searchParams.set(k, v));
+  put('variant', S.variant);
+  put('screen', S.screen, 'page');
+  put('owlet', S.owlet);
+  put('tab', S.tab);
+  put('open', S.open);
+  put('at', S.at);
+  put('edit', S.edit);
+  put('theme', S.theme, 'dark');
+  put('size', S.size, 'fit');
+  history.replaceState(null, '', u);
+}
+const isPhone = () => $('#win').clientWidth <= 700;
+
+function render(focusSel) {
+  const v = VARIANTS[S.variant];
+  const win = $('#win');
+  const active = document.activeElement;
+  const hadFocus = !!(active && win.contains(active));
+  const keep = hadFocus ? active.getAttribute('data-key') : null;
+  const scrolls = {};
+  $$('[data-scroll]', win).forEach((el) => (scrolls[el.dataset.scroll] = el.scrollTop));
+  document.documentElement.dataset.theme = S.theme;
+  document.body.dataset.bare = String(S.bare);
+  $('#stage').dataset.size = S.size;
+  const phone = isPhone();
+  win.dataset.phone = String(phone);
+  win.dataset.variant = S.variant;
+  if (!S.owlet && S.screen === 'owlet') S.owlet = v.first;
+  const room = v.view(S, phone);
+  const layer = v.layer ? v.layer(S, phone) : '';
+  win.innerHTML =
+    (phone
+      ? `<div class="ph"><div class="ph__body">${room}</div><div class="ph__tabs" aria-label="Sotto’s pages. Only Owlets is drawn."><span>${ic('list')}Threads</span><span>${ic('eye')}Watcher</span><span class="on">${ic('owl')}Owlets</span></div></div>`
+      : `<div class="strip" aria-label="Sotto’s window. Only the Owlets page is drawn."><span class="strip__mark">${ic('owl')}<span>Sotto Owl</span></span><div class="switch"><span>Dictate</span><span>Watcher</span><span>Threads</span><span class="on">Owlets</span></div><span class="strip__ctl" aria-hidden="true"><span>–</span><span>▢</span><span>✕</span></span></div><div class="room">${room}</div>`) +
+    layer;
+  $('#toast').textContent = S.toast;
+  $$('[data-scroll]', win).forEach((el) => {
+    if (scrolls[el.dataset.scroll] != null) el.scrollTop = scrolls[el.dataset.scroll];
+    else if (S.at === 'end' && el.hasAttribute('data-stick')) el.scrollTop = el.scrollHeight;
+  });
+  if (S.at === 'card') {
+    const card = $('[data-req]', win);
+    if (card) card.scrollIntoView({ block: 'center' });
+  }
+  const layerEl = $('.layer', win);
+  let target = (focusSel && $(focusSel, win)) || (keep && $(`[data-key="${keep}"]`, win));
+  // an open layer keeps the focus inside it, whatever was focused under it
+  if (layerEl && target && !layerEl.contains(target)) target = null;
+  if (target) target.focus({ preventScroll: !focusSel });
+  else if (layerEl) {
+    const first = $('.layer [data-first]', win) || $('.layer button, .layer input, .layer select, .layer textarea', win);
+    if (first) first.focus();
+  } else if (hadFocus) {
+    // what was focused is gone: go to the new screen's first sensible control, never back to the page's top
+    const auto = $('[data-autofocus], [data-first]', win);
+    if (auto) auto.focus({ preventScroll: true });
+  }
+  // the bar and the caption. On a phone the caption is its short form until More is pressed.
+  const small = window.matchMedia('(max-width: 700px)').matches;
+  $('#lab').textContent = small ? `${S.variant} · ${v.short}` : `${S.variant} · ${v.name}`;
+  const rule = '<span class="cap__rule">Parts marked <b>Idea</b> are not decided. All of it is sample data: nothing is read or sent.</span>';
+  $('#cap').innerHTML =
+    small && !S.more
+      ? `<strong>${S.variant} · ${esc(v.ref)}.</strong> ${v.brief} <button type="button" class="cap__more" id="more" aria-expanded="false">More</button>`
+      : `<strong>${S.variant} · ${esc(v.ref)}.</strong> ${v.caption} ${rule}${small ? ' <button type="button" class="cap__more" id="more" aria-expanded="true">Less</button>' : ''}`;
+  $('#theme').textContent = S.theme === 'dark' ? 'Light' : 'Dark';
+  $('#theme').setAttribute('aria-label', S.theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme');
+  $('#size').value = S.size;
+  $('#jump').value = '';
+  document.title = `Owlets looks · ${S.variant} · ${v.name}`;
+  syncUrl();
+}
+function go(patch, focusSel) {
+  Object.assign(S, patch);
+  render(focusSel);
+}
+function closeLayer() {
+  const back = S.opener;
+  S.opener = null;
+  go({ open: null }, back ? `[data-key="${back}"]` : null);
+}
+function cycle(delta) {
+  const keys = Object.keys(VARIANTS);
+  const next = keys[(keys.indexOf(S.variant) + delta + keys.length) % keys.length];
+  go({ variant: next, screen: 'page', owlet: null, tab: null, open: null, at: null, edit: null, form: null });
+}
+
+function parseSet(str) {
+  const out = {};
+  new URLSearchParams(str).forEach((v, k) => (out[k] = v === 'null' ? null : v));
+  return out;
+}
+
+document.addEventListener('click', (e) => {
+  const win = $('#win');
+  const el = e.target.closest('[data-set], [data-act]');
+  if (!el || !win.contains(el)) {
+    // a press on the scrim closes the layer
+    if (e.target.classList && e.target.classList.contains('layer')) closeLayer();
+    return;
+  }
+  if (el.dataset.set != null) {
+    const patch = parseSet(el.dataset.set);
+    // remember what opened a layer, so closing it can hand the focus back
+    if (patch.open && !S.open) S.opener = el.getAttribute('data-key');
+    if (patch.screen && patch.screen !== S.screen) S.form = patch.screen === 'setup' ? null : S.form;
+    go(patch, el.dataset.focus || null);
+    return;
+  }
+  const act = el.dataset.act;
+  const id = el.dataset.id;
+  if (act === 'allow' || act === 'deny') {
+    S.answers[id] = act === 'allow' ? 'allowed' : 'denied';
+    S.toast = act === 'allow' ? CHANGES[id].allowed : CHANGES[id].denied;
+    render(`[data-key="ans-${id}"]`);
+  } else if (act === 'answer') {
+    S.answers[id] = el.dataset.opt;
+    render(`[data-key="ans-${id}"]`);
+  } else if (act === 'unanswer') {
+    delete S.answers[id];
+    render(`[data-req="${id}"] button`);
+  } else if (act === 'switch') {
+    const on = el.getAttribute('aria-checked') !== 'true';
+    el.setAttribute('aria-checked', String(on));
+    S.flags[el.dataset.flag] = on;
+  } else if (act === 'close') {
+    closeLayer();
+  } else if (VARIANTS[S.variant].act) {
+    VARIANTS[S.variant].act(act, el);
+  }
+});
+
+document.addEventListener('submit', (e) => {
+  const f = e.target;
+  if (!f.dataset || !f.dataset.form) return;
+  e.preventDefault();
+  if (f.dataset.form === 'say') {
+    const text = f.elements.say.value.trim();
+    if (!text) return;
+    (S.sent[f.dataset.owlet] ||= []).push(text);
+    render(`[data-key="say-${f.dataset.owlet}"]`);
+    const stick = $('[data-stick]');
+    if (stick) stick.scrollTop = stick.scrollHeight;
+  } else if (f.dataset.form === 'setup') {
+    const name = (S.form && S.form.name) || 'The owlet';
+    S.toast = S.edit ? `${name} is saved. This is a prototype, so nothing was kept.` : `${name} is made. This is a prototype, so nothing was kept.`;
+    go({ screen: S.edit ? 'owlet' : 'page', owlet: S.edit || null, edit: null, open: null, form: null });
+  }
+});
+
+/* setup fields write into S.form without a redraw, except the ones that change what is offered */
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (!el.dataset || !el.dataset.f || !S.form) return;
+  const f = el.dataset.f;
+  if (f === 'accounts') {
+    const set = new Set(S.form.accounts);
+    el.checked ? set.add(el.value) : set.delete(el.value);
+    S.form.accounts = [...set];
+    return;
+  }
+  S.form[f] = el.value;
+  if (f === 'home') {
+    S.form.model = COMPUTERS[el.value].models[0];
+    S.form.accounts = S.form.accounts.filter((a) => COMPUTERS[el.value].accounts.includes(a));
+    render(`[data-key="${el.getAttribute('data-key')}"]`);
+  } else if (f === 'runs' || f === 'template' || f === 'look') {
+    if (f === 'template') {
+      const t = TEMPLATES.find((x) => x.id === el.value);
+      Object.assign(S.form, { title: t.title, role: t.role, outcome: t.outcome, words: t.when, runs: t.when ? 'routine' : 'asked' });
+    }
+    render(`[data-key="${el.getAttribute('data-key')}"]`);
+  } else if (f === 'words') {
+    const out = $('#read-words');
+    const r = readSchedule(el.value);
+    if (out) out.innerHTML = r ? `Sotto reads this as: <b>${esc(r[0])}</b>. Next: ${esc(r[1])}.` : 'Say when in your own words.';
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  const win = $('#win');
+  const hasLayer = !!$('.layer', win);
+  if (e.key === 'Escape') {
+    if (S.open) {
+      e.preventDefault();
+      closeLayer();
+    } else if (VARIANTS[S.variant].escape && VARIANTS[S.variant].escape()) {
+      e.preventDefault();
+    }
+    return;
+  }
+  if (e.key === 'Tab' && hasLayer) {
+    const items = $$('.layer button, .layer input, .layer select, .layer textarea, .layer [tabindex="0"]', win).filter((x) => !x.disabled && x.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!$('.layer', win).contains(document.activeElement)) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+    return;
+  }
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target.matches && e.target.matches('[role="tab"]')) {
+    const tabs = $$('[role="tab"]', e.target.closest('[role="tablist"]'));
+    const next = tabs[(tabs.indexOf(e.target) + (e.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length];
+    const k = next.getAttribute('data-key');
+    e.preventDefault();
+    next.click();
+    const now = $(`[data-key="${k}"]`, win);
+    if (now) now.focus();
+    return;
+  }
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    const t = e.target;
+    if (t.matches && t.matches('input, textarea, select, [contenteditable], [role="tab"], [role="radio"]')) return;
+    if (hasLayer) return;
+    e.preventDefault();
+    cycle(e.key === 'ArrowLeft' ? -1 : 1);
+  }
+});
+
+/* ---------- the setup form's fields. Each look arranges and words them its own way. ---------- */
+const LOOKS = { round: 'Round head', tufts: 'Ear tufts', small: 'Small, with big eyes', heart: 'Heart face' };
+const F = {
+  text: (f, key, label, o = {}) =>
+    `<div class="field"><label for="f-${key}">${label}</label><input type="text" id="f-${key}" data-f="${key}" data-key="f-${key}" value="${esc(f[key])}" autocomplete="off" placeholder="${esc(o.ph || '')}" ${o.first ? 'data-first' : ''}>${o.hint ? `<p class="hint">${o.hint}</p>` : ''}</div>`,
+  area: (f, key, label, o = {}) =>
+    `<div class="field"><label for="f-${key}">${label}</label><textarea id="f-${key}" data-f="${key}" data-key="f-${key}" rows="${o.rows || 3}" placeholder="${esc(o.ph || '')}">${esc(f[key])}</textarea>${o.hint ? `<p class="hint">${o.hint}</p>` : ''}</div>`,
+  look: (f) =>
+    `<div class="field" role="radiogroup" aria-labelledby="f-look-l"><span class="lbl" id="f-look-l">Look</span><div class="looks">${Object.keys(LOOKS)
+      .map((k) => `<label><input type="radio" name="look" value="${k}" data-f="look" data-key="f-look-${k}" ${f.look === k ? 'checked' : ''} aria-label="${LOOKS[k]}">${owl(k, 'working', 34)}</label>`)
+      .join('')}</div></div>`,
+  home: (f, label = 'Home computer', hint = 'Its chat, its files and its work stay there. You reach it from here and from your paired iPhone.') =>
+    `<div class="field" role="radiogroup" aria-labelledby="f-home-l"><span class="lbl" id="f-home-l">${label}</span><div class="pick pick--2">${Object.values(COMPUTERS)
+      .map((c) => `<label><input type="radio" name="home" value="${c.id}" data-f="home" data-key="f-home-${c.id}" ${f.home === c.id ? 'checked' : ''}><span><strong>${esc(c.name)}</strong><span>${esc(c.kind)}</span></span></label>`)
+      .join('')}</div>${hint ? `<p class="hint">${hint}</p>` : ''}</div>`,
+  model: (f, label = 'Model') =>
+    `<div class="field"><label for="f-model">${label}</label><select id="f-model" data-f="model" data-key="f-model">${COMPUTERS[f.home].models.map((m) => `<option ${f.model === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select><p class="hint">The models ready on ${esc(COMPUTERS[f.home].name)}. What it reads goes to this model’s provider.</p></div>`,
+  accounts: (f, label = 'Plugin accounts it may use') => {
+    const on = COMPUTERS[f.home].accounts;
+    const off = Object.keys(ACCOUNTS).filter((a) => !on.includes(a) && ACCOUNTS[a].kind !== 'github');
+    return `<div class="field" role="group" aria-labelledby="f-acc-l"><span class="lbl" id="f-acc-l">${label}</span><div class="pick pick--auto">${on
+      .map((a) => `<label><input type="checkbox" value="${a}" data-f="accounts" data-key="f-acc-${a}" ${f.accounts.includes(a) ? 'checked' : ''}><span><strong>${esc(acctLabel(a))}</strong><span>${ACCOUNT_RULES[ACCOUNTS[a].kind].join('. ')}.</span></span></label>`)
+      .join('')}${off.map((a) => `<label data-off="true"><span><strong>${esc(acctLabel(a))}</strong><span>Not on ${esc(COMPUTERS[f.home].name)}. ${esc(ACCOUNTS[a].note)}</span></span></label>`).join('')}</div><p class="hint">An owlet never answers its own card. Anything it sends, posts or deploys waits for you.</p></div>`;
+  },
+  runs: (f, label = 'When it runs') => {
+    const r = readSchedule(f.words);
+    return `<div class="field" role="radiogroup" aria-labelledby="f-runs-l"><span class="lbl" id="f-runs-l">${label}</span><div class="pick pick--2">
+      <label><input type="radio" name="runs" value="asked" data-f="runs" data-key="f-runs-asked" ${f.runs === 'asked' ? 'checked' : ''}><span><strong>When you ask</strong><span>It works when you message it.</span></span></label>
+      <label><input type="radio" name="runs" value="routine" data-f="runs" data-key="f-runs-routine" ${f.runs === 'routine' ? 'checked' : ''}><span><strong>On a routine too ${idea()}</strong><span>It also starts by itself.</span></span></label></div>
+      ${f.runs === 'routine' ? `<div class="field field--sub"><label for="f-words">When, in your own words</label><input type="text" id="f-words" data-f="words" data-key="f-words" value="${esc(f.words)}" autocomplete="off" placeholder="weekdays at 7:30am"><p class="hint" id="read-words">${r ? `Sotto reads this as: <b>${esc(r[0])}</b>. Next: ${esc(r[1])}.` : 'Say when in your own words.'}</p><p class="hint">A routine sends nothing by itself. If it wants to send something while you are away, the card waits for you.</p></div>` : ''}</div>`;
+  },
+};
+
+function boot() {
+  $('#prev').onclick = () => cycle(-1);
+  $('#next').onclick = () => cycle(1);
+  $('#theme').onclick = () => go({ theme: S.theme === 'dark' ? 'light' : 'dark' });
+  $('#size').onchange = (e) => go({ size: e.target.value });
+  $('#cap').addEventListener('click', (e) => {
+    if (e.target.id === 'more') {
+      S.more = !S.more;
+      render();
+      $('#more').focus();
+    }
+  });
+  $('#reset').onclick = () => {
+    S.answers = {};
+    S.sent = {};
+    S.flags = {};
+    S.form = null;
+    S.toast = '';
+    go({ screen: 'page', owlet: null, tab: null, open: null, at: null, edit: null });
+  };
+  $('#jump').onchange = (e) => {
+    const patch = VARIANTS[S.variant].jump(e.target.value);
+    S.form = null;
+    go({ screen: 'page', owlet: null, tab: null, open: null, at: null, edit: null, ...patch });
+  };
+  let was = null;
+  new ResizeObserver(() => {
+    const now = isPhone();
+    if (was !== null && now !== was) render();
+    was = now;
+  }).observe($('#win'));
+  render();
+}
+
+/* ==================== Look A ==================== */
+/*
+ * PROTOTYPE — look A, after Grok Bot: computers and screens.
+ *
+ * Grok Bot's Bots share one computer and each has a screen you can watch; the chat shows each step; a
+ * routine belongs to one Bot; skills are shared. Here the shared computer is the owlet's home: This
+ * computer or a paired host. The page groups owlets by home and shows each one's screen. An owlet opens
+ * on its chat beside its screen. A new owlet is a short dialog: a name, a look, its job, its home.
+ */
+
+(() => {
+  const CARD_FOOT = `${idea()} It waits here until you answer, at the desktop or on the phone. Today a thread’s card lapses after five minutes.`;
+
+  function screen(o, size) {
+    const s = o.screen;
+    const st = statusOf(o);
+    const mini = size === 'mini';
+    let body;
+    if (s.asleep) body = `<div class="a-asleep">${owl(o.look, 'idle', mini ? 30 : 44)}<span>${esc(s.asleep)}</span></div>`;
+    else if (s.log) body = `<div class="a-screen__body a-screen__body--log"><p class="a-screen__sub clip">${esc(s.sub)}</p>${s.log.map((l) => `<div class="a-log ${l.startsWith('✗') ? 'bad' : ''}">${esc(l)}</div>`).join('')}</div>`;
+    else body = `<div class="a-screen__body a-screen__body--rows"><p class="a-screen__sub clip">${esc(s.sub)}</p>${s.rows.map((r) => `<div class="a-srow ${r.mark ? 'mark' : ''}"><b>${esc(r.a)}</b><span>${esc(r.b)}</span><i>${esc(r.c)}</i></div>`).join('')}</div>`;
+    const foot = o.status === 'needs' && st === 'idle' ? 'Nothing is waiting.' : s.foot;
+    return `<div class="a-screen a-screen--${size}"><div class="a-screen__bar"><span class="clip">${esc(s.title)}</span></div>${body}<p class="a-screen__foot ${s.live ? 'live' : ''}"><span class="clip">${esc(foot)}</span></p></div>`;
+  }
+  /* on the phone a screen is a small picture of itself: bars, no words */
+  function thumb(o) {
+    const s = o.screen;
+    const kind = s.asleep ? 'asleep' : s.log ? 'log' : 'rows';
+    return `<span class="a-thumb a-thumb--${kind}">${kind === 'asleep' ? owl(o.look, 'idle', 22) : '<i></i><i class="hi"></i><i></i><i></i>'}</span>`;
+  }
+
+  function tile(o) {
+    const st = statusOf(o);
+    const n = pendingOf(o).length;
+    const label = `Open ${o.name}, ${o.title}. ${STATUS[st].label}${o.status === 'working' && n ? `, and ${n} need you` : ''}. ${o.model}. ${lineOf(o)}.`;
+    return `<button class="a-tile" data-set="screen=owlet&owlet=${o.id}&tab=null&at=null" data-key="tile-${o.id}" aria-label="${esc(label)}">
+      <div aria-hidden="true">${screen(o, 'mini')}</div>
+      <div class="a-tile__who" aria-hidden="true">${owl(o.look, st, 30)}<span class="grow"><strong>${esc(o.name)}</strong><span class="muted">${esc(o.title)}</span></span>${chip(o)}</div>
+      <div class="a-tile__meta" aria-hidden="true"><span>${esc(o.model)}</span>${needsNote(o)}<span class="wrap">${esc(lineOf(o))}</span></div>
+    </button>`;
+  }
+
+  function page() {
+    return `<div class="a-page" data-scroll="a-page">
+      <header class="a-head"><div class="grow"><h1>Owlets <span class="owltag">Owl</span></h1>
+      <p class="muted">Each owlet lives on one computer. Owlets on the same computer share its plugin accounts, its files and its skills.</p></div>
+      <button class="btn btn--primary" data-set="screen=setup&edit=null" data-key="new">${ic('plus')}New owlet</button></header>
+      <div class="a-homes">${Object.values(COMPUTERS)
+        .map((c) => {
+          const mine = OWLETS.filter((o) => o.home === c.id);
+          return `<section class="a-home" aria-labelledby="a-h-${c.id}"><header>${ic('home')}<h2 id="a-h-${c.id}">${esc(c.name)}</h2><span class="muted small">${esc(c.kind)} · ${esc(c.state)}</span></header>
+          <div class="a-tiles">${mine.map(tile).join('')}</div>
+          <div class="a-shared"><p><b>Plugin accounts here</b>${c.accounts.map(acctLabel).map(esc).join(', ')}</p><p><b>Skills here</b>${c.skills.map(esc).join(', ')} ${idea()}</p></div></section>`;
+        })
+        .join('')}</div>
+    </div>`;
+  }
+
+  /* the panel beside the chat: the screen, the routines, the skills */
+  function side(o) {
+    const tab = ['screen', 'routines', 'skills'].includes(S.tab) ? S.tab : 'screen';
+    const c = COMPUTERS[o.home];
+    const others = OWLETS.filter((x) => x.home === o.home && x.id !== o.id);
+    const tabs = [['screen', 'Screen'], ['routines', 'Routines'], ['skills', 'Skills']];
+    let panel;
+    if (tab === 'screen') {
+      panel = `${screen(o, 'big')}
+        <p class="xs muted">${idea()} A screen shows what the owlet has open: a plugin read, a page in Sotto’s browser, a file in its folder. You can watch, and you never have to.</p>
+        <div class="a-block"><h3 class="sec-h">It may use</h3><div class="card rows">${o.accounts.map((a) => `<div class="a-line"><span class="grow"><strong>${esc(acctLabel(a))}</strong><span class="muted">${ACCOUNT_RULES[ACCOUNTS[a].kind].join('. ')}.</span></span></div>`).join('')}</div></div>
+        <div class="a-block"><h3 class="sec-h">On ${esc(c.name)} with it</h3><div class="card rows">${
+          others.length
+            ? others.map((x) => `<button class="a-line btn--quiet" style="width:100%;border:0;background:none;text-align:left" data-set="owlet=${x.id}&tab=null&open=null&at=null" data-key="nb-${x.id}" aria-label="Open ${esc(x.name)}, ${esc(x.title)}">${owl(x.look, statusOf(x), 26)}<span class="grow"><strong>${esc(x.name)}</strong><span class="muted">${esc(x.title)}</span></span>${chip(x)}</button>`).join('')
+            : '<p class="a-line muted">No other owlet lives here.</p>'
+        }</div><p class="xs muted">They share ${esc(c.name)}’s plugin accounts and files. A name is not a wall between them.</p></div>`;
+    } else if (tab === 'routines') {
+      panel = `<p class="xs muted">${idea()} A routine starts this owlet by itself, at a time or when something happens. Schedules are not decided.</p>
+        ${
+          o.routines.length
+            ? o.routines
+                .map((r) => {
+                  const on = S.flags[`rt-${o.id}-${r.id}`] ?? r.on;
+                  return `<div class="card a-rt"><div class="a-rt__top"><strong class="grow">${esc(r.name)}</strong><span class="xs muted">Active</span><button class="sw" role="switch" aria-checked="${on}" aria-label="${esc(r.name)} is active" data-act="switch" data-flag="rt-${o.id}-${r.id}" data-key="rt-${o.id}-${r.id}"></button></div>
+                  <dl class="kv"><dt>When to run</dt><dd>${esc(r.when)}</dd><dt>Instruction</dt><dd>${esc(r.instruction)}</dd><dt>Next run</dt><dd>${esc(r.next)}</dd></dl>
+                  <div class="btnrow"><button class="btn" data-act="runnow" data-id="${r.id}" data-key="run-${r.id}">${ic('play')}Run it now</button></div>
+                  <div><h4 class="sec-h">Run history</h4><ul class="a-hist">${r.history.map((h) => `<li><span>${esc(h[0])}</span><span>${esc(h[1])}</span><span>${esc(h[2])}</span></li>`).join('')}</ul></div></div>`;
+                })
+                .join('')
+            : `<div class="card a-rt"><p>No routines. ${esc(o.name)} works when you ask.</p></div>`
+        }
+        <p class="xs muted">To add one, tell ${esc(o.name)} in the chat: “Every weekday at 6, sweep the inbox.” It shows you the routine before it starts.</p>`;
+    } else {
+      panel = `<p class="xs muted">${idea()} A skill is a saved way of doing a job. An owlet writes one when you ask it to, and every owlet on ${esc(c.name)} can use it.</p>
+        <div class="card rows" style="padding:2px 12px">${c.skills.map((s) => `<div class="a-line"><span class="grow"><strong>${esc(s)}</strong><span class="muted">${esc((OWLETS.flatMap((x) => x.skills).find((k) => k.name === s) || { by: `Kept on ${c.name}` }).by)}</span></span></div>`).join('')}</div>`;
+    }
+    return `<aside class="a-side" aria-label="${esc(o.name)} on ${esc(c.name)}"><div class="a-tabs" role="tablist" aria-label="${esc(o.name)}’s screen, routines and skills">${tabs
+      .map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" tabindex="${tab === k ? 0 : -1}" data-set="tab=${k}" data-key="atab-${k}">${l}</button>`)
+      .join('')}</div><div class="a-panel" role="tabpanel" data-scroll="a-side-${o.id}-${tab}">${panel}</div></aside>`;
+  }
+
+  function open(o) {
+    const c = COMPUTERS[o.home];
+    const st = statusOf(o);
+    return `<div class="a-open">
+      <header class="a-bar"><button class="iconbtn" data-set="screen=page&owlet=null&tab=null&at=null" data-key="back" data-autofocus data-focus="[data-key='tile-${o.id}']" aria-label="Back to all owlets">${ic('back')}</button>
+        ${owl(o.look, st, 34)}<div class="grow"><h1>${esc(o.name)}<span>${esc(o.title)}</span></h1><p class="small muted">Lives on ${esc(c.name)} · ${esc(o.model)}</p></div>
+        ${chip(o)}${needsNote(o)}
+        <button class="btn a-showscreen" data-set="open=side" data-key="showscreen">${ic('screen')}Show its screen</button>
+        <button class="btn" data-set="screen=setup&edit=${o.id}" data-key="edit">${ic('pencil')}Edit</button>
+        ${st === 'working' ? `<button class="btn" data-act="stop" data-key="stop" aria-label="Stop ${esc(o.name)}’s work">${ic('stop')}Stop</button>` : ''}
+      </header>
+      <div class="a-split">
+        <section class="a-chat" aria-label="Chat with ${esc(o.name)}">
+          <div class="a-chat__scroll" data-scroll="a-chat-${o.id}" data-stick><div class="a-col">${talk(o, { changeFoot: CARD_FOOT })}</div></div>
+          <div class="a-chat__foot"><div class="a-col">${composer(o)}</div></div>
+        </section>
+        ${side(o)}
+      </div>
+    </div>`;
+  }
+
+  function setupDialog(phone) {
+    const f = formFor(S.edit);
+    const o = S.edit ? owletById(S.edit) : null;
+    return `<div class="layer"><form class="dialog ${phone ? 'is-full' : ''}" role="dialog" aria-modal="true" aria-labelledby="a-dlg-h" data-form="setup">
+      <div class="layer__head"><h2 id="a-dlg-h">${o ? `Edit ${esc(o.name)}` : 'New owlet'}</h2><button type="button" class="iconbtn" data-act="cancel-setup" data-key="dlg-x" aria-label="Close without saving">${ic('x')}</button></div>
+      <div class="layer__body"><div class="a-form">
+        <div class="a-form__two">${F.text(f, 'name', 'Name', { ph: 'Tawny', first: true })}${F.look(f)}</div>
+        ${F.area(f, 'role', 'Its job', { rows: 3, ph: 'Read the Work mailbox. Tell me what needs a reply…', hint: 'Say it as you would to a person. This is its role, and the first thing it reads in every chat.' })}
+        ${F.home(f)}
+        ${F.model(f)}
+        ${F.accounts(f)}
+        ${F.runs(f)}
+      </div></div>
+      <div class="layer__foot"><button type="button" class="btn" data-act="cancel-setup" data-key="dlg-cancel">Cancel</button><button type="submit" class="btn btn--primary" data-key="dlg-save">${o ? 'Save the changes' : 'Make the owlet'}</button></div>
+    </form></div>`;
+  }
+
+  /* ---------- phone ---------- */
+  function phonePage() {
+    return `<div class="ph__nav"><h1 class="ph__big">Owlets</h1><span class="owltag">Owl</span><span class="grow"></span><button class="iconbtn" data-set="screen=setup&edit=null" data-key="new" aria-label="New owlet">${ic('plus')}</button></div>
+      <div class="ph__scroll" data-scroll="a-ph-page">${Object.values(COMPUTERS)
+        .map((c) => {
+          const mine = OWLETS.filter((o) => o.home === c.id);
+          return `<section class="a-psec" aria-labelledby="a-ph-${c.id}"><h2 id="a-ph-${c.id}">${ic('home')}${esc(c.name)} · ${esc(c.state)}</h2><div class="card rows">${mine
+            .map((o) => {
+              const st = statusOf(o);
+              return `<button class="a-prow" data-set="screen=owlet&owlet=${o.id}&at=null" data-key="tile-${o.id}" aria-label="Open ${esc(o.name)}, ${esc(o.title)}. ${STATUS[st].label}. ${esc(o.model)}.">
+                ${owl(o.look, st, 38)}<span class="grow" aria-hidden="true"><span class="who"><strong>${esc(o.name)}</strong><span>${esc(o.title)}</span></span><span class="line">${chip(o)} · ${esc(o.model)}</span><span class="line clip">${esc(lineOf(o))}</span></span><span aria-hidden="true">${thumb(o)}</span></button>`;
+            })
+            .join('')}</div><p class="a-pshare">They share its plugin accounts: ${c.accounts.map(acctLabel).map(esc).join(', ')}.</p></section>`;
+        })
+        .join('')}</div>`;
+  }
+  function phoneOpen(o) {
+    const st = statusOf(o);
+    return `<h1 class="vh">${esc(o.name)}, ${esc(o.title)}</h1><div class="ph__nav"><button class="iconbtn" data-set="screen=page&owlet=null&at=null" data-key="back" data-autofocus data-focus="[data-key='tile-${o.id}']" aria-label="Back to all owlets">${ic('back')}</button>
+      <button class="a-phwho" data-set="open=profile" data-key="who" aria-label="${esc(o.name)}, ${esc(o.title)}. Show its role, home and routines">${owl(o.look, st, 34)}<span class="grow"><strong>${esc(o.name)}</strong><span class="sub clip">${esc(homeName(o))} · ${esc(o.model)}</span></span></button>
+      <button class="btn" data-set="open=side" data-key="showscreen" aria-label="Watch ${esc(o.name)}’s screen">${ic('screen')}Watch</button></div>
+      <p class="ph__meta">${chip(o)}${needsNote(o)}<span class="clip">${esc(lineOf(o))}</span></p>
+      <div class="ph__scroll a-phchat" data-scroll="a-chat-${o.id}" data-stick>${talk(o, { changeFoot: CARD_FOOT })}</div>
+      <div class="a-phfoot">${composer(o)}</div>`;
+  }
+  function profileSheet(o) {
+    const c = COMPUTERS[o.home];
+    return `<div class="layer"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="a-prof-h"><div class="layer__head">${owl(o.look, statusOf(o), 34)}<h2 id="a-prof-h">${esc(o.name)} · ${esc(o.title)}</h2><button class="iconbtn" data-act="close" data-key="prof-x" aria-label="Close" data-first>${ic('x')}</button></div>
+      <div class="layer__body"><p>${esc(o.role)}</p>
+      <dl class="kv"><dt>Home</dt><dd>${esc(c.name)}</dd><dt>Model</dt><dd>${esc(o.model)}</dd><dt>May use</dt><dd>${o.accounts.map(acctLabel).map(esc).join(', ')}</dd><dt>Runs</dt><dd>${o.routines.length ? o.routines.map((r) => esc(r.when)).join('; ') + ' ' + idea() : 'When you ask'}</dd></dl>
+      <div class="btnrow"><button class="btn" data-set="screen=setup&edit=${o.id}&open=null" data-key="prof-edit">${ic('pencil')}Edit ${esc(o.name)}</button></div></div></div></div>`;
+  }
+
+  VARIANTS.A = {
+    name: 'after Grok Bot',
+    ref: 'after Grok Bot (xAI)',
+    short: 'Grok Bot',
+    brief: 'Computers and screens: owlets grouped by the computer they live on, a screen to watch for each, routines, shared skills, and the card on the phone.',
+    first: 'tawny',
+    caption:
+      'Computers and screens. It borrows Grok Bot’s named Bots with a job, the one computer they share and the screen each has that you can watch, routines that belong to one Bot, skills that are shared, and a phone that shows the work and the card. Here the shared computer is the owlet’s home: This computer or forge.',
+    jump(name) {
+      if (name === 'owlet') return { screen: 'owlet', owlet: 'scops' };
+      if (name === 'change') return { screen: 'owlet', owlet: 'tawny', at: 'end' };
+      if (name === 'setup') return { screen: 'setup' };
+      if (name === 'edit') return { screen: 'setup', edit: 'tawny', owlet: 'tawny' };
+      return {};
+    },
+    view(S, phone) {
+      const o = S.owlet ? owletById(S.owlet) : S.edit ? owletById(S.edit) : null;
+      if (phone) return o && (S.screen === 'owlet' || S.screen === 'setup') ? phoneOpen(o) : phonePage();
+      return o && (S.screen === 'owlet' || S.screen === 'setup') ? open(o) : page();
+    },
+    layer(S, phone) {
+      if (S.screen === 'setup') return setupDialog(phone);
+      const o = S.owlet && owletById(S.owlet);
+      if (!o) return '';
+      if (S.open === 'side')
+        return `<div class="layer"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(o.name)}’s screen, routines and skills"><div class="layer__head"><h2>${esc(o.name)} on ${esc(homeName(o))}</h2><button class="iconbtn" data-act="close" data-key="side-x" aria-label="Close" data-first>${ic('x')}</button></div>${side(o)}</div></div>`;
+      if (S.open === 'profile') return profileSheet(o);
+      return '';
+    },
+    act(name, el) {
+      if (name === 'cancel-setup') {
+        const back = S.edit;
+        go({ screen: back ? 'owlet' : 'page', owlet: back || null, edit: null, form: null }, back ? '[data-key="edit"], [data-key="who"]' : '[data-key="new"]');
+      } else if (name === 'runnow') {
+        S.toast = 'This is a prototype. Nothing ran.';
+        el.textContent = 'Sample only. Nothing ran.';
+      } else if (name === 'stop') {
+        S.toast = 'This is a prototype. Nothing was stopped.';
+        el.textContent = 'Sample only';
+      }
+    },
+    escape() {
+      if (S.screen === 'setup') {
+        this.act('cancel-setup');
+        return true;
+      }
+      return false;
+    },
+  };
+})();
+
+/* ==================== Look B ==================== */
+/*
+ * PROTOTYPE — look B, after Devin Bots (Cognition, announced November 17, 2026): outcomes and Needs you.
+ *
+ * A Devin Bot owns an outcome, starts a session for each piece of work, and gathers every approval,
+ * decision and report in one Needs you list. Here the page opens on every card waiting for you, across
+ * all owlets, with what each owlet owns beside it. An owlet opens on its work grouped by where it stands,
+ * and its settings are tabs on the same page. A new owlet starts from a template.
+ */
+
+(() => {
+  const CARD_FOOT = `${idea()} It stays in Needs you until you answer, however long that is. Today a thread’s card lapses after five minutes.`;
+  const TABS = [['work', 'Work'], ['reports', 'Reports'], ['runs', 'When it runs'], ['uses', 'May use'], ['knows', 'Knows'], ['limit', 'Limit']];
+
+  const needItems = () => OWLETS.flatMap((o) => [o.change && { type: 'change', id: o.change, o }, o.question && { type: 'question', id: o.question, o }].filter(Boolean));
+  const openCount = () => needItems().filter((i) => !S.answers[i.id]).length;
+
+  /* an owlet's work, with what was answered in this sitting moved from Needs you to Done */
+  function groups(o) {
+    const key = (x, g, i) => x.change || x.question || `${g}${i}`;
+    const tag = (list, g) => list.map((x, i) => ({ ...x, k: key(x, g, i), g }));
+    const needs = tag(o.work.needs, 'needs');
+    const open = needs.filter((x) => !S.answers[x.k]);
+    const answered = needs.filter((x) => S.answers[x.k]).map((x) => ({ ...x, g: 'done', s: x.change ? (S.answers[x.k] === 'allowed' ? 'Just now · you allowed it' : 'Just now · you said no') : S.answers[x.k] === 'skipped' ? 'Just now · you skipped it' : 'Just now · you answered' }));
+    return { needs: open, working: tag(o.work.working, 'working'), next: tag(o.work.next, 'next'), done: [...answered, ...tag(o.work.done, 'done')] };
+  }
+  const GROUPS = [['needs', 'Needs you'], ['working', 'Working'], ['next', 'Up next'], ['done', 'Done']];
+
+  function counts(o) {
+    const g = groups(o);
+    return `<span class="b-counts">${GROUPS.map(([k, l]) => `<span class="${g[k].length && (k === 'needs' || k === 'working') ? `n-${k}` : ''}">${l} <b>${g[k].length}</b></span>`).join('')}</span>`;
+  }
+
+  function item(i) {
+    const o = i.o;
+    const c = i.type === 'change' ? CHANGES[i.id] : QUESTIONS[i.id];
+    return `<div class="b-item"><p class="b-from"><span class="b-kind">${i.type === 'change' ? 'Change' : 'Question'}</span>
+      <button data-set="screen=owlet&owlet=${o.id}&tab=null&at=null" data-key="from-${i.id}" aria-label="Open ${esc(o.name)}, ${esc(o.title)}">${owl(o.look, statusOf(o), 22)}${esc(o.name)} <span>${esc(o.title)}</span></button>
+      <span>${esc(homeName(o))} · asked ${esc(c.asked)}</span></p>
+      ${i.type === 'change' ? changeCard(i.id, CARD_FOOT) : questionCard(i.id)}</div>`;
+  }
+  function reports() {
+    const list = ['elf', 'scops', 'tawny'].map(owletById);
+    return `<div class="card rows b-reps">${list
+      .map((o) => {
+        const openR = !!S.flags[`rep-${o.id}`];
+        return `<div class="b-rep"><button aria-expanded="${openR}" data-act="toggle-rep" data-id="${o.id}" data-key="rep-${o.id}">${owl(o.look, statusOf(o), 26)}<span><strong>${esc(o.report.title)}</strong><span class="sub">${esc(o.name)} · ${esc(o.report.when)} · ${esc(o.report.summary)}</span></span><span class="chev" aria-hidden="true"></span></button>${openR ? reportCard(o, { label: false }) : ''}</div>`;
+      })
+      .join('')}</div>`;
+  }
+  function needsColumn(phone) {
+    const n = openCount();
+    return `<section aria-labelledby="b-needs-h"><div class="b-h"><h2 id="b-needs-h" class="${phone ? 'vh' : ''}">Needs you</h2><span class="count ${phone ? 'vh' : ''}">${n}</span><p>Only you can answer these. Nothing is sent or posted until you do.</p></div>
+      <div class="b-items">${n ? '' : '<p class="card b-none">Nothing needs you.</p>'}${needItems().map(item).join('')}</div></section>
+      <section aria-labelledby="b-rep-h"><div class="b-h"><h2 id="b-rep-h">While you were away</h2><p>Reports from runs you did not watch.</p></div>${reports()}</section>`;
+  }
+  function own(o) {
+    const st = statusOf(o);
+    return `<button class="b-own" data-set="screen=owlet&owlet=${o.id}&tab=null&at=null" data-key="own-${o.id}" aria-label="Open ${esc(o.name)}, ${esc(o.title)}. ${STATUS[st].label}. Lives on ${esc(homeName(o))}. ${esc(o.model)}.">
+      <span class="b-own__top">${owl(o.look, st, 26)}<strong>${esc(o.name)}</strong><span class="muted grow">${esc(o.title)}</span>${chip(o)}</span>
+      <span class="b-own__what">${esc(o.outcome)}</span>
+      <span class="b-own__meta"><span>${esc(homeName(o))}</span><span>${esc(o.model)}</span>${spark(o.days)}</span>
+      ${counts(o)}</button>`;
+  }
+  const ordered = () => [...OWLETS].sort((a, b) => ({ working: 0, needs: 1, idle: 2 })[statusOf(a)] - { working: 0, needs: 1, idle: 2 }[statusOf(b)]);
+
+  function page() {
+    return `<div class="b-page">
+      <div class="b-main" data-scroll="b-main"><div class="b-in"><h1 class="b-title">Owlets <span class="owltag">Owl</span></h1>${needsColumn()}</div></div>
+      <aside class="b-side" data-scroll="b-side" aria-label="Your owlets and what each one owns"><div class="b-side__h"><h2>What each one owns</h2><button class="btn btn--primary" data-set="screen=setup&edit=null" data-key="new">${ic('plus')}New owlet</button></div>${ordered().map(own).join('')}
+      <p class="xs muted" style="padding:2px 4px">The bars are runs a day for the last two weeks.</p></aside>
+    </div>`;
+  }
+
+  /* ---------- one owlet ---------- */
+  function workTab(o, phone) {
+    const g = groups(o);
+    return `<div class="b-in">
+      <div class="card b-away"><span class="lab">While you were away · ${esc(o.report.when)}</span><p>${esc(o.report.summary)}</p><button class="btn" data-set="tab=reports" data-key="read-report">Read the report</button></div>
+      <div class="b-board">${GROUPS.map(
+        ([k, l]) => `<section class="b-group" data-g="${k}" aria-labelledby="b-g-${k}"><h3 id="b-g-${k}">${l} <span class="n">${g[k].length}</span></h3><div class="b-stack">${
+          g[k].length
+            ? g[k].map((x) => `<button class="b-work" data-set="open=item:${x.k}" data-key="work-${x.k}"><strong>${esc(x.t)}</strong><span>${esc(x.s)}</span></button>`).join('')
+            : `<p class="b-empty">${k === 'needs' ? 'Nothing needs you.' : k === 'working' ? 'Not working now.' : k === 'next' ? 'Nothing planned. It works when you ask.' : 'Nothing yet.'}</p>`
+        }</div></section>`
+      ).join('')}</div>
+    </div>`;
+  }
+  function reportsTab(o) {
+    return `<div class="b-in narrow">${reportCard(o)}<div><h3 class="sec-h" style="margin-bottom:8px">Earlier</h3><div class="card rows b-set">${o.work.done
+      .filter((x) => !x.report)
+      .map((x) => `<div class="b-setrow"><span class="grow"><strong>${esc(x.t)}</strong><span class="sub">${esc(x.s)}</span></span></div>`)
+      .join('') || '<p class="b-setrow muted">No earlier runs.</p>'}</div></div></div>`;
+  }
+  function runsTab(o) {
+    return `<div class="b-in narrow"><p class="small muted">${idea()} What starts ${esc(o.name)} without a message from you. Schedules and events are not decided. Whatever starts it, a change still waits for you.</p>
+      <div class="card rows b-set"><div class="b-setrow"><span class="grow"><strong>When you ask</strong><span class="sub">A message from you, at the desktop or on the phone.</span></span><span class="xs muted">Always</span></div>
+      ${o.routines
+        .map((r) => {
+          const on = S.flags[`rt-${o.id}-${r.id}`] ?? r.on;
+          return `<div class="b-setrow"><span class="grow"><strong>${esc(r.when)}</strong><span class="sub">${esc(r.name)}: ${esc(r.instruction)}</span><span class="sub">Next: ${esc(r.next)} · last: ${esc(r.history[0][0])}, ${esc(r.history[0][2])}</span></span><button class="sw" role="switch" aria-checked="${on}" aria-label="${esc(r.when)} starts ${esc(o.name)}" data-act="switch" data-flag="rt-${o.id}-${r.id}" data-key="rt-${o.id}-${r.id}"></button></div>`;
+        })
+        .join('')}</div>
+      <div class="field" style="max-width:360px"><label for="b-add-run">Add a time or an event</label><select id="b-add-run" data-key="b-add-run"><option>Choose…</option><option>Every hour</option><option>Every day at a time</option><option>Every week on a day</option><option>Once, at a date and time</option><option>When a new issue opens</option><option>When CI on main goes red</option><option>When mail arrives in an account</option></select><p class="hint">Sample only. An event would need a source Sotto trusts and a cap on how often it may start.</p></div></div>`;
+  }
+  function usesTab(o) {
+    const c = COMPUTERS[o.home];
+    return `<div class="b-in narrow"><div><h3 class="sec-h" style="margin-bottom:8px">Plugin accounts</h3><div class="card rows b-set">${c.accounts
+      .map((a) => {
+        const on = S.flags[`acc-${o.id}-${a}`] ?? o.accounts.includes(a);
+        return `<div class="b-setrow"><span class="grow"><strong>${esc(acctLabel(a))}</strong><span class="sub">${ACCOUNT_RULES[ACCOUNTS[a].kind].join('. ')}.</span></span><button class="sw" role="switch" aria-checked="${on}" aria-label="${esc(o.name)} may use ${esc(acctLabel(a))}" data-act="switch" data-flag="acc-${o.id}-${a}" data-key="acc-${o.id}-${a}"></button></div>`;
+      })
+      .join('')}</div><p class="xs muted" style="margin-top:6px">These are the accounts on ${esc(c.name)}. An owlet never answers its own card: every send, post or deploy waits in Needs you.</p></div>
+      <div><h3 class="sec-h" style="margin-bottom:8px">Where it lives</h3><div class="card b-set"><div class="b-setrow"><span class="grow"><strong>${esc(c.name)} · ${esc(o.model)}</strong><span class="sub">${esc(c.kind)}. Its work, its reports and its sign-ins stay there.</span></span><button class="btn" data-set="screen=setup&edit=${o.id}" data-key="uses-edit">Change</button></div></div></div></div>`;
+  }
+  function knowsTab(o) {
+    const lines = [...o.memory.you, ...o.memory.learned].filter((_, i) => !S.flags[`forgot-${o.id}-${i}`]);
+    const all = [...o.memory.you, ...o.memory.learned];
+    return `<div class="b-in narrow"><div><h3 class="sec-h" style="margin-bottom:8px">Instructions · you write these</h3><div class="card b-set"><div class="b-setrow"><p class="grow">${esc(o.role)}</p><button class="btn" data-set="screen=setup&edit=${o.id}" data-key="knows-edit">${ic('pencil')}Edit</button></div></div></div>
+      <div><h3 class="sec-h" style="margin-bottom:8px">What it has learned · it writes these ${idea()}</h3><div class="card b-set"><ul class="b-lines rows">${
+        lines.length ? all.map((t, i) => (S.flags[`forgot-${o.id}-${i}`] ? '' : `<li><span>${esc(t)}</span><button class="btn" data-act="forget" data-id="${o.id}-${i}" data-key="forget-${o.id}-${i}" aria-label="Remove: ${esc(t)}">Remove</button></li>`)).join('') : '<li class="muted">Nothing yet.</li>'
+      }</ul></div><p class="xs muted" style="margin-top:6px">It reads these at the start of every run. A line here is something it noticed, never a permission.</p></div></div>`;
+  }
+  function limitTab(o) {
+    const pct = Math.round((o.limit.spent / o.limit.cap) * 100);
+    return `<div class="b-in narrow"><p class="small muted">${idea()} A monthly limit on what this owlet’s model may cost, counted the way Usage counts a thread.</p>
+      <div class="card b-set" style="padding:14px 16px;display:grid;gap:10px"><div class="b-setrow" style="padding:0"><span class="grow"><strong>Monthly limit</strong><span class="sub">Spent this month: $${o.limit.spent.toFixed(2)} of $${o.limit.cap}. The month starts on the 1st.</span></span><span class="t2" style="font-weight:650">$${o.limit.cap}</span></div>
+      <div class="meter" role="img" aria-label="${pct} percent of the monthly limit used"><i style="width:${pct}%"></i></div>
+      <p class="small t2">At the limit ${esc(o.name)} stops and says so in Needs you. It can ask for more. Only you can raise it.</p></div></div>`;
+  }
+
+  function sayRow(o) {
+    const sent = S.sent[o.id] || [];
+    const last = sent.length ? `<p class="last"><b>You:</b> ${esc(sent[sent.length - 1])} <br><b>${esc(o.name)}:</b> This is a prototype, so there is no answer. Nothing left this page.</p>` : `<p class="last"><b>${esc(o.name)}, ${esc(o.lastAt)}:</b> ${esc(o.last)}</p>`;
+    return `<div class="b-say"><div>${last}${composer(o, `Tell ${o.name} what to change`)}</div></div>`;
+  }
+
+  function open(o, phone) {
+    const tab = TABS.some(([k]) => k === S.tab) ? S.tab : 'work';
+    const st = statusOf(o);
+    const body = { work: workTab, reports: reportsTab, runs: runsTab, uses: usesTab, knows: knowsTab, limit: limitTab }[tab](o, phone);
+    const tabs = `<div class="b-tabs" role="tablist" aria-label="${esc(o.name)}’s work and settings">${TABS.map(([k, l]) => `<button role="tab" aria-selected="${tab === k}" tabindex="${tab === k ? 0 : -1}" data-set="tab=${k}" data-key="btab-${k}">${l}</button>`).join('')}</div>`;
+    const owns = `<div class="b-owns"><span class="lab">Owns</span><p>${esc(o.outcome)}</p></div>`;
+    const stop = st === 'working' ? `<button class="btn" data-act="stop" data-key="stop" aria-label="Stop ${esc(o.name)}’s work">${ic('stop')}Stop</button>` : '';
+    if (phone) {
+      return `<div class="ph__nav"><button class="iconbtn" data-set="screen=page&owlet=null&tab=null&open=null" data-focus="[data-key='own-${o.id}'], [data-key='from-${o.change || o.question}']" data-key="back" data-autofocus aria-label="Back to Needs you and all owlets">${ic('back')}</button>${owl(o.look, st, 30)}<div class="grow"><h1 class="clip">${esc(o.name)}</h1><p class="xs muted clip">${esc(homeName(o))} · ${esc(o.model)}</p></div>${chip(o)}</div>
+        ${owns}${tabs}<div class="b-body ph__scroll" role="tabpanel" data-scroll="b-body-${o.id}-${tab}">${body}</div>${tab === 'work' ? sayRow(o) : ''}`;
+    }
+    return `<div class="b-open">
+      <header class="b-bar"><button class="iconbtn" data-set="screen=page&owlet=null&tab=null&open=null" data-focus="[data-key='own-${o.id}']" data-key="back" data-autofocus aria-label="Back to Needs you and all owlets">${ic('back')}</button>${owl(o.look, st, 30)}
+        <div class="grow"><h1>${esc(o.name)}<span>${esc(o.title)}</span></h1><p class="small muted">Lives on ${esc(homeName(o))} · ${esc(o.model)}</p></div>${chip(o)}${needsNote(o)}${stop}</header>
+      ${owns}${tabs}
+      <div class="b-body" role="tabpanel" data-scroll="b-body-${o.id}-${tab}">${body}</div>
+      ${tab === 'work' ? sayRow(o) : ''}
+    </div>`;
+  }
+
+  function itemSheet(o) {
+    const k = S.open.slice(5);
+    const g = groups(o);
+    const all = [...g.needs, ...g.working, ...g.next, ...g.done];
+    const x = all.find((y) => y.k === k);
+    if (!x) return '';
+    let body;
+    if (x.change) body = changeCard(x.change, CARD_FOOT);
+    else if (x.question) body = questionCard(x.question);
+    else if (x.report) body = reportCard(o, { label: false });
+    else if (x.g === 'working') {
+      const live = o.chat.find((m) => m.who === 'steps' && m.live);
+      body = `<p class="t2">${esc(x.s)}</p><ul class="steps" aria-label="Steps so far">${(live ? live.items : []).map((s, i, a) => `<li class="${i === a.length - 1 ? 'live' : ''}">${esc(s)}</li>`).join('')}</ul><p class="small muted">It has read and written nothing outside GitHub. If it wants to post, the card comes to Needs you.</p>`;
+    } else if (x.g === 'next') body = `<p class="t2">${esc(x.s)}</p><p class="small muted">Not started. ${idea()} It starts by itself at that time, and the report lands here.</p><div class="btnrow"><button class="btn" data-act="runnow" data-key="item-run">${ic('play')}Start it now</button></div>`;
+    else body = `<p class="t2">${esc(x.s)}</p><p class="small muted">Finished. Nothing is waiting.</p>`;
+    return `<div class="layer"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="b-item-h"><div class="layer__head"><h2 id="b-item-h">${esc(x.t)}</h2><button class="iconbtn" data-act="close" data-key="item-x" aria-label="Close" data-first>${ic('x')}</button></div>
+      <div class="layer__body"><p class="small muted">${esc(o.name)} · ${esc(homeName(o))} · ${esc(GROUPS.find(([gk]) => gk === x.g)[1])}</p>${body}</div></div></div>`;
+  }
+
+  /* ---------- setup ---------- */
+  function setup(phone) {
+    const f = formFor(S.edit);
+    const o = S.edit ? owletById(S.edit) : null;
+    const templates = `<div class="card"><h2 id="b-tpl-h">Start from</h2><div class="pick b-tpl" role="radiogroup" aria-labelledby="b-tpl-h">${TEMPLATES.map(
+      (t) => `<label><input type="radio" name="template" value="${t.id}" data-f="template" data-key="f-tpl-${t.id}" ${f.template === t.id ? 'checked' : ''}><span><strong>${esc(t.name)}</strong><span>${esc(t.outcome || 'An empty owlet. You write all of it.')}</span></span></label>`
+    ).join('')}</div><p class="xs muted">${idea()} A template fills in the form. You can change every word.</p></div>`;
+    const cards = `<div class="b-setup__cards">
+      <div class="card"><h2>What it owns</h2><div class="b-two">${F.text(f, 'name', 'Name', { ph: 'Scops', first: true })}${F.text(f, 'title', 'What it is, in a word or two', { ph: 'Repo upkeep' })}</div>
+        ${F.area(f, 'outcome', 'Outcome', { rows: 2, ph: 'main stays green…', hint: 'One sentence that stays true because this owlet is here.' })}
+        ${F.area(f, 'role', 'Instructions', { rows: 3, hint: 'How to do the work. It reads these at the start of every run.' })}</div>
+      <div class="card"><h2>Where it lives</h2><div class="b-two">${F.home(f, 'Home computer', '')}${F.model(f)}</div></div>
+      <div class="card"><h2>What it may use</h2>${F.accounts(f, 'Plugin accounts')}</div>
+      <div class="card"><h2>When it runs</h2>${F.runs(f, 'It starts')}</div>
+      <div class="card"><h2>Limit ${idea()}</h2>${F.text(f, 'cap', 'Monthly limit in US dollars', { hint: 'At the limit it stops and tells you. Only you can raise it.' })}</div>
+    </div>`;
+    return `<form class="b-setup" data-form="setup">
+      <div class="${phone ? 'ph__nav' : 'b-bar'}"><button type="button" class="iconbtn" data-act="cancel-setup" data-key="set-back" aria-label="Back without saving">${ic('back')}</button><h1 class="grow">${o ? `Edit ${esc(o.name)}` : 'New owlet'}</h1></div>
+      <div class="b-setup__scroll" data-scroll="b-setup"><div class="b-setup__grid ${o ? 'one' : ''}">${o ? '' : templates}${cards}</div></div>
+      <div class="b-setup__foot"><button type="button" class="btn" data-act="cancel-setup" data-key="set-cancel">Cancel</button><button type="submit" class="btn btn--primary" data-key="set-save">${o ? 'Save the changes' : 'Make the owlet'}</button></div>
+    </form>`;
+  }
+
+  function phonePage() {
+    const tab = S.tab === 'owlets' ? 'owlets' : 'needs';
+    return `<div class="ph__nav"><h1 class="ph__big">Owlets</h1><span class="owltag">Owl</span><span class="grow"></span><button class="iconbtn" data-set="screen=setup&edit=null" data-key="new" aria-label="New owlet">${ic('plus')}</button></div>
+      <div class="b-seg" role="tablist" aria-label="Needs you or all owlets"><button role="tab" aria-selected="${tab === 'needs'}" tabindex="${tab === 'needs' ? 0 : -1}" data-set="tab=needs" data-key="seg-needs">Needs you<span class="count">${openCount()}</span></button><button role="tab" aria-selected="${tab === 'owlets'}" tabindex="${tab === 'owlets' ? 0 : -1}" data-set="tab=owlets" data-key="seg-owlets">Owlets ${OWLETS.length}</button></div>
+      <div class="ph__scroll" role="tabpanel" data-scroll="b-ph-${tab}"><div class="b-phpad">${tab === 'needs' ? needsColumn(true) : `<div style="display:grid;gap:10px">${ordered().map(own).join('')}</div>`}</div></div>`;
+  }
+
+  VARIANTS.B = {
+    name: 'after Devin Bots',
+    ref: 'after Devin Bots (Cognition)',
+    short: 'Devin Bots',
+    brief: 'Outcomes and Needs you: each owlet owns an outcome, every card waiting for you is in one list, and its work is grouped by where it stands.',
+    first: 'scops',
+    caption:
+      'Outcomes and Needs you. It borrows the Devin Bot that owns an outcome and not a task, one Needs you list for every approval, decision and report, work grouped by where it stands, triggers on a time or an event, templates to start from, and a usage limit. The page opens on every card waiting for you.',
+    jump(name) {
+      if (name === 'owlet') return { screen: 'owlet', owlet: 'scops' };
+      if (name === 'change') return { screen: 'owlet', owlet: 'scops', open: 'item:comment-214' };
+      if (name === 'setup') return { screen: 'setup' };
+      if (name === 'edit') return { screen: 'setup', edit: 'scops', owlet: 'scops' };
+      return {};
+    },
+    view(S, phone) {
+      if (S.screen === 'setup') return setup(phone);
+      const o = S.screen === 'owlet' && S.owlet ? owletById(S.owlet) : null;
+      if (o) return open(o, phone);
+      return phone ? phonePage() : page();
+    },
+    layer(S) {
+      const o = S.owlet && owletById(S.owlet);
+      if (o && S.open && S.open.startsWith('item:')) return itemSheet(o);
+      return '';
+    },
+    act(name, el) {
+      if (name === 'toggle-rep') {
+        S.flags[`rep-${el.dataset.id}`] = !S.flags[`rep-${el.dataset.id}`];
+        render();
+      } else if (name === 'forget') {
+        S.flags[`forgot-${el.dataset.id}`] = true;
+        S.toast = 'Removed. This is a prototype, so nothing was changed.';
+        render('[data-key^="forget-"], [data-key="btab-knows"]');
+      } else if (name === 'cancel-setup') {
+        const back = S.edit;
+        go({ screen: back ? 'owlet' : 'page', owlet: back || null, edit: null, form: null }, back ? '[data-key="btab-work"]' : '[data-key="new"]');
+      } else if (name === 'runnow' || name === 'stop') {
+        S.toast = 'This is a prototype. Nothing changed.';
+        el.textContent = 'Sample only';
+      }
+    },
+    escape() {
+      if (S.screen === 'setup') {
+        this.act('cancel-setup');
+        return true;
+      }
+      // a report opened in place closes on Escape too
+      const rep = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.b-rep') : null;
+      const btn = rep && rep.querySelector('button[aria-expanded="true"]');
+      if (btn) {
+        S.flags[`rep-${btn.dataset.id}`] = false;
+        render(`[data-key="rep-${btn.dataset.id}"]`);
+        return true;
+      }
+      return false;
+    },
+  };
+})();
+
+/* ==================== Look C ==================== */
+/*
+ * PROTOTYPE — look C, after Hermes Agent's Bot Mode (Nous Research): one long chat and its pages.
+ *
+ * In Bot Mode a bot is a profile: a role, a model, memory and skills of its own, with one main chat that
+ * is never started over, every other run a tab beside it, and its routines docked next to the chat in
+ * plain words. Here the owlets sit on a branch drawn in text characters, as the owls of Watcher's room
+ * are. An owlet opens on its one chat; its runs are tabs; its routines are docked; and what it is (role,
+ * home, accounts, routines, memory, skills) is a set of pages you can read and change.
+ */
+
+(() => {
+  const OWL = {
+    round: [' ,_, ', '(E,E)', '/)_) ', ' " " '],
+    tufts: ['/\\_/\\', '(E,E)', '/)_) ', ' " " '],
+    small: [' ._. ', '(E,E)', ' (_) ', ' " " '],
+    heart: [' ,-, ', '{E,E}', '/)_) ', ' " " '],
+  };
+  const EYE = { working: 'o', needs: 'O', idle: '-' };
+  const TWIG = '─'.repeat(11) + '┴' + '─'.repeat(17) + '┬' + '─'.repeat(23) + '┴' + '─'.repeat(9);
+  const twig = () => `<span class="c-twig" data-deco aria-hidden="true">${TWIG.repeat(6)}</span>`;
+
+  /* an owlet in text characters: four lines, the eyes say what it is doing */
+  function ascii(o, st = statusOf(o)) {
+    const eye = `<span class="eye">${EYE[st]}</span>`;
+    const lines = OWL[o.look].map((l) => esc(l).replace(/E/g, eye));
+    const mark = st === 'needs' ? '<span class="mark"> !</span>' : st === 'idle' ? '<span class="zz"> z</span>' : '  ';
+    lines[0] = `  ${lines[0]}${mark}`;
+    for (let i = 1; i < lines.length; i++) lines[i] = `  ${lines[i]}  `;
+    return `<pre class="c-ascii" data-state="${st}" data-deco aria-hidden="true">${lines.join('\n')}</pre>`;
+  }
+  const face = (o, st = statusOf(o)) => `<span class="c-ascii" data-state="${st}" data-deco aria-hidden="true">${esc(OWL[o.look][1]).replace(/E/g, `<span class="eye">${EYE[st]}</span>`)}${st === 'needs' ? '<span class="mark">!</span>' : ''}</span>`;
+
+  /* a night sky in text characters, the same every time. The page shows as much of it as it has room for. */
+  const SKY = (() => {
+    let seed = 11;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const rows = [];
+    for (let y = 0; y < 18; y++) {
+      let row = '';
+      for (let x = 0; x < 210; x++) {
+        const r = rnd();
+        row += r < 0.011 ? '·' : r < 0.016 ? '*' : r < 0.019 ? '+' : r < 0.0205 ? '<b>*</b>' : ' ';
+      }
+      rows.push(row);
+    }
+    return rows.join('\n');
+  })();
+  const MARGIN = ['   ·', ' *', '      ·', '  <b>·</b>', '', '    +', ' ·', '', '      *', '  ·', '', '   <b>*</b>', '       ·', ' ·', '', '    ·', '  +', '', '      ·', ' *', '', '   ·'].join('\n');
+
+  const cardFoot = (o) => `It lapses in five minutes if nobody answers, and then nothing is sent. That is Sotto’s rule for a thread’s card today. ${idea()} After a lapse ${esc(o.name)} would say so here, and ask again when you tell it to.`;
+  const label = (o) => {
+    const st = statusOf(o);
+    const n = pendingOf(o).length;
+    return `Open ${o.name}, ${o.title}. ${STATUS[st].label}${o.status === 'working' && n ? `, and ${n} need you` : ''}. Lives on ${homeName(o)}. ${o.model}.`;
+  };
+
+  function page() {
+    return `<div class="c-page" data-scroll="c-page">
+      <header class="c-head"><div class="grow"><h1>Owlets <span class="owltag">Owl</span></h1><p class="muted">Each owlet has one chat that is never started over. Press one to open it.</p></div>
+      <button class="btn btn--primary" data-set="screen=setup&edit=null" data-key="new">${ic('plus')}New owlet</button></header>
+      <div class="c-sky" data-deco aria-hidden="true"><pre>${SKY}</pre><span class="c-moon">☾</span></div>
+      <div class="c-scene">
+        <div class="c-row" style="--n:${OWLETS.length}">${OWLETS.map(
+          (o) => `<button class="c-bird" data-set="screen=owlet&owlet=${o.id}&tab=null&at=null" data-key="bird-${o.id}" aria-label="${esc(label(o))}">
+            ${ascii(o)}${twig()}
+            <span class="c-name" aria-hidden="true">${esc(o.name)}</span><span class="c-title" aria-hidden="true">${esc(o.title)}</span>
+            <span class="c-chips" aria-hidden="true">${chip(o)}${needsNote(o)}</span>
+            <span class="c-where" aria-hidden="true">${esc(homeName(o))} · ${esc(o.model)}</span>
+            <span class="c-said" aria-hidden="true">“${esc(o.last)}” <i>${esc(o.lastAt)}</i></span></button>`
+        ).join('')}</div>
+      </div>
+      <p class="c-key"><span><span class="c-ascii" data-state="working" data-deco aria-hidden="true">(<span class="eye">o</span>,<span class="eye">o</span>)</span> eyes open: working</span><span><span class="c-ascii" data-state="idle" data-deco aria-hidden="true">(<span class="eye">-</span>,<span class="eye">-</span>)</span> eyes shut: idle</span><span><span class="c-ascii" data-state="needs" data-deco aria-hidden="true">(<span class="eye">O</span>,<span class="eye">O</span>)<span class="mark">!</span></span> wide eyes and a mark: needs you</span></p>
+    </div>`;
+  }
+
+  /* the pane docked beside the chat: this owlet's routines in plain words, and a look at its pages */
+  function dock(o, inSheet) {
+    const used = o.memory.used;
+    const fresh = o.skills.filter((s) => s.state === 'new').length;
+    return `<aside class="c-dock" aria-label="${esc(o.name)}’s routines" data-scroll="c-dock-${o.id}">
+      ${inSheet ? '' : `<div class="c-dock__h"><h2>Routines ${idea()}</h2><button class="iconbtn" data-act="dock" data-key="dock-x" aria-label="Hide the routines">${ic('x')}</button></div>`}
+      <p class="xs muted">A routine starts ${esc(o.name)} by itself. You write when in your own words, and its report lands in the chat. Schedules are not decided.</p>
+      ${
+        o.routines.length
+          ? o.routines
+              .map((r) => {
+                const on = S.flags[`rt-${o.id}-${r.id}`] ?? r.on;
+                const quiet = S.flags[`quiet-${o.id}-${r.id}`] ?? true;
+                const read = readSchedule(r.words);
+                return `<div class="card c-rt"><div class="c-rt__top"><strong>${esc(r.name)}</strong><button class="sw" role="switch" aria-checked="${on}" aria-label="${esc(r.name)} is on" data-act="switch" data-flag="rt-${o.id}-${r.id}" data-key="rt-${o.id}-${r.id}"></button></div>
+                  <p class="c-words">${esc(r.words)}</p>
+                  <p class="xs muted">Sotto reads this as: ${esc(read[0])}. Next: ${esc(r.next)}.</p>
+                  <p class="small t2">${esc(r.instruction)}</p>
+                  <div class="c-quiet"><span>Say nothing when there is nothing to report</span><button class="sw" role="switch" aria-checked="${quiet}" aria-label="${esc(r.name)} says nothing when there is nothing to report" data-act="switch" data-flag="quiet-${o.id}-${r.id}" data-key="quiet-${o.id}-${r.id}"></button></div>
+                  <div class="btnrow"><button class="btn" data-act="runnow" data-key="run-${r.id}">${ic('play')}Run it now</button></div></div>`;
+              })
+              .join('')
+          : `<div class="card c-rt"><p>No routines. ${esc(o.name)} works when you ask.</p></div>`
+      }
+      <div class="field"><label for="c-add">Add a routine, in your own words</label><input type="text" id="c-add" class="inp" data-key="c-add" autocomplete="off" placeholder="fridays at 4pm"><div class="btnrow"><button type="button" class="btn" data-act="add-routine" data-key="c-add-btn">Read it back to me</button></div><p class="hint" id="c-add-out">Sotto says how it read your words before anything starts.</p></div>
+      <div class="c-about"><h3 class="sec-h">${esc(o.name)}’s pages</h3><div class="card rows">
+        <div class="c-pgline"><strong>Role</strong><span class="muted">${esc(o.role.slice(0, 96))}…</span></div>
+        <div class="c-pgline"><strong>May use</strong><span class="muted">${o.accounts.map(acctLabel).map(esc).join(', ')}</span></div>
+        <div class="c-pgline"><strong>Memory ${idea()}</strong><span class="muted">${used.toLocaleString('en-US')} of 2,200 characters</span><div class="meter" role="img" aria-label="${Math.round((used / 2200) * 100)} percent of its memory used"><i style="width:${Math.round((used / 2200) * 100)}%"></i></div></div>
+        <div class="c-pgline"><strong>Skills ${idea()}</strong><span class="muted">${o.skills.length} written${fresh ? `, ${fresh} new for you to read` : ''}</span></div>
+      </div><div class="btnrow"><button class="btn" data-set="screen=setup&edit=${o.id}&open=null" data-key="dock-pages">${ic('page')}Open its pages</button></div></div>
+    </aside>`;
+  }
+
+  function chatBody(o, tab) {
+    if (tab === 'run') {
+      const r = o.report;
+      return `<div class="c-col c-run"><p class="c-runhead">Run · ${esc(r.title)} · ${esc(r.when)} · on ${esc(r.on)} · took ${esc(r.took)}${o.routines.length ? ' · started by its routine' : ' · started by your message'}</p>
+        <ol class="steps" aria-label="Every step of this run">${r.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
+        ${reportCard(o, { label: false })}
+        <p class="small muted">A run is a record of its own. Its report also went into ${esc(o.name)}’s chat, and that is where you talk about it.</p>
+        <div class="btnrow"><button class="btn" data-set="tab=chat" data-key="to-chat">Go to ${esc(o.name)}’s chat</button></div></div>`;
+    }
+    return `<div class="c-col">${talk(o, { changeFoot: cardFoot(o), report: { after: `<div class="btnrow"><button class="btn" data-set="tab=run&at=null" data-key="open-run">Open this run</button></div>` } })}</div>`;
+  }
+
+  function tabs(o, tab, phone) {
+    const closed = !!S.flags['c-dock-closed'];
+    return `<div class="c-tabs"><div role="tablist" aria-label="${esc(o.name)}’s chat and its runs" style="display:flex;gap:2px">
+      <button role="tab" aria-selected="${tab === 'chat'}" tabindex="${tab === 'chat' ? 0 : -1}" data-set="tab=chat&at=null" data-key="ctab-chat"><span class="pin" aria-hidden="true"></span>${esc(o.name)}’s chat</button>
+      <button role="tab" aria-selected="${tab === 'run'}" tabindex="${tab === 'run' ? 0 : -1}" data-set="tab=run&at=null" data-key="ctab-run">Run · ${esc(o.report.tab)}</button></div>
+      <span class="grow"></span>${phone ? '' : `<button class="btn c-dockbtn" data-act="dock" data-key="dockbtn" data-wide="${closed ? 'closed' : 'open'}">${ic('clock')}Routines</button>`}</div>`;
+  }
+
+  function open(o, phone) {
+    const tab = S.tab === 'run' ? 'run' : 'chat';
+    const st = statusOf(o);
+    const closed = !!S.flags['c-dock-closed'];
+    const body = `<section class="c-chat" aria-label="${tab === 'chat' ? `Chat with ${esc(o.name)}` : `A run of ${esc(o.name)}`}">
+        ${phone ? '' : `<pre class="c-margin c-margin--l" data-deco aria-hidden="true">${MARGIN}</pre><pre class="c-margin c-margin--r" data-deco aria-hidden="true">${MARGIN}</pre>`}
+        <div class="c-chat__scroll" role="tabpanel" data-scroll="c-chat-${o.id}-${tab}" ${tab === 'chat' ? 'data-stick' : ''}>${chatBody(o, tab)}</div>
+        ${tab === 'chat' ? `<div class="c-chat__foot"><div class="c-col">${composer(o)}</div></div>` : ''}
+      </section>`;
+    if (phone) {
+      return `<h1 class="vh">${esc(o.name)}, ${esc(o.title)}</h1><div class="ph__nav c-who"><button class="iconbtn" data-set="screen=page&owlet=null&tab=null&at=null" data-focus="[data-key='bird-${o.id}']" data-key="back" data-autofocus aria-label="Back to all owlets">${ic('back')}</button>
+        <button class="c-phname" data-set="screen=setup&edit=${o.id}" data-key="who" aria-label="${esc(o.name)}, ${esc(o.title)}. Open its pages"><strong>${face(o)} ${esc(o.name)}</strong><span class="sub clip">${esc(o.title)}</span></button>
+        <button class="btn" data-set="open=dock" data-key="dockbtn">${ic('clock')}Routines</button></div>
+        <p class="ph__meta">${chip(o)}${needsNote(o)}<span class="clip">${esc(homeName(o))} · ${esc(o.model)}</span></p>
+        ${tabs(o, tab, true)}${body}`;
+    }
+    return `<div class="c-open">
+      <nav class="c-strip" aria-label="Owlets on the branch"><button class="c-perch" data-set="screen=page&owlet=null&tab=null&at=null" data-focus="[data-key='bird-${o.id}']" data-key="back" data-autofocus>${ic('back')}<span>The branch</span></button>${OWLETS.map(
+        (x) => `<button class="c-perch" aria-current="${x.id === o.id}" data-set="owlet=${x.id}&tab=null&at=null&open=null" data-key="perch-${x.id}" aria-label="${esc(label(x))}">${face(x)}<span aria-hidden="true">${esc(x.name)}</span></button>`
+      ).join('')}<span class="grow"></span><button class="btn btn--quiet" data-set="screen=setup&edit=null" data-key="new">${ic('plus')}New owlet</button></nav>
+      <header class="c-who"><h1>${esc(o.name)}<span>${esc(o.title)}</span></h1><p class="small muted grow">Lives on ${esc(homeName(o))} · ${esc(o.model)}</p>${chip(o)}${needsNote(o)}
+        <button class="btn" data-set="screen=setup&edit=${o.id}" data-key="pages">${ic('page')}Its pages</button>${st === 'working' ? `<button class="btn" data-act="stop" data-key="stop" aria-label="Stop ${esc(o.name)}’s work">${ic('stop')}Stop</button>` : ''}</header>
+      ${tabs(o, tab, false)}
+      <div class="c-body ${closed ? 'is-wide' : ''}">${body}${closed ? '' : dock(o)}</div>
+    </div>`;
+  }
+
+  /* ---------- its pages ---------- */
+  const PAGES = [['who', 'Who it is'], ['role', 'Role'], ['home', 'Lives on'], ['uses', 'May use'], ['routines', 'Routines'], ['memory', 'Memory'], ['skills', 'Skills']];
+  function book(phone) {
+    const f = formFor(S.edit);
+    const o = S.edit ? owletById(S.edit) : null;
+    const pg = (key, inner, tag = '') => {
+      const i = PAGES.findIndex(([k]) => k === key);
+      return `<section class="c-pg" id="pg-${key}" aria-labelledby="pg-${key}-h"><header><h2 id="pg-${key}-h">${PAGES[i][1]} ${tag}</h2><span class="no">${i + 1} / ${PAGES.length}</span></header>${inner}</section>`;
+    };
+    const looks = `<div class="field" role="radiogroup" aria-labelledby="c-look-l"><span class="lbl" id="c-look-l">Look</span><div class="c-looks">${Object.keys(LOOKS)
+      .map((k) => `<label><input type="radio" name="look" value="${k}" data-f="look" data-key="f-look-${k}" ${f.look === k ? 'checked' : ''} aria-label="${LOOKS[k]}">${ascii({ look: k }, 'working')}</label>`)
+      .join('')}</div></div>`;
+    const mem = o
+      ? `<p class="small muted">${o.memory.used.toLocaleString('en-US')} of 2,200 characters. It is kept small on purpose, so ${esc(o.name)} reads all of it every time.</p><div class="meter" role="img" aria-label="${Math.round((o.memory.used / 2200) * 100)} percent used"><i style="width:${Math.round((o.memory.used / 2200) * 100)}%"></i></div>
+         <ul class="c-lines">${[...o.memory.you.map((t) => ['About you', t]), ...o.memory.learned.map((t) => ['It learned', t])]
+           .map(([w, t], i) => (S.flags[`forgot-${o.id}-${i}`] ? '' : `<li><span class="who">${w}</span><span>${esc(t)}</span><button type="button" class="btn" data-act="forget" data-id="${o.id}-${i}" data-key="forget-${o.id}-${i}" aria-label="Remove: ${esc(t)}">Remove</button></li>`))
+           .join('')}</ul><p class="xs muted">A line here is something it noticed. It is never a permission.</p>`
+      : '<p class="muted">Empty. It writes a line here when it learns how you like something done, and you can remove any line.</p>';
+    const skills = o
+      ? `<ul class="c-lines">${o.skills
+          .map((s, i) => {
+            const st = S.flags[`skill-${o.id}-${i}`] || s.state;
+            return `<li><span><strong style="font-weight:600">${esc(s.name)}</strong><br><span class="muted small">${esc(s.by)}${st === 'new' ? '. New: it is not used until you keep it.' : st === 'gone' ? '. Thrown away.' : '. Kept.'}</span></span>${st === 'new' ? `<button type="button" class="btn" data-act="skill" data-id="${o.id}-${i}" data-to="kept" data-key="keep-${o.id}-${i}" aria-label="Keep the skill ${esc(s.name)}">Keep it</button><button type="button" class="btn" data-act="skill" data-id="${o.id}-${i}" data-to="gone" data-key="toss-${o.id}-${i}" aria-label="Throw away the skill ${esc(s.name)}">Throw it away</button>` : ''}</li>`;
+          })
+          .join('')}</ul><p class="xs muted">A skill is a page ${esc(o.name)} wrote about how to do one job, so the next run starts from it.</p>`
+      : '<p class="muted">None yet. After a job goes well, it can write down how it did it. Nothing it writes is used until you keep it.</p>';
+    const r = readSchedule(f.words);
+    const routines = `<div class="field"><label for="f-words">When it runs, in your own words</label><input type="text" id="f-words" data-f="words" data-key="f-words" value="${esc(f.words)}" autocomplete="off" placeholder="weekdays at 7:30am"><p class="hint" id="read-words">${r ? `Sotto reads this as: <b>${esc(r[0])}</b>. Next: ${esc(r[1])}.` : 'Leave it empty and it works only when you ask.'}</p></div>
+      <p class="small t2">A routine’s report lands in the owlet’s chat. If the run wants to send something and you are not there, the card lapses and nothing is sent; it tells you in the chat.</p>`;
+    return `<form class="c-book" data-form="setup">
+      <div class="${phone ? 'ph__nav' : 'c-book__bar'}"><button type="button" class="iconbtn" data-act="cancel-setup" data-key="book-back" aria-label="Back without saving">${ic('back')}</button><h1 class="grow">${o ? `${esc(o.name)}’s pages` : 'A new owlet’s pages'}</h1>
+        ${phone ? '' : `<button type="button" class="btn" data-act="cancel-setup" data-key="book-cancel">Cancel</button>`}<button type="submit" class="btn btn--primary" data-key="book-save">${o ? 'Save the pages' : 'Make the owlet'}</button></div>
+      <div class="c-book__body"><nav class="c-index" aria-label="Pages">${PAGES.map(([k, l], i) => `<button type="button" data-act="page" data-id="${k}" data-key="idx-${k}"><i>${i + 1}</i>${l}</button>`).join('')}</nav>
+      <div class="c-pages" data-scroll="c-pages"><div>
+        ${pg('who', `<div class="c-two">${F.text(f, 'name', 'Name', { ph: 'Elf', first: true })}${F.text(f, 'title', 'Title', { ph: 'Morning brief', hint: 'What it is, in a word or two.' })}</div>${looks}`)}
+        ${pg('role', F.area(f, 'role', 'What it is for and how it works', { rows: 5, hint: 'It reads this page at the start of every chat and every run. Write it as you would brief a person.' }))}
+        ${pg('home', `<div class="c-two">${F.home(f, 'Computer', '')}${F.model(f)}</div><p class="xs muted">Its chat, its pages and its runs are kept on that computer. You reach them from this desktop and from your paired iPhone.</p>`)}
+        ${pg('uses', F.accounts(f, 'Plugin accounts'))}
+        ${pg('routines', routines, idea())}
+        ${pg('memory', mem, idea())}
+        ${pg('skills', skills, idea())}
+      </div></div></div>
+    </form>`;
+  }
+
+  function phonePage() {
+    return `<div class="ph__nav"><h1 class="ph__big">Owlets</h1><span class="owltag">Owl</span><span class="grow"></span><button class="iconbtn" data-set="screen=setup&edit=null" data-key="new" aria-label="New owlet">${ic('plus')}</button></div>
+      <div class="ph__scroll" data-scroll="c-ph-page"><div class="c-plist">${OWLETS.map(
+        (o) => `<button class="c-prow" data-set="screen=owlet&owlet=${o.id}&tab=null&at=null" data-key="bird-${o.id}" aria-label="${esc(label(o))}"><span class="perch" aria-hidden="true">${ascii(o)}${twig()}</span>
+          <span class="info" aria-hidden="true"><span class="c-name">${esc(o.name)}<span>${esc(o.title)}</span></span><span>${chip(o)} ${needsNote(o)}</span><span class="c-where">${esc(homeName(o))} · ${esc(o.model)}</span><span class="c-said clip">“${esc(o.last)}”</span></span></button>`
+      ).join('')}<p class="xs muted" style="padding:6px 4px">Eyes open: working. Eyes shut: idle. Wide eyes and a mark: needs you.</p></div></div>`;
+  }
+
+  VARIANTS.C = {
+    name: 'after Hermes Agent',
+    ref: 'after Hermes Agent’s Bot Mode (Nous Research)',
+    short: 'Hermes',
+    brief: 'One long chat and its pages: one chat per owlet that is never started over, runs as tabs, routines in plain words, and pages for its role and memory.',
+    first: 'elf',
+    caption:
+      'One long chat and its pages. It borrows the Hermes bot that is a profile with a role, memory and skills of its own, one main chat that is never started over, each run a tab beside it, routines docked next to the chat and written in plain words, and a small memory you can read. It is drawn as a sibling of Watcher’s room, with the owlets on a branch.',
+    jump(name) {
+      if (name === 'owlet') return { screen: 'owlet', owlet: 'elf' };
+      if (name === 'change') return { screen: 'owlet', owlet: 'tawny', at: 'end' };
+      if (name === 'setup') return { screen: 'setup' };
+      if (name === 'edit') return { screen: 'setup', edit: 'elf', owlet: 'elf' };
+      return {};
+    },
+    view(S, phone) {
+      if (S.screen === 'setup') return book(phone);
+      const o = S.screen === 'owlet' && S.owlet ? owletById(S.owlet) : null;
+      if (o) return open(o, phone);
+      return phone ? phonePage() : page();
+    },
+    layer(S) {
+      const o = S.owlet && owletById(S.owlet);
+      if (o && S.open === 'dock' && S.screen === 'owlet')
+        return `<div class="layer"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="c-dock-h"><div class="layer__head"><h2 id="c-dock-h">${esc(o.name)}’s routines ${idea()}</h2><button class="iconbtn" data-act="close" data-key="dock-sx" aria-label="Close" data-first>${ic('x')}</button></div>${dock(o, true)}</div></div>`;
+      return '';
+    },
+    act(name, el) {
+      if (name === 'dock') {
+        if ($('#win').clientWidth < 1000) {
+          S.opener = el.getAttribute('data-key');
+          return go({ open: 'dock' });
+        }
+        S.flags['c-dock-closed'] = !S.flags['c-dock-closed'];
+        render(S.flags['c-dock-closed'] ? '[data-key="dockbtn"]' : '[data-key="dock-x"]');
+      } else if (name === 'page') {
+        const pgEl = $(`#pg-${el.dataset.id}`);
+        if (pgEl) {
+          pgEl.scrollIntoView({ block: 'start' });
+          const first = $('input, textarea, select, button', pgEl);
+          if (first) first.focus({ preventScroll: true });
+        }
+      } else if (name === 'forget') {
+        S.flags[`forgot-${el.dataset.id}`] = true;
+        S.toast = 'Removed. This is a prototype, so nothing was changed.';
+        render('[data-key^="forget-"], [data-key="idx-memory"]');
+      } else if (name === 'skill') {
+        S.flags[`skill-${el.dataset.id}`] = el.dataset.to;
+        render('[data-key="idx-skills"]');
+      } else if (name === 'add-routine') {
+        const v = $('#c-add').value.trim();
+        $('#c-add-out').textContent = v ? `Sample only. Sotto would say here how it read “${v}”, and nothing would start until you agreed.` : 'Write when it should run first.';
+      } else if (name === 'cancel-setup') {
+        const back = S.edit;
+        go({ screen: back ? 'owlet' : 'page', owlet: back || null, edit: null, form: null }, back ? '[data-key="pages"], [data-key="who"]' : '[data-key="new"]');
+      } else if (name === 'runnow' || name === 'stop') {
+        S.toast = 'This is a prototype. Nothing changed.';
+        el.textContent = 'Sample only';
+      }
+    },
+    escape() {
+      if (S.screen === 'setup') {
+        this.act('cancel-setup');
+        return true;
+      }
+      return false;
+    },
+  };
+})();
+
+boot();
+</script>
+</body>
+</html>

@@ -128,6 +128,8 @@ export interface AgentRuntimeOptions {
   dynamicThreadsEnabled?: boolean
   /** Model routing's Owl answer (ADR-0207), and where its event names are logged. */
   modelRouterEnabled?: boolean
+  /** Owlets' Owl answer (ADR-0213). */
+  owletsEnabled?: boolean
   modelRouterLog?: (event: RouterEvent) => void
   threadSnoozeEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
@@ -423,7 +425,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, { historyEnabled: options.historyEnabled, watcherEnabled: options.watcherEnabled ?? false,
-    heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false })
+    heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false, owletsEnabled: options.owletsEnabled === true })
   if (detachedRuns) agentHost.watchDetachedRuns(detachedRuns)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
@@ -508,7 +510,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, modelRouterEnabled: options.modelRouterEnabled === true, modelRouter: () => options.settings().modelRouter, ...(options.modelRouterLog ? { modelRouterLog: options.modelRouterLog } : {}), watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, modelRouterEnabled: options.modelRouterEnabled === true, owletsEnabled: options.owletsEnabled === true, modelRouter: () => options.settings().modelRouter, ...(options.modelRouterLog ? { modelRouterLog: options.modelRouterLog } : {}), watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -958,7 +960,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+  const hostService = new LocalHostService({ control: agentControl, owlets: options.owletsEnabled === true, owletThreadIds: () => agentHost.owletThreadIds(), events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host reports the detached runs it finds that its desktops' threads may own (#2749).
     ...(detachedRuns && options.runsAs === 'headless-host' ? { detachedRuns } : {}),
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).

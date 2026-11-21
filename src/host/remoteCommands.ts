@@ -39,6 +39,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'select-project': ['projectId'], 'settle-project': ['projectId'], 'restore-project': ['projectId'],
   'settle-thread': ['threadId'], 'restore-thread': ['threadId'],
   'rename-thread': ['threadId', 'title'], 'regenerate-thread-title': ['threadId'],
+  // An owlet (ADR-0213) is the user's own setup, as a new thread is: its mode is held to the same remote permission rules.
+  'create-owlet': ['threadId', 'name', 'role', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'], 'set-owlet': ['threadId', 'name', 'role'],
   'create-thread': ['projectId', 'title', 'modelId', 'titleSource', 'threadId', 'workingCopy', 'baseBranch', 'startFromOrigin',
     'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode', 'speed', 'fastMode'],
   // Continuing an agent as its own thread makes a new thread on the new-thread defaults, as create-thread does, and asks
