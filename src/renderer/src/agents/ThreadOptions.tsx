@@ -13,6 +13,7 @@ import { shownWords, type LaterWords } from './interfaceWords'
 import { ChoiceChip, type ChoiceOption } from './ChoiceChip'
 import { RUNTIME_LABELS, PERMISSIONS_ICON, effortChoices, modeChoices, startingProviderMode, permissionInForceCaption, settingRefusalText, unconfirmedSettingText, promptOnItsWay, watcherPermissionFixedReason } from './permissionPresentation'
 import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
+import type { CombinedEffort } from './EffortGauge'
 import { useOwnServersBridge } from './OwnModelServers'
 import { ServerMark, ServerSpeedCard, useOwnServerMark } from './ServerMark'
 import { localHostId } from './localAgents'
@@ -27,7 +28,7 @@ import { providerKey } from './threadFacts'
 import { nextTurnChoiceOf, nextTurnKinds, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, settingValuesInForce, speedPatch, SPEED_NOT_CARRIED, SPEED_STANDARD, threadSpeed, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
-import { FixedEffortChip, noEffortLevelsReason } from './FixedEffortChip'
+import { FixedEffortChip, fixedEffortReason, noEffortLevelsReason } from './FixedEffortChip'
 import { isTopEffort } from '../../../shared/topEffort'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
@@ -255,6 +256,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const ownServers = !watcher && (!thread.hostId || thread.hostId === localHostId(state)) ? ownServersBridge : undefined
   const bar = useRef<HTMLDivElement>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
+  const effortTriggerRef = useRef<HTMLButtonElement>(null)
+  const combinedDialogId = useId()
+  const [combinedPicker, setCombinedPicker] = useState<{ readonly open: boolean; readonly focus: 'search' | 'effort' }>({ open: false, focus: 'search' })
   const captionId = useId()
   const unconfirmedId = useId(), unconfirmedModelId = useId(), unconfirmedEffortId = useId(), unconfirmedFastId = useId()
   const { models: own, locked } = threadModelChoices(state, thread, watcher)
@@ -330,8 +334,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     if (chip.isConnected && !chip.disabled && (document.activeElement === null || document.activeElement === document.body)) chip.focus()
   }, [saving])
   const press = (kind: SettingKind, value: string, patch: SettingsPatch, showing: string = drawn[kind]): void => {
-    // The effort card keeps its own focus while it saves; a list or menu hands it back to its chip.
-    refocus.current = kind === 'effort' ? null
+    // The effort card and the combined composer picker keep their own focus while saving; standalone lists hand it back.
+    refocus.current = kind === 'effort' || (Boolean(quiet) && combinedPicker.open) ? null
       : (document.activeElement as Element | null)?.closest('.thread-chip-menu, .model-picker')?.querySelector<HTMLButtonElement>('.thread-chip') ?? null
     pendingSettingsStore.press(thread.id, kind, value, patch, command, drawn, showing)
   }
@@ -485,6 +489,38 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   }
   const effortDescription = [...new Set([settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort') ? describedFor('effort') : '',
     settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('fast') ? describedFor('fast') : ''])].filter(Boolean).join(' ')
+  const effortSpeed = speeds.length > 0 ? {
+    value: shownSpeed,
+    name: speedName(shownSpeed, speeds),
+    options: speedOptions(speeds, speedProvider),
+    onChange: changeSpeed,
+    onStep: (direction: 1 | -1) => changeSpeed(nextSpeed(speeds, shownSpeed, direction)),
+  } : undefined
+  const effortSuggestion = quiet && !dynamic.overseeing
+    ? suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)
+    : null
+  const effortLockedReason = router.routed ? t`Model routing chooses the effort.`
+    : effortDisabled && levels.length > 0 ? fixedEffortReason(stayingWith ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' }))
+      : model?.noReasoningEfforts ? noEffortLevelsReason(stayingWith ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' }), modelNameNow)
+        : undefined
+  const changeEffort = (reasoningEffort: string): void => {
+    press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
+    orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
+  }
+  const combinedEffort: CombinedEffort | undefined = quiet ? {
+    levels,
+    value: reasoning,
+    disabled: fixed || effortDisabled || router.routed || Boolean(model?.noReasoningEfforts),
+    lockedReason: effortLockedReason,
+    suggestion: effortSuggestion,
+    ultracodeEffort: ultracodeLevel(state, thread, model),
+    onChange: changeEffort,
+    speed: effortSpeed,
+    speedDisabled: fixed,
+    routed: router.routed,
+    stayOpenOnModel: pressed => !(continuing && continuations.some(item => item.id === pressed))
+      && !others.some(item => item.id === pressed && watcherProviderOf(item) !== null),
+  } : undefined
   const permissions = watcher
     ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
       disabled={permissionsFixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
@@ -495,6 +531,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     {dynamic.dialog}
     <div className="thread-options thread-options--chips">
       <ModelPicker foot={dynamic.foot || router.foot ? close => <>{dynamic.foot?.(close)}{router.foot?.()}</> : undefined}
+        effort={combinedEffort}
+        open={quiet ? combinedPicker.open : undefined}
+        onOpenChange={quiet ? next => setCombinedPicker(prev => next ? { open: true, focus: 'search' } : { ...prev, open: false }) : undefined}
+        initialFocus={quiet ? combinedPicker.focus : undefined}
+        returnFocusTo={quiet && combinedPicker.focus === 'effort' ? effortTriggerRef : undefined}
+        dialogId={quiet ? combinedDialogId : undefined}
         suffix={router.routed ? routedOnce ? `· ${modelNameNow}` : undefined : dynamic.suffix} shownName={router.routed ? t({ message: 'Auto', comment: 'On a routed thread\'s model chip, in place of a model\'s name: model routing chooses the model.' }) : undefined}
         label={router.routed ? routedOnce ? t`Choose model. Model routing is on, now ${modelNameNow}, ${effortLabel(reasoning)}` : t`Choose model. Model routing is on` : dynamic.overseeing ? t`Choose model. ${modelNameNow} oversees this thread` : undefined} models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
@@ -532,17 +574,15 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         ? <FixedEffortChip level="" provider="" reason={noEffortLevelsReason(stayingWith ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' }), modelNameNow)} quiet={Boolean(quiet)} trace={false} />
       : quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || effortDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('effort') || kept.has('fast')} describedBy={effortDescription}
-        speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
-        suggestion={dynamic.overseeing ? null : suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
-        onChange={reasoningEffort => {
-          press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
-          orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
-        }} />
+        speed={effortSpeed}
+        suggestion={effortSuggestion}
+        triggerRef={effortTriggerRef}
+        pickerOpen={combinedPicker.open}
+        pickerId={combinedDialogId}
+        onOpenPicker={() => setCombinedPicker(prev => prev.open ? { open: false, focus: 'search' } : { open: true, focus: 'effort' })}
+        onChange={changeEffort} />
       : efforts.length > 0 && <EffortPicker ownServer={model?.ownServer} key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
-        disabled={fixed || effortDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort')} describedBy={describedFor('effort')} onChange={reasoningEffort => {
-          press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
-          orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
-        }}
+        disabled={fixed || effortDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort')} describedBy={describedFor('effort')} onChange={changeEffort}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {quiet?.shieldSlot ? createPortal(permissions, quiet.shieldSlot) : permissions}

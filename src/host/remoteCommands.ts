@@ -91,6 +91,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'start-thread-session': ['threadId'],
   interrupt: ['threadId'], 'compact-thread': ['threadId'],
   // Stopping a run the thread detached is the user's own press, like Stop on the thread; it answers no request (#2476).
+  // Stop on a thread's detached run (ADR-0204). On a desktop that a phone reaches, the thread's run may be one a paired
+  // host reported (#2749): the desktop then asks that host, which ends it only after it looks again.
   'stop-detached-run': ['threadId', 'runId'],
   answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice', 'skipped', 'attachments'],
 }

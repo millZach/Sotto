@@ -175,15 +175,19 @@ describe('speed in the quiet split chip', () => {
     return command
   }
   const effort = (): HTMLElement => screen.getByRole('combobox', { name: 'Thread reasoning' })
-  const pick = (name: string): void => { fireEvent.click(effort()); fireEvent.click(screen.getByRole('radio', { name })) }
+  const pick = (name: string): void => {
+    if (!screen.queryByRole('dialog', { name: 'Choose model' })) fireEvent.click(effort())
+    fireEvent.click(screen.getByRole('radio', { name }))
+  }
 
-  it('chooses supported speeds from the effort list without changing effort or drawing a speed button', async () => {
+  it('chooses supported speeds from the combined picker without changing effort or drawing a speed button', async () => {
     const command = quiet()
     expect(screen.queryByRole('button', { name: /^Thread speed/u })).toBeNull()
     expect(effort()).toHaveTextContent('High, Standard')
     fireEvent.click(effort())
-    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Low', 'Medium', 'High', 'XHigh', 'Max'])
-    expect(screen.getByRole('option', { name: 'High' })).toHaveAttribute('aria-selected', 'true')
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+    expect(slider).toHaveAttribute('aria-valuetext', 'High')
+    expect(slider).toHaveAttribute('max', '4')
     expect(screen.getByRole('radio', { name: 'Fast' })).toHaveAttribute('title', '2x speed, increased usage.')
     fireEvent.click(screen.getByRole('radio', { name: 'Fast' }))
     await waitFor(() => expect(effort()).toHaveTextContent('High, Fast'))
@@ -196,7 +200,7 @@ describe('speed in the quiet split chip', () => {
     expect(command.mock.calls.map(call => call[0])).toEqual(['fast', 'ultrafast', null].map(speed => ({ type: 'configure-thread', threadId: 'thread', speed })))
   })
 
-  it('keeps the speeds one Tab stop whose arrows move the choice, and Alt arrows working in the list', async () => {
+  it('keeps the speeds one Tab stop whose arrows move the choice, and Alt arrows working on the gauge', async () => {
     const command = quiet()
     fireEvent.click(effort())
     const radios = screen.getAllByRole('radio')
@@ -205,7 +209,7 @@ describe('speed in the quiet split chip', () => {
     fireEvent.keyDown(radios[0]!, { key: 'ArrowRight' })
     await waitFor(() => expect(screen.getByRole('radio', { name: 'Fast' })).toHaveAttribute('aria-checked', 'true'))
     expect(screen.getByRole('radio', { name: 'Fast' })).toHaveFocus()
-    fireEvent.keyDown(screen.getByRole('option', { name: 'High' }), { key: 'ArrowUp', altKey: true })
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'ArrowUp', altKey: true })
     await waitFor(() => expect(screen.getByRole('radio', { name: 'Ultrafast' })).toHaveAttribute('aria-checked', 'true'))
     expect(command.mock.calls.map(call => call[0])).toEqual(['fast', 'ultrafast'].map(speed => ({ type: 'configure-thread', threadId: 'thread', speed })))
   })
@@ -230,7 +234,7 @@ describe('speed in the quiet split chip', () => {
     expect(effort()).toHaveAttribute('title', 'Thread reasoning: High')
     fireEvent.click(effort())
     expect(screen.queryByRole('radio')).toBeNull()
-    fireEvent.click(screen.getByRole('option', { name: 'High' }))
+    fireEvent.click(screen.getByRole('button', { name: 'High' }))
     expect(command).not.toHaveBeenCalled()
   })
 

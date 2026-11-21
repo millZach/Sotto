@@ -167,6 +167,7 @@ export class E2EAgentHost implements AgentHost {
         if (command.reasoningEffort !== undefined) thread.reasoningEffort = command.reasoningEffort
         if (command.runtimeMode !== undefined) thread.runtimeMode = command.runtimeMode
         if (command.providerMode !== undefined) thread.providerMode = command.providerMode
+        if (command.speed !== undefined) { if (command.speed === null) delete thread.speed; else thread.speed = command.speed }
       } else if (command.type === 'send' || command.type === 'steer') {
         if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) return { accepted: false }
         thread.settledAt = null; thread.settledOverride = null; thread.updatedAt = new Date().toISOString()

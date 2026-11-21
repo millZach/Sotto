@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Check, Zap } from 'lucide-react'
 import { t } from '@lingui/core/macro'
 import { effortLabel } from './EffortPicker'
@@ -32,7 +32,7 @@ export interface ChipSpeed {
  * after the word, one press that sets it, and the level is marked in the list (ADR-0172). They stay until a press or a
  * change of draft takes the reason away. Nothing moves at rest.
  */
-export function SplitChipEffort({ levels, value, disabled, pending = false, describedBy, suggestion: wanted, onChange, speed }: {
+export function SplitChipEffort({ levels, value, disabled, pending = false, describedBy, suggestion: wanted, onChange, speed, triggerRef, pickerOpen, pickerId, onOpenPicker }: {
   readonly levels: readonly string[]
   readonly value: string
   readonly disabled: boolean
@@ -43,27 +43,47 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
   readonly onChange: (level: string) => void
   /** Absent where the model offers no speed but Standard, so no bolt is drawn. */
   readonly speed?: ChipSpeed | undefined
+  /** Ref forwarded to the effort trigger button so the combined picker can return focus here on close. */
+  readonly triggerRef?: RefObject<HTMLButtonElement | null> | undefined
+  /** Whether the shared combined model + effort picker is currently open. */
+  readonly pickerOpen?: boolean | undefined
+  /** DOM id of the shared combined picker dialog, for `aria-controls`. */
+  readonly pickerId?: string | undefined
+  /** When provided, pressing the effort word opens the shared combined picker instead of a separate effort list. */
+  readonly onOpenPicker?: (() => void) | undefined
 }): ReactNode {
   const current = levels.indexOf(value)
   const suggestion = disabled ? null : wanted
-  const [open, setOpen] = useState(false)
-  const trigger = useRef<HTMLButtonElement>(null)
+  const [localOpen, setLocalOpen] = useState(false)
+  const delegated = onOpenPicker !== undefined
+  const open = delegated ? Boolean(pickerOpen) : localOpen
+  const setOpen = (next: boolean | ((value: boolean) => boolean)): void => {
+    if (delegated) {
+      const target = typeof next === 'function' ? next(Boolean(pickerOpen)) : next
+      if (target !== Boolean(pickerOpen)) onOpenPicker()
+      return
+    }
+    setLocalOpen(next)
+  }
+  const localTrigger = useRef<HTMLButtonElement>(null)
+  const trigger = triggerRef ?? localTrigger
   const panel = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
-  const listId = useId()
+  const fallbackListId = useId()
+  const listId = delegated && pickerId !== undefined ? pickerId : fallbackListId
   useEffect(() => {
-    if (!open) return
+    if (delegated || !open) return
     const dismiss = (event: PointerEvent): void => {
       const target = event.target as Node
-      if (!panel.current?.contains(target) && !trigger.current?.contains(target)) setOpen(false)
+      if (!panel.current?.contains(target) && !trigger.current?.contains(target)) setLocalOpen(false)
     }
     document.addEventListener('pointerdown', dismiss, true)
     const selected = list.current?.querySelector<HTMLButtonElement>('button[aria-selected="true"]')
     ;(selected ?? list.current?.querySelector<HTMLButtonElement>('button'))?.focus()
     return () => { document.removeEventListener('pointerdown', dismiss, true) }
-  }, [open])
+  }, [delegated, open, trigger])
   // A turn starting fixes the setting; the chip keeps its focus, as the dots did, and its list closes.
-  useEffect(() => { if (disabled && open) { setOpen(false); trigger.current?.focus() } }, [disabled, open])
+  useEffect(() => { if (!delegated && disabled && open) { setLocalOpen(false); trigger.current?.focus() } }, [delegated, disabled, open, trigger])
   const set = (index: number): void => {
     const level = levels[Math.max(0, Math.min(levels.length - 1, index))]
     if (level !== undefined && level !== value && !disabled) onChange(level)
@@ -108,11 +128,11 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
     : <>{speed.value === 'ultrafast' ? <Zap size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" /> : null}<Zap size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" /></>
   // The composer around the word reads this mark for its travelling light at the top level (effortTrace.css).
   return <span className="split-chip-effort" data-speed={speed?.value} data-pending={pending || undefined} data-effort-trace={isTopEffort(levels, value)}
-    onKeyDown={event => {
+    onKeyDown={delegated ? undefined : event => {
       if (!open || event.key !== 'Escape') return
       event.preventDefault(); event.stopPropagation(); close()
     }}
-    onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
+    onBlur={delegated ? undefined : event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
     <button ref={trigger} type="button" className="split-chip-effort__trigger tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open}
       aria-controls={open ? listId : undefined} aria-keyshortcuts={speed ? 'ArrowLeft ArrowRight ArrowUp ArrowDown Home End Alt+ArrowUp Alt+ArrowDown' : 'ArrowLeft ArrowRight ArrowUp ArrowDown Home End'}
       aria-describedby={pending ? describedBy : undefined} title={title} aria-disabled={disabled || undefined}
@@ -131,7 +151,7 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
         const prompt = event.detail === 0 ? null : trigger.current?.closest('form')?.querySelector<HTMLElement>('.prompt-editor')
         ;(prompt ?? trigger.current)?.focus()
       }}><span className="split-chip-effort__arrow" aria-hidden="true">→</span><span className="split-chip-effort__suggested">{suggested}</span></button>}
-    {open ? <div ref={panel} id={listId} className="thread-chip-menu__list thread-chip-menu__list--foot split-chip-effort__menu" role="dialog" aria-label={label}>
+    {!delegated && open ? <div ref={panel} id={listId} className="thread-chip-menu__list thread-chip-menu__list--foot split-chip-effort__menu" role="dialog" aria-label={label}>
       <div ref={list} role="listbox" aria-label={t`Reasoning effort`} className="thread-chip-menu__options" onKeyDown={event => { if (!speedKey(event)) moveListboxFocus(event, list.current) }}>
         {levels.map((level, index) => {
           const marked = index === suggestion

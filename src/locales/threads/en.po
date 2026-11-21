@@ -106,6 +106,12 @@ msgstr "{0} context"
 msgid "{0} of {1} models selected"
 msgstr "{0} of {1} models selected"
 
+#. A detached run on another machine: {0} is its name, such as "Codex run"; {machine} is the machine, such as forge.
+#. placeholder {0}: work.label
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "{0} on {machine}"
+msgstr "{0} on {machine}"
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -595,6 +601,11 @@ msgstr "{kindWord}: {label}, Working"
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "{kindWord}: {name}, {stateWord}"
 msgstr "{kindWord}: {name}, {stateWord}"
+
+#. {label} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/EffortGauge.tsx
+msgid "{label} — suggested for this draft"
+msgstr "{label} — suggested for this draft"
 
 #. {label} is the code's language, such as TypeScript, or the word "Code".
 #: src/renderer/src/agents/MessageContent.tsx
@@ -1244,6 +1255,8 @@ msgid "{secondsLeft, plural, other {# seconds left to answer}}"
 msgstr "{secondsLeft, plural, other {# seconds left to answer}}"
 
 #. {setLevel} is a reasoning effort level, or "Provider default".
+#. {setLevel} is a reasoning effort level, or "Provider default".
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "{setLevel} is set. Choose a level this model offers."
 msgstr "{setLevel} is set. Choose a level this model offers."
@@ -2222,7 +2235,11 @@ msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file
 msgstr "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
 
 #. A permission mode: the agent decides what to ask about.
+#. On a routed thread's effort display: model routing chooses the effort.
+#. On a routed thread's effort display: model routing chooses the effort.
 #. On a routed thread's model chip, in place of a model's name: model routing chooses the model.
+#: src/renderer/src/agents/EffortGauge.tsx
+#: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Auto"
@@ -3792,6 +3809,7 @@ msgstr "default"
 #. A button that sets the model's own default reasoning effort.
 #. The model uses its own default thinking.
 #. The quiet composer's effort word while the thread is on the model's own default reasoning effort.
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/effortNames.ts
 #: src/renderer/src/agents/EffortPicker.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
@@ -5214,6 +5232,12 @@ msgstr "its worktree holds files Git ignores; delete it on its own to review the
 msgid "its worktree is in use"
 msgstr "its worktree is in use"
 
+#. {name} is the currently selected model's name.
+#. placeholder {0}: current.name
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Jump to active model, {0}"
+msgstr "Jump to active model, {0}"
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Jump to latest"
 msgstr "Jump to latest"
@@ -5614,6 +5638,7 @@ msgstr "Model providers"
 msgid "Model routing"
 msgstr "Model routing"
 
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Model routing chooses the effort."
 msgstr "Model routing chooses the effort."
@@ -5975,6 +6000,10 @@ msgstr "No branches yet."
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "No changes to commit."
 msgstr "No changes to commit."
+
+#: src/renderer/src/agents/EffortGauge.tsx
+msgid "No effort levels."
+msgstr "No effort levels."
 
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "No files match “{filter}”."
@@ -8904,6 +8933,11 @@ msgstr "Sources"
 msgid "Speech"
 msgstr "Speech"
 
+#. Label beside the speed segmented switch inside the combined model picker.
+#: src/renderer/src/agents/EffortGauge.tsx
+msgid "Speed"
+msgstr "Speed"
+
 #. {voice} is the name of an ElevenLabs voice, such as Rachel.
 #: src/renderer/src/agents/SoundLine.tsx
 msgid "Spoken in the voice {voice}"
@@ -8991,6 +9025,10 @@ msgstr "Started by you. Sotto sends this thread a wake-up when #{number} needs i
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."
 msgstr "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Started from this thread on {machine} and left running there. Sotto on {machine} found it running; its provider does not report it."
+msgstr "Started from this thread on {machine} and left running there. Sotto on {machine} found it running; its provider does not report it."
 
 #. A background agent's status.
 #. A delegated thread's state: its brief is still being started or sent.
@@ -9659,6 +9697,8 @@ msgstr "the provider"
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
+#. Stands for a provider whose name is not known, at the start of a sentence.
+#. Stands for a provider whose name is not known, at the start of a sentence.
 #: src/renderer/src/agents/ThreadOptions.tsx
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "The provider"
@@ -10129,6 +10169,7 @@ msgstr "Thread permissions"
 msgid "Thread reasoning"
 msgstr "Thread reasoning"
 
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Thread reasoning effort"
 msgstr "Thread reasoning effort"

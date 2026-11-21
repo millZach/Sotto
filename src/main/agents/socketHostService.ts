@@ -33,6 +33,7 @@ import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostF
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { withKeptPartsPutBack, type HeldParts } from '../../shared/keptParts'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, hostThreadWordsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
+import { detachedRunElsewhereStopSchema, type DetachedRunElsewhere, type RunMark } from '../../shared/agentMonitoring'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
 import type { BrowserEvent } from '../../shared/browser'
@@ -286,6 +287,9 @@ export class SocketHostService implements HostService {
   private readonly nextPromptEntries = new Map<string, NextPromptEntry>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   private readonly checkListeners = new Set<() => void>()
+  /** The detached runs the host last reported with marks none of its threads own (#2749), and who hears them change. */
+  private runsElsewhere: readonly DetachedRunElsewhere[] = []
+  private readonly runsElsewhereListeners = new Set<(runs: readonly DetachedRunElsewhere[]) => void>()
   private readonly spendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
   private readonly elevenLabsSpendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
   private readonly modelListeners = new Set<(news: Model3dHostNews) => void>()
@@ -458,7 +462,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -506,6 +510,12 @@ export class SocketHostService implements HostService {
     if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
     // A queue read on a closed connection is not current: the machine's panel says nothing of it until the host pushes again.
     if (this.checks !== undefined) { this.checks = undefined; this.checksChanged() }
+    // The runs it reported stay as it last reported them: they run on there, and the thread is not called at rest while
+    // its host is away. The host's next report replaces them, and the router lets them go when the host is removed.
+  }
+  private runsElsewhereChanged(runs: readonly DetachedRunElsewhere[]): void {
+    this.runsElsewhere = runs
+    for (const listener of [...this.runsElsewhereListeners]) { try { listener(runs) } catch { /* A listener's failure is its own. */ } }
   }
   private checksChanged(): void {
     for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
@@ -598,6 +608,7 @@ export class SocketHostService implements HostService {
         else if (message.event === 'plugin-meshy-spending') { for (const listener of [...this.spendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
         // And the same for its ElevenLabs copies, pushed only to a desktop whose hello accepted `plugin-elevenlabs-spending`.
         else if (message.event === 'plugin-elevenlabs-spending') { for (const listener of [...this.elevenLabsSpendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
+        else if (message.event === 'detached-runs-elsewhere') this.runsElsewhereChanged(message.runs)
         else if (message.event === 'check-queue') { if (this.options.crossMachineEnabled === true) { this.checks = message.checks; this.checksChanged() } }
         // Pushed only to a desktop whose hello accepted `next-prompts` and that said it wants them (ADR-0173).
         else if (message.event === 'next-prompts') {
@@ -1924,6 +1935,29 @@ export class SocketHostService implements HostService {
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     this.delegationListeners.add(listener)
     return () => { this.delegationListeners.delete(listener) }
+  }
+  /**
+   * The host lists `detached-runs-elsewhere` (#2749): it reports the detached runs it finds with a mark none of its own
+   * threads owns, such as one a thread on this desktop started there over ssh, looks again when asked, and stops one of
+   * them when this desktop's user presses its Stop.
+   */
+  get supportsDetachedRunsElsewhere(): boolean { return this.features.includes('detached-runs-elsewhere') }
+  /** The runs the host last reported on this connection; none once it closes. */
+  detachedRunsElsewhere(): readonly DetachedRunElsewhere[] { return this.runsElsewhere }
+  /** Hears the host report them, and this connection closing. Returns the way to stop. */
+  subscribeDetachedRunsElsewhere(listener: (runs: readonly DetachedRunElsewhere[]) => void): () => void {
+    this.runsElsewhereListeners.add(listener)
+    return () => { this.runsElsewhereListeners.delete(listener) }
+  }
+  /** Asks the host to look for detached runs again, a few seconds from now, as a turn ending on this desktop may have started one there. */
+  async lookForDetachedRuns(): Promise<void> {
+    this.offers('detached-runs-elsewhere')
+    await this.call({ op: 'detached-runs-look' })
+  }
+  /** Stops a run the host reported, by its ID, after the host looks again and finds the same process: null once it ended, or why not. */
+  async stopDetachedRunElsewhere(runId: string, mark: RunMark): Promise<string | null> {
+    this.offers('detached-runs-elsewhere')
+    return this.read(detachedRunElsewhereStopSchema, await this.call({ op: 'detached-run-elsewhere-stop', runId, mark })).error
   }
   /** The host lists `check-queue-views` and this desktop accepted it (#1312): it pushes its own check queue. */
   get supportsCheckQueueViews(): boolean { return this.options.crossMachineEnabled === true && this.features.includes('check-queue-views') }
