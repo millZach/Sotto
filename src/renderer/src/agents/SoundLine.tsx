@@ -7,7 +7,7 @@ import { dollarFigure } from '../../../shared/plugins'
 import { soundFileGone, type SoundFailure, type SoundKind, type SoundView } from '../../../shared/sounds'
 import { useOwlFeature } from '../state/owlFeature'
 import { useReducedMotion } from '../state/reducedMotion'
-import { useActivityBodyHost } from './activityBodies'
+import { usePairedHost } from './activityBodies'
 import { sizeWords } from './modelParts'
 import './soundLine.css'
 
@@ -28,7 +28,7 @@ import './soundLine.css'
 export function SoundLine({ soundId, name }: { readonly soundId: string; readonly name: string }): ReactNode {
   const on = useOwlFeature('plugins')
   // The transcript says whose the thread is, as for a 3D model's line.
-  const host = useActivityBodyHost()
+  const host = usePairedHost()
   const hostId = host ? parseHostEntityKey(host.threadId)?.hostId : undefined
   const key = hostId ? hostEntityKey(hostId, soundId) : soundId
   const away = host !== null && !host.connected

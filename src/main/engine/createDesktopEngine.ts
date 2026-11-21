@@ -80,6 +80,7 @@ import { registerThreadMoveIpc } from '../agents/threadMovesIpc'
 import { registerUsageIpc } from '../agents/usageIpc'
 import { VISUALIZE_TOOL, VisualToolServer } from '../agents/visualTools'
 import { createWatcherRoomDesktop } from '../agents/watcherRoomDesktop'
+import { windowHistories } from '../agents/windowActivityBodies'
 import { githubBaseBranchChecks, githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState } from '../agents/worktreeCleanup'
 import { registerCouncilIpc } from '../council/councilIpc'
 import { CouncilService } from '../council/councilService'
@@ -496,9 +497,13 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       )
     : undefined
 
+  // This computer's histories reach the window with their long bodies cut, as a paired host's do, and a record is read
+  // whole when its row opens (#2737).
+  const localHistories = windowHistories(agentControl)
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
-    detail: id => agentControl.threadDetail(id),
+    detail: localHistories.detail,
+    activityBody: localHistories.activityBody,
     preview: request => agentControl.attachmentPreview(request),
     media: request => agentControl.threadMedia(request),
     mediaPart: async request => { const found = await agentControl.threadMediaVideo(request); return found && { mimeType: found.handle.mimeType, sizeBytes: found.handle.sizeBytes, bytes: found.bytes } },
@@ -511,7 +516,8 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     gitPullRequestList: request => agentControl.gitPullRequestList(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
-    subscribeDetail: listener => agentControl.subscribeThreadDetail(listener, { appends: true }),
+    // The main window applies appends; an append to a record it holds cut goes as the record cut again (#2737).
+    subscribeDetail: localHistories.subscribeDetail,
     questionPage: token => agentControl.questionPage(token),
     questionPageOpened: token => agentControl.questionPageOpened(token),
   })

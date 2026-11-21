@@ -5,7 +5,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useId, useRef, useState,
 import type { Model3dFailure, Model3dView } from '../../../shared/models3d'
 import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import { useOwlFeature } from '../state/owlFeature'
-import { useActivityBodyHost } from './activityBodies'
+import { usePairedHost } from './activityBodies'
 import { useReducedMotion } from '../state/reducedMotion'
 import { creditsWords, extensionOf, progressWords, Ring, sizeWords, stepWords, useStill } from './modelParts'
 import './modelLine.css'
@@ -24,7 +24,7 @@ export function ModelLine({ modelId, name }: { readonly modelId: string; readonl
   const on = useOwlFeature('plugins')
   // A thread on a paired host names its 3D model by the host's own ID; the window asks for it by a key that says which
   // host holds it, as it names the thread (the Meshy plan's ticket 6, part 2). The transcript says whose the thread is.
-  const host = useActivityBodyHost()
+  const host = usePairedHost()
   const hostId = host ? parseHostEntityKey(host.threadId)?.hostId : undefined
   const key = hostId ? hostEntityKey(hostId, modelId) : modelId
   const away = host !== null && !host.connected
