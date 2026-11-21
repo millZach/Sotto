@@ -95,13 +95,14 @@ describe('combined model, effort and speed picker', () => {
     expect(within(dialog).getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAttribute('max', '5')
     expect(within(dialog).getByRole('radio', { name: 'Fast' })).toBeInTheDocument()
 
-    // Switch to Haiku 5.5: picker stays open and expands Haiku's 3-level gauge with no speed control.
+    // Switch to Haiku 5.5: picker stays open, expands Haiku's 3-level gauge with no speed control, and moves focus into it.
     fireEvent.click(within(dialog).getByRole('option', { name: 'Haiku 5.5' }))
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Haiku 5.5'))
     expect(screen.getByRole('dialog', { name: 'Choose model' })).toBeInTheDocument()
     const slider = within(dialog).getByRole('slider', { name: 'Thread reasoning effort' })
     expect(slider).toHaveAttribute('max', '2')
     expect(slider).toHaveAttribute('aria-valuetext', 'Medium')
+    expect(slider).toHaveFocus()
     expect(within(dialog).queryByRole('radio')).toBeNull()
     expect(sent).toEqual([{ type: 'configure-thread', threadId: 'thread', modelId: 'claude:haiku' }])
   })
@@ -183,5 +184,60 @@ describe('combined model, effort and speed picker', () => {
       { type: 'configure-thread', threadId: 'thread', reasoningEffort: 'low' },
       { type: 'configure-thread', threadId: 'thread', reasoningEffort: 'medium' },
     ])
+  })
+
+  it('closes cleanly if the thread locks while open and never reopens unasked when the turn ends', () => {
+    const start = multiProviderState()
+    const command = vi.fn(async () => start)
+    const { rerender } = render(<ThreadOptions thread={start.host.threads[0]!} state={start} quiet={{ effortScore: 0 }} command={command} />)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    expect(screen.getByRole('dialog', { name: 'Choose model' })).toBeInTheDocument()
+
+    const running = withThread(start, { status: 'running' })
+    rerender(<ThreadOptions thread={running.host.threads[0]!} state={running} quiet={{ effortScore: 0 }} command={command} />)
+    expect(screen.queryByRole('dialog', { name: 'Choose model' })).toBeNull()
+
+    const idleAgain = withThread(start, { status: 'idle' })
+    rerender(<ThreadOptions thread={idleAgain.host.threads[0]!} state={idleAgain} quiet={{ effortScore: 0 }} command={command} />)
+    expect(screen.queryByRole('dialog', { name: 'Choose model' })).toBeNull()
+  })
+
+  it('reaches OpenCode model source rows from Search on ArrowDown and returns focus on Back in combined mode', () => {
+    const state = multiProviderState()
+    state.host.models = [
+      ...state.host.models,
+      { id: 'opencode/big-pickle', name: 'Big Pickle', provider: 'OpenCode', providerId: 'opencode', source: 'OpenCode Zen', ready: true, reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' },
+    ]
+    mountQuiet(state)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const dialog = screen.getByRole('dialog', { name: 'Choose model' })
+    fireEvent.click(within(dialog).getByRole('tab', { name: 'OpenCode' }))
+    const search = within(dialog).getByRole('textbox', { name: 'Search models' })
+    expect(search).toHaveFocus()
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    const zen = within(dialog).getByRole('button', { name: /^Show OpenCode Zen models/u })
+    expect(zen).toHaveFocus()
+    fireEvent.click(zen)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Back to model sources' }))
+    expect(within(dialog).getByRole('button', { name: /^Show OpenCode Zen models/u })).toHaveFocus()
+  })
+
+  it('lands on the first effort level from an unknown saved effort and ignores modified arrows on the gauge', async () => {
+    const start = multiProviderState()
+    start.host.threads[0]!.reasoningEffort = 'legacy'
+    start.host.models[0] = { ...start.host.models[0]!, speeds: [] }
+    const { sent } = mountQuiet(start)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+    const slider = screen.getByRole('slider', { name: 'Thread reasoning effort' })
+
+    // Modified arrows (Alt/Ctrl/Meta) on a model without speeds do not step effort.
+    fireEvent.keyDown(slider, { key: 'ArrowRight', altKey: true })
+    fireEvent.keyDown(slider, { key: 'ArrowRight', ctrlKey: true })
+    fireEvent.keyDown(slider, { key: 'ArrowRight', metaKey: true })
+    expect(sent).toEqual([])
+
+    // From an unknown saved effort, ArrowRight lands on the first offered level (low) instead of skipping to medium.
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    await waitFor(() => expect(sent).toEqual([{ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'low' }]))
   })
 })

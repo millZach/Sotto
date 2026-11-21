@@ -129,7 +129,7 @@ export function InlineModelCard({ modelKey, header, effort, sliderRef, cardRef }
     const wheel = (event: WheelEvent): void => {
       event.preventDefault()
       if (!editableEffort || event.deltaY === 0) return
-      const next = Math.max(0, Math.min(count - 1, Math.round(position) + (event.deltaY < 0 ? 1 : -1)))
+      const next = !known ? 0 : Math.max(0, Math.min(count - 1, Math.round(position) + (event.deltaY < 0 ? 1 : -1)))
       if (next !== Math.round(position) || !known) choose(next)
     }
     input.addEventListener('wheel', wheel, { passive: false })
@@ -236,12 +236,12 @@ export function InlineModelCard({ modelKey, header, effort, sliderRef, cardRef }
               }}
               onKeyDown={event => {
                 if (speedKey(event)) return
+                if (event.altKey || event.ctrlKey || event.metaKey) return
                 if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); return }
-                // A digit with Ctrl or ⌘ is a page shortcut's (ADR-0158), not a step.
-                const digit = /^[1-9]$/u.test(event.key) && !event.ctrlKey && !event.metaKey ? Number(event.key) - 1 : -1
+                const digit = /^[1-9]$/u.test(event.key) ? Number(event.key) - 1 : -1
                 const steps: Record<string, number> = { ArrowRight: 1, ArrowUp: 1, PageUp: 1, ArrowLeft: -1, ArrowDown: -1, PageDown: -1 }
                 const next = event.key === 'Home' ? 0 : event.key === 'End' ? count - 1 : digit >= 0 && digit < count ? digit
-                  : steps[event.key] !== undefined ? rounded + steps[event.key]! : null
+                  : steps[event.key] !== undefined ? (!known ? 0 : rounded + steps[event.key]!) : null
                 if (next === null) return
                 event.preventDefault()
                 event.stopPropagation()

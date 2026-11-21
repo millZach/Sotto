@@ -148,8 +148,8 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * Favorites while any exist. A favorite whose provider or model has gone stays listed, unavailable, and can be unstarred.
  * Typing there searches every provider's models.
  */
-/** Model rows inside the picker's listbox, skipping buttons inside an expanded inline model card. */
-const LISTBOX_OPTIONS = '[role="option"]:not(:disabled), .model-picker__legacy'
+/** Interactive rows inside the picker's list (models, Legacy row, and OpenCode/Cursor source rows), skipping controls inside an expanded inline model card. */
+const LISTBOX_OPTIONS = '[role="option"]:not(:disabled), .model-picker__legacy, :scope > button:not(:disabled)'
 
 export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card, effort, open: controlledOpen, onOpenChange, initialFocus = 'search', returnFocusTo, dialogId: givenDialogId }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
@@ -199,12 +199,20 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
   const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
   const [localOpen, setLocalOpen] = useState(openOnMount && !disabled)
+  const requestedOpen = controlledOpen !== undefined ? controlledOpen : localOpen
   const canOpen = !disabled || (combined && !effort.disabled)
-  const open = (controlledOpen !== undefined ? controlledOpen : localOpen) && canOpen
+  const open = requestedOpen && canOpen
   const setOpen = (next: boolean): void => {
     if (controlledOpen === undefined) setLocalOpen(next)
     onOpenChange?.(next)
   }
+  // If the thread locks or its provider disconnects while open, clear the open state so it never reopens unasked later.
+  useEffect(() => {
+    if (requestedOpen && !canOpen) {
+      if (controlledOpen === undefined) setLocalOpen(false)
+      onOpenChange?.(false)
+    }
+  }, [requestedOpen, canOpen, controlledOpen, onOpenChange])
   const [addingServer, setAddingServer] = useState(false)
   const [cardRested, setCardRested] = useState(false)
   const [cardFocused, setCardFocused] = useState(false)
@@ -394,7 +402,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
     if (target?.to === 'search') search.current?.focus()
     else if (target?.to === 'effort') {
       inlineCard.current?.scrollIntoView?.({ block: 'nearest' })
-      ;(effortSlider.current ?? search.current)?.focus()
+      ;(effortSlider.current ?? inlineCard.current?.querySelector<HTMLButtonElement>('[role="option"]') ?? search.current)?.focus()
     } else if (target) {
       const items = [...(list.current?.querySelectorAll<HTMLButtonElement>(combined ? LISTBOX_OPTIONS : 'button:not(:disabled)') ?? [])]
       if (target.to === 'model') (items.find(item => item.getAttribute('aria-selected') === 'true') ?? items[0] ?? back.current)?.focus()
@@ -467,8 +475,9 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
       onClick={() => {
         if (unready) return
         if (isActive && combined) return
-        onChange(model.id)
         const stay = combined && (effort.stayOpenOnModel ? effort.stayOpenOnModel(model.id) : true)
+        if (stay) pendingFocus.current = { to: 'effort' }
+        onChange(model.id)
         if (!stay) setOpen(false)
       }}>
       <span>{favorite || showInline ? <ProviderMark provider={model.providerId} name={model.provider} size={showInline ? 13 : 12} /> : null}{model.name}{(favorite || showInline) && model.source ? <small>{model.source}</small> : null}{!model.ready && <small>{t({ message: 'Unavailable', comment: 'Beside a model that cannot be chosen now.' })}</small>}</span>
