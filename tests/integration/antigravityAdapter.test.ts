@@ -214,6 +214,19 @@ describe('Antigravity ACP adapter', () => {
     expect((await thread(id)).activities?.find(row => row.kind === 'compaction')?.context).toEqual({ before: 11964, after: 9816 })
   })
 
+  it('does not call a /compact agy answered in words a compaction', async () => {
+    const id = await open()
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Say ok' })
+    await f!.driver.completeTurn(id, 'ok')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    await f!.host.execute({ type: 'compact-thread', threadId: id, commandId: 'compact-1' })
+    await expect.poll(async () => (await thread(id)).compaction?.status).toBe('running')
+    await f!.driver.completeTurn(id, 'What would you like me to compact?')
+    await expect.poll(async () => (await thread(id)).compaction?.status).toBe('failed')
+    expect((await thread(id)).compaction?.error).toBe('Antigravity answered /compact in words rather than compacting this thread. Nothing was lost. Update Antigravity, then compact again.')
+    expect((await thread(id)).activities?.some(row => row.kind === 'compaction')).toBe(false)
+  })
+
   it('says a compaction failed when agy stops before it finishes, and keeps the thread', async () => {
     const id = await open()
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Say ok' })
