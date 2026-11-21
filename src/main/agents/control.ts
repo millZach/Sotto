@@ -1,6 +1,6 @@
 import type { ThreadMediaStore } from './threadMedia'
 import { dormantProviderConfigurationSchema, parkedChoices, type DormantProviderConfiguration } from './parkedChoices'
-import { changeOwlet, makeOwlet, owletsRoot, strayOwletFolder, withoutOwletThreads } from './owlets'
+import { changeOwlet, makeOwlet, owletsRoot, strayOwletFolder } from './owlets'
 import { atomicDraftDigest } from './draftDigest'
 import { OWLET_REFUSALS, OWLETS_HELD, type AgentOwlet } from '../../shared/owlets'
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
@@ -1449,8 +1449,6 @@ export class AgentControl {
       for (const thread of snapshot.threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') { this.dormantThreadIds.add(thread.id); this.dormantWatcherIds.add(thread.id) }
       snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.threadAvailable(thread.id)) }
     }
-    // Where Owlets are off, an owlet's thread is kept whole and shown nowhere (ADR-0210).
-    if (this.dependencies.owletsEnabled !== true) snapshot = withoutOwletThreads(snapshot, this.dormantOwletIds)
     if (this.held.size) {
       for (const thread of snapshot.threads) {
         if (!thread.providerId || !this.held.has(thread.providerId)) continue
@@ -1989,8 +1987,8 @@ export class AgentControl {
     }
     // A list that loses nothing is kept as it is, so a broadcast shares the part of the last one that has not changed.
     const kept = <T>(list: readonly T[], keep: (item: T) => boolean): T[] => (list.every(keep) ? list : list.filter(keep)) as T[]
-    const owlets = this.owletsFolder ??= owletsRoot(this.dependencies.directory)
-    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder && !strayOwletFolder(owlets, resolved(project.path), project.id, state.host.threads))
+    const owlets = this.owletsFolder ??= owletsRoot(this.dependencies.directory), held = this.dependencies.host.owletProjectIds?.()
+    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder && !strayOwletFolder(owlets, resolved(project.path), project.id, held))
     if (!this.threadAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false

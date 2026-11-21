@@ -960,7 +960,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, owlets: options.owletsEnabled === true, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+  const hostService = new LocalHostService({ control: agentControl, owlets: options.owletsEnabled === true, owletThreadIds: () => agentHost.owletThreadIds(), events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
     ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {
       nextPromptListeners.add(listener)

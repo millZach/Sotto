@@ -281,6 +281,7 @@ export interface HostService {
   readonly supportsThreadSnooze?: boolean
   /** The host makes and changes owlets (ADR-0210): its Owl answer is on. */
   readonly supportsOwlets?: boolean
+  owletThreadIds?(): ReadonlySet<string>
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
   /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
@@ -498,6 +499,8 @@ export interface LocalHostControl {
  * carries between them. Every command arrives with the identity of the client that sent it, so the
  * boundary is the same one a socket would cross.
  */
+const NO_OWLETS: ReadonlySet<string> = new Set()
+
 export class LocalHostService implements HostService {
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } { return this.control.watcherPhoneExclusions?.() ?? { threadIds: [], projectIds: [] } }
   get watcherPhone(): WatcherPhoneService | undefined { return this.options.watcherPhone }
@@ -530,7 +533,7 @@ export class LocalHostService implements HostService {
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
   /** `facts` reads this machine's report, the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; owlets?: boolean; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
+  constructor(private readonly options: { control: LocalHostControl; owlets?: boolean; owletThreadIds?: () => ReadonlySet<string>; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
@@ -704,6 +707,8 @@ export class LocalHostService implements HostService {
   get supportsThreadSnooze(): boolean { return this.control.supportsThreadSnooze === true }
   /** Owlets' Owl answer on this host (ADR-0210), so it lists `owlets`. */
   get supportsOwlets(): boolean { return this.options.owlets === true }
+  /** The threads that are owlets (ADR-0210), which a phone is not shown, kept by the workspace rather than read per update. */
+  owletThreadIds(): ReadonlySet<string> { return this.options.owletThreadIds?.() ?? NO_OWLETS }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
   get supportsBringBack(): boolean { return this.options.bringBack === true }

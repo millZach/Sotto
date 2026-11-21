@@ -138,11 +138,12 @@ export async function changeOwlet(enabled: boolean, snapshot: Snapshot, host: Pi
 
 /**
  * Whether a project is an owlet's folder that no owlet holds, as one whose owlet's thread could not be made is (ADR-0210):
- * kept out of view like Watcher's own folder. `root` is `owletsRoot`, resolved once; `path` is resolved.
+ * kept out of view like Watcher's own folder. `root` is `owletsRoot`, resolved once; `path` is resolved; `owletProjects` the
+ * projects owlets hold, which the workspace keeps, so no update reads every thread for it.
  */
-export function strayOwletFolder(root: string, path: string, projectId: string, threads: readonly { readonly projectId: string; readonly owlet?: AgentOwlet | undefined }[]): boolean {
+export function strayOwletFolder(root: string, path: string, projectId: string, owletProjects: ReadonlySet<string> | undefined): boolean {
   const fold = (value: string): string => process.platform === 'win32' ? value.toLowerCase() : value
-  return fold(path).startsWith(fold(root) + sep) && !threads.some(thread => thread.owlet !== undefined && thread.projectId === projectId)
+  return fold(path).startsWith(fold(root) + sep) && owletProjects?.has(projectId) !== true
 }
 
 /**
@@ -151,18 +152,4 @@ export function strayOwletFolder(root: string, path: string, projectId: string, 
  */
 export function assertOwletModel(thread: { readonly owlet?: AgentOwlet | undefined }, model: AgentModel | undefined): void {
   if (thread.owlet && !owletProviderAllowed(model?.providerId)) refuse('provider')
-}
-
-/**
- * Where Owlets are off (ADR-0210): every owlet's thread left out and counted in `dormant`, so commands naming it are refused.
- * A snapshot with no owlet comes back as it was, so the update path copies nothing on its account.
- */
-export function withoutOwletThreads(snapshot: AgentHostSnapshot, dormant: Set<string>): AgentHostSnapshot {
-  let some = false
-  for (const thread of snapshot.threads) if (thread.owlet) { some = true; dormant.add(thread.id) }
-  if (!some) return snapshot
-  // An owlet's folder goes with it; a project another thread works in stays.
-  const threads = snapshot.threads.filter(thread => !thread.owlet), kept = new Set(threads.map(thread => thread.projectId))
-  const gone = new Set(snapshot.threads.filter(thread => thread.owlet && !kept.has(thread.projectId)).map(thread => thread.projectId))
-  return { ...snapshot, threads, projects: snapshot.projects.filter(project => !gone.has(project.id)) }
 }

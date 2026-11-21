@@ -626,7 +626,9 @@ export class DesktopHostRouter {
   }
   /** A host's owlets left out where Owlets are off here, as stable keeps a held feature out of view (ADR-0072, ADR-0210). */
   private withoutHeldOwlets(state: AgentState, hostId: string): AgentState {
-    if (this.options.owletsEnabled === true || !state.host.threads.some(thread => thread.owlet !== undefined)) return state
+    // Only a host that lists `owlets` can hold one, so no other host's update is read for them.
+    if (this.options.owletsEnabled === true || this.hosts.get(hostId)?.connection.service.supportsOwlets !== true) return state
+    if (!state.host.threads.some(thread => thread.owlet !== undefined)) return state
     for (const thread of state.host.threads) if (thread.owlet !== undefined) this.heldOwlets.add(`${hostId} ${thread.id}`)
     return withoutOwlets(state)
   }

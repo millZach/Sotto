@@ -595,7 +595,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     // A run with Owlets off copies the list only while an owlet is in it.
-    if (this.watcherEnabled && !this.held.size && (this.owletsEnabled || !snapshot.threads.some(thread => thread.owlet !== undefined))) return snapshot
+    if (this.watcherEnabled && !this.held.size && (this.owletsEnabled || this.owlets().size === 0)) return snapshot
     return { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)),
       ...(this.held.size ? catalogWithoutHeld(snapshot, this.held) : {}) }
   }
@@ -4606,7 +4606,28 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return [...new Set([...(this.watcherEnabled ? [] : this.retainedWatcherIds), ...this.state.snapshot.threads.filter(thread => !this.visible(thread)).map(thread => thread.id)])]
   }
   /** The owlets this run keeps out of view because Owlets are off on it (ADR-0210). */
-  dormantOwletIds(): readonly string[] { return this.owletsEnabled ? [] : this.state.snapshot.threads.filter(thread => thread.owlet !== undefined).map(thread => thread.id) }
+  dormantOwletIds(): readonly string[] { return this.owletsEnabled ? [] : [...this.owlets().keys()] }
+  /**
+   * Every owlet's thread and its project (ADR-0210), read from the store once it is loaded and kept as owlets are made, so an
+   * update never reads every thread to find them. A deleted owlet may stay listed; nothing reads it as more than a name.
+   */
+  private owletThreads: Map<string, string> | undefined
+  private owletProjects: Set<string> | undefined
+  private owlets(): ReadonlyMap<string, string> {
+    if (this.owletThreads) return this.owletThreads
+    const found = new Map(this.state.snapshot.threads.filter(thread => thread.owlet !== undefined).map(thread => [thread.id, thread.projectId] as const))
+    if (this.ready) this.owletThreads = found
+    return found
+  }
+  private owletIdSet: Set<string> | undefined
+  owletThreadIds(): ReadonlySet<string> {
+    const owlets = this.owlets()
+    return owlets === this.owletThreads ? this.owletIdSet ??= new Set(owlets.keys()) : new Set(owlets.keys())
+  }
+  owletProjectIds(): ReadonlySet<string> {
+    const owlets = this.owlets()
+    return owlets === this.owletThreads ? this.owletProjects ??= new Set(owlets.values()) : new Set(owlets.values())
+  }
   dormantThreadProviders(): ReadonlyMap<string, ProviderId> {
     const providers = new Map<string, ProviderId>()
     for (const thread of this.state.snapshot.threads) {
@@ -6051,6 +6072,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         worktree: command.councilJudge ? { mode: 'shared', path: command.workingDirectory!, status: 'ready' } : await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (command.dynamic && whyNotDynamic(thread) === undefined) thread.dynamic = true
+      if (thread.owlet && this.owletThreads) { this.owletThreads.set(thread.id, thread.projectId); this.owletProjects = undefined; this.owletIdSet = undefined }
       // A thread that starts Dynamic is not routed as well: Dynamic chooses its own models (ADR-0207).
       if (command.routed && whyNotRouted(thread) === undefined) thread.routed = true
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path

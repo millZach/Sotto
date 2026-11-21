@@ -520,6 +520,10 @@ export interface AgentHost extends ProviderHost {
   setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
   /** The owlets kept out of view where Owlets are off (ADR-0210), so a command naming one is told why. */
   dormantOwletIds?(): readonly string[]
+  /** The projects owlets hold (ADR-0210), kept as owlets are made, so no update reads every thread to find them. */
+  owletProjectIds?(): ReadonlySet<string>
+  /** The threads that are owlets, by thread ID, kept as owlets are made. */
+  owletThreadIds?(): ReadonlySet<string>
   /** An owlet's new name and role (ADR-0210): Sotto's own record on the thread. The provider is not told. */
   setThreadOwlet?(threadId: string, owlet: AgentOwlet): Promise<AgentHostSnapshot>
   /** Model routing on or off for a thread (ADR-0207): Sotto's own mark, which its next send reads. */

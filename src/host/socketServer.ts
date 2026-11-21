@@ -674,22 +674,18 @@ export async function startSocketServer(options: SocketServerOptions) {
     return provider !== undefined && peer.unknownProviders.has(provider)
   }
   /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
-  // A phone is shown no owlet (ADR-0210) until the iPhone has an Owlets page of its own: each shell's owlets, found once.
-  const owletIds = new WeakMap<AgentState, ReadonlySet<string>>()
-  const owletsIn = (state: AgentState): ReadonlySet<string> => {
-    let ids = owletIds.get(state)
-    if (!ids) owletIds.set(state, ids = new Set(state.host.threads.filter(thread => thread.owlet !== undefined).map(thread => thread.id)))
-    return ids
-  }
-  /** The owlets in the newest shell built, which a phone's reads of one thread are kept from. */
-  let knownOwlets: ReadonlySet<string> = new Set()
+  // A phone is shown no owlet (ADR-0210) until the iPhone has an Owlets page of its own. The host keeps which threads are
+  // owlets, so no update reads every thread for them, and a host with none leaves the shell as it is.
+  const NO_OWLETS: ReadonlySet<string> = new Set()
+  const owletIds = (): ReadonlySet<string> => service.owletThreadIds?.() ?? NO_OWLETS
   const phoneShellsWithoutOwlets = new WeakMap<AgentState, AgentState>()
   const withoutOwletsForPhone = (state: AgentState): AgentState => {
+    if (owletIds().size === 0) return state
     let shown = phoneShellsWithoutOwlets.get(state)
     if (!shown) phoneShellsWithoutOwlets.set(state, shown = withoutOwlets(state))
     return shown
   }
-  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? '') || knownOwlets.has(threadId))
+  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? '') || owletIds().has(threadId))
   const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
   /**
    * `hiddenThread` for many threads at once, as a search names them: Watcher's phone exclusions read once, and each
@@ -801,7 +797,6 @@ export async function startSocketServer(options: SocketServerOptions) {
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
   /** `whole` is set only by a `settled-threads` read, which pages through the threads a phone's list leaves out. */
   const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
-    knownOwlets = owletsIn(read)
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
     const visible = isPhonePeer(peer) ? withoutOwletsForPhone(visibleWatcherState(forPhone(original), false)) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
