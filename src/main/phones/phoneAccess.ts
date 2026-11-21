@@ -471,9 +471,9 @@ export class PhoneAccess {
     // A setting of Sotto's that already carries this listener is left as it is. Every Serve change writes Tailscale's whole
     // setting, which it refuses while it holds an entry this account may not change, so an unneeded write could fail on
     // someone else's entry.
-    const carried = owner === 'ours' && servePortOwner(config, servePort, [port]) === 'ours'
+    const alreadyCarriesListener = owner === 'ours' && servePortOwner(config, servePort, [port]) === 'ours'
     let result: ServeResult = { ok: true }
-    if (!carried) {
+    if (!alreadyCarriesListener) {
       try { result = await this.options.tailscale.serve(servePort, port) } catch { result = { ok: false, reason: 'failed' } }
     }
     if (!result.ok) {
