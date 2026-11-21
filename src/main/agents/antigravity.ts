@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities } from '../../shared/agentActivity'
+import { compactionPending, idleMark } from '../../shared/compaction'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
@@ -18,12 +19,13 @@ import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, an
   antigravitySessionMode, antigravitySessionSettingsSchema, antigravityThinking, leastEffort, ANTIGRAVITY_RUNTIME_MODES, type AntigravityModelFacts, type AntigravityModelThinking,
   type AntigravityRuntimeMode, type AntigravitySessionSettings } from './antigravityModels'
 import { antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, type AntigravityPending } from './antigravityRequests'
-import { countAntigravityAnswer, countAntigravityFullness } from './antigravityThreadUsage'
+import { countAntigravityAnswer, countAntigravityFullness, forgetAntigravityFullness } from './antigravityThreadUsage'
 import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, meetsAntigravityFloor, readAntigravityVersion,
   writeAntigravitySettings, ANTIGRAVITY_ACP_VERSION, ANTIGRAVITY_CLI_FLOOR, GOOGLE_ACCOUNT, type AntigravityFrame, type AntigravitySignIn } from './antigravityRpc'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { bracketCompaction, markCompactionActivity } from './compactionActivity'
 import type { ActivitySubscriptionOptions, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ProviderHost, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { watcherMayWrite } from './host'
@@ -130,6 +132,8 @@ const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), desc
 
 /** Google's terms allow other makers' models only in its own apps (ADR-0212), so a thread on one is not sent. */
 const ANTIGRAVITY_GEMINI_ONLY = 'Antigravity threads in Sotto run Gemini models only, under Google’s terms. Nothing was sent, and your thread and draft are kept. Choose a Gemini model, then send.'
+const COMPACTING = 'Antigravity is compacting this thread. Wait for it to finish, then send.'
+const COMPACTION_LOST = 'Antigravity stopped before it finished compacting this thread. Nothing was lost. Compact it again if it still needs it.'
 const PROCESS_LOST = 'Antigravity stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const WATCHER_WITHOUT_TOOLS = 'This Antigravity client cannot give Watcher its Sotto tools or instructions, so Watcher did not start. Nothing was sent. Update Antigravity, then connect it again, or choose another model for Watcher.'
 
@@ -221,6 +225,9 @@ export class AntigravityAcpHost implements ProviderHost {
   private readonly turns = new Map<string, LiveTurn>()
   private readonly pending = new Map<string, Pending>()
   private readonly dispatching = new Set<string>()
+  /** Each thread's `/compact` in flight, by its command, and the threads whose next context size closes a compaction's record. */
+  private readonly compactions = new Map<string, string>()
+  private readonly compactedSince = new Set<string>()
   private readonly observed = new Set<string>()
   private readonly outdated = new Set<string>()
   private readonly processes = new Set<AntigravityRpc>()
@@ -254,7 +261,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private writing = Promise.resolve()
   private state: AgentHostSnapshot = { connected: false, name: 'Antigravity', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true,
-      reconcile: true, configureThread: true, configureThreadModel: true, skills: true, steer: true, compact: false } }
+      reconcile: true, configureThread: true, configureThreadModel: true, skills: true, steer: true, compact: true } }
   readonly folders: AntigravityFolders
   private readonly usage: AntigravityUsageHooks | undefined
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
@@ -664,7 +671,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private busy(id: string): boolean { return this.working(id) || this.asking(id) }
   private working(id: string): boolean {
     const turn = this.turns.get(id)
-    return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || (turn !== undefined && !turn.ended)
+    return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || this.compactions.has(id) || (turn !== undefined && !turn.ended)
   }
   private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
   private open(id: string): Promise<Connection> {
@@ -823,7 +830,14 @@ export class AntigravityAcpHost implements ProviderHost {
       else this.readSettings(connection, update)
       return
     }
-    if (kind === 'usage_update') { this.taken(id); if (countAntigravityFullness(this.thread(id), update)) this.emit(true); return }
+    if (kind === 'usage_update') {
+      this.taken(id)
+      if (this.compactions.has(id) || !countAntigravityFullness(this.thread(id), update)) return
+      if (this.compactedSince.delete(id)) { const thread = this.thread(id); thread.activities = bracketCompaction(thread.activities, { after: thread.usage!.contextUsed! }); this.changed(id) }
+      this.emit(true); return
+    }
+    // A compaction is not a turn: anything `agy` says while it folds the conversation is not shown as the last turn's.
+    if (this.compactions.has(id) && kind !== 'user_message_chunk') return
     if (!['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(kind)) { this.taken(id); return }
     const content = record(update.content)
     const words = content?.type === 'text' && typeof content.text === 'string' ? content.text : undefined
@@ -897,9 +911,8 @@ export class AntigravityAcpHost implements ProviderHost {
       this.assertGeneration(generation)
       if (profile) assertWatcherPermission(command)
     }
-    if (command.type === 'compact-thread') throw new Error('Antigravity cannot compact a thread.')
     if (!this.state.connected) throw new Error('Connect Antigravity before managing threads.')
-    if (command.type !== 'send' && command.type !== 'create-thread') return this.run(command, generation, profile, watcherGuard)
+    if (command.type !== 'send' && command.type !== 'create-thread' && command.type !== 'compact-thread') return this.run(command, generation, profile, watcherGuard)
     if (this.dispatching.has(command.threadId)) throw new Error('Antigravity is already receiving work for this thread. Wait for its delivery result.')
     this.dispatching.add(command.threadId)
     try { return await this.run(command, generation, profile, watcherGuard) } finally { this.dispatching.delete(command.threadId); this.stopOutdated() }
@@ -925,6 +938,7 @@ export class AntigravityAcpHost implements ProviderHost {
       this.reaper.touch(id)
       if (command.type === 'send') return await this.send(command, alias, connection, generation, profile, watcherGuard)
       if (command.type === 'answer') return await this.answer(command, alias, connection, profile)
+      if (command.type === 'compact-thread') return await this.compact(command, alias, connection, generation, watcherGuard)
       throw new Error('Antigravity does not take that action.')
     } catch (error) {
       if (error instanceof AntigravityUncertain) return { accepted: false, uncertain: true }
@@ -1064,6 +1078,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
     const running = this.turns.get(id)
     if (running && !running.ended) throw new Error('Antigravity is still working on this thread. Steer it, or queue this follow-up.')
+    if (this.compactions.has(id)) throw new Error(COMPACTING)
     if (this.thread(id).requests.length) throw new Error('Answer Antigravity’s pending request before sending another message.')
     verifyFileMentions(command.text, command.files)
     // A skill is `agy`'s own `/name`, read at the start of the prompt; one chosen and not typed goes first.
@@ -1134,6 +1149,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private async steer(command: Extract<AgentHostCommand, { type: 'steer' }>, alias: Alias, generation: number, profile: WatcherLaunchProfile | undefined, watcherGuard?: () => void): Promise<AgentHostResult> {
     void profile
     const id = command.threadId, turn = this.turns.get(id), connection = this.connections.get(id)
+    if (this.compactions.has(id)) throw new Error(COMPACTING)
     if (!turn || turn.ended || !connection) throw new Error('Antigravity is not working on this thread. Send a follow-up instead.')
     const index = this.indexOf(id, alias), previous = index.sent(command.commandId, command.messageId)
     if (previous) return this.log.has(id, previous.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
@@ -1152,6 +1168,51 @@ export class AntigravityAcpHost implements ProviderHost {
     this.emit()
     this.prompt(id, alias, connection, turn, generation, prompt.blocks)
     return { accepted: true }
+  }
+  /**
+   * `agy` 1.5 compacts its conversation on its own `/compact`, which T3 sends as a prompt too. It is a quiet turn: no
+   * reply, an `end_turn`, and the next turn's context is the smaller one (checked on 1.5.13, November 21, 2026). The
+   * compaction is held in memory, like the token count, so a restart forgets its record but not what `agy` folded.
+   */
+  private async compact(command: Extract<AgentHostCommand, { type: 'compact-thread' }>, alias: Alias, connection: Connection, generation: number, watcherGuard?: () => void): Promise<AgentHostResult> {
+    const id = command.threadId, thread = this.thread(id), running = this.turns.get(id)
+    if (thread.compaction?.commandId === command.commandId) return { accepted: true }
+    if ((running && !running.ended) || this.compactions.has(id) || compactionPending(thread.compaction)) throw new Error('Antigravity is still working on this thread. Wait for it to finish before compacting.')
+    if (thread.requests.length) throw new Error('Answer Antigravity’s pending request before compacting.')
+    await this.applySettings(alias, connection)
+    if (generation !== this.generation || this.connections.get(id) !== connection) throw new AntigravityUncertain('Antigravity’s connection changed.')
+    watcherGuard?.()
+    const before = thread.usage?.contextUsed
+    this.compactions.set(id, command.commandId); this.compactedSince.delete(id)
+    thread.compaction = { commandId: command.commandId, status: 'running', ...(command.idle ? { idle: true } : {}) }
+    thread.status = 'running'; this.changed(id); this.emit()
+    void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: [{ type: 'text', text: '/compact' }] }, value => {
+      if (generation !== this.generation || this.compactions.get(id) !== command.commandId) return
+      // Its tokens were spent, so they count toward the thread's total, but the last turn's stay the latest.
+      countAntigravityAnswer(this.thread(id), value, false)
+      const stop = promptAnswerSchema.parse(value).stopReason
+      if (stop === 'end_turn') this.settleCompaction(id, command.commandId, before)
+      else this.settleCompaction(id, command.commandId, before, stop === 'cancelled' ? 'The compaction was stopped. Nothing was lost.' : 'Antigravity did not compact this thread. Nothing was lost. Try again later.')
+    }, true).catch((error: unknown) => {
+      this.settleCompaction(id, command.commandId, before, !connection.rpc.alive ? COMPACTION_LOST
+        : error instanceof AntigravityRejected ? 'Antigravity refused to compact this thread. Nothing was lost.' : COMPACTION_LOST)
+    })
+    return { accepted: true }
+  }
+  /** The end of a `/compact`: its record, and on success a boundary in the transcript and no stale context size. */
+  private settleCompaction(id: string, commandId: string, before: number | undefined, error?: string): void {
+    if (this.compactions.get(id) !== commandId) return
+    this.compactions.delete(id)
+    const thread = this.threads.get(id); if (!thread) return
+    thread.compaction = { commandId, status: error ? 'failed' : 'completed', ...idleMark(thread.compaction), ...(error ? { error } : {}) }
+    thread.status = error ? 'error' : 'idle'
+    if (!error) {
+      const anchor = this.log.lastMessageId(id)
+      thread.activities = markCompactionActivity(thread.activities, { provider: 'antigravity', key: commandId, turnId: this.log.lastUserMessageId(id) ?? 'antigravity-history',
+        ...(anchor !== undefined ? { afterMessageId: anchor } : {}), ...(before !== undefined ? { before } : {}) })
+      forgetAntigravityFullness(thread); this.compactedSince.add(id)
+    }
+    this.changed(id); this.reaper.touch(id); this.emit()
   }
   private async answer(command: Extract<AgentHostCommand, { type: 'answer' }>, alias: Alias, connection: Connection, profile: WatcherLaunchProfile | undefined): Promise<AgentHostResult> {
     const pending = this.pending.get(command.requestId)
@@ -1269,6 +1330,7 @@ export class AntigravityAcpHost implements ProviderHost {
     }
     this.pending.clear()
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
+    for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST)
     this.turns.clear()
     for (const thread of this.threads.values()) thread.requests = []
     this.threadChanges.markAll()

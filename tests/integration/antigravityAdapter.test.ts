@@ -175,6 +175,53 @@ describe('Antigravity ACP adapter', () => {
     expect((await thread(id)).usage).toMatchObject({ contextUsed: 9203, latest: { input: 9180, output: 23, cached: 7018 }, total: { input: 18255, output: 49, cached: 7018 } })
   })
 
+  it('compacts a thread with agy’s own /compact, a quiet turn, and leaves its context size to the next turn', async () => {
+    const id = await open()
+    const prompts = async () => (await f!.requests()).filter(record => record.method === 'session/prompt').map(record => (record.params as { prompt: { text?: string }[] }).prompt[0]?.text)
+    // The numbers agy 1.5.13 sent on Gemini 3.8 Flash: a turn, /compact, then the next turn on the folded conversation.
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Write about bicycles' })
+    await f!.action(id, { type: 'complete', text: 'Bicycles', fullness: { used: 11964, size: 1048576 },
+      usage: { inputTokens: 9086, outputTokens: 2878, cachedReadTokens: 0, cachedWriteTokens: 0, thoughtTokens: 1876, totalTokens: 11964 } })
+    await expect.poll(async () => (await thread(id)).usage?.total?.output).toBe(2878)
+    const before = (await thread(id)).activities?.filter(row => row.kind !== 'turn').length
+    expect(await f!.host.execute({ type: 'compact-thread', threadId: id, commandId: 'compact-1' })).toEqual({ accepted: true })
+    await expect.poll(prompts).toEqual(['Write about bicycles', '/compact'])
+    expect((await thread(id)).compaction).toEqual({ commandId: 'compact-1', status: 'running' })
+    // A message waits for the compaction rather than folding into it.
+    await expect(f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Too soon' })).rejects.toThrow('Antigravity is compacting this thread.')
+    await f!.action(id, { type: 'complete', fullness: { used: 14623, size: 1048576 },
+      usage: { inputTokens: 2089, outputTokens: 1321, cachedReadTokens: 11213, cachedWriteTokens: 0, thoughtTokens: 763, totalTokens: 14623 } })
+    await expect.poll(async () => (await thread(id)).compaction?.status).toBe('completed')
+    const compacted = await thread(id)
+    expect(compacted.status).toBe('idle')
+    // Its tokens count toward the total, the last turn's stay the latest, and the size from before the fold is dropped.
+    expect(compacted.usage).toMatchObject({ latest: { output: 2878 }, total: { output: 4199 } })
+    expect(compacted.usage?.contextUsed).toBeUndefined()
+    // No reply, and what agy said while it folded is not shown as a turn's work; the transcript shows the boundary.
+    expect(compacted.messages.map(message => message.text)).toEqual(['Write about bicycles', 'Bicycles'])
+    expect(compacted.activities?.filter(row => row.kind !== 'turn' && row.kind !== 'compaction').length).toBe(before)
+    expect(compacted.activities?.find(row => row.kind === 'compaction')).toMatchObject({ title: 'Context compacted', context: { before: 11964 } })
+    // The next turn says the smaller size, which closes the boundary's record.
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm3', text: 'Say ok' })
+    await f!.action(id, { type: 'complete', text: 'ok', fullness: { used: 9816, size: 1048576 },
+      usage: { inputTokens: 9774, outputTokens: 42, cachedReadTokens: 0, cachedWriteTokens: 0, thoughtTokens: 40, totalTokens: 9816 } })
+    await expect.poll(async () => (await thread(id)).usage?.contextUsed).toBe(9816)
+    expect((await thread(id)).activities?.find(row => row.kind === 'compaction')?.context).toEqual({ before: 11964, after: 9816 })
+  })
+
+  it('says a compaction failed when agy stops before it finishes, and keeps the thread', async () => {
+    const id = await open()
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Say ok' })
+    await f!.driver.completeTurn(id, 'ok')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    await f!.host.execute({ type: 'compact-thread', threadId: id, commandId: 'compact-1' })
+    await expect.poll(async () => (await thread(id)).compaction?.status).toBe('running')
+    await f!.host.execute({ type: 'interrupt', threadId: id, commandId: randomUUID() })
+    await expect.poll(async () => (await thread(id)).compaction).toEqual({ commandId: 'compact-1', status: 'failed', error: 'The compaction was stopped. Nothing was lost.' })
+    expect((await thread(id)).messages.map(message => message.text)).toEqual(['Say ok', 'ok'])
+    expect((await thread(id)).activities?.some(row => row.kind === 'compaction')).toBe(false)
+  })
+
   it('shows a command with agy’s own fields', async () => {
     const id = await open()
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'List files' })

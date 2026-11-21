@@ -49,6 +49,19 @@ export function countAntigravityAnswer(thread: AgentThread, answer: unknown, new
   return true
 }
 
+/**
+ * After `/compact`: `agy` 1.5.13 reports the context with the summary added, before it is folded, and the smaller size
+ * only with the next turn, so the figure from before would outlive the compaction. It is dropped, with a new time,
+ * until that turn says the new one.
+ */
+export function forgetAntigravityFullness(thread: AgentThread): void {
+  if (thread.usage?.contextUsed === undefined) return
+  const { contextUsed: _compacted, ...rest } = thread.usage
+  void _compacted
+  const now = new Date().toISOString()
+  thread.usage = { ...rest, contextUpdatedAt: now, updatedAt: now }
+}
+
 /** A `usage_update`: how full the thread's context is, on the model it runs. Whether anything changed. */
 export function countAntigravityFullness(thread: AgentThread, update: unknown): boolean {
   const parsed = fullnessSchema.safeParse(update)
