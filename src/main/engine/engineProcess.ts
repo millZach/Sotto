@@ -122,8 +122,9 @@ export function attachEngineProcessServer(
 
   connection.onClose(() => {
     // If the Electron parent exits or crashes, shut down cleanly with a 5 s hard-exit deadline.
+    // A shutdown already under way finishes its cleanup first; its hard-exit backstop is already armed.
     if (!shuttingDown) void finishShutdown(5_000).catch(() => undefined)
-    else onExit?.(5_000)
+    else void shutdownPromise?.catch(() => undefined).then(() => { onExit?.(5_000) })
   })
 
   connection.onPush((event, payload) => {
