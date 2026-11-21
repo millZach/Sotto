@@ -1,6 +1,6 @@
 # Owlets are named helpers, each one thread in a folder of its own
 
-Accepted by Zach on November 19 and 20, 2026, in the Owlets brainstorms (`docs/plans/2026-11-19-owlets-second-brainstorm.md`, which keeps every answer word for word). He asked for "our own version of grok bot or Hermes called owlets for Sotto", chose the sidebar look and its R2 rows from `docs/prototypes/owlets-sidebar/`, and on November 20 said to start the first slice. **Number provisional until merge** (docs/agents/domain.md).
+Accepted by Zach on November 19 and 20, 2026, in the Owlets brainstorms (`docs/plans/2026-11-19-owlets-second-brainstorm.md`, which keeps every answer word for word). He asked for "our own version of grok bot or Hermes called owlets for Sotto", chose the sidebar look and its R2 rows from `docs/prototypes/owlets-sidebar/`, and on November 20 said to start the first slice.
 
 An **owlet** is a long-lived helper the user names and gives a role, such as "Tawny, keeps my inbox". Underneath it is one ordinary project-bound thread: the same provider tools, cards and permission mode as any thread, in a folder of its own that Sotto makes. Every run is more turns in that one thread. Owlets are an Owl feature, `owlets` in `src/shared/owlFeatures.ts` (ADR-0072): stable shows and starts none of it and keeps its threads whole.
 
@@ -22,7 +22,7 @@ An **owlet** is a long-lived helper the user names and gives a role, such as "Ta
 ## The first slice's two parts
 
 1. **The desktop** (this decision's first pull request): the records, the commands, provider memory off, the Owlets page with R2 rows, New owlet and Edit owlet, Needs you and the unread mark.
-2. **The iPhone**: an Owlets tab beside Threads that lists the owlets and opens a thread as the Threads list does, answers their cards, and makes and changes owlets (Zach's pick "Also set up and edit"). The iPhone gets owlets from the thread records it already reads.
+2. **The iPhone**: an Owlets tab beside Threads that lists the owlets and opens a thread as the Threads list does, answers their cards, and makes and changes owlets (Zach's pick "Also set up and edit"). The iPhone gets owlets from the thread records it already reads. A host sends owlets only to an iPhone whose hello accepts `owlets`, so an older iPhone never shows them as ordinary threads. Zach's picks on November 21, 2026, from `docs/prototypes/owlets-iphone/`: the tab stands after Threads (Threads, Owlets, Watcher, Computers, Settings); **Edit owlet** is at the top of an owlet's thread's ••• menu, with its folder in the thread's place line; and on the iPhone Duo unfolded, the sidebar beside an owlet's thread lists the owlets.
 
 ## Left for later slices
 

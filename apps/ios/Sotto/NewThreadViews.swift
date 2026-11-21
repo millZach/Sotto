@@ -650,7 +650,7 @@ private struct Crumb: View {
 }
 
 /// A field on step 3. The whole box opens its choices, shows the current one, and carries a chevron.
-private struct FieldBox<Choices: View>: View {
+struct FieldBox<Choices: View>: View {
     let label: String
     let value: String
     let identifier: String
@@ -670,7 +670,7 @@ private struct FieldBox<Choices: View>: View {
     }
 }
 
-private struct FieldBoxLabel: View {
+struct FieldBoxLabel: View {
     let label: String
     let value: String
     var body: some View {
@@ -693,7 +693,7 @@ private struct FieldBoxLabel: View {
 }
 
 /// A short line under a field. A warm one carries a warning light, for a default that didn't apply.
-private struct FieldNote: View {
+struct FieldNote: View {
     let text: String
     var warm = false
     var body: some View {
