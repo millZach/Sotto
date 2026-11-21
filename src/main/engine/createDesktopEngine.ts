@@ -341,7 +341,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ...e2eConfiguration ? { fetch: e2eTeamFetch(userDataPath) } : {},
   }) : undefined
 
-  const fixtureScript = (name: string): string => join(__dirname, '../../tests/fixtures', name)
+  const fixtureScript = (name: string): string => join(process.cwd(), 'tests', 'fixtures', name)
   const localRuntime: DesktopLocalRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
     directory: userDataPath,
