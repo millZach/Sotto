@@ -35,17 +35,20 @@ class RemoteCredentialsCache {
   private availableFlag: boolean
   private plaintext: Record<string, string>
   private sealedValues: Record<string, string>
+  private unreadableErrors: Record<string, string>
 
   constructor(initial: CredentialSnapshot, private readonly connection: EngineRpcConnection) {
     this.availableFlag = initial.available
     this.plaintext = { ...initial.plaintext }
     this.sealedValues = { ...initial.sealed }
+    this.unreadableErrors = { ...initial.unreadable }
   }
 
   applySnapshot(snapshot: CredentialSnapshot): void {
     this.availableFlag = snapshot.available
     this.plaintext = { ...snapshot.plaintext }
     this.sealedValues = { ...snapshot.sealed }
+    this.unreadableErrors = { ...snapshot.unreadable }
   }
 
   available(): boolean { return this.availableFlag }
@@ -53,6 +56,7 @@ class RemoteCredentialsCache {
   get(slot: string): string {
     if (!this.sealedValues[slot]) return ''
     if (!this.availableFlag) throw new Error('Unlock your operating system credential store to continue.')
+    if (Object.hasOwn(this.unreadableErrors, slot)) throw new Error(this.unreadableErrors[slot]!)
     return this.plaintext[slot] ?? ''
   }
   sealed(slot: string): string | undefined { return this.sealedValues[slot] || undefined }
@@ -72,12 +76,17 @@ class RemoteCredentialsCache {
  * Runs the Electron-free desktop engine over `connection` (ADR-0210).
  * Exported so integration tests can drive the exact same protocol against a real child process or in-process socket.
  */
-export function attachEngineProcessServer(connection: EngineRpcConnection, onExit?: () => void): void {
+export function attachEngineProcessServer(
+  connection: EngineRpcConnection,
+  onExit?: (deadlineMs?: number) => void,
+  onShutdownStart?: (deadlineMs: number) => void,
+): void {
   let engine: DesktopEngine | undefined
   let credentialsCache: RemoteCredentialsCache | undefined
   let engineLanguage: MainInterfaceLanguage | undefined
   let activeProfiler: ProfilerTarget | null = null
   let shuttingDown = false
+  let shutdownPromise: Promise<void> | undefined
 
   const loopMonitor = new MainLoopMonitor({
     clock: {
@@ -89,24 +98,32 @@ export function attachEngineProcessServer(connection: EngineRpcConnection, onExi
   })
   loopMonitor.start()
 
-  const finishShutdown = async (): Promise<void> => {
-    if (shuttingDown) return
+  const finishShutdown = (deadlineMs = 5_000, propagateError = false): Promise<void> => {
+    if (shutdownPromise) return shutdownPromise
     shuttingDown = true
-    loopMonitor.stop()
-    if (activeProfiler) {
-      const profiler = activeProfiler
-      activeProfiler = null
-      await profiler.cancel().catch(() => undefined)
-    }
-    if (engine) {
-      await engine.close().catch(() => undefined)
-    }
-    onExit?.()
+    // Arm the hard-exit backstop before awaiting close() so a hung shutdown can never orphan the engine.
+    onShutdownStart?.(deadlineMs)
+    shutdownPromise = (async () => {
+      loopMonitor.stop()
+      if (activeProfiler) {
+        const profiler = activeProfiler
+        activeProfiler = null
+        await profiler.cancel().catch(() => undefined)
+      }
+      let closeError: unknown
+      if (engine) {
+        try { await engine.close() } catch (error) { closeError = error }
+      }
+      if (!propagateError) onExit?.(deadlineMs)
+      if (propagateError && closeError !== undefined) throw closeError
+    })()
+    return shutdownPromise
   }
 
   connection.onClose(() => {
-    // If the Electron parent exits or crashes, shut down cleanly so no orphan engine process remains.
-    void finishShutdown()
+    // If the Electron parent exits or crashes, shut down cleanly with a 5 s hard-exit deadline.
+    if (!shuttingDown) void finishShutdown(5_000).catch(() => undefined)
+    else onExit?.(5_000)
   })
 
   connection.onPush((event, payload) => {
@@ -285,7 +302,8 @@ export function attachEngineProcessServer(connection: EngineRpcConnection, onExi
         return true
       }
       case 'engine:close':
-        await finishShutdown()
+        await finishShutdown(18_000, true)
+        queueMicrotask(() => { onExit?.(18_000) })
         return true
       default:
         throw new Error(`ENGINE_METHOD_UNKNOWN: ${method}`)
@@ -296,18 +314,37 @@ export function attachEngineProcessServer(connection: EngineRpcConnection, onExi
 async function main(): Promise<void> {
   const endpoint = process.env['SOTTO_ENGINE_ENDPOINT']
   const token = process.env['SOTTO_ENGINE_TOKEN']
-  // Clear auth secrets from process.env immediately so spawned provider CLIs never inherit them.
+  // Clear auth secrets and Electron-run-as-Node flag before spawning any provider CLIs.
   delete process.env['SOTTO_ENGINE_ENDPOINT']
   delete process.env['SOTTO_ENGINE_TOKEN']
+  delete process.env['ELECTRON_RUN_AS_NODE']
   if (!endpoint || !token) return
 
   const connection = await connectEngineClient(endpoint, token)
-  attachEngineProcessServer(connection, () => {
-    const hardExit = setTimeout(() => process.exit(0), 5_000)
-    hardExit.unref()
-    connection.close()
-    process.exit(0)
+  let hardExitArmed = false
+  const armHardExit = (deadlineMs: number): void => {
+    if (hardExitArmed) return
+    hardExitArmed = true
+    const timer = setTimeout(() => process.exit(0), deadlineMs)
+    timer.unref()
+  }
+  process.on('unhandledRejection', () => {
+    connection.sendPush('shell:log', 'engine-unhandled-rejection')
   })
+  attachEngineProcessServer(
+    connection,
+    () => {
+      connection.close()
+      process.exit(0)
+    },
+    armHardExit,
+  )
+  const terminate = (): void => {
+    armHardExit(5_000)
+    connection.close()
+  }
+  process.once('SIGTERM', terminate)
+  process.once('SIGINT', terminate)
 }
 
 // Run only when launched as the dedicated engine process (never when imported by tests).

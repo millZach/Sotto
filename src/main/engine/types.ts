@@ -66,6 +66,8 @@ export interface EngineShellBridge {
   onE2EFileAction?(kind: 'open' | 'show', path: string): void
   onE2EExternalLink?(url: string): void
   onE2EThreadFolder?(path: string): void
+  /** Optional in-process nativeImage thumbnail maker used when `out-of-process-engine` is off (ADR-0210). */
+  mediaThumbnail?(dataUrl: string, scale: number): string | null | Promise<string | null>
   /** Called in-process when `browserTools` receives a host-setup or other E2E hook. */
   onPopupObserved?(threadIds: readonly string[]): void
 }

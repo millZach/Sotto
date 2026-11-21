@@ -13,6 +13,7 @@ export interface CredentialSnapshot {
   readonly available: boolean
   readonly plaintext: Readonly<Record<string, string>>
   readonly sealed: Readonly<Record<string, string>>
+  readonly unreadable: Readonly<Record<string, string>>
 }
 
 /** The only persisted representation is OS-encrypted ciphertext. */
@@ -37,14 +38,16 @@ export class AgentCredentials {
     const available = this.available()
     const plaintext: Record<string, string> = {}
     const sealed: Record<string, string> = {}
+    const unreadable: Record<string, string> = {}
     for (const [slot, cipher] of Object.entries(this.values)) {
       if (!cipher) continue
       sealed[slot] = cipher
       if (available) {
-        try { plaintext[slot] = this.encryption.decryptString(Buffer.from(cipher, 'base64')) } catch { /* unreadable slot stays empty */ }
+        try { plaintext[slot] = this.encryption.decryptString(Buffer.from(cipher, 'base64')) }
+        catch (error) { unreadable[slot] = error instanceof Error ? error.message : String(error) }
       }
     }
-    return { available, plaintext, sealed }
+    return { available, plaintext, sealed, unreadable }
   }
   async load(): Promise<void> {
     await this.mutation

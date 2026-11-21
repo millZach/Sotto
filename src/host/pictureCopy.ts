@@ -62,7 +62,7 @@ export function pictureCopy(dataUrl: string, edge: number): string | null {
  * Returns `dataUrl` unchanged when the image already fits, or null when it is not a readable PNG or JPEG.
  */
 export function pictureThumbnail(dataUrl: string, width: number, height: number): string | null {
-  const picture = decodedPicture(dataUrl, { allowProfile: true })
+  const picture = decodedPicture(dataUrl, { allowProfile: true, maxPixels: PICTURE_REDRAW_MAX_PIXELS })
   if (!picture) return null
   const scale = Math.min(1, width / picture.width, height / picture.height)
   if (scale >= 1) return dataUrl

@@ -463,9 +463,11 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     ...owlFeatures['inline-media'] ? {
-      mediaThumbnail: pictureMaker
-        ? (url: string, scale: number) => pictureMaker.thumbnail(url, Math.ceil(MEDIA_TILE_SIZE.width * scale), Math.ceil(MEDIA_TILE_SIZE.height * scale))
-        : (url: string) => url,
+      mediaThumbnail: shellBridge.mediaThumbnail
+        ? (url: string, scale: number) => shellBridge.mediaThumbnail!(url, scale)
+        : pictureMaker
+          ? (url: string, scale: number) => pictureMaker.thumbnail(url, Math.ceil(MEDIA_TILE_SIZE.width * scale), Math.ceil(MEDIA_TILE_SIZE.height * scale))
+          : () => null,
       mediaTiles: keptThumbnails,
     } : {},
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),

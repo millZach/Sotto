@@ -6,6 +6,10 @@ import { join } from 'node:path'
 
 /** Maximum single transport frame size (64 MiB — accommodates video parts and large attachments). */
 export const MAX_ENGINE_FRAME_BYTES = 64 * 1024 * 1024
+/** Maximum size of the initial unauthenticated hello frame (4 KiB). */
+const MAX_HELLO_FRAME_BYTES = 4 * 1024
+/** Maximum time an unauthenticated peer may stay open before presenting a valid hello frame. */
+const UNAUTHENTICATED_SOCKET_TIMEOUT_MS = 5_000
 /** Default handshake timeout for the local engine child to connect and authenticate. */
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 20_000
 
@@ -157,6 +161,15 @@ export function encodeEngineFrame(message: EngineWireMessage): Buffer {
 export class EngineFrameDecoder {
   private chunks: Buffer[] = []
   private buffered = 0
+  private maxFrameBytes: number
+
+  constructor(maxFrameBytes = MAX_ENGINE_FRAME_BYTES) {
+    this.maxFrameBytes = maxFrameBytes
+  }
+
+  setMaxFrameBytes(limit: number): void {
+    this.maxFrameBytes = limit
+  }
 
   push(chunk: Buffer, onMessage: (message: EngineWireMessage) => void): void {
     if (chunk.byteLength === 0) return
@@ -165,7 +178,7 @@ export class EngineFrameDecoder {
 
     while (this.buffered >= 4) {
       const length = this.peekLength()
-      if (length > MAX_ENGINE_FRAME_BYTES) {
+      if (length > this.maxFrameBytes) {
         this.chunks = []
         this.buffered = 0
         throw new Error('ENGINE_FRAME_TOO_LARGE')
@@ -310,7 +323,8 @@ export class EngineRpcConnection {
 
   private dispatch(message: EngineWireMessage): void {
     if (message.kind === 'push') {
-      this.pushHandler(message.event, message.payload)
+      // Isolate push handler exceptions so a bad push never tears down the transport link.
+      try { this.pushHandler(message.event, message.payload) } catch { /* drop throwing push */ }
       return
     }
     if (message.kind === 'res') {
@@ -376,9 +390,11 @@ export async function listenEngineServer(endpoint: string, token: string): Promi
       socket.destroy()
       return
     }
-    const decoder = new EngineFrameDecoder()
+    const decoder = new EngineFrameDecoder(MAX_HELLO_FRAME_BYTES)
     let authenticated = false
     const trailing: EngineWireMessage[] = []
+    const authTimer = setTimeout(() => { if (!authenticated) socket.destroy() }, UNAUTHENTICATED_SOCKET_TIMEOUT_MS)
+    authTimer.unref()
     const onData = (chunk: Buffer): void => {
       try {
         decoder.push(chunk, message => {
@@ -387,11 +403,14 @@ export async function listenEngineServer(endpoint: string, token: string): Promi
             return
           }
           if (message.kind !== 'hello' || !verifyEngineToken(token, message.token)) {
+            clearTimeout(authTimer)
             socket.destroy()
             return
           }
+          clearTimeout(authTimer)
           authenticated = true
           accepted = true
+          decoder.setMaxFrameBytes(MAX_ENGINE_FRAME_BYTES)
         })
         if (authenticated && !acceptedConnection) {
           socket.removeListener('data', onData)
@@ -407,11 +426,13 @@ export async function listenEngineServer(endpoint: string, token: string): Promi
           }
         }
       } catch {
+        clearTimeout(authTimer)
         socket.destroy()
       }
     }
     socket.on('data', onData)
-    socket.on('error', () => { socket.destroy() })
+    socket.on('error', () => { clearTimeout(authTimer); socket.destroy() })
+    socket.on('close', () => { clearTimeout(authTimer) })
   })
 
   await new Promise<void>((resolve, reject) => {

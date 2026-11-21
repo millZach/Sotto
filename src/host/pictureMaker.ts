@@ -62,11 +62,11 @@ export class PictureMaker {
     return this.ask(id => ({ id, dataUrl, edge })).then(answer => answer.copy)
   }
 
-  /** A JPEG tile thumbnail of `dataUrl` fitted inside `width` by `height`, or `dataUrl` when it already fits or cannot be scaled. */
+  /** A JPEG tile thumbnail of `dataUrl` fitted inside `width` by `height`, or null when it cannot be scaled (never returns an unscaled original on failure). */
   thumbnail(dataUrl: string, width: number, height: number): Promise<string | null> {
     if (this.closed || this.failedStarts >= FAILED_STARTS_MAX || this.waiting.size >= PICTURES_WAITING_MAX
-      || !KINDS.some(kind => dataUrl.startsWith(kind)) || carriesCameraDetails(dataUrl)) return Promise.resolve(dataUrl)
-    return this.ask(id => ({ id, op: 'thumbnail', dataUrl, width, height })).then(answer => answer.copy ?? dataUrl)
+      || !KINDS.some(kind => dataUrl.startsWith(kind))) return Promise.resolve(null)
+    return this.ask(id => ({ id, op: 'thumbnail', dataUrl, width, height })).then(answer => answer.copy)
   }
 
   /** Redraws a PNG or JPEG from its pixels alone so no metadata survives (ADR-0141, ADR-0210). */

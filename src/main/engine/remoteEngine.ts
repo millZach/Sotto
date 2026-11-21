@@ -24,7 +24,7 @@ import { createEngineEndpoint, generateEngineToken, listenEngineServer, type Eng
 import type { DesktopEngine, DesktopEngineOptions, EngineCertifiedDetailStats, EngineIpcRole, EngineShellBridge, EngineTurnRecordsInfo, EngineWindowFocus, FilesBindingsDelta, GitChangesMethod, HostedGitChangesMethod, ProductEventFeature } from './types'
 
 const ENGINE_INIT_TIMEOUT_MS = 30_000
-const ENGINE_CLOSE_TIMEOUT_MS = 10_000
+const ENGINE_CLOSE_TIMEOUT_MS = 20_000
 
 export interface OutOfProcessEngineLauncherOptions {
   /** Built path to `engineProcess.js`; defaults to `join(__dirname, 'engineProcess.js')`. */
@@ -196,7 +196,16 @@ export async function startOutOfProcessEngine(
     }
   })
 
+  let lastCredentialsAvailable = shellBridge.credentials.available()
+  const syncCredentialsIfAvailabilityChanged = (): void => {
+    const nowAvailable = shellBridge.credentials.available()
+    if (nowAvailable !== lastCredentialsAvailable) {
+      lastCredentialsAvailable = nowAvailable
+      if (!connection.isClosed) connection.sendPush('shell:credentialsSync', snapshotCredentials(shellBridge))
+    }
+  }
   const unsubscribeCredentials = shellBridge.credentials.subscribe?.(() => {
+    lastCredentialsAvailable = shellBridge.credentials.available()
     if (!connection.isClosed) connection.sendPush('shell:credentialsSync', snapshotCredentials(shellBridge))
   })
 
@@ -275,12 +284,15 @@ export async function startOutOfProcessEngine(
     if (installedRemoteHostProxy && globalThis.sottoRemoteHostE2E === installedRemoteHostProxy) globalThis.sottoRemoteHostE2E = undefined
     if (installedBabysitProxy && globalThis.sottoBabysitE2E === installedBabysitProxy) globalThis.sottoBabysitE2E = undefined
     unsubscribeCredentials?.()
+    let closeError: unknown
     if (!connection.isClosed) {
-      await connection.request('engine:close', [], ENGINE_CLOSE_TIMEOUT_MS).catch(() => undefined)
+      try { await connection.request('engine:close', [], ENGINE_CLOSE_TIMEOUT_MS) }
+      catch (error) { closeError = error }
     }
     connection.close()
     await waitForChildExit(child, 3_000)
     await server.close().catch(() => undefined)
+    if (closeError !== undefined) throw closeError
   })()
 
   return {
@@ -290,7 +302,10 @@ export async function startOutOfProcessEngine(
       connection.request('engine:invokeIpc', [channel, role, args]),
     watcherBridge,
 
-    setWindowFocus: (state: EngineWindowFocus) => { connection.sendPush('engine:setWindowFocus', state) },
+    setWindowFocus: (state: EngineWindowFocus) => {
+      syncCredentialsIfAvailabilityChanged()
+      connection.sendPush('engine:setWindowFocus', state)
+    },
     setPopupShown: (shown: boolean) => { connection.sendPush('engine:setPopupShown', shown) },
     setPopupObserved: (threadIds: readonly string[]) => { connection.sendPush('engine:setPopupObserved', threadIds) },
     setRunningTerminals: (threadIds: readonly string[]) => { connection.sendPush('engine:setRunningTerminals', threadIds) },
@@ -359,7 +374,7 @@ export async function startOutOfProcessEngine(
 
 function snapshotCredentials(shellBridge: EngineShellBridge) {
   if (shellBridge.credentials.exportSnapshot) return shellBridge.credentials.exportSnapshot()
-  return { available: shellBridge.credentials.available(), plaintext: {}, sealed: {} }
+  return { available: shellBridge.credentials.available(), plaintext: {}, sealed: {}, unreadable: {} }
 }
 
 async function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<void> {

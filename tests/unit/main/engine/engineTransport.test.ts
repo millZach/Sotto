@@ -95,7 +95,10 @@ describe('EngineTransport server/client over OS named pipe or UDS (ADR-0210)', (
       ])
 
       const pushes: Array<{ event: string; payload: unknown }> = []
-      serverConn.onPush((event, payload) => pushes.push({ event, payload }))
+      serverConn.onPush((event, payload) => {
+        if (event === 'shell:throw') throw new Error('bad push listener')
+        pushes.push({ event, payload })
+      })
       clientConn.onRequest(async (method, args) => {
         if (method === 'echoBin') return new Uint8Array([1, 2, 3, 4])
         if (method === 'engine:invokeIpc') {
@@ -135,11 +138,13 @@ describe('EngineTransport server/client over OS named pipe or UDS (ADR-0210)', (
       // Error serialization preserves message and code.
       await expect(serverConn.request('fail')).rejects.toMatchObject({ message: 'boom', code: 'E_BOOM' })
 
-      // Push delivery.
+      // Push delivery, including verifying a throwing push handler does not tear down the link (L2).
+      clientConn.sendPush('shell:throw', { bad: true })
       clientConn.sendPush('shell:sendToMain', { channel: 'agent:state', payload: { rev: 9 } })
       await vi.waitFor(() => {
         expect(pushes).toEqual([{ event: 'shell:sendToMain', payload: { channel: 'agent:state', payload: { rev: 9 } } }])
       })
+      await expect(serverConn.request('reverse', ['still-alive'])).resolves.toBe('hello still-alive')
 
       // Closing the client rejects in-flight requests cleanly.
       const hanging = serverConn.request('hang-never-answered')

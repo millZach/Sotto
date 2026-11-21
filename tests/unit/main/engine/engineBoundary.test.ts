@@ -13,6 +13,10 @@ import { FilesBindingsMirror, FilesBindingsTracker } from '../../../../src/main/
 import { EngineIpcRegistry } from '../../../../src/main/engine/ipcRegistry'
 import { isAuthorizedIpcSender } from '../../../../src/main/ipc/registerIpc'
 import { pictureRedraw, pictureThumbnail } from '../../../../src/host/pictureCopy'
+import { PictureMaker } from '../../../../src/host/pictureMaker'
+import { AgentCredentials } from '../../../../src/main/agents/credentials'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import type { AgentHostSnapshot, AgentProject, AgentThread } from '../../../../src/shared/agents'
 
 function walkTsFiles(dir: string): string[] {
@@ -157,5 +161,44 @@ describe('pure-Node desktop picture helpers (ADR-0210)', () => {
     expect(redrawn).not.toBeNull()
     expect(redrawn?.kind).toBe('image/png')
     expect(redrawn?.dataUrl).toMatch(/^data:image\/png;base64,/u)
+  })
+
+  it('returns null from PictureMaker.thumbnail on unsupported kinds or unavailable worker instead of caching unscaled originals', async () => {
+    const maker = new PictureMaker(join(process.cwd(), 'nonexistent-picture-worker.js'))
+    try {
+      await expect(maker.thumbnail('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 208, 140)).resolves.toBeNull()
+      await expect(maker.thumbnail(makePngDataUrl(800, 600), 208, 140)).resolves.toBeNull()
+    } finally {
+      await maker.close()
+    }
+  })
+})
+
+describe('AgentCredentials.exportSnapshot unreadable slots (L4)', () => {
+  it('records decrypt errors in unreadable instead of silently returning empty strings', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sotto-cred-snap-'))
+    try {
+      let failDecrypt = false
+      const credentials = new AgentCredentials(dir, {
+        isEncryptionAvailable: () => true,
+        encryptString: value => Buffer.from(`enc:${value}`, 'utf8'),
+        decryptString: buffer => {
+          if (failDecrypt) throw new Error('Keychain decrypt failed')
+          return buffer.toString('utf8').replace(/^enc:/u, '')
+        },
+      })
+      await credentials.load()
+      await credentials.set('formatting', 'sk-test-key')
+      expect(credentials.exportSnapshot().plaintext['formatting']).toBe('sk-test-key')
+      expect(credentials.exportSnapshot().unreadable).toEqual({})
+
+      failDecrypt = true
+      const snap = credentials.exportSnapshot()
+      expect(snap.sealed['formatting']).toBeTruthy()
+      expect(snap.plaintext['formatting']).toBeUndefined()
+      expect(snap.unreadable['formatting']).toBe('Keychain decrypt failed')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

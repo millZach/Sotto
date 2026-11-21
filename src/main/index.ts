@@ -28,6 +28,7 @@ import { startOutOfProcessEngine } from './engine/remoteEngine'
 import { FilesBindingsMirror } from './engine/filesBindingsMirror'
 import type { DesktopEngine, DesktopEngineOptions, EngineShellBridge, GitChangesMethod } from './engine/types'
 import { chooseProjectDirectoryInElectron } from './agents/ipc'
+import { mediaThumbnailMaker } from './agents/mediaThumbnail'
 import { version as appVersion } from '../../package.json'
 import {
   app,
@@ -957,6 +958,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     onE2EExternalLink: url => { openedExternalLink = url },
     onE2EThreadFolder: path => { openedThreadFolder = path },
     onPopupObserved: threadIds => { popup?.feed.observe(threadIds) },
+    ...(!owlFeatures['out-of-process-engine'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {}),
   }
   // Behind `out-of-process-engine` (ADR-0210), run the desktop engine in its own child process so coordinator,
   // Watcher, router and store bursts never stall Electron's main UI/input thread.
@@ -983,6 +985,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }
   app.on('browser-window-focus', () => { windowBlurredAt = 0; syncWindowFocus() })
   app.on('browser-window-blur', () => { windowBlurredAt = Date.now(); syncWindowFocus() })
+  app.on('browser-window-created', (_event, window) => {
+    window.on('show', syncWindowFocus)
+    window.on('hide', syncWindowFocus)
+    window.on('minimize', syncWindowFocus)
+    window.on('restore', syncWindowFocus)
+  })
   syncWindowFocus()
 
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from the engine, once per address.
