@@ -79,6 +79,7 @@ export const OWL_FEATURES = [
   { id: 'model-router', name: 'Model routing', owlSince: '2026-11-13', owner: 'docs/adr/0207-a-routed-threads-model-and-effort-are-chosen-for-each-message.md', sentToStable: true },
   { id: 'plugins', name: 'Plugins', owlSince: '2026-11-11', owner: 'docs/adr/0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md', sentToStable: true },
   { id: 'out-of-process-engine', name: 'Out-of-process engine', owlSince: '2026-11-20', owner: 'docs/adr/0210-the-desktop-engine-runs-in-its-own-process.md', sentToStable: false },
+  { id: 'rust-remote-host', name: 'Rust host for remote machines', owlSince: '2026-11-20', owner: 'docs/adr/0212-rust-sotto-host-for-remote-machines.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

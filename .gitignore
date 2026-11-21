@@ -1,4 +1,5 @@
 node_modules/
+/target/
 artifacts/watcher-live/
 artifacts/codex-reasoning-rows/*
 !artifacts/codex-reasoning-rows/before.png
