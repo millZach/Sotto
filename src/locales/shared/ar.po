@@ -227,6 +227,10 @@ msgstr ""
 msgid "Orchestrating"
 msgstr ""
 
+#: src/shared/interfaceWords.ts
+msgid "Owlets are available in Sotto Owl. Open an Owl build to continue. Nothing was sent."
+msgstr ""
+
 #. The name of an effort colourway.
 #: src/shared/interfaceWords.ts
 msgid "Plasma"

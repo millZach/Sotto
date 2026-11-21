@@ -1,4 +1,8 @@
 import type { ThreadMediaStore } from './threadMedia'
+import { dormantProviderConfigurationSchema, parkedChoices, type DormantProviderConfiguration } from './parkedChoices'
+import { changeOwlet, makeOwlet, owletsRoot, strayOwletFolder } from './owlets'
+import { atomicDraftDigest } from './draftDigest'
+import { OWLET_REFUSALS, OWLETS_HELD, type AgentOwlet } from '../../shared/owlets'
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
 import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { clonePlainData, freezePlainData } from './cloneHostSnapshot'
@@ -281,14 +285,6 @@ const savedReceiptsSchema = z.array(agentDeliveryReceiptsSchema.element).max(MAX
 /** A dormant legacy singleton can be parked while stable uses its ordinary composer. */
 const dormantLegacyDraftSchema = z.object({ draft: z.string(), draftThreadId: z.string(), draftRequestId: z.string().nullable(),
   draftAttachments: savedAttachmentsSchema, manualDraftId: z.uuid().nullable(), composing: z.boolean() })
-/**
- * A held provider's choices, parked while stable uses an available provider; ordinary choices remain editable. Only
- * what was parked is read back: the configuration's defaults would otherwise fill in a provider and an effort it never had.
- */
-const dormantProviderConfigurationSchema = agentConfigurationSchema.pick({ defaultModelId: true, newThreadModelId: true }).partial().extend({
-  provider: providerIdSchema.optional(), newThreadReasoningEffort: agentConfigurationSchema.shape.newThreadReasoningEffort.unwrap().optional(),
-  enabled: z.boolean().optional(), newThreadRuntimeMode: agentConfigurationSchema.shape.newThreadRuntimeMode.nullable() })
-type DormantProviderConfiguration = z.infer<typeof dormantProviderConfigurationSchema>
 const savedSchema = z.object({
   watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema),
   providerUpgrade: providerUpgradeSchema.nullable().default(null),
@@ -529,6 +525,9 @@ export class AgentControl {
   /** The Council (ADR-0177), given only while its Owl feature is on: the threads it follows, and its prompts' identities. */
   private councilHooks: CouncilControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
+  /** A `create-project` or `create-thread` that `create-owlet` runs (ADR-0213): the owlet a thread is made as, or true for its project. */
+  private readonly owletStarts = new WeakMap<object, AgentOwlet | true>()
+  private readonly owletsMaking = new Set<string>()
   /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
   private readonly delegationOrigins = new WeakSet<object>()
   /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
@@ -909,6 +908,7 @@ export class AgentControl {
   }
   private readonly dormantThreadIds = new Set<string>()
   private readonly dormantWatcherIds = new Set<string>()
+  private readonly dormantOwletIds = new Set<string>()
   private readonly dormantThreadDrafts = new Map<string, Saved['threadDrafts'][number]>()
   private dormantLegacyDraft: Saved['dormantLegacyDraft']
   /** Each held provider's parked choices, by provider. */
@@ -919,9 +919,10 @@ export class AgentControl {
   private readonly dormantThreadProviders = new Map<string, ProviderId>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
   private readonly held: HeldProviders
-  private threadAvailable(id: string | null | undefined): boolean { return !id || !this.dormantThreadIds.has(id) }
+  private threadAvailable(id: string | null | undefined): boolean { return !id || !this.dormantThreadIds.has(id) && !this.dormantOwletIds.has(id) }
   private dormantRefusal(id: string | null | undefined): string {
     if (id && this.dormantWatcherIds.has(id)) return 'Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
+    if (id && this.dormantOwletIds.has(id)) return OWLETS_HELD
     return heldProviderRefusal((id ? this.dormantThreadProviders.get(id) : undefined) ?? firstHeldProvider(this.held))
   }
   private providerAvailable(provider: string): boolean { return !this.held.has(provider as ProviderId) }
@@ -1102,6 +1103,8 @@ export class AgentControl {
     dynamicThreadsEnabled?: boolean
     /** Model routing's Owl answer (ADR-0207), and its settings as they stand: off, a saved mark stays whole and no send is routed. */
     modelRouterEnabled?: boolean
+    /** Owlets' Owl answer (ADR-0213): off, a saved owlet stays whole and nothing makes or changes one. */
+    owletsEnabled?: boolean
     modelRouter?: () => ModelRouterSettings
     modelRouterLog?: (event: RouterEvent) => void
     threadSnoozeEnabled?: boolean
@@ -1254,7 +1257,7 @@ export class AgentControl {
       }
     }
 
-    if (this.dependencies.watcherEnabled !== true || this.held.size) {
+    if (this.dependencies.watcherEnabled !== true || this.held.size || this.dependencies.owletsEnabled !== true) {
       // The workspace retains special kinds that its public snapshots omit. They must be known before saved work is normalized.
       await this.dependencies.host.initialize?.()
       const dormant = this.dependencies.host.dormantThreadIds?.()
@@ -1263,6 +1266,7 @@ export class AgentControl {
       // The workspace's snapshot already omits these threads, so their providers come from the host that hid them.
       for (const [id, provider] of this.dependencies.host.dormantThreadProviders?.() ?? []) this.dormantThreadProviders.set(id, provider)
       if (this.dependencies.watcherEnabled !== true) for (const id of this.dependencies.host.watcherThreadIds?.() ?? []) this.dormantWatcherIds.add(id)
+      for (const id of this.dependencies.host.dormantOwletIds?.() ?? []) this.dormantOwletIds.add(id)
       const snapshot = this.dependencies.host.workspaceSnapshot?.()
       if (snapshot) this.shownSnapshot(snapshot)
     }
@@ -1973,6 +1977,7 @@ export class AgentControl {
   watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
   /** Watcher's own workspace folder, and each project folder as `resolve` spells it, worked out once rather than on every shell. */
   private watcherFolder: string | undefined
+  private owletsFolder: string | undefined
   private readonly resolvedProjectPaths = new Map<string, string>()
   private hideWatcher(state: AgentState): void {
     const folder = this.watcherFolder ??= resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
@@ -1986,7 +1991,8 @@ export class AgentControl {
     }
     // A list that loses nothing is kept as it is, so a broadcast shares the part of the last one that has not changed.
     const kept = <T>(list: readonly T[], keep: (item: T) => boolean): T[] => (list.every(keep) ? list : list.filter(keep)) as T[]
-    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder)
+    const owlets = this.owletsFolder ??= owletsRoot(this.dependencies.directory), held = this.dependencies.host.owletProjectIds?.()
+    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder && !strayOwletFolder(owlets, resolved(project.path), project.id, held))
     if (!this.threadAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
@@ -2554,7 +2560,7 @@ export class AgentControl {
     const configuration = this.state.configuration
     let parks = false
     for (const provider of this.held) {
-      const held = parked.get(provider), dormant = this.parkedChoices(configuration, provider, held)
+      const held = parked.get(provider), dormant = parkedChoices(configuration, provider, held)
       if (held || Object.keys(dormant).length) parks = true
       if (Object.keys(dormant).length) this.dormantProviderConfigurations.set(provider, dormant)
     }
@@ -2577,18 +2583,6 @@ export class AgentControl {
       else configuration.newThreadRuntimeMode = newThreadRuntimeMode
     }
     if (enabled) configuration.enabledProviders = [...new Set([...enabledThreadProviders(configuration), provider])]
-  }
-  /** A held provider's choices in the saved configuration, over what it already had parked. */
-  private parkedChoices(configuration: AgentConfiguration, provider: ProviderId, held: DormantProviderConfiguration | undefined): DormantProviderConfiguration {
-    const dormant = { ...held }
-    if (configuration.provider === provider) dormant.provider = provider
-    if (enabledThreadProviders(configuration).includes(provider)) dormant.enabled = true
-    if (parsePublicProviderEntityId(configuration.defaultModelId)?.provider === provider) dormant.defaultModelId = configuration.defaultModelId
-    if (parsePublicProviderEntityId(configuration.newThreadModelId)?.provider === provider) {
-      dormant.newThreadModelId = configuration.newThreadModelId; dormant.newThreadReasoningEffort = configuration.newThreadReasoningEffort
-      dormant.newThreadRuntimeMode = configuration.newThreadRuntimeMode ?? null
-    }
-    return dormant
   }
   /** Held providers' choices move aside, so stable uses an available provider and nothing of the held ones is lost. */
   private parkHeldChoices(configuration: AgentConfiguration): void {
@@ -3580,6 +3574,20 @@ export class AgentControl {
     if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
     this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
   }
+  /** A new owlet (ADR-0213), each step the user's own command, held to their permission rules, and quiet (`owletStarts`). */
+  private createOwlet(command: Extract<AgentCommand, { type: 'create-owlet' }>, client: ClientIdentity): Promise<AgentState> {
+    return makeOwlet({ enabled: this.dependencies.owletsEnabled === true, directory: this.dependencies.directory, host: () => this.state.host,
+      permit: model => this.guardThreadPermission(client, command, model),
+      admit: async (next, owlet) => {
+        if (this.disposed) throw new Error(OWLET_REFUSALS.stopping)
+        this.owletStarts.set(next, owlet ?? true)
+        return (await this.admitCommandShell(next, client)).error
+      }, making: this.owletsMaking }, command).then(error => ({ ...this.reply(), error }))
+  }
+  /** An owlet's name and role, in its thread's own lane (ADR-0213). */
+  private async setOwlet(command: Extract<AgentCommand, { type: 'set-owlet' }>): Promise<void> {
+    this.acceptSnapshot(await changeOwlet(this.dependencies.owletsEnabled === true, this.state.host, this.dependencies.host, command, this.owletsMaking))
+  }
   /** In the thread's own lane, as Dynamic's mark is (ADR-0207). Turned off, the thread's last pick goes with it. */
   private async setThreadRouted(command: Extract<AgentCommand, { type: 'set-thread-routed' }>): Promise<void> {
     if (this.dependencies.modelRouterEnabled !== true) throw new Error('Model routing is available in Sotto Owl. Nothing changed.')
@@ -3655,11 +3663,6 @@ export class AgentControl {
    * a draft save included (issue #313). Nor is any thread copied for it: the answer is the shell a broadcast would carry
    * (`reply`), read and never written into below its top level (#1760).
    */
-  /** An explicit revision owns one immutable Send packet, including after a lost reply or restart. */
-  private atomicDraftDigest(draft: NonNullable<Extract<AgentCommand, { type: 'send' }>['draft']>): string {
-    return createHash('sha256').update(JSON.stringify([draft.threadId, draft.text, draft.attachments === undefined ? null : draft.attachments.map(image => [image.id, image.name, image.mimeType, image.sizeBytes, image.digest]),
-      draft.binding ? [draft.binding.requestId, draft.binding.questionsDigest] : null])).digest('hex')
-  }
   commandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
     // Admission refuses a dormant owner before the atomic wrapper can alter any delivery ledger.
     if (command.type !== 'send' || !command.draft?.draftId || this.disposed || !this.threadAvailable(command.draft.threadId)
@@ -3668,7 +3671,7 @@ export class AgentControl {
     const watcherOrigin = this.watcherOrigins.get(command)
     if (watcherOrigin) this.watcherOrigins.set(packet, watcherOrigin)
     const threadId = packet.draft!.threadId, draftId = packet.draft!.draftId!
-    const digest = this.atomicDraftDigest(packet.draft!)
+    const digest = atomicDraftDigest(packet.draft!)
     const key = JSON.stringify([threadId, draftId])
     const pending = this.promptAdmissions.get(key)
     const outbox = this.outbox.find(item => item.draftId === draftId)
@@ -3771,7 +3774,7 @@ export class AgentControl {
             : packet.attachments === undefined ? undefined : structuredClone(packet.attachments),
           skills: command.type === 'send' ? saved?.skills : undefined, files: command.type === 'send' ? saved?.files : undefined, requestId },
         ...(packet.draftId ? { immutableRevision: true } : {}),
-        ...(command.type === 'send' && command.draft?.draftId ? { atomicDigest: this.atomicDraftDigest(command.draft) } : {}),
+        ...(command.type === 'send' && command.draft?.draftId ? { atomicDigest: atomicDraftDigest(command.draft) } : {}),
         ...(saved ? { previousDraftId: saved.draftId } : {}),
         ...(ignoredEmptyDraftId !== undefined ? { ignoredEmptyDraftId } : {}),
         ...(requestId ? { questionsDigest: question ? requestQuestionsDigest(requestDraftQuestions(question)) : null } : {}),
@@ -3874,6 +3877,8 @@ export class AgentControl {
     if (command.type === 'update-client' || command.type === 'queue-client-updates' || command.type === 'cancel-client-updates' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
     if (command.type === 'start-thread-session') return this.startThreadSession(command.threadId)
+    // A new owlet runs its own create-project and create-thread, so it waits on no lane itself (ADR-0213).
+    if (command.type === 'create-owlet') return this.createOwlet(command, client)
     if (command.type === 'preview-delete-thread' || command.type === 'delete-thread' || command.type === 'preview-clear-threads' || command.type === 'clear-threads') return this.clearCommand(command)
     if (command.type === 'preview-reclaim-thread-worktree') {
       const preview = this.dependencies.host.previewThreadWorktreeReclaim
@@ -4648,6 +4653,7 @@ export class AgentControl {
     client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
     if (command.type === 'set-thread-dynamic') return this.setThreadDynamic(command)
     if (command.type === 'set-thread-routed') return this.setThreadRouted(command)
+    if (command.type === 'set-owlet') return this.setOwlet(command)
     const origin = this.watcherOrigins.get(command); origin?.guard()
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     const heldChoice = heldProviderChosenBy(command, this.held)
@@ -4867,12 +4873,14 @@ export class AgentControl {
         if (command.useExisting && !existing) throw new Error(PROJECT_FOLDER_MISSING)
         const folderKey = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
         const known = command.useExisting ? this.state.host.projects.find(project => folderKey(project.path) === folderKey(path) && (!project.providerId || project.providerId === provider)) : undefined
+        // An owlet's own project (ADR-0213) is quiet, as Sotto's own setup is: no selection, no announcement.
+        const quiet = this.owletStarts.has(command)
         if (known) {
-          if (!origin && selectionRevision === this.selectionRevision) {
+          if (!origin && !quiet && selectionRevision === this.selectionRevision) {
             this.state.activeProjectId = known.id; this.state.activeThreadId = null
           }
           // Sotto's own setup of a copy for a worker (#1690) announces nothing.
-          this.observe(); if (!origin || origin.userSetup) this.say(`Opened ${known.title}.`)
+          this.observe(); if (!quiet && (!origin || origin.userSetup)) this.say(`Opened ${known.title}.`)
           return
         }
         // Sotto's own command checks its guard before it makes anything: Watcher's request may have ended while it waited.
@@ -4887,11 +4895,11 @@ export class AgentControl {
           if (this.refusedProjects.delete(projectId)) await made?.undo()
           throw error
         }
-        if (!origin && selectionRevision === this.selectionRevision) {
+        if (!origin && !quiet && selectionRevision === this.selectionRevision) {
           this.state.activeProjectId = projectId; this.state.activeThreadId = null
         }
         this.observe()
-        if (!origin || origin.userSetup) this.say(`Created ${command.title} in ${path}.`)
+        if (!quiet && (!origin || origin.userSetup)) this.say(`Created ${command.title} in ${path}.`)
         return
       }
       case 'settle-project':
@@ -4974,6 +4982,7 @@ export class AgentControl {
         // Only a check its machine's queue started takes the check worktree (#1312).
         if (command.check !== undefined && !origin) throw new Error('Only a check that Watcher or a delegation starts works in the check worktree. Nothing was made.')
         const threadId = command.threadId ?? randomUUID()
+        const owletStart = this.owletStarts.get(command)
         this.madeThisRun.set(threadId, Date.now())
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
@@ -4985,17 +4994,18 @@ export class AgentControl {
           ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
           ...(command.check ? { check: true as const } : {}),
           ...(origin?.keptSpeed ? { keptSpeed: true as const } : {}),
+          ...(typeof owletStart === 'object' ? { owlet: owletStart } : {}),
           ...(command.dynamic && !origin && this.dependencies.dynamicThreadsEnabled === true ? { dynamic: true as const } : {}),
           ...(command.routed && !origin && this.dependencies.modelRouterEnabled === true ? { routed: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
         // A thread the popup starts stays the popup's: the window keeps what it shows (ADR-0181).
-        const opens = !origin && client.keepsSelection !== true
+        const opens = !origin && owletStart === undefined && client.keepsSelection !== true
         if (opens && selectionRevision === this.selectionRevision) {
           this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId
         }
         this.observe(); this.acceptSnapshot(await this.readThread(threadId))
         if (opens && selectionRevision === this.selectionRevision) this.state.activeProjectId = this.thread(threadId).projectId
-        if (client.keepsSelection !== true) this.say(`Opened ${command.title}.`)
+        if (client.keepsSelection !== true && owletStart === undefined) this.say(`Opened ${command.title}.`)
         return
       }
       case 'continue-agent':

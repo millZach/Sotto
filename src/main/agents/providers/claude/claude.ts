@@ -1,4 +1,5 @@
 import { assertCouncilJudgeDirectory, COUNCIL_JUDGE_CLAUDE_ARGS } from '../../../council/councilJudge'
+import { inOwletFolder } from '../../owlets'
 import type { MediaCapture } from '../../threadMedia'
 import { preserveLegacyAliases } from '../../legacyAliases'
 import type { BrowserAgentTools } from '../../browserAgentServer'
@@ -161,8 +162,13 @@ const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
  * Both are sent on every launch, off as well as on: a `fastMode` the user saved with `/fast` would otherwise run a thread
  * fast, and bill it so, while its bolt shows off, and would carry over when a live model change moves the thread onto a
  * model with it; an `ultracode` saved in the user's Claude Code settings would run every thread as a workflow (ADR-0148).
+ *
+ * In an owlet's folder the same layer turns auto memory off (ADR-0213), so nothing an owlet reads is kept in Claude Code's
+ * memory for that folder; the environment says it too, for a Claude Code that reads only that.
  */
-export const flagSettingsArguments = (fastMode: boolean, ultracode: boolean): readonly string[] => ['--settings', JSON.stringify({ fastMode, ultracode })]
+export const flagSettingsArguments = (fastMode: boolean, ultracode: boolean, memoryOff = false): readonly string[] =>
+  ['--settings', JSON.stringify({ fastMode, ultracode, ...(memoryOff ? { autoMemoryEnabled: false } : {}) })]
+const MEMORY_OFF_ENVIRONMENT = { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } as const
 /**
  * The effort the CLI is told for a thread's level (ADR-0148): Ultracode is no effort of Claude Code's, so it is sent as
  * the level it runs at, `at`, with `ultracode` on; every other level is sent as itself with `ultracode` off.
@@ -365,6 +371,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   private workerRoles: WorkerRoleSource | undefined
   useWorkerRoles(roles: WorkerRoleSource): void { this.workerRoles = roles }
+  private owletInstructions: ((threadId: string) => string | undefined) | undefined
+  useOwletInstructions(read: (threadId: string) => string | undefined): void { this.owletInstructions = read }
   /** A launch's role agents and the instructions that name them, or nothing while worker roles are off. */
   private subagentRoles(threadMode: AgentRuntimeMode, canDelegate: boolean) {
     if (!this.workerRoles) return undefined
@@ -1708,19 +1716,22 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     const overseer = profile || alias.councilJudge ? undefined : this.workerRoles?.overseer?.(id)
     const roles = profile || overseer || alias.councilJudge ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
+    const memoryOff = inOwletFolder(this.options.userDataPath, alias.cwd)
+    // An owlet's name and role go first in its system prompt (ADR-0213).
+    const owlet = profile || alias.councilJudge ? undefined : this.owletInstructions?.(id)
     const asks = profile ? undefined : CLAUDE_QUESTIONS
     const questions = [asks, ...this.options.markdownLinks === true ? [MARKDOWN_LINK_INSTRUCTIONS] : []].filter(Boolean).join('\n\n')
     // The flag takes a list, so another option follows it.
     const args = [...(this.options.args ?? []), ...(alias.councilJudge ? COUNCIL_JUDGE_CLAUDE_ARGS : toolArguments), ...(profile ? WATCHER_CLOSED_TOOLS : []), '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? [questions, profile.instructions ?? WATCHER_SYSTEM_PROMPT].filter(Boolean).join('\n\n') : overseer ? `${questions}\n\n${overseer}` : roles?.instructions ? `${questions}\n\n${roles.instructions}` : questions,
+      '--append-system-prompt', profile ? [questions, profile.instructions ?? WATCHER_SYSTEM_PROMPT].filter(Boolean).join('\n\n') : [owlet, questions, overseer ?? roles?.instructions].filter(Boolean).join('\n\n'),
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
-      ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode)]
+      ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode, memoryOff)]
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
       runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, mode: alias.runtimeMode ?? 'approval-required', takesNotes: !alias.councilJudge && (!!profile || this.workerRoles?.overseerNote !== undefined), subagentMode: roles?.subagents?.widest,
-        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(profile || alias.councilJudge ? {} : PLAN_TOOLS_ENVIRONMENT), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(profile || alias.councilJudge ? {} : PLAN_TOOLS_ENVIRONMENT), ...(memoryOff ? MEMORY_OFF_ENVIRONMENT : {}), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.

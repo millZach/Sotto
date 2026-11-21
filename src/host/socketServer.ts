@@ -1,4 +1,5 @@
 import { startsThread } from '../shared/threadStarts'
+import { withoutOwlets } from '../shared/owletVisibility'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
 import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
@@ -450,6 +451,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const delegation = service.supportsHostDelegation === true && desktopRecords
   const usageReads = service.supportsUsage === true && service.usageRead !== undefined
   const features = HOST_FEATURES.filter(feature => (feature !== 'thread-snooze' || service.supportsThreadSnooze === true)
+    && (feature !== 'owlets' || service.supportsOwlets === true)
     && (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
@@ -718,7 +720,18 @@ export async function startSocketServer(options: SocketServerOptions) {
     return provider !== undefined && peer.unknownProviders.has(provider)
   }
   /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
-  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
+  // A phone is shown no owlet (ADR-0213) until the iPhone has an Owlets page of its own. The host keeps which threads are
+  // owlets, so no update reads every thread for them, and a host with none leaves the shell as it is.
+  const NO_OWLETS: ReadonlySet<string> = new Set()
+  const owletIds = (): ReadonlySet<string> => service.owletThreadIds?.() ?? NO_OWLETS
+  const phoneShellsWithoutOwlets = new WeakMap<AgentState, AgentState>()
+  const withoutOwletsForPhone = (state: AgentState): AgentState => {
+    if (owletIds().size === 0) return state
+    let shown = phoneShellsWithoutOwlets.get(state)
+    if (!shown) phoneShellsWithoutOwlets.set(state, shown = withoutOwlets(state))
+    return shown
+  }
+  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? '') || owletIds().has(threadId))
   const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
   /**
    * `hiddenThread` for many threads at once, as a search names them: Watcher's phone exclusions read once, and each
@@ -844,7 +857,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
     // A phone says so by accepting activity summaries, which every phone build does and no desktop does (as below).
-    const visible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original, peer.activitySummaries), false) : original
+    const visible = isPhonePeer(peer) ? withoutOwletsForPhone(visibleWatcherState(forPhone(original, peer.activitySummaries), false)) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
@@ -1694,8 +1707,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (result.checkoutHold) checkoutHold = result.checkoutHold
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
-          // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is.
-          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
+          // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is, and so is
+          // an owlet's, which its setup shows (ADR-0213).
+          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'create-owlet' || input.type === 'set-owlet' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null
             if (!receipt.answerDelivered) receipt.error = { code: 'unavailable', message: errors.unavailable }

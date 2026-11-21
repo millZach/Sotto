@@ -7,7 +7,7 @@ import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { FakeProviderHost } from './fakeProviderHost'
 
 /** `adapters` carries the fake providers of a workspace that stopped over into a new one on the same `root`, as a restart keeps the providers' own threads. */
-export async function workspaceFixture(root?: string, options?: { worktreeRefreshDelayMs?: number; watcherEnabled?: boolean; history?: boolean
+export async function workspaceFixture(root?: string, options?: { worktreeRefreshDelayMs?: number; watcherEnabled?: boolean; owletsEnabled?: boolean; history?: boolean
   adapters?: { codex: FakeProviderHost; claude: FakeProviderHost; grok: FakeProviderHost } }) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-workspace-'))
   const registry = new ThreadRegistry(root)
@@ -25,7 +25,7 @@ export async function workspaceFixture(root?: string, options?: { worktreeRefres
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), pi: new FakeProviderHost(), antigravity: new FakeProviderHost(), hermes: new FakeProviderHost() } })
   const host = new WorkspaceHost(native, root, { historyEnabled: () => history,
-    ...(options?.worktreeRefreshDelayMs !== undefined ? { worktreeRefreshDelayMs: options.worktreeRefreshDelayMs } : {}), watcherEnabled: options?.watcherEnabled ?? true })
+    ...(options?.worktreeRefreshDelayMs !== undefined ? { worktreeRefreshDelayMs: options.worktreeRefreshDelayMs } : {}), watcherEnabled: options?.watcherEnabled ?? true, owletsEnabled: options?.owletsEnabled === true })
   await host.initialize()
   let stopping: Promise<void> | undefined
   return { root, registry, adapters, host, native, setHistory: (value: boolean) => { history = value },

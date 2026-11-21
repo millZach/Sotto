@@ -1,0 +1,1784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Owlets sidebar, prototype</title>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything. Every press changes memory only,
+  and the page asks no other host for anything: the font is the file beside it.
+
+  Question: what should a row in the Owlets sidebar show? Zach looked at three Owlets looks
+  (docs/prototypes/owlets-looks/) on November 19, 2026 and said: "I kind of prefer just a side bar that has
+  all the owlets in one bar on the left with a main thread window for them. Easiest to manage and add as
+  many as you like". So this is one layout, Sotto's own Threads page (a sidebar and a pane), with three
+  row variants on the same route, switchable with ?variant= and the bar at the bottom:
+
+    R1  Names       A status ring and a name. A to Z.
+    R2  Two lines   The owlet's own mark, its name and role, then the home computer and what happened last or
+                    the next run. Newest first.
+    R3  Grouped     Folding heads by state (Working now, New reports, Idle) or by computer. One line a row.
+
+  The same twenty made-up owlets are in all three, and the thread window, the cards, the setup and the
+  phone are the same whichever rows are showing.
+
+  Built in, from Zach's answers: a page of its own, an Owl feature; a schedule and events as well as when
+  asked; a card nobody answers lapses in five minutes and nothing is sent; the same tools as a thread, under
+  its permission mode; a folder of its own; one home computer and a model each; a scheduled run due while
+  its computer sleeps is skipped and the next report says so; Needs you and an unread mark, no notification;
+  every run is more turns in its one thread; the three events are a red CI run, a new issue or comment and
+  new mail; owlets are drawn; the iPhone also sets one up and edits it; nothing of Watcher is here.
+
+  One file on purpose, with the Figtree files beside it: the repository's lint reads every .js file, and
+  this is not product code.
+
+  The bar: rows (← → cycle), jump to a screen, theme, window size, start again. Under 700px wide the window
+  frame goes and the page is the iPhone app. Add &bare=1 to any link to drop the bar and the caption.
+
+  URL: ?variant=R1|R2|R3 &owlet=<id> &screen=setup &edit=<id> &group=state|computer &q=<search>
+       &where=all|here|forge &side=open|rail &open=about &at=report|card|lapsed|end|top
+       &theme=dark|light &size=fit|1600x1000|1280x800|820x560|390x844 &bare=1
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:,">
+<style>
+/*
+ * PROTOTYPE — throwaway. Colours are the Sotto theme's two halves by role (src/shared/themes/palettes.ts),
+ * with the Threads room's own night values from src/renderer/src/styles/tokens.css: a soft warm ink for the
+ * pane, the sidebar a step below it. Sizes and corners are the scale's steps (11, 12, 13, 14 px; 4, 6, 8, 10, 14 px).
+ */
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('figtree-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url('figtree-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.16 0.004 75);
+  --tt-sidebar: oklch(0.14 0.004 75);
+  --tt-card: oklch(0.185 0.008 265);
+  --tt-well: oklch(0.115 0.008 265);
+  --tt-field: oklch(0.115 0.008 265);
+  --tt-overlay: oklch(0.215 0.008 265);
+  --tt-bubble: oklch(0.215 0.006 75);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-muted: oklch(0.72 0.014 265);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.42 0.02 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-warning-text: oklch(0.829017 0.171221 81.038);
+  --tt-error-text: oklch(0.702184 0.189226 22.228);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-hover: oklch(0.18 0.004 75);
+  --tt-hover-soft: color-mix(in srgb, oklch(0.985 0.005 280) 7%, transparent);
+  --tt-selected: oklch(0.265 0.035 188);
+  --tt-selected-border: color-mix(in srgb, oklch(0.714403 0.104089 183.092) 30%, oklch(0.42 0.02 265));
+  --tt-scrim: rgb(0 0 0 / 55%);
+  --tt-shadow: 0 18px 50px rgb(0 0 0 / 55%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-card: color-mix(in oklab, oklch(0.978 0.004 85) 93%, oklch(0.235 0.014 75));
+  --tt-well: oklch(0.978 0.004 85);
+  --tt-field: oklch(0.99 0.003 85);
+  --tt-overlay: oklch(0.99 0.003 85);
+  --tt-bubble: oklch(0.93 0.012 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.34 0.014 75);
+  --tt-muted: oklch(0.45 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.72 0.016 80);
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-text: oklch(0.4 0.08 186);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-warning-text: oklch(0.45 0.14 50);
+  --tt-error-text: oklch(0.48 0.2 28);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-hover: oklch(0.93 0.01 85);
+  --tt-hover-soft: color-mix(in srgb, oklch(0.235 0.014 75) 7%, transparent);
+  --tt-selected: color-mix(in oklab, oklch(0.92 0.03 186) 65%, oklch(0.93 0.005 85));
+  --tt-selected-border: transparent;
+  --tt-scrim: rgb(0 0 0 / 30%);
+  --tt-shadow: 0 18px 50px rgb(0 0 0 / 18%);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: #16171b; font-family: var(--tt-font); -webkit-text-size-adjust: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+h1, h2, h3, h4, p, ul, ol, dl, dd, pre, fieldset, legend { margin: 0; padding: 0; }
+fieldset { border: 0; min-width: 0; }
+ul, ol { list-style: none; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ============ the prototype's own controls: not part of the design ============ */
+.stage { height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(440px, 1fr); justify-items: center; gap: 8px; padding: 10px 12px 78px; }
+.top { width: 100%; display: flex; justify-content: center; }
+.cap { max-width: 1180px; width: 100%; font: 13px/1.45 system-ui, sans-serif; color: #cfd1d9; }
+.cap strong { color: #fff; }
+.cap .cap__rule { color: #a9acb8; }
+.bar { position: fixed; left: 0; right: 0; bottom: 12px; margin: 0 auto; width: max-content; z-index: 90; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; padding: 8px; max-width: calc(100vw - 16px); background: #0d0e11; color: #eee; border: 1px solid #454752; border-radius: 12px; font: 13px system-ui, sans-serif; box-shadow: 0 6px 24px rgb(0 0 0 / 50%); }
+.bar button, .bar select { min-height: 36px; padding: 4px 10px; border-radius: 8px; border: 1px solid #454752; background: #1b1c21; color: #eee; font: inherit; }
+.bar .lab { min-width: 132px; text-align: center; font-weight: 600; padding: 0 4px; }
+.bar :focus-visible { outline: 2px solid #7fe0d0; outline-offset: 1px; }
+.bar .sep { width: 1px; align-self: stretch; background: #454752; margin: 0 2px; }
+.cap__more { border: 0; background: none; padding: 0 2px; color: #7fe0d0; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.cap__more:focus-visible { outline: 2px solid #7fe0d0; outline-offset: 2px; }
+
+.win { position: relative; width: 100%; height: 100%; min-height: 440px; background: var(--tt-canvas); color: var(--tt-text); font-size: 14px; line-height: 1.45; border: 1px solid #000; overflow: hidden; display: flex; flex-direction: column; }
+.stage[data-size='1600x1000'] .win { width: 1600px; height: 1000px; }
+.stage[data-size='1280x800'] .win { width: 1280px; height: 800px; }
+.stage[data-size='820x560'] .win { width: 820px; height: 560px; }
+.stage[data-size='390x844'] .win { width: 390px; height: 844px; border-radius: 34px; border: 0; box-shadow: 0 0 0 9px #050506, 0 0 0 10px #3a3b42; margin: 10px 0; }
+.stage:not([data-size='fit']) { justify-items: start; overflow-x: auto; grid-template-rows: auto auto; height: auto; min-height: 100dvh; align-content: start; }
+.stage:not([data-size='fit']) .win { justify-self: center; flex: none; }
+
+/* bare: the window is the whole viewport, for checking at an exact size */
+body[data-bare='true'] .stage { padding: 0; gap: 0; grid-template-rows: 1fr; min-height: 100dvh; height: 100dvh; }
+body[data-bare='true'] .cap, body[data-bare='true'] .bar { display: none; }
+body[data-bare='true'] .win { width: 100vw; height: 100dvh; min-height: 0; border: 0; border-radius: 0; box-shadow: none; margin: 0; }
+
+@media (max-width: 700px) {
+  .stage, .stage:not([data-size='fit']) { padding: 0; gap: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; justify-items: stretch; }
+  .stage .win, .stage[data-size] .win { width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; box-shadow: none; margin: 0; }
+  .top { display: flex; flex-direction: column; min-width: 0; background: #0d0e11; border-bottom: 1px solid #454752; }
+  .bar { position: static; margin: 0; width: auto; max-width: none; border: 0; border-radius: 0; box-shadow: none; padding: 6px 8px 4px; justify-content: flex-start; flex-wrap: nowrap; min-width: 0; }
+  .bar button, .bar select { min-height: 44px; min-width: 44px; flex: none; font-size: 16px; }
+  .bar .lab { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .bar .size, .bar .sep, .bar .reset { display: none; }
+  .bar .jump { width: 104px; }
+  .cap { padding: 0 10px 8px; font-size: 12px; line-height: 1.4; max-width: none; }
+  body[data-bare='true'] .top { display: none; }
+  body[data-bare='true'] .stage { grid-template-rows: minmax(0, 1fr); }
+}
+
+/* ============ focus, text helpers ============ */
+.win :focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; border-radius: 6px; }
+.muted { color: var(--tt-muted); }
+.mono { font-family: var(--tt-mono); font-size: 0.92em; }
+.grow { flex: 1; min-width: 0; }
+
+.owltag { flex: none; font-size: 11px; font-weight: 600; line-height: 1.4; padding: 0 6px; border-radius: 4px; border: 1px solid var(--tt-field-border); color: var(--tt-muted); }
+.idea { display: inline-block; flex: none; font-size: 11px; font-weight: 600; line-height: 1.4; padding: 0 6px; border-radius: 999px; border: 1px dashed var(--tt-field-border); color: var(--tt-muted); white-space: nowrap; }
+
+/* The status ring, as a thread's: an outline at rest, a ring that turns while it works, amber when it wants
+   you, green with a filled centre for a report nobody has read. */
+.ring { display: block; flex: none; width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-muted); border-radius: 50%; }
+.ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-accent-text) 0 32%, color-mix(in srgb, var(--tt-accent-text) 26%, transparent) 32% 100%); -webkit-mask: radial-gradient(circle, transparent 38%, #000 42%); mask: radial-gradient(circle, transparent 38%, #000 42%); animation: ring 1.5s linear infinite; }
+.ring[data-state='needs'] { border: 2px solid var(--tt-warning-text); }
+.ring[data-unread] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 30%, transparent 34%); }
+@keyframes ring { to { rotate: 360deg; } }
+
+.owl { flex: none; display: block; }
+.owl .b { fill: color-mix(in oklab, var(--tt-text) 34%, var(--tt-canvas)); }
+.owl .f { fill: color-mix(in oklab, var(--tt-text) 58%, var(--tt-canvas)); }
+.owl .e { fill: var(--tt-canvas); }
+.owl .p { fill: var(--tt-text); }
+.owl .z { stroke: var(--tt-text-2); stroke-width: 1.6; fill: none; stroke-linecap: round; }
+.owl[data-state='working'] .p { fill: var(--tt-accent); }
+.owl[data-state='needs'] .p { fill: var(--tt-warning-text); }
+
+/* ============ the page: Sotto's Threads layout, a sidebar and a pane ============ */
+.shell { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
+.shell[data-side='rail'], .shell[data-side='over'] { grid-template-columns: 52px minmax(0, 1fr); }
+.shell[data-side='over'] .side { position: absolute; inset: 0 auto 0 0; z-index: 30; width: 280px; box-shadow: var(--tt-shadow); }
+.shell__scrim { position: absolute; inset: 0; z-index: 20; background: var(--tt-scrim); }
+
+.side { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); }
+.side__top { flex: none; display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; }
+.mark { display: block; flex: none; width: 24px; height: 24px; }
+.side__top .mark { margin-right: auto; }
+.tbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.tbtn:hover, .ibtn:hover { background: var(--tt-hover-soft); color: var(--tt-text); }
+.tbtn svg { width: 16px; height: 16px; flex: none; }
+.ibtn { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-muted); }
+.ibtn svg { width: 16px; height: 16px; }
+.side__title { flex: none; display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 10px 6px 14px; }
+.side__title h2 { font-size: 13px; font-weight: 600; }
+.side__order { font-size: 12px; color: var(--tt-muted); white-space: nowrap; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 6px; background: var(--tt-card); }
+.seg button { height: 20px; padding: 0 7px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-muted); font-size: 12px; white-space: nowrap; }
+.seg button[aria-pressed='true'] { background: var(--tt-overlay); color: var(--tt-text); font-weight: 600; }
+
+.search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-muted); }
+.search > svg { position: absolute; left: 9px; top: 50%; width: 16px; height: 16px; translate: 0 -50%; pointer-events: none; }
+.search input { width: 100%; height: 100%; min-width: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font-size: 13px; }
+.search input::placeholder { color: var(--tt-muted); opacity: 1; }
+.search input::-webkit-search-cancel-button { display: none; }
+.search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--tt-muted); translate: 0 -50%; }
+.search__clear svg { width: 14px; height: 14px; }
+.search__clear[hidden] { display: none; }
+
+/* Needs you: the Threads sidebar's own card. A card that waits leads; a card that lapsed rests under it. */
+.needs { flex: none; margin: 0 8px 6px; padding: 3px 7px 2px; border-radius: 8px; background: var(--tt-card); }
+.needs__head { display: flex; align-items: center; gap: 6px; min-height: 22px; }
+.needs__head h2 { font-size: 13px; font-weight: 600; }
+.needs__count { padding: 0 5px; border-radius: 4px; background: var(--tt-well); color: var(--tt-text-2); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.needs__longest { margin-left: auto; color: var(--tt-muted); font-size: 12px; white-space: nowrap; }
+.needs__entry { border-top: 1px solid var(--tt-hairline); }
+.needs__line { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 28px; }
+.needs__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; font-size: 13px; font-weight: 500; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.needs__title span { font-weight: 400; color: var(--tt-muted); }
+.needs__entry[data-rest] .needs__line { color: var(--tt-muted); font-size: 12px; }
+.needs__entry[data-rest] .needs__title { flex: 0 1 auto; color: var(--tt-text-2); font-size: 12px; }
+.needs__when { flex: none; white-space: nowrap; }
+.needs__actions { display: flex; flex: none; gap: 4px; margin-left: auto; }
+.nbtn { flex: none; min-height: 22px; padding: 0 6px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-well); font-size: 12px; white-space: nowrap; }
+.nbtn--ghost { border-color: transparent; background: transparent; color: var(--tt-muted); }
+.nbtn:hover { background: var(--tt-hover-soft); }
+.needs__entry[data-rest]:not(:hover, :focus-within) .needs__actions { opacity: 0; }
+@media (hover: none) { .needs__entry[data-rest] .needs__actions { opacity: 1 !important; } }
+
+.side__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 4px 12px; scrollbar-width: thin; scrollbar-color: var(--tt-hairline) transparent; }
+.side__empty { margin: 6px 10px; color: var(--tt-muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.row { position: relative; display: flex; margin: 1px 0; border: 1px solid transparent; border-radius: 6px; }
+.row:hover { background: var(--tt-hover); }
+.row[data-current] { background: var(--tt-selected); border-color: var(--tt-selected-border); }
+.row__btn { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; flex: 1; min-width: 0; min-height: 34px; padding: 0 8px 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); text-align: left; }
+.row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.row[data-current] .row__name { color: var(--tt-text); }
+.row__l1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.row__l1 .row__name { flex: 0 1 auto; }
+.row__role { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-muted); font-size: 13px; }
+.row__end { display: inline-flex; align-items: center; color: var(--tt-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.row__end svg { width: 14px; height: 14px; }
+.row__end[data-tone='needs'] { color: var(--tt-warning-text); }
+.row__end[data-tone='working'] { color: var(--tt-accent-text); }
+/* two lines: the owlet's own mark, its name and role, then the home computer and what happened or what is next */
+.row--two .row__btn { grid-template-columns: 31px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; min-height: 52px; padding: 7px 8px 8px; }
+.row--two .row__name { font-weight: 600; color: var(--tt-text); }
+.row__face { grid-column: 1; grid-row: 1 / span 2; position: relative; width: 31px; height: 31px; }
+.row__face .ring { position: absolute; right: 0; bottom: 0; }
+.row__face .ring:not([data-state='working']) { background-color: var(--tt-sidebar); }
+.row[data-current] .row__face .ring:not([data-state='working']) { background-color: var(--tt-selected); }
+.row--two .row__l1 { grid-column: 2; grid-row: 1; }
+.row__l2 { grid-column: 2; grid-row: 2; display: flex; gap: 10px; min-width: 0; color: var(--tt-muted); font-size: 13px; line-height: 1.3; }
+.row__home { flex: none; white-space: nowrap; }
+.row__what { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row__what[data-tone='needs'] { color: var(--tt-warning-text); }
+.row__what[data-tone='working'] { color: var(--tt-accent-text); }
+.row__what[data-tone='news'] { color: var(--tt-text-2); }
+/* groups: a quiet head that folds, as Working now and Recent do */
+.group { margin-bottom: 8px; }
+.group__head { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 28px; padding: 0 12px 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; text-align: left; }
+.group__head:hover { background: var(--tt-hover); color: var(--tt-text); }
+.group__head svg { flex: none; width: 14px; height: 14px; transition: transform .16s ease; }
+.group__head[aria-expanded='true'] svg { transform: rotate(90deg); }
+.group__count { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* the foot: the room switch, with Owlets as a fourth room, then Usage, Settings and Help */
+.side__foot { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px 10px; color: var(--tt-muted); }
+.side__foot span { position: relative; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; }
+.side__foot svg { width: 18px; height: 18px; }
+.side__foot .on { background: var(--tt-card); color: var(--tt-text); }
+.side__foot .on::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 2px; height: 2px; border-radius: 2px; background: var(--tt-text-2); }
+.side__foot .sep { width: 1px; height: 18px; border-radius: 0; background: var(--tt-hairline); }
+
+/* collapsed: the rail, as the Threads sidebar folds at a narrow window */
+.rail { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; min-height: 0; padding: 10px 0 8px; background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); }
+.rail__list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: none; }
+.rail__list::-webkit-scrollbar { display: none; }
+.rail__list ul { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 2px 0 6px; }
+.rail__list li { position: relative; display: grid; place-items: center; width: 42px; height: 40px; }
+.tile { position: relative; display: grid; place-items: center; width: 32px; height: 34px; padding: 0; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-card); color: var(--tt-text-2); font-size: 13px; font-weight: 500; }
+.tile:hover { color: var(--tt-text); border-color: var(--tt-field-border); }
+.tile[aria-current='true'] { background: var(--tt-selected); border-color: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border)); color: var(--tt-text); }
+.rail__list li > .ring { position: absolute; right: 1px; bottom: 0; pointer-events: none; }
+.rail__list li > .ring:not([data-state='working']) { background-color: var(--tt-sidebar); }
+.rail__foot { flex: none; display: grid; gap: 6px; color: var(--tt-muted); }
+.rail__foot span { display: grid; place-items: center; width: 28px; height: 28px; }
+.rail__foot svg { width: 18px; height: 18px; }
+
+/* ============ the pane: one owlet's thread ============ */
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--tt-canvas); }
+.pane__head { flex: none; display: flex; align-items: center; gap: 14px; height: 44px; padding: 0 10px 0 18px; min-width: 0; }
+.pane__who { display: flex; align-items: center; gap: 10px; flex: 0 1 auto; min-width: 0; }
+.pane__head h1 { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane__role { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-muted); font-size: 13px; }
+.pane__fact { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.pane__fact svg { flex: none; width: 16px; height: 16px; color: var(--tt-muted); }
+.pane__fact span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.hbtn { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.hbtn:hover { background: var(--tt-hover-soft); color: var(--tt-text); }
+.hbtn svg { width: 16px; height: 16px; }
+.pane__runs { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 0 18px 9px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; }
+.pane__runs b { font-weight: 600; color: var(--tt-muted); }
+.pane__runs span { display: inline-flex; align-items: center; gap: 5px; }
+.pane__runs svg { flex: none; width: 14px; height: 14px; color: var(--tt-muted); }
+.pane__runs .pane__next { margin-left: auto; color: var(--tt-muted); }
+.pane__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px 22px; scrollbar-width: thin; scrollbar-color: var(--tt-hairline) transparent; }
+.col { max-width: 760px; margin: 0 auto; }
+.pane__foot { flex: none; padding: 0 20px 18px; }
+
+/* a conversation */
+.talk { display: grid; gap: 18px; align-content: start; font-size: 16px; line-height: 1.6; }
+.msg p { overflow-wrap: anywhere; }
+.msg__who { margin-bottom: 3px; color: var(--tt-text-2); font-size: 12px; font-weight: 600; line-height: 1.4; }
+.msg__who span { margin-left: 10px; color: var(--tt-muted); font-weight: 400; }
+.msg--you { justify-self: end; max-width: 86%; padding: 11px 16px 13px; border-radius: 14px; background: var(--tt-bubble); }
+.day { color: var(--tt-muted); font-size: 12px; text-align: center; }
+.note { color: var(--tt-muted); font-size: 13px; line-height: 1.5; }
+.runline { display: flex; align-items: center; gap: 8px; color: var(--tt-muted); font-size: 13px; line-height: 1.4; }
+.runline svg { flex: none; width: 14px; height: 14px; }
+.runline span { min-width: 0; }
+.runline::after { content: ''; flex: 1 1 24px; height: 1px; background: var(--tt-hairline); }
+.steps { color: var(--tt-muted); font-size: 13px; line-height: 1.5; }
+.steps summary { display: inline-flex; align-items: center; gap: 6px; width: max-content; max-width: 100%; border-radius: 6px; cursor: pointer; list-style: none; }
+.steps summary::-webkit-details-marker { display: none; }
+.steps summary svg { width: 13px; height: 13px; }
+.steps[open] summary svg { transform: rotate(90deg); }
+.steps ul { display: grid; gap: 2px; margin-top: 6px; }
+.steps li { display: flex; gap: 8px; align-items: baseline; overflow-wrap: anywhere; }
+.steps li::before { content: ''; flex: none; width: 5px; height: 5px; border: 1px solid var(--tt-muted); border-radius: 50%; transform: translateY(-1px); }
+.working { display: flex; align-items: center; gap: 9px; color: var(--tt-accent-text); font-size: 14px; }
+
+/* a report from a run nobody was there for */
+.report { display: grid; gap: 12px; padding: 14px 16px; border-radius: 14px; background: var(--tt-card); font-size: 14px; line-height: 1.5; }
+.report__label { color: var(--tt-accent-text); font-size: 12px; font-weight: 600; }
+.report h3 { font-size: 17px; font-weight: 650; line-height: 1.3; }
+.report__meta { margin-top: 2px; color: var(--tt-muted); font-size: 13px; }
+.report__missed { display: flex; gap: 9px; align-items: flex-start; padding: 8px 12px; border-radius: 10px; background: var(--tt-well); color: var(--tt-text-2); }
+.report__missed svg { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--tt-warning-text); }
+.report__missed strong { color: var(--tt-warning-text); font-weight: 600; }
+.report__sum { font-size: 15px; }
+.report h4 { margin-bottom: 6px; color: var(--tt-muted); font-size: 13px; font-weight: 600; }
+.report li { position: relative; padding: 2px 0 2px 14px; overflow-wrap: anywhere; }
+.report li::before { content: ''; position: absolute; left: 2px; top: 0.74em; width: 4px; height: 4px; border-radius: 50%; background: var(--tt-muted); }
+.report__did { display: flex; flex-wrap: wrap; gap: 2px 14px; padding-top: 9px; border-top: 1px solid var(--tt-well); color: var(--tt-text-2); font-size: 13px; }
+.report__did b { color: var(--tt-muted); font-weight: 600; }
+
+/* the card: every word that will go, and the two answers. Lapsed, it keeps the words and loses the answers. */
+.req { display: grid; gap: 10px; padding: 14px 16px 12px; border-radius: 14px; background: var(--tt-card); box-shadow: inset 3px 0 0 var(--tt-warning-text); font-size: 14px; line-height: 1.5; }
+.req--lapsed { box-shadow: inset 3px 0 0 var(--tt-field-border); }
+.report .req { border-radius: 10px; background: var(--tt-well); }
+.req__top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.req h3 { font-size: 15px; font-weight: 650; }
+.req__state { color: var(--tt-warning-text); font-size: 13px; font-weight: 600; }
+.req__by { margin-top: 1px; color: var(--tt-muted); font-size: 13px; }
+.req__h, .report .req__h { margin: 0; color: var(--tt-muted); font-size: 13px; font-weight: 600; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 13px; }
+.kv dt { color: var(--tt-muted); }
+.kv dd { overflow-wrap: anywhere; }
+.req__body { padding: 10px 12px; border-radius: 10px; background: var(--tt-well); color: var(--tt-text); font-family: var(--tt-font); font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.report .req .req__body { background: var(--tt-card); }
+.req__note { color: var(--tt-text-2); font-size: 13px; }
+.req__foot { color: var(--tt-muted); font-size: 12px; }
+.req__later { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-muted); font-size: 13px; }
+.req__later p { flex: 1 1 220px; min-width: 0; }
+.answered { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 8px 12px; border-radius: 10px; background: var(--tt-card); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 5px 14px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; font-size: 13px; font-weight: 550; white-space: nowrap; }
+.btn:hover { background: var(--tt-hover-soft); }
+.btn--primary { border-color: transparent; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 650; }
+.btn--primary:hover { background: var(--tt-accent); filter: brightness(1.08); }
+.btn--link { min-height: 0; padding: 0; border: 0; background: none; color: var(--tt-accent-text); font-size: inherit; font-weight: 500; text-align: left; text-decoration: underline; text-underline-offset: 2px; white-space: normal; }
+.btn svg { flex: none; width: 16px; height: 16px; }
+.btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* the composer: the message, then what the thread is set to, as a thread's own shows it */
+.composer { display: grid; gap: 4px; padding: 12px 10px 8px 16px; border-radius: 14px; background: var(--tt-card); }
+.composer:has(textarea:focus-visible), .composer:has(input[type='text']:focus-visible) { box-shadow: 0 0 0 1.5px var(--tt-accent); }
+.composer textarea, .composer input[type='text'] { width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; font-size: 16px; line-height: 1.5; resize: none; }
+.composer textarea:focus-visible, .composer input[type='text']:focus-visible { outline: none; }
+.composer textarea::placeholder, .composer input::placeholder { color: var(--tt-muted); opacity: 1; }
+.composer__foot { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.chipbtn { display: inline-flex; align-items: center; gap: 5px; flex: 0 1 auto; min-width: 0; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-muted); font-size: 13px; white-space: nowrap; }
+.chipbtn:hover { background: var(--tt-hover-soft); color: var(--tt-text); }
+.chipbtn svg { flex: none; width: 15px; height: 15px; }
+.chipbtn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.composer__send { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin-left: 6px; padding: 0; border: 0; border-radius: 50%; background: var(--tt-text); color: var(--tt-canvas); }
+.composer__send svg { width: 18px; height: 18px; }
+.win .composer__send:focus-visible { border-radius: 50%; }
+
+/* ============ setting one up, in the pane ============ */
+.setup { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.setup .pane__head { gap: 8px; border-bottom: 1px solid var(--tt-hairline); }
+.setup__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 20px 32px; align-items: start; max-width: 1000px; margin: 0 auto; }
+.setup__col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.field { display: grid; gap: 5px; min-width: 0; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 12px; }
+.pair > .hint { grid-column: 1 / -1; }
+.markrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.markrow .lbl { display: inline-flex; align-items: center; gap: 8px; }
+.looks { display: flex; gap: 8px; }
+.looks label { position: relative; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); cursor: pointer; }
+.looks label:has(input:checked) { border-color: var(--tt-accent); background: var(--tt-selected); }
+.looks label:has(input:focus-visible) { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.looks input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.field > label, .field > .lbl, .field > legend { color: var(--tt-text-2); font-size: 13px; font-weight: 600; }
+.field > legend { margin-bottom: 5px; }
+.hint { color: var(--tt-muted); font-size: 12px; line-height: 1.45; }
+.hint--warn { color: var(--tt-warning-text); }
+.field input[type='text'], .field textarea, .field select { width: 100%; min-width: 0; min-height: 34px; padding: 6px 10px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); font-size: 14px; }
+.field textarea { min-height: 72px; line-height: 1.45; resize: vertical; }
+.field input[aria-invalid='true'] { border-color: var(--tt-error-text); }
+.pick { display: grid; gap: 6px; }
+.pick--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pick label { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; padding: 8px 10px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); cursor: pointer; }
+.pick label:has(input:checked) { border-color: var(--tt-accent); background: var(--tt-selected); }
+.pick label:has(input:focus-visible) { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.pick input { flex: none; margin: 3px 0 0; accent-color: var(--tt-accent); }
+.pick input:focus-visible { outline: none; }
+.pick strong { display: block; font-size: 14px; font-weight: 600; }
+.pick label > span { min-width: 0; }
+.pick label > span > span { display: block; color: var(--tt-muted); font-size: 12px; line-height: 1.4; }
+.pick label:has(input:checked) > span > span { color: var(--tt-text-2); }
+.pick label[data-off='true'] { border-style: dashed; cursor: default; }
+.pick label[data-off='true'] strong { color: var(--tt-muted); }
+.sw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-well); }
+.sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-muted); transition: transform .12s; }
+.sw[aria-checked='true'] { border-color: transparent; background: var(--tt-accent); }
+.sw[aria-checked='true']::after { background: var(--tt-on-accent); transform: translateX(16px); }
+.win .sw:focus-visible { border-radius: 10px; }
+.when { display: grid; gap: 10px; padding: 12px; border-radius: 10px; background: var(--tt-card); }
+.when__row { display: flex; gap: 10px; align-items: center; min-height: 24px; }
+.when__row > svg { flex: none; width: 18px; height: 18px; margin: 0 9px; color: var(--tt-accent-text); }
+.when__row strong { font-size: 14px; font-weight: 600; }
+.when__row span span { display: block; color: var(--tt-muted); font-size: 12px; }
+.when__sub { display: grid; gap: 5px; padding-left: 46px; }
+.when__events { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.when__events > .lbl { font-size: 14px; font-weight: 600; }
+.ev { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: center; min-height: 34px; }
+.ev input { margin: 0 10px 0 11px; accent-color: var(--tt-accent); width: 15px; height: 15px; }
+.ev__words { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 14px; }
+.ev__words select { width: auto; max-width: 100%; min-height: 30px; padding: 3px 8px; }
+.ev[data-off='true'] label { color: var(--tt-muted); }
+.ev .hint { grid-column: 2; }
+
+/* ============ layers: anything that opens over the room. Escape closes it. ============ */
+.layer { position: absolute; inset: 0; z-index: 40; display: flex; background: var(--tt-scrim); }
+.sheet { display: flex; flex-direction: column; width: min(440px, 100%); height: 100%; margin-left: auto; background: var(--tt-overlay); box-shadow: var(--tt-shadow); }
+.layer__head { flex: none; display: flex; align-items: center; gap: 10px; padding: 14px 12px 10px 16px; }
+.layer__head h2 { flex: 1; min-width: 0; font-size: 17px; font-weight: 650; }
+.layer__body { flex: 1; min-height: 0; overflow: auto; display: grid; gap: 14px; align-content: start; padding: 4px 16px 16px; }
+.layer__foot { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--tt-hairline); }
+.about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 16px; font-size: 15px; }
+.about dt { color: var(--tt-muted); }
+.about dd { overflow-wrap: anywhere; }
+.about dd span { display: block; color: var(--tt-muted); font-size: 13px; }
+.iconbtn { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); }
+.iconbtn:hover { background: var(--tt-hover-soft); }
+.iconbtn svg { width: 18px; height: 18px; }
+.toast { position: absolute; left: 50%; bottom: 18px; z-index: 60; max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 10px; background: var(--tt-overlay); box-shadow: var(--tt-shadow); color: var(--tt-text); font-size: 13px; line-height: 1.4; translate: -50% 0; pointer-events: none; }
+
+/* ============ the phone: the iPhone app's list, and a thread a press opens ============ */
+.win[data-phone='true'] { font-size: 16px; line-height: 1.4; }
+.ph { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.ph__scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ph__tabs { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 6px 6px max(8px, env(safe-area-inset-bottom)); border-top: 1px solid var(--tt-hairline); background: var(--tt-sidebar); }
+.ph__tabs span { position: relative; display: grid; justify-items: center; gap: 2px; padding: 4px 0; color: var(--tt-muted); font-size: 11px; }
+.ph__tabs svg { width: 24px; height: 24px; }
+.ph__tabs .on { color: var(--tt-accent-text); font-weight: 600; }
+.ph__tabs b { position: absolute; top: 0; left: calc(50% + 5px); display: grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--tt-warning-text); color: var(--tt-canvas); font-size: 11px; font-weight: 700; line-height: 1; }
+.pl__head { display: flex; align-items: center; gap: 10px; padding: 18px 16px 12px 20px; }
+.pl__head h1 { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+.pl__add { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--tt-card); color: var(--tt-accent-text); }
+.pl__add svg { width: 24px; height: 24px; }
+.win .pl__add:focus-visible { border-radius: 50%; }
+.pl__find { display: flex; gap: 8px; padding: 0 16px 10px; }
+.pl__where { flex: none; width: 142px; height: 44px; padding: 0 10px 0 14px; border: 1px solid var(--tt-hairline); border-radius: 22px; background: var(--tt-card); font-size: 15px; font-weight: 500; }
+.win .pl__where:focus-visible { border-radius: 22px; }
+.pl__order { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 6px 20px 2px 22px; color: var(--tt-muted); font-size: 15px; }
+.pl__order .seg button { height: 32px; padding: 0 12px; font-size: 14px; }
+.win[data-phone='true'] .search { flex: 1; height: 44px; margin: 0; }
+.win[data-phone='true'] .search > svg { left: 13px; width: 18px; height: 18px; }
+.win[data-phone='true'] .search input { padding: 0 40px 0 40px; border-radius: 22px; background: var(--tt-card); font-size: 16px; }
+.win[data-phone='true'] .search input:focus-visible { border-radius: 22px; }
+.win[data-phone='true'] .search__clear { right: 2px; width: 40px; height: 40px; }
+.win[data-phone='true'] .needs { margin: 0 16px 6px; padding: 6px 12px 2px; border-radius: 14px; }
+.win[data-phone='true'] .needs__head h2 { font-size: 15px; }
+.win[data-phone='true'] .needs__line { min-height: 44px; gap: 10px; }
+.win[data-phone='true'] .needs__title { min-height: 44px; font-size: 16px; }
+.win[data-phone='true'] .needs__entry[data-rest] .needs__line, .win[data-phone='true'] .needs__entry[data-rest] .needs__title { font-size: 14px; }
+.win[data-phone='true'] .nbtn { min-height: 36px; padding: 0 12px; border-radius: 8px; font-size: 14px; }
+.win[data-phone='true'] .ring { width: 12px; height: 12px; }
+.pl__list { padding: 0 0 12px; }
+.win[data-phone='true'] .row { margin: 0; border: 0; border-radius: 0; }
+.win[data-phone='true'] .row:hover { background: transparent; }
+.win[data-phone='true'] .row__btn { grid-template-columns: 12px minmax(0, 1fr) auto; column-gap: 14px; min-height: 48px; padding: 8px 20px 8px 22px; border-radius: 0; }
+.win[data-phone='true'] .row__name { color: var(--tt-text); font-size: 17px; font-weight: 600; }
+.win[data-phone='true'] .row__role { font-size: 15px; }
+.win[data-phone='true'] .row__end { font-size: 13px; }
+.win[data-phone='true'] .row__end svg { width: 16px; height: 16px; }
+.win[data-phone='true'] .row--two .row__btn { grid-template-columns: 37px minmax(0, 1fr); column-gap: 12px; row-gap: 2px; min-height: 66px; padding: 10px 20px 10px 18px; }
+.win[data-phone='true'] .row__face { width: 37px; height: 37px; }
+.win[data-phone='true'] .row__face .ring:not([data-state='working']) { background-color: var(--tt-canvas); }
+.win[data-phone='true'] .row__l2 { font-size: 15px; }
+.win[data-phone='true'] .group { margin-bottom: 4px; }
+.win[data-phone='true'] .group__head { min-height: 44px; padding: 10px 20px 0 18px; border-radius: 0; font-size: 15px; font-weight: 500; letter-spacing: 0; }
+.win[data-phone='true'] .group__head svg { width: 16px; height: 16px; }
+.win[data-phone='true'] .side__empty { margin: 10px 22px; font-size: 15px; }
+.ph__nav { flex: none; display: flex; align-items: center; gap: 6px; min-height: 52px; padding: 4px 8px; }
+.ph__nav h1 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 650; }
+.pill { display: inline-flex; align-items: center; gap: 7px; flex: none; height: 32px; padding: 0 12px; border-radius: 16px; background: var(--tt-card); color: var(--tt-text-2); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.pill[data-tone='needs'] { color: var(--tt-warning-text); }
+.pill[data-tone='working'] { color: var(--tt-accent-text); }
+.ph__sub { flex: none; padding: 0 18px 9px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.win[data-phone='true'] .iconbtn { width: 44px; height: 44px; }
+.win[data-phone='true'] .iconbtn svg { width: 22px; height: 22px; }
+.win[data-phone='true'] .pane__scroll { padding: 14px 16px 18px; }
+.win[data-phone='true'] .pane__foot { padding: 0 12px max(12px, env(safe-area-inset-bottom)); }
+.win[data-phone='true'] .composer { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 18px; border-radius: 24px; }
+.win[data-phone='true'] .composer input[type='text'] { min-height: 36px; }
+.win[data-phone='true'] .composer__send { width: 36px; height: 36px; margin: 0; }
+.win[data-phone='true'] .report { padding: 14px; font-size: 15px; }
+.win[data-phone='true'] .report__sum, .win[data-phone='true'] .req, .win[data-phone='true'] .req__body { font-size: 16px; }
+.win[data-phone='true'] .req { padding: 14px 14px 12px; }
+.win[data-phone='true'] .req h3 { font-size: 17px; }
+.win[data-phone='true'] .req__foot { font-size: 13px; }
+.win[data-phone='true'] .kv { font-size: 15px; }
+.win[data-phone='true'] .btn { min-height: 44px; padding: 8px 16px; border-radius: 10px; font-size: 15px; }
+.win[data-phone='true'] .btn--link { min-height: 0; padding: 0; font-size: inherit; }
+.win[data-phone='true'] .req .btnrow .btn { flex: 1 1 140px; }
+.win[data-phone='true'] .steps, .win[data-phone='true'] .runline, .win[data-phone='true'] .note { font-size: 14px; }
+.win[data-phone='true'] .steps summary { min-height: 32px; }
+.win[data-phone='true'] .runline { align-items: flex-start; }
+.win[data-phone='true'] .runline svg { margin-top: 3px; }
+.win[data-phone='true'] .runline::after { display: none; }
+.win[data-phone='true'] .layer { align-items: flex-end; }
+.win[data-phone='true'] .sheet { width: 100%; height: auto; max-height: 92%; margin: 0; border-radius: 18px 18px 0 0; }
+.win[data-phone='true'] .setup .pane__head { height: 52px; padding: 0 12px; }
+.win[data-phone='true'] .setup .pane__head h1 { font-size: 17px; font-weight: 650; text-align: center; }
+.win[data-phone='true'] .field input[type='text'], .win[data-phone='true'] .field textarea, .win[data-phone='true'] .field select { min-height: 44px; font-size: 16px; }
+.win[data-phone='true'] .field > label, .win[data-phone='true'] .field > .lbl, .win[data-phone='true'] .field > legend { font-size: 15px; }
+.win[data-phone='true'] .hint { font-size: 13px; }
+.win[data-phone='true'] .pick--2, .win[data-phone='true'] .pair { grid-template-columns: minmax(0, 1fr); }
+.win[data-phone='true'] .pair { gap: 14px; }
+.win[data-phone='true'] .pair > .hint { margin-top: -8px; }
+.win[data-phone='true'] .pick strong, .win[data-phone='true'] .when__row strong, .win[data-phone='true'] .ev__words { font-size: 16px; }
+.win[data-phone='true'] .pick label > span > span, .win[data-phone='true'] .when__row span span { font-size: 13px; }
+.win[data-phone='true'] .sw { width: 50px; height: 30px; border-radius: 15px; }
+.win[data-phone='true'] .sw::after { width: 24px; height: 24px; }
+.win[data-phone='true'] .sw[aria-checked='true']::after { transform: translateX(20px); }
+.win[data-phone='true'] .when__row > svg { margin: 0 16px; }
+.win[data-phone='true'] .when__sub { padding-left: 0; }
+.win[data-phone='true'] .ev { min-height: 44px; }
+.win[data-phone='true'] .ev input { width: 20px; height: 20px; margin: 0 6px 0 4px; }
+.win[data-phone='true'] .ev__words select { min-height: 40px; }
+.win[data-phone='true'] .toast { bottom: 84px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<div class="stage" id="stage" data-size="fit">
+  <div class="top">
+    <div class="bar" role="toolbar" aria-label="Prototype controls">
+      <button type="button" id="prev" aria-label="Show the previous row variant">‹</button>
+      <span class="lab" id="lab" aria-live="polite"></span>
+      <button type="button" id="next" aria-label="Show the next row variant">›</button>
+      <span class="sep"></span>
+      <select id="jump" class="jump" aria-label="Jump to a screen">
+        <option value="">Jump to…</option>
+        <option value="page">The page</option>
+        <option value="report">A report from a run while away</option>
+        <option value="card">A card waiting</option>
+        <option value="working">An owlet working</option>
+        <option value="setup">Set one up</option>
+        <option value="edit">Edit one</option>
+      </select>
+      <button type="button" id="theme"></button>
+      <select id="size" class="size" aria-label="Window size">
+        <option value="fit">Fit this window</option>
+        <option value="1600x1000">1600 × 1000</option>
+        <option value="1280x800">1280 × 800</option>
+        <option value="820x560">820 × 560, the smallest</option>
+        <option value="390x844">iPhone, 390 × 844</option>
+      </select>
+      <button type="button" id="reset" class="reset" aria-label="Start again: put every card and owlet back">Start again</button>
+    </div>
+    <p class="cap" id="cap"></p>
+  </div>
+  <div class="win" id="win"></div>
+</div>
+<p class="vh" role="status" aria-live="polite" id="toast"></p>
+<script>
+'use strict';
+
+/* ==================== Sample data ==================== */
+/*
+ * PROTOTYPE — throwaway sample data. Every name, address, repository and number here is made up.
+ * Nothing is read from or sent to anywhere. It is Thursday, 9:12 am.
+ */
+
+const COMPUTERS = {
+  here: { id: 'here', name: 'This computer', kind: 'Sleeps when you close it', icon: 'laptop', models: ['Haiku 4.5', 'Fable 5.2', 'Opus 5.5', 'GPT-6 Luna'], accounts: ['proton-work', 'gmail-personal', 'github-here'] },
+  forge: { id: 'forge', name: 'forge', kind: 'Paired host, always on', icon: 'server', models: ['Haiku 4.5', 'Fable 5.2', 'Opus 5.5', 'GPT-6 Luna', 'GPT-6 Sol'], accounts: ['gmail-personal', 'github-forge'] },
+};
+
+const ACCOUNTS = {
+  'proton-work': { plugin: 'Proton Mail', name: 'Work', kind: 'mail', note: 'Stays on this computer, where Proton Mail Bridge runs.' },
+  'gmail-personal': { plugin: 'Gmail', name: 'Personal', kind: 'mail', note: 'Added here and copied to forge.' },
+  'github-here': { plugin: 'GitHub', name: 'sample-dev', kind: 'github', note: 'gh’s own sign-in on this computer.' },
+  'github-forge': { plugin: 'GitHub', name: 'sample-dev', kind: 'github', note: 'gh’s own sign-in on forge.' },
+};
+/* What an account lets an owlet do, in the words the Plugins page uses. */
+const ACCOUNT_RULES = {
+  mail: 'Reads after you say yes once. Every email asks you.',
+  github: 'Reads without asking. Every comment and issue asks you.',
+};
+
+/* The permission modes a thread has. An owlet shows its own the same way. */
+const MODES = {
+  ask: { label: 'Ask for approval', says: 'It asks before every edit and every command.' },
+  edits: { label: 'Allow edits', says: 'It edits files in its folder without asking, and asks before it reaches outside.' },
+  auto: { label: 'Auto', says: 'Its provider judges what is safe to run, and asks you about the rest.' },
+  full: { label: 'Full access', says: 'It runs anything on its computer without asking.' },
+};
+
+/* The three events Zach named for the first version. Each needs a plugin account of its kind. */
+const EVENTS = {
+  mail: { needs: 'mail', label: 'New mail in', text: (x) => `new mail in ${x}`, what: 'Which mailbox' },
+  ci: { needs: 'github', label: 'A CI run on main goes red in', text: (x) => `a CI run on main goes red in ${x}`, what: 'Which repository, for a red CI run' },
+  issue: { needs: 'github', label: 'A new issue or comment in', text: (x) => `a new issue or comment in ${x}`, what: 'Which repository, for a new issue or comment' },
+};
+const REPOS = ['sample-co/ferry', 'sample-co/harbor'];
+
+const CARD_WORDS = {
+  mail: { allow: 'Send the email', deny: 'Don’t send it', denied: 'You said no. Nothing was sent.', lapsed: 'Lapsed. Nothing was sent.', would: 'What it would have sent', wanted: 'What it wanted to send', nothing: 'Nothing is sent', tell: 'send it', wants: 'wants to send an email', gone: 'The card lapsed. Nothing was sent.' },
+  comment: { allow: 'Post the comment', deny: 'Don’t post it', denied: 'You said no. Nothing was posted.', lapsed: 'Lapsed. Nothing was posted.', would: 'What it would have posted', wanted: 'What it wanted to post', nothing: 'Nothing is posted', tell: 'post it', wants: 'wants to post a comment', gone: 'The card lapsed. Nothing was posted.' },
+};
+
+const CARDS = {
+  'mail-mara': {
+    kind: 'mail', owlet: 'tawny', start: 'lapsed', title: 'Send an email as Work', account: 'Proton Mail · Work', asked: '8:42 am', lapsedAt: '8:47 am',
+    rows: [['To', 'mara@harborsupply.example'], ['Subject', 'Re: Tuesday’s site visit']],
+    body: 'Hi Mara,\n\nWednesday at 10 works for me. I’ll bring the revised drawings.\n\nSee you then,\nSam',
+    allowed: 'You allowed it. The email went from Work at 9:13 am.',
+  },
+  'mail-pier': {
+    kind: 'mail', owlet: 'barn', start: 'live', title: 'Send an email as Personal', account: 'Gmail · Personal', asked: '9:10 am', until: '9:15 am', waited: '2 min', lapsedAt: '9:15 am',
+    rows: [['To', 'billing@northpier.example'], ['Subject', 'Invoice for October']],
+    body: 'Hello,\n\nThank you for November’s receipt. The invoice for October never reached me. Could you send it again?\n\nThank you,\nSam',
+    allowed: 'You allowed it. The email went from Personal at 9:13 am.',
+  },
+  'comment-214': {
+    kind: 'comment', owlet: 'screech', start: 'lapsed', title: 'Post a comment on issue #214', account: 'GitHub · sample-dev, gh on forge', asked: '2:46 am', lapsedAt: '2:51 am',
+    rows: [['On', 'sample-co/harbor · #214 Export fails on files over 2 GB'], ['As', 'sample-dev']],
+    body: 'Thanks for the report. This looks like the failure #209 fixes: the exporter reads the whole file into memory, so files over 2 GB time out.\n\nWhich version are you on, and how large was the file?',
+    allowed: 'You allowed it. The comment is on #214, posted as sample-dev.',
+  },
+};
+/* A lapsed card can be asked again (an idea, not decided): the same words on a new card that waits. */
+Object.keys(CARDS).filter((id) => CARDS[id].start === 'lapsed').forEach((id) => {
+  CARDS[`${id}-again`] = { ...CARDS[id], start: 'live', after: id, asked: '9:12 am', until: '9:17 am', waited: 'now', lapsedAt: '9:17 am' };
+});
+
+const REPORTS = {
+  'tawny-841': {
+    title: 'Mara asked to move the site visit', by: 'Started by new mail in Work', at: '8:41 am', took: '41 s',
+    missed: 'Missed 7:30 am. This computer was asleep.', missedNext: 'The next scheduled run is tomorrow at 7:30 am.',
+    summary: 'Mara at Harbor Supply asked to move Tuesday’s site visit to Wednesday at 10. I wrote a reply saying yes and asked to send it. Nobody answered, so nothing was sent.',
+    card: 'mail-mara',
+    groups: [{ h: 'Can wait', items: ['The port office: the dock permit renewal is due in three weeks.', 'Tideline: this month’s newsletter.'] }],
+    did: ['Read 3 new messages', 'Wrote 1 reply', 'Sent nothing'],
+  },
+  'screech-245': {
+    title: 'A first reply to issue #214', by: 'Started by a new issue in sample-co/harbor', at: '2:45 am', took: '52 s',
+    summary: 'Issue #214 says the export fails on files over 2 GB. It looks like the failure #209 fixes. I wrote a first reply and asked to post it. Nobody answered, so nothing was posted.',
+    card: 'comment-214', groups: [], did: ['Read 1 new issue', 'Wrote 1 comment', 'Posted nothing'],
+  },
+  'elf-730': {
+    title: 'Thursday’s brief', by: 'On its schedule', at: '7:30 am', took: '1 min 4 s',
+    summary: 'One thing needs you this morning. The rest can wait.',
+    groups: [
+      { h: 'Needs you', items: ['Your landlord wrote at 6:40 am about Saturday’s boiler visit and wants a time.'] },
+      { h: 'Changed overnight', items: ['Two pull requests merged in sample-co/ferry: #207 and #208.', 'Issue #214 opened in sample-co/harbor at 2:44 am.'] },
+      { h: 'Can wait', items: ['Tideline: this month’s newsletter.'] },
+    ],
+    did: ['Read 9 messages in Personal', 'Read 2 repositories', 'Sent nothing'],
+  },
+};
+
+const sched = (words, read, next, nextShort) => ({ words, read, next, nextShort });
+const NO_SCHEDULE = sched('', '', '', '');
+const OWLETS = [
+  {
+    id: 'tawny', name: 'Tawny', code: 'Ta', look: 'round', title: 'Inbox',
+    role: 'Read the Work mailbox. Tell me what needs a reply and what can wait. Draft replies in my voice, short and plain. Never send anything without asking me.',
+    home: 'here', model: 'Haiku 4.5', mode: 'ask', ...sched('weekdays at 7:30am', 'Monday to Friday at 7:30 am', 'tomorrow, 7:30 am', 'Fri 7:30 am'),
+    events: [{ kind: 'mail', in: 'Work' }], accounts: ['proton-work'], state: 'idle', unread: true, ago: 25, cards: ['mail-mara', 'mail-mara-again'],
+    last: { at: '8:47 am', words: 'Card lapsed' },
+    thread: [
+      { t: 'day', text: 'Yesterday' },
+      { t: 'you', at: '5:48 pm', text: 'What is still waiting in Work?' },
+      { t: 'steps', took: '12 s', items: ['Read 6 messages in Work', 'Checked which ones you answered', 'Wrote the list'] },
+      { t: 'owlet', at: '5:48 pm', text: 'Two need a reply: the port office about the dock permit, and Jonah about Friday’s order. The other four can wait.' },
+      { t: 'day', text: 'Today' },
+      { t: 'run', icon: 'bolt', by: 'Started by new mail in Work', at: '8:41 am' },
+      { t: 'steps', took: '41 s', items: ['Read 3 new messages in Work', 'Read Mara’s message about the site visit', 'Read your last three replies to Mara', 'Wrote a reply', 'Asked to send it'] },
+      { t: 'report', id: 'tawny-841' },
+    ],
+  },
+  {
+    id: 'scops', name: 'Scops', code: 'Sc', look: 'tufts', title: 'Repo upkeep',
+    role: 'Watch CI on main and new issues in sample-co/ferry. Say what broke and why. Fix what is small. Ask before you post anything.',
+    home: 'forge', model: 'Fable 5.2', mode: 'edits', ...NO_SCHEDULE,
+    events: [{ kind: 'ci', in: 'sample-co/ferry' }, { kind: 'issue', in: 'sample-co/ferry' }], accounts: ['github-forge'], state: 'working', since: '3 min', unread: false, ago: 3, cards: [],
+    last: { at: '9:09 am', words: 'Working' },
+    thread: [
+      { t: 'day', text: 'Tuesday' },
+      { t: 'run', icon: 'bolt', by: 'Started by a new issue in sample-co/ferry', at: '2:10 pm' },
+      { t: 'steps', took: '1 min 20 s', items: ['Read issue #209', 'Read the exporter', 'Wrote a first reply', 'Asked to post it'] },
+      { t: 'owlet', at: '2:11 pm', text: 'Issue #209 asks for larger exports. I wrote a first reply, and you posted it at 2:14 pm.' },
+      { t: 'day', text: 'Today' },
+      { t: 'run', icon: 'bolt', by: 'Started by a red CI run on main in sample-co/ferry', at: '9:09 am' },
+      { t: 'steps', open: true, items: ['Read run 4821 on main', 'Found the failing job, export-large'] },
+      { t: 'working', text: 'Reading the test log' },
+    ],
+  },
+  {
+    id: 'elf', name: 'Elf', code: 'El', look: 'small', title: 'Morning brief',
+    role: 'Each weekday morning, tell me what changed overnight in my mail and my repositories. One page. Start with what needs me.',
+    home: 'forge', model: 'GPT-6 Luna', mode: 'ask', ...sched('weekdays at 7:30am', 'Monday to Friday at 7:30 am', 'tomorrow, 7:30 am', 'Fri 7:30 am'),
+    events: [], accounts: ['gmail-personal', 'github-forge'], state: 'idle', unread: true, ago: 101, cards: [],
+    last: { at: '7:31 am', words: 'Brief ready' },
+    thread: [
+      { t: 'day', text: 'Today' },
+      { t: 'run', icon: 'clock', by: 'On its schedule', at: '7:30 am' },
+      { t: 'steps', took: '1 min 4 s', items: ['Read 9 messages in Personal', 'Read sample-co/ferry and sample-co/harbor', 'Wrote the brief'] },
+      { t: 'report', id: 'elf-730' },
+    ],
+  },
+  {
+    id: 'barn', name: 'Barn', code: 'Ba', look: 'heart', title: 'Receipts',
+    role: 'Keep my receipts and invoices in order. Read Personal for them, file each one in your folder, and tell me what is missing. Ask before you write to anyone.',
+    home: 'here', model: 'Haiku 4.5', mode: 'ask', ...sched('every friday at 4pm', 'Every Friday at 4:00 pm', 'tomorrow, 4:00 pm', 'Fri 4:00 pm'),
+    events: [{ kind: 'mail', in: 'Personal' }], accounts: ['gmail-personal'], state: 'idle', unread: false, ago: 2, cards: ['mail-pier'],
+    last: { at: '9:10 am', words: 'Asked to send an email' },
+    thread: [
+      { t: 'day', text: 'Yesterday' },
+      { t: 'you', at: '4:20 pm', text: 'The October invoice from North Pier never came. Ask them for it when you next read Personal.' },
+      { t: 'owlet', at: '4:20 pm', text: 'I will. I’ll show you the email before it goes.' },
+      { t: 'day', text: 'Today' },
+      { t: 'run', icon: 'bolt', by: 'Started by new mail in Personal', at: '9:09 am' },
+      { t: 'steps', took: '35 s', items: ['Read 2 new messages in Personal', 'Filed North Pier’s receipt for November', 'Looked for an invoice for October and found none', 'Wrote to North Pier'] },
+      { t: 'owlet', at: '9:10 am', text: 'North Pier sent November’s receipt, and I filed it. There is still no invoice for October, so I wrote to their billing address to ask for it.' },
+      { t: 'card', id: 'mail-pier' },
+    ],
+  },
+  {
+    id: 'snowy', name: 'Snowy', code: 'Sn', look: 'round', title: 'Release notes', role: 'Each Monday, draft release notes from what merged last week. Plain words, grouped by what a user sees.',
+    home: 'forge', model: 'Opus 5.5', mode: 'edits', ...sched('every monday at 9am', 'Every Monday at 9:00 am', 'Monday, 9:00 am', 'Mon 9:00 am'),
+    events: [], accounts: ['github-forge'], state: 'idle', unread: false, ago: 4332, cards: [],
+    last: { day: 'Monday', at: '9:04 am', short: 'Mon', words: 'Notes drafted', by: 'On its schedule', took: '4 min 10 s', steps: 9, said: 'I drafted the notes for 0.4.2 from the 11 pull requests merged last week. They are in my folder as notes-0.4.2.md.' },
+  },
+  {
+    id: 'pygmy', name: 'Pygmy', code: 'Py', look: 'small', title: 'Typos', role: 'Each night, read what changed in sample-co/ferry and fix typos in the docs. Put the fixes on a branch. Never push.',
+    home: 'forge', model: 'Haiku 4.5', mode: 'edits', ...sched('every night at 1am', 'Every night at 1:00 am', 'tonight, 1:00 am', 'Fri 1:00 am'),
+    events: [], accounts: ['github-forge'], state: 'idle', unread: true, ago: 490, cards: [],
+    last: { day: 'Today', at: '1:02 am', words: '2 typos fixed', by: 'On its schedule', took: '1 min 12 s', steps: 6, said: 'I read the 14 files changed yesterday in sample-co/ferry and fixed 2 typos in the docs. The change is on a branch, typos-nov-19. Nothing is pushed.' },
+  },
+  {
+    id: 'boreal', name: 'Boreal', code: 'Bo', look: 'tufts', title: 'Dependency updates', role: 'Each Sunday evening, try the dependency updates on a branch and run the tests. Tell me which are safe.',
+    home: 'forge', model: 'GPT-6 Sol', mode: 'edits', ...sched('every sunday at 8pm', 'Every Sunday at 8:00 pm', 'Sunday, 8:00 pm', 'Sun 8:00 pm'),
+    events: [], accounts: ['github-forge'], state: 'idle', unread: false, ago: 5112, cards: [],
+    last: { day: 'Sunday', at: '8:06 pm', short: 'Sun', words: '2 updates ready', by: 'On its schedule', took: '6 min 2 s', steps: 14, said: 'Two updates are ready on a branch, deps-nov-15: the test runner and the date library. The tests pass with both. Nothing is pushed.' },
+  },
+  {
+    id: 'sawwhet', name: 'Saw-whet', code: 'Sw', look: 'small', title: 'Flaky tests', role: 'When CI on main goes red in sample-co/harbor, rerun the failed job once and say whether the test is flaky or the change broke it.',
+    home: 'forge', model: 'Fable 5.2', mode: 'auto', ...NO_SCHEDULE,
+    events: [{ kind: 'ci', in: 'sample-co/harbor' }], accounts: ['github-forge'], state: 'working', since: '1 min', unread: false, ago: 1, cards: [],
+    last: { at: '9:11 am', words: 'Working' },
+    thread: [
+      { t: 'day', text: 'Today' },
+      { t: 'run', icon: 'bolt', by: 'Started by a red CI run on main in sample-co/harbor', at: '9:11 am' },
+      { t: 'steps', open: true, items: ['Read run 2207 on main', 'Found the failing job, visual-gate'] },
+      { t: 'working', text: 'Rerunning the visual gate' },
+    ],
+  },
+  {
+    id: 'screech', name: 'Screech', code: 'Sr', look: 'tufts', title: 'Issue replies',
+    role: 'Write a first reply to each new issue in sample-co/harbor. Ask what is missing and point at any open fix. Ask me before you post.',
+    home: 'forge', model: 'Fable 5.2', mode: 'ask', ...NO_SCHEDULE,
+    events: [{ kind: 'issue', in: 'sample-co/harbor' }], accounts: ['github-forge'], state: 'idle', unread: true, ago: 381, cards: ['comment-214', 'comment-214-again'],
+    last: { at: '2:51 am', words: 'Card lapsed' },
+    thread: [
+      { t: 'day', text: 'Today' },
+      { t: 'run', icon: 'bolt', by: 'Started by a new issue in sample-co/harbor', at: '2:45 am' },
+      { t: 'steps', took: '52 s', items: ['Read issue #214', 'Looked for open pull requests that touch the exporter', 'Found #209', 'Wrote a first reply', 'Asked to post it'] },
+      { t: 'report', id: 'screech-245' },
+    ],
+  },
+  {
+    id: 'horned', name: 'Horned', code: 'Ho', look: 'tufts', title: 'Weekly report', role: 'Each Friday afternoon, write what shipped this week and what slipped, from my notes folder.',
+    home: 'here', model: 'Opus 5.5', mode: 'ask', ...sched('every friday at 3pm', 'Every Friday at 3:00 pm', 'tomorrow, 3:00 pm', 'Fri 3:00 pm'),
+    events: [], accounts: [], state: 'idle', unread: false, ago: 8645, cards: [],
+    last: { day: 'Friday', at: '3:07 pm', short: 'Fri', words: 'Report written', by: 'On its schedule', took: '5 min 31 s', steps: 11, said: 'The report for the week of November 9 is in my folder as week-46.md. Three things shipped and one slipped.' },
+  },
+  {
+    id: 'burrowing', name: 'Burrowing', code: 'Bu', look: 'round', title: 'Downloads', role: 'Each day at noon, sort what is in Downloads into Documents and Pictures. Delete nothing.',
+    home: 'here', model: 'Haiku 4.5', mode: 'full', ...sched('every day at noon', 'Every day at 12:00 pm', 'today, 12:00 pm', '12:00 pm'),
+    events: [], accounts: [], state: 'idle', unread: false, ago: 1272, cards: [],
+    last: { day: 'Yesterday', at: '12:01 pm', short: 'Wed', words: '14 files sorted', by: 'On its schedule', took: '22 s', steps: 5, said: 'I sorted 14 files out of Downloads: 9 into Documents and 5 into Pictures. Nothing was deleted.' },
+  },
+  {
+    id: 'spotted', name: 'Spotted', code: 'Sp', look: 'heart', title: 'Reading list', role: 'Keep my reading list. When I give you a paper, add it with two lines on why it matters.',
+    home: 'forge', model: 'GPT-6 Luna', mode: 'ask', ...NO_SCHEDULE,
+    events: [], accounts: [], state: 'idle', unread: false, ago: 2432, cards: [],
+    last: { day: 'Tuesday', at: '4:40 pm', short: 'Tue', words: 'List updated', by: 'You asked', took: '1 min 3 s', steps: 4, said: 'I added the three papers to the list and wrote two lines on each. The list is in my folder as reading.md.', asked: 'Add these three papers to the list.' },
+  },
+  {
+    id: 'barred', name: 'Barred', code: 'Br', look: 'round', title: 'Changelog', role: 'Each Friday, add the week’s merged pull requests to CHANGELOG.md on a branch.',
+    home: 'forge', model: 'Haiku 4.5', mode: 'edits', ...sched('every friday at 5pm', 'Every Friday at 5:00 pm', 'tomorrow, 5:00 pm', 'Fri 5:00 pm'),
+    events: [], accounts: ['github-forge'], state: 'idle', unread: false, ago: 8529, cards: [],
+    last: { day: 'Friday', at: '5:03 pm', short: 'Fri', words: 'Changelog updated', by: 'On its schedule', took: '2 min 44 s', steps: 7, said: 'I added last week’s 11 merged pull requests to CHANGELOG.md on a branch, changelog-week-46. Nothing is pushed.' },
+  },
+  {
+    id: 'boobook', name: 'Boobook', code: 'Bk', look: 'small', title: 'Stand-up notes', role: 'Each weekday before stand-up, list what I merged and reviewed yesterday and what is open today.',
+    home: 'here', model: 'Haiku 4.5', mode: 'ask', ...sched('weekdays at 9:15am', 'Monday to Friday at 9:15 am', 'today, 9:15 am', '9:15 am'),
+    events: [], accounts: ['github-here'], state: 'idle', unread: false, ago: 1436, cards: [],
+    last: { day: 'Yesterday', at: '9:16 am', short: 'Wed', words: 'Notes ready', by: 'On its schedule', took: '48 s', steps: 5, said: 'On Tuesday you merged two pull requests and reviewed one. The list for today is in my folder as standup.md.' },
+  },
+  {
+    id: 'morepork', name: 'Morepork', code: 'Mo', look: 'heart', title: 'Backups', role: 'Each night, check that the three backups on forge ran, and restore one file from each to prove it.',
+    home: 'forge', model: 'Haiku 4.5', mode: 'ask', ...sched('every night at 2am', 'Every night at 2:00 am', 'tonight, 2:00 am', 'Fri 2:00 am'),
+    events: [], accounts: [], state: 'idle', unread: true, ago: 428, cards: [],
+    last: { day: 'Today', at: '2:04 am', words: '3 backups ran', by: 'On its schedule', took: '3 min 40 s', steps: 7, said: 'All three backups on forge ran last night, and a file restored from each one. The oldest copy is 30 days old.' },
+  },
+  {
+    id: 'ural', name: 'Ural', code: 'Ur', look: 'tufts', title: 'Translations', role: 'Each Wednesday, find interface strings with no German or Spanish, and add them on a branch.',
+    home: 'forge', model: 'GPT-6 Sol', mode: 'edits', ...sched('every wednesday at 10am', 'Every Wednesday at 10:00 am', 'Wednesday, 10:00 am', 'Wed 10:00 am'),
+    events: [], accounts: ['github-forge'], state: 'idle', unread: false, ago: 1387, cards: [],
+    last: { day: 'Yesterday', at: '10:05 am', short: 'Wed', words: '6 strings added', by: 'On its schedule', took: '3 min 9 s', steps: 8, said: 'Six strings had no German or Spanish. I added both on a branch, strings-nov-18. Nothing is pushed.' },
+  },
+  {
+    id: 'little', name: 'Little', code: 'Li', look: 'small', title: 'Newsletter digest', role: 'Each Sunday morning, read the week’s newsletters in Personal and give me ten lines.',
+    home: 'forge', model: 'GPT-6 Luna', mode: 'ask', ...sched('every sunday at 9am', 'Every Sunday at 9:00 am', 'Sunday, 9:00 am', 'Sun 9:00 am'),
+    events: [], accounts: ['gmail-personal'], state: 'idle', unread: false, ago: 5769, cards: [],
+    last: { day: 'Sunday', at: '9:03 am', short: 'Sun', words: 'Digest ready', by: 'On its schedule', took: '1 min 50 s', steps: 6, said: 'Seven newsletters came this week. The ten lines are in my folder as digest-nov-15.md.' },
+  },
+  {
+    id: 'marsh', name: 'Marsh', code: 'Ma', look: 'round', title: 'Docs links', role: 'Each Monday, follow every link in the docs and list the ones that no longer open.',
+    home: 'forge', model: 'Haiku 4.5', mode: 'edits', ...sched('every monday at 6am', 'Every Monday at 6:00 am', 'Monday, 6:00 am', 'Mon 6:00 am'),
+    events: [], accounts: ['github-forge'], state: 'idle', unread: false, ago: 4510, cards: [],
+    last: { day: 'Monday', at: '6:02 am', short: 'Mon', words: '1 broken link', by: 'On its schedule', took: '2 min 2 s', steps: 5, said: 'One link no longer opens: the install guide points at a page that moved. The fix is on a branch, links-nov-16. Nothing is pushed.' },
+  },
+  {
+    id: 'hawk', name: 'Hawk', code: 'Ha', look: 'tufts', title: 'Security advisories', role: 'Each morning, read new security advisories and say whether any touches what my two repositories depend on.',
+    home: 'forge', model: 'Fable 5.2', mode: 'ask', ...sched('every day at 6am', 'Every day at 6:00 am', 'tomorrow, 6:00 am', 'Fri 6:00 am'),
+    events: [], accounts: ['github-forge'], state: 'idle', unread: true, ago: 189, cards: [],
+    last: { day: 'Today', at: '6:03 am', words: 'Nothing new', by: 'On its schedule', took: '2 min 15 s', steps: 8, said: 'No new advisory touches what sample-co/ferry or sample-co/harbor depend on.' },
+  },
+  {
+    id: 'sooty', name: 'Sooty', code: 'So', look: 'heart', title: 'Licence notices', role: 'On the first of each month, check that the licence notices match what is installed.',
+    home: 'here', model: 'Haiku 4.5', mode: 'edits', ...sched('first of the month at 9am', 'The first of each month at 9:00 am', 'December 1, 9:00 am', 'Dec 1'),
+    events: [], accounts: [], state: 'idle', unread: false, ago: 26650, cards: [],
+    last: { day: 'November 1', at: '9:02 am', short: 'Nov 1', words: 'Notices current', by: 'On its schedule', took: '1 min 30 s', steps: 6, said: 'The licence notices match what is installed. Nothing changed.' },
+  },
+];
+const ORIGINAL = JSON.stringify(OWLETS);
+
+/* The four marks drawn so far. A real set is still to draw. */
+const LOOKS = { round: 'Round head', tufts: 'Ear tufts', small: 'Small, with big eyes', heart: 'Heart face' };
+
+const VARIANTS = {
+  R1: { name: 'Names', brief: 'A status ring and a name, A to Z.', caption: 'Each row is a status ring and a name, in A to Z order, so an owlet stays where it was. Twenty take 720 pixels. Everything else about an owlet is in its thread window and in the row’s tooltip.' },
+  R2: { name: 'Two lines', brief: 'Its mark, name and role, then home and what is next.', caption: 'Each row draws the owlet’s own mark, puts the role beside the name, and under them the home computer and either what just happened or the next run. Newest first, as Recent is on the Threads page.' },
+  R3: { name: 'Grouped', brief: 'Folding heads, by state or by computer.', caption: 'Rows sit under heads that fold: Working now, New reports and Idle, or one head for each computer. A row is one line, with the role beside the name.' },
+};
+const SHARED_CAPTION = 'All three keep Needs you above the list and the ring’s unread mark, and the thread window, the cards and the setup are the same in each.';
+
+/* ==================== State, the URL and small drawings ==================== */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const byId = (id) => OWLETS.find((o) => o.id === id);
+
+const Q = new URLSearchParams(location.search);
+const asked = (Q.get('variant') || Q.get('row') || '').toUpperCase();
+const S = {
+  variant: VARIANTS[asked] ? asked : 'R1',
+  screen: Q.get('screen') === 'setup' ? 'setup' : 'page',
+  owlet: byId(Q.get('owlet')) ? Q.get('owlet') : null,
+  edit: byId(Q.get('edit')) ? Q.get('edit') : null,
+  group: Q.get('group') === 'computer' ? 'computer' : 'state',
+  q: Q.get('q') || '',
+  where: COMPUTERS[Q.get('where')] ? Q.get('where') : 'all',
+  side: ['open', 'rail'].includes(Q.get('side')) ? Q.get('side') : null,
+  open: Q.get('open') === 'about' ? 'about' : null,
+  at: Q.get('at'),
+  theme: Q.get('theme') === 'light' ? 'light' : 'dark',
+  size: ['fit', '1600x1000', '1280x800', '820x560', '390x844'].includes(Q.get('size')) ? Q.get('size') : 'fit',
+  bare: Q.has('bare'),
+  more: false,
+  answers: {}, lapsedNow: {}, again: {}, dismissed: {}, read: {}, sent: {}, drafts: {}, folds: {},
+  form: null, toast: '', opener: null, jump: true, made: 0,
+};
+
+const ICONS = {
+  back: '<path d="M15 5l-7 7 7 7"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  send: '<path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/>',
+  pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  compose: '<path d="M12 5H6.5A1.5 1.5 0 005 6.5v11A1.5 1.5 0 006.5 19h11a1.5 1.5 0 001.5-1.5V12"/><path d="M17.5 4.5l2 2L12 14l-2.6.6.6-2.6z"/>',
+  collapse: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9.5 5v14M15.5 10l-2 2 2 2"/>',
+  expand: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9.5 5v14M13.5 10l2 2-2 2"/>',
+  folder: '<path d="M3.5 7.5A1.5 1.5 0 015 6h4l2 2h8a1.5 1.5 0 011.5 1.5v8A1.5 1.5 0 0119 19H5a1.5 1.5 0 01-1.5-1.5z"/>',
+  laptop: '<rect x="5" y="5.5" width="14" height="9.5" rx="1.5"/><path d="M3 18.5h18"/>',
+  server: '<rect x="4.5" y="4.5" width="15" height="6" rx="1.5"/><rect x="4.5" y="13.5" width="15" height="6" rx="1.5"/><path d="M8 7.5h.01M8 16.5h.01"/>',
+  shield: '<path d="M12 3.5l7 2.5v5.5c0 4.2-2.9 7.4-7 9-4.1-1.6-7-4.8-7-9V6z"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  bolt: '<path d="M13 3L5.5 13.5H11L10 21l7.5-10.5H12z"/>',
+  chat: '<path d="M4.5 6.5a2 2 0 012-2h11a2 2 0 012 2v7a2 2 0 01-2 2H11l-4 3.5v-3.5h-.5a2 2 0 01-2-2z"/>',
+  moon: '<path d="M19.5 14.5A8 8 0 019.5 4.5a8 8 0 1010 10z"/>',
+  dots: '<path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/>',
+  mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v3"/>',
+  owl: '<path d="M5 5l3.5 2.5c1-.5 2.2-.8 3.5-.8s2.5.3 3.5.8L19 5v9c0 4-3 6.5-7 6.5S5 18 5 14z"/><circle cx="9.2" cy="12" r="2"/><circle cx="14.8" cy="12" r="2"/>',
+  bubbles: '<path d="M4 6a1.5 1.5 0 011.5-1.5h8A1.5 1.5 0 0115 6v5a1.5 1.5 0 01-1.5 1.5H8.5L5.5 15v-2.5A1.5 1.5 0 014 11z"/><path d="M18 9.5h.5A1.5 1.5 0 0120 11v5a1.5 1.5 0 01-1.5 1.5V20l-3-2.5H11"/>',
+  owlets: '<circle cx="8.5" cy="10" r="5"/><path d="M6.8 9.6h.01M10.2 9.6h.01" stroke-width="2.4"/><circle cx="16.8" cy="12.5" r="3.6"/><path d="M15.6 12.2h.01M18 12.2h.01" stroke-width="2"/><path d="M3 19.5h18"/>',
+  chart: '<path d="M5 19v-8M10 19V5M15 19v-6M20 19V9"/>',
+  gear: '<circle cx="12" cy="12" r="2.8"/><path d="M10.4 3.8h3.2l.5 2.3 1.6.9 2.2-.7 1.6 2.8-1.7 1.6v1.8l1.7 1.6-1.6 2.8-2.2-.7-1.6.9-.5 2.3h-3.2l-.5-2.3-1.6-.9-2.2.7-1.6-2.8 1.7-1.6v-1.8L4.5 9.1l1.6-2.8 2.2.7 1.6-.9z"/>',
+  help: '<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 114 2c-.9.6-1.6 1.2-1.6 2.3M12 17h.01"/>',
+  monitor: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 21h6M12 17v4"/>',
+  sliders: '<path d="M4 7h8M18 7h2M4 12h2M12 12h8M4 17h10M20 17h0"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="12" r="2.2"/><circle cx="17" cy="17" r="2.2"/>',
+};
+const ic = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+const MARK = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="var(--tt-accent)"/><path d="M5.5 6.5l3 2h7l3-2v8.2a4.3 4.3 0 01-4.3 4.3H9.8a4.3 4.3 0 01-4.3-4.3z" fill="var(--tt-on-accent)"/><circle cx="9.3" cy="13" r="1.9" fill="var(--tt-accent)"/><circle cx="14.7" cy="13" r="1.9" fill="var(--tt-accent)"/></svg>';
+
+/* An owlet's face in its thread's header. The shape is its look; the eyes say what it is doing. */
+function owl(look, state, size = 24) {
+  const heads = {
+    round: 'M4 17c0-8 5-13 12-13s12 5 12 13-5 12-12 12S4 25 4 17z',
+    tufts: 'M4 4l6.5 4.5c1.7-.7 3.5-1 5.5-1s3.8.3 5.5 1L28 4v14c0 7-5 11-12 11S4 25 4 18z',
+    small: 'M6 18c0-7 4-11.5 10-11.5S26 11 26 18s-4 10.5-10 10.5S6 25 6 18z',
+    heart: 'M16 7.5c3.5-4.5 12-3 12 6C28 22 22 28 16 29 10 28 4 22 4 13.5c0-9 8.5-10.5 12-6z',
+  };
+  const r = look === 'small' ? 5.2 : 4.7;
+  const eyes =
+    state === 'idle'
+      ? '<path class="z" d="M8 16.5q3 2.6 6 0M18 16.5q3 2.6 6 0"/>'
+      : `<circle class="e" cx="11" cy="16" r="${r}"/><circle class="e" cx="21" cy="16" r="${r}"/><circle class="p" cx="11" cy="16" r="${state === 'needs' ? 2.7 : 2.2}"/><circle class="p" cx="21" cy="16" r="${state === 'needs' ? 2.7 : 2.2}"/>`;
+  return `<svg class="owl" data-state="${state}" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><path class="b" d="${heads[look] || heads.round}"/>${eyes}<path class="f" d="M14.4 20h3.2L16 23.2z"/></svg>`;
+}
+
+/* ---------- what an owlet is doing, given what has been pressed in this sitting ---------- */
+const homeOf = (o) => COMPUTERS[o.home];
+const evText = (e) => EVENTS[e.kind].text(e.in);
+const acctLabel = (id) => `${ACCOUNTS[id].plugin} · ${ACCOUNTS[id].name}`;
+const shown = (o) => o.cards.filter((id) => !CARDS[id].after || S.again[CARDS[id].after]);
+function cardState(id) {
+  if (S.answers[id]) return S.answers[id];
+  return CARDS[id].start === 'lapsed' || S.lapsedNow[id] ? 'lapsed' : 'live';
+}
+const liveOf = (o) => shown(o).filter((id) => cardState(id) === 'live');
+const statusOf = (o) => (liveOf(o).length ? 'needs' : o.state === 'working' ? 'working' : 'idle');
+const isUnread = (o) => o.unread && !S.read[o.id] && statusOf(o) === 'idle';
+const ring = (o) => {
+  const st = statusOf(o);
+  return `<i class="ring" ${st !== 'idle' ? `data-state="${st}"` : isUnread(o) ? 'data-unread' : ''}></i>`;
+};
+const stateWords = (o) => {
+  const st = statusOf(o);
+  if (st === 'needs') return 'Needs you';
+  if (st === 'working') return `Working ${o.since}`;
+  return isUnread(o) ? 'New report' : 'Idle';
+};
+/* What a two-line row says under the name, and how loud it is. */
+function whatOf(o) {
+  const st = statusOf(o);
+  if (st === 'needs') return ['Needs you', 'needs'];
+  if (st === 'working') return [`Working ${o.since}`, 'working'];
+  if (isUnread(o)) return [`${o.last.words} ${o.last.short || o.last.at}`, 'news'];
+  if (o.nextShort) return [`Next: ${o.nextShort}`, ''];
+  return [o.events.length ? 'Waits for an event' : o.words ? 'On a schedule' : 'When you ask', ''];
+}
+const says = (o) => `${o.name}, ${o.title}. ${stateWords(o)}. On ${homeOf(o).name}.`;
+
+const live = () => OWLETS.flatMap((o) => liveOf(o).map((id) => ({ o, id, c: CARDS[id] })));
+const rested = () => OWLETS.flatMap((o) => shown(o).filter((id) => cardState(id) === 'lapsed' && !S.dismissed[id] && !S.again[id]).map((id) => ({ o, id, c: CARDS[id] })));
+
+function matches(o) {
+  if (S.where !== 'all' && o.home !== S.where) return false;
+  const q = S.q.trim().toLowerCase();
+  if (!q) return true;
+  const hay = [o.name, o.title, homeOf(o).name, o.model, MODES[o.mode].label, o.words, ...o.events.map(evText), ...o.accounts.map(acctLabel), stateWords(o)].join(' ').toLowerCase();
+  return q.split(/\s+/).every((w) => hay.includes(w));
+}
+const az = (a, b) => a.name.localeCompare(b.name);
+const newest = (a, b) => a.ago - b.ago;
+
+/* ==================== The sidebar ==================== */
+function rowAttrs(o, phone) {
+  const cur = !phone && (S.screen === 'page' || S.edit === o.id) && current() === o;
+  return { li: cur ? ' data-current' : '', btn: `data-act="open" data-id="${o.id}" data-key="row-${o.id}" aria-label="${esc(says(o))}" title="${esc(`${o.title} · ${homeOf(o).name} · ${stateWords(o)}`)}"${cur ? ' aria-current="true"' : ''}` };
+}
+function rowR1(o, phone) {
+  const a = rowAttrs(o, phone);
+  return `<li class="row"${a.li}><button class="row__btn" ${a.btn}>${ring(o)}<span class="row__name">${esc(o.name)}</span></button></li>`;
+}
+function rowR2(o, phone) {
+  const a = rowAttrs(o, phone);
+  const [what, tone] = whatOf(o);
+  const st = statusOf(o);
+  return `<li class="row row--two"${a.li}><button class="row__btn" ${a.btn}><span class="row__face">${owl(o.look, st, phone ? 34 : 28)}${st !== 'idle' || isUnread(o) ? ring(o) : ''}</span><span class="row__l1"><span class="row__name">${esc(o.name)}</span><span class="row__role">${esc(o.title)}</span></span><span class="row__l2"><span class="row__home">${esc(homeOf(o).name)}</span><span class="row__what" data-tone="${tone}">${esc(what)}</span></span></button></li>`;
+}
+function rowR3(o, phone) {
+  const a = rowAttrs(o, phone);
+  const st = statusOf(o);
+  const end = S.group === 'computer' ? `<span class="row__end" data-tone="${st === 'idle' ? '' : st}">${esc(st === 'needs' ? 'Needs you' : st === 'working' ? 'Working' : o.last.short || o.last.at)}</span>` : `<span class="row__end">${ic(homeOf(o).icon)}</span>`;
+  return `<li class="row"${a.li}><button class="row__btn" ${a.btn}>${ring(o)}<span class="row__l1"><span class="row__name">${esc(o.name)}</span><span class="row__role">${esc(o.title)}</span></span>${end}</button></li>`;
+}
+function groupsOf(all) {
+  if (S.group === 'computer') return Object.values(COMPUTERS).map((c) => ({ id: `c-${c.id}`, name: c.name, items: all.filter((o) => o.home === c.id).sort(az) }));
+  return [
+    { id: 's-working', name: 'Working now', items: all.filter((o) => statusOf(o) !== 'idle').sort(newest) },
+    { id: 's-news', name: 'New reports', items: all.filter((o) => isUnread(o)).sort(newest) },
+    { id: 's-idle', name: 'Idle', items: all.filter((o) => statusOf(o) === 'idle' && !isUnread(o)).sort(newest) },
+  ];
+}
+function list(phone) {
+  const all = OWLETS.filter(matches);
+  if (!all.length) return `<p class="side__empty">${S.q.trim() ? `No owlet matches “${esc(S.q.trim())}”.` : 'No owlet lives on this computer yet.'}</p>`;
+  if (S.variant === 'R1') return `<ul>${[...all].sort(az).map((o) => rowR1(o, phone)).join('')}</ul>`;
+  if (S.variant === 'R2') return `<ul>${[...all].sort(newest).map((o) => rowR2(o, phone)).join('')}</ul>`;
+  return groupsOf(all)
+    .filter((g) => g.items.length)
+    .map((g) => {
+      const open = !S.folds[g.id] || !!S.q.trim();
+      return `<section class="group"><h3><button class="group__head" data-act="fold" data-id="${g.id}" data-key="fold-${g.id}" aria-expanded="${open}">${ic('chev')}<span>${esc(g.name)}</span><span class="group__count">${g.items.length}</span></button></h3>${open ? `<ul>${g.items.map((o) => rowR3(o, phone)).join('')}</ul>` : ''}</section>`;
+    })
+    .join('');
+}
+function orderControl() {
+  if (S.variant === 'R1') return '<span class="side__order">A to Z</span>';
+  if (S.variant === 'R2') return '<span class="side__order">Newest first</span>';
+  return `<span class="seg" role="group" aria-label="Group the owlets by">${[['state', 'State'], ['computer', 'Computer']].map(([id, label]) => `<button data-act="group" data-to="${id}" data-key="group-${id}" aria-pressed="${S.group === id}">${label}</button>`).join('')}</span>`;
+}
+function search() {
+  return `<div class="search" role="search">${ic('search')}<input type="search" id="q" data-key="q" aria-label="Search owlets" placeholder="Search ${OWLETS.length} owlets" value="${esc(S.q)}" autocomplete="off" spellcheck="false"><button class="search__clear" data-act="clear-q" data-key="clear-q" aria-label="Clear the search"${S.q ? '' : ' hidden'}>${ic('x')}</button></div>`;
+}
+function needsCard() {
+  const waits = live();
+  const rest = rested();
+  if (!waits.length && !rest.length) return '';
+  return `<section class="needs" aria-labelledby="needs-h">
+    <div class="needs__head"><h2 id="needs-h">Needs you</h2><span class="needs__count">${waits.length + rest.length}</span>${waits.length ? `<span class="needs__longest">${esc(waits[0].c.waited === 'now' ? 'Just now' : waits[0].c.waited)}</span>` : ''}</div>
+    <ul>${waits
+      .map(({ o, id, c }) => `<li class="needs__entry"><div class="needs__line"><i class="ring" data-state="needs"></i><button class="needs__title" data-act="goto-card" data-id="${id}" data-key="needs-${id}" aria-label="Open ${esc(o.name)}. It ${CARD_WORDS[c.kind].wants}.">${esc(o.name)} <span>${CARD_WORDS[c.kind].wants}</span></button><button class="nbtn" data-act="answer" data-id="${id}" data-key="answer-${id}" aria-label="Answer ${esc(o.name)}’s card">Answer</button></div></li>`)
+      .join('')}${rest
+      .map(({ o, id, c }) => `<li class="needs__entry" data-rest><div class="needs__line"><i class="ring"></i><span class="needs__when">Card lapsed in</span><button class="needs__title" data-act="goto-lapsed" data-id="${id}" data-key="needs-${id}" aria-label="Open ${esc(o.name)} at the card that lapsed at ${esc(c.lapsedAt)}">${esc(o.name)}</button><span class="needs__actions"><button class="nbtn nbtn--ghost" data-act="dismiss" data-id="${id}" data-key="dismiss-${id}" aria-label="Dismiss the lapsed card in ${esc(o.name)}">Dismiss</button></span></div></li>`)
+      .join('')}</ul></section>`;
+}
+const FOOT = `<div class="side__foot" aria-label="Sotto’s rooms. Only Owlets is drawn."><span title="Dictate">${ic('mic')}</span><span title="Watcher">${ic('owl')}</span><span title="Threads">${ic('bubbles')}</span><span class="on" title="Owlets">${ic('owlets')}</span><span class="sep"></span><span title="Usage">${ic('chart')}</span><span title="Settings">${ic('gear')}</span><span title="Help">${ic('help')}</span></div>`;
+function sidebar() {
+  return `<nav class="side" aria-label="Owlets">
+    <div class="side__top">${MARK}<button class="tbtn" data-act="new" data-key="new">${ic('compose')}<span>New owlet</span></button><button class="ibtn" data-act="side" data-to="rail" data-key="collapse" aria-label="Collapse the owlets list">${ic('collapse')}</button></div>
+    <div class="side__title"><h2>Owlets</h2><span class="owltag" title="An Owl feature: in Sotto Owl until it is sent to stable">Owl</span><span class="grow"></span>${orderControl()}</div>
+    ${search()}
+    <div data-needs>${needsCard()}</div>
+    <div class="side__scroll" data-scroll="side" data-list>${list(false)}</div>
+    ${FOOT}
+  </nav>`;
+}
+function rail() {
+  const rank = (o) => (statusOf(o) === 'needs' ? 0 : statusOf(o) === 'working' ? 1 : isUnread(o) ? 2 : 3);
+  const order = [...OWLETS].sort((a, b) => rank(a) - rank(b) || az(a, b));
+  return `<nav class="rail" aria-label="Owlets">
+    ${MARK}
+    <button class="ibtn" data-act="side" data-to="open" data-key="expand" aria-label="Show the owlets list">${ic('expand')}</button>
+    <div class="rail__list" data-scroll="rail"><ul>${order
+      .map((o) => {
+        const st = statusOf(o);
+        const cur = (S.screen === 'page' || S.edit === o.id) && current() === o;
+        return `<li><button class="tile" data-act="open" data-id="${o.id}" data-key="tile-${o.id}" aria-label="${esc(says(o))}" title="${esc(`${o.name} · ${o.title} · ${stateWords(o)}`)}"${cur ? ' aria-current="true"' : ''}>${esc(o.code)}</button>${st !== 'idle' || isUnread(o) ? ring(o) : ''}</li>`;
+      })
+      .join('')}</ul></div>
+    <div class="rail__foot" aria-hidden="true"><span>${ic('chart')}</span><span>${ic('gear')}</span><span>${ic('help')}</span></div>
+  </nav>`;
+}
+
+/* ==================== The pane: one owlet's thread ==================== */
+const current = () => byId(S.owlet) || OWLETS[0];
+
+function card(id) {
+  const c = CARDS[id];
+  const o = byId(c.owlet);
+  const w = CARD_WORDS[c.kind];
+  const st = cardState(id);
+  const facts = `<dl class="kv">${c.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl><pre class="req__body">${esc(c.body)}</pre>`;
+  if (st === 'allowed' || st === 'denied') {
+    return `<p class="answered" tabindex="-1" data-key="ans-${id}"><span>${esc(st === 'allowed' ? c.allowed : w.denied)}</span><button class="btn--link" data-act="unanswer" data-id="${id}" data-key="un-${id}">Show the card again (prototype)</button></p>`;
+  }
+  if (st === 'lapsed') {
+    const later = S.again[id]
+      ? `<p>You told ${esc(o.name)} to ${w.tell}. It asked again on a new card, below.</p>`
+      : `<button class="btn" data-act="again" data-id="${id}" data-key="again-${id}">Tell ${esc(o.name)} to ${w.tell}</button><span class="idea">Idea</span><p>It would ask again on a new card. ${w.nothing} until you answer that one.</p>`;
+    return `<section class="req req--lapsed" aria-labelledby="req-${id}" data-req="${id}" data-key="lapsed-${id}" tabindex="-1">
+      <div><div class="req__top"><h3 id="req-${id}">${esc(c.title)}</h3><p class="req__state">${w.lapsed}</p></div>
+      <p class="req__by">${esc(o.name)} asked at ${esc(c.asked)}, on ${esc(homeOf(o).name)}, with ${esc(c.account)}. Nobody answered in five minutes.</p></div>
+      <h4 class="req__h">${w.would}</h4>
+      ${facts}
+      <div class="req__later">${later}</div>
+      ${S.lapsedNow[id] ? `<p class="req__foot"><button class="btn--link" data-act="unlapse" data-id="${id}" data-key="unlapse-${id}">Put the card back (prototype)</button></p>` : ''}
+    </section>`;
+  }
+  return `<section class="req" aria-labelledby="req-${id}" data-req="${id}" data-live>
+    <div><h3 id="req-${id}">${esc(c.title)}</h3>
+    <p class="req__by">${esc(o.name)} asks, on ${esc(homeOf(o).name)} · ${esc(c.asked)} · with ${esc(c.account)}</p></div>
+    ${facts}
+    <p class="req__note">${w.nothing} until you press ${w.allow}. Only you can answer this.</p>
+    <div class="btnrow"><button class="btn btn--primary" data-act="allow" data-id="${id}" data-key="allow-${id}">${w.allow}</button><button class="btn" data-act="deny" data-id="${id}" data-key="deny-${id}">${w.deny}</button></div>
+    <p class="req__foot">Waits until ${esc(c.until)}. With no answer it lapses, and ${w.nothing.toLowerCase()}. <button class="btn--link" data-act="lapse" data-id="${id}" data-key="lapse-${id}">Skip ahead five minutes (prototype)</button></p>
+  </section>`;
+}
+
+function report(o, id) {
+  const r = REPORTS[id];
+  return `<article class="report" aria-label="Report from a run while you were away: ${esc(r.title)}" data-report>
+    <div><p class="report__label">While you were away</p>
+    <h3>${esc(r.title)}</h3>
+    <p class="report__meta">${esc(r.by)} · ${esc(r.at)} · on ${esc(homeOf(o).name)} · took ${esc(r.took)}</p></div>
+    ${r.missed ? `<p class="report__missed">${ic('moon')}<span><strong>${esc(r.missed)}</strong> ${esc(r.missedNext)}</span></p>` : ''}
+    <p class="report__sum">${esc(r.summary)}</p>
+    ${r.card ? `<div><h4>${CARD_WORDS[CARDS[r.card].kind].wanted}</h4>${card(r.card)}</div>` : ''}
+    ${r.groups.map((g) => `<div><h4>${esc(g.h)}</h4><ul>${g.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}
+    <p class="report__did"><b>What it did</b>${r.did.map((d) => `<span>${esc(d)}</span>`).join('')}</p>
+  </article>`;
+}
+
+/* An owlet with no thread written out gets one from its last run. */
+function threadOf(o) {
+  if (o.thread) return o.thread;
+  const l = o.last;
+  const items = [{ t: 'day', text: l.day }];
+  if (l.asked) items.push({ t: 'you', at: l.at, text: l.asked });
+  else items.push({ t: 'run', icon: 'clock', by: l.by, at: l.at });
+  items.push({ t: 'steps', took: l.took, n: l.steps }, { t: 'owlet', at: l.at, text: l.said });
+  return items;
+}
+function transcript(o) {
+  const parts = threadOf(o).map((m) => {
+    if (m.t === 'day') return `<p class="day">${esc(m.text)}</p>`;
+    if (m.t === 'note') return `<p class="note">${esc(m.text)}</p>`;
+    if (m.t === 'you') return `<div class="msg msg--you"><p class="msg__who">You<span>${esc(m.at)}</span></p><p>${esc(m.text)}</p></div>`;
+    if (m.t === 'owlet') return `<div class="msg msg--owl"><p class="msg__who">${esc(o.name)}<span>${esc(m.at)}</span></p><p>${esc(m.text)}</p></div>`;
+    if (m.t === 'run') return `<p class="runline">${ic(m.icon)}<span>${esc(m.by)} · ${esc(m.at)}</span></p>`;
+    if (m.t === 'steps') {
+      const n = m.items ? m.items.length : m.n;
+      const head = `${n} step${n === 1 ? '' : 's'}${m.took ? ` · ${esc(m.took)}` : ''}`;
+      return m.items ? `<details class="steps"${m.open ? ' open' : ''}><summary>${head}${ic('chev')}</summary><ul>${m.items.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></details>` : `<p class="steps">${head}</p>`;
+    }
+    if (m.t === 'working') return `<p class="working"><i class="ring" data-state="working"></i><span>${esc(m.text)}</span></p>`;
+    if (m.t === 'report') return report(o, m.id);
+    if (m.t === 'card') return card(m.id);
+    return '';
+  });
+  /* a lapsed card asked again: your words, its answer, and the new card */
+  o.cards.filter((id) => CARDS[id].after && S.again[CARDS[id].after]).forEach((id) => {
+    const w = CARD_WORDS[CARDS[id].kind];
+    parts.push(`<div class="msg msg--you"><p class="msg__who">You<span>9:12 am</span></p><p>${w.tell[0].toUpperCase()}${w.tell.slice(1)}.</p></div>`);
+    parts.push(`<div class="msg msg--owl"><p class="msg__who">${esc(o.name)}<span>9:12 am</span></p><p>I am asking again. This is a new card, and only you can answer it.</p></div>`);
+    parts.push(card(id));
+  });
+  (S.sent[o.id] || []).forEach((t) => {
+    parts.push(`<div class="msg msg--you"><p class="msg__who">You<span>Now</span></p><p>${esc(t)}</p></div>`);
+    parts.push(`<div class="msg msg--owl"><p class="msg__who">${esc(o.name)}<span>Now</span></p><p class="muted">This is a prototype, so ${esc(o.name)} has no answer. Nothing left this page.</p></div>`);
+  });
+  return `<div class="talk">${parts.join('')}</div>`;
+}
+function runsLine(o) {
+  const parts = [`<span>${ic('chat')}when you ask</span>`];
+  if (o.words) parts.push(`<span>${ic('clock')}${esc(o.words)}</span>`);
+  o.events.forEach((e) => parts.push(`<span>${ic('bolt')}${esc(evText(e))}</span>`));
+  return `<p class="pane__runs" aria-label="When ${esc(o.name)} runs"><b>Runs</b>${parts.join('')}${o.words && o.next ? `<span class="pane__next">Next: ${esc(o.next)}</span>` : ''}</p>`;
+}
+function composer(o, phone) {
+  const hint = statusOf(o) !== 'working' ? `Message ${o.name}` : phone ? 'Reply while it works' : `${o.name} is working. Write a follow-up to queue it.`;
+  const draft = esc(S.drafts[o.id] || '');
+  const send = `<button class="composer__send" type="submit" aria-label="Send the message to ${esc(o.name)}" data-key="send-${o.id}">${ic('send')}</button>`;
+  if (phone) return `<form class="composer" data-form="say" data-owlet="${o.id}"><input type="text" name="say" autocomplete="off" aria-label="Message ${esc(o.name)}" placeholder="${esc(hint)}" value="${draft}" data-key="say-${o.id}">${send}</form>`;
+  return `<form class="composer" data-form="say" data-owlet="${o.id}">
+    <textarea name="say" rows="${layout() === 'narrow' ? 1 : 2}" aria-label="Message ${esc(o.name)}" placeholder="${esc(hint)}" data-key="say-${o.id}">${draft}</textarea>
+    <div class="composer__foot"><span class="grow"></span>
+      <button type="button" class="chipbtn" data-act="edit" data-focus="mode" data-key="chip-mode" aria-label="Permission mode: ${MODES[o.mode].label}. Change it." title="${esc(MODES[o.mode].says)}">${ic('shield')}<span>${MODES[o.mode].label}</span></button>
+      <button type="button" class="chipbtn" data-act="edit" data-focus="model" data-key="chip-model" aria-label="Model: ${esc(o.model)}. Change it."><span>${esc(o.model)}</span></button>
+      ${send}
+    </div>
+  </form>`;
+}
+function pane(o) {
+  const st = statusOf(o);
+  return `<header class="pane__head">
+      <span class="pane__who">${owl(o.look, st, 24)}<h1>${esc(o.name)}</h1><span class="pane__role">/ ${esc(o.title)}</span></span>
+      <span class="pane__fact" title="Its own folder, which Sotto made. Its thread and its files live there.">${ic('folder')}<span class="mono">Owlets/${esc(o.name)}</span></span>
+      <span class="pane__fact" title="Its home computer. ${esc(homeOf(o).kind)}.">${ic(homeOf(o).icon)}<span>${esc(homeOf(o).name)}</span></span>
+      <span class="grow"></span>
+      <button class="hbtn" data-act="edit" data-key="edit" aria-label="Edit ${esc(o.name)}">${ic('pencil')}<span>Edit</span></button>
+    </header>
+    ${runsLine(o)}
+    <div class="pane__scroll" data-scroll="thread-${o.id}" data-stick><div class="col">${transcript(o)}</div></div>
+    <div class="pane__foot"><div class="col">${composer(o, false)}</div></div>`;
+}
+
+/* ==================== Setting one up ==================== */
+function blankEvents() {
+  return { mail: { on: false, in: '' }, ci: { on: false, in: '' }, issue: { on: false, in: '' } };
+}
+function formFor(id) {
+  if (S.form && S.form.id === (id || 'new')) return S.form;
+  const o = id ? byId(id) : null;
+  const events = blankEvents();
+  if (o) o.events.forEach((e) => (events[e.kind] = { on: true, in: e.in }));
+  S.form = o
+    ? { id, name: o.name, look: o.look, title: o.title, role: o.role, home: o.home, model: o.model, mode: o.mode, accounts: [...o.accounts], schedOn: !!o.words, words: o.words, events }
+    : { id: 'new', name: '', look: 'round', title: '', role: '', home: 'here', model: COMPUTERS.here.models[0], mode: 'ask', accounts: [], schedOn: false, words: '', events };
+  return S.form;
+}
+/* How Sotto reads a schedule's plain words back. A fixed table: the prototype only shows the idea. */
+function readSchedule(words) {
+  const w = (words || '').trim().toLowerCase();
+  if (!w) return null;
+  const known = OWLETS.find((o) => o.words === w);
+  return known ? [known.read, known.next, known.nextShort] : null;
+}
+const readBack = (words) => {
+  const r = readSchedule(words);
+  if (r) return `Sotto reads this as: <b>${esc(r[0])}</b>. Next: ${esc(r[1])}.`;
+  return (words || '').trim() ? 'Sotto would say here how it read your words, and when the next run is.' : 'Say when in your own words, such as “weekdays at 7:30am”.';
+};
+const folderLine = (f) => `Its folder: <span class="mono">Owlets/${esc(f.name.trim() || '…')}</span> on ${esc(COMPUTERS[f.home].name)}. Sotto makes it, and its thread and its files live there.`;
+function eventChoices(f, kind) {
+  const need = EVENTS[kind].needs;
+  const have = f.accounts.filter((a) => ACCOUNTS[a].kind === need);
+  if (!have.length) return null;
+  return need === 'mail' ? have.map((a) => ACCOUNTS[a].name) : REPOS;
+}
+function setup(phone) {
+  const f = formFor(S.edit);
+  const editing = !!S.edit;
+  const home = COMPUTERS[f.home];
+  const off = Object.keys(ACCOUNTS).filter((a) => !home.accounts.includes(a) && ACCOUNTS[a].kind !== 'github');
+  const who = `<div class="pair"><div class="field"><label for="f-name">Name</label><input type="text" id="f-name" data-f="name" data-key="f-name" value="${esc(f.name)}" autocomplete="off" placeholder="Such as Tawny" data-first></div>
+    <div class="field"><label for="f-title">Role, in a word or two</label><input type="text" id="f-title" data-f="title" data-key="f-title" value="${esc(f.title)}" autocomplete="off" placeholder="Such as Inbox"></div>
+    <p class="hint" id="folder-line">${folderLine(f)}</p></div>
+    <div class="field markrow" role="radiogroup" aria-labelledby="f-look-l"><span class="lbl" id="f-look-l">Its mark <span class="idea">Idea</span></span><div class="looks">${Object.keys(LOOKS)
+      .map((k) => `<label title="${LOOKS[k]}"><input type="radio" name="look" value="${k}" data-f="look" data-key="f-look-${k}" ${f.look === k ? 'checked' : ''} aria-label="${LOOKS[k]}">${owl(k, 'working', 30)}</label>`)
+      .join('')}</div></div>
+    <div class="field"><label for="f-role">What it does</label><textarea id="f-role" data-f="role" data-key="f-role" rows="3" placeholder="In your own words. It reads this at the start of every run.">${esc(f.role)}</textarea></div>`;
+  const where = `<fieldset class="field"><legend>Home computer</legend><div class="pick pick--2">${Object.values(COMPUTERS)
+    .map((c) => `<label><input type="radio" name="home" value="${c.id}" data-f="home" data-key="f-home-${c.id}" ${f.home === c.id ? 'checked' : ''}><span><strong>${esc(c.name)}</strong><span>${esc(c.kind)}</span></span></label>`)
+    .join('')}</div><p class="hint">It runs there and nowhere else. You reach it from here and from your paired iPhone.</p></fieldset>
+    <div class="field"><label for="f-model">Model</label><select id="f-model" data-f="model" data-key="f-model">${home.models.map((m) => `<option ${f.model === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select><p class="hint">The models ready on ${esc(home.name)}. It has that provider’s own tools, as a thread does.</p></div>
+    <fieldset class="field"><legend>Permission mode</legend><div class="pick pick--2">${Object.entries(MODES)
+      .map(([id, m]) => `<label><input type="radio" name="mode" value="${id}" data-f="mode" data-key="f-mode-${id}" ${f.mode === id ? 'checked' : ''}><span><strong>${m.label}</strong><span>${m.says}</span></span></label>`)
+      .join('')}</div><p class="hint${f.mode === 'full' ? ' hint--warn' : ''}" id="mode-line">${modeLine(f)}</p></fieldset>`;
+  const accounts = `<fieldset class="field"><legend>Plugin accounts it may use</legend><div class="pick">${home.accounts
+    .map((a) => `<label><input type="checkbox" value="${a}" data-f="accounts" data-key="f-acc-${a}" ${f.accounts.includes(a) ? 'checked' : ''}><span><strong>${esc(acctLabel(a))}</strong><span>${ACCOUNT_RULES[ACCOUNTS[a].kind]}</span></span></label>`)
+    .join('')}${off.map((a) => `<label data-off="true"><span><strong>${esc(acctLabel(a))}</strong><span>Not on ${esc(home.name)}. ${esc(ACCOUNTS[a].note)}</span></span></label>`).join('')}</div><p class="hint">Only you answer a card. An owlet never answers its own.</p></fieldset>`;
+  const events = Object.keys(EVENTS)
+    .map((kind) => {
+      const e = EVENTS[kind];
+      const choices = eventChoices(f, kind);
+      const cur = f.events[kind];
+      if (!choices) return `<div class="ev" data-off="true"><input type="checkbox" id="f-ev-${kind}" data-key="f-ev-${kind}" disabled><div class="ev__words"><label for="f-ev-${kind}">${e.label} …</label></div><p class="hint">${e.needs === 'mail' ? 'Tick a mail account first.' : 'Tick the GitHub account first.'}</p></div>`;
+      const sel = choices.includes(cur.in) ? cur.in : choices[0];
+      return `<div class="ev"><input type="checkbox" id="f-ev-${kind}" data-ev="${kind}" data-key="f-ev-${kind}" ${cur.on ? 'checked' : ''}><div class="ev__words"><label for="f-ev-${kind}">${e.label}</label><select data-evin="${kind}" data-key="f-evin-${kind}" aria-label="${e.what}">${choices.map((c) => `<option ${c === sel ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div></div>`;
+    })
+    .join('');
+  const when = `<fieldset class="field"><legend>When it runs</legend><div class="when">
+      <p class="when__row">${ic('check')}<span><strong>When you ask</strong><span>It always answers when you write to it.</span></span></p>
+      <div class="when__row"><button type="button" class="sw" role="switch" aria-checked="${f.schedOn}" aria-labelledby="f-sched-l" data-act="sched" data-key="f-sched"></button><span id="f-sched-l"><strong>On a schedule</strong></span></div>
+      ${f.schedOn ? `<div class="when__sub field"><label for="f-words" class="vh">The schedule, in your own words</label><input type="text" id="f-words" data-f="words" data-key="f-words" value="${esc(f.words)}" autocomplete="off" placeholder="weekdays at 7:30am"><p class="hint" id="read-words">${readBack(f.words)}</p>${f.home === 'here' ? '<p class="hint hint--warn">A run due while This computer is asleep is skipped. The next report says so.</p>' : ''}</div>` : ''}
+      <div class="when__events" role="group" aria-labelledby="f-ev-l"><span class="lbl" id="f-ev-l">On events</span>${events}</div>
+    </div><p class="hint">A run nobody started uses the same permission mode. A card it leaves waits five minutes, then lapses, and nothing is sent.</p></fieldset>`;
+  const head = phone
+    ? `<header class="pane__head"><button type="button" class="hbtn" data-act="cancel-setup" data-key="cancel">Cancel</button><h1 id="setup-h" class="grow">${editing ? `Edit ${esc(byId(S.edit).name)}` : 'New owlet'}</h1><button class="btn btn--primary" type="submit" data-key="save">${editing ? 'Save' : 'Make it'}</button></header>`
+    : `<header class="pane__head"><h1 id="setup-h">${editing ? `Edit ${esc(byId(S.edit).name)}` : 'New owlet'}</h1><span class="grow"></span><button type="button" class="btn" data-act="cancel-setup" data-key="cancel">Cancel</button><button class="btn btn--primary" type="submit" data-key="save">${editing ? 'Save' : 'Make the owlet'}</button></header>`;
+  return `<form class="setup" data-form="setup" aria-labelledby="setup-h" novalidate>${head}
+    <div class="pane__scroll" data-scroll="setup"><div class="setup__grid"><div class="setup__col">${who}${where}</div><div class="setup__col">${accounts}${when}</div></div></div>
+  </form>`;
+}
+function modeLine(f) {
+  const home = COMPUTERS[f.home].name;
+  if (f.mode === 'full') return `With Full access it runs anything on ${esc(home)} without asking, in a run nobody started too. An email, a comment and a deploy still ask you on a card.`;
+  return 'The same modes a thread has. A run that starts by itself uses this one too.';
+}
+
+/* ==================== The phone ==================== */
+function phoneList() {
+  const order = S.variant === 'R1' ? '<span>A to Z</span>' : S.variant === 'R2' ? '<span>Newest first</span>' : `<span>Group by</span>${orderControl()}`;
+  return `<div class="ph">
+    <div class="ph__scroll" data-scroll="plist">
+      <header class="pl__head"><h1>Owlets <span class="owltag" title="An Owl feature">Owl</span></h1><button class="pl__add" data-act="new" data-key="new" aria-label="New owlet">${ic('plus')}</button></header>
+      <div class="pl__find"><select class="pl__where" id="where" data-key="where" aria-label="Show the owlets on">${[['all', 'All computers'], ['here', 'This computer'], ['forge', 'forge']].map(([id, label]) => `<option value="${id}" ${S.where === id ? 'selected' : ''}>${label}</option>`).join('')}</select>${search()}</div>
+      <div data-needs>${needsCard()}</div>
+      <div class="pl__order">${order}</div>
+      <div class="pl__list" data-list>${list(true)}</div>
+    </div>
+    <div class="ph__tabs" aria-label="Sotto’s pages. Only Owlets is drawn."><span>${ic('bubbles')}Threads</span><span>${ic('owl')}Watcher</span><span class="on">${ic('owlets')}Owlets${live().length + rested().length ? `<b>${live().length + rested().length}</b>` : ''}</span><span>${ic('monitor')}Computers</span><span>${ic('sliders')}Settings</span></div>
+  </div>`;
+}
+function phoneThread(o) {
+  const st = statusOf(o);
+  const sub = [homeOf(o).name, o.words, ...o.events.map(evText)].filter(Boolean).join(' · ') || `${homeOf(o).name} · runs when you ask`;
+  return `<div class="ph">
+    <header class="ph__nav"><button class="iconbtn" data-act="back" data-key="back" aria-label="Back to Owlets">${ic('back')}</button><h1>${esc(o.name)}</h1><span class="pill" data-tone="${st === 'idle' ? '' : st}">${ring(o)}${esc(stateWords(o))}</span><button class="iconbtn" data-act="about" data-key="about" aria-label="About ${esc(o.name)}: its role, home, model and when it runs">${ic('dots')}</button></header>
+    <p class="ph__sub">${esc(sub)}</p>
+    <div class="pane__scroll" data-scroll="thread-${o.id}" data-stick>${transcript(o)}</div>
+    <div class="pane__foot">${composer(o, true)}</div>
+  </div>`;
+}
+function aboutSheet(o) {
+  const runs = ['When you ask', o.words ? `On a schedule: ${o.words}` : '', ...o.events.map((e) => `When ${evText(e)}`)].filter(Boolean);
+  return `<div class="layer"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="about-h">
+    <div class="layer__head">${owl(o.look, statusOf(o), 32)}<h2 id="about-h">${esc(o.name)}</h2><button class="iconbtn" data-act="close" data-key="about-x" aria-label="Close" data-first>${ic('x')}</button></div>
+    <div class="layer__body"><dl class="about">
+      <dt>Role</dt><dd>${esc(o.title)}<span>${esc(o.role)}</span></dd>
+      <dt>Home</dt><dd>${esc(homeOf(o).name)}<span>${esc(homeOf(o).kind)}</span></dd>
+      <dt>Folder</dt><dd class="mono">Owlets/${esc(o.name)}</dd>
+      <dt>Model</dt><dd>${esc(o.model)}</dd>
+      <dt>Permissions</dt><dd>${MODES[o.mode].label}<span>${MODES[o.mode].says}</span></dd>
+      <dt>Accounts</dt><dd>${o.accounts.length ? o.accounts.map((a) => esc(acctLabel(a))).join('<br>') : 'None'}</dd>
+      <dt>Runs</dt><dd>${runs.map(esc).join('<br>')}${o.words && o.next ? `<span>Next: ${esc(o.next)}</span>` : ''}</dd>
+    </dl></div>
+    <div class="layer__foot"><button class="btn" data-act="edit" data-key="about-edit">${ic('pencil')}Edit</button></div>
+  </div></div>`;
+}
+
+/* ==================== Draw ==================== */
+const layout = () => {
+  const w = $('#win').clientWidth;
+  return w <= 700 ? 'phone' : w <= 900 ? 'narrow' : 'wide';
+};
+function view(m) {
+  if (m === 'phone') {
+    if (S.screen === 'setup') return `<div class="ph">${setup(true)}</div>`;
+    return S.owlet ? phoneThread(current()) : phoneList();
+  }
+  const side = S.side || (m === 'narrow' ? 'rail' : 'open');
+  const over = m === 'narrow' && side === 'open';
+  return `<div class="shell" data-side="${over ? 'over' : side}">
+    ${side === 'rail' || over ? rail() : ''}
+    ${side === 'open' ? sidebar() : ''}
+    ${over ? '<div class="shell__scrim" data-act="side" data-to="rail"></div>' : ''}
+    <main class="pane">${S.screen === 'setup' ? setup(false) : pane(current())}</main>
+  </div>`;
+}
+function placeThread(el) {
+  const o = current();
+  const want = S.at || (o.thread && o.thread.some((m) => m.t === 'report') && isUnread(o) ? 'report' : 'end');
+  const target = { report: '[data-report]', card: '[data-req][data-live]', lapsed: '.req--lapsed' }[want];
+  const hit = target && $(target, el);
+  if (want === 'top') el.scrollTop = 0;
+  else if (hit) el.scrollTop = hit.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 14;
+  else el.scrollTop = el.scrollHeight;
+}
+function syncUrl() {
+  const u = new URL(location.href);
+  const put = (k, v, dflt) => (v == null || v === '' || v === dflt ? u.searchParams.delete(k) : u.searchParams.set(k, v));
+  u.searchParams.delete('row');
+  put('variant', S.variant);
+  put('screen', S.screen, 'page');
+  put('owlet', byId(S.owlet) ? S.owlet : null);
+  put('edit', S.edit);
+  put('group', S.group, 'state');
+  put('q', S.q);
+  put('where', S.where, 'all');
+  put('side', S.side);
+  put('open', S.open);
+  put('at', S.at);
+  put('theme', S.theme, 'dark');
+  put('size', S.size, 'fit');
+  history.replaceState(null, '', u);
+}
+let toastTimer = 0;
+function render(focusSel) {
+  const win = $('#win');
+  const active = document.activeElement;
+  const hadFocus = !!(active && win.contains(active));
+  const keep = hadFocus ? active.getAttribute('data-key') : null;
+  const scrolls = {};
+  $$('[data-scroll]', win).forEach((el) => (scrolls[el.dataset.scroll] = el.scrollTop));
+  document.documentElement.dataset.theme = S.theme;
+  document.body.dataset.bare = String(S.bare);
+  $('#stage').dataset.size = S.size;
+  // the prototype's own bar and caption, first: the caption's height sets the window's
+  const v = VARIANTS[S.variant];
+  const small = window.matchMedia('(max-width: 700px)').matches;
+  $('#lab').textContent = `${S.variant} · ${v.name}`;
+  const rule = '<span class="cap__rule">The part marked <b>Idea</b> is not decided. All of it is sample data: nothing is read or sent.</span>';
+  $('#cap').innerHTML =
+    small && !S.more
+      ? `<strong>${S.variant} · ${esc(v.name)}.</strong> ${v.brief} <button type="button" class="cap__more" id="more" aria-expanded="false">More</button>`
+      : `<strong>${S.variant} · ${esc(v.name)}.</strong> ${v.caption} ${SHARED_CAPTION} ${rule}${small ? ' <button type="button" class="cap__more" id="more" aria-expanded="true">Less</button>' : ''}`;
+  $('#theme').textContent = S.theme === 'dark' ? 'Light' : 'Dark';
+  $('#theme').setAttribute('aria-label', S.theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme');
+  $('#size').value = S.size;
+  $('#jump').value = '';
+  document.title = `Owlets sidebar · ${S.variant} · ${v.name}`;
+  const m = layout();
+  win.dataset.phone = String(m === 'phone');
+  win.dataset.variant = S.variant;
+  win.dataset.layout = m;
+  win.innerHTML = view(m) + (S.open === 'about' ? aboutSheet(current()) : '') + (S.toast ? `<p class="toast" aria-hidden="true">${esc(S.toast)}</p>` : '');
+  $('#toast').textContent = S.toast;
+  clearTimeout(toastTimer);
+  if (S.toast) toastTimer = setTimeout(() => { S.toast = ''; const t = $('.toast', win); if (t) t.remove(); }, 5000);
+  $$('[data-scroll]', win).forEach((el) => {
+    const k = el.dataset.scroll;
+    if (el.hasAttribute('data-stick')) {
+      if (scrolls[k] != null && !S.jump) el.scrollTop = scrolls[k];
+      else placeThread(el);
+    } else if (scrolls[k] != null) el.scrollTop = scrolls[k];
+    else if (k === 'side' || k === 'rail') {
+      const cur = $('[aria-current="true"]', el);
+      if (cur) {
+        const r = cur.getBoundingClientRect();
+        const b = el.getBoundingClientRect();
+        if (r.bottom > b.bottom - 6) el.scrollTop += r.bottom - b.bottom + 10;
+        else if (r.top < b.top) el.scrollTop += r.top - b.top - 10;
+        const first = el.scrollTop > 0 && $$('li, .group', el).find((x) => x.getBoundingClientRect().top >= b.top - 1);
+        if (first) el.scrollTop += first.getBoundingClientRect().top - b.top - 2;
+      }
+    }
+  });
+  S.jump = false;
+  const layerEl = $('.layer', win);
+  const wanted = [].concat(focusSel || []).map((sel) => $(sel, win)).find(Boolean);
+  let target = wanted || (keep && $(`[data-key="${keep}"]`, win));
+  if (layerEl && target && !layerEl.contains(target)) target = null;
+  if (target) target.focus({ preventScroll: !wanted });
+  else if (layerEl) {
+    const first = $('.layer [data-first]', win) || $('.layer button', win);
+    if (first) first.focus();
+  } else if (hadFocus) {
+    const auto = $('[data-first], [aria-current="true"], [data-key="back"], [data-key="new"]', win);
+    if (auto) auto.focus({ preventScroll: true });
+  }
+  syncUrl();
+}
+function go(patch, focusSel) {
+  if ('owlet' in patch || 'at' in patch || 'screen' in patch) S.jump = true;
+  Object.assign(S, patch);
+  render(focusSel);
+}
+/* only the list and the Needs you card redraw as you type, so the search box keeps its caret */
+function redrawList() {
+  const win = $('#win');
+  const phone = layout() === 'phone';
+  $$('[data-list]', win).forEach((el) => (el.innerHTML = list(phone)));
+  const clear = $('.search__clear', win);
+  if (clear) clear.hidden = !S.q;
+  syncUrl();
+}
+function closeLayer() {
+  const back = S.opener;
+  S.opener = null;
+  go({ open: null }, back ? `[data-key="${back}"]` : null);
+}
+function cycle(delta) {
+  const keys = Object.keys(VARIANTS);
+  go({ variant: keys[(keys.indexOf(S.variant) + delta + keys.length) % keys.length] });
+}
+function leaveSetup() {
+  const back = S.opener;
+  S.opener = null;
+  S.form = null;
+  const keys = back === 'new' ? ['new', 'expand'] : [back, 'edit', 'about', 'new'];
+  go({ screen: 'page', edit: null }, keys.filter(Boolean).map((k) => `[data-key="${k}"]`));
+}
+
+/* ==================== Presses, typing and keys ==================== */
+document.addEventListener('click', (e) => {
+  const win = $('#win');
+  const el = e.target.closest('[data-act]');
+  if (!el || !win.contains(el)) {
+    if (e.target.classList && e.target.classList.contains('layer')) closeLayer();
+    return;
+  }
+  const act = el.dataset.act;
+  const id = el.dataset.id;
+  const m = layout();
+  const overSide = m === 'narrow' && S.side === 'open';
+  const rowKey = (oid) => (m === 'phone' ? '[data-key="back"]' : m === 'narrow' ? `[data-key="tile-${oid}"]` : `[data-key="row-${oid}"]`);
+  if (act === 'open') {
+    S.read[id] = true;
+    go({ owlet: id, screen: 'page', edit: null, at: null, form: null, side: overSide ? null : S.side }, rowKey(id));
+  } else if (act === 'goto-card' || act === 'answer' || act === 'goto-lapsed') {
+    const oid = CARDS[id].owlet;
+    S.read[oid] = true;
+    const lapsed = act === 'goto-lapsed';
+    go({ owlet: oid, screen: 'page', edit: null, form: null, at: lapsed ? 'lapsed' : 'card', side: overSide ? null : S.side }, lapsed ? `[data-key="lapsed-${id}"]` : act === 'answer' ? `[data-key="allow-${id}"]` : m === 'phone' ? '[data-key="back"]' : `[data-key="needs-${id}"]`);
+  } else if (act === 'dismiss') {
+    S.dismissed[id] = true;
+    render('#q');
+  } else if (act === 'allow' || act === 'deny') {
+    S.answers[id] = act === 'allow' ? 'allowed' : 'denied';
+    S.toast = act === 'allow' ? CARDS[id].allowed : CARD_WORDS[CARDS[id].kind].denied;
+    render(`[data-key="ans-${id}"]`);
+  } else if (act === 'unanswer') {
+    delete S.answers[id];
+    render(`[data-key="allow-${id}"]`);
+  } else if (act === 'lapse') {
+    S.lapsedNow[id] = true;
+    S.toast = CARD_WORDS[CARDS[id].kind].gone;
+    render(`[data-key="lapsed-${id}"]`);
+  } else if (act === 'unlapse') {
+    delete S.lapsedNow[id];
+    render(`[data-key="allow-${id}"]`);
+  } else if (act === 'again') {
+    S.again[id] = true;
+    go({ at: 'card' }, `[data-key="allow-${id}-again"]`);
+  } else if (act === 'new') {
+    S.form = null;
+    S.opener = 'new';
+    go({ screen: 'setup', edit: null, open: null, side: overSide ? null : S.side }, '#f-name');
+  } else if (act === 'edit') {
+    const o = current();
+    S.form = null;
+    S.opener = S.open === 'about' ? 'about' : el.getAttribute('data-key');
+    const f = el.dataset.focus;
+    go({ screen: 'setup', edit: o.id, owlet: o.id, open: null }, f === 'mode' ? `[data-key="f-mode-${o.mode}"]` : f === 'model' ? '#f-model' : '#f-name');
+  } else if (act === 'cancel-setup') {
+    leaveSetup();
+  } else if (act === 'side') {
+    go({ side: el.dataset.to === 'rail' && m === 'narrow' ? null : el.dataset.to === 'open' && m === 'wide' ? null : el.dataset.to }, el.dataset.to === 'open' ? '[data-key="collapse"]' : '[data-key="expand"]');
+  } else if (act === 'fold') {
+    S.folds[id] = !S.folds[id];
+    render();
+  } else if (act === 'group') {
+    go({ group: el.dataset.to });
+  } else if (act === 'clear-q') {
+    S.q = '';
+    $('#q').value = '';
+    redrawList();
+    $('#q').focus();
+  } else if (act === 'back') {
+    const from = S.owlet;
+    go({ owlet: null, open: null, at: null }, `[data-key="row-${from}"]`);
+  } else if (act === 'about') {
+    S.opener = 'about';
+    go({ open: 'about' });
+  } else if (act === 'close') {
+    closeLayer();
+  } else if (act === 'sched') {
+    S.form.schedOn = !S.form.schedOn;
+    render(S.form.schedOn ? '#f-words' : '[data-key="f-sched"]');
+  }
+});
+
+document.addEventListener('submit', (e) => {
+  const f = e.target;
+  if (!f.dataset || !f.dataset.form) return;
+  e.preventDefault();
+  if (f.dataset.form === 'say') {
+    const text = f.elements.say.value.trim();
+    if (!text) return;
+    (S.sent[f.dataset.owlet] ||= []).push(text);
+    delete S.drafts[f.dataset.owlet];
+    go({ at: 'end' }, `[data-key="say-${f.dataset.owlet}"]`);
+  } else if (f.dataset.form === 'setup') {
+    const d = S.form;
+    const name = d.name.trim();
+    if (!name) {
+      const box = $('#f-name');
+      box.setAttribute('aria-invalid', 'true');
+      $('#folder-line').textContent = 'Give it a name first.';
+      box.focus();
+      return;
+    }
+    const r = d.schedOn ? readSchedule(d.words) : null;
+    const events = Object.keys(EVENTS).filter((k) => d.events[k].on && eventChoices(d, k)).map((k) => ({ kind: k, in: eventChoices(d, k).includes(d.events[k].in) ? d.events[k].in : eventChoices(d, k)[0] }));
+    const fields = { name, look: d.look, title: d.title.trim() || 'No role yet', role: d.role, home: d.home, model: d.model, mode: d.mode, accounts: [...d.accounts], words: d.schedOn ? d.words.trim() : '', read: r ? r[0] : '', next: r ? r[1] : '', nextShort: r ? r[2] : '', events };
+    if (S.edit) {
+      Object.assign(byId(S.edit), fields);
+      S.toast = `${name} is saved. A prototype keeps it only until you leave this page.`;
+      leaveSetup();
+    } else {
+      const id = `made-${++S.made}`;
+      OWLETS.push({ id, code: name.slice(0, 2), state: 'idle', unread: false, ago: -S.made, cards: [], last: { at: 'Now', words: 'Made just now' }, thread: [{ t: 'day', text: 'Today' }, { t: 'note', text: `You made ${name} just now. Its folder is Owlets/${name} on ${COMPUTERS[d.home].name}. It has not run yet.` }], ...fields });
+      S.toast = `${name} is made. A prototype keeps it only until you leave this page.`;
+      S.opener = null;
+      S.form = null;
+      go({ screen: 'page', edit: null, owlet: id, at: null }, ['[data-key="back"]', `[data-key="row-${id}"]`, `[data-key="tile-${id}"]`]);
+    }
+  }
+});
+
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.id === 'q') {
+    S.q = el.value;
+    redrawList();
+    return;
+  }
+  if (el.name === 'say') {
+    const form = el.closest('form');
+    if (form) S.drafts[form.dataset.owlet] = el.value;
+    return;
+  }
+  if (!S.form || !el.dataset) return;
+  const d = S.form;
+  if (el.dataset.ev) {
+    d.events[el.dataset.ev].on = el.checked;
+    return;
+  }
+  if (el.dataset.evin) {
+    d.events[el.dataset.evin].in = el.value;
+    return;
+  }
+  const f = el.dataset.f;
+  if (!f) return;
+  if (f === 'accounts') {
+    const set = new Set(d.accounts);
+    el.checked ? set.add(el.value) : set.delete(el.value);
+    d.accounts = [...set];
+    render(`[data-key="${el.getAttribute('data-key')}"]`);
+    return;
+  }
+  d[f] = el.value;
+  if (f === 'home') {
+    d.model = COMPUTERS[el.value].models.includes(d.model) ? d.model : COMPUTERS[el.value].models[0];
+    d.accounts = d.accounts.filter((a) => COMPUTERS[el.value].accounts.includes(a));
+    render(`[data-key="${el.getAttribute('data-key')}"]`);
+  } else if (f === 'mode') {
+    const line = $('#mode-line');
+    line.textContent = modeLine(d);
+    line.classList.toggle('hint--warn', d.mode === 'full');
+  } else if (f === 'name') {
+    el.removeAttribute('aria-invalid');
+    $('#folder-line').innerHTML = folderLine(d);
+  } else if (f === 'words') {
+    $('#read-words').innerHTML = readBack(el.value);
+  }
+});
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'where') go({ where: e.target.value });
+});
+
+document.addEventListener('keydown', (e) => {
+  const win = $('#win');
+  const t = e.target;
+  const hasLayer = !!$('.layer', win);
+  if (e.key === 'Escape') {
+    const m = layout();
+    if (S.open) closeLayer();
+    else if (m === 'narrow' && S.side === 'open') go({ side: null }, '[data-key="expand"]');
+    else if (t.id === 'q' && S.q) {
+      S.q = '';
+      t.value = '';
+      redrawList();
+    } else if (S.screen === 'setup') leaveSetup();
+    else return;
+    e.preventDefault();
+    return;
+  }
+  if (e.key === 'Tab' && hasLayer) {
+    const items = $$('.layer button, .layer input, .layer select, .layer textarea', win).filter((x) => !x.disabled && x.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!$('.layer', win).contains(document.activeElement) || (!e.shiftKey && document.activeElement === last)) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    }
+    return;
+  }
+  if (e.key === 'Enter' && !e.shiftKey && t.matches && t.matches('.composer textarea')) {
+    e.preventDefault();
+    t.form.requestSubmit();
+    return;
+  }
+  // the list answers the arrow keys, as the Threads sidebar's does
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key) && t.matches && t.matches('.row__btn, .tile, .group__head')) {
+    const items = $$('.row__btn, .tile, .group__head', t.closest('nav, .pl__list'));
+    const i = items.indexOf(t);
+    const next = e.key === 'Home' ? items[0] : e.key === 'End' ? items[items.length - 1] : items[Math.max(0, Math.min(items.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+    e.preventDefault();
+    next.focus();
+    return;
+  }
+  if (e.key === 'ArrowDown' && t.id === 'q') {
+    const firstRow = $('[data-list] .row__btn, [data-list] .group__head', win);
+    if (firstRow) {
+      e.preventDefault();
+      firstRow.focus();
+    }
+    return;
+  }
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (t.matches && t.matches('input, textarea, select, [contenteditable], summary')) return;
+    if (hasLayer) return;
+    e.preventDefault();
+    cycle(e.key === 'ArrowLeft' ? -1 : 1);
+  }
+});
+
+function boot() {
+  $('#prev').onclick = () => cycle(-1);
+  $('#next').onclick = () => cycle(1);
+  $('#theme').onclick = () => go({ theme: S.theme === 'dark' ? 'light' : 'dark' });
+  $('#size').onchange = (e) => go({ size: e.target.value, side: null });
+  $('#cap').addEventListener('click', (e) => {
+    if (e.target.id === 'more') {
+      S.more = !S.more;
+      render();
+      $('#more').focus();
+    }
+  });
+  $('#reset').onclick = () => {
+    OWLETS.splice(0, OWLETS.length, ...JSON.parse(ORIGINAL));
+    Object.assign(S, { answers: {}, lapsedNow: {}, again: {}, dismissed: {}, read: {}, sent: {}, drafts: {}, folds: {}, form: null, toast: '', opener: null, q: '', where: 'all' });
+    go({ screen: 'page', owlet: null, edit: null, open: null, at: null, side: null });
+  };
+  $('#jump').onchange = (e) => {
+    const to = {
+      page: { owlet: null },
+      report: { owlet: 'tawny', at: 'report' },
+      card: { owlet: 'barn', at: 'card' },
+      working: { owlet: 'scops', at: 'end' },
+      setup: { screen: 'setup' },
+      edit: { screen: 'setup', edit: 'tawny', owlet: 'tawny' },
+    }[e.target.value];
+    S.form = null;
+    S.opener = null;
+    go({ screen: 'page', owlet: null, edit: null, open: null, at: null, ...to });
+  };
+  let was = null;
+  new ResizeObserver(() => {
+    const now = layout();
+    if (was !== null && now !== was) render();
+    was = now;
+  }).observe($('#win'));
+  render();
+  document.fonts.ready.then(() => {
+    if (document.activeElement && $('#win').contains(document.activeElement)) return;
+    S.jump = true;
+    render();
+  });
+}
+boot();
+</script>
+</body>
+</html>

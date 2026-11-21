@@ -1416,6 +1416,26 @@ msgstr "An agent is ready."
 msgid "an earlier model"
 msgstr "an earlier model"
 
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "An owlet is a helper you name and give a role. It keeps one thread in a folder of its own on one computer, with the same tools and cards as any thread. It runs when you talk to it."
+msgstr "An owlet is a helper you name and give a role. It keeps one thread in a folder of its own on one computer, with the same tools and cards as any thread. It runs when you talk to it."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "An owlet lives on one computer. If that computer is asleep, it can't run."
+msgstr "An owlet lives on one computer. If that computer is asleep, it can't run."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "An owlet on this computer already has that name."
+msgstr "An owlet on this computer already has that name."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed."
+msgstr "An owlet on this computer has that name, or a folder by that name. Choose another name. Nothing was changed."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "An owlet runs on Claude Code or Codex, whose own memory Sotto turns off. Choose one of their models. Nothing was changed."
+msgstr "An owlet runs on Claude Code or Codex, whose own memory Sotto turns off. Choose one of their models. Nothing was changed."
+
 #: src/renderer/src/features/usage/UsageCharts.tsx
 msgid "an unreported number of"
 msgstr "an unreported number of"
@@ -1760,6 +1780,7 @@ msgstr "Can't read limits"
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/features/owlets/OwletSetup.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Cancel"
@@ -1960,6 +1981,10 @@ msgstr "Choose All to see every transcript."
 msgid "Choose an end date on or after the start date."
 msgstr "Choose an end date on or after the start date."
 
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Choose an owlet to open its thread."
+msgstr "Choose an owlet to open its thread."
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Choose another model for {who}"
 msgstr "Choose another model for {who}"
@@ -1991,6 +2016,10 @@ msgstr "Choose threads to move to {toName}"
 #: src/renderer/src/watcher/MoveSuggestion.tsx
 msgid "Choose threads…"
 msgstr "Choose threads…"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Claude Code or Codex. Sotto turns off their own memory in the owlet's folder."
+msgstr "Claude Code or Codex. Sotto turns off their own memory in the owlet's folder."
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Claude Code subscription"
@@ -2167,6 +2196,11 @@ msgstr "Confidence"
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Connect {providers} in Settings, under Providers, to start Watcher."
 msgstr "Connect {providers} in Settings, under Providers, to start Watcher."
+
+#. {home} is a computer, such as "This computer" or "forge".
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Connect Claude Code or Codex on {home} to make an owlet there. Owlets run only on those two, whose own memory Sotto turns off."
+msgstr "Connect Claude Code or Codex on {home} to make an owlet there. Owlets run only on those two, whose own memory Sotto turns off."
 
 #: src/renderer/src/platformCopy.ts
 msgid "Connect or enable an input device in System Settings > Sound, then try again."
@@ -2677,9 +2711,22 @@ msgstr "Each thread is settled where it is once its new thread’s first turn en
 msgid "Edit"
 msgstr "Edit"
 
+#. placeholder {0}: editing.name
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Edit {0}"
+msgstr "Edit {0}"
+
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Edit {name}"
+msgstr "Edit {name}"
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Edit memory"
 msgstr "Edit memory"
+
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Edit owlet"
+msgstr "Edit owlet"
 
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "Edits files and runs any command without asking, anywhere on this computer."
@@ -2954,6 +3001,14 @@ msgstr "Git working folder"
 msgid "Give F9 to Sotto"
 msgstr "Give F9 to Sotto"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Give the owlet a name."
+msgstr "Give the owlet a name."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Give the owlet a name. Nothing was changed."
+msgstr "Give the owlet a name. Nothing was changed."
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "giving its review"
 msgstr "giving its review"
@@ -3117,6 +3172,10 @@ msgstr "Holding sends"
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "holding up the verdict"
 msgstr "holding up the verdict"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Home computer"
+msgstr "Home computer"
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "How do you like work to get started?"
@@ -3288,6 +3347,10 @@ msgstr "is not in the snapshot"
 msgid "Issues filed"
 msgstr "Issues filed"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "It can use the plugin accounts kept for every project. To give it an account kept to chosen projects, choose its folder for that account in Settings, under Plugins."
+msgstr "It can use the plugin accounts kept for every project. To give it an account kept to chosen projects, choose its folder for that account in Settings, under Plugins."
+
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "It carries {carried} and leaves out {leftOut}."
 msgstr "It carries {carried} and leaves out {leftOut}."
@@ -3382,6 +3445,11 @@ msgstr "Its first turn on {machine} ended. Settling the thread here…"
 msgid "Its first turn on {machine} ended. Settling the thread on {from}…"
 msgstr "Its first turn on {machine} ended. Settling the thread on {from}…"
 
+#. {folder} is like "Owlets/Tawny"; {home} is a computer, such as "This computer".
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Its folder: {folder} on {home}. Sotto makes it, and its thread and its files live there."
+msgstr "Its folder: {folder} on {home}. Sotto makes it, and its thread and its files live there."
+
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Its last turn failed."
 msgstr "Its last turn failed."
@@ -3463,6 +3531,18 @@ msgstr "Keep local history is off, so it holds only what Sotto kept since it las
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Keep local history was off, so it held only what Sotto had kept since it last started."
 msgstr "Keep local history was off, so it held only what Sotto had kept since it last started."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Keep the name to 40 characters."
+msgstr "Keep the name to 40 characters."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Keep the name to 40 characters. Nothing was changed."
+msgstr "Keep the name to 40 characters. Nothing was changed."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Keep the role to 200 characters. Nothing was changed."
+msgstr "Keep the role to 200 characters. Nothing was changed."
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Keep transcript"
@@ -3758,6 +3838,14 @@ msgstr "Main was blocked {blocked} of the last minute. The longest freeze was {l
 msgid "Make a code"
 msgstr "Make a code"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Make owlet"
+msgstr "Make owlet"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Making the owlet…"
+msgstr "Making the owlet…"
+
 #: src/renderer/src/watcher/WatcherBeside.tsx
 msgid "Markdown file"
 msgstr "Markdown file"
@@ -3906,6 +3994,7 @@ msgstr "Minimum score"
 msgid "Mode"
 msgstr "Mode"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Model"
 msgstr "Model"
@@ -4035,6 +4124,7 @@ msgid "Muse subscription"
 msgstr "Muse subscription"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
+#: src/renderer/src/features/owlets/OwletSetup.tsx
 msgid "Name"
 msgstr "Name"
 
@@ -4053,6 +4143,7 @@ msgstr "Needs {name}'s desk first. Your own, for now: {own}."
 #. A group of threads in Watcher’s room: they wait on the user
 #: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/SeatGrid.tsx
+#: src/renderer/src/features/owlets/OwletsView.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Needs you"
@@ -4081,6 +4172,11 @@ msgstr "New criterion"
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "New folder path"
 msgstr "New folder path"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "New owlet"
+msgstr "New owlet"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread"
@@ -4119,6 +4215,10 @@ msgstr "No answer came."
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "No app noted yet. Sotto notes the app it pastes into."
 msgstr "No app noted yet. Sotto notes the app it pastes into."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "No computer here can make owlets. Owlets need Sotto Owl on the computer they live on."
+msgstr "No computer here can make owlets. Owlets need Sotto Owl on the computer they live on."
 
 #: src/renderer/src/features/council/CouncilSeats.tsx
 msgid "No connected provider"
@@ -4196,6 +4296,14 @@ msgstr "No other threads yet. Threads you or Watcher start show here."
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "No outside research."
 msgstr "No outside research."
+
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "No owlet matches."
+msgstr "No owlet matches."
+
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "No owlets yet. Make one with New owlet."
+msgstr "No owlets yet. Make one with New owlet."
 
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "No preference"
@@ -4439,6 +4547,10 @@ msgstr "Not reported"
 msgid "Not reported yet."
 msgstr "Not reported yet."
 
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Not run yet"
+msgstr "Not run yet"
+
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Not set up"
 msgstr "Not set up"
@@ -4555,10 +4667,21 @@ msgstr "Omarchy in both columns of Settings › Appearance, with Match Linux."
 msgid "Omarchy setup"
 msgstr "Omarchy setup"
 
+#. An owlet's home computer, such as "On forge" or "On this computer".
+#. placeholder {0}: owletHomeName(state, row.thread.hostId, true)
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "On {0}"
+msgstr "On {0}"
+
 #. Follows a thread’s name: the computer it runs on
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "on {computer}"
 msgstr "on {computer}"
+
+#. {home} is the owlet's home computer, such as "This computer" or "forge".
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "On {home}. Change its model and permission mode in its thread, as any thread's."
+msgstr "On {home}. Change its model and permission mode in its thread, as any thread's."
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "On {modelName}, with your own {accountProvider} account."
@@ -4643,6 +4766,10 @@ msgstr "Open directly in the tray when Sotto launches."
 #: src/renderer/src/watcher/WatcherBeside.tsx
 msgid "Open in Threads"
 msgstr "Open in Threads"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Open Plugins"
+msgstr "Open Plugins"
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 #: src/renderer/src/features/dictate/Journal.tsx
@@ -4796,6 +4923,22 @@ msgstr "Outside Sotto"
 msgid "Overview"
 msgstr "Overview"
 
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Owlet"
+msgstr "Owlet"
+
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Owlets"
+msgstr "Owlets"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Owlets are available in Sotto Owl. Nothing was changed."
+msgstr "Owlets are available in Sotto Owl. Nothing was changed."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Owlets are unavailable on this computer. Update Sotto there. Nothing was changed."
+msgstr "Owlets are unavailable on this computer. Update Sotto there. Nothing was changed."
+
 #: src/renderer/src/components/AppShell.tsx
 msgid "Pages"
 msgstr "Pages"
@@ -4874,6 +5017,10 @@ msgstr "permission"
 msgid "Permission boundaries"
 msgstr "Permission boundaries"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Permission mode"
+msgstr "Permission mode"
+
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Permission request"
 msgstr "Permission request"
@@ -4921,6 +5068,10 @@ msgstr "PR #{number} open"
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Preferences stay on this computer. Sotto does not send them to any provider."
 msgstr "Preferences stay on this computer. Sotto does not send them to any provider."
+
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Preparing agent controls…"
+msgstr "Preparing agent controls…"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Preparing proposal"
@@ -5572,6 +5723,10 @@ msgstr "Revoked"
 msgid "Right after linking, each computer reaches the other once, carrying nothing. Your teammate's card then says whether it works both ways, and what to share if it doesn't."
 msgstr "Right after linking, each computer reaches the other once, carrying nothing. Your teammate's card then says whether it works both ways, and what to share if it doesn't."
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Role"
+msgstr "Role"
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Room left"
 msgstr "Room left"
@@ -5609,6 +5764,10 @@ msgstr "Run threads on another computer"
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "running"
 msgstr "running"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Save"
+msgstr "Save"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Save memory"
@@ -5662,6 +5821,7 @@ msgstr "Saving setup..."
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
+#: src/renderer/src/features/owlets/OwletSetup.tsx
 msgid "Saving…"
 msgstr "Saving…"
 
@@ -5688,6 +5848,10 @@ msgstr "Search 3D models"
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Search models or paste @preset/…"
 msgstr "Search models or paste @preset/…"
+
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Search owlets"
+msgstr "Search owlets"
 
 #: src/renderer/src/features/dictate/Journal.tsx
 #: src/renderer/src/features/help/HelpView.tsx
@@ -6264,6 +6428,10 @@ msgstr "Sotto could not switch to that model, so nothing changed. It may no long
 msgid "Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again."
 msgstr "Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again."
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Sotto did not hear back, so the owlet may or may not have been made. Check the list before trying again."
+msgstr "Sotto did not hear back, so the owlet may or may not have been made. Check the list before trying again."
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Sotto did not start the host on {name}, so it cannot restart it. Update it there with these commands."
 msgstr "Sotto did not start the host on {name}, so it cannot restart it. Update it there with these commands."
@@ -6308,6 +6476,10 @@ msgstr "Sotto is clipboard first: successful text is always copied. Automatic pa
 #: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Sotto is set up in Omarchy."
 msgstr "Sotto is set up in Omarchy."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Sotto is stopping. Nothing more was made."
+msgstr "Sotto is stopping. Nothing more was made."
 
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto looks for new releases on GitHub and installs them itself."
@@ -6902,6 +7074,10 @@ msgstr "Tests, visual checks, and the evidence you want before calling work fini
 msgid "That look could not be saved. Your previous look is still on. Choose it again to retry."
 msgstr "That look could not be saved. Your previous look is still on. Choose it again to retry."
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "That model or its options are not ready on that computer. Choose a ready model. Nothing was made."
+msgstr "That model or its options are not ready on that computer. Choose a ready model. Nothing was made."
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
 msgstr "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
@@ -7101,6 +7277,10 @@ msgstr "The owl in the bar"
 msgid "The owl watches a thread until you press it again."
 msgstr "The owl watches a thread until you press it again."
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "The owlet's folder did not appear as a project. Its folder was kept. Try again."
+msgstr "The owlet's folder did not appear as a project. Its folder was kept. Try again."
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "The projects you left out are not here, as they are not on {name}'s desks."
 msgstr "The projects you left out are not here, as they are not on {name}'s desks."
@@ -7220,13 +7400,17 @@ msgstr "This build cannot reach Watcher yet. Nothing was started. A later Sotto 
 msgid "This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are."
 msgstr "This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are."
 
+#. An owlet's home computer inside a sentence, when it is the one the window runs on, as in "Its folder is on this computer".
 #. This computer, in the middle of a sentence
 #: src/renderer/src/features/models3d/ModelsPage.tsx
+#: src/renderer/src/features/owlets/OwletSetup.tsx
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "this computer"
 msgstr "this computer"
 
+#. An owlet's home computer when it is the one the window runs on.
+#: src/renderer/src/features/owlets/OwletSetup.tsx
 #: src/renderer/src/features/updates/updateAll.ts
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/features/usage/UsageView.tsx
@@ -7294,6 +7478,10 @@ msgstr "This model does not read images"
 msgid "This month"
 msgstr "This month"
 
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "This owlet already exists. Nothing was changed."
+msgstr "This owlet already exists. Nothing was changed."
+
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "This permanently removes every saved transcript, and the numbers the Dictate room counts, from this computer. Your settings are unchanged."
 msgstr "This permanently removes every saved transcript, and the numbers the Dictate room counts, from this computer. Your settings are unchanged."
@@ -7301,6 +7489,10 @@ msgstr "This permanently removes every saved transcript, and the numbers the Dic
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "This removes the transcript and its numbers from this computer. It cannot be undone."
 msgstr "This removes the transcript and its numbers from this computer. It cannot be undone."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "This thread is not an owlet. Nothing was changed."
+msgstr "This thread is not an owlet. Nothing was changed."
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "This thread is waiting for {waitsOn} to answer about its move. Nothing was lost."
@@ -7634,6 +7826,10 @@ msgstr "Unknown"
 msgid "Unmeasurable"
 msgstr "Unmeasurable"
 
+#: src/renderer/src/features/owlets/OwletsView.tsx
+msgid "Unread"
+msgstr "Unread"
+
 #: src/renderer/src/App.tsx
 msgid "Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again."
 msgstr "Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again."
@@ -7789,6 +7985,14 @@ msgstr "Usage views"
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Use another model"
 msgstr "Use another model"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Use letters, numbers, spaces and hyphens in the name."
+msgstr "Use letters, numbers, spaces and hyphens in the name."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "Use letters, numbers, spaces and hyphens in the name. Nothing was changed."
+msgstr "Use letters, numbers, spaces and hyphens in the name. Nothing was changed."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Use not reported"
@@ -8079,6 +8283,14 @@ msgstr "What {title} said last"
 #: src/renderer/src/features/memory/questions.ts
 msgid "What are your preferences for keeping history?"
 msgstr "What are your preferences for keeping history?"
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "What it does for you, in a few words, such as \"Keeps my inbox\"."
+msgstr "What it does for you, in a few words, such as \"Keeps my inbox\"."
+
+#: src/renderer/src/features/owlets/OwletSetup.tsx
+msgid "What it may do without asking, as for any thread. It asks you about everything else, and never answers its own cards."
+msgstr "What it may do without asking, as for any thread. It asks you about everything else, and never answers its own cards."
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "What makes a change ready for you?"

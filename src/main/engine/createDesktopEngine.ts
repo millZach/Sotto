@@ -351,6 +351,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     threadSnoozeEnabled: owlFeatures['thread-snooze'],
     dynamicThreadsEnabled: owlFeatures['dynamic-threads'],
     modelRouterEnabled: owlFeatures['model-router'],
+    owletsEnabled: owlFeatures.owlets,
     heldProviders,
     usageEnabled,
     productEvents,
@@ -469,6 +470,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), {
     replyBuilt: agentStateBroadcaster.replyBuilt,
     watcherEnabled,
+    owletsEnabled: owlFeatures.owlets,
     heldProviders,
     crossMachineWork: crossMachineEnabled,
     streamingPublishCost: owlFeatures['streaming-publish-cost'],
