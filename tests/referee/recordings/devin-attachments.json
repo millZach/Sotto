@@ -244,6 +244,7 @@
          "host": {
           "capabilities": {
            "configureThread": true,
+           "configureThreadEffort": true,
            "interrupt": true,
            "messageOrigin": true,
            "observe": true,
@@ -258,6 +259,7 @@
           "hostId": "<id:1>",
           "models": [
            {
+            "defaultReasoningEffort": "medium",
             "id": "native:devin:model:fixture-model",
             "name": "Fixture Devin",
             "provider": "Devin",
@@ -307,7 +309,7 @@
              }
             ],
             "ready": true,
-            "reasoningEfforts": [],
+            "reasoningEfforts": ["low","medium","high"],
             "supportsImages": false
            }
           ],
@@ -373,6 +375,7 @@
             "capabilities": {
              "compact": false,
              "configureThread": true,
+             "configureThreadEffort": true,
              "configureThreadModel": false,
              "interrupt": true,
              "messageOrigin": true,
@@ -545,6 +548,7 @@
         "host": {
          "capabilities": {
           "configureThread": true,
+          "configureThreadEffort": true,
           "interrupt": true,
           "messageOrigin": true,
           "observe": true,
@@ -559,6 +563,7 @@
          "hostId": "<id:1>",
          "models": [
           {
+           "defaultReasoningEffort": "medium",
            "id": "native:devin:model:fixture-model",
            "name": "Fixture Devin",
            "provider": "Devin",
@@ -608,7 +613,7 @@
             }
            ],
            "ready": true,
-           "reasoningEfforts": [],
+           "reasoningEfforts": ["low","medium","high"],
            "supportsImages": false
           }
          ],
@@ -674,6 +679,7 @@
            "capabilities": {
             "compact": false,
             "configureThread": true,
+            "configureThreadEffort": true,
             "configureThreadModel": false,
             "interrupt": true,
             "messageOrigin": true,
@@ -888,6 +894,7 @@
          "host": {
           "capabilities": {
            "configureThread": true,
+           "configureThreadEffort": true,
            "interrupt": true,
            "messageOrigin": true,
            "observe": true,
@@ -902,6 +909,7 @@
           "hostId": "<id:1>",
           "models": [
            {
+            "defaultReasoningEffort": "medium",
             "id": "native:devin:model:fixture-model",
             "name": "Fixture Devin",
             "provider": "Devin",
@@ -951,7 +959,7 @@
              }
             ],
             "ready": true,
-            "reasoningEfforts": [],
+            "reasoningEfforts": ["low","medium","high"],
             "supportsImages": false
            }
           ],
@@ -1017,6 +1025,7 @@
             "capabilities": {
              "compact": false,
              "configureThread": true,
+             "configureThreadEffort": true,
              "configureThreadModel": false,
              "interrupt": true,
              "messageOrigin": true,
@@ -1173,6 +1182,7 @@
         "host": {
          "capabilities": {
           "configureThread": true,
+          "configureThreadEffort": true,
           "interrupt": true,
           "messageOrigin": true,
           "observe": true,
@@ -1187,6 +1197,7 @@
          "hostId": "<id:1>",
          "models": [
           {
+           "defaultReasoningEffort": "medium",
            "id": "native:devin:model:fixture-model",
            "name": "Fixture Devin",
            "provider": "Devin",
@@ -1236,7 +1247,7 @@
             }
            ],
            "ready": true,
-           "reasoningEfforts": [],
+           "reasoningEfforts": ["low","medium","high"],
            "supportsImages": false
           }
          ],
@@ -1302,6 +1313,7 @@
            "capabilities": {
             "compact": false,
             "configureThread": true,
+            "configureThreadEffort": true,
             "configureThreadModel": false,
             "interrupt": true,
             "messageOrigin": true,
@@ -1488,6 +1500,7 @@
          "host": {
           "capabilities": {
            "configureThread": true,
+           "configureThreadEffort": true,
            "interrupt": true,
            "messageOrigin": true,
            "observe": true,
@@ -1502,6 +1515,7 @@
           "hostId": "<id:1>",
           "models": [
            {
+            "defaultReasoningEffort": "medium",
             "id": "native:devin:model:fixture-model",
             "name": "Fixture Devin",
             "provider": "Devin",
@@ -1551,7 +1565,7 @@
              }
             ],
             "ready": true,
-            "reasoningEfforts": [],
+            "reasoningEfforts": ["low","medium","high"],
             "supportsImages": false
            }
           ],
@@ -1616,6 +1630,7 @@
             "capabilities": {
              "compact": false,
              "configureThread": true,
+             "configureThreadEffort": true,
              "configureThreadModel": false,
              "interrupt": true,
              "messageOrigin": true,
@@ -1770,6 +1785,7 @@
         "host": {
          "capabilities": {
           "configureThread": true,
+          "configureThreadEffort": true,
           "interrupt": true,
           "messageOrigin": true,
           "observe": true,
@@ -1784,6 +1800,7 @@
          "hostId": "<id:1>",
          "models": [
           {
+           "defaultReasoningEffort": "medium",
            "id": "native:devin:model:fixture-model",
            "name": "Fixture Devin",
            "provider": "Devin",
@@ -1833,7 +1850,7 @@
             }
            ],
            "ready": true,
-           "reasoningEfforts": [],
+           "reasoningEfforts": ["low","medium","high"],
            "supportsImages": false
           }
          ],
@@ -1898,6 +1915,7 @@
            "capabilities": {
             "compact": false,
             "configureThread": true,
+            "configureThreadEffort": true,
             "configureThreadModel": false,
             "interrupt": true,
             "messageOrigin": true,
@@ -2257,6 +2275,7 @@
            "projectId": "native:devin:project:<id:5>",
            "providerId": "devin",
            "providerMode": "ask-first",
+           "reasoningEffort": "medium",
            "requests": [],
            "snoozedUntil": null,
            "status": "idle",
@@ -2286,6 +2305,7 @@
         "projectId": "native:devin:project:<id:5>",
         "providerId": "devin",
         "providerMode": "ask-first",
+        "reasoningEffort": "medium",
         "requests": [],
         "snoozedUntil": null,
         "status": "idle",
@@ -2314,6 +2334,7 @@
         "projectId": "native:devin:project:<id:5>",
         "providerId": "devin",
         "providerMode": "ask-first",
+        "reasoningEffort": "medium",
         "requests": [],
         "snoozedUntil": null,
         "status": "idle",
@@ -2342,6 +2363,7 @@
         "projectId": "native:devin:project:<id:5>",
         "providerId": "devin",
         "providerMode": "ask-first",
+        "reasoningEffort": "medium",
         "requests": [],
         "snoozedUntil": null,
         "status": "idle",
