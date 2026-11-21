@@ -275,10 +275,26 @@ describe('a sound’s line in its thread', () => {
 const FORGE = '33333333-3333-4333-8333-000000000001'
 const ON_FORGE = `host:${FORGE}:sound-1`
 function onForge(connected: boolean): React.ReactElement {
-  return <ActivityBodyContext.Provider value={{ threadId: `host:${FORGE}:thread-1`, hostName: 'forge', connected }}>
+  return <ActivityBodyContext.Provider value={{ threadId: `host:${FORGE}:thread-1`, hostName: 'forge', connected, remote: true }}>
     <VisualCard visual={{ id: 'v1', title: 'Opening narration', kind: 'sound', source: 'sound-1' }} threadId={`host:${FORGE}:thread-1`} />
   </ActivityBodyContext.Provider>
 }
+
+describe('a sound’s line in this computer’s transcript', () => {
+  it('reads the sound by its own ID and offers Show in File Explorer, though the transcript names this computer', async () => {
+    // Bug Bot on #2753, L1: this computer's transcripts carry a body host too, for their cut bodies (#2737).
+    const plugins = bridge(MADE)
+    await act(async () => {
+      render(<ActivityBodyContext.Provider value={{ threadId: 'thread-1', hostName: 'this computer', connected: true, remote: false }}>
+        <VisualCard visual={{ id: 'v1', title: 'Opening narration', kind: 'sound', source: 'sound-1' }} threadId="thread-1" />
+      </ActivityBodyContext.Provider>)
+    })
+    expect(plugins.sound).toHaveBeenCalledWith('sound-1')
+    expect(line()).not.toHaveTextContent('on this computer')
+    await userEvent.click(within(line()).getByRole('button', { name: 'Show the details' }))
+    expect(within(line()).getByRole('button', { name: 'Show in File Explorer' })).toBeInTheDocument()
+  })
+})
 
 describe('a host thread’s sound’s line', () => {
   it('reads the sound by a key that names its host, says it is on forge, and fetches its MP3 by that key on the first press of Play only', async () => {

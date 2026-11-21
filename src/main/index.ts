@@ -317,6 +317,7 @@ import { MainActivityService, type MainActivityLogEvent } from './performance/ma
 import { HangWatchdog, WindowHangWatch, type HangWatchdogLogEvent } from './performance/hangWatchdog'
 import { saveHangRecording, updateHangRecording } from './performance/hangRecording'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { windowHistories } from './agents/windowActivityBodies'
 import { threadSwitchTimings } from './performance/threadSwitchTimings'
 import { registerMainCheckoutIpc } from './agents/mainCheckoutIpc'
 import type { MainCheckoutEvent } from './agents/mainCheckout'
@@ -1328,16 +1329,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? followDesktopDefaults(desktopDefaultsPush, hostRouter, () => workerRolesEnabled ? workingCopySettings.workerRoles : undefined,
       () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined,
       () => owlFeatures['inline-media'] ? workingCopySettings.showEveryAgentPicture : undefined) : undefined
+  // This computer's histories reach the window with their long bodies cut, as a paired host's do, and a record is read
+  // whole when its row opens (#2737).
+  const localHistories = windowHistories(agentControl)
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
-    detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
+    detail: localHistories.detail, preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
+    activityBody: localHistories.activityBody,
     mediaPart: async request => { const found = await agentControl.threadMediaVideo(request); return found && { mimeType: found.handle.mimeType, sizeBytes: found.handle.sizeBytes, bytes: found.bytes } },
     stage: image => agentControl.stageAttachment(image), stageFile: file => agentControl.stageAttachmentFile(file), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request), gitPullRequestList: request => agentControl.gitPullRequestList(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
-    // The main window applies appends: a running command's output crosses as its new lines (ADR-0025, October 30 amendment).
-    subscribeDetail: listener => agentControl.subscribeThreadDetail(listener, { appends: true }),
+    // The main window applies appends; an append to a record it holds cut goes as the record cut again (#2737).
+    subscribeDetail: localHistories.subscribeDetail,
     questionPage: token => agentControl.questionPage(token),
     questionPageOpened: token => agentControl.questionPageOpened(token),
   })

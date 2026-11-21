@@ -1437,8 +1437,8 @@ export class DesktopHostRouter {
     return connection.service.startHandover(id!)
   }
   /**
-   * One record of a remote thread whole, read on its host when its row opens (ADR-0025, October 18 amendment). This
-   * computer's own threads never carry a cut body, so a thread here answers null.
+   * One record of a thread whole, read on its host when its row opens (ADR-0025, October 18 amendment). This computer's
+   * threads reach the window cut too (#2737) and are read from its own history; a connection that cuts nothing answers null.
    */
   async activityBody(request: { readonly threadId: string; readonly activityId: string }): Promise<AgentActivity | null> {
     const { connection, id } = this.target(request.threadId)
