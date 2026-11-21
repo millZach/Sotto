@@ -86,12 +86,12 @@ it('sends a desktop and an iPhone no more per push than forge\'s host did, while
     await h.clock.pass(1_000)
     const toDesktop = tallyPeer(desktop.messages, marks.desktop, false), streamedToPhone = tallyPeer(phone.messages, marks.phone, false).events.shell?.frames ?? 0
     // Then what an iPhone does read changes on the thread's row, so it is pushed something to measure.
-    const changed = phone.messages.length
+    const renamesFrom = phone.messages.length
     for (let rename = 0; rename < 4; rename++) {
       thread.title = `Synthetic thread renamed ${rename}`; p.adapter.mark(session); p.adapter.publish(true)
       await h.clock.pass(200)
     }
-    const toPhone = tallyPeer(phone.messages, changed, false)
+    const toPhone = tallyPeer(phone.messages, renamesFrom, false)
     const shellToDesktop = toDesktop.events.shell, shellToPhone = toPhone.events.shell, progress = toDesktop.progressOnly
     const report = JSON.stringify({ desktop: { pushes: shellToDesktop?.frames, bytesPerPush: shellToDesktop?.bytesPerFrame, unchangedPartsPerPush: shellToDesktop?.unchangedPartsPerFrame },
       phone: { pushesWhileStreaming: streamedToPhone, pushes: shellToPhone?.frames, bytesPerPush: shellToPhone?.bytesPerFrame, unchangedPartsPerPush: shellToPhone?.unchangedPartsPerFrame },

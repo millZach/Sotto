@@ -14,6 +14,8 @@ import { hostSizedShellParts, PHONE_SENT_STATE_PARTS, PHONE_SENT_WIRE_PARTS, wit
 import { PHONE_UNREAD_SHELL_PARTS } from '../../src/shared/hostProtocol'
 
 const fixture = useSocketHostFixture()
+/** The fixture's provider, whose threads' usage a test sets and publishes itself: it has no event for usage. */
+const nativeHost = () => fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
 const cleanups: (() => unknown)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
@@ -23,6 +25,8 @@ const THREADS = ['workshop', 'docs']
 const STREAM_MS = 1_200
 /** How many times each working thread's usage moves, a tenth of a second apart. */
 const USAGE_MOVES = 12
+/** A thread's usage, as a desktop's compaction line reads it. */
+const SOME_USAGE = { contextUsed: 4_200, contextWindow: 200_000, rateVersions: [], partial: false, updatedAt: new Date(0).toISOString() }
 
 type ShellPush = { event: 'shell'; state: AgentState }
 async function peerOn(port: number, name: string) {
@@ -82,39 +86,51 @@ describe('a phone while threads stream', () => {
   })
 
   it('is pushed no shell while only the threads\' token usage moves, which no phone reads (November 20)', async () => {
-    // A working Claude thread's usage moves with each request its turn makes, and its elapsed time with it. No phone reads
-    // a thread's usage, but with it on the row every move made the phone's shell new: with six threads working the iPhone
-    // was pushed a shell several times a second, redrew the thread page and its reply box for each, and lagged while typing.
-    const native = fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
+    // A working thread's usage moves with each request its turn makes, and its elapsed time with it. No phone reads a
+    // thread's usage, but with it on the row every move made the phone's shell new, so a phone was pushed its thread list
+    // for every move of every working thread's, and read and compared each one on its main thread.
     const peer = await phone()
     for (const threadId of THREADS) fixture.native.event({ type: 'stream', threadId, messageId: threadId + '-reply', text: 'Synthetic reply', status: 'running', activities: steps(1) })
     await expect.poll(() => peer.shells().some(push => THREADS.every(id => row(push.state, id)?.status === 'running'))).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 200))
     const before = peer.shells().length
     for (let move = 1; move <= USAGE_MOVES; move++) {
-      for (const thread of native.state.threads.filter(item => THREADS.includes(item.id))) {
+      for (const thread of nativeHost().state.threads.filter(item => THREADS.includes(item.id))) {
         thread.usage = { total: { input: 1_000 * move, output: 100 * move }, contextUsed: 2_000 * move, contextWindow: 200_000, elapsedMs: 500 * move,
           rateVersions: [], partial: false, updatedAt: new Date(Date.UTC(2026, 10, 20, 12, 0, 0, move * 500)).toISOString() }
       }
-      native.emit()
+      nativeHost().emit()
       await new Promise(resolve => setTimeout(resolve, 100))
     }
     await new Promise(resolve => setTimeout(resolve, 200))
-    // Before, this was a shell for each move: `USAGE_MOVES`.
+    // Before, this was a shell for each move: USAGE_MOVES.
     expect(peer.shells().length - before).toBe(0)
-    expect(row(peer.shells().at(-1)!.state, 'workshop')).not.toHaveProperty('usage')
-    // What a phone does read still goes at once.
+    // What a phone does read still goes at once, and the row it comes on, whose thread still holds its usage, leaves it out.
     fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic reply, done', status: 'idle' })
     await expect.poll(() => row(peer.shells().at(-1)!.state, 'workshop')?.status).toBe('idle')
+    expect(nativeHost().state.threads.find(item => item.id === 'workshop')?.usage).toBeDefined()
+    for (const threadId of THREADS) expect(row(peer.shells().at(-1)!.state, threadId)).not.toHaveProperty('usage')
   })
 
   it('leaves a desktop\'s usage whole', async () => {
-    const native = fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
     const desktop = await peerOn(fixture.host.descriptor!.port, 'Synthetic desktop')
-    const thread = native.state.threads.find(item => item.id === 'workshop')!
-    thread.usage = { contextUsed: 4_200, contextWindow: 200_000, rateVersions: [], partial: false, updatedAt: new Date(0).toISOString() }
-    native.emit()
-    await expect.poll(() => desktop.shells().map(push => row(push.state, 'workshop')?.usage?.contextUsed).at(-1)).toBe(4_200)
+    nativeHost().state.threads.find(item => item.id === 'workshop')!.usage = SOME_USAGE
+    nativeHost().emit()
+    await expect.poll(() => desktop.shells().map(push => row(push.state, 'workshop')?.usage?.contextUsed).at(-1)).toBe(SOME_USAGE.contextUsed)
+  })
+
+  it('leaves usage whole for a client on the phone listener that did not say it is a phone', async () => {
+    // A desktop whose record the listener has lost is admitted as a phone; its compaction line reads the thread's usage.
+    const listener = await startSocketServer({ service: fixture.host.service, pairing: fixture.host.pairing, admin: false })
+    cleanups.push(() => listener.close())
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Synthetic desktop without a record')
+    const peer = await rawPeer(listener.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    cleanups.push(() => peer.frames.close())
+    await peer.call('hello', { op: 'hello', afterSeq: Number.MAX_SAFE_INTEGER, accepts: ['detail-delta', 'client-liveness', 'client-updates', 'activity-bodies'] })
+    nativeHost().state.threads.find(item => item.id === 'workshop')!.usage = SOME_USAGE
+    nativeHost().emit()
+    const shells = () => peer.messages.filter((message): message is ShellPush => message.event === 'shell')
+    await expect.poll(() => shells().map(push => row(push.state, 'workshop')?.usage?.contextUsed).at(-1)).toBe(SOME_USAGE.contextUsed)
   })
 
   it('leaves a desktop\'s summaries whole', async () => {

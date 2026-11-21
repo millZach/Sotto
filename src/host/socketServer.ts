@@ -750,29 +750,35 @@ export async function startSocketServer(options: SocketServerOptions) {
    * with every word and step a working thread streams, so with them no shell to a phone ever repeated the last one: a
    * phone with threads working was pushed its whole shell with every publish, about twenty a second, and the iPhone
    * lagged while typing and scrolling. A phone's rows leave them out, so only what a phone reads makes its shell new.
-   * A row's token usage goes the same way (November 20, 2026): it moves with each request a working thread makes, and
-   * no phone reads it, so with six threads working a phone was pushed a shell several times a second and lagged while
-   * typing again. Made once per read however many phones are sent it, and the read itself when no row carries any of them.
+   * A row's token usage goes too (November 20, 2026), for a phone that said so itself (`saidPhone`, below): it moves with
+   * each request a working thread makes and no phone reads it, so a phone was pushed its thread list for every move of every
+   * working thread's. A desktop the listener does not know as one, its record lost, keeps it:
+   * its compaction line reads it. Made once per read however many phones are sent it, and the read itself when no row
+   * carries any of them.
    */
-  const phoneShells = new WeakMap<AgentState, AgentState>()
-  const forPhone = (state: AgentState): AgentState => {
-    let made = phoneShells.get(state)
+  const phoneShells = { saidPhone: new WeakMap<AgentState, AgentState>(), unsaid: new WeakMap<AgentState, AgentState>() }
+  const forPhone = (state: AgentState, saidPhone: boolean): AgentState => {
+    const shells = saidPhone ? phoneShells.saidPhone : phoneShells.unsaid
+    let made = shells.get(state)
     if (made) return made
     let changed = false
     const threads = state.host.threads.map(thread => {
       const summary = thread.summary
-      const summaryUnread = summary !== undefined && ('lastUser' in summary || 'lastAssistant' in summary || 'activityCount' in summary)
-      if (!summaryUnread && !('usage' in thread)) return thread
+      const leavesWords = summary !== undefined && ('lastUser' in summary || 'lastAssistant' in summary || 'activityCount' in summary)
+      const leavesUsage = saidPhone && thread.usage !== undefined
+      if (!leavesWords && !leavesUsage) return thread
       changed = true
-      const { usage: _usage, ...row } = thread
-      void _usage
-      if (!summaryUnread) return row
-      // Without `activityCount` too, which the schema reads as 0: no phone reads it.
-      const kept: Partial<AgentThreadSummary> = { ...summary }
-      delete kept.lastUser; delete kept.lastAssistant; delete kept.activityCount
-      return { ...row, summary: kept as AgentThreadSummary }
+      const row = { ...thread }
+      if (leavesUsage) delete row.usage
+      if (leavesWords) {
+        // Without `activityCount` too, which the schema reads as 0: no phone reads it.
+        const kept: Partial<AgentThreadSummary> = { ...summary }
+        delete kept.lastUser; delete kept.lastAssistant; delete kept.activityCount
+        row.summary = kept as AgentThreadSummary
+      }
+      return row
     })
-    phoneShells.set(state, made = changed ? { ...state, host: { ...state.host, threads } } : state)
+    shells.set(state, made = changed ? { ...state, host: { ...state.host, threads } } : state)
     return made
   }
   /**
@@ -791,7 +797,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   /** `whole` is set only by a `settled-threads` read, which pages through the threads a phone's list leaves out. */
   const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
-    const visible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original), false) : original
+    // A phone says so by accepting activity summaries, which every phone build does and no desktop does (as below).
+    const visible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original, peer.activitySummaries), false) : original
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
