@@ -15,6 +15,18 @@ const record = (id: string, patch: Partial<AgentActivity> = {}): AgentActivity =
 const base = (messages: AgentMessage[], activities?: AgentActivity[]): AgentThreadDetail =>
   ({ threadId: 'workshop', revision: 4, messages, ...(activities === undefined ? {} : { activities }) })
 
+describe('applying a delta', () => {
+  it('keeps whether older messages wait in the store, which no delta says, with records or without (#1990)', () => {
+    for (const held of [base([message('a', 'Pick')]), base([message('a', 'Pick')], [record('build')])]) {
+      const longer = { ...held, earlierAvailable: true }
+      const told = { threadId: 'workshop', baseRevision: 4, revision: 6, messageDeltas: [], activityDeltas: [] }
+      expect(applyAgentThreadDetailDelta(longer, told)).toEqual({ ...longer, revision: 6 })
+      expect(applyAgentThreadDetailDelta(longer, { ...told, messageDeltas: [{ message: message('b', 'Indigo') }] })?.earlierAvailable).toBe(true)
+      expect(applyAgentThreadDetailDelta(held, told)).not.toHaveProperty('earlierAvailable')
+    }
+  })
+})
+
 describe('diffing the detail of one thread', () => {
   it('says a streaming message grew by a suffix', () => {
     const held = base([message('a', 'Pick'), message('b', 'Indigo')])

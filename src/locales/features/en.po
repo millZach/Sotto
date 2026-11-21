@@ -6387,6 +6387,10 @@ msgstr "Sotto turns your voice into text on this computer, and your audio never 
 msgid "Sotto turns your voice into text on this computer, and your audio never leaves it. Choose a model here. One that is not on this computer yet downloads when you choose it, and you can carry on while it does."
 msgstr "Sotto turns your voice into text on this computer, and your audio never leaves it. Choose a model here. One that is not on this computer yet downloads when you choose it, and you can carry on while it does."
 
+#: src/renderer/src/App.tsx
+msgid "Sotto's background engine stopped unexpectedly. Your saved threads and settings are still on disk. Restart Sotto to reconnect."
+msgstr "Sotto's background engine stopped unexpectedly. Your saved threads and settings are still on disk. Restart Sotto to reconnect."
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Sotto’s choice"
 msgstr "Sotto’s choice"

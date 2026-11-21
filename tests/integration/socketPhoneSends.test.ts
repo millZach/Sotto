@@ -49,6 +49,23 @@ it('notes each kind, thread, whole part and changed field a phone is sent, and n
   expect(JSON.stringify(lines)).not.toContain('Workshop')
 })
 
+it('names every part of a shell pushed to a phone that keeps none', async () => {
+  const lines: PhoneSendsLine[] = []
+  const sends = phoneSends(line => lines.push(line))
+  const listener = await startSocketServer({ service: fixture.host.service, pairing: fixture.host.pairing, admin: false, phoneSends: sends })
+  cleanups.push(() => listener.close())
+  const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Synthetic phone')
+  const peer = await rawPeer(listener.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+  cleanups.push(() => peer.frames.close())
+  await peer.call('hello', { op: 'hello', afterSeq: Number.MAX_SAFE_INTEGER, accepts: PHONE_ACCEPTS.filter(feature => feature !== 'kept-parts') })
+  fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic reply', status: 'running' })
+  await expect.poll(() => peer.messages.filter(message => message.event === 'shell').length).toBeGreaterThan(0)
+  sends.flush()
+  const parts = Object.assign({}, ...lines.map(line => line.parts)) as PhoneSendsLine['parts']
+  expect(parts.configuration?.frames).toBeGreaterThan(0)
+  expect(parts['host.name']?.frames).toBeGreaterThan(0)
+})
+
 it('notes nothing a desktop is sent', async () => {
   const lines: PhoneSendsLine[] = []
   const sends = phoneSends(line => lines.push(line))

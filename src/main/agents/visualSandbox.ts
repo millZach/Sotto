@@ -34,7 +34,7 @@ export interface VisualSandboxAdapters {
 
 export interface VisualSandboxOptions {
   /** The visual this computer's thread holds under this ID. */
-  read(threadId: string, visualId: string): AgentVisual | undefined
+  read(threadId: string, visualId: string): AgentVisual | undefined | Promise<AgentVisual | undefined>
   /** This computer's host ID, which a window's host-qualified thread key names for a thread here. */
   localHostId(): string | undefined
   /** Sotto's main window, the only renderer that may hold a visual's guest. */
@@ -72,7 +72,7 @@ export function installVisualSandbox(adapters: VisualSandboxAdapters, options: V
     let lostEarly = false
     const next = await adapters.startProxy(() => { if (proxy === next) lose(next); else lostEarly = true })
     try {
-      if (!session) { const made = adapters.session(); sealVisualSession(made, store); session = made }
+      if (!session) { const made = adapters.session(); sealVisualSession(made, { isAwaitingLoad: url => store.isAwaitingLoad(url), serve: url => store.serveAsync(url) }); session = made }
       await pointVisualSessionAtProxy(session, next.port)
       if (disposed) throw new Error('The sandbox was closed.')
       if (lostEarly) throw new Error('The dead proxy was lost while the session was sealed.')
@@ -112,7 +112,7 @@ export function installVisualSandbox(adapters: VisualSandboxAdapters, options: V
     const threadId = localVisualThreadId(request.threadId, options.localHostId())
     if (threadId === undefined) return { ok: false, reason: i18n._(ON_ANOTHER_COMPUTER) }
     try { await seal() } catch { return { ok: false, reason: i18n._(NOT_SEALED), retry: true } }
-    return store.open({ ...request, threadId })
+    return store.openAsync({ ...request, threadId })
   })
 
   return () => {

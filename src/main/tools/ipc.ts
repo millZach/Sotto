@@ -11,7 +11,6 @@ import { toolListRequestSchema, type ToolListRequest, type ToolsResult } from '.
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { TerminalService } from './terminal'
 import type { BrowserService } from './browser'
-import type { GitChangesService } from './gitChanges'
 import { INVALID_REQUEST } from './common'
 
 /** Each call's arguments, checked against schemas built once rather than on every call. */
@@ -59,7 +58,11 @@ const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], MessageDes
 }
 const NO_CHECKPOINTS = msg`Turn checkpoints are kept only for threads on this computer. Nothing was changed.`
 
-export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges; hostedBrowser?: HostedBrowser; featureUsed?: (feature: 'terminal') => void; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
+export type GitChangesIpcService = {
+  readonly [M in typeof GIT_CHANGES_METHODS[number]]: (payload: unknown) => unknown
+} & { dispose(): void }
+
+export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesIpcService; hostedGitChanges?: HostedGitChanges; hostedBrowser?: HostedBrowser; featureUsed?: (feature: 'terminal') => void; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
   const channels: string[] = []
   const register = (channel: string, operation: (payload: unknown) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {

@@ -18,6 +18,7 @@ export const recoveryNoticeSchema = z
       'PLUGIN_USE_NOT_CLEARED',
       'MODEL_WORDS_NOT_CLEARED',
       'SOUND_WORDS_NOT_CLEARED',
+      'ENGINE_EXITED',
     ]),
   })
   .strict()

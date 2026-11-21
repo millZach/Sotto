@@ -134,7 +134,9 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  *
  * `held` is the revision of each observed thread's detail the client holds, as far as what it was sent says: set by a
  * whole detail that went, moved on by a delta that followed it, and dropped by a push that could not go or a delta that
- * did not follow it. `opening` is each observed thread still owed its first whole detail. `sentAhead` holds each whole
+ * did not follow it. `opening` is each observed thread still owed its first whole detail. `readAhead` is, for a desktop
+ * whose hello accepted `detail-read-held`, each thread it read whole while not following it, at the revision it was
+ * answered and with a digest of what it was sent, so the observe that follows sends it again only when it changed (#1990). `sentAhead` holds each whole
  * detail this client was sent while that copy was still waiting out the coalescing window, so it is not sent again (#700).
  *
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
@@ -150,7 +152,15 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
  * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
  */
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+/** A thread a desktop read whole while not following it: the revision it was answered and a digest of what it was sent. */
+interface ReadAhead { readonly revision: number; readonly digest: string }
+/** How many such reads a desktop's socket remembers, the newest kept: a click reads one thread at a time. */
+const READ_AHEAD_LIMIT = 16
+/** What a client was sent of a thread's history, but for its revision, as a digest that tells two copies apart byte for byte. */
+function sentDigest(detail: AgentThreadDetail): string {
+  return createHash('sha256').update(JSON.stringify({ ...detail, revision: 0 })).digest('base64')
+}
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -170,6 +180,16 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * parts, by reference, under its thread records' revision; a push is measured from it only when its thread records are.
    */
   keptParts?: boolean; keptBase?: HeldParts | null
+  /**
+   * Watcher's page as the last shell push written to this phone carried it: a digest of the page without its time, and
+   * the time it carried. A page with the same digest goes with that time, so it is the page the phone holds (#2755).
+   */
+  pageStamp?: PageStamp | undefined
+  /**
+   * The newest time on any Watcher page this phone was sent, by a push or an answer. A stamp older than it is never used
+   * again: the phone shows the newer page and would leave a page under the older time unshown (#2755).
+   */
+  pageNewest?: string | undefined
   /** Whether its hello accepted `provider-mode-lists`: a catalog it is sent lists each provider's modes once, not on every model. */
   providerModeLists?: boolean
   /**
@@ -212,6 +232,17 @@ const usageForPeer = (peer: Peer, read: UsageLocalHostRead): UsageLocalHostRead 
 const usageProvidersForPeer = (peer: Peer, providerIds: UsageProviderId[] | undefined): UsageProviderId[] | undefined => {
   const known = peer.usageAntigravity ? providerIds : usageProvidersBeforeAntigravity(providerIds)
   return peer.usageMuseOpenCode ? known : usageProvidersBeforeMuse(known)
+}
+/** Watcher's page as a phone was pushed it: a digest of the page without its time, and the time it went with. */
+interface PageStamp { readonly digest: string; readonly observedAt: string }
+/** The later of two ISO times, either of which may be missing. */
+const laterTime = (a: string | undefined, b: string | undefined): string | undefined =>
+  a === undefined ? b : b === undefined ? a : Date.parse(b) > Date.parse(a) ? b : a
+/** The time on the Watcher page a `watcher-phone-` answer carries, if it carries one. */
+const pageTimeOf = (result: unknown): string | undefined => {
+  const state = typeof result === 'object' && result !== null ? (result as { state?: unknown }).state : undefined
+  const at = typeof state === 'object' && state !== null ? (state as { observedAt?: unknown }).observedAt : undefined
+  return typeof at === 'string' ? at : undefined
 }
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
 interface WireShell { state: HostWireShell; carries: number | null }
@@ -519,6 +550,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined)
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
+    // So is a read held for the observe after it (#1990).
+    && (feature !== 'detail-read-held' || options.admin !== false || options.tailnet !== undefined)
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
     && (feature !== 'agents-view' || service.supportsAgentsView === true)
     // Branch moves (ADR-0105 decision 8) only where the host's Owl answer turns on cross-machine work, for recorded desktops.
@@ -928,15 +961,26 @@ export async function startSocketServer(options: SocketServerOptions) {
    * time out, so a page with nothing new but its time is not pushed again. `withoutConversation` leaves Watcher's
    * conversation out too, so a shell whose only news is Watcher writing can wait its window. Each part is serialized and
    * hashed once.
+   *
+   * The page also goes with the time it last changed rather than when it was read (November 20, 2026, #2755): `heldStamp`
+   * is the page the phone was last pushed, and a page with the same digest is written with its time, unless the phone was
+   * since sent a page under a later time (`newest`). A new time on every read made the page unlike the one the phone held,
+   * so kept parts never kept it and every shell pushed to a phone, for any thread's news, carried Watcher's whole page
+   * again. `stamp` is the digest and time written, for the phone to hold.
    */
-  const shellText = (state: HostWireShell): { text: string; digest: string; withoutConversation: string } => {
+  const shellText = (state: HostWireShell, heldStamp?: PageStamp, newest?: string): { text: string; digest: string; withoutConversation: string; stamp?: PageStamp } => {
     const page = state.watcher
     const hash = (text: string): string => createHash('sha1').update(text).digest('base64')
     if (!page) { const text = JSON.stringify(state), digest = hash(text); return { text, digest, withoutConversation: digest } }
     const rest = JSON.stringify({ ...state, watcher: undefined }), untimed = JSON.stringify({ ...page, observedAt: undefined })
-    const text = rest.slice(0, -1) + ',"watcher":' + untimed.slice(0, -1) + ',"observedAt":' + JSON.stringify(page.observedAt) + '}}'
+    const pageDigest = hash(untimed)
+    const reuse = heldStamp?.digest === pageDigest && laterTime(heldStamp.observedAt, newest) === heldStamp.observedAt
+    // A changed page goes under its read time, but never under one older than a page the phone was sent: after the
+    // computer's clock went back, the phone would leave it unshown and keep showing the page before it.
+    const observedAt = reuse ? heldStamp!.observedAt : laterTime(page.observedAt, newest)!
+    const text = rest.slice(0, -1) + ',"watcher":' + untimed.slice(0, -1) + ',"observedAt":' + JSON.stringify(observedAt) + '}}'
     const restDigest = hash(rest), pageWithoutConversation = JSON.stringify({ ...page, observedAt: undefined, conversation: undefined })
-    return { text, digest: restDigest + hash(untimed), withoutConversation: restDigest + hash(pageWithoutConversation) }
+    return { text, digest: restDigest + pageDigest, withoutConversation: restDigest + hash(pageWithoutConversation), stamp: { digest: pageDigest, observedAt } }
   }
   /**
    * One read of the service's shell for every phone sent together: each read copies the whole coordinator state. It is
@@ -1085,6 +1129,31 @@ export async function startSocketServer(options: SocketServerOptions) {
     else peer.held.delete(threadId)
   }
   const detail = (peer: Peer, threadId: string): void => { sendWhole(peer, threadId, service.threadDetail(threadId)) }
+  /** Remembers a thread a desktop read whole while not following it (`detail-read-held`, #1990), the newest last. */
+  const readAheadOf = (peer: Peer, threadId: string, read: AgentThreadDetail): void => {
+    peer.readAhead.delete(threadId)
+    peer.readAhead.set(threadId, { revision: read.revision, digest: sentDigest(read) })
+    for (const oldest of peer.readAhead.keys()) { if (peer.readAhead.size <= READ_AHEAD_LIMIT) break; peer.readAhead.delete(oldest) }
+  }
+  /**
+   * Holds an observed thread the client read whole just before as it stands, and says whether it did, so its whole is not
+   * sent again (#1990): what it would be sent now is what it was answered, byte for byte but for the revision. At the same revision it
+   * holds it already; at a later one, which the host's own revisions can reach with nothing changed, it is told so by a
+   * delta that changes nothing, from the revision it read to this one. Either way the pushes after it follow it.
+   */
+  const holdAsRead = (peer: Peer, threadId: string, whole: AgentThreadDetail | null): boolean => {
+    const read = peer.readAhead.get(threadId)
+    // A whole older than the read is never compared: the read stays remembered, and the caller sends the thread as it is.
+    if (!read || !whole || whole.revision < read.revision) return false
+    peer.readAhead.delete(threadId)
+    const sent = forPeer(peer, whole)
+    if (!sent || sentDigest(sent) !== read.digest) return false
+    if (whole.revision !== read.revision && !push(peer, { v: 1, event: 'detail-delta', threadId,
+      delta: { threadId, baseRevision: read.revision, revision: whole.revision, messageDeltas: [], activityDeltas: [] } })) return false
+    peer.opening.delete(threadId)
+    peer.held.set(threadId, whole.revision)
+    return true
+  }
   /**
    * Pushes a desktop Watcher's projection, whose revision differs from the last one it was written. To a desktop that
    * accepted `watcher-progress`, a projection whose record part and evidence are those of the last one written to it goes
@@ -1135,10 +1204,15 @@ export async function startSocketServer(options: SocketServerOptions) {
     // To a client that accepted `changed-thread-records`, the thread records that changed since its last shell push go
     // beside a state whose own list is empty (#996); they become what it holds once the frame is written.
     const records = peer.threadRecords?.encode(wire.state.host.threads)
-    const state = records ? { ...wire.state, host: { ...wire.state.host, threads: [] } } : wire.state
+    const listed = records ? { ...wire.state, host: { ...wire.state.host, threads: [] } } : wire.state
     const threadNews = records !== undefined && (records.payload.base === null || records.payload.changed.length > 0 || records.payload.removed !== undefined || records.payload.order !== undefined)
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
-    const { text: stateText, digest, withoutConversation } = shellText(state)
+    const { text: stateText, digest, withoutConversation, stamp } = shellText(listed, peer.pageStamp, peer.pageNewest)
+    // Watcher's page with the time the phone holds it under, when nothing on it is new, so its kept part below is kept.
+    // Made only for a push that goes, as the kept parts are.
+    let stamped: HostWireShell | undefined
+    const state = (): HostWireShell => stamped ??= stamp && listed.watcher && listed.watcher.observedAt !== stamp.observedAt
+      ? { ...listed, watcher: { ...listed.watcher, observedAt: stamp.observedAt } } : listed
     const threadsText = records ? ',"threads":' + JSON.stringify(records.payload) : '', eventsText = ',"eventPage":' + JSON.stringify(eventPage) + '}'
     const frameOf = (text: string): string => '{"v":1,"event":"shell","state":' + text + threadsText + eventsText
     const full = frameOf(stateText)
@@ -1146,12 +1220,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     // leaves out each part that holds what that push held, and names it (ADR-0028, November 10 amendment). Made only for a
     // push that goes: the repeat check and Watcher's writing window below read the whole state, as before.
     const keptBase = peer.keptBase, keeps = keptBase != null && records !== undefined && records.payload.base === keptBase.revision
-    const sent = (): HostWireShell | KeptPartsShell<HostWireShell> => keeps && keptBase ? withKeptParts(state, keptBase, SOCKET_HOST_SENT) : state
+    const sent = (): HostWireShell | KeptPartsShell<HostWireShell> => keeps && keptBase ? withKeptParts(state(), keptBase, SOCKET_HOST_SENT) : state()
     // A written push moves the client past its events, and what it carried is what the client now holds: its parts, whole,
     // become what the next push's are measured from, with its thread records.
     const written = (): void => {
-      peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire); records?.commit()
-      if (peer.keptParts) peer.keptBase = records && peer.threadRecords?.baseRevision === records.payload.revision ? { revision: records.payload.revision, top: state, host: state.host } : null
+      peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire); records?.commit(); peer.pageStamp = stamp; peer.pageNewest = laterTime(peer.pageNewest, stamp?.observedAt)
+      if (peer.keptParts) peer.keptBase = records && peer.threadRecords?.baseRevision === records.payload.revision ? { revision: records.payload.revision, top: state(), host: state().host } : null
     }
     if (fits(full)) {
       // A shell whose state is byte for byte the last one this client was pushed, with no events to bring, would only
@@ -1163,7 +1237,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       // One whose only news is Watcher's conversation waits out its window, and is read again when the window closes.
       else if (noEvents && !threadNews && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + WATCHER_WRITING_WINDOW_MS) holdWriting(peer, last.at + WATCHER_WRITING_WINDOW_MS)
       else {
-        const wrote = keeps ? sent() : state, text = keeps ? frameOf(JSON.stringify(wrote)) : full
+        const wrote = keeps ? sent() : state(), text = keeps ? frameOf(JSON.stringify(wrote)) : full
         peer.frames.sendText(text)
         if (options.phoneSends && isPhonePeer(peer)) {
           options.phoneSends.sent(peer, 'shell', Buffer.byteLength(text))
@@ -1217,7 +1291,18 @@ export async function startSocketServer(options: SocketServerOptions) {
     const held = peer.held.get(threadId)
     // A whole no newer than what the client holds is what it holds already, since a revision names what the thread holds,
     // and goes no second time (#2699): one the service published again, as a read made while recovering from a delta can.
-    if (!isAgentThreadDetailDelta(update)) { if (!peer.sentAhead.has(update) && !(held !== undefined && update.revision <= held)) sendWhole(peer, threadId, update); return }
+    if (!isAgentThreadDetailDelta(update)) {
+      if (peer.sentAhead.has(update) || held !== undefined && update.revision <= held) return
+      // The whole an observe publishes goes no second time either to a client that read it just before (#1990). One older
+      // than that read is left to the observe, which compares the thread as it is then, as a waiting one older than the
+      // read is: sent, it would have the client held at a revision older than the one it holds.
+      if (peer.opening.has(threadId)) {
+        const read = peer.readAhead.get(threadId)
+        if (read && update.revision < read.revision) return
+        if (holdAsRead(peer, threadId, update)) return
+      }
+      sendWhole(peer, threadId, update); return
+    }
     if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return
     if (!peer.deltas) { sendWhole(peer, threadId, made.whole()); return }
     // A delta that starts before the revision the client holds, and ends past it, goes as the thread whole instead (#2700):
@@ -1859,6 +1944,9 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
         peer.pictureEdges = (request.accepts?.includes('thread-media-edge') ?? false) && offers(peer, 'thread-media-edge')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
+        // A read counts toward the observe after it only with deltas, which carry the revision it moved to (#1990).
+        peer.readHeld = peer.deltas && (request.accepts?.includes('detail-read-held') ?? false) && offers(peer, 'detail-read-held')
+        peer.readAhead.clear()
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
         peer.watcherPhone = (request.accepts?.includes('watcher-phone') ?? false) && offers(peer, 'watcher-phone')
@@ -2023,8 +2111,12 @@ export async function startSocketServer(options: SocketServerOptions) {
           await peer.frames.drained(); if (peer.frames.isClosed) break
           if (!peer.opening.has(id)) continue
           // A copy still waiting is sent now in its place, so the thread is neither read again nor sent twice.
-          const offered = waiting.get(id)
-          if (offered) { peer.sentAhead.add(offered); sendWhole(peer, id, offered) } else detail(peer, id)
+          // One older than a read the client made since is not offered: the thread as it is now is compared instead.
+          const read = peer.readAhead.get(id)
+          const offered = read && waiting.get(id) && waiting.get(id)!.revision < read.revision ? undefined : waiting.get(id)
+          const whole = offered ?? service.threadDetail(id)
+          if (offered) peer.sentAhead.add(offered)
+          if (!holdAsRead(peer, id, whole)) sendWhole(peer, id, whole)
         }
         await peer.frames.drained()
         return null
@@ -2529,6 +2621,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       // An answer that carries a shell gives the client a picture of its own, so the next shell push goes whatever it repeats.
       // So does one that carries Watcher's page: a phone shows the page it was answered with until a shell replaces it.
       if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
+      // Its page was stamped when it was read, so no later push reuses an older stamp: one would read as older than the page
+      // the phone shows, and go unshown though it changed since (#2755). An answer without a page changes nothing here.
+      const answeredPage = carried?.state.watcher?.observedAt ?? (request.op.startsWith('watcher-phone-') && 'result' in response ? pageTimeOf(response.result) : undefined)
+      if (answeredPage !== undefined) peer.pageNewest = laterTime(peer.pageNewest, answeredPage)
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
       else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'plugin-meshy-model-bytes' || request.op === 'plugin-elevenlabs-sound-bytes' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
@@ -2539,6 +2635,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           // A thread read whole is held at that revision, and the deltas that follow it apply.
           const read = response.result as AgentThreadDetail | null
           if (read && peer.observed.has(request.threadId) && !peer.opening.has(request.threadId)) peer.held.set(request.threadId, read.revision)
+          else if (read && request.op === 'detail' && peer.readHeld && !peer.stepWindows) readAheadOf(peer, request.threadId, read)
         } else if (request.op === 'hello' || (request.op === 'events' && !request.threadId)) {
           if (request.op === 'hello') peer.ready = true
           // The queue as it stands follows the hello's answer; each change follows it.
@@ -2677,7 +2774,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, usageAntigravity: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, usageAntigravity: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), readHeld: false, readAhead: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

@@ -224,6 +224,10 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
     /// What an opened agent's task and result were read for: its run, its revision and its status. When it changes, they
     /// are read again.
     public var detailsKey: String? = nil
+    /// The computer a delegated thread runs on, where that is not the sheet's own thread's (#2750): its row opens it there.
+    public var hostID: String? = nil
+    /// That computer's name, which VoiceOver says with the row, as the row's line shows it.
+    public var computer: String? = nil
 
     /// Whether the row's "Delegated by" line adds that Watcher watches it through that thread (#1217, Zach's pick B). Only
     /// a row below a thread the sheet's own thread delegated to has the line, and Watcher, which talks only to the thread
@@ -241,7 +245,8 @@ public struct AgentsRow: Identifiable, Equatable, Sendable {
                 String(localized: "\(title), delegated thread on \(AgentNames.name($0))", bundle: .module,
                        comment: "A delegated thread's row for VoiceOver; the first %@ is its title, the second its agent's name, such as Codex")
             } ?? String(localized: "\(title), delegated thread", bundle: .module, comment: "A delegated thread's row for VoiceOver; %@ is its title")
-            let said = Self.withStatus(what, status)
+            // A thread on another computer says which, in the same words as its status, before how it stands (#2750).
+            let said = Self.withStatus(Self.withStatus(what, computer), status)
             return waitingFor != nil
                 ? String(localized: "\(said). Opens it to answer", bundle: .module,
                          comment: "A delegated thread's row for VoiceOver; %@ is what the row is and what it is doing")
@@ -346,18 +351,95 @@ public enum AgentsRoster {
     /// The delegated threads below `owner`, two levels, from the list's own `delegatedBy` links: each first-level one,
     /// then its own.
     public static func delegated(below owner: String, in threads: [ThreadSummary]) -> [Below] {
-        var children: [String: [ThreadSummary]] = [:]
-        for thread in threads { if let by = thread.delegatedBy, by != thread.id { children[by, default: []].append(thread) } }
-        let first = (children[owner] ?? []).filter { $0.id != owner }
-        let firstIDs = Set(first.map(\.id))
-        var result: [Below] = []
-        for thread in first {
-            result.append(Below(thread: thread, level: 1, by: nil))
-            for child in children[thread.id] ?? [] where child.id != owner && !firstIDs.contains(child.id) {
-                result.append(Below(thread: child, level: 2, by: thread))
+        delegatedAcross(below: ThreadRef(hostID: "", threadID: owner), in: [ComputerThreads(hostID: "", threads: threads)])
+            .map { Below(thread: $0.thread, level: $0.level, by: $0.by) }
+    }
+
+    /// One computer's threads as the phone holds them, for delegations that cross computers (#2750).
+    public struct ComputerThreads: Sendable {
+        public let hostID: String
+        public let threads: [ThreadSummary]
+        /// Whether this computer says which failures a client has shown (`failure-seen`): its own threads' Needs attention follows it.
+        public let failuresSeen: Bool
+        /// Whether the phone can reach it now: a computer it cannot is listed as it last shared its threads, which may be stale.
+        public let reachable: Bool
+        public init(hostID: String, threads: [ThreadSummary], failuresSeen: Bool = true, reachable: Bool = true) {
+            self.hostID = hostID; self.threads = threads; self.failuresSeen = failuresSeen; self.reachable = reachable
+        }
+    }
+    /// One delegated thread below a thread, on whichever of the phone's computers runs it: 1 under it, 2 under one of its
+    /// delegated threads, `by`.
+    public struct BelowAcross: Sendable {
+        public let thread: ThreadSummary
+        public let hostID: String
+        public let level: Int
+        public let by: ThreadSummary?
+        public init(thread: ThreadSummary, hostID: String, level: Int, by: ThreadSummary?) { self.thread = thread; self.hostID = hostID; self.level = level; self.by = by }
+    }
+    /// What a computer gives a delegated thread's row: its projects and models, and its name.
+    public struct Place: Sendable {
+        public let projects: [Project]
+        public let computer: String?
+        public let models: [ThreadModel]
+        /// Whether this computer says which failures a client has shown (`failure-seen`).
+        public let failuresSeen: Bool
+        /// Whether the phone can reach it now (`ComputerThreads.reachable`).
+        public let reachable: Bool
+        public init(projects: [Project], computer: String?, models: [ThreadModel], failuresSeen: Bool = true, reachable: Bool = true) {
+            self.projects = projects; self.computer = computer; self.models = models; self.failuresSeen = failuresSeen; self.reachable = reachable
+        }
+    }
+
+    /// The delegated threads below `owner`, two levels, on whichever of the phone's computers they run (#2750), as the
+    /// desktop's Tools › Agents finds them across machines. A `delegatedBy` link names its thread three ways: a bare ID on
+    /// the thread's own computer; `host:<hostId>:<id>`, as a desktop names a paired host's thread that delegated to one of
+    /// its own; and `relay:<client>:<caller>`, as a host names a desktop's thread that delegated to one of its own, which is
+    /// found by its ID on another of the phone's computers. A link that names nothing the phone holds names no one here.
+    public static func delegatedAcross(below owner: ThreadRef, in computers: [ComputerThreads]) -> [BelowAcross] {
+        var holders: [String: [String]] = [:]
+        for computer in computers { for thread in computer.threads { holders[thread.id, default: []].append(computer.hostID) } }
+        var children: [String: [(thread: ThreadSummary, hostID: String)]] = [:]
+        for computer in computers {
+            for thread in computer.threads {
+                guard let link = thread.delegatedBy, let parent = delegatingRef(link, on: computer.hostID, holders: holders),
+                      parent != ThreadRef(hostID: computer.hostID, threadID: thread.id) else { continue }
+                children[parent.id, default: []].append((thread: thread, hostID: computer.hostID))
+            }
+        }
+        let first = (children[owner.id] ?? []).filter { ThreadRef(hostID: $0.hostID, threadID: $0.thread.id) != owner }
+        let firstIDs = Set(first.map { ThreadRef(hostID: $0.hostID, threadID: $0.thread.id).id })
+        var result: [BelowAcross] = []
+        for item in first {
+            result.append(BelowAcross(thread: item.thread, hostID: item.hostID, level: 1, by: nil))
+            for child in children[ThreadRef(hostID: item.hostID, threadID: item.thread.id).id] ?? [] {
+                let ref = ThreadRef(hostID: child.hostID, threadID: child.thread.id)
+                if ref == owner || firstIDs.contains(ref.id) { continue }
+                result.append(BelowAcross(thread: child.thread, hostID: child.hostID, level: 2, by: item.thread))
             }
         }
         return result
+    }
+    /// The thread a `delegatedBy` link names, by the computer that holds it; `holders` lists each thread ID's computers.
+    static func delegatingRef(_ link: String, on hostID: String, holders: [String: [String]]) -> ThreadRef? {
+        if let keyed = hostKeyed(link) { return keyed }
+        guard link.hasPrefix("relay:") else { return ThreadRef(hostID: hostID, threadID: link) }
+        let rest = link.dropFirst("relay:".count)
+        guard let colon = rest.firstIndex(of: ":") else { return nil }
+        let caller = String(rest[rest.index(after: colon)...])
+        if let keyed = hostKeyed(caller) { return keyed }
+        // A thread is its computer and its ID: held by two other computers, the ID alone does not say which, so it names no one.
+        let others = (holders[caller] ?? []).filter { $0 != hostID }
+        guard others.count == 1, let holder = others.first else { return nil }
+        return ThreadRef(hostID: holder, threadID: caller)
+    }
+    /// `host:<hostId>:<id>`, a client's key for another computer's thread, as that computer's ID and the thread's own.
+    private static func hostKeyed(_ key: String) -> ThreadRef? {
+        guard key.hasPrefix("host:") else { return nil }
+        let rest = key.dropFirst("host:".count)
+        guard let colon = rest.firstIndex(of: ":") else { return nil }
+        let host = String(rest[..<colon]), id = String(rest[rest.index(after: colon)...])
+        guard UUID(uuidString: host) != nil, !id.isEmpty else { return nil }
+        return ThreadRef(hostID: host, threadID: id)
     }
 
     /// What the thread list says of a thread's agents, as one value: when it changes, the sheet reads them again. Each
@@ -365,9 +447,11 @@ public enum AgentsRoster {
     /// from Background work to Answered while it stays idle and asks nothing is read again, as when its last monitor
     /// ends (`watcherTurnOutcome` in src/main/agents/watcherOutcomes.ts). The thread's own agent counts are in it too.
     public static func refreshSignal(_ owner: ThreadSummary, in threads: [ThreadSummary]) -> String {
+        refreshSignal(owner, below: delegated(below: owner.id, in: threads).map(\.thread))
+    }
+    private static func refreshSignal(_ owner: ThreadSummary, below threads: [ThreadSummary]) -> String {
         func agents(_ summary: SubagentSummary?) -> String { summary.map { "\($0.total)/\($0.working)/\($0.unknown)" } ?? "" }
-        let below = delegated(below: owner.id, in: threads).map { item in
-            let thread = item.thread
+        let below = threads.map { thread in
             let background = (thread.backgroundWork ?? []).map(\.type).joined(separator: ",")
             return [thread.id, thread.status, String(thread.requests.count), background, String(thread.monitoring?.count ?? 0),
                     agents(thread.subagentSummary)].joined(separator: ":")
@@ -387,10 +471,18 @@ public enum AgentsRoster {
     /// The top bar's count, from the thread list alone: delegated threads, both levels, and the provider's sub-agents.
     /// Nil when the thread has neither, so the control is not there.
     public static func count(_ owner: ThreadSummary, in threads: [ThreadSummary], failuresSeen: Bool = true) -> AgentsCount? {
-        let below = delegated(below: owner.id, in: threads)
+        count(owner, on: "", in: [ComputerThreads(hostID: "", threads: threads, failuresSeen: failuresSeen)])
+    }
+    /// The same count, with the delegated threads on every one of the phone's computers (#2750), each read by what its own
+    /// computer says of failures a client has shown.
+    public static func count(_ owner: ThreadSummary, on hostID: String, in computers: [ComputerThreads]) -> AgentsCount? {
+        let seen = Dictionary(computers.map { ($0.hostID, $0.failuresSeen) }, uniquingKeysWith: { first, _ in first })
+        // What a computer the phone cannot reach last said is not current, so its threads add nothing to what needs you.
+        let away = Set(computers.filter { !$0.reachable && $0.hostID != hostID }.map(\.hostID))
+        let below = delegatedAcross(below: ThreadRef(hostID: hostID, threadID: owner.id), in: computers)
         let total = below.count + (owner.subagentSummary?.total ?? 0)
         guard total > 0 else { return nil }
-        return AgentsCount(total: total, needs: below.filter { needsYou($0.thread, failuresSeen: failuresSeen) }.count)
+        return AgentsCount(total: total, needs: below.filter { !away.contains($0.hostID) && needsYou($0.thread, failuresSeen: seen[$0.hostID] ?? true) }.count)
     }
 
     /// The sheet's rows: the delegated threads and the sub-agents in one list, newest start first. Each delegated thread
@@ -399,9 +491,25 @@ public enum AgentsRoster {
     /// computer's and `computer` its name, for where each delegated thread runs.
     public static func rows(owner: ThreadSummary, threads: [ThreadSummary], delegations: [DelegatedThreadRecord]?, agents: [SubagentRow],
                             models: [ThreadModel] = [], failuresSeen: Bool = true, projects: [Project] = [], computer: String? = nil) -> [AgentsRow] {
+        let below = delegated(below: owner.id, in: threads).map { BelowAcross(thread: $0.thread, hostID: "", level: $0.level, by: $0.by) }
+        return rows(owner: owner, on: "", below: below, delegations: delegations, agents: agents, models: models, failuresSeen: failuresSeen,
+                    place: { _ in Place(projects: projects, computer: computer, models: models) })
+    }
+    /// The same rows, with the delegated threads on whichever of the phone's computers runs them (#2750). Delegation's record
+    /// on the sheet's own computer knows only its own threads, so a row on another computer shows what the thread list says
+    /// of it, Working while its turn runs, and no outcome otherwise, never a guess; it names its own computer and opens there.
+    public static func rows(owner: ThreadSummary, on hostID: String, below: [BelowAcross], delegations: [DelegatedThreadRecord]?, agents: [SubagentRow],
+                            models: [ThreadModel] = [], failuresSeen: Bool = true, place: (String) -> Place) -> [AgentsRow] {
         let quiet = ThreadGroups.isSettled(owner)
         let records = Dictionary((delegations ?? []).map { ($0.thread, $0) }, uniquingKeysWith: { first, _ in first })
-        let projectTitles = Dictionary(projects.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        var places: [String: (place: Place, titles: [String: String])] = [:]
+        func placed(_ host: String) -> (place: Place, titles: [String: String]) {
+            if let known = places[host] { return known }
+            let found = place(host)
+            let made = (place: found, titles: Dictionary(found.projects.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first }))
+            places[host] = made
+            return made
+        }
         // Each block is a delegated thread with its own, or a sub-agent with the agents under it, and keeps its order.
         var blocks: [Block] = []
         var family: [AgentsRow] = []
@@ -411,10 +519,12 @@ public enum AgentsRoster {
             blocks.append(Block(start: head.startedAt, index: blocks.count, rows: [head] + below))
             family = []
         }
-        for item in delegated(below: owner.id, in: threads) {
+        for item in below {
             if item.level == 1 { closeFamily() }
-            family.append(threadRow(item.thread, level: item.level, by: item.by, record: records[item.thread.id], read: delegations != nil, quiet: quiet,
-                                    models: models, failuresSeen: failuresSeen, project: projectTitles[item.thread.projectId], computer: computer))
+            let here = item.hostID == hostID, at = placed(item.hostID)
+            family.append(threadRow(item.thread, level: item.level, by: item.by, record: here ? records[item.thread.id] : nil, read: here && delegations != nil, quiet: quiet,
+                                    models: at.place.models, failuresSeen: here ? failuresSeen : at.place.failuresSeen, project: at.titles[item.thread.projectId],
+                                    computer: at.place.computer, hostID: here ? nil : item.hostID, reachable: here || at.place.reachable))
         }
         closeFamily()
         var agentBlock: [AgentsRow] = []
@@ -490,10 +600,13 @@ public enum AgentsRoster {
     }
 
     static func threadRow(_ thread: ThreadSummary, level: Int, by: ThreadSummary?, record: DelegatedThreadRecord?, read: Bool, quiet: Bool,
-                          models: [ThreadModel], failuresSeen: Bool = true, project: String? = nil, computer: String? = nil) -> AgentsRow {
-        let waiting = waitingFor(thread)
+                          models: [ThreadModel], failuresSeen: Bool = true, project: String? = nil, computer: String? = nil, hostID: String? = nil,
+                          reachable: Bool = true) -> AgentsRow {
+        // A thread on a computer the phone cannot reach is as that computer last shared it (#2750): it says so, and claims
+        // no work, request or failure it may no longer have.
+        let waiting = reachable ? waitingFor(thread) : nil
         // An unseen failure needs the user too, but asks nothing: it says Needs attention and has no Open to answer.
-        let attention = waiting == nil && failureUnseen(thread, failuresSeen: failuresSeen)
+        let attention = reachable && waiting == nil && failureUnseen(thread, failuresSeen: failuresSeen)
         // Settled is quiet, whether the sheet's own thread or this one was settled: only a request or a failure lights it.
         let settled = quiet || ThreadGroups.isSettled(thread)
         let state = ThreadState(thread)
@@ -501,11 +614,13 @@ public enum AgentsRoster {
         // its outcome is Unknown, never guessed; before then, nothing is said.
         let outcome: String?
         if let record { outcome = record.outcome }
+        else if !reachable { outcome = nil }
         else if state.workInProgress { outcome = "working" }
         else { outcome = read ? "unknown" : nil }
         let working = outcome == "working" || outcome == "background"
         let status: String?
-        if let waiting {
+        if !reachable { status = ComputerStatus.unreachable.words }
+        else if let waiting {
             status = waiting == "question" ? String(localized: "Needs your answer", bundle: .module)
                 : String(localized: "Needs your approval", bundle: .module)
         }
@@ -514,7 +629,8 @@ public enum AgentsRoster {
         else if let outcome { status = outcomeWord(outcome) }
         else { status = nil }
         let tone: AgentsRow.Tone
-        if waiting != nil || attention { tone = .needs }
+        if !reachable { tone = .quiet }
+        else if waiting != nil || attention { tone = .needs }
         else if settled { tone = .quiet }
         else if working { tone = .working }
         else if outcome == "failed" { tone = .failed }
@@ -528,9 +644,13 @@ public enum AgentsRoster {
         let model = models.first { $0.id == thread.modelId }?.name
         // Provider · project · computer, as every thread's line reads (#1861), then what this one was delegated for.
         let facts = [AgentNames.known(thread.providerId), project, computer, workTitle(record?.work), model].compactMap { $0 }.filter { !$0.isEmpty }
-        return AgentsRow(id: "thread:" + thread.id, kind: .thread, level: level, title: thread.title, threadID: thread.id, agentID: nil,
-                         providerID: thread.providerId, delegatedBy: by?.title, preview: record?.brief, facts: facts, startedAt: start,
-                         elapsed: elapsed, status: status, tone: tone, waitingFor: waiting)
+        // A row on another computer is that computer's thread: its ID says so, so two computers' threads never share a row.
+        var row = AgentsRow(id: hostID.map { "thread:\($0)/\(thread.id)" } ?? "thread:" + thread.id, kind: .thread, level: level, title: thread.title, threadID: thread.id, agentID: nil,
+                            providerID: thread.providerId, delegatedBy: by?.title, preview: record?.brief, facts: facts, startedAt: start,
+                            elapsed: elapsed, status: status, tone: tone, waitingFor: waiting)
+        row.hostID = hostID
+        if hostID != nil { row.computer = computer }
+        return row
     }
 
     static func agentRow(_ row: SubagentRow, depth: Int, quiet: Bool, models: [ThreadModel] = []) -> AgentsRow {
