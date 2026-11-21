@@ -29,10 +29,16 @@ import { stepClock } from '../fixtures/stepClock'
  */
 const DESKTOP_PUSH_BYTES = 3_100
 /**
- * Bytes of JSON in one thread list push to an iPhone: 1,826. It was about 199 KB; #2392 left out what no phone reads (73,177),
- * and #2393 the rest.
+ * Bytes of JSON in one thread list push to an iPhone: 1,477. It was about 199 KB; #2392 left out what no phone reads (73,177),
+ * and #2393 the rest. It was 1,864 until November 20, 2026, when the row's token usage, which no phone reads, left it too.
  */
-const PHONE_PUSH_BYTES = 2_100
+const PHONE_PUSH_BYTES = 1_700
+/**
+ * Thread list pushes to an iPhone while the thread streams 40 chunks and its token usage moves 4 times: none. It was 4,
+ * one for each move of the usage, which no phone reads, until November 20, 2026. The iPhone's size budget is measured
+ * on renames after the stream instead.
+ */
+const PHONE_PUSHES_WHILE_STREAMING = 0
 /**
  * The parts of a push to a desktop, and to an iPhone, that are as the push before had them: 7 each, the frame's `v` and
  * `event`, the state's `kept` and its host's, the host's empty `threads` and catalog revision, and the event page. They were
@@ -78,15 +84,23 @@ it('sends a desktop and an iPhone no more per push than forge\'s host did, while
     const marks = { desktop: desktop.messages.length, phone: phone.messages.length }
     await h.stream([session], 'reply', 40)
     await h.clock.pass(1_000)
-    const toDesktop = tallyPeer(desktop.messages, marks.desktop, false), toPhone = tallyPeer(phone.messages, marks.phone, false)
+    const toDesktop = tallyPeer(desktop.messages, marks.desktop, false), streamedToPhone = tallyPeer(phone.messages, marks.phone, false).events.shell?.frames ?? 0
+    // Then what an iPhone does read changes on the thread's row, so it is pushed something to measure.
+    const changed = phone.messages.length
+    for (let rename = 0; rename < 4; rename++) {
+      thread.title = `Synthetic thread renamed ${rename}`; p.adapter.mark(session); p.adapter.publish(true)
+      await h.clock.pass(200)
+    }
+    const toPhone = tallyPeer(phone.messages, changed, false)
     const shellToDesktop = toDesktop.events.shell, shellToPhone = toPhone.events.shell, progress = toDesktop.progressOnly
     const report = JSON.stringify({ desktop: { pushes: shellToDesktop?.frames, bytesPerPush: shellToDesktop?.bytesPerFrame, unchangedPartsPerPush: shellToDesktop?.unchangedPartsPerFrame },
-      phone: { pushes: shellToPhone?.frames, bytesPerPush: shellToPhone?.bytesPerFrame, unchangedPartsPerPush: shellToPhone?.unchangedPartsPerFrame },
+      phone: { pushesWhileStreaming: streamedToPhone, pushes: shellToPhone?.frames, bytesPerPush: shellToPhone?.bytesPerFrame, unchangedPartsPerPush: shellToPhone?.unchangedPartsPerFrame },
       progressOnly: progress && { changes: progress.changes, bytesPerChange: progress.bytesPerChange, unchangedPartsPerChange: progress.unchangedPartsPerChange, wholeWatcherStatePerChange: progress.wholePushesPerChange } })
     if (process.env.SOTTO_PUSH_SIZES === '1') console.log(`HOST-PUSH-SIZES ${report}`)
     // Some of each, so no budget passes on nothing.
     expect(shellToDesktop?.frames ?? 0, `The desktop was sent too few thread list pushes to measure: ${report}`).toBeGreaterThanOrEqual(2)
     expect(shellToPhone?.frames ?? 0, `The iPhone was sent too few thread list pushes to measure: ${report}`).toBeGreaterThanOrEqual(2)
+    expect(streamedToPhone, `An iPhone was pushed its thread list while only what it does not read moved: ${report}`).toBeLessThanOrEqual(PHONE_PUSHES_WHILE_STREAMING)
     expect(progress?.changes ?? 0, `The desktop was told of too few changes of Watcher's progress to measure: ${report}`).toBeGreaterThanOrEqual(2)
     expect(shellToDesktop!.bytesPerFrame, `A thread list push to a desktop grew past its budget: ${report}`).toBeLessThanOrEqual(DESKTOP_PUSH_BYTES)
     expect(shellToPhone!.bytesPerFrame, `A thread list push to an iPhone grew past its budget: ${report}`).toBeLessThanOrEqual(PHONE_PUSH_BYTES)

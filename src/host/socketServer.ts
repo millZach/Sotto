@@ -750,7 +750,9 @@ export async function startSocketServer(options: SocketServerOptions) {
    * with every word and step a working thread streams, so with them no shell to a phone ever repeated the last one: a
    * phone with threads working was pushed its whole shell with every publish, about twenty a second, and the iPhone
    * lagged while typing and scrolling. A phone's rows leave them out, so only what a phone reads makes its shell new.
-   * Made once per read however many phones are sent it, and the read itself when no row carries any of them.
+   * A row's token usage goes the same way (November 20, 2026): it moves with each request a working thread makes, and
+   * no phone reads it, so with six threads working a phone was pushed a shell several times a second and lagged while
+   * typing again. Made once per read however many phones are sent it, and the read itself when no row carries any of them.
    */
   const phoneShells = new WeakMap<AgentState, AgentState>()
   const forPhone = (state: AgentState): AgentState => {
@@ -759,12 +761,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     let changed = false
     const threads = state.host.threads.map(thread => {
       const summary = thread.summary
-      if (!summary || !('lastUser' in summary || 'lastAssistant' in summary || 'activityCount' in summary)) return thread
+      const summaryUnread = summary !== undefined && ('lastUser' in summary || 'lastAssistant' in summary || 'activityCount' in summary)
+      if (!summaryUnread && !('usage' in thread)) return thread
+      changed = true
+      const { usage: _usage, ...row } = thread
+      void _usage
+      if (!summaryUnread) return row
       // Without `activityCount` too, which the schema reads as 0: no phone reads it.
       const kept: Partial<AgentThreadSummary> = { ...summary }
       delete kept.lastUser; delete kept.lastAssistant; delete kept.activityCount
-      changed = true
-      return { ...thread, summary: kept as AgentThreadSummary }
+      return { ...row, summary: kept as AgentThreadSummary }
     })
     phoneShells.set(state, made = changed ? { ...state, host: { ...state.host, threads } } : state)
     return made

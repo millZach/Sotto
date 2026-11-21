@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { startSocketServer } from '../../src/host/socketServer'
-import type { AgentState } from '../../src/shared/agents'
+import type { AgentHostSnapshot, AgentState } from '../../src/shared/agents'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { hostSizedShellParts, PHONE_SENT_STATE_PARTS, PHONE_SENT_WIRE_PARTS, withShellParts } from '../fixtures/shellParts'
@@ -21,6 +21,8 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 const PHONE_ACCEPTS = ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'watcher-phone', 'watcher-phone-stop-all']
 const THREADS = ['workshop', 'docs']
 const STREAM_MS = 1_200
+/** How many times each working thread's usage moves, a tenth of a second apart. */
+const USAGE_MOVES = 12
 
 type ShellPush = { event: 'shell'; state: AgentState }
 async function peerOn(port: number, name: string) {
@@ -77,6 +79,42 @@ describe('a phone while threads stream', () => {
     fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic reply, done', status: 'idle' })
     await expect.poll(() => row(peer.shells().at(-1)!.state, 'workshop')?.status).toBe('idle')
     expect(peer.frames.isClosed).toBe(false)
+  })
+
+  it('is pushed no shell while only the threads\' token usage moves, which no phone reads (November 20)', async () => {
+    // A working Claude thread's usage moves with each request its turn makes, and its elapsed time with it. No phone reads
+    // a thread's usage, but with it on the row every move made the phone's shell new: with six threads working the iPhone
+    // was pushed a shell several times a second, redrew the thread page and its reply box for each, and lagged while typing.
+    const native = fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
+    const peer = await phone()
+    for (const threadId of THREADS) fixture.native.event({ type: 'stream', threadId, messageId: threadId + '-reply', text: 'Synthetic reply', status: 'running', activities: steps(1) })
+    await expect.poll(() => peer.shells().some(push => THREADS.every(id => row(push.state, id)?.status === 'running'))).toBe(true)
+    await new Promise(resolve => setTimeout(resolve, 200))
+    const before = peer.shells().length
+    for (let move = 1; move <= USAGE_MOVES; move++) {
+      for (const thread of native.state.threads.filter(item => THREADS.includes(item.id))) {
+        thread.usage = { total: { input: 1_000 * move, output: 100 * move }, contextUsed: 2_000 * move, contextWindow: 200_000, elapsedMs: 500 * move,
+          rateVersions: [], partial: false, updatedAt: new Date(Date.UTC(2026, 10, 20, 12, 0, 0, move * 500)).toISOString() }
+      }
+      native.emit()
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    await new Promise(resolve => setTimeout(resolve, 200))
+    // Before, this was a shell for each move: `USAGE_MOVES`.
+    expect(peer.shells().length - before).toBe(0)
+    expect(row(peer.shells().at(-1)!.state, 'workshop')).not.toHaveProperty('usage')
+    // What a phone does read still goes at once.
+    fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic reply, done', status: 'idle' })
+    await expect.poll(() => row(peer.shells().at(-1)!.state, 'workshop')?.status).toBe('idle')
+  })
+
+  it('leaves a desktop\'s usage whole', async () => {
+    const native = fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
+    const desktop = await peerOn(fixture.host.descriptor!.port, 'Synthetic desktop')
+    const thread = native.state.threads.find(item => item.id === 'workshop')!
+    thread.usage = { contextUsed: 4_200, contextWindow: 200_000, rateVersions: [], partial: false, updatedAt: new Date(0).toISOString() }
+    native.emit()
+    await expect.poll(() => desktop.shells().map(push => row(push.state, 'workshop')?.usage?.contextUsed).at(-1)).toBe(4_200)
   })
 
   it('leaves a desktop\'s summaries whole', async () => {
