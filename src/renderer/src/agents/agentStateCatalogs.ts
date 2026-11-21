@@ -119,7 +119,8 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
     const { readRevision, ...full } = await bridge.get()
     // Kept by the page alone, with the very records it hands on: the complete list after names them as repeated.
     answeredRead = typeof readRevision === 'number' ? readRevision : undefined
-    if (typeof readRevision === 'number') read = { revision: readRevision, records: new Map(full.host.threads.map(thread => [thread.id, thread] as const)) }
+    // Only the newest read is kept: an older one whose answer lands last never takes the place of the read main marks by.
+    if (typeof readRevision === 'number' && (read === undefined || readRevision > read.revision)) read = { revision: readRevision, records: new Map(full.host.threads.map(thread => [thread.id, thread] as const)) }
     askedAt.set(full, at)
     lastRead.set(hostCatalogKey(full.host.hostId), full.host.models)
     for (const client of full.host.clientHosts ?? []) {

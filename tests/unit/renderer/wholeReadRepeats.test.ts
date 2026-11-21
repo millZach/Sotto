@@ -34,7 +34,7 @@ function wire() {
     bridge, get, sent,
     lose: () => { lose = true },
     holdAnswers: () => { holding = true },
-    releaseAnswers: () => { holding = false; for (const answer of held.splice(0)) answer() },
+    releaseAnswers: (newestFirst = false) => { holding = false; for (const answer of newestFirst ? held.splice(0).reverse() : held.splice(0)) answer() },
     publish: (state: AgentState) => {
       current = state
       broadcaster.send(state, payload => { sent.push(payload); if (!lose) listener?.(structuredClone(payload)); lose = false; return true })
@@ -97,6 +97,25 @@ describe('the complete list after a whole read of the state (#2733)', () => {
     await settle()
     expect(delivered.at(-1)).toEqual(next)
     expect(link.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the newest of two reads when the older one’s answer lands last', async () => {
+    const link = wire()
+    const delivered: AgentState[] = []
+    const page = wrapAgentBridge(link.bridge)
+    stops.push(page.onState(state => delivered.push(state)))
+    link.publish(shell(six()))
+    await settle()
+    link.holdAnswers()
+    const first = page.get(), second = page.get()
+    link.releaseAnswers(true)
+    const [, newer] = await Promise.all([first, second])
+    const after = shell(retitled(newer.host.threads, 3, 'Fourth'))
+    link.publish(after)
+    await settle()
+    // The list marks the newer read's records, which the page kept although the older answer came after it.
+    expect(delivered.at(-1)).toEqual(after)
+    expect(delivered.at(-1)!.host.threads.filter((thread, at) => thread === newer.host.threads[at]).length).toBe(newer.host.threads.length - 1)
   })
 
   it('takes a list naming another read as it is', async () => {
