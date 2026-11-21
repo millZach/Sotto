@@ -48,3 +48,12 @@ On forge, the scan and stop bundled with esbuild and run under the pinned Node, 
 - A real `claude -p` or `codex exec` started by a real Sotto thread's own command and found by a running Sotto. Doing it needs a second Sotto beside Zach's, on his account; the second journey stands in for it with the real adapter and a stand-in client carrying the session as Claude Code passes it.
 - Codex: `CODEX_THREAD_ID` was read from a real `codex exec` on forge (it equals the Codex thread's ID), and the adapter's mapping is typed and small, but no journey runs a Codex thread.
 - Reduced motion: the row's Working ring follows the existing delegation ring's rule; not captured.
+
+## Tools › Agents (November 20, 2026)
+
+Zach picked variant 2, **Own section**, of `docs/prototypes/detached-runs-in-agents-prototype.html`. Checked in the built app on Windows by the new journey in `tests/e2e/detached-runs.spec.ts` ("Tools › Agents lists a detached run in its own section, counts it, and stops it from there"): the run, given to the window as its host publishes it, stands under **Detached runs** in Tools › Agents with Working and Stop; the count reads "1 detached run" and "1 working"; the pane does not also say it has no agents; nothing in the roster scrolls sideways and every part is 4.5:1 or better at 1600x1000, 1280x800 and 820x560, dark and light; Stop answers that nothing was stopped (a desktop journey looks for no runs); and once the run ends the section goes and the pane reads as before. `tests/unit/renderer/tools/detachedRunsInAgents.test.tsx` covers the section above the agents, the second heading, the count, Stop through `stop-detached-run` and its refusal, and a thread with no run.
+
+- `artifacts/detached-runs/agents-detached-run-dark-1280x800.png`: the section beside the thread, dark.
+- `artifacts/detached-runs/agents-detached-run-light-820x560.png`: the same at the minimum size, light.
+
+Not verified here: a run Zach's laptop thread left on forge over ssh. Neither machine can tie that run to the thread yet (its process carries no mark), so it shows in neither place; that is the follow-up that finds runs across machines.

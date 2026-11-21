@@ -326,7 +326,7 @@ function RunningFor({ startedAt }: { readonly startedAt: string }): ReactNode {
  * them the client, the model and effort its command names, the folder it works in and how long it has run; then why it
  * is here, and its command behind a disclosure. It is not a Sotto thread, so it opens nothing, and it goes when it ends.
  */
-function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork }): ReactNode {
+export function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork }): ReactNode {
   const { t } = useLingui()
   const stop = useContext(DetachedRunStopContext)
   const [stopping, setStopping] = useState(false)

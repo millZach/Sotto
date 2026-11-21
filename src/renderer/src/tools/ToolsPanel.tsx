@@ -3,6 +3,7 @@ import { threadHost } from './HostPageView'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
+import { useShared } from '../agents/stateSharing'
 import { useMark } from '../components/marks'
 import { Box, Copy, FileDiff, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
@@ -425,6 +426,13 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const openFromRoster = useCallback((threadId: string): void => {
     if (command && rosterThreadId !== undefined) openDelegatedThread(command, threadId, rosterThreadId, store)
   }, [command, rosterThreadId, store])
+  // The Agents thread's detached runs (ADR-0204), listed above its agents, and Stop for each through the host that runs the
+  // thread, as its row under the last reply stops it.
+  const agentsRuns = useShared(useMemo(() => thread?.backgroundWork?.filter(work => work.type === 'detached-run'), [thread?.backgroundWork]))
+  const unreached = t`Sotto could not reach the computer that runs this thread. The run may still be running.`
+  const runThreadId = thread?.id
+  const stopRun = useCallback((runId: string): Promise<string | null> => !command || runThreadId === undefined ? Promise.resolve(unreached)
+    : command({ type: 'stop-detached-run', threadId: runThreadId, runId }).then(result => result === null ? unreached : result.error, () => unreached), [command, runThreadId, unreached])
   const delegation = useMemo<DelegatedRosterSource | undefined>(() => delegationOn && command ? { state, shownThreadId: focusedThreadId, open: openFromRoster } : undefined,
     [delegationOn, command, state, focusedThreadId, openFromRoster])
   // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
@@ -526,7 +534,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' && !browserHost?.browser || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
-    rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation} />
+    rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation}
+    runs={agentsRuns} stopRun={command ? stopRun : undefined} />
   else if (chrome.surface === 'models' && modelsOn) body = <ModelsSurface key={thread.id} list={threadModels}
     onShowFile={path => { store.closeLinkedFile(thread.id); store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
   else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
