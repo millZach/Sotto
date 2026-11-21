@@ -302,6 +302,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// The thread on the same computer that delegated to this one, by its Sotto thread ID (ADR-0081). Only a computer
     /// with delegation on sends it, and never for a delegating thread this iPhone can't read.
     public var delegatedBy: String? = nil
+    /// The thread is an owlet (ADR-0213): its name and role. Only a computer that makes owlets sends it, and only to an
+    /// iPhone whose hello accepts `owlets`. Its thread lists on the Owlets tab, never on Threads.
+    public var owlet: ThreadOwlet? = nil
     /// How many sub-agents the thread's provider reports, and how many work (ADR-0103). Read tolerantly.
     public var subagentSummary: SubagentSummary? = nil
     /// The computer's word that the thread's last turn failed and a client has shown it since, or Dismiss all named it
