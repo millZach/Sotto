@@ -45,7 +45,7 @@ export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
 export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
 /** One activity record whole, for a remote row whose body its host sent cut (ADR-0025, October 18 amendment). */
 export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
-export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+export { ACTIVE_PROVIDERS, everyProvider, providerIdSchema, type ActiveProviderId, type ProviderId } from './providerIds'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from './threadPrompts'
 import type { AgentThreadWords, AgentThreadWordsRequest } from './threadWords'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
@@ -1898,7 +1898,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi', 'antigravity'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'antigravity'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import type { ProviderId, AgentHostSnapshot } from '../../src/shared/agents'
+import type { ActiveProviderId, ProviderId, AgentHostSnapshot } from '../../src/shared/agents'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import { ProviderUnavailable } from '../../src/main/agents/providerProblem'
 import { PROVIDER_SIGN_IN_ARGS, type SignInCommand } from '../../src/host/providerSignIn'
@@ -19,9 +19,9 @@ export class SignedOutUntilSignIn extends E2EAgentHost {
     return super.connect()
   }
 }
-export function signInProviders(directory: string): Record<ProviderId, SignedOutUntilSignIn> {
+export function signInProviders(directory: string): Record<ActiveProviderId, SignedOutUntilSignIn> {
   return { codex: new SignedOutUntilSignIn('codex', directory), claude: new SignedOutUntilSignIn('claude', directory),
-    grok: new SignedOutUntilSignIn('grok', directory), devin: new SignedOutUntilSignIn('devin', directory), muse: new SignedOutUntilSignIn('muse', directory), opencode: new SignedOutUntilSignIn('opencode', directory), cursor: new SignedOutUntilSignIn('cursor', directory), deepseek: new SignedOutUntilSignIn('deepseek', directory), pi: new SignedOutUntilSignIn('pi', directory), antigravity: new SignedOutUntilSignIn('antigravity', directory), hermes: new SignedOutUntilSignIn('hermes', directory) }
+    grok: new SignedOutUntilSignIn('grok', directory), devin: new SignedOutUntilSignIn('devin', directory), muse: new SignedOutUntilSignIn('muse', directory), opencode: new SignedOutUntilSignIn('opencode', directory), cursor: new SignedOutUntilSignIn('cursor', directory), deepseek: new SignedOutUntilSignIn('deepseek', directory), antigravity: new SignedOutUntilSignIn('antigravity', directory), hermes: new SignedOutUntilSignIn('hermes', directory) }
 }
 /** Each provider's sign-in, run as the fake client under this Node, with only what it needs in its environment. */
 export function fakeSignInCommand(directory: string, script = resolve('tests/fixtures/fakeSignInCli.mjs'), page?: string, split?: string) {

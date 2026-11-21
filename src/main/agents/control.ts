@@ -4,7 +4,7 @@ import { changeOwlet, makeOwlet, owletsRoot, strayOwletFolder } from './owlets'
 import { atomicDraftDigest } from './draftDigest'
 import { OWLET_REFUSALS, OWLETS_HELD, type AgentOwlet } from '../../shared/owlets'
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
-import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
+import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { clonePlainData, freezePlainData } from './cloneHostSnapshot'
 import { CheckoutHeldRefusal, CheckoutSendRefusal, type CheckoutPendingWork } from './checkoutMutations'
 import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextWriter'
@@ -922,7 +922,7 @@ export class AgentControl {
   private dormantRefusal(id: string | null | undefined): string {
     if (id && this.dormantWatcherIds.has(id)) return 'Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
     if (id && this.dormantOwletIds.has(id)) return OWLETS_HELD
-    return heldProviderRefusal((id ? this.dormantThreadProviders.get(id) : undefined) ?? firstHeldProvider(this.held))
+    return heldProviderRefusal(id ? this.dormantThreadProviders.get(id) : undefined)
   }
   private providerAvailable(provider: string): boolean { return !this.held.has(provider as ProviderId) }
   private availableProviders(): ProviderId[] { return providerIdSchema.options.filter(provider => this.providerAvailable(provider)) }

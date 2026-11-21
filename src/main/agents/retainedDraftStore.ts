@@ -41,9 +41,12 @@ export class RetainedDraftStore {
   /** The providers held to Owl on this run, whose drafts are parked as read; absent holds every one. */
   private readonly held: HeldProviders
   /** A saved record names a held provider, matched in the file's text before it is parsed. */
+  private readonly holdsRemoteProvider: boolean
   private readonly heldProviderWords: RegExp | undefined
   constructor(private readonly options: { directory?: string; historyEnabled?: () => boolean; watcherEnabled?: boolean; heldProviders?: HeldProviders; onRecovery?: () => void; onWriteFailure?: () => void } = {}) {
     this.held = heldProvidersOption(options)
+    // Paired hosts never ran Pi. Its retirement cannot own an unlabelled draft from an older host.
+    this.holdsRemoteProvider = [...this.held].some(id => id !== 'pi')
     this.heldProviderWords = this.held.size ? new RegExp(`"providerId"\\s*:\\s*"(?:${[...this.held].join('|')})"`, 'u') : undefined
     if (options.directory) this.disk = new AtomicJsonStore(join(options.directory, 'remote-drafts.json'), retainedDraftsSchema.parse, () => [], undefined, undefined, options.onRecovery)
   }
@@ -51,7 +54,7 @@ export class RetainedDraftStore {
     return this.options.watcherEnabled !== true && (edit.threadKind === 'watcher' || edit.threadKind === 'watcher-history')
       || edit.providerId !== undefined && this.held.has(edit.providerId)
   }
-  private parksLegacy(edit: Pick<RetainedDraft, 'providerId'>): boolean { return this.held.size > 0 && !providerIdSchema.safeParse(edit.providerId).success }
+  private parksLegacy(edit: Pick<RetainedDraft, 'providerId'>): boolean { return this.holdsRemoteProvider && !providerIdSchema.safeParse(edit.providerId).success }
   private needsPreservation(value: unknown): boolean {
     if (!value || typeof value !== 'object') return false
     const record = value as Pick<RetainedDraft, 'threadKind' | 'providerId'>
@@ -59,7 +62,7 @@ export class RetainedDraftStore {
   }
   private mayHoldDormantWords(text: string): boolean {
     return this.options.watcherEnabled !== true && /"threadKind"\s*:\s*"watcher(?:-history)?"/u.test(text)
-      || this.heldProviderWords !== undefined && (this.heldProviderWords.test(text) || /"(?:hostId|draft)"\s*:/u.test(text))
+      || this.heldProviderWords !== undefined && (this.heldProviderWords.test(text) || this.holdsRemoteProvider && /"(?:hostId|draft)"\s*:/u.test(text))
   }
   private get keepsHistory(): boolean { return this.options.historyEnabled?.() !== false }
   /** History-on unread files stay untouched; history off uses only this window's memory edits. */

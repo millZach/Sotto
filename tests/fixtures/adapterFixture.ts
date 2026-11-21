@@ -1,6 +1,6 @@
 // @vitest-environment node
 import type { AgentHost } from '../../src/main/agents/host';
-import type { ProviderId } from '../../src/shared/agents';
+import type { ActiveProviderId, ProviderId } from '../../src/shared/agents';
 
 export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
 
@@ -19,7 +19,7 @@ export type AdapterContractSkips = Readonly<Partial<Record<'uncertain' | 'restar
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string
   /** The provider whose adapter this is, whose profile the contract holds its capabilities to. Absent for the in-memory fake. */
-  providerId?: ProviderId
+  providerId?: ActiveProviderId
   driver: {
     typeInProvider(sessionId: string, text: string): Promise<void>
     completeTurn(sessionId: string, text: string): Promise<void>
