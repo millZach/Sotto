@@ -1,15 +1,15 @@
 /* The combined model, effort and speed picker (Inline Model Card + Power Gauge + Prism Ignition).
    Colour comes from theme and effort-colourway tokens alone; corners and type come from the scale (ADR-0169). */
 
-.model-picker__dialog--combined {
+.model-picker__dialog.model-picker__dialog--combined {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
-  width: min(376px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
   height: auto;
-  max-height: min(500px, calc(100vh - 32px));
+  max-height: min(560px, calc(100vh - 32px));
 }
-.model-picker__dialog--combined:has(> .model-picker__foot) { grid-template-rows: minmax(0, 1fr) auto; }
-.model-picker__dialog--combined > .model-picker__foot { padding: 6px 12px; }
+.model-picker__dialog.model-picker__dialog--combined:has(> .model-picker__foot) { grid-template-rows: minmax(0, 1fr) auto; }
+.model-picker__dialog.model-picker__dialog--combined > .model-picker__foot { padding: 6px 12px; }
 
 /* Horizontal provider strip across the top of the combined picker. */
 .model-picker__providers {

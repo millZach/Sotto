@@ -1495,10 +1495,6 @@ msgstr ""
 msgid "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
 msgstr ""
 
-#: src/renderer/src/features/usage/usagePresentation.ts
-msgid "Antigravity's sign-in on {host} needs renewing. Run an Antigravity turn there, then read again."
-msgstr ""
-
 #: src/renderer/src/features/updates/updateControlLogic.ts
 msgid "Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing."
 msgstr ""
@@ -3043,10 +3039,6 @@ msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Goal"
-msgstr ""
-
-#: src/renderer/src/features/usage/usagePresentation.ts
-msgid "Google account through Antigravity"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx

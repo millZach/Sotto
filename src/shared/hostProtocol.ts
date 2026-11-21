@@ -263,8 +263,9 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `usage-muse-opencode`: Usage reads and refreshes may name Muse and OpenCode, and their rows come back (October 21, 2026,
  * ADR-0083). A desktop names neither to a host that does not list it, and a host reads and sends a desktop whose hello does
  * not accept it only the providers Usage counted before, since that desktop's strict schemas refuse a read naming another.
- * `usage-antigravity`: Usage reads and refreshes may name Antigravity, its rows and limits come back, and a client row may be
- * Antigravity's own app (November 20, 2026, ADR-0083). A desktop names it to no host that does not list it, and a host
+ * `usage-antigravity`: Usage reads and refreshes may name Antigravity, its rows come back, and a client row may be
+ * Antigravity's own app (November 20, 2026, ADR-0083). Its limits came back too until November 21, 2026, when Sotto stopped
+ * reading them under Google's terms (ADR-0212). A desktop names it to no host that does not list it, and a host
  * reads and sends a desktop whose hello does not accept it only the providers Usage counted before.
  * `usage-background-refresh`: `usage-refresh` takes `background`, a refresh the desktop's Usage made on its own when it
  * opened, which a provider whose read is costly may answer from a reading of the last few minutes (#1456). Read again

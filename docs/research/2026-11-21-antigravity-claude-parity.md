@@ -26,9 +26,9 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | # | Feature | Claude | Antigravity | Live on `agy` | Evidence |
 |---|---|---|---|---|---|
 | 1 | Start a thread, in a shared checkout or a new worktree | Works | Works | Passed | Both through `workspace.ts:2577,5704`; `antigravity.ts:939-961` passes the folder to `session/new` |
-| 2 | Models and reasoning effort | Works | Works | Passed: the account's 11 models, by maker, each with its thinking levels | `antigravityModels.ts:101-109`; combined picker test in `combinedModelEffortPicker.test.tsx` |
+| 2 | Models and reasoning effort | Works | Partial since November 21: Gemini models only, under Google's terms (ADR-0212's amendment); Claude and GPT through Antigravity are not offered | Passed before the change: the account's 11 models, 8 of them Gemini, each with its thinking levels | `antigravityModels.ts:101-109`; combined picker test in `combinedModelEffortPicker.test.tsx` |
 | 2b | Speed (Fast) | Works on eligible models (`subscriptionClaude.ts:174-179`) | Can't | `agy` offers no speed option | Session options are `model`, `thought_level`, `mode` only |
-| 3 | Change model or effort for the next prompt | Works | Works | Passed: Gemini 3.8 Flash to Claude Opus 5.5 at high, next reply on it | `antigravity.ts:988-1025`, `session/set_config_option` |
+| 3 | Change model or effort for the next prompt | Works | Works, between Gemini models | Passed: Gemini 3.8 Flash to Claude Opus 5.5 at high before the change; the live check now switches between Gemini models | `antigravity.ts:988-1025`, `session/set_config_option` |
 | 4 | Steer, queue and stop | Works | Works | Passed: steer; stop in 1.0 s | `antigravity.ts:1100-1148`; Sotto's queue `control.ts:4093-4108` |
 | 5 | Resume after a Sotto restart | Works | Works | Passed: remembered the first reply after restart | `session/resume`, `antigravity.ts:685-712` |
 | 6 | Fork a thread | Works, native fork in place (`claude.ts:1067-1085`) | Partial: Fork from here starts a fresh session with a handover | Not run | No ACP fork; `workspace.ts:694-708` |
@@ -51,7 +51,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | 15 | Delegation from the thread; the Agents pane | Works | Partial: delegation works; `agy`'s own child agents show as a row without their work | Tool calls pass (row 24) | `antigravityActivity.ts:51,71`; T3 reads child work from `agy`'s `brain` folder |
 | 16 | Background work and work-settled | Works (`claudeMonitoring.ts:75`) | Can't: ACP has no background-work lifecycle; rows close at turn end | Not run | `antigravity.ts:876` |
 | 17 | Live token count on the thread | Works (`thread.usage`, `claude.ts:2061,2088`) | Works since slice 1: context from `usage_update`, the turn's tokens from each prompt's `usage`; held in memory, so a restart shows it again from the next turn | Passed: 9,515 of 1,048,576, with input and output | `antigravityThreadUsage.ts` |
-| 17b | Usage page counts and account limits | Works | Works: counts from `agy`'s conversation files; Google account limits | Passed: limits read | `antigravityHistory.ts:326`, `antigravityUsage.ts:29` |
+| 17b | Usage page counts and account limits | Works | Partial since November 21: counts from `agy`'s conversation files; no account limits, which only `agy`'s own sign-in can read (ADR-0212's amendment) | Counts not run live | `antigravityHistory.ts:326`, `antigravityUsage.ts` |
 | 18 | Titles, branch names, commit and pull request drafts | Works | Works | Passed: a title | `antigravity.ts:1218,1249` |
 | 19 | Checkpoints and undo | Works: files restored with the conversation rewind | Partial: snapshots and turn diffs work; undo needs a rewind `agy` cannot do | Not run | `checkpoints.ts:332,476` |
 | 20 | Watcher on Antigravity; Antigravity threads under Watcher | Works | Works since the tools fix | Not run on real `agy` | `watcherOnAntigravity.test.ts` (fake now advertises what real `agy` does) |
@@ -67,13 +67,17 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | 27 | Media and visuals tools | Works | Works since the tools fix | Tool calls pass | `workspace.ts:1714-1717` |
 | 28 | Idle stop, resume and client update | Works | Partial: idle stop and update work; after an update the model list is not read again | Not run | `antigravity.ts:638-675` |
 
+## Google's terms (November 21, 2026)
+
+Google's Antigravity terms let it suspend an account used through third-party software, and allow Claude and other non-Gemini models only in Google's own app, CLI and supported IDEs. Driving `agy acp` itself is the gray area T3 Code is in, and the risk Zach accepts. So Sotto now offers Gemini models only (rows 2 and 3), reads no account limits (row 17b), and warns on the Antigravity row that the user's own Google account carries the risk (ADR-0212's amendment). Claude parity therefore means doing on Gemini what a Claude thread does, not running Claude through Antigravity. Each slice below is checked against these terms before it is built; slice 3 most of all.
+
 ## The gaps, as slices
 
 Missing and Partial rows only, grouped so each slice is one pull request. Can't and Neither rows are not slices.
 
 1. **Token count on the thread** (row 17). Fill the thread's token count from each prompt's `usage`, as Claude's is. No new UI. Done.
 2. **Compaction** (row 12). Turn Sotto's compaction on for Antigravity by sending `agy`'s own `/compact`, with its status. No new UI.
-3. **The user's own MCP servers** (row 24b). Hand `agy` the MCP servers the user set up for it in `~/.gemini`, beside Sotto's. No new UI; reads one more file of the user's, which the ADR says.
+3. **The user's own MCP servers** (row 24b). Hand `agy` the MCP servers the user set up for it in `~/.gemini`, beside Sotto's. No new UI; reads one more file of the user's, which the ADR says. Look at it afresh against Google's Antigravity terms before it is built (ADR-0212's amendment): it hands `agy` more of the user's own setup from another app.
 4. **Question cards** (row 8). Find how `agy` raises its question tool over ACP, and make it a card; if `agy` only asks in text, say so here and close it as Can't.
 5. **Edits on their lines** (row 13). Place each edit's snippet against the file, as T3 does, so diffs show line numbers.
 6. **PDFs in** (row 10b). Send a PDF as embedded context.
