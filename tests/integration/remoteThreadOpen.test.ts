@@ -19,7 +19,10 @@ async function opened() {
 
 /**
  * Opening a remote thread sends it whole once where it can (#996). On a028edc36 a click in the sidebar sent it three
- * times, a thread coming on screen twice, and the window catching up on a thread it followed once more.
+ * times, a thread coming on screen twice, and the window catching up on a thread it followed once more. Since #1990 a
+ * click sends it once too: the host holds the copy the window's ask brought, unchanged, for the observe after it. This
+ * host's fake provider holds every thread's messages, as a real host holds those of a thread something else observes;
+ * one a real host does not hold is read with no history, and its observe brings the one copy.
  */
 describe('opening a thread on a remote host (#996)', () => {
   it('sends a thread coming on screen once: the window\'s ask waits for the observe that brings it', async () => {
@@ -39,13 +42,18 @@ describe('opening a thread on a remote host (#996)', () => {
     expect(held).toEqual(await client.readThreadDetail(threadId))
   })
 
-  it('sends a thread clicked in the sidebar twice: the window\'s ask, and the observe of a thread it held unobserved', async () => {
+  it('sends a thread clicked in the sidebar once: the window\'s ask, which the observe after it holds (#1990)', async () => {
     const { client, threadId, transfers } = await opened()
     await client.command({ type: 'select-thread', threadId })
     const ask = client.windowDetail(threadId)
     await client.observe([threadId]); await ask
     // Selecting reads nothing: the history comes with the ask the window makes for it.
-    expect(transfers()).toBe(2)
+    expect(transfers()).toBe(1)
+    // The copy the ask brought is kept current from there: a message the agent writes arrives as a change to it.
+    const native = client.shell().host.threads.find(thread => thread.id === threadId)!.title === 'Workshop' ? 'workshop' : 'docs'
+    fixture.native.event({ type: 'ready', threadId: native, text: 'After the click' })
+    await expect.poll(() => client.threadDetail(threadId)?.messages.some(message => message.text === 'After the click')).toBe(true)
+    expect(transfers()).toBe(1)
   })
 
   it('reads a thread the host said was too large again, rather than answer with an older copy', async () => {
