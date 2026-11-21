@@ -228,9 +228,12 @@ export function script(provider: RefereeProvider, scenario: ScenarioName = 'main
   if (scenario === 'lost-acknowledgement') return LOSES_ACKNOWLEDGEMENT[provider] && [
     ...opening,
     { say: 'the fake will acknowledge the next prompt late', by: 'fake', drive: () => ({ type: 'lose-acknowledgement' }) },
-    // The send is over once the host has settled what became of it: the delivery says, and the lane is closed.
+    // The send is over once the host has settled what became of it: the delivery says, and the lane is closed. Where the
+    // late acknowledgement shows its turn running after the prompt shows, the step waits for the turn too: the prompt
+    // alone, still idle, lasts only until the acknowledgement lands, and a busy machine can miss it (#2708).
     commandStep({ say: 'desktop sends "Referee prompt one"', by: 'desktop', request: command({ type: 'manual-send', threadId: THREAD, text: 'Referee prompt one' }),
-      until: held => textOf(held).includes('Referee prompt one') && ((held.shell?.deliveries ?? []) as { status?: string }[]).every(delivery => delivery.status !== 'submitting' && delivery.status !== 'queued') }),
+      until: (held, context) => textOf(held).includes('Referee prompt one') && ((held.shell?.deliveries ?? []) as { status?: string }[]).every(delivery => delivery.status !== 'submitting' && delivery.status !== 'queued')
+        && (!LOSES_ACKNOWLEDGEMENT[provider]!.startsTurn || sent(provider, 'Referee prompt one')(held, context)) }),
     { say: 'the fake acknowledges prompts again', by: 'fake', drive: () => ({ type: 'acknowledge-again' }) },
     { ...complete('Referee reply one'), until: recordEnded('Referee reply one') },
     ...reads,
