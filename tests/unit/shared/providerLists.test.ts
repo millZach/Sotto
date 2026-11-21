@@ -96,7 +96,7 @@ describe('provider lists', () => {
   })
 
   it('names the provider a list that must name every provider leaves out', () => {
-    expect(everyProvider(['cursor', 'deepseek', 'hermes', 'pi', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex', 'antigravity'])).toEqual(['cursor', 'deepseek', 'hermes', 'pi', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])
+    expect(everyProvider(['cursor', 'deepseek', 'hermes', 'pi', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex', 'antigravity'])).toEqual(['cursor', 'deepseek', 'hermes', 'pi', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex', 'antigravity'])
     // @ts-expect-error Cursor is missing, and the type checker says so.
     everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'deepseek'])
   })

@@ -27,6 +27,9 @@ import { WorkerRoles } from './subagentRoles'
 import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
+import { AntigravityAcpHost } from './antigravity'
+import type { AntigravitySignIn } from './antigravityRpc'
+import type { AntigravityLookup } from './antigravityLookup'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
@@ -263,6 +266,8 @@ export interface AgentRuntimeOptions {
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
    */
   ownServers?: () => Promise<readonly OwnServer[]>
+  /** Antigravity's sign-in and where its program is, read from Settings and the credential store before each start. */
+  antigravity?: { readonly signIn?: () => Promise<AntigravitySignIn>; readonly lookup?: () => Promise<AntigravityLookup> }
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -386,7 +391,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
-    antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new HeldProviderHost('antigravity')),
+    // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
+    antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia,
+      ...(options.antigravity?.signIn ? { signIn: options.antigravity.signIn } : {}), ...(options.antigravity?.lookup ? { lookup: options.antigravity.lookup } : {}) })),
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
       : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),

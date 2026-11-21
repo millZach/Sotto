@@ -16,7 +16,7 @@ import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestS
  * `hostProtocol.ts`). DeepSeek is not one: its models come from this computer's own servers, which a host does
  * not keep yet (ADR-0138), so a host holds it.
  */
-export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'hermes'] as const satisfies readonly ProviderId[]
+export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'hermes', 'antigravity'] as const satisfies readonly ProviderId[]
 export type HostProviderId = typeof HOST_PROVIDERS[number]
 export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
 /**

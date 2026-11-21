@@ -10,6 +10,8 @@ vi.mock('../../../src/main/agents/museRpc', () => ({ findMuseExecutable: probes.
 vi.mock('../../../src/main/agents/opencodeServer', () => ({ findOpenCodeExecutable: probes.opencode }))
 // No Cursor either.
 vi.mock('../../../src/main/agents/cursorRpc', () => ({ findCursorExecutable: probes.cursor }))
+// Nor the providers this test does not look at, whatever this computer has installed.
+vi.mock('../../../src/main/agents/antigravityLookup', () => ({ findAntigravityExecutable: async () => undefined }))
 import { detectInstalledProviders } from '../../../src/main/agents/installedProviders'
 import { heldProvidersOf } from '../../../src/shared/heldProviders'
 beforeEach(() => { for (const probe of Object.values(probes)) probe.mockReset().mockResolvedValue('/synthetic/client'); probes.opencode.mockResolvedValue(undefined); probes.cursor.mockResolvedValue(undefined) })

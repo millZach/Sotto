@@ -1,0 +1,217 @@
+// A stand-in for Google Antigravity's `agy`, shaped on what `agy acp` 1.5.12 answered live on forge (initialize, auth
+// methods, `Authentication required`) and on T3 Code's recorded Antigravity frames: config options for the model (in
+// groups), a `thinking_level` option per Gemini model, a `mode` option with default, accept-edits, auto and plan,
+// `session/resume` that replays nothing, permissions as allow_once / allow_always / reject_once, and questions as
+// permission requests whose tool call ID starts `interaction_`.
+//
+// `node fakeAntigravityAgent.mjs <root> --version` answers as `agy` does; `node fakeAntigravityAgent.mjs <root> acp ...`
+// speaks ACP on stdio as one thread's process. Sessions are kept one file each under <root>/sessions. script.json may
+// name `cliVersion`, `signedOut`, `dropPromptAck`, `rejectResume`, `rejectSettings`, `noAuto` and `sideAnswer`.
+import { createInterface } from 'node:readline'
+import { randomUUID } from 'node:crypto'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { clearInterval, setInterval } from 'node:timers'
+
+const root = process.argv[2]
+const args = process.argv.slice(3)
+const path = name => join(root, name)
+const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(name), 'utf8')) } catch { return fallback } }
+const violation = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason }) + '\n')
+const startup = read('script.json', {})
+const version = startup.cliVersion ?? '1.5.13'
+
+if (args.includes('--version')) { process.stdout.write(`${version}\n`); process.exit(0) }
+
+const MODELS = [
+  { value: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', thinking: ['low', 'medium', 'high'] },
+  { value: 'gemini-4-carbon', name: 'Gemini 4 Carbon', thinking: ['low', 'high'] },
+  { value: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },
+]
+const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n')
+const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
+const appData = args[args.indexOf('--app-data-dir') + 1]
+record({ method: 'fixture/process', params: { pid: process.pid, version, args, cwd: process.cwd(), environment: {
+  GEMINI_HOME: process.env.GEMINI_HOME, AGY_ACP_FORCE_FILE_STORAGE: process.env.AGY_ACP_FORCE_FILE_STORAGE, AGY_CLI_DISABLE_AUTO_UPDATE: process.env.AGY_CLI_DISABLE_AUTO_UPDATE,
+  SSH_CONNECTION: process.env.SSH_CONNECTION, BROWSER: process.env.BROWSER, hasGeminiKey: process.env.GEMINI_API_KEY !== undefined, hasGoogleKey: process.env.GOOGLE_API_KEY !== undefined,
+  hasCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS !== undefined } } })
+// `agy` refuses an absolute app data folder.
+if (appData && /^([a-z]:)?[\\/]/iu.test(appData)) { process.stdout.write('{"jsonrpc":"2.0","error":{"code":-32603,"message":"must not be absolute"},"id":0}\n') }
+
+mkdirSync(path('sessions'), { recursive: true })
+const sessionFile = id => path(`sessions/${id}.json`)
+const sessions = new Map()
+const resident = new Set()
+const loadSession = id => { if (sessions.has(id)) return sessions.get(id); try { const session = JSON.parse(readFileSync(sessionFile(id), 'utf8')); sessions.set(id, session); return session } catch { return undefined } }
+const save = id => writeFileSync(sessionFile(id), JSON.stringify(sessions.get(id)))
+const modes = () => ['default', 'accept-edits', ...(read('script.json', {}).noAuto ? [] : ['auto']), 'plan']
+const configOptions = session => {
+  const model = MODELS.find(entry => entry.value === session.model)
+  return [
+    { id: 'model', name: 'Model', type: 'select', currentValue: session.model,
+      options: [{ group: 'gemini', name: 'Gemini', options: MODELS.filter(entry => entry.value.startsWith('gemini')).map(({ value, name }) => ({ value, name })) },
+        { group: 'partners', name: 'Partner models', options: MODELS.filter(entry => !entry.value.startsWith('gemini')).map(({ value, name }) => ({ value, name })) }] },
+    ...(model?.thinking ? [{ id: 'thinking_level', name: 'Thinking', category: 'thought_level', type: 'select', currentValue: session.thinking ?? model.thinking.at(-1),
+      options: model.thinking.map(value => ({ value, name: value })) }] : []),
+    { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: session.mode ?? 'default', options: modes().map(value => ({ value, name: value })) },
+  ]
+}
+const update = (sessionId, body) => send({ method: 'session/update', params: { sessionId, update: body } })
+
+const pending = new Map(); let serial = 0
+let authenticated = false
+const prompts = []
+function finish(reason) {
+  const prompt = prompts.pop()
+  // A steer folds into the turn: every earlier prompt of it ends with the newest one.
+  for (const earlier of prompts.splice(0)) send({ id: earlier.id, result: { stopReason: 'end_turn' } })
+  if (prompt) send({ id: prompt.id, result: { stopReason: reason } })
+}
+function validate(frame, request) {
+  const outcome = frame.result?.outcome
+  if (frame.error) return 'A request Sotto reads is answered, not refused'
+  if (!outcome || typeof outcome.outcome !== 'string') return 'Expected an outcome'
+  if (!['selected', 'cancelled'].includes(outcome.outcome)) return 'Expected selected or cancelled'
+  if (outcome.outcome === 'selected' && !request.options.includes(outcome.optionId)) return `Unknown option ${outcome.optionId}`
+  if (outcome.outcome === 'selected' && outcome.optionId === 'remember-this') return 'Sotto must never answer allow_always'
+  return undefined
+}
+
+createInterface({ input: process.stdin }).on('line', line => {
+  check()
+  if (!line.trim()) return
+  const frame = JSON.parse(line)
+  // A side call's prompt is kept in oneshot.jsonl, apart from the threads' traffic, as a side call never touches a thread.
+  const sideSession = frame.method === 'session/prompt' ? loadSession(frame.params?.sessionId) : undefined
+  const side = sideSession !== undefined && sideSession.mcpServers.length === 0 && sideSession.prompts.length === 0 && read('script.json', {}).sideAnswer
+    && /Name this/u.test(JSON.stringify(frame.params?.prompt ?? []))
+  record(side ? { ...frame, params: { sessionId: frame.params.sessionId, prompt: '[side call]' } } : frame)
+  if (!frame.method) {
+    const request = pending.get(frame.id)
+    if (!request) { violation('Unknown or repeated response ID'); return }
+    pending.delete(frame.id)
+    const reason = validate(frame, request)
+    if (reason) violation(reason)
+    return
+  }
+  const p = frame.params ?? {}
+  const script = read('script.json', {})
+  const needsAuth = () => { if (authenticated) return false; send({ id: frame.id, error: { code: -32000, message: 'Authentication required' } }); return true }
+  if (frame.method === 'initialize') {
+    if (p.clientCapabilities?.fs?.writeTextFile !== false || p.clientCapabilities?.terminal !== false) violation('Sotto offers no file or terminal capability')
+    const ready = () => send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1,
+      agentCapabilities: { loadSession: true, mcpCapabilities: { http: script.httpMcp !== false }, promptCapabilities: { image: script.images === true, audio: false, embeddedContext: true },
+        sessionCapabilities: { resume: {}, close: {}, load: {}, list: {} }, auth: { logout: {} }, _meta: { antigravity: { tier: true, systemPrompt: { append: script.noAppend !== true } } } },
+      agentInfo: { name: 'Antigravity ACP Server', version },
+      authMethods: [{ id: 'oauth-personal', name: 'Log in with Google' }, { id: 'oauth-business', name: 'Log in with Gemini Enterprise' },
+        { id: 'gemini-api-key', name: 'Gemini API key' }, { id: 'agent-platform', name: 'Gemini Enterprise Agent Platform' }] } })
+    if (script.startDelayMs) setTimeout(ready, script.startDelayMs); else ready()
+  } else if (frame.method === 'authenticate') {
+    if (script.signedOut || !['oauth-personal', 'oauth-business', 'gemini-api-key', 'agent-platform'].includes(p.methodId)) { send({ id: frame.id, error: { code: -32000, message: 'Authentication required' } }); return }
+    if (p.methodId === 'gemini-api-key' && !process.env.GEMINI_API_KEY) { send({ id: frame.id, error: { code: -32000, message: 'Authentication required' } }); return }
+    authenticated = true
+    send({ id: frame.id, result: {} })
+  } else if (frame.method === 'session/new') {
+    if (needsAuth()) return
+    const sessionId = randomUUID()
+    sessions.set(sessionId, { cwd: p.cwd, model: 'gemini-3.8-flash', mode: 'default', mcpServers: (p.mcpServers ?? []).map(server => server.name),
+      systemAppend: p._meta?.antigravity?.systemPrompt?.append ?? null, prompts: [] })
+    save(sessionId); resident.add(sessionId)
+    record({ method: 'fixture/session-resident', params: { sessionId, resident: true } })
+    send({ id: frame.id, result: { sessionId, configOptions: configOptions(sessions.get(sessionId)) } })
+    update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'plan', description: 'Plan before acting' }] })
+  } else if (frame.method === 'session/resume') {
+    if (needsAuth()) return
+    const session = loadSession(p.sessionId)
+    if (!session || script.rejectResume) { send({ id: frame.id, error: { code: -32602, message: 'Session not found' } }); return }
+    resident.add(p.sessionId); session.mcpServers = (p.mcpServers ?? []).map(server => server.name)
+    if (p._meta?.antigravity?.systemPrompt?.append !== undefined) session.systemAppend = p._meta.antigravity.systemPrompt.append
+    save(p.sessionId)
+    record({ method: 'fixture/session-resident', params: { sessionId: p.sessionId, resident: true } })
+    // A resumed session replays nothing.
+    send({ id: frame.id, result: { configOptions: configOptions(session) } })
+  } else if (frame.method === 'session/set_config_option') {
+    const session = loadSession(p.sessionId)
+    if (!session) { send({ id: frame.id, error: { code: -32602, message: 'Session not found' } }); return }
+    if (script.rejectSettings) { send({ id: frame.id, error: { code: -32602, message: 'Rejected' } }); return }
+    if (p.configId === 'model') {
+      if (!MODELS.some(entry => entry.value === p.value)) { send({ id: frame.id, error: { code: -32602, message: 'Unknown model' } }); return }
+      session.model = p.value; delete session.thinking
+    } else if (p.configId === 'thinking_level') {
+      const model = MODELS.find(entry => entry.value === session.model)
+      if (!model?.thinking?.includes(p.value)) { send({ id: frame.id, error: { code: -32602, message: 'Unknown thinking level' } }); return }
+      session.thinking = p.value
+    } else if (p.configId === 'mode') {
+      // `agy` refuses the edit-only and run-everything names T3 maps away from.
+      if (!modes().includes(p.value)) { send({ id: frame.id, error: { code: -32602, message: 'Unknown mode' } }); return }
+      session.mode = p.value
+    } else { send({ id: frame.id, error: { code: -32602, message: 'Unknown option' } }); return }
+    save(p.sessionId)
+    send({ id: frame.id, result: { configOptions: configOptions(session) } })
+  } else if (frame.method === 'session/prompt') {
+    const session = loadSession(p.sessionId)
+    if (!session || !resident.has(p.sessionId)) { violation('Prompt for a session this process has not opened'); send({ id: frame.id, error: { code: -32602, message: 'Session not found' } }); return }
+    const text = p.prompt.filter(part => part.type === 'text').map(part => part.text).join('')
+    session.prompts.push(text); save(p.sessionId)
+    // A side call: a session with no tool servers, answered at once with the scripted words, logged apart.
+    if (script.sideAnswer && session.mcpServers.length === 0 && session.prompts.length === 1 && /Side-writing|Name this/u.test(text)) {
+      appendFileSync(path('oneshot.jsonl'), JSON.stringify({ cwd: session.cwd, model: session.model, thinking: session.thinking, mode: session.mode, material: text }) + '\n')
+      update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.sideAnswer } })
+      send({ id: frame.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+    prompts.push({ id: frame.id, sessionId: p.sessionId })
+    if (!script.dropPromptAck) update(p.sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Reading the request.' } })
+    if (script.dropPromptAck) { const staged = path(`script.json.${process.pid}.tmp`); writeFileSync(staged, JSON.stringify({ ...script, dropPromptAck: undefined })); renameSync(staged, path('script.json')) }
+  } else if (frame.method === 'session/cancel') {
+    finish('cancelled')
+  } else if (frame.id !== undefined) send({ id: frame.id, error: { code: -32601, message: 'Method not found' } })
+}).on('close', () => {
+  clearInterval(control)
+  for (const sessionId of resident) record({ method: 'fixture/session-resident', params: { sessionId, resident: false } })
+  process.exit(0)
+})
+
+let last
+function check() {
+  if (!existsSync(path('control.json'))) return
+  const command = read('control.json', {})
+  if (!command.id || command.id === last || !resident.has(command.sessionId)) return
+  last = command.id
+  try { mkdirSync(path('control-claims'), { recursive: true }); writeFileSync(path(`control-claims/${command.id}`), String(process.pid), { flag: 'wx' }) } catch { return }
+  run(command)
+}
+const control = setInterval(check, 10)
+function ask(sessionId, toolCall, options) {
+  const id = `antigravity-${++serial}`
+  pending.set(id, { options: options.map(option => option.optionId) })
+  send({ id, method: 'session/request_permission', params: { sessionId, toolCall, options } })
+}
+function run(command) {
+  const sessionId = command.sessionId
+  if (command.type === 'complete') {
+    if (command.text) update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: command.text } })
+    finish(command.reason ?? 'end_turn')
+  }
+  if (command.type === 'takeover') update(sessionId, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: command.text } })
+  if (command.type === 'tool') {
+    const toolCallId = `toolu_${randomUUID()}`
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'Running run_command', kind: 'execute', status: 'pending', rawInput: { CommandLine: command.command, Cwd: command.cwd ?? '.' } })
+    const picture = command.image ? [{ type: 'content', content: { type: 'image', data: command.image, mimeType: command.mimeType ?? 'image/png' } }] : []
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { combinedOutput: command.output ?? '', exitCode: 0 }, content: picture })
+  }
+  if (command.type === 'permission' || command.type === 'edit-permission') {
+    const edit = command.type === 'edit-permission'
+    const toolCallId = `toolu_${randomUUID()}`
+    const toolCall = edit
+      ? { toolCallId, title: 'Edit notes.md', kind: 'edit', status: 'pending', locations: [{ path: 'notes.md' }], content: [{ type: 'diff', path: 'notes.md', oldText: 'a', newText: 'b' }] }
+      : { toolCallId, title: `\`${command.text}\``, kind: 'execute', status: 'pending', rawInput: { CommandLine: command.text } }
+    update(sessionId, { sessionUpdate: 'tool_call', ...toolCall })
+    ask(sessionId, toolCall, [{ optionId: 'remember-this', name: 'Allow always', kind: 'allow_always', _meta: { 'agy.security.warning': { message: 'Runs this command from now on.' } } },
+      { optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }, { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' }])
+  }
+  if (command.type === 'question') {
+    ask(sessionId, { toolCallId: `interaction_${randomUUID().slice(0, 8)}`, title: command.text, kind: 'other', status: 'pending' },
+      [{ optionId: 'Blue', name: 'Blue', kind: 'allow_once' }, { optionId: 'Red', name: 'Red', kind: 'allow_once' }])
+  }
+}

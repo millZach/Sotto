@@ -226,8 +226,8 @@ describe('worker roles', () => {
 
 describe('Watcher’s providers in words', () => {
   it('names those this run does not hold, so stable never names Muse and Owl does', () => {
-    expect(watcherProvidersInWords(new Set(['muse', 'opencode', 'cursor']))).toBe('Codex, Claude Code or Grok Build')
-    expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build, Muse or Cursor')
+    expect(watcherProvidersInWords(new Set(['muse', 'opencode', 'cursor']))).toBe('Codex, Claude Code, Grok Build or Antigravity')
+    expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build, Muse, Cursor or Antigravity')
   })
 })
 
