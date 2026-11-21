@@ -1,0 +1,304 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE. Not product code; delete it once Zach has picked.
+  Question: what should Antigravity's provider mark and its colours be in Sotto?
+  Three marks drawn for Sotto (A Lift, B Trails, C Escape) and today's placeholder arrow, each with a mark colour
+  (--tt-provider-antigravity) and a badge colour for light and dark, shown at real sizes in the places the mark appears.
+  None of the options is Google's Antigravity logo, and none copies it. Every mark is one 24x24 path, filled, with no
+  gradient, so it works as a single-colour template image on iPhone and Android.
+  Switch with ?variant=A|B|C|keep, the bar at the bottom, or the Left and Right keys.
+  Surface colours are Sotto's default theme (tokens.css), converted from oklch to hex.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Antigravity mark: prototype</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --font: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --page: #f9f8f5; --page-text: #221d17; --page-muted: #68625b; --page-line: #ddd8d0; --page-card: #fdfcf9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #040507; --page-text: #f9fafd; --page-muted: #a0a5ae; --page-line: #26282d; --page-card: #090a0e; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--page); color: var(--page-text); font: 14px/1.45 var(--font); padding: 20px 20px 96px; overflow-x: hidden; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  p { margin: 0 0 8px; }
+  .lede { color: var(--page-muted); max-width: 70ch; }
+  .intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 24px; align-items: start; margin: 16px 0 20px; padding: 16px; border: 1px solid var(--page-line); border-radius: 10px; background: var(--page-card); }
+  .intro .idea { max-width: 62ch; }
+  .intro .contrast { color: var(--page-muted); font-size: 12px; }
+  .sizes { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sizes__pane { display: flex; align-items: end; gap: 14px; padding: 12px 14px; border-radius: 8px; }
+  .sizes__pane figure { margin: 0; display: grid; justify-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+  .scopes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  @media (max-width: 900px) { .scopes { grid-template-columns: minmax(0, 1fr); } .intro { grid-template-columns: minmax(0, 1fr); } }
+
+  /* Each side is one of Sotto's two default modes. */
+  .scope { --ink: #080b0a; border-radius: 12px; padding: 16px; background: var(--canvas); color: var(--text); border: 1px solid var(--line); min-width: 0; }
+  .scope[data-mode='dark'] {
+    --canvas: #040507; --surface: #090a0e; --raised: #111316; --overlay: #18191d; --text: #f9fafd; --muted: #a0a5ae; --line: #25272c; --line-strong: #34373d;
+    --codex: #d7dbe1; --claude: #e3b58e; --grok: #c9baff; --cursor: #f2b9c9; --devin: #a5d8f5;
+    --codex-badge: #d7dbe1; --claude-badge: #e3b58e; --grok-badge: #c9baff; --cursor-badge: #f2b9c9;
+    --ring-working: #4fbdab;
+  }
+  .scope[data-mode='light'] {
+    --canvas: #f9f8f5; --surface: #fdfcf9; --raised: #f2f0ec; --overlay: #efece8; --text: #221d17; --muted: #68625b; --line: #e3ded6; --line-strong: #d2ccc2;
+    --codex: color-mix(in srgb, #c9ced6 50%, #221d17); --claude: color-mix(in srgb, #e2ad80 50%, #221d17); --grok: color-mix(in srgb, #bfaefc 50%, #221d17); --cursor: #94405a; --devin: color-mix(in srgb, #8fcaef 50%, #221d17);
+    --codex-badge: #c9ced6; --claude-badge: #e2ad80; --grok-badge: #bfaefc; --cursor-badge: #eaaabd;
+    --ring-working: #22867a;
+  }
+  .scope__label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 12px; }
+  .where { font-size: 12px; color: var(--muted); margin: 16px 0 6px; }
+  .where:first-of-type { margin-top: 0; }
+  svg.mark { display: block; flex: none; fill: currentColor; }
+  .scope .ag { color: var(--ag); }
+
+  /* Settings › Providers rows */
+  .providers { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+  .prow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-width: 0; }
+  .prow + .prow { border-top: 1px solid var(--line); }
+  .badge { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 7px; color: var(--ink); }
+  .prow__name { font-weight: 600; }
+  .prow__text { min-width: 0; flex: 1; }
+  .prow__state { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prow__more { color: var(--muted); font-size: 12px; flex: none; }
+
+  /* Model chip */
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-strong); background: var(--raised); color: var(--text); font: 13px var(--font); max-width: 100%; }
+  .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .caret { color: var(--muted); }
+
+  /* Model menu */
+  .menu { display: grid; grid-template-columns: 44px minmax(0, 1fr); border: 1px solid var(--line-strong); border-radius: 10px; background: var(--overlay); overflow: hidden; max-width: 360px; }
+  .rail { display: grid; align-content: start; gap: 2px; padding: 6px; border-right: 1px solid var(--line); }
+  .rail button { all: unset; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; }
+  .rail button .mark { opacity: .75; }
+  .rail button[aria-selected='true'] { background: color-mix(in srgb, var(--text) 9%, transparent); }
+  .rail button[aria-selected='true'] .mark { opacity: 1; }
+  .menu__list { padding: 6px; min-width: 0; }
+  .menu__head { font-size: 11px; color: var(--muted); padding: 4px 8px; }
+  .menu__item { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+  .menu__item[aria-selected='true'] { background: color-mix(in srgb, var(--text) 7%, transparent); }
+  .menu__item small { color: var(--muted); font-size: 11px; }
+  .menu__foot { font-size: 11px; color: var(--muted); padding: 6px 8px 2px; border-top: 1px solid var(--line); margin-top: 4px; }
+
+  /* Sidebar thread rows */
+  .sidebar { background: var(--canvas); border: 1px solid var(--line); border-radius: 10px; padding: 6px; max-width: 300px; }
+  .trow { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; padding: 6px 10px 6px 8px; border-radius: 7px; }
+  .trow[data-current] { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .trow__ring { width: 10px; height: 10px; margin: 4px 2px 0; border-radius: 50%; border: 2px solid var(--muted); }
+  .trow__ring[data-working] { border-color: var(--ring-working); }
+  .trow__title { grid-column: 2 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+  .trow[data-resting] .trow__title { font-weight: 400; }
+  .trow__mark { grid-column: 1; }
+  .trow__words { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trow__time { font-size: 12px; color: var(--muted); }
+  .trow:not([data-current]) .trow__mark .mark { color: var(--muted); }
+
+  /* Phone thread rows: the mark is a template image tinted in one colour. */
+  .phone { width: 100%; max-width: 360px; border-radius: 22px; border: 1px solid var(--line-strong); background: var(--surface); padding: 8px 0; overflow: hidden; }
+  .phone__bar { font-size: 11px; font-weight: 600; color: var(--muted); padding: 2px 16px 6px; }
+  .prow-phone { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 16px; align-items: center; }
+  .prow-phone + .prow-phone { border-top: 1px solid var(--line); }
+  .prow-phone__mark { grid-row: 1 / 3; }
+  .prow-phone__title { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prow-phone__words { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prow-phone__time { grid-row: 1; grid-column: 3; font-size: 12px; color: var(--muted); }
+
+  /* The floating switcher */
+  .switcher { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 5px; border-radius: 12px; background: var(--page-card); border: 1px solid var(--page-line); box-shadow: 0 8px 28px rgb(0 0 0 / .28); max-width: calc(100vw - 16px); z-index: 2; }
+  .switcher button { font: 600 13px var(--font); color: var(--page-text); background: transparent; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; white-space: nowrap; }
+  .switcher button[aria-pressed='true'] { background: color-mix(in srgb, var(--page-text) 12%, transparent); }
+  .switcher button:focus-visible { outline: 2px solid #4fbdab; outline-offset: 1px; }
+  .switcher .step { color: var(--page-muted); }
+  @media (max-width: 480px) {
+    body { padding: 14px 12px 104px; }
+    .switcher { gap: 0; padding: 4px; }
+    .switcher button { padding: 7px 7px; font-size: 12px; }
+    .switcher .keep-long { display: none; }
+  }
+  @media (min-width: 481px) { .switcher .keep-short { display: none; } }
+</style>
+</head>
+<body>
+  <h1>Antigravity’s mark in Sotto</h1>
+  <p class="lede">Three marks drawn for Sotto and today’s placeholder, each with its own colours. Every mark is one filled path in a 24 × 24 box, so the phones can draw it as a one-colour template. None is Google’s logo. Left and Right keys switch.</p>
+
+  <section class="intro" aria-live="polite">
+    <div class="idea">
+      <h2 id="opt-name"></h2>
+      <p id="opt-idea"></p>
+      <p class="contrast" id="opt-contrast"></p>
+    </div>
+    <div class="sizes">
+      <div class="sizes__pane scope" data-mode="dark" id="sizes-dark"></div>
+      <div class="sizes__pane scope" data-mode="light" id="sizes-light"></div>
+    </div>
+  </section>
+
+  <div class="scopes">
+    <section class="scope" data-mode="dark" aria-label="Dark"></section>
+    <section class="scope" data-mode="light" aria-label="Light"></section>
+  </div>
+
+  <template id="context">
+    <p class="scope__label"></p>
+
+    <p class="where">Settings › Providers, row header</p>
+    <div class="providers">
+      <div class="prow"><span class="badge" style="background: var(--codex-badge)" data-mark="codex" data-size="17"></span><div class="prow__text"><div class="prow__name">Codex</div><div class="prow__state">Connected · ChatGPT account</div></div><span class="prow__more">Details</span></div>
+      <div class="prow"><span class="badge" style="background: var(--ag-badge)" data-mark="ag" data-size="17"></span><div class="prow__text"><div class="prow__name">Antigravity</div><div class="prow__state">Connected · Google account</div></div><span class="prow__more">Details</span></div>
+      <div class="prow"><span class="badge" style="background: var(--cursor-badge)" data-mark="cursor" data-size="17"></span><div class="prow__text"><div class="prow__name">Cursor</div><div class="prow__state">Not signed in</div></div><span class="prow__more">Details</span></div>
+    </div>
+
+    <p class="where">A thread’s model chip</p>
+    <div class="chips">
+      <button class="chip" type="button"><span class="ag" data-mark="ag" data-size="14"></span><span>Google / Gemini 3.8 Flash</span><span class="caret">▾</span></button>
+      <button class="chip" type="button"><span style="color: var(--claude)" data-mark="claude" data-size="14"></span><span>Claude Opus 5.5</span><span class="caret">▾</span></button>
+    </div>
+
+    <p class="where">The model menu’s provider rail</p>
+    <div class="menu">
+      <div class="rail" role="listbox" aria-label="Providers">
+        <button role="option" aria-selected="false" style="color: var(--codex)" data-mark="codex" data-size="16"></button>
+        <button role="option" aria-selected="false" style="color: var(--claude)" data-mark="claude" data-size="16"></button>
+        <button role="option" aria-selected="false" style="color: var(--grok)" data-mark="grok" data-size="16"></button>
+        <button role="option" aria-selected="false" style="color: var(--cursor)" data-mark="cursor" data-size="16"></button>
+        <button role="option" aria-selected="true" class="ag" data-mark="ag" data-size="16"></button>
+      </div>
+      <div class="menu__list">
+        <div class="menu__head">Google models in Antigravity</div>
+        <div class="menu__item" aria-selected="true"><span>Gemini 3.8 Flash</span><small>Fast</small></div>
+        <div class="menu__item"><span>Gemini 3.8 Pro</span><small>Deep</small></div>
+        <div class="menu__item"><span>Gemini 3.5 Flash-Lite</span><small>Light</small></div>
+        <div class="menu__foot">Every model here runs through Antigravity, on your Google account.</div>
+      </div>
+    </div>
+
+    <p class="where">Sidebar thread rows (the row on screen in colour, the rest in the muted ink)</p>
+    <div class="sidebar">
+      <div class="trow" data-current><span class="trow__ring" data-working></span><span class="trow__title">Fix the sign-in redirect</span><span class="trow__mark ag" data-mark="ag" data-size="14"></span><span class="trow__words">Working · editing auth.ts</span><span class="trow__time">now</span></div>
+      <div class="trow" data-resting><span class="trow__ring"></span><span class="trow__title">Split control.ts along its seams</span><span class="trow__mark" style="color: var(--claude)" data-mark="claude" data-size="14"></span><span class="trow__words">Done</span><span class="trow__time">12m</span></div>
+      <div class="trow" data-resting><span class="trow__ring"></span><span class="trow__title">Tune the badge contrast</span><span class="trow__mark ag" data-mark="ag" data-size="14"></span><span class="trow__words">Done</span><span class="trow__time">1h</span></div>
+      <div class="trow" data-resting><span class="trow__ring"></span><span class="trow__title">Cube mark for Cursor</span><span class="trow__mark" style="color: var(--cursor)" data-mark="cursor" data-size="14"></span><span class="trow__words">Done</span><span class="trow__time">2h</span></div>
+    </div>
+
+    <p class="where">Phone thread rows (template image, one tint)</p>
+    <div class="phone">
+      <div class="phone__bar">Threads</div>
+      <div class="prow-phone"><span class="prow-phone__mark ag" data-mark="ag" data-size="18"></span><span class="prow-phone__title">Fix the sign-in redirect</span><span class="prow-phone__time">now</span><span class="prow-phone__words">Working · editing auth.ts</span></div>
+      <div class="prow-phone"><span class="prow-phone__mark" style="color: var(--codex)" data-mark="codex" data-size="18"></span><span class="prow-phone__title">Watcher’s merge queue</span><span class="prow-phone__time">8m</span><span class="prow-phone__words">Needs you · one question</span></div>
+      <div class="prow-phone"><span class="prow-phone__mark" style="color: var(--grok)" data-mark="grok" data-size="18"></span><span class="prow-phone__title">Draft the release notes</span><span class="prow-phone__time">1h</span><span class="prow-phone__words">Done</span></div>
+    </div>
+  </template>
+
+  <nav class="switcher" aria-label="Options">
+    <button type="button" class="step" data-step="-1" aria-label="Previous option">‹</button>
+    <button type="button" data-variant="A" aria-pressed="false">A Lift</button>
+    <button type="button" data-variant="B" aria-pressed="false">B Trails</button>
+    <button type="button" data-variant="C" aria-pressed="false">C Escape</button>
+    <button type="button" data-variant="keep" aria-pressed="false"><span class="keep-long">Keep the placeholder</span><span class="keep-short">Keep</span></button>
+    <button type="button" class="step" data-step="1" aria-label="Next option">›</button>
+  </nav>
+
+<script>
+  const OTHERS = {
+    codex: { vb: '0 0 256 260', d: 'M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z' },
+    claude: { vb: '0 0 256 257', d: 'm50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z' },
+    grok: { vb: '0 0 24 24', d: 'M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257' },
+    cursor: { vb: '0 0 24 24', d: 'M12 2.4L19.51 6.74L12 11.08L4.49 6.74ZM3.69 8.12L11.2 12.46L11.2 21.14L3.69 16.8ZM12.8 12.46L20.31 8.12L20.31 16.8L12.8 21.14Z' },
+  }
+  // Each option: the mark (one path, 24x24) and its colours. Contrast is against Sotto's default surfaces.
+  const OPTIONS = {
+    A: {
+      name: 'A · Lift',
+      idea: 'A ball hanging in the air over its own shadow, with clear air between them: gravity undone, said once. The shadow is narrower than the ball, so it never reads as a person’s shoulders. Gold, a hue no other provider uses.',
+      d: 'M12 1.5a6 6 0 1 1 0 12a6 6 0 1 1 0-12ZM12 19.2c2.9 0 5 .75 5 1.65s-2.1 1.65-5 1.65s-5-.75-5-1.65s2.1-1.65 5-1.65Z',
+      dark: { mark: '#f2d06b', badge: '#f2d06b' }, light: { mark: '#7a5900', badge: '#f0cc5c' },
+      contrast: 'Mark by night 11.7–13.6:1 on the room, a card and the menu; by day 5.5–6.3:1. Ink on the badge 13.2:1 by night, 12.7:1 by day.',
+    },
+    B: {
+      name: 'B · Trails',
+      idea: 'A diamond rising over three trails, the middle one longest, like something that has just lifted off. A spring green, fresher than the placeholder’s lime.',
+      d: 'M12 .8L19.4 8.2L12 15.6L4.6 8.2ZM4.6 17.6H8.6V21.2H4.6ZM10 17.6H14V23.2H10ZM15.4 17.6H19.4V21.2H15.4Z',
+      dark: { mark: '#b9e88a', badge: '#b9e88a' }, light: { mark: '#3d6b14', badge: '#b2e27c' },
+      contrast: 'Mark by night 12.5–14.5:1; by day 5.4–6.2:1. Ink on the badge 14.1:1 by night, 13.2:1 by day.',
+    },
+    C: {
+      name: 'C · Escape',
+      idea: 'A deep cup, and a ball that has risen out of it and hangs above the rim: something that left the well it sat in. The cup is open wide so it never reads as a power button. A cool mint. It sits nearer Sotto’s teal than A or B do.',
+      d: 'M18.93 11A8 8 0 1 1 5.07 11L7.84 12.6A4.8 4.8 0 1 0 16.16 12.6ZM12 2.3a3.1 3.1 0 1 1 0 6.2a3.1 3.1 0 1 1 0-6.2Z',
+      dark: { mark: '#9fdcc4', badge: '#9fdcc4' }, light: { mark: '#1f6a4c', badge: '#93d6bb' },
+      contrast: 'Mark by night 11.3–13.1:1; by day 5.5–6.3:1. Ink on the badge 12.7:1 by night, 11.8:1 by day.',
+    },
+    keep: {
+      name: 'Keep the placeholder',
+      idea: 'Today’s upward arrow (M12 3L20 11H15V21H9V11H4Z), the path both phones draw now, in its pale lime with a deep olive mark by day.',
+      d: 'M12 3L20 11H15V21H9V11H4Z',
+      dark: { mark: '#cfe38f', badge: '#cfe38f' }, light: { mark: '#56661a', badge: '#cbe07f' },
+      contrast: 'Mark by night 12.6–14.6:1; by day 5.4–6.2:1. Ink on the badge 14.2:1 by night, 13.7:1 by day.',
+    },
+  }
+  const ORDER = ['A', 'B', 'C', 'keep']
+
+  const svg = (vb, d, size) => `<svg class="mark" width="${size}" height="${size}" viewBox="${vb}" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
+
+  document.querySelectorAll('.scopes > .scope').forEach((scope) => {
+    scope.append(document.getElementById('context').content.cloneNode(true))
+    scope.querySelector('.scope__label').textContent = scope.dataset.mode === 'dark' ? 'Dark' : 'Light'
+  })
+
+  function show(id) {
+    if (!OPTIONS[id]) id = 'A'
+    const o = OPTIONS[id]
+    document.querySelectorAll('.scope').forEach((scope) => {
+      const c = o[scope.dataset.mode]
+      scope.style.setProperty('--ag', c.mark)
+      scope.style.setProperty('--ag-badge', c.badge)
+    })
+    document.querySelectorAll('[data-mark]').forEach((el) => {
+      const size = Number(el.dataset.size)
+      el.innerHTML = el.dataset.mark === 'ag' ? svg('0 0 24 24', o.d, size) : svg(OTHERS[el.dataset.mark].vb, OTHERS[el.dataset.mark].d, size)
+    })
+    for (const mode of ['dark', 'light']) {
+      const pane = document.getElementById('sizes-' + mode)
+      pane.style.setProperty('--ag', o[mode].mark)
+      pane.style.setProperty('--ag-badge', o[mode].badge)
+      pane.innerHTML = [48, 24, 16, 14].map((s) => `<figure><span class="ag">${svg('0 0 24 24', o.d, s)}</span><figcaption>${s}px</figcaption></figure>`).join('')
+        + `<figure><span class="badge" style="background: var(--ag-badge)">${svg('0 0 24 24', o.d, 17)}</span><figcaption>badge</figcaption></figure>`
+    }
+    document.getElementById('opt-name').textContent = o.name
+    document.getElementById('opt-idea').textContent = o.idea
+    document.getElementById('opt-contrast').textContent = o.contrast
+    document.querySelectorAll('.switcher [data-variant]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.variant === id)))
+    const url = new URL(location.href)
+    url.searchParams.set('variant', id)
+    history.replaceState(null, '', url)
+    current = id
+  }
+
+  let current = 'A'
+  const step = (n) => show(ORDER[(ORDER.indexOf(current) + n + ORDER.length) % ORDER.length])
+  document.querySelector('.switcher').addEventListener('click', (e) => {
+    const b = e.target.closest('button')
+    if (!b) return
+    if (b.dataset.variant) show(b.dataset.variant)
+    else step(Number(b.dataset.step))
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return
+    if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); step(1) }
+  })
+  const asked = new URLSearchParams(location.search).get('variant')
+  show(ORDER.find((k) => k.toLowerCase() === (asked || '').toLowerCase()) || 'A')
+</script>
+</body>
+</html>
