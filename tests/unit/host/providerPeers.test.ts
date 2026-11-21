@@ -39,18 +39,17 @@ function hostState(): AgentState {
 
 describe('a client that does not know OpenCode', () => {
   it('is a client whose hello does not accept provider-opencode', () => {
-    expect(PROVIDER_HOST_FEATURES).toEqual({ opencode: 'provider-opencode', cursor: 'provider-cursor', deepseek: 'provider-deepseek', pi: 'provider-pi', hermes: 'provider-hermes', antigravity: 'provider-antigravity' })
-    expect([...providersUnknownTo(undefined)]).toEqual(['opencode', 'cursor', 'deepseek', 'pi', 'hermes', 'antigravity'])
-    expect([...providersUnknownTo(['detail-delta', 'model-catalog-revision'])]).toEqual(['opencode', 'cursor', 'deepseek', 'pi', 'hermes', 'antigravity'])
+    expect(PROVIDER_HOST_FEATURES).toEqual({ opencode: 'provider-opencode', cursor: 'provider-cursor', deepseek: 'provider-deepseek', hermes: 'provider-hermes', antigravity: 'provider-antigravity' })
+    expect([...providersUnknownTo(undefined)]).toEqual(['opencode', 'cursor', 'deepseek', 'hermes', 'antigravity'])
+    expect([...providersUnknownTo(['detail-delta', 'model-catalog-revision'])]).toEqual(['opencode', 'cursor', 'deepseek', 'hermes', 'antigravity'])
     // A phone that knows OpenCode but not Cursor (ADR-0128) is sent OpenCode and nothing of Cursor's.
-    expect([...providersUnknownTo(['detail-delta', 'provider-opencode'])]).toEqual(['cursor', 'deepseek', 'pi', 'hermes', 'antigravity'])
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode'])]).toEqual(['cursor', 'deepseek', 'hermes', 'antigravity'])
     // A phone from before DeepSeek Harness reached phones (ADR-0138, November 8 amendment) is sent nothing of it.
-    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor'])]).toEqual(['deepseek', 'pi', 'hermes', 'antigravity'])
-    // Pi remains hidden from every client that has not explicitly accepted its provider ID.
-    expect([...providersUnknownTo(['provider-opencode', 'provider-cursor', 'provider-deepseek'])]).toEqual(['pi', 'hermes', 'antigravity'])
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor'])]).toEqual(['deepseek', 'hermes', 'antigravity'])
+    expect([...providersUnknownTo(['provider-opencode', 'provider-cursor', 'provider-deepseek'])]).toEqual(['hermes', 'antigravity'])
     // A client from before Antigravity (ADR-0212) is sent nothing of it; one that accepts it, everything.
-    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-pi', 'provider-hermes'])]).toEqual(['antigravity'])
-    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-pi', 'provider-hermes', 'provider-antigravity'])]).toEqual([])
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-hermes'])]).toEqual(['antigravity'])
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-hermes', 'provider-antigravity'])]).toEqual([])
   })
 
   it('is sent a shell that names OpenCode nowhere: no row, model, project, thread, draft, client update or setting', () => {

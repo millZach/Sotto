@@ -8,6 +8,8 @@ The built app on Apple silicon macOS used an isolated profile with Claude Code a
 
 The renderer regression also gave Muse a cached ready model while disconnected and Devin a connected client unable to start threads. Before the fix, Building and Orchestrating both listed those two providers. Both cases pass with the composer’s availability check.
 
+In a separate desktop profile, Devin was connected and two Devin models were starred. Its client still offered one. Building, UI, Code review, Research and Computer use opened on Favorites with that one model. Orchestrating opened on its current provider. Its Favorites pane was empty, and its Devin tab explained why Watcher can’t run there. Both stars were still in storage after all six menus closed. [Building’s Favorites at 1280×800](../../artifacts/worker-roles/roles-building-favorites.png)
+
 ## What was run
 
 `tests/e2e/worker-roles.spec.ts` launches the built app on the Owl track with the real Claude Code and Codex adapters over the fake CLIs. The fake Claude Code lists Opus 5.5, Sonnet 5.5 and Haiku 5.5; the fake Codex lists GPT-6.1 Sol, GPT-6 Astra and GPT-6 Luna. Muse and Grok Build are not set up. No new-thread default permission is chosen, so the ceiling is Ask for approval.

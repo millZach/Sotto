@@ -224,6 +224,10 @@ export class SottoThreadHost implements ProviderHost {
   useThreadTools(tools: readonly ScopedThreadTools[]): void {
     this.inner.useThreadTools?.(tools.map(entry => ({ name: entry.name, definitions: entry.definitions,
       ...(entry.timeoutMs === undefined ? {} : { timeoutMs: entry.timeoutMs }),
+      definitionsFor: (id: string) => {
+        const threadId = this.threadFor(id)
+        return threadId ? entry.definitionsFor?.(threadId) ?? entry.definitions : []
+      },
       mcpServer: async (id: string) => {
         const threadId = this.threadFor(id)
         return threadId ? entry.mcpServer(threadId) : undefined

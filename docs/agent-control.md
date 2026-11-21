@@ -1,6 +1,6 @@
 # Sotto agent control
 
-Sotto opens coding threads and routes manual commands through the installed Codex, Claude Code, Grok Build, Devin, Muse (ADR-0079), OpenCode 2 (ADR-0087), Cursor (ADR-0128), DeepSeek (ADR-0138), Hermes (ADR-0124) and Pi (ADR-0202) clients. Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. You send prompts, answer requests and stop work from each thread. Sotto no longer babysits pull requests; on stable 0.1.42 and earlier, explicit babysitting can send wake-ups but answers no request.
+Sotto opens coding threads and routes manual commands through the installed Codex, Claude Code, Grok Build, Devin, Muse (ADR-0079), OpenCode 2 (ADR-0087), Cursor (ADR-0128), DeepSeek (ADR-0138), Hermes (ADR-0208) and Antigravity (ADR-0212) clients. Threads have Sotto-owned identities; each native client keeps its own sign-in, model catalog and conversation history. The providers can be connected together. You send prompts, answer requests and stop work from each thread. Sotto no longer babysits pull requests; on stable 0.1.42 and earlier, explicit babysitting can send wake-ups but answers no request.
 
 ## Set up
 

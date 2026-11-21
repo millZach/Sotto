@@ -2492,6 +2492,71 @@ import UIKit
         capture("new-thread-glow-options")
     }
 
+    /// Owlets (ADR-0213): the tab after Threads while the laptop makes owlets, the owlets with the one asking under Needs you
+    /// and none of them on Threads, an owlet's thread with its role and folder, Edit owlet in its •••, and New owlet, which
+    /// opens the new owlet's thread (Zach's picks, November 21, 2026).
+    func testTheOwletsTabListsOwletsEditsOneAndMakesOne() {
+        launch(Self.fixture + ["--ui-owlets"])
+        XCTAssertFalse(row("owlet-tawny").exists, "Threads never lists an owlet")
+        let tab = app.buttons["tab-owlets"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "The Owlets tab shows while the laptop makes owlets")
+        XCTAssertLessThan(tab.frame.minX, app.buttons["tab-computers"].frame.minX, "The Owlets tab stands before Computers")
+        XCTAssertGreaterThan(tab.frame.minX, app.buttons["tab-threads"].frame.minX, "The Owlets tab stands after Threads")
+        tab.tap()
+        let tawny = app.buttons["owlet-\(laptop)/owlet-tawny"]
+        XCTAssertTrue(tawny.waitForExistence(timeout: 10), "The owlets list on their own tab")
+        XCTAssertTrue(byID("threads-heading-owlets-needs").exists, "Tawny, asking to send an email, leads under Needs you")
+        XCTAssertTrue(app.buttons["owlet-\(laptop)/owlet-barn"].exists, "An owlet that never ran lists too")
+        capture("owlets-list")
+
+        tawny.tap()
+        XCTAssertTrue(byID("thread-owlet-role").waitForExistence(timeout: 10), "An owlet's thread shows its role under its name")
+        if app.buttons["Not now"].waitForExistence(timeout: 5) {
+            capture("owlets-card")
+            reveal(app.buttons["Not now"])
+            app.buttons["Not now"].tap()
+        }
+        let place = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Owlets/Tawny")).firstMatch
+        XCTAssertTrue(place.waitForExistence(timeout: 5), "Its place line names its folder")
+        capture("owlets-thread")
+        let actions = app.buttons["thread-actions"]
+        XCTAssertTrue(actions.waitForExistence(timeout: 5), "An owlet's thread always has •••")
+        actions.tap()
+        let edit = app.buttons["thread-edit-owlet"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5), "An owlet's ••• has Edit owlet")
+        capture("owlets-menu")
+        edit.tap()
+        let name = app.textFields["owlet-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "Edit owlet opens on its name")
+        XCTAssertEqual(name.value as? String, "Tawny")
+        XCTAssertFalse(app.buttons["owlet-model"].exists, "Edit owlet leaves the model to the thread")
+        capture("owlets-edit")
+        app.buttons["owlet-setup-cancel"].tap()
+        XCTAssertTrue(waitUntilGone(name), "Cancel closes Edit owlet")
+        back()
+
+        let new = app.buttons["new-owlet"]
+        XCTAssertTrue(new.waitForExistence(timeout: 5))
+        new.tap()
+        let newName = app.textFields["owlet-name"]
+        XCTAssertTrue(newName.waitForExistence(timeout: 5), "New owlet opens on its name")
+        newName.tap()
+        newName.typeText("Kestrel")
+        let role = byID("owlet-role")
+        role.tap()
+        role.typeText("Watches the build")
+        XCTAssertTrue(app.buttons["owlet-model"].exists, "New owlet asks for a model")
+        XCTAssertTrue(text("Its folder: Owlets/Kestrel").exists, "New owlet names the folder it makes")
+        capture("owlets-new")
+        let save = app.buttons["owlet-setup-save"]
+        XCTAssertTrue(save.isEnabled, "A name and a ready model are enough to make an owlet")
+        save.tap()
+        let title = app.staticTexts["thread-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "Making an owlet opens its thread")
+        XCTAssertEqual(title.label, "Kestrel")
+        capture("owlets-made")
+    }
+
     /// The app's CPU while a page sits still, three seconds at a time. A page that keeps itself busy spends CPU with nothing
     /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
     private func idleCPU(_ arguments: [String], openThread: Bool) throws {

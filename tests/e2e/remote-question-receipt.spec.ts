@@ -9,7 +9,7 @@ import { SocketHostService } from '../../src/main/agents/socketHostService'
 import type { AgentHostCommand, AgentHostResult, ThreadReadPurpose } from '../../src/main/agents/host'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import type { RemoteHostE2EConnection } from '../../src/main/e2e/remoteHost'
-import type { AgentRequest, ProviderId } from '../../src/shared/agents'
+import type { AgentRequest, ActiveProviderId } from '../../src/shared/agents'
 import type { RequestDraft } from '../../src/shared/requestDrafts'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
@@ -73,7 +73,7 @@ const structured: AgentRequest = { id: 'remote-form', kind: 'question', text: 'F
 ] }
 const drafts = async (profile: string): Promise<RequestDraft[]> => JSON.parse(await readFile(join(profile, 'request-drafts.json'), 'utf8')).drafts
 
-async function fixture(provider: ProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false,
+async function fixture(provider: ActiveProviderId, uncertain = false, answerCompletion?: Promise<boolean>, keepQuestion = false,
   options: { historyEnabled?: boolean } = {}) {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-question-' })).directory
   let host: Awaited<ReturnType<typeof startHeadlessHost>> | undefined
@@ -82,7 +82,7 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
   try {
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
       localHostEnabled: false, reducedMotion: 'on', historyEnabled: options.historyEnabled ?? false }))
-    const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider(), muse: new AnswerProvider(), opencode: new AnswerProvider(), cursor: new AnswerProvider(), deepseek: new AnswerProvider(), pi: new AnswerProvider(), antigravity: new AnswerProvider(), hermes: new AnswerProvider() }
+    const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider(), muse: new AnswerProvider(), opencode: new AnswerProvider(), cursor: new AnswerProvider(), deepseek: new AnswerProvider(), antigravity: new AnswerProvider(), hermes: new AnswerProvider() }
     await Promise.all(Object.entries(providers).map(([id, provider]) => provider.initializeWorkingFolders(join(profile, 'working-folders', id))))
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,

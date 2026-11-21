@@ -5842,10 +5842,6 @@ msgid "Replies in threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below."
-msgstr ""
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 msgstr ""
 
@@ -6835,10 +6831,6 @@ msgstr ""
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
 msgstr ""
 
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources."
-msgstr ""
-
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Sotto runs Tailscale Serve on {name}, port 8443, or 10000 when another app uses 8443, so Sotto on your iPhone can reach {name}’s threads over your tailnet. Only phones you pair can connect. Phones reach {name} while its host runs. Turning this off removes the setting and disconnects them."
 msgstr ""
@@ -7145,10 +7137,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Steer now"
-msgstr ""
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
@@ -8155,10 +8143,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Threads with OpenCode"
-msgstr ""
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Threads with Pi"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx

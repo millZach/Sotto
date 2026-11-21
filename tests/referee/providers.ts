@@ -31,7 +31,7 @@ interface FakeLayout {
 
 /**
  * Every provider a host takes that has a fake program (`HOST_PROVIDERS` in `src/shared/hostProviders.ts`). Hermes is a
- * host provider too and has no fake program yet, so it has no recording; Pi and DeepSeek Harness are held on every host
+ * host provider too and has no fake program yet, so it has no recording; DeepSeek Harness is held on every host
  * (ADR-0138, `heldOnHost`), so a host starts nothing for them.
  */
 export const REFEREE_FAKES = {

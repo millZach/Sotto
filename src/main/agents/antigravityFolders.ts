@@ -3,8 +3,9 @@ import { join } from 'node:path'
 /**
  * Sotto's own Antigravity folders, as T3 Code keeps a profile of its own (the research note, "Launch"). Every `agy`
  * Sotto starts runs with `--gemini-dir <gemini>` and `GEMINI_HOME=<gemini>`, and `--app-data-dir antigravity-acp`,
- * which `agy` takes only as a name under the Gemini folder. So the user's own `~/.gemini` is never read for a thread or
- * written by one, and the user's own `agy` never lists Sotto's conversations. The sign-in lives in the app data folder.
+ * which `agy` takes only as a name under the Gemini folder. So `agy` never reads the user's own `~/.gemini` for a thread
+ * or writes it, and the user's own `agy` never lists Sotto's conversations; Sotto hands a thread only the MCP servers
+ * set up there (`antigravityUserServers.ts`). The sign-in lives in the app data folder.
  *
  * `root` is the runtime's directory: user data on the desktop, the data directory on a headless host.
  */

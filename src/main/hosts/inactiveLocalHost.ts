@@ -6,7 +6,7 @@ import { watcherRecordSchema } from '../../shared/watcher'
 import { migrateWatcherRecord } from '../agents/watcherRecords'
 import { savedWatcherFile } from '../agents/watcherRecordFile'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../shared/agents'
-import { HELD_PROVIDER_ENTRIES, type HeldProviders } from '../../shared/heldProviders'
+import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import type { DesktopLocalRuntime } from './localRuntime'
 import { loadHostIdentity } from '../agents/hostIdentity'
 import { ShortTextWriter } from '../llm/shortTextWriter'
@@ -28,7 +28,7 @@ export function emptyDesktopState(hostId?: string): AgentState {
  */
 /** `parked` names the providers whose saved threads stay dormant: every provider an Owl feature holds, on either track. */
 export async function inactiveLocalHost(directory: string,
-  parked: HeldProviders = new Set(HELD_PROVIDER_ENTRIES.map(entry => entry.provider))): Promise<DesktopLocalRuntime> {
+  parked: HeldProviders = heldProvidersOf({})): Promise<DesktopLocalRuntime> {
   const state = emptyDesktopState(await loadHostIdentity(directory))
   // Ownership remains readable while providers are off. No saved data is migrated or written here.
   const retained = new Set<string>()

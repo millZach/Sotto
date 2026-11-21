@@ -6,16 +6,20 @@ import { z } from 'zod'
  * before the type checker names what still needs it. It lives apart from `agents.ts` so the schemas `agents.ts`
  * imports can use it too.
  */
-export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi', 'antigravity'])
+export const ACTIVE_PROVIDERS = ['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'antigravity'] as const
+export type ActiveProviderId = typeof ACTIVE_PROVIDERS[number]
+
+/** Saved profiles and older peers can still name Pi. Its threads have no runnable adapter. */
+export const providerIdSchema = z.enum([...ACTIVE_PROVIDERS, 'pi'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 
-type MissingProvider<T extends readonly ProviderId[]> = Exclude<ProviderId, T[number]>
+type MissingProvider<T extends readonly ActiveProviderId[]> = Exclude<ActiveProviderId, T[number]>
 
 /**
  * A list that must name every provider, in an order its caller chooses. A provider left out is a type error that
  * names it, so a new provider cannot be forgotten in one; a provider named twice throws when the list is made.
  */
-export function everyProvider<const T extends readonly ProviderId[]>(
+export function everyProvider<const T extends readonly ActiveProviderId[]>(
   list: T & ([MissingProvider<T>] extends [never] ? unknown : { readonly missingProvider: MissingProvider<T> }),
 ): T {
   const repeated = list.find((id, index) => list.indexOf(id) !== index)

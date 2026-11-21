@@ -31,6 +31,9 @@ public enum RemoteCommands {
         // thread act without asking needs the computer's remote-answer policy, which the computer checks.
         "configure-thread": ["threadId", "modelId", "reasoningEffort", "runtimeMode", "providerMode", "fastMode", "speed"],
         // The user's own Babysit pull request and Stop babysitting (ADR-0061, ADR-0102). Neither grants anything.
+        // An owlet (ADR-0213) is the user's own setup, as a new thread is: its permission is held to the same rules.
+        "create-owlet": ["threadId", "name", "role", "modelId", "reasoningEffort", "runtimeMode", "providerMode"],
+        "set-owlet": ["threadId", "name", "role"],
         "babysit-pull-request": ["threadId", "url"],
         "stop-babysitting": ["threadId", "url"],
     ]

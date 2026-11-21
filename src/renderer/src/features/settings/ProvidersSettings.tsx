@@ -3,7 +3,7 @@ import { ChevronRight, CircleArrowUp, ExternalLink, RefreshCw } from 'lucide-rea
 import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
+import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, ACTIVE_PROVIDERS, type ActiveProviderId, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import { catalogEntry } from '../../../../shared/modelCatalog'
 import { modelInForce } from '../../../../shared/modelLineup'
 import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE_EFFORTS, type UltracodeEffort } from '../../../../shared/ultracode'
@@ -33,7 +33,7 @@ function problemWord(problem: string | undefined): string | undefined {
   return problem === 'signed-out' ? t`Not signed in` : problem === 'not-installed' ? t`Not installed` : problem === 'too-old' ? t`Too old to use` : problem === 'cannot-start' ? t`Can't be started` : undefined
 }
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi', antigravity: 'Antigravity' }
+const CLIENT_NAMES: Record<ActiveProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', antigravity: 'Antigravity' }
 
 /**
  * What the update switch says it checks, by where each client's published version is read: Muse's own release feed and
@@ -209,7 +209,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     finally { setCopyingLogin(false) }
   }
   // A provider this computer does not have, or has too old, opens its maker's install page, as first-run setup did.
-  const openInstallGuide = async (provider: ProviderId): Promise<void> => {
+  const openInstallGuide = async (provider: ActiveProviderId): Promise<void> => {
     const guide = PROVIDER_INSTALL_GUIDES[provider].replace(/^https:\/\//u, ''), providerName = PROVIDER_LABELS[provider]
     const failed = msg({ message: `Your browser did not open. Go to ${guide} to install ${providerName}.`, comment: '{guide} is a web address; {providerName} is a provider\'s name.' })
     setErrors(previous => ({ ...previous, [provider]: undefined }))
@@ -318,7 +318,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   }
 
   /** What the one open row shows: its connection, its models in a small field, and its client. */
-  const details = (provider: ProviderId): ReactNode => {
+  const details = (provider: ActiveProviderId): ReactNode => {
     const status = statusFor(provider)
     const label = PROVIDER_LABELS[provider], clientName = CLIENT_NAMES[provider]
     const connected = status.connection === 'connected'
@@ -357,7 +357,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         : <div className="provider-connection">
           <div>
             <h4>{t`Local connection`}</h4>
-            <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'pi' ? t`Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources.` : provider === 'hermes' ? t`Full access on this computer. Uses ChatGPT or your model servers. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
+            <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'hermes' ? t`Full access on this computer. Uses ChatGPT or your model servers. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
             {provider === 'devin' && <div className="provider-login"><code>devin auth login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Devin login command`} onClick={() => void copyLogin('devin', 'devin auth login')}>{loginCopied === 'devin' ? t`Copied` : t`Copy`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'devin' ? t`Devin login command copied.` : ''}</span></div>}
             {named && status.error ? <p className="provider-connection__said tt-paragraph">{shownWords(status.error)}</p> : null}
             {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyLogin('muse', 'muse login')}>{loginCopied === 'muse' ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'muse' ? t`Muse login command copied.` : ''}</span></div>}
@@ -367,7 +367,6 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'hermes' && window.sotto?.providerSignIn && problem !== 'not-installed' && problem !== 'too-old'
           ? <HermesChatGptSource signedIn={'account' in status && status.account === 'ChatGPT'} onSignIn={() => setSignInFor('hermes')}
             signOut={() => window.sotto!.providerSignIn!.signIn({ type: 'hermes-sign-out' })} /> : null}
-        {provider === 'pi' && window.sotto?.pi ? <OpenCodeModelSources provider="Pi" bridge={window.sotto.pi} /> : null}
         {provider === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
         {/* A small field rather than the whole list, so one provider's models never fill the page. Cursor's models arrive
             grouped by model maker (ADR-0128) and OpenCode's by model source, and the list keeps those groups. */}
@@ -442,13 +441,12 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
         {provider === 'antigravity' && <details className="provider-support"><summary>{t`Threads with Antigravity`}</summary><p className="tt-paragraph"><Trans>Replies, reasoning, approvals and Antigravity’s questions, steering, images, and skills as /name, on the Gemini models your sign-in lists. Watcher runs on Antigravity, and Antigravity threads run on paired hosts and phones too. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>All four permission modes: on Allow edits Sotto answers Antigravity’s requests to change files for you, on Full access every request, and Auto is Antigravity’s own. Its questions always come to you. Usage shows Antigravity’s token counts. Compact context uses Antigravity’s own /compact, and Antigravity keeps its own history in Sotto’s own Antigravity folder.</Trans></p></details>}
         {provider === 'opencode' && <details className="provider-support"><summary>{t`Threads with OpenCode`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
-        {provider === 'pi' && <details className="provider-support"><summary>{t`Threads with Pi`}</summary><p className="tt-paragraph">{t`Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below.`}</p><p className="tt-paragraph">{t`Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet.`}</p></details>}
         {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
       </div>
     </>
   }
 
-  const row = (provider: ProviderId): ReactNode => {
+  const row = (provider: ActiveProviderId): ReactNode => {
     const status = statusFor(provider)
     const label = PROVIDER_LABELS[provider]
     const isOpen = open === provider
@@ -522,7 +520,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     {signInFor && window.sotto?.providerSignIn ? <HostProviderSignIn place={t({ message: 'This computer', comment: 'The computer Sotto runs on, named where a paired host would be.' })} provider={signInFor}
       signIn={step => window.sotto!.providerSignIn!.signIn(step as LocalSignInRequest)} onClose={closeSignIn} /> : null}
-    <ul className="providers-list" aria-label={t`Thread providers`} data-setting="thread-providers" onKeyDown={moveBetweenRows}>{providerIdSchema.options.filter(provider => !held.has(provider)).map(row)}</ul>
+    <ul className="providers-list" aria-label={t`Thread providers`} data-setting="thread-providers" onKeyDown={moveBetweenRows}>{ACTIVE_PROVIDERS.filter(provider => !held.has(provider)).map(row)}</ul>
     <p className="providers-note tt-paragraph">{t`Choose what new threads start with in Settings > Threads.`}</p>
     <div className="providers-updates">
       <div>
