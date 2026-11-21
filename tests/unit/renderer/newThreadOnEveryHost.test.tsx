@@ -45,7 +45,8 @@ describe('a new thread on any computer starts on this computer’s defaults (ADR
     expect(await create(available, FORGE)).toMatchObject({ modelId: codex.id, speed: 'ultrafast' })
     const older = computers(defaults, { models: [{ ...codex, fastMode: {} }] })
     const standard = await create(older, FORGE)
-    expect(standard.speed ?? standard.fastMode).toBeUndefined()
+    expect(standard).toMatchObject({ fastMode: false })
+    expect(standard.speed).toBeUndefined()
     older.configuration.newThreadSpeed = 'fast'
     expect(await create(older, FORGE)).toMatchObject({ fastMode: true })
   })

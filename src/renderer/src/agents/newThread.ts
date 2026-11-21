@@ -12,7 +12,7 @@ import { whyNotRouted } from '../../../shared/modelRouter'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
 import type { LaterWords } from './interfaceWords'
-import { pendingSettingsStore, speedPatch, threadSpeed, unconfirmedKinds } from './pendingSettings'
+import { pendingSettingsStore, speedPatch, SPEED_STANDARD, threadSpeed, unconfirmedKinds } from './pendingSettings'
 
 /** A creation on its way, handed over the moment it is issued so the thread can be shown without waiting. */
 export interface ThreadCreationStart {
@@ -173,7 +173,8 @@ export async function beginNewThread(state: AgentState, command: (command: Agent
   const thread = routed ? { ...overseen, routed: true as const } : overseen
   // The defaults go with the creation, since a remote host would otherwise start the thread on its own (ADR-0074).
   // A provider's own permission profiles (Devin) are left to the host, which starts on the first, as before.
-  const chosen = { ...(speed ? speedPatch(speed, selectedModel) : {}), ...(sentEffort !== undefined ? { reasoningEffort: sentEffort } : {}),
+  // A host with its own faster default must also hear this computer’s choice of Standard.
+  const chosen = { ...(selectedModel?.speeds?.length || selectedModel?.fastMode ? speedPatch(speed ?? SPEED_STANDARD, selectedModel) : {}), ...(sentEffort !== undefined ? { reasoningEffort: sentEffort } : {}),
     ...(state.configuration.newThreadRuntimeMode && permission.runtimeMode ? { runtimeMode: permission.runtimeMode } : {}) }
   const created = command({ type: 'create-thread', threadId, projectId: project.id, title, modelId, titleSource: 'default', workingCopy, ...worktreeChoices, ...chosen, ...(dynamic ? { dynamic: true as const } : {}), ...(routed ? { routed: true as const } : {}) })
     .then(result => result === null ? UNCONFIRMED_CREATION : result.error, () => UNCONFIRMED_CREATION)
