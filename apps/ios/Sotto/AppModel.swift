@@ -5234,12 +5234,14 @@ extension AppModel {
     private func countAgents(_ ref: ThreadRef) -> AgentsCount? {
         guard offersAgentsView(ref.hostID), let threads = live[ref.hostID]?.shell?.host.threads,
               let owner = threads.first(where: { $0.id == ref.threadID }) else { return nil }
-        return AgentsRoster.count(owner, on: ref.hostID, in: agentComputers(first: ref.hostID), failuresSeen: offersFailuresSeen(ref.hostID))
+        return AgentsRoster.count(owner, on: ref.hostID, in: agentComputers(first: ref.hostID))
     }
     /// Every computer's threads as it last shared them, the thread's own computer first, so a thread that delegated to
     /// another computer finds its delegated threads there (#2750).
     func agentComputers(first hostID: String) -> [AgentsRoster.ComputerThreads] {
-        let shared = live.compactMap { id, computer in computer.shell.map { AgentsRoster.ComputerThreads(hostID: id, threads: $0.host.threads) } }
+        let shared = live.compactMap { id, computer in
+            computer.shell.map { AgentsRoster.ComputerThreads(hostID: id, threads: $0.host.threads, failuresSeen: computer.features.contains("failure-seen")) }
+        }
         return shared.sorted { one, other in one.hostID == hostID ? other.hostID != hostID : other.hostID == hostID ? false : one.hostID < other.hostID }
     }
     /// A computer's model catalog as it last shared it, for a delegated thread's model on that computer.

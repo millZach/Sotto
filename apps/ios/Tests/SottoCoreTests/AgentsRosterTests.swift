@@ -58,6 +58,7 @@ final class AgentsRosterTests: XCTestCase {
                                      place: { AgentsRoster.Place(projects: [], computer: $0 == laptopID ? "This laptop" : "forge", models: []) })
         let forgeRow = try XCTUnwrap(rows.first { $0.threadID == "on-forge" })
         XCTAssertEqual(forgeRow.hostID, forgeID, "A row on another computer opens there")
+        XCTAssertEqual(forgeRow.id, "thread:\(forgeID)/on-forge", "And is that computer's thread, by its ID")
         XCTAssertTrue(forgeRow.facts.contains("forge"))
         XCTAssertEqual(forgeRow.tone, .working, "The list says it is working, though the laptop's record does not know it")
         let reviewRow = try XCTUnwrap(rows.first { $0.threadID == "review" })
@@ -65,6 +66,9 @@ final class AgentsRosterTests: XCTestCase {
         let localRow = try XCTUnwrap(rows.first { $0.threadID == "local-child" })
         XCTAssertNil(localRow.hostID)
         XCTAssertEqual(localRow.status, AgentsRoster.outcomeWord("unknown"), "The laptop's own record answered without it")
+        // A caller's ID held by two other computers does not say which thread it is, so it names no one.
+        let twin = AgentsRoster.ComputerThreads(hostID: "33333333-3333-4333-8333-333333333333", threads: [try thread("C449D630-6C48-4F71-B1ED-FFB6392BB404")])
+        XCTAssertFalse(AgentsRoster.delegatedAcross(below: ThreadRef(hostID: laptopID, threadID: cutover.id), in: computers + [twin]).contains { $0.thread.id == "on-forge" })
         // The one-computer forms are as they were.
         XCTAssertEqual(AgentsRoster.delegated(below: cutover.id, in: [cutover, local, baselines]).map(\.thread.id), ["local-child"])
         XCTAssertEqual(AgentsRoster.count(cutover, in: [cutover, local, baselines])?.total, 1)
