@@ -3,7 +3,7 @@ import type { Dirent, Stats } from 'node:fs'
 import { lstat, mkdir, open, opendir, readdir, readFile, readlink, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
+import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentCommand, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
 import { movedWorktreeWords } from '../../shared/branchMoves'
 import { CHECK_MOVED_TO, CHECK_WORKTREE_FOLDER } from './checkWorktree'
 import { COUNCIL_WORKTREE_FOLDER } from '../council/councilFolders'
@@ -353,6 +353,18 @@ export interface WorktreeReclaimOptions {
   readonly withUncommittedChanges?: boolean
   /** A rule acting on its own: a folder with anything but dependencies and regenerable build output in its ignored files is left alone. */
   readonly automatic?: boolean
+  /** Recheck the host's cleanup rule immediately before locking the folder. */
+  readonly canRemove?: () => boolean
+}
+
+/** Only the files the user confirmed in the manual removal or deletion question. */
+export function confirmedWorktreeFiles({ confirmedIgnored, confirmedItems, confirmedRepositories }:
+  Extract<AgentCommand, { type: 'reclaim-thread-worktree' | 'delete-thread' }>) {
+  return {
+    ...(confirmedIgnored && { confirmedIgnored }),
+    ...(confirmedItems && { confirmedItems }),
+    ...(confirmedRepositories && { confirmedRepositories }),
+  }
 }
 const DEPENDENCY_FOLDER = /(^|\/)node_modules\/$/u
 /** The Git attribute a repository sets on a build folder its build makes again, such as `/out sotto-build-output`, so a rule may remove it (ADR-0041). */
@@ -1505,7 +1517,7 @@ export class ThreadWorktrees {
    * output among its ignored files. Uncommitted work goes only after the user's answer. A detached
    * folder is put back on its commit.
    */
-  async reclaim(metadata: AgentWorktree, options: WorktreeReclaimOptions = {}, canRemove?: () => boolean): Promise<AgentWorktree> {
+  async reclaim(metadata: AgentWorktree, options: WorktreeReclaimOptions = {}): Promise<AgentWorktree> {
     if (metadata.mode !== 'independent' || metadata.reused) throw new Error('Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.')
     const allocationRoot = join(await realpath(this.directory), this.home.folder)
     if (!metadata.path || pathKey(dirname(metadata.path)) !== pathKey(allocationRoot) || !/^[a-f0-9-]{36}$/u.test(basename(metadata.path))) throw new Error('This folder is outside Sotto’s reserved worktree folder. Nothing was changed.')
@@ -1559,7 +1571,7 @@ export class ThreadWorktrees {
         // Nothing is deleted until Git holds the folder locked for Sotto's removal: from here on, a removal cut off by a
         // crash, a quit or a file kept in use is one Sotto recognises and finishes (#1297). The checks above covered
         // submodules, nested work and uncommitted changes, which is what Git's own clean check would have asked about.
-        if (canRemove && !canRemove()) return undefined
+        if (options.canRemove && !options.canRemove()) return undefined
         if (registration) await writeFile(join(registration, REMOVAL_RECORD), JSON.stringify({ nestedWorktrees }))
         await this.git(metadata.repositoryRoot!, ['worktree', 'lock', '--reason', REMOVING_LOCK_REASON, '--', facts.path])
         return nestedWorktrees

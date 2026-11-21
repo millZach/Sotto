@@ -2382,7 +2382,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.initialize()
       const thread = this.thread(threadId)
       const worktree = thread.worktree
-      const { stillEligible } = options
+      const { stillEligible, ...removal } = options
       const canRemove = stillEligible ? () => stillEligible(this.thread(threadId)) : undefined
       if (canRemove && !canRemove()) return this.workspaceSnapshot()
       if (worktree?.mode !== 'independent' || !worktree.path || worktree.reused) throw new Error('This thread has no worktree of its own to remove.')
@@ -2399,7 +2399,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (options.expectedMergedTip && (await runWorktreeGit(worktree.path!, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim() !== options.expectedMergedTip) {
           throw new Error('This branch changed after its merged pull request was checked. Its folder stays.')
         }
-        const reclaimed = await this.worktrees.reclaim(worktree, options, canRemove)
+        const reclaimed = await this.worktrees.reclaim(worktree, canRemove ? { ...removal, canRemove } : removal)
         if (!reclaimed.reclaimedAt) return this.workspaceSnapshot()
         this.touched(this.thread(threadId)).worktree = reclaimed
         this.dirty = true
