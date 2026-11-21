@@ -43,7 +43,8 @@ import type { UsageHistorySink } from './usageHistory/sink'
 import type { MediaCapture } from './threadMedia'
 import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
-import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
+import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
+import { readAntigravityUserServers, type AntigravitySessionServer } from './antigravityUserServers'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
 import { validateWatcherProfile, WatcherHistoryRefusal, WatcherProfileRefusal } from './watcherProfile'
@@ -212,6 +213,8 @@ export interface AntigravityAcpOptions {
   captureMedia?: MediaCapture
   /** Usage on: `agy`'s token counts from its conversation files (`antigravityUsage.ts`). Never the account's limits (ADR-0212). */
   usageEnabled?: boolean
+  /** The user's own `agy` MCP file (`antigravityUserServers.ts`), whose servers a thread gets beside Sotto's. None when unset. */
+  userMcpConfig?: string
 }
 
 export class AntigravityAcpHost implements ProviderHost {
@@ -426,8 +429,11 @@ export class AntigravityAcpHost implements ProviderHost {
       if (generation === this.generation && this.connections.get(id) === connection) this.revokeProfile(id, this.knownLaunchProfiles.get(id), reason)
     }
   }
-  /** Sotto's tool servers for this thread, each with the thread's bearer token; Watcher's thread gets its own, never the browser. */
-  private async toolServers(id: string, connection: Connection): Promise<ThreadMcpServer[]> {
+  /**
+   * Sotto's tool servers for this thread, each with the thread's bearer token, then the user's own from their `agy` setup.
+   * Watcher's thread gets its own only: never the browser, never the user's.
+   */
+  private async toolServers(id: string, connection: Connection): Promise<AntigravitySessionServer[]> {
     if (connection.watcher) {
       const profile = await this.launchProfile(id)
       if (!profile) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Nothing was sent. Reopen Watcher to recover.')
@@ -442,10 +448,15 @@ export class AntigravityAcpHost implements ProviderHost {
       return [{ name: profile.server.name, type: profile.server.type, url: profile.server.url, headers: profile.server.headers.map(header => ({ ...header })) },
         ...scoped.map(({ server }) => server)]
     }
-    if (!this.httpToolServers) return []
-    const servers: ThreadMcpServer[] = []
-    if (this.browserTools) servers.push(await this.browserTools.mcpServer(id))
-    for (const { server } of await scopedThreadServers(this.threadTools, id)) servers.push(server)
+    const servers: AntigravitySessionServer[] = []
+    if (this.httpToolServers) {
+      if (this.browserTools) servers.push(await this.browserTools.mcpServer(id))
+      for (const { server } of await scopedThreadServers(this.threadTools, id)) servers.push(server)
+    }
+    if (!this.options.userMcpConfig) return servers
+    // Sotto's own keep their names: a server of the user's with one of them is left out.
+    const taken = new Set(servers.map(server => server.name))
+    for (const server of await readAntigravityUserServers(this.options.userMcpConfig, this.httpToolServers)) if (!taken.has(server.name)) servers.push(server)
     return servers
   }
   /** What a session starts with besides its folder and tools: Watcher's instructions, appended to `agy`'s own system prompt. */

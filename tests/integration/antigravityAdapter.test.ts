@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { readdir, readFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
@@ -287,14 +288,14 @@ describe('Antigravity ACP adapter', () => {
     expect(await readdir(join(f.root, 'antigravity', 'scratch')).catch(() => [])).toEqual([])
   })
 
+  const probeTools = [{ name: 'sotto_probe', definitions: [], mcpServer: async () => ({ name: 'sotto_probe', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }) }]
   it('hands Sotto’s tools to agy, which advertises no MCP capability yet takes HTTP servers, and none when agy says it cannot', async () => {
-    const tools = [{ name: 'sotto_probe', definitions: [], mcpServer: async () => ({ name: 'sotto_probe', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }) }]
     const servers = async () => (await f!.requests()).filter(record => record.method === 'session/new' && record.params?.cwd === f!.root).map(record => (record.params?.mcpServers as { name: string }[]).map(server => server.name))
     for (const httpMcp of [undefined, false]) {
       await f?.cleanup()
       f = await antigravityFixture()
       if (httpMcp === false) await f.script({ httpMcp })
-      f.host.useThreadTools(tools)
+      f.host.useThreadTools(probeTools)
       await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       const id = randomUUID()
@@ -303,6 +304,37 @@ describe('Antigravity ACP adapter', () => {
       await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
       await expect.poll(servers).toEqual([httpMcp === false ? [] : ['sotto_probe']])
     }
+  })
+
+  it('hands the user’s own agy servers beside Sotto’s, on a new session and a resumed one, and leaves out one with a name Sotto uses', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-antigravity-thread-')), config = join(root, 'user-mcp_config.json')
+    await writeFile(config, JSON.stringify({ mcpServers: {
+      files: { command: 'files-mcp', args: ['--root', '.'], env: { FILES_TOKEN: 'user-secret' } },
+      remote: { serverUrl: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer user-secret' } },
+      sotto_probe: { command: 'not-sotto' },
+      off: { command: 'off-mcp', disabled: true },
+    } }))
+    f = await antigravityFixture(root, undefined, {}, { userMcpConfig: config })
+    f.host.useThreadTools(probeTools)
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Tools' })
+    f.host.observeThreads?.([id])
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+    const handed = async (method: string) => (await f!.requests()).filter(record => record.method === method && record.params?.cwd === f!.root).map(record => record.params?.mcpServers)
+    const expected = [
+      { name: 'sotto_probe', type: 'http', url: 'http://127.0.0.1:9/mcp', headers: [] },
+      { name: 'files', command: 'files-mcp', args: ['--root', '.'], env: [{ name: 'FILES_TOKEN', value: 'user-secret' }] },
+      { name: 'remote', type: 'http', url: 'https://mcp.example.com/mcp', headers: [{ name: 'Authorization', value: 'Bearer user-secret' }] },
+    ]
+    await expect.poll(() => handed('session/new')).toEqual([expected])
+    // A new process resumes the session and needs the servers again; the user's file is read afresh.
+    await writeFile(config, JSON.stringify({ mcpServers: { files: { command: 'files-mcp' } } }))
+    await f!.host.disconnect(); await f!.host.connect()
+    f!.host.observeThreads?.([id])
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Again' })
+    await expect.poll(() => handed('session/resume')).toEqual([[expected[0], { name: 'files', command: 'files-mcp', args: [], env: [] }]])
   })
 
   it('lists agy’s commands as skills', async () => {

@@ -23,6 +23,22 @@ const executable = process.env.SOTTO_ANTIGRAVITY_EXECUTABLE ?? ''
 const directory = process.env.SOTTO_ANTIGRAVITY_LIVE_DIR ?? ''
 const reportPath = process.env.SOTTO_ANTIGRAVITY_LIVE_REPORT
 
+/** A local MCP server of the user's, as their own `agy` file would name it: one tool, `echo`, and a file of its calls. */
+const USER_SERVER = `import { appendFileSync } from 'node:fs'
+let buffer = ''
+process.stdin.on('data', chunk => {
+  buffer += chunk; let at
+  while ((at = buffer.indexOf('\\n')) >= 0) {
+    const line = buffer.slice(0, at); buffer = buffer.slice(at + 1); if (!line.trim()) continue
+    const frame = JSON.parse(line), reply = result => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result }) + '\\n')
+    if (frame.method === 'initialize') reply({ protocolVersion: frame.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'user_probe', version: '1.0.0' } })
+    else if (frame.method === 'tools/list') reply({ tools: [{ name: 'echo', description: 'Return the user test value.', inputSchema: { type: 'object', properties: {} } }] })
+    else if (frame.method === 'tools/call') { appendFileSync(process.env.USER_PROBE_CALLS, 'call\\n'); reply({ content: [{ type: 'text', text: 'USER-4418' }] }) }
+    else if (frame.id !== undefined) reply({})
+  }
+})
+`
+
 /** A solid square PNG of one colour, so a model can name it. */
 function squarePng(rgb: readonly [number, number, number], size = 32): Buffer {
   const chunk = (type: string, data: Buffer): Buffer => {
@@ -39,7 +55,11 @@ function squarePng(rgb: readonly [number, number, number], size = 32): Buffer {
 
 it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { timeout: 1_800_000 }, async () => {
   const project = await mkdtemp(join(tmpdir(), 'sotto-antigravity-parity-'))
-  const host = new AntigravityAcpHost(directory, { executable, requestTimeoutMs: 120_000 })
+  // The user's own `agy` file, kept outside the project, with one local server whose variable says where it records calls.
+  const userSetup = await mkdtemp(join(tmpdir(), 'sotto-antigravity-user-mcp-')), userCalls = join(userSetup, 'calls.txt')
+  await writeFile(join(userSetup, 'server.mjs'), USER_SERVER)
+  await writeFile(join(userSetup, 'mcp_config.json'), JSON.stringify({ mcpServers: { user_probe: { command: process.execPath, args: [join(userSetup, 'server.mjs')], env: { USER_PROBE_CALLS: userCalls } } } }))
+  const host = new AntigravityAcpHost(directory, { executable, requestTimeoutMs: 120_000, userMcpConfig: join(userSetup, 'mcp_config.json') })
   let calls = 0
   const tools = new ThreadToolServer({ name: 'sotto_probe', serverName: 'Sotto probe', instructions: 'A local test tool.', unavailable: 'Unavailable', failed: 'Failed' },
     [{ name: 'ping', description: 'Return the test value.', inputSchema: { type: 'object', properties: {} } }],
@@ -72,6 +92,15 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
       await idle(id)
       const reply = await lastReply(id)
       return { passed: calls > 0 && reply.includes('PONG-7731'), saw: { calls, reply: reply.slice(0, 200), activities: (await thread(id)).activities?.map(row => [row.kind, row.title]).slice(0, 10) } }
+    })
+
+    // A server from the user's own `agy` file reaches agy beside Sotto's (parity slice 3).
+    await check('user-mcp-server', async () => {
+      const id = await open('full-access')
+      await send(id, 'Call the echo tool on the user_probe MCP server, then reply with exactly the text it returned.')
+      await idle(id)
+      const reply = await lastReply(id), called = existsSync(userCalls)
+      return { passed: called && reply.includes('USER-4418'), saw: { called, reply: reply.slice(0, 200), activities: (await thread(id)).activities?.map(row => [row.kind, row.title]).slice(0, 10) } }
     })
 
     // An image in.
@@ -171,6 +200,7 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
     if (reportPath) await writeFile(reportPath, JSON.stringify(results, null, 2))
     host.disconnect(); await host.closed(); await tools.close()
     await rm(project, { recursive: true, force: true })
+    await rm(userSetup, { recursive: true, force: true })
   }
   expect(Object.entries(results).filter(([, result]) => !result.passed).map(([name]) => name)).toEqual([])
 })
