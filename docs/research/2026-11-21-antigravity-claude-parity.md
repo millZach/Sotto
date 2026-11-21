@@ -40,7 +40,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | 10b | PDFs and other files in | Works: PDFs sent as documents; other files staged in the folder | Partial: files are staged in the folder; a PDF is not sent as a document | Not run | `claude.ts:2417-2427`; ACP's embedded context could carry it |
 | 10c | Pictures and media out, inline | Works | Works for tool pictures and Sotto's media tiles; non-text reply chunks are dropped | Not run | `antigravityActivity.ts:72`, `mediaTools.ts:23` |
 | 11 | Slash commands and skills | Works | Works | Passed: 13 of `agy`'s commands listed | `antigravity.ts:822-825,1072-1076` |
-| 12 | Compaction and its status | Works (`/compact`, status, boundaries) | Missing: Sotto's compaction is turned off for Antigravity, though `agy` lists its own `/compact` | `/compact` listed | `antigravity.ts:256-257,905` |
+| 12 | Compaction and its status | Works (`/compact`, status, boundaries) | Works since slice 2: `agy`'s own `/compact` as a quiet turn, its status, a boundary with the sizes before and after; held in memory | Probed on Gemini 3.8 Flash: no reply, the next turn's context smaller (14,623 to 9,816) | `antigravity.ts` `compact` |
 | 13 | Tool, command and file-edit rows | Works | Partial: tool and command rows work; an edit shows its before and after snippet without line numbers | Passed: command and file-change rows | `antigravityActivity.ts:39-72`; T3 places snippets against the file |
 | 14 | Rewind the conversation | Works (`claude.ts:971-1007`) | Can't | No ACP rewind | Fork from here is the way back |
 
@@ -76,7 +76,7 @@ Google's Antigravity terms let it suspend an account used through third-party so
 Missing and Partial rows only, grouped so each slice is one pull request. Can't and Neither rows are not slices.
 
 1. **Token count on the thread** (row 17). Fill the thread's token count from each prompt's `usage`, as Claude's is. No new UI. Done.
-2. **Compaction** (row 12). Turn Sotto's compaction on for Antigravity by sending `agy`'s own `/compact`, with its status. No new UI.
+2. **Compaction** (row 12). Turn Sotto's compaction on for Antigravity by sending `agy`'s own `/compact`, with its status. No new UI. Done.
 3. **The user's own MCP servers** (row 24b). Hand `agy` the MCP servers the user set up for it in `~/.gemini`, beside Sotto's. No new UI; reads one more file of the user's, which the ADR says. Look at it afresh against Google's Antigravity terms before it is built (ADR-0212's amendment): it hands `agy` more of the user's own setup from another app.
 4. **Question cards** (row 8). Find how `agy` raises its question tool over ACP, and make it a card; if `agy` only asks in text, say so here and close it as Can't.
 5. **Edits on their lines** (row 13). Place each edit's snippet against the file, as T3 does, so diffs show line numbers.
