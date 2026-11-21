@@ -136,6 +136,7 @@ describe('typed preload bridge', () => {
       [
         'addHistory',
         'agents',
+        'antigravity',
         'browser',
           'cancelTranscription',
         'cancelDictationKeyRecord',

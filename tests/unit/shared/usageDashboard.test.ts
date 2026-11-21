@@ -16,7 +16,7 @@ describe('usage dashboard boundaries', () => {
     const parsed = usageTokenObservationSchema.parse(observation)
     expect(parsed.tokens).toEqual({ input: 0, cached: 0 })
     // Muse and OpenCode are counted in Sotto threads (October 21, 2026); OpenCode reports no account limits.
-    expect(usageProviderIdSchema.options).toEqual(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
+    expect(usageProviderIdSchema.options).toEqual(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'antigravity'])
     expect(usageProviderIdSchema.options.every(id => providerIdSchema.options.includes(id))).toBe(true)
     for (const providerId of ['muse', 'opencode'] as const) {
       expect(usageTokenObservationSchema.safeParse({ ...observation, providerId }).success).toBe(true)
@@ -24,7 +24,7 @@ describe('usage dashboard boundaries', () => {
       expect(usagePromptSubmissionSchema.safeParse({ providerId, threadId: 'sotto-thread', messageId: 'message',
         modelId: `${providerId}-model`, at: '2026-10-12T12:00:00.000Z', kind: 'user', inputKind: 'send' }).success).toBe(true)
     }
-    expect(USAGE_LIMIT_PROVIDERS).toEqual(['codex', 'claude', 'grok', 'devin', 'muse'])
+    expect(USAGE_LIMIT_PROVIDERS).toEqual(['codex', 'claude', 'grok', 'devin', 'muse', 'antigravity'])
     expect(usageQuotaReadSchema.safeParse({ providerId: 'muse', status: 'unavailable', windows: [], refreshable: false, reason: 'not-reported' }).success).toBe(true)
     expect(usageQuotaReadSchema.safeParse({ providerId: 'opencode', status: 'unavailable', windows: [], refreshable: false, reason: 'unsupported' }).success).toBe(false)
   })
