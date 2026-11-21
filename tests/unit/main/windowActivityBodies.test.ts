@@ -38,6 +38,19 @@ describe("this computer's histories as the main window is sent them (#2737)", ()
     expect(short).toBeLessThan(2000 * (ACTIVITY_BODY_LIMIT + 512))
   })
 
+  it('reuses a record’s cut on a fresh read of the same history, with its other fields as they are now', () => {
+    const whole = record({ output: long(400), title: 'Ran npm test' })
+    const bodies = new WindowActivityBodies(() => null)
+    const first = bodies.detail(history([whole]))!.activities![0]!
+    // A read hands over copies; a title of the same length changes nothing the signature measures.
+    const again = bodies.detail(history([{ ...structuredClone(whole), title: 'Ran npm lint' }]))!.activities![0]!
+    expect(again.output).toBe(first.output)
+    expect(again.cut).toBe(first.cut)
+    expect(again.title).toBe('Ran npm lint')
+    const grown = bodies.detail(history([{ ...whole, output: `${whole.output}\nmore` }]))!.activities![0]!
+    expect(grown.output!.endsWith('\nmore')).toBe(true)
+  })
+
   it('sends a history with nothing to cut as it is', () => {
     const detail = history([record({ output: 'ok' })])
     expect(new WindowActivityBodies(() => null).detail(detail)).toBe(detail)
