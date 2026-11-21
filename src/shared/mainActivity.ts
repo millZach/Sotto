@@ -25,6 +25,7 @@ export const ACTIVITY_RECORDINGS_KEPT = 5
 
 const share = z.number().min(0).max(1)
 const milliseconds = z.number().nonnegative().max(Number.MAX_SAFE_INTEGER)
+const count = z.number().int().nonnegative().max(1_000_000)
 
 export const mainLoopReadingSchema = z.object({
   /** The share of the window main was blocked, from 0 to 1. */
@@ -107,8 +108,15 @@ export const threadSwitchTimingSchema = z.object({
   shareMs: milliseconds,
   newThreadRecords: z.number().int().nonnegative().max(100_000_000),
   newFields: z.array(z.string().regex(/^(?:host\.)?[A-Za-z]{1,64}$/u)).max(32),
+  /**
+   * The whole reads of the state the window decided it needed meanwhile, by why: a broadcast whose kept parts, threads or
+   * catalogs it could not put back, or a command's answer whose threads or catalogs it could not.
+   */
+  wholeReads: z.object({ broadcastParts: count, broadcastThreads: count, broadcastCatalog: count, answerThreads: count, answerCatalog: count }).strict(),
 }).strict()
 export type ThreadSwitchTiming = z.infer<typeof threadSwitchTimingSchema>
+/** Why the window read the whole state, as the thread switch timing names it. */
+export type WholeReadCause = keyof ThreadSwitchTiming['wholeReads']
 
 export interface MainActivityBridge {
   read(): Promise<MainActivityState>

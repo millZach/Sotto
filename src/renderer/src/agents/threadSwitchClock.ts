@@ -1,5 +1,5 @@
 import type { AgentState } from '../../../shared/agents'
-import type { ThreadSwitchTiming } from '../../../shared/mainActivity'
+import type { ThreadSwitchTiming, WholeReadCause } from '../../../shared/mainActivity'
 
 /** A switch that has not painted in this long is let go: the window was hidden, or something else went wrong. */
 export const THREAD_SWITCH_GIVE_UP_MS = 60_000
@@ -35,6 +35,7 @@ interface Switch {
   shareMs: number
   newThreadRecords: number
   readonly newFields: Set<string>
+  readonly wholeReads: Record<WholeReadCause, number>
 }
 
 /**
@@ -55,11 +56,15 @@ export class ThreadSwitchClock {
     const handledAt = this.options.now()
     const pressedAt = press !== undefined && PRESSES.has(press.type) && press.timeStamp > 0 && press.timeStamp <= handledAt ? press.timeStamp : handledAt
     this.current = { threadId, pressedAt, handledAt, held: facts.held, threads: facts.threads, ...(facts.held ? { historyAt: handledAt } : {}),
-      commits: 0, shareMs: 0, newThreadRecords: 0, newFields: new Set() }
+      commits: 0, shareMs: 0, newThreadRecords: 0, newFields: new Set(),
+      wholeReads: { broadcastParts: 0, broadcastThreads: 0, broadcastCatalog: 0, answerThreads: 0, answerCatalog: 0 } }
   }
 
   /** The person went back to the thread already shown: whatever switch was on its way is not one they waited for. */
   cancel(): void { this.current = null }
+
+  /** The page decided it needed a whole read of the state, for `cause`. */
+  wholeRead(cause: WholeReadCause): void { if (this.current) this.current.wholeReads[cause] += 1 }
 
   /** Whether a switch is being timed, so a commit measures its state sharing for it. */
   timing(): boolean { return this.current !== null }
@@ -116,7 +121,7 @@ export class ThreadSwitchClock {
         this.options.report({
           inputMs: since(current.handledAt), replyMs: since(current.replyAt), historyMs: since(current.historyAt), frameMs: since(frameAt), paintedMs: since(paintedAt),
           held: current.held, remote, messages, activities, threads: current.threads,
-          commits: current.commits, shareMs: Math.round(current.shareMs), newThreadRecords: current.newThreadRecords, newFields: [...current.newFields].sort(),
+          commits: current.commits, shareMs: Math.round(current.shareMs), newThreadRecords: current.newThreadRecords, newFields: [...current.newFields].sort(), wholeReads: { ...current.wholeReads },
         })
       })
     })
