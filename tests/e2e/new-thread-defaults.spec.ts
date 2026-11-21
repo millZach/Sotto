@@ -8,7 +8,7 @@ const evidence = evidenceDirectory('artifacts/new-thread-defaults')
 
 test('Settings effort stays a slider and new work uses the saved defaults', async () => {
   test.setTimeout(120_000)
-  const launched = await launchSotto()
+  const launched = await launchSotto('composer-speed')
   const { page } = launched
   try {
     await page.evaluate(async () => {
@@ -18,11 +18,26 @@ test('Settings effort stays a slider and new work uses the saved defaults', asyn
     await page.reload()
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
+    const model = page.getByRole('combobox', { name: 'Thread model', exact: true })
+    await model.click()
+    await page.getByRole('tab', { name: 'Codex', exact: true }).click()
+    await page.getByRole('option', { name: 'GPT-6.2-Astra', exact: true }).click()
+    const speed = page.getByRole('combobox', { name: 'Default speed for new threads' })
+    await expect(speed).toHaveText('Standard')
+    await speed.click()
+    await page.getByRole('option', { name: 'Ultra fast', exact: true }).click()
+    await expect(speed).toHaveText('Ultra fast')
+    await speed.press('Enter')
+    await page.getByRole('option', { name: 'Standard', exact: true }).press('Enter')
+    await expect(speed).toHaveText('Standard')
+    await speed.press('Enter')
+    await page.getByRole('option', { name: 'Ultra fast', exact: true }).press('Enter')
+    await expect(speed).toHaveText('Ultra fast')
+    await mkdir(evidence, { recursive: true })
     const chip = page.getByRole('combobox', { name: 'Thread reasoning', exact: true })
     await chip.click()
     const slider = page.getByRole('slider', { name: 'Thread reasoning effort' })
     await expect(slider).toBeVisible()
-    await mkdir(evidence, { recursive: true })
     await page.screenshot({ path: join(evidence, 'settings-current.png') })
     expect(await slider.evaluate(node => {
       const style = getComputedStyle(node)
@@ -60,12 +75,18 @@ test('Settings effort stays a slider and new work uses the saved defaults', asyn
     await page.screenshot({ path: join(evidence, 'settings-reduced-motion.png'), animations: 'disabled' })
     await slider.press('3')
     await expect(chip).toHaveText(/High/)
+    await slider.press('4')
+    await expect(chip).toHaveText(/XHigh/)
     await slider.press('Escape')
     await expect(chip).toBeFocused()
     await page.reload()
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
-    await expect(chip).toHaveText(/High/)
+    await expect(chip).toHaveText(/XHigh/)
+    await expect(speed).toHaveText('Ultra fast')
+    await resizeWindow(launched, 1280, 800)
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+    await page.locator('.account-row--chips').screenshot({ path: join(evidence, 'default-speed.png'), animations: 'disabled' })
     await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: 'New thread', exact: true }).click()
@@ -73,8 +94,9 @@ test('Settings effort stays a slider and new work uses the saved defaults', asyn
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
     await expect.poll(() => page.evaluate(async () => {
       const state = await window.sotto!.agents!.get()
-      return state.host.threads.find(thread => thread.id === state.activeThreadId)?.reasoningEffort
-    })).toBe('high')
+      const thread = state.host.threads.find(thread => thread.id === state.activeThreadId)
+      return [thread?.modelId, thread?.reasoningEffort, thread?.speed]
+    })).toEqual(['codex:astra', 'xhigh', 'ultrafast'])
   } finally { await closeSotto(launched) }
 })
 

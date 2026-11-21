@@ -42,9 +42,9 @@ afterEach(async () => {
   }
 })
 
-async function controlFixture() {
+async function controlFixture(scenario?: ConstructorParameters<typeof E2EAgentHost>[0]) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-new-thread-defaults-')); roots.push(root)
-  const host = new GrokLikeHost()
+  const host = new GrokLikeHost(scenario)
   const credentials = await testCredentials(root, { mode: 'unavailable' });
   const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner,
   })
@@ -69,6 +69,20 @@ describe('new-thread defaults applied on create-thread (issue #347)', () => {
     const created = await f.control.command({ type: 'create-thread', projectId: 'project', title: 'Defaulted', modelId: 'claude:test' })
     expect(created.error).toBeNull()
     expect(created.host.threads.find(t => t.id === created.activeThreadId)).toMatchObject({ reasoningEffort: 'high', runtimeMode: 'full-access' })
+  })
+
+  it('uses the host’s supported speed when creation omits it and honors an explicit Standard', async () => {
+    const { control } = await controlFixture('composer-speed')
+    await control.command({ type: 'configure', patch: { newThreadSpeed: 'ultrafast' } })
+    for (const [modelId, choice, expected] of [
+      ['codex:astra', {}, 'ultrafast'], ['codex:astra', { speed: null }, null],
+      ['codex:astra', { fastMode: true }, 'fast'], ['claude:test', {}, null],
+    ] as const) {
+      const created = await control.command({ type: 'create-thread', projectId: 'project', title: 'New thread', modelId, ...choice })
+      expect(created.error).toBeNull()
+      const thread = created.host.threads.find(item => item.id === created.activeThreadId)!
+      expect(thread.speed ?? null).toBe(expected)
+    }
   })
 
   it('puts the permission default back to the provider’s own on null, the spelling JSON carries to a host (ADR-0074)', async () => {

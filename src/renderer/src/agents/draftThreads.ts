@@ -31,6 +31,7 @@ export function draftThread(values: {
   readonly title: string
   readonly modelId: string
   readonly providerId?: AgentThread['providerId']
+  readonly speed?: AgentThread['speed']
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
   readonly providerMode?: string | undefined
@@ -47,6 +48,7 @@ export function draftThread(values: {
     ...(values.host?.hostLabel ? { hostLabel: values.host.hostLabel } : {}),
     ...(values.host?.remoteHost ? { remoteHost: true } : {}),
     ...(values.providerId ? { providerId: values.providerId } : {}),
+    ...(values.speed ? { speed: values.speed } : {}),
     ...(values.reasoningEffort ? { reasoningEffort: values.reasoningEffort } : {}),
     ...(values.runtimeMode ? { runtimeMode: values.runtimeMode } : {}),
     ...(values.providerMode ? { providerMode: values.providerMode } : {}),

@@ -364,12 +364,16 @@ export function verifyDevinSkillShow(stdout: string, skill: string): string {
  * and `permissions` approve tools while an inline skill runs, added to the session's own permissions, and `model`,
  * `agent` and `subagent` change what runs the skill. `skills show` prints only the first of those, so the file is read.
  */
-const SKILL_FIELDS = new Set(['name', 'description', 'argument-hint', 'triggers'])
+// `disable-model-invocation` only keeps Devin's model from running the skill by itself, so the user's slash is the one way
+// it runs (#2778).
+const SKILL_FIELDS = new Set(['name', 'description', 'argument-hint', 'triggers', 'disable-model-invocation'])
 const MAX_SKILL_BYTES = 256 * 1024
 /**
  * A skill file whose frontmatter, if it has one, sets only `SKILL_FIELDS`. A line at the top of the frontmatter that is
  * not one of those fields, written plainly, is refused, so a quoted, flowed or merged key is refused rather than read.
- * Lines indented under a field, list items and comments belong to it. The file is never kept or put in an error.
+ * Lines indented under a field, list items and comments belong to it. An indented line before the first field belongs to
+ * none: YAML reads a frontmatter indented as a whole as top-level keys, so it is refused rather than skipped (#2781). The
+ * file is never kept or put in an error.
  */
 export function verifyDevinSkillFile(text: string): void {
   const lines = text.replace(/^\uFEFF/u, '').split(/\r?\n/u)
@@ -377,8 +381,11 @@ export function verifyDevinSkillFile(text: string): void {
   if (start < 0 || lines[start]!.trimEnd() !== '---') return
   const end = lines.findIndex((line, index) => index > start && line.trimEnd() === '---')
   if (end < 0) throw new Error(PLUGIN_REFUSAL)
+  let underField = false
   for (const line of lines.slice(start + 1, end)) {
-    if (line.trim() === '' || /^\s/u.test(line) || /^#/u.test(line)) continue
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue
+    if (/^\s/u.test(line)) { if (!underField) throw new Error(PLUGIN_REFUSAL); continue }
+    underField = true
     const field = /^([A-Za-z][A-Za-z0-9_-]*):(?:\s|$)/u.exec(line)?.[1]
     if (!field || !SKILL_FIELDS.has(field)) throw new Error(PLUGIN_REFUSAL)
   }
@@ -452,6 +459,18 @@ export async function assertDevinSkillOnlyPlugins(executable: string, argsPrefix
     const base = verifyDevinSkillShow(await nativeList(executable, [...argsPrefix, 'skills', 'show', skill], environment, cwd), skill)
     verifyDevinSkillFile(await readSkillFile(base))
   })
+}
+
+const SKILL_REFUSAL = 'Sotto could not confirm that this Devin skill leaves every tool call asking, so nothing was sent. A skill Sotto runs sets only its name, description, argument hint, triggers and whether Devin’s model may run it. Remove the slash, or change the skill’s frontmatter.'
+/**
+ * A skill a prompt starts with is checked as a plugin's skills are, the moment it is asked for: its details and its own
+ * file, whose frontmatter must grant nothing (ADR-0017). argsPrefix must include --config and the owned profile.
+ */
+export async function assertDevinSkillGrantsNothing(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, skill: string, cwd?: string): Promise<void> {
+  try {
+    const base = verifyDevinSkillShow(await nativeList(executable, [...argsPrefix, 'skills', 'show', skill], environment, cwd), skill)
+    verifyDevinSkillFile(await readSkillFile(base))
+  } catch (error) { throw new Error(SKILL_REFUSAL, { cause: error }) }
 }
 
 /** Runs `read` over the items a few at a time and gives the results in order; the first refusal, in order, is thrown. */

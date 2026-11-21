@@ -30,6 +30,7 @@ import { DevinAcpHost } from './devin'
 import { AntigravityAcpHost } from './antigravity'
 import { describeAntigravityProgress, managedAntigravityExecutable, removeDownloadedAntigravity } from './antigravityInstall'
 import { withAntigravityBinaryPath } from './antigravityLookup'
+import { antigravityUserMcpConfig } from './antigravityUserServers'
 import type { AntigravitySignIn } from './antigravityRpc'
 import type { AntigravityLookup } from './antigravityLookup'
 import { MuseMspHost } from './muse'
@@ -394,6 +395,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
     // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
     antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia, usageEnabled: options.usageEnabled === true,
+      // The MCP servers the user set up for their own `agy` on this computer, handed to each thread beside Sotto's.
+      userMcpConfig: antigravityUserMcpConfig(),
       ...(options.antigravity?.program ? { executable: options.antigravity.program.executable, executableArgs: options.antigravity.program.args } : {}),
       // The sign-in Settings chose, with the key from the credential store only for the two methods that take one (ADR-0212).
       signIn: options.antigravity?.signIn ?? (async () => {

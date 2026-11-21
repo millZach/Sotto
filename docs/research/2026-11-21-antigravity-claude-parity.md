@@ -60,7 +60,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | 23 | Sotto's browser | Works | Works since the tools fix | Tool calls pass (row 24) | `antigravity.ts:430-433` |
 | 23b | Computer use (desktop control) | Neither: wired to Codex only | Neither | — | `codex.ts:360-378` |
 | 24 | Sotto's own MCP tools | Works | Works since the tools fix | Passed: listed `mcp_sotto_probe_ping` and called it | `antigravity.ts:546` |
-| 24b | The user's own MCP servers | Works: Claude Code reads the user's own setup | Missing: `agy` runs in Sotto's own folder, so the servers set up for `agy` in `~/.gemini` are not loaded | Not run | ADR-0212; `antigravityFolders.ts` |
+| 24b | The user's own MCP servers | Works: Claude Code reads the user's own setup | Works since slice 3: the servers in the user's own `~/.gemini/config/mcp_config.json`, handed to each provider session beside Sotto's; not to Watcher | Passed on 1.5.14: a local server from the user's file listed and called | `antigravityUserServers.ts` |
 | 24c | Plugins (`sotto_plugins`) | Works | Works since the tools fix | Tool calls pass | Same servers as row 24 |
 | 25 | The Council | Works | Works since the tools fix | Tool calls pass | `createDesktopEngine.ts:856-882` |
 | 26 | The merge train: `ready_to_merge`, `tell_watcher` | Works | Works since the tools fix | Tool calls pass | `tellWatcherTools.ts:66` |
@@ -77,7 +77,7 @@ Missing and Partial rows only, grouped so each slice is one pull request. Can't 
 
 1. **Token count on the thread** (row 17). Fill the thread's token count from each prompt's `usage`, as Claude's is. No new UI. Done.
 2. **Compaction** (row 12). Turn Sotto's compaction on for Antigravity by sending `agy`'s own `/compact`, with its status. No new UI. Done.
-3. **The user's own MCP servers** (row 24b). Hand `agy` the MCP servers the user set up for it in `~/.gemini`, beside Sotto's. No new UI; reads one more file of the user's, which the ADR says. Look at it afresh against Google's Antigravity terms before it is built (ADR-0212's amendment): it hands `agy` more of the user's own setup from another app.
+3. **The user's own MCP servers** (row 24b). Hand `agy` the MCP servers the user set up for it in `~/.gemini`, beside Sotto's. No new UI; reads one more file of the user's, which the ADR says. Look at it afresh against Google's Antigravity terms before it is built (ADR-0212's amendment): it hands `agy` more of the user's own setup from another app. Done: the terms name no MCP servers, and this reads no sign-in and calls no Google server (ADR-0212's amendment).
 4. **Question cards** (row 8). Find how `agy` raises its question tool over ACP, and make it a card; if `agy` only asks in text, say so here and close it as Can't.
 5. **Edits on their lines** (row 13). Place each edit's snippet against the file, as T3 does, so diffs show line numbers.
 6. **PDFs in** (row 10b). Send a PDF as embedded context.

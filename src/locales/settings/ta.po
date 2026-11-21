@@ -2671,6 +2671,10 @@ msgstr ""
 msgid "Default projects directory"
 msgstr ""
 
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Default speed for new threads"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key, speech model and history are preserved."
 msgstr ""
@@ -4188,6 +4192,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Model, reasoning effort and permissions."
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Model, reasoning effort, speed and permissions."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx

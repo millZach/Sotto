@@ -152,8 +152,10 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
 /** Interactive rows inside the picker's list (models, Legacy row, and OpenCode/Cursor source rows), skipping controls inside an expanded inline model card. */
 const LISTBOX_OPTIONS = '[role="option"]:not(:disabled), .model-picker__legacy, :scope > button:not(:disabled)'
 
-export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card, effort, open: controlledOpen, onOpenChange, initialFocus = 'search', returnFocusTo, dialogId: givenDialogId }: {
+export function ModelPicker({ foot, suffix, shownName, models, modelId, current = resolveModel(models, modelId), disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card, effort, open: controlledOpen, onOpenChange, initialFocus = 'search', returnFocusTo, dialogId: givenDialogId }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
+  /** The model on the chip when a saved choice can be absent from the menu. */
+  readonly current?: AgentModel | undefined
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
   readonly note?: string | undefined
@@ -196,8 +198,6 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
 }): ReactNode {
   const { t } = useLingui()
   const combined = effort !== undefined
-  // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
-  const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
   const [localOpen, setLocalOpen] = useState(openOnMount && !disabled)
   const requestedOpen = controlledOpen !== undefined ? controlledOpen : localOpen

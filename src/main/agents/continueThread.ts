@@ -196,7 +196,7 @@ export class ContinueService {
       if (prefix.length + request.text.length > AGENT_TEXT_MAX) refuse('Your message and the handover together are too long to send. Shorten your message, then continue. Nothing was sent.')
       if (!existing) {
         const created = await this.options.control.commandShell({ type: 'create-thread', projectId: source.projectId, title: source.title, modelId: model.id,
-          threadId: request.newThreadId, ...(source.titleSource === 'user' ? { titleSource: 'user' as const } : {}),
+          threadId: request.newThreadId, speed: null, ...(source.titleSource === 'user' ? { titleSource: 'user' as const } : {}),
           ...copy,
           ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
           ...(runtimeMode ? { runtimeMode } : {}),

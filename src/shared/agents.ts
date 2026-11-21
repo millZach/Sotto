@@ -1152,6 +1152,8 @@ export const agentConfigurationSchema = z.object({
    */
   newThreadModelId: z.string().max(6_144),
   newThreadReasoningEffort: z.string().max(64).default(''),
+  /** The speed a person’s New thread opens at where its model offers it. Standard is null or absent. */
+  newThreadSpeed: agentSpeedSchema.nullable().optional(),
   newThreadRuntimeMode: agentRuntimeModeSchema.optional(),
 }).strict()
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>

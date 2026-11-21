@@ -1,0 +1,22 @@
+[
+  {
+    "key": "rail:host:7547a8a8-c233-4f30-a109-e2c8d6f7daa8:visual-gate",
+    "title": "Visual gate flake · workshop · Needs your approval"
+  },
+  {
+    "key": "rail:host:7547a8a8-c233-4f30-a109-e2c8d6f7daa8:footer-links",
+    "title": "Footer links · sotto-site · Working"
+  },
+  {
+    "key": "rail:host:7547a8a8-c233-4f30-a109-e2c8d6f7daa8:weekly-note",
+    "title": "Weekly note · notes · Working"
+  },
+  {
+    "key": "rail:host:7547a8a8-c233-4f30-a109-e2c8d6f7daa8:grok-previews",
+    "title": "Grok voice previews · workshop · Done"
+  },
+  {
+    "key": "rail:host:7547a8a8-c233-4f30-a109-e2c8d6f7daa8:wav-stall",
+    "title": "Streaming WAV stall · workshop · Done"
+  }
+]

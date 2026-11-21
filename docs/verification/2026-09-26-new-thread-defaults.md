@@ -27,3 +27,11 @@ Checked on September 26, 2026, on Windows, in the built app (`npm run build`, th
 
 - macOS.
 - Paired remote clients cannot change the new-thread defaults; they stay a desktop setting.
+
+## Default speed on November 21, 2026
+
+On Apple silicon macOS, the built app opened Settings → Threads with a fixture Codex catalog offering Fast and Ultra fast for GPT-6.2-Astra. Choosing Ultra fast, returning to Standard with the keyboard, and choosing Ultra fast again saved each choice. After a reload, the row showed GPT-6.2-Astra, XHigh and Ultra fast. Opening a new project thread gave it all three settings before its first message.
+
+![New thread defaults on GPT-6.2-Astra, XHigh and Ultra fast](../../artifacts/new-thread-defaults/default-speed.png)
+
+The same Electron journey checked the row at 1600×1000, 1280×800 and 820×560 in dark and light appearances, and checked reduced motion. The Codex adapter integration fixture confirmed that a thread created at Ultra fast sends `serviceTier: "ultrafast"` on start and resume.

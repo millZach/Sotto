@@ -136,7 +136,7 @@ export function remoteHostUpdateRefusal(client: { readonly desktop: boolean; rea
  * Settings' to do, whatever the client's answer policy (ADR-0079, `remoteCommandRefusal`).
  */
 export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] = ['provider', 'enabledProviders', 'enabled', 'defaultModelId',
-  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode', 'museDisableSandbox']
+  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadSpeed', 'newThreadRuntimeMode', 'museDisableSandbox']
 
 /**
  * Whether a remote command changes what a thread may do without asking, or discards work the user has

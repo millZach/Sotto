@@ -79,7 +79,7 @@ describe('remote command allow-list', () => {
   })
   it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
     expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'museDisableSandbox', 'newThreadModelId', 'newThreadReasoningEffort',
-      'newThreadRuntimeMode', 'projectsDirectory', 'provider', 'reasoning', 'reasoningEffort', 'reasoningModel'])
+      'newThreadRuntimeMode', 'newThreadSpeed', 'projectsDirectory', 'provider', 'reasoning', 'reasoningEffort', 'reasoningModel'])
     for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch })), Object.keys(patch)[0]).toThrow()
     for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }])
       expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
@@ -88,7 +88,7 @@ describe('remote command allow-list', () => {
   })
   it('takes a host’s projects directory and new-thread defaults, and a permission default only with the answer policy (ADR-0074)', () => {
     for (const patch of [{ projectsDirectory: '/home/zach/projects' }, { newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' },
-      { newThreadRuntimeMode: 'approval-required' }, { newThreadRuntimeMode: null }] as const)
+      { newThreadSpeed: 'ultrafast' }, { newThreadSpeed: null }, { newThreadRuntimeMode: 'approval-required' }, { newThreadRuntimeMode: null }] as const)
       expect(refuse({ type: 'configure', patch } as AgentCommand), Object.keys(patch)[0]).toBeNull()
     for (const mode of ['auto-accept-edits', 'auto', 'full-access'] as const) {
       expect(refuse({ type: 'configure', patch: { newThreadRuntimeMode: mode } }), mode).toBe('forbidden')

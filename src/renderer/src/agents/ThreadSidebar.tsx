@@ -37,7 +37,7 @@ import { RowMenu, rowMenuPlace, rowMenuPressed, type RowMenuPlace } from './RowM
 import { menuKeys, threadKeyDown, threadOffers, useThreadMenu } from './threadMenu'
 import { useRailFocusName } from './RailFocusName'
 import { RailTile } from './RailTile'
-import { ROVING_GROUP, ROVING_KEY, ROVING_TOGGLE, ROW_ACTIONS, useRovingList } from './rovingList'
+import { listControls, ROVING_GROUP, ROVING_KEY, ROVING_TOGGLE, ROW_ACTIONS, useRovingList } from './rovingList'
 import { useSettleGaps, type HeldGap } from './settleGap'
 import { SettleToast } from './SettleToast'
 import { useWordCut } from './wordCut'
@@ -930,13 +930,21 @@ export function ThreadSidebar({ state, command, organization, query, threadWords
       }
       const step = press(nextChord) ? 1 : press(previousChord) ? -1 : 0
       if (step !== 0) {
-        if (openRows.length === 0) return
-        const at = openRows.findIndex(item => item.thread.id === currentThreadId)
-        const target = openRows[(at === -1 ? (step === 1 ? -1 : 0) : at) + step]
-          ?? (step === 1 ? openRows[0] : openRows.at(-1))
-        if (!target || target.thread.id === currentThreadId) return
+        // The rail groups its tiles independently of the expanded list (ADR-0146). Read the controls it actually
+        // draws, including settled waiting/watched tiles, just as its plain arrows do; menus and cards are excluded.
+        const order = collapsed && railNav.current
+          ? listControls(railNav.current).flatMap(tile => {
+            const key = tile.getAttribute(ROVING_KEY)
+            return key?.startsWith('rail:') ? [key.slice('rail:'.length)] : []
+          })
+          : openRows.map(row => row.thread.id)
+        if (order.length === 0) return
+        const at = order.indexOf(currentThreadId ?? '')
+        const target = order[(at === -1 ? (step === 1 ? -1 : 0) : at) + step]
+          ?? (step === 1 ? order[0] : order.at(-1))
+        if (!target || target === currentThreadId) return
         event.preventDefault()
-        onOpen(target.thread.id)
+        onOpen(target)
         return
       }
       if (press(waitingChord)) {
