@@ -1077,7 +1077,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     },
     installProgress: (): string | undefined => antigravityProgress,
     cancelInstall: (): boolean => agentControl.antigravityRuntime()?.cancel() ?? false,
-    removeDownloaded: async (): Promise<string> => { const runtime = agentControl.antigravityRuntime(); return runtime ? describeAntigravityRemoval(await runtime.remove()) : 'There is no downloaded Antigravity to remove.' },
+    removeDownloaded: async (): Promise<string> => {
+      const runtime = agentControl.antigravityRuntime()
+      if (!runtime) return 'There is no downloaded Antigravity to remove.'
+      const removed = describeAntigravityRemoval(await runtime.remove())
+      // Threads move off the removed copy as they would after an update: each new process finds agy again.
+      await antigravityHost.clientUpdated().catch(() => undefined)
+      return removed
+    },
   } : undefined
   idleCompaction.start()
   return { antigravityAccount, piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }

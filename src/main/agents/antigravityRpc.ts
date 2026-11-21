@@ -14,8 +14,6 @@ export const ANTIGRAVITY_ACP_VERSION = 1
 
 /** The client did not answer, or answered in a way that leaves the outcome unknown. */
 export class AntigravityUncertain extends Error {}
-/** A check of Antigravity's own answer refused it: a verdict whose sentence the user reads. */
-export class AntigravityRefusal extends Error {}
 /** Antigravity answered a request with a JSON-RPC error. Only the numeric code is kept; its own words are never published. */
 export class AntigravityRejected extends Error {
   readonly code: number | undefined
@@ -162,7 +160,7 @@ export class AntigravityRpc {
               if (frame.error) waiter.reject(new AntigravityRejected(frame.error.code, frame.error.message))
               else {
                 try { await waiter.apply(frame.result); waiter.resolve() }
-                catch (error) { waiter.reject(error instanceof AntigravityRefusal ? error : new AntigravityUncertain('Antigravity sent an answer Sotto could not read.')) }
+                catch { waiter.reject(new AntigravityUncertain('Antigravity sent an answer Sotto could not read.')) }
               }
             } else await this.receive(frame)
           } finally { queued -= size }

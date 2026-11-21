@@ -357,7 +357,7 @@ export class AntigravityRuntime {
           written += chunk.byteLength
           if (written > MAX_EXECUTABLE_BYTES) { child.kill(); return }
           child.stdout.pause()
-          writing = writing.then(() => file.write(chunk)).then(() => { child.stdout.resume() })
+          writing = writing.then(() => file.write(chunk)).then(() => { child.stdout.resume() }, (error: unknown) => { child.kill(); throw error })
         })
         child.on('error', fail)
         child.on('close', code => { void writing.then(() => code === 0 && written > 0 && written <= MAX_EXECUTABLE_BYTES ? done() : fail(new InstallError('installer', refused)), fail) })

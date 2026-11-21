@@ -459,8 +459,7 @@ export class AntigravityAcpHost implements ProviderHost {
    */
   private async handshake(rpc: AntigravityRpc, signIn: AntigravitySignIn): Promise<AntigravityClient> {
     let client: AntigravityClient | undefined
-    await rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }, value => { client = initializeSchema.parse(value) }, false, this.options.startTimeoutMs ?? 90_000)
+    await this.sendInitialize(rpc, value => { client = initializeSchema.parse(value) })
     if (client!.protocolVersion !== ANTIGRAVITY_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${ANTIGRAVITY_ACP_VERSION}, and this Antigravity client answered ACP ${client!.protocolVersion}.`)
     const version = client!.agentInfo?.version
     if (!version || !meetsAntigravityFloor(version)) {
@@ -579,6 +578,11 @@ export class AntigravityAcpHost implements ProviderHost {
         ...['', '-wal', '-shm', '-journal'].map(suffix => rm(join(this.folders.appData, 'conversations', `${safe}.db${suffix}`), { force: true }))] : []),
     ].map(work => work.catch(() => undefined)))
   }
+  /** ACP `initialize`: no file or terminal capability, Sotto's name, and the start's own deadline, since `agy` unpacks itself first. */
+  private sendInitialize(rpc: AntigravityRpc, read: (value: unknown) => void): Promise<void> {
+    return rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }, read, false, this.options.startTimeoutMs ?? 90_000)
+  }
   /** One `agy acp` of its own, for a sign-in or a sign-out, in a scratch folder: initialized, then handed to `work`, then closed. */
   private async accountProcess<T>(work: (rpc: AntigravityRpc, signIn: AntigravitySignIn) => Promise<T>): Promise<T> {
     const executable = this.options.executable ?? await findAntigravityExecutable(this.options.environment, await this.options.lookup?.())
@@ -591,8 +595,7 @@ export class AntigravityAcpHost implements ProviderHost {
       if (frame.method && frame.id !== undefined) void process.reply(frame.id, antigravityDecline()).catch(() => undefined)
     }, () => undefined)
     try {
-      await rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-        clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }, () => undefined, false, this.options.startTimeoutMs ?? 90_000)
+      await this.sendInitialize(rpc, () => undefined)
       return await work(rpc, signIn)
     } finally { rpc.close(); await rpc.closed; await this.removeScratchSession(scratch, undefined) }
   }

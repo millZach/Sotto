@@ -232,6 +232,8 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
   const installing = pending === 'install'
   const cloudReady = project.trim() !== '' && location.trim() !== ''
   const locked = signing || installing || busy || saving
+  // A field, and the action after it, stay usable while a save runs, so Tab moves on in order; each action saves first.
+  const typing = signing || installing || busy
 
   const focus = (target: string): void => { requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(`[data-antigravity="${target}"]:not(:disabled)`)?.focus()) }
   const ran = async (work: () => Promise<LaterWords | null>): Promise<boolean> => {
@@ -276,10 +278,10 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
   const step = (n: number, body: ReactNode): ReactNode => <li><span className="antigravity-steps__n" aria-hidden="true">{n}</span><div>{body}</div></li>
   const cloudFields = (): ReactNode => <div className="antigravity-fields">
     <label className="antigravity-field"><span>{t`Google Cloud project`}</span>
-      <input className="tt-input" data-antigravity="project" value={project} placeholder="my-project-id" autoComplete="off" spellCheck={false} disabled={locked}
+      <input className="tt-input" data-antigravity="project" value={project} placeholder="my-project-id" autoComplete="off" spellCheck={false} disabled={typing}
         onChange={event => setProject(event.target.value)} onBlur={() => void saveCloud()} /></label>
     <label className="antigravity-field"><span>{t`Location`}</span>
-      <input className="tt-input" data-antigravity="location" value={location} placeholder="us-central1" autoComplete="off" spellCheck={false} disabled={locked}
+      <input className="tt-input" data-antigravity="location" value={location} placeholder="us-central1" autoComplete="off" spellCheck={false} disabled={typing}
         onChange={event => setLocation(event.target.value)} onBlur={() => void saveCloud()} /></label>
   </div>
   const keyField = (): ReactNode => {
@@ -295,7 +297,7 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
       <label htmlFor={`${ids}-key`}>{keyName}</label>
       <div className="antigravity-field__row">
         <input id={`${ids}-key`} className="tt-input" type="password" data-antigravity="key" value={key} placeholder={replacing ? t`Paste the new key` : t`Paste the key`}
-          autoComplete="off" spellCheck={false} disabled={locked} aria-describedby={`${ids}-key-hint`}
+          autoComplete="off" spellCheck={false} disabled={typing} aria-describedby={`${ids}-key-hint`}
           onChange={event => setKey(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void connectWithKey() } }} />
         <Button variant="primary" disabled={locked || !key.trim()} aria-label={t({ message: `Save this ${keyName} and connect Antigravity`, comment: '{keyName} is the kind of key, such as Gemini API key.' })} onClick={() => void connectWithKey()}>{t`Connect`}</Button>
         {replacing ? <Button variant="ghost" disabled={locked} onClick={() => { setReplacing(false); setKey(''); focus('replace') }}>{t`Keep the saved key`}</Button> : null}
@@ -342,7 +344,7 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
       return <ol className="antigravity-steps">
         {step(1, <><p className="tt-paragraph">{t`Enter your organisation’s Google Cloud project and location.`}</p>{cloudFields()}</>)}
         {connected ? null : step(2, <><p className="tt-paragraph">{t`Sign in with Google in your browser. Google tells agy when you are done; there is no code to paste.`}</p>
-          <Button variant="primary" data-antigravity="sign-in" disabled={locked || !cloudReady} aria-label={t`Sign in to Gemini Enterprise with Google in your browser`} onClick={() => void startEnterprise()}>{t({ message: 'Sign in', comment: 'A button that signs in to a provider.' })}</Button></>)}
+          <Button variant="primary" data-antigravity="sign-in" disabled={typing || !cloudReady} aria-label={t`Sign in to Gemini Enterprise with Google in your browser`} onClick={() => void startEnterprise()}>{t({ message: 'Sign in', comment: 'A button that signs in to a provider.' })}</Button></>)}
       </ol>
     }
     if (method === 'gemini-api-key') return <ol className="antigravity-steps">
@@ -356,7 +358,7 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
       {step(2, platformWay === 'key' ? keyField() : <>
         {cloudFields()}
         <p className="antigravity-hint tt-paragraph">{keySaved ? t`Sotto uses the saved key while one is saved. Remove it under API key to use this project instead.` : t`agy uses this computer’s Google Cloud application default credentials for that project.`}</p>
-        {connected ? null : <div className="provider-client__actions"><Button variant="primary" disabled={locked || !cloudReady} aria-label={t`Connect Antigravity to Agent Platform with this project and location`} onClick={() => void connectProject()}>{t`Connect`}</Button></div>}
+        {connected ? null : <div className="provider-client__actions"><Button variant="primary" disabled={typing || !cloudReady} aria-label={t`Connect Antigravity to Agent Platform with this project and location`} onClick={() => void connectProject()}>{t`Connect`}</Button></div>}
       </>)}
     </ol>
   }
@@ -403,7 +405,7 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
         <summary>{t`Binary path`}</summary>
         <div className="antigravity-field">
           <label htmlFor={`${ids}-binary`}>{t`agy to use instead of Sotto’s download`}</label>
-          <input id={`${ids}-binary`} className="tt-input" value={binaryPath} placeholder={t`Empty: Sotto’s download, or agy on your PATH`} autoComplete="off" spellCheck={false} disabled={locked}
+          <input id={`${ids}-binary`} className="tt-input" value={binaryPath} placeholder={t`Empty: Sotto’s download, or agy on your PATH`} autoComplete="off" spellCheck={false} disabled={typing}
             onChange={event => setBinaryPath(event.target.value)} onBlur={() => { if (binaryPath.trim() !== settings.antigravityBinaryPath) void ran(() => configure({ antigravityBinaryPath: binaryPath.trim() })) }} />
         </div>
         <div className="provider-client__actions">

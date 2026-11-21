@@ -100,7 +100,11 @@ describe('Antigravity’s provider row (variant B)', () => {
     expect(signIn).toBeDisabled()
     fireEvent.change(within(details).getByLabelText('Google Cloud project'), { target: { value: 'acme-agents' } })
     expect(signIn).toBeDisabled()
+    // Leaving the project field saves it, and the next field and Sign in stay usable meanwhile, so Tab moves on in order.
+    fireEvent.blur(within(details).getByLabelText('Google Cloud project'))
+    expect(within(details).getByLabelText('Location')).toBeEnabled()
     fireEvent.change(within(details).getByLabelText('Location'), { target: { value: 'us-central1' } })
+    fireEvent.blur(within(details).getByLabelText('Location'))
     expect(signIn).toBeEnabled()
     fireEvent.click(signIn)
     await waitFor(() => expect(account.enterpriseSignIn).toHaveBeenCalledTimes(1))
