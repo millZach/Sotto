@@ -515,7 +515,7 @@ msgstr "An agent is installing {provider} on {host} now. Stop it first. Nothing 
 msgid "An agent is installing {provider} on {host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started."
 msgstr "An agent is installing {provider} on {host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started."
 
-#: src/main/index.ts
+#: src/main/engine/createDesktopEngine.ts
 msgid "An agent is setting up {host} now. Stop that setup first. Nothing was started."
 msgstr "An agent is setting up {host} now. Stop that setup first. Nothing was started."
 
@@ -596,7 +596,7 @@ msgstr "Bcc: {bcc}"
 msgid "Branches are unavailable on this host."
 msgstr "Branches are unavailable on this host."
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 msgid "Branches are unavailable."
 msgstr "Branches are unavailable."
 
@@ -624,7 +624,7 @@ msgstr "Cc: {cc}"
 msgid "Changed files are unavailable on this host."
 msgstr "Changed files are unavailable on this host."
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 msgid "Changed files are unavailable."
 msgstr "Changed files are unavailable."
 
@@ -854,7 +854,7 @@ msgstr "Continue a thread from the main Sotto window."
 msgid "Continue with a new message on the desktop that owns this thread. Nothing was changed."
 msgstr "Continue with a new message on the desktop that owns this thread. Nothing was changed."
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 msgid "Continuing an agent as a thread is unavailable in this window."
 msgstr "Continuing an agent as a thread is unavailable in this window."
 
@@ -934,7 +934,7 @@ msgstr "Enter one SSH answer without a line break."
 msgid "File checkpoint capture was unavailable."
 msgstr "File checkpoint capture was unavailable."
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 msgid "Files cannot be attached in this window. Nothing was attached."
 msgstr "Files cannot be attached in this window. Nothing was attached."
 
@@ -1485,7 +1485,7 @@ msgstr "Promote to production"
 msgid "Pull requests are unavailable on this host."
 msgstr "Pull requests are unavailable on this host."
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 msgid "Pull requests are unavailable."
 msgstr "Pull requests are unavailable."
 
@@ -1582,7 +1582,7 @@ msgstr "Saved thread ownership could not be read. Your saved answers have not ch
 msgid "Screenshot to message isn't available for a page on the host machine yet. Nothing was captured."
 msgstr "Screenshot to message isn't available for a page on the host machine yet. Nothing was captured."
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 msgid "Screenshots cannot be attached in this window. Nothing was attached."
 msgstr "Screenshots cannot be attached in this window. Nothing was attached."
 
@@ -2014,7 +2014,7 @@ msgstr "SSH waited too long for your answer, so Sotto stopped connecting. Connec
 msgid "SSH waited too long for your answer, so Sotto stopped connecting. Nothing was saved. Add the host again when you are ready to answer."
 msgstr "SSH waited too long for your answer, so Sotto stopped connecting. Nothing was saved. Add the host again when you are ready to answer."
 
-#: src/main/index.ts
+#: src/main/engine/createDesktopEngine.ts
 msgid "Standalone chats are no longer available."
 msgstr "Standalone chats are no longer available."
 
@@ -3285,7 +3285,7 @@ msgstr "This host already runs Sotto {version}, which this computer installs whe
 msgid "This host already runs Sotto {version}, which this computer installs when Sotto restarts. Nothing was saved. Nothing on the host was lost. Restart Sotto to finish its update, then try again."
 msgstr "This host already runs Sotto {version}, which this computer installs when Sotto restarts. Nothing was saved. Nothing on the host was lost. Restart Sotto to finish its update, then try again."
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This host cannot list its folders yet. Update Sotto on it, then try again."
 msgstr "This host cannot list its folders yet. Update Sotto on it, then try again."
@@ -3873,7 +3873,7 @@ msgstr "What it reads goes to Watcher’s provider, as everything Watcher reads 
 msgid "Window"
 msgstr "Window"
 
-#: src/main/agents/ipc.ts
+#: src/main/agents/ipcCore.ts
 msgid "Working-copy choices are unavailable. Reopen the project and try again."
 msgstr "Working-copy choices are unavailable. Reopen the project and try again."
 

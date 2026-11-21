@@ -1,5 +1,5 @@
 /**
- * Owlets (ADR-0210) through the built app, on the Owl track, with the real Claude Code and Codex adapters over their fake
+ * Owlets (ADR-0211) through the built app, on the Owl track, with the real Claude Code and Codex adapters over their fake
  * CLIs: the room switch opens the Owlets page, New owlet makes one on this computer, its row shows its name, role and home
  * computer, its thread opens beside the sidebar, Edit owlet renames it, and the Threads page lists none of it.
  *

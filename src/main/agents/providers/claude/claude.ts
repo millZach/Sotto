@@ -163,7 +163,7 @@ const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
  * fast, and bill it so, while its bolt shows off, and would carry over when a live model change moves the thread onto a
  * model with it; an `ultracode` saved in the user's Claude Code settings would run every thread as a workflow (ADR-0148).
  *
- * In an owlet's folder the same layer turns auto memory off (ADR-0210), so nothing an owlet reads is kept in Claude Code's
+ * In an owlet's folder the same layer turns auto memory off (ADR-0211), so nothing an owlet reads is kept in Claude Code's
  * memory for that folder; the environment says it too, for a Claude Code that reads only that.
  */
 export const flagSettingsArguments = (fastMode: boolean, ultracode: boolean, memoryOff = false): readonly string[] =>
@@ -1717,7 +1717,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     const roles = profile || overseer || alias.councilJudge ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const memoryOff = inOwletFolder(this.options.userDataPath, alias.cwd)
-    // An owlet's name and role go first in its system prompt (ADR-0210).
+    // An owlet's name and role go first in its system prompt (ADR-0211).
     const owlet = profile || alias.councilJudge ? undefined : this.owletInstructions?.(id)
     const asks = profile ? undefined : CLAUDE_QUESTIONS
     const questions = [asks, ...this.options.markdownLinks === true ? [MARKDOWN_LINK_INSTRUCTIONS] : []].filter(Boolean).join('\n\n')

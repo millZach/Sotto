@@ -73,6 +73,7 @@ const recoveryMessages = {
   HISTORY_RECOVERED: msg`Sotto started with an empty history after its local history file could not be read. The original file was preserved.`,
   ACCESSIBILITY_PERMISSION_REQUIRED: msg`Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.`,
   AUTOMATION_PERMISSION_REQUIRED: msg`Sotto copied the transcript instead of pasting it. Paste it with ⌘V. Automatic paste needs Sotto allowed to control System Events in System Settings > Privacy & Security > Automation.`,
+  ENGINE_EXITED: msg`Sotto's background engine stopped unexpectedly. Your saved threads and settings are still on disk. Restart Sotto to reconnect.`,
 } as const satisfies Record<Exclude<RecoveryNotice['code'], 'OPENROUTER_KEY_UNREADABLE'>, MessageDescriptor>
 
 // The macOS pane that holds the permission a notice is about.

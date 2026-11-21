@@ -120,7 +120,7 @@ export function thisComputerId(state: AgentState | null): string | undefined {
 const machineOf = (thread: AgentThread, here: string | undefined): string | undefined => thread.remoteHost === true ? thread.hostId : here
 /**
  * The open threads Move threads offers for a machine (#1178 part 3, Zach's pick A): every connected machine's but that
- * one's, Watcher's own, owlets (ADR-0210) and what is settled or archived left out, up to the hundred a preview takes.
+ * one's, Watcher's own, owlets (ADR-0211) and what is settled or archived left out, up to the hundred a preview takes.
  */
 export function movableThreadIds(state: AgentState, target: string | undefined): readonly string[] {
   const here = thisComputerId(state), projects = projectsById(state.host.projects)

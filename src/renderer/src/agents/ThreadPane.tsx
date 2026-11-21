@@ -417,10 +417,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   }, [worktreeReady, thread.id, command])
   const { settle: settleThread, dialog: settleDialog } = useSettleThread(command)
   /* Renaming is Sotto's own record of the thread: it neither waits for a running turn nor tells the provider. */
-  // An owlet's folder is named as Sotto made it (ADR-0210); any other thread's crumb is its project, or its provider.
+  // An owlet's folder is named as Sotto made it (ADR-0211); any other thread's crumb is its project, or its provider.
   const crumb = thread.owlet !== undefined ? owletFolderLabel(row.project?.title ?? thread.owlet.name) : row.project?.title ?? row.provider
   const naming: PaneMenuItem[] = [
-    // An owlet's name is its owlet's, changed with Edit owlet (ADR-0210).
+    // An owlet's name is its owlet's, changed with Edit owlet (ADR-0211).
     ...(!isThreadArchived(thread) && !renaming && thread.owlet === undefined ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, run: () => { renameReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setRenaming(true) } }] : []),
   ]
   // Open beside leads the layout rows; the pane area's rows follow it.

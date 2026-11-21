@@ -35,7 +35,7 @@ const KINDS = ['data:image/png;base64,', 'data:image/jpeg;base64,'] as const
  */
 export class PictureMaker {
   private worker: ChildProcess | undefined
-  private readonly waiting = new Map<number, (copy: string | null) => void>()
+  private readonly waiting = new Map<number, (answer: { readonly copy: string | null; readonly kind?: 'image/jpeg' | 'image/png' }) => void>()
   private next = 1
   private timer: NodeJS.Timeout | undefined
   /** Whether the timer running is the deadline for an answer, not the idle wait. */
@@ -59,12 +59,35 @@ export class PictureMaker {
   reduce(dataUrl: string, edge: number): Promise<string | null> {
     if (this.closed || this.failedStarts >= FAILED_STARTS_MAX || this.waiting.size >= PICTURES_WAITING_MAX
       || !KINDS.some(kind => dataUrl.startsWith(kind)) || carriesCameraDetails(dataUrl)) return Promise.resolve(null)
+    return this.ask(id => ({ id, dataUrl, edge })).then(answer => answer.copy)
+  }
+
+  /** A JPEG tile thumbnail of `dataUrl` fitted inside `width` by `height`, or null when it cannot be scaled (never returns an unscaled original on failure). */
+  thumbnail(dataUrl: string, width: number, height: number): Promise<string | null> {
+    if (this.closed || this.failedStarts >= FAILED_STARTS_MAX || this.waiting.size >= PICTURES_WAITING_MAX
+      || !KINDS.some(kind => dataUrl.startsWith(kind))) return Promise.resolve(null)
+    return this.ask(id => ({ id, op: 'thumbnail', dataUrl, width, height })).then(answer => answer.copy)
+  }
+
+  /** Redraws a PNG or JPEG from its pixels alone so no metadata survives (ADR-0141, ADR-0210). */
+  async redraw(bytes: Buffer, kind: 'image/jpeg' | 'image/png'): Promise<{ readonly bytes: Buffer; readonly kind: 'image/jpeg' | 'image/png' } | null> {
+    if (this.closed || this.failedStarts >= FAILED_STARTS_MAX || this.waiting.size >= PICTURES_WAITING_MAX) return null
+    const dataUrl = `data:${kind};base64,${bytes.toString('base64')}`
+    const answer = await this.ask(id => ({ id, op: 'redraw', dataUrl, kind }))
+    if (!answer.copy) return null
+    const outKind = answer.kind ?? (answer.copy.startsWith('data:image/png;base64,') ? 'image/png' : 'image/jpeg')
+    const prefix = `data:${outKind};base64,`
+    if (!answer.copy.startsWith(prefix)) return null
+    return { bytes: Buffer.from(answer.copy.slice(prefix.length), 'base64'), kind: outKind }
+  }
+
+  private ask(build: (id: number) => PictureRequest): Promise<{ readonly copy: string | null; readonly kind?: 'image/jpeg' | 'image/png' }> {
     const worker = this.started()
-    if (!worker) return Promise.resolve(null)
+    if (!worker) return Promise.resolve({ copy: null })
     const id = this.next++
     return new Promise(resolve => {
       this.waiting.set(id, resolve)
-      worker.send({ id, dataUrl, edge } satisfies PictureRequest, error => { if (error) this.lose(worker, true) })
+      worker.send(build(id), error => { if (error) this.lose(worker, true) })
       // A picture asked for while others wait keeps their deadline: only an answer starts the clock again.
       if (!this.awaitingAnswer) this.watch()
     })
@@ -82,7 +105,7 @@ export class PictureMaker {
     if (!existsSync(this.path)) return undefined
     let worker: ChildProcess
     // The host's own Node runs it, with none of the host's flags, and nothing it might print is read or kept.
-    try { worker = fork(this.path, [], { execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }) } catch { this.failed(); return undefined }
+    try { worker = fork(this.path, [], { execArgv: [], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }) } catch { this.failed(); return undefined }
     worker.on('message', (answer: PictureAnswer) => { this.answered(answer) })
     // A worker that goes before it is stopped, by failing to start or ending on its own, takes nothing with it: what waited
     // is sent whole. One the host stopped is already let go.
@@ -102,7 +125,7 @@ export class PictureMaker {
     this.failedStarts = 0
     // Counted only from a process other than the host's own.
     if (answer.copy !== null && answer.pid !== process.pid) this.copies++
-    settle(answer.copy)
+    settle({ copy: answer.copy, ...(answer.kind ? { kind: answer.kind } : {}) })
     this.watch()
   }
 
@@ -143,7 +166,7 @@ export class PictureMaker {
     this.timer = undefined
     this.awaitingAnswer = false
     if (failed) this.failed()
-    for (const settle of this.waiting.values()) settle(null)
+    for (const settle of this.waiting.values()) settle({ copy: null })
     this.waiting.clear()
   }
 

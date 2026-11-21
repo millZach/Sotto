@@ -10,8 +10,12 @@ it('registers the desktop drain before remote resources can start', () => {
   const source = readFileSync('src/main/index.ts', 'utf8')
   const registration = source.indexOf('registerHostQuitDrain(app,')
   expect(registration).toBeGreaterThan(-1)
-  for (const start of ['await desktopHosts.start()', 'void phoneAccess.start()']) {
+  for (const start of ['await startOutOfProcessEngine(', 'await createDesktopEngine(']) {
     expect(registration).toBeLessThan(source.indexOf(start))
+  }
+  const engine = readFileSync('src/main/engine/createDesktopEngine.ts', 'utf8')
+  for (const start of ['await desktopHosts.start()', 'void phoneAccess.start()']) {
+    expect(engine).toContain(start)
   }
 })
 

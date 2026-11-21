@@ -58,12 +58,12 @@ export interface Room { readonly id: AppRoom; readonly label: string; readonly d
 const dictate = (): Room => ({ id: 'dictate', label: interfaceI18n._(msg({ message: 'Dictate', comment: 'The room switch: the page you dictate on' })), destination: 'home' })
 const watcher: Room = { id: 'watcher', label: 'Watcher', destination: 'watcher' }
 const threads = (): Room => ({ id: 'threads', label: interfaceI18n._(msg({ message: 'Threads', comment: 'The room switch and page links: the Threads page' })), destination: 'threads' })
-// Owlets is a name, as Watcher is (ADR-0210).
+// Owlets is a name, as Watcher is (ADR-0211).
 const owlets: Room = { id: 'owlets', label: 'Owlets', destination: 'owlets' }
 
 /**
  * The room switch, the one definition every switch draws: Dictate | Threads, with Watcher's owl between them
- * while the Watcher gate is on (ADR-0072, ADR-0073), and Owlets after Threads while its Owl feature is (ADR-0210).
+ * while the Watcher gate is on (ADR-0072, ADR-0073), and Owlets after Threads while its Owl feature is (ADR-0211).
  * Dictate leaves while dictation is off (ADR-0107). A switch left with one room is not drawn. The Council is no room:
  * it is a tab of a thread pane's drawer (ADR-0177).
  */

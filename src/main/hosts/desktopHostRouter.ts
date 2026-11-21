@@ -430,7 +430,7 @@ export class DesktopHostRouter {
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
   private readonly held: HeldProviders
-  /** Where Owlets are off here (ADR-0210), the owlets a paired Owl host keeps, by host and thread, so nothing here reaches one. */
+  /** Where Owlets are off here (ADR-0211), the owlets a paired Owl host keeps, by host and thread, so nothing here reaches one. */
   private readonly heldOwlets = new Set<string>()
   /** What the window's Settles did to delegated threads elsewhere (#1316 part 3, Owl `cross-machine-work`). */
   private readonly cascadedSettles: CascadedSettles
@@ -458,7 +458,7 @@ export class DesktopHostRouter {
      * This desktop's thumbnail maker for pictures in threads (ADR-0170): a data URL in, the picture at tile size out, or
      * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
      */
-    mediaThumbnail?: (dataUrl: string, scale: number) => string | null
+    mediaThumbnail?: (dataUrl: string, scale: number) => string | null | Promise<string | null>
     /** Where those thumbnails are kept: shared with the copies made for phones, so all of them keep to one budget in bytes. */
     mediaTiles?: KeptThumbnails
     /**
@@ -624,7 +624,7 @@ export class DesktopHostRouter {
   private visibleProvider(provider: ProviderId): ProviderId {
     return this.held.has(provider) ? providerIdSchema.options.find(item => !this.held.has(item)) ?? 'codex' : provider
   }
-  /** A host's owlets left out where Owlets are off here, as stable keeps a held feature out of view (ADR-0072, ADR-0210). */
+  /** A host's owlets left out where Owlets are off here, as stable keeps a held feature out of view (ADR-0072, ADR-0211). */
   private withoutHeldOwlets(state: AgentState, hostId: string): AgentState {
     // Only a host that lists `owlets` can hold one, so no other host's update is read for them.
     if (this.options.owletsEnabled === true || this.hosts.get(hostId)?.connection.service.supportsOwlets !== true) return state
@@ -1365,7 +1365,7 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     const whole = await connection.media?.({ threadId: id!, activityId: request.activityId, mediaId: request.mediaId }) ?? null
     if (!whole || request.size === 'full') return whole
-    const tile = thumbnail(whole.dataUrl, scale)
+    const tile = await thumbnail(whole.dataUrl, scale)
     if (tile === null) return null
     this.mediaTiles.set(key, tile)
     return { dataUrl: tile }

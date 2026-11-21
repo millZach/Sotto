@@ -12,7 +12,7 @@ export class FakeProviderHost implements AgentHost {
   /** What a side call answers; absent, this provider writes nothing, the way Devin does. */
   sideWriter: ((sessionId: string, prompt: ShortTextPrompt) => Promise<string | null>) | undefined
   observed: readonly string[] = []
-  /** What an owlet is told at each launch (ADR-0210), asked by this provider's own session ID, as an adapter asks. */
+  /** What an owlet is told at each launch (ADR-0211), asked by this provider's own session ID, as an adapter asks. */
   owletInstructions: ((sessionId: string) => string | undefined) | undefined
   useOwletInstructions(read: (sessionId: string) => string | undefined): void { this.owletInstructions = read }
   /** The live-session set as last named, by this provider's session IDs; undefined until one is. */

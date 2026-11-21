@@ -104,7 +104,7 @@ The agent stopped before it wrote its report, so its last round of checks was no
 - **Sidebar rows** (asked with R1, R2 and R3 open): "I like R2, so that is what I would choose". Each row shows the owlet's own mark, its name with its role beside it, and under them its home computer and either what just happened or its next run. Newest first, as Recent is on the Threads page.
 - **The provider's own memory in owlet folders:** "Off in owlet folders (suggested)". Claude Code's auto memory, Codex's memories and any other provider memory are off in an owlet's folder from the first slice. Until the notes come, an owlet remembers only its chat, and nothing it reads reaches other threads through a provider's shared memory.
 
-- **Building** (November 20): "I am fine with you starting to build go for it". The first slice is built in this thread, the desktop first and the iPhone second (ADR-0210).
+- **Building** (November 20): "I am fine with you starting to build go for it". The first slice is built in this thread, the desktop first and the iPhone second (ADR-0211).
 - **Threads page, folder and providers** (asked while building): "Only on Owlets (suggested)", "In Sotto's data folder (suggested)" and "Only where it's off (suggested)".
 - **The owlet mark** (asked with `docs/prototypes/owlet-mark/` open): "Draw it now (suggested)", then "C · Each its own face (suggested)".
 - **Plugin accounts in setup** (after the spec review): "Link for now (suggested)". **A limit on owlets**: "Drop the limit (suggested)".

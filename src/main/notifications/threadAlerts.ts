@@ -112,7 +112,7 @@ export class ThreadAlerts {
       if (thread.delegatedBy !== undefined) delegated = true
       let record = this.records.get(thread.id)
       // Settled is quiet (#1279): it alerts nothing, and it is seen afresh if it ever comes back. An owlet is quiet too: the
-      // user hears of one through Needs you and its unread mark on the Owlets page, never a notification (ADR-0210).
+      // user hears of one through Needs you and its unread mark on the Owlets page, never a notification (ADR-0211).
       if (settled(thread) || thread.owlet) { if (record) this.forget(thread.id, record); continue }
       const first = record === undefined
       if (!record) this.records.set(thread.id, record = { seen: publication, alerted: false })

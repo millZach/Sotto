@@ -1,6 +1,5 @@
 import { createServer, type Server } from 'node:net'
 import { VISUAL_PARTITION, VISUAL_SCHEME } from '../../shared/visualPages'
-import type { VisualPageStore } from './visualPageStore'
 
 /**
  * What seals an interactive visual from the network (ADR-0060): the session every page runs in, the proxy that session
@@ -39,7 +38,7 @@ export async function pointVisualSessionAtProxy(session: VisualSessionLike, dead
  * waiting page address is cancelled, every permission is denied and downloads are blocked. Its proxy is set apart, by
  * `pointVisualSessionAtProxy`, and a page is shown only once both are done.
  */
-export function sealVisualSession(session: VisualSessionLike, pages: Pick<VisualPageStore, 'isAwaitingLoad' | 'serve'>): void {
+export function sealVisualSession(session: VisualSessionLike, pages: { isAwaitingLoad(url: string): boolean; serve(url: string): Response | Promise<Response> }): void {
   session.protocol.handle(VISUAL_SCHEME, request => pages.serve(request.url))
   session.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !(details.resourceType === 'mainFrame' && pages.isAwaitingLoad(details.url)) }))
   session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))

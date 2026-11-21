@@ -47,7 +47,7 @@ export function owletRefusalWords(sentence: string): string {
   }
 }
 
-/** A computer an owlet can live on: this computer or a connected paired host that makes owlets (`owlets`, ADR-0210). */
+/** A computer an owlet can live on: this computer or a connected paired host that makes owlets (`owlets`, ADR-0211). */
 export interface OwletHome { readonly hostId: string; readonly name: string }
 
 /**
@@ -74,7 +74,7 @@ export function owletModels(state: AgentState, hostId: string): AgentModel[] {
 }
 
 /**
- * New owlet and Edit owlet (ADR-0210). A new owlet takes a name, a role, its home computer, a model and a permission mode;
+ * New owlet and Edit owlet (ADR-0211). A new owlet takes a name, a role, its home computer, a model and a permission mode;
  * Sotto makes its folder and its thread. An owlet's name and role change here; its model and permission mode change in its
  * thread, as any thread's do, and its home computer is the one it was made on.
  */

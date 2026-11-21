@@ -521,7 +521,7 @@ export class AgentControl {
   /** The Council (ADR-0177), given only while its Owl feature is on: the threads it follows, and its prompts' identities. */
   private councilHooks: CouncilControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
-  /** A `create-project` or `create-thread` that `create-owlet` runs (ADR-0210): the owlet a thread is made as, or true for its project. */
+  /** A `create-project` or `create-thread` that `create-owlet` runs (ADR-0211): the owlet a thread is made as, or true for its project. */
   private readonly owletStarts = new WeakMap<object, AgentOwlet | true>()
   private readonly owletsMaking = new Set<string>()
   /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
@@ -1099,7 +1099,7 @@ export class AgentControl {
     dynamicThreadsEnabled?: boolean
     /** Model routing's Owl answer (ADR-0207), and its settings as they stand: off, a saved mark stays whole and no send is routed. */
     modelRouterEnabled?: boolean
-    /** Owlets' Owl answer (ADR-0210): off, a saved owlet stays whole and nothing makes or changes one. */
+    /** Owlets' Owl answer (ADR-0211): off, a saved owlet stays whole and nothing makes or changes one. */
     owletsEnabled?: boolean
     modelRouter?: () => ModelRouterSettings
     modelRouterLog?: (event: RouterEvent) => void
@@ -3562,7 +3562,7 @@ export class AgentControl {
     if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
     this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
   }
-  /** A new owlet (ADR-0210), each step the user's own command, held to their permission rules, and quiet (`owletStarts`). */
+  /** A new owlet (ADR-0211), each step the user's own command, held to their permission rules, and quiet (`owletStarts`). */
   private createOwlet(command: Extract<AgentCommand, { type: 'create-owlet' }>, client: ClientIdentity): Promise<AgentState> {
     return makeOwlet({ enabled: this.dependencies.owletsEnabled === true, directory: this.dependencies.directory, host: () => this.state.host,
       permit: model => this.guardThreadPermission(client, command, model),
@@ -3572,7 +3572,7 @@ export class AgentControl {
         return (await this.admitCommandShell(next, client)).error
       }, making: this.owletsMaking }, command).then(error => ({ ...this.reply(), error }))
   }
-  /** An owlet's name and role, in its thread's own lane (ADR-0210). */
+  /** An owlet's name and role, in its thread's own lane (ADR-0211). */
   private async setOwlet(command: Extract<AgentCommand, { type: 'set-owlet' }>): Promise<void> {
     this.acceptSnapshot(await changeOwlet(this.dependencies.owletsEnabled === true, this.state.host, this.dependencies.host, command, this.owletsMaking))
   }
@@ -3865,7 +3865,7 @@ export class AgentControl {
     if (command.type === 'update-client' || command.type === 'queue-client-updates' || command.type === 'cancel-client-updates' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
     if (command.type === 'start-thread-session') return this.startThreadSession(command.threadId)
-    // A new owlet runs its own create-project and create-thread, so it waits on no lane itself (ADR-0210).
+    // A new owlet runs its own create-project and create-thread, so it waits on no lane itself (ADR-0211).
     if (command.type === 'create-owlet') return this.createOwlet(command, client)
     if (command.type === 'preview-delete-thread' || command.type === 'delete-thread' || command.type === 'preview-clear-threads' || command.type === 'clear-threads') return this.clearCommand(command)
     if (command.type === 'preview-reclaim-thread-worktree') {
@@ -4855,7 +4855,7 @@ export class AgentControl {
         if (command.useExisting && !existing) throw new Error(PROJECT_FOLDER_MISSING)
         const folderKey = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
         const known = command.useExisting ? this.state.host.projects.find(project => folderKey(project.path) === folderKey(path) && (!project.providerId || project.providerId === provider)) : undefined
-        // An owlet's own project (ADR-0210) is quiet, as Sotto's own setup is: no selection, no announcement.
+        // An owlet's own project (ADR-0211) is quiet, as Sotto's own setup is: no selection, no announcement.
         const quiet = this.owletStarts.has(command)
         if (known) {
           if (!origin && !quiet && selectionRevision === this.selectionRevision) {

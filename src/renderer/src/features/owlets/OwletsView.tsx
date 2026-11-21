@@ -38,7 +38,7 @@ export function owletOrder(rows: readonly ThreadRow[]): ThreadRow[] {
 const unread = (row: ThreadRow): boolean => row.thread.finishedUnread === true || row.state === 'needs' && !row.attention
 
 /**
- * The Owlets page (ADR-0210), an Owl feature: every owlet in one sidebar, the ones waiting on you first under Needs you,
+ * The Owlets page (ADR-0211), an Owl feature: every owlet in one sidebar, the ones waiting on you first under Needs you,
  * and the chosen owlet's one thread beside it, as on the Threads page. Zach picked the sidebar look's R2 rows: the owlet's
  * mark (`OwletMark`), its name with its role, and under them its home computer and what it last did.
  */

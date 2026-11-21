@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { ProviderId } from './providerIds'
 
 /**
- * Owlets (ADR-0210): Sotto's own named helpers, an Owl feature. An owlet is one project-bound thread that carries its
+ * Owlets (ADR-0211): Sotto's own named helpers, an Owl feature. An owlet is one project-bound thread that carries its
  * name and role, in a folder of its own that Sotto makes in its home computer's data folder. These are the parts both
  * processes and the host read.
  */
@@ -70,7 +70,7 @@ export const agentOwletSchema = z.object({ name: owletNameSchema, role: owletRol
 export type AgentOwlet = z.infer<typeof agentOwletSchema>
 
 /**
- * What an owlet's provider is told at each launch (ADR-0210): its name and the role the user gave it. English, as what Sotto
+ * What an owlet's provider is told at each launch (ADR-0211): its name and the role the user gave it. English, as what Sotto
  * sends a model is. The role is the user's own words.
  */
 export function owletInstructions(owlet: AgentOwlet): string {

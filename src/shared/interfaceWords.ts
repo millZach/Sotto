@@ -169,7 +169,7 @@ export function hostCannotStageScreenshotsWords(): string {
   return t`This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.`
 }
 
-/** Owlets held on a build where they are off (`OWLETS_HELD`, ADR-0210). */
+/** Owlets held on a build where they are off (`OWLETS_HELD`, ADR-0211). */
 export function owletsHeldWords(): string {
   return t`Owlets are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.`
 }
