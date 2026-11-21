@@ -416,6 +416,11 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * first, as Grok does, is turned round there and nowhere else.
    */
   ownServer: z.literal(true).optional(), hiddenFromMenu: z.literal(true).optional(), reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
+  /**
+   * The provider said this model has no effort levels, so its effort chip is held and says so. Only Devin says it, once it
+   * has read the model's levels; a model with no levels and no mark, such as one not read yet, shows no chip.
+   */
+  noReasoningEfforts: z.literal(true).optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
    * Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four.
@@ -897,6 +902,8 @@ export const agentCapabilitiesSchema = z.object({
   configureThread: z.boolean().optional(), skills: z.boolean().optional(),
   /** False when a started thread can change only its permission mode, not its model or reasoning. */
   configureThreadModel: z.boolean().optional(),
+  /** True where a started thread keeps its model but can still change its effort, as a Devin thread can. */
+  configureThreadEffort: z.boolean().optional(),
   steer: z.boolean().optional(),
   compact: z.boolean().optional(),
 })

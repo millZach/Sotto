@@ -31,6 +31,9 @@
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
+  "src/main/agents/devinThinking.ts": {
+    "structuredClone(": 1
+  },
   "src/main/agents/followups.ts": {
     "structuredClone(": 3
   },
