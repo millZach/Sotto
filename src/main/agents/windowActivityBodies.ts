@@ -1,7 +1,8 @@
-import { isTerminalActivity, type AgentActivity } from '../../shared/agentActivity'
+import type { AgentActivity } from '../../shared/agentActivity'
 import { cutActivityBodies } from '../../shared/activityBodies'
 import { agentActivitySignature, isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { AgentActivityDelta, AgentThreadDetail, AgentThreadDetailUpdate } from '../../shared/agents'
+import { sottoBrowserToolOfTitle } from '../../shared/sottoBrowserTools'
 
 /** The threads whose cut bodies are kept, the most recently sent last: as many histories as the window keeps. */
 const KEPT_THREADS = 16
@@ -17,15 +18,25 @@ interface KeptCut {
 }
 
 /**
- * This computer's thread histories as the main window is handed them, with each finished record's bodies over the limit
+ * The records the window is handed whole. A running record, so its output keeps crossing as appends of its new lines
+ * (ADR-0025, October 30 amendment) rather than as the whole record again on each one; it is cut by the change that ends
+ * it. And three kinds the window reads without opening a row, which a paired host's threads go without: a file change,
+ * whose diffs give a turn's lines added and removed; a step in Sotto's browser, whose answer names the action and the
+ * page; and reasoning, which an own server's speed card counts while its turn runs.
+ */
+function keptWhole(record: AgentActivity): boolean {
+  return record.status === 'running' || record.kind === 'file-change' || record.kind === 'reasoning'
+    || (record.kind === 'tool' && sottoBrowserToolOfTitle(record.title) !== undefined)
+}
+
+/**
+ * This computer's thread histories as the main window is handed them, with each record's bodies over the limit
  * cut, as a paired host already cuts them for the desktop (ADR-0025, October 18 amendment): the window holds what its rows
  * draw, and reads a record whole (`activityBody`) when one of them opens. On November 20, 2026 the owner's "Locate Control
  * Builder blocks" crossed whole at 25.6 MB on a first open, twice, IPC and then the context bridge (#2737).
  *
- * A record still running goes whole, so its output keeps crossing as appends of its new lines (ADR-0025, October 30
- * amendment) rather than as the whole record again on each one; it is cut by the change that finishes it. An append to a
- * record the window holds cut would join a cut body, so it goes as the record cut again, read from where the history
- * stands now.
+ * Some records go whole (`keptWhole`). An append to a record the window holds cut would join a cut body, so it goes as
+ * the record cut again, read from where the history stands now.
  *
  * Each read of a history hands over fresh copies of its records, so what a cut left of each record's bodies is kept by
  * its ID and signature for the threads sent most recently, and a thread opened again is not cut again. Only the bodies
@@ -37,7 +48,7 @@ export class WindowActivityBodies {
 
   constructor(private readonly wholeRecord: (threadId: string, activityId: string) => AgentActivity | null) {}
 
-  /** A thread's history whole, its finished records' bodies over the limit cut. */
+  /** A thread's history whole, its records' bodies over the limit cut. */
   detail(detail: AgentThreadDetail | null): AgentThreadDetail | null {
     if (detail === null) return null
     if (detail.activities === undefined) { this.kept.delete(detail.threadId); return detail }
@@ -81,7 +92,7 @@ export class WindowActivityBodies {
 
   /** A record as the window is sent it: cut, from `before` when its signature has not moved, and noted in `after`. */
   private record(record: AgentActivity, before: Map<string, KeptCut> | undefined, after: Map<string, KeptCut> | undefined): AgentActivity {
-    if (!isTerminalActivity(record.status)) { after?.delete(record.id); return record }
+    if (keptWhole(record)) { after?.delete(record.id); return record }
     const signature = agentActivitySignature(record)
     const held = before?.get(record.id)
     if (held?.signature === signature) { after?.set(record.id, held); return laid(record, held) }
@@ -121,4 +132,29 @@ function laid(record: AgentActivity, kept: KeptCut): AgentActivity {
     ...kept.text !== undefined ? { text: kept.text } : {},
     ...diffs && record.changes ? { changes: record.changes.map((change, index) => diffs.has(index) ? { ...change, diff: diffs.get(index)! } : change) } : {},
     ...kept.cut !== undefined ? { cut: kept.cut } : {} }
+}
+
+/** What the window's local host connection reads of this computer's threads. */
+export interface LocalThreadHistories {
+  threadDetail(threadId: string): AgentThreadDetail | null
+  subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void, options: { readonly appends?: boolean }): () => void
+  threadActivity(threadId: string, activityId: string): AgentActivity | null
+}
+
+/**
+ * The local host connection's history reads, as a click in the sidebar makes them: each history and every change to it
+ * with its long bodies cut, appends included, and one record whole when its row opens.
+ */
+export function windowHistories(control: LocalThreadHistories): {
+  readonly detail: (threadId: string) => AgentThreadDetail | null
+  readonly subscribeDetail: (listener: (update: AgentThreadDetailUpdate) => void) => () => void
+  readonly activityBody: (threadId: string, activityId: string) => Promise<AgentActivity | null>
+} {
+  const bodies = new WindowActivityBodies((threadId, activityId) => control.threadActivity(threadId, activityId))
+  return {
+    detail: threadId => bodies.detail(control.threadDetail(threadId)),
+    // The main window applies appends: a running command's output crosses as its new lines (ADR-0025, October 30 amendment).
+    subscribeDetail: listener => control.subscribeThreadDetail(update => { const sent = bodies.update(update); if (sent !== null) listener(sent) }, { appends: true }),
+    activityBody: async (threadId, activityId) => control.threadActivity(threadId, activityId),
+  }
 }

@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { serialize } from 'node:v8'
 import { describe, expect, it } from 'vitest'
-import { WindowActivityBodies } from '../../../src/main/agents/windowActivityBodies'
+import { WindowActivityBodies, windowHistories } from '../../../src/main/agents/windowActivityBodies'
 import { ACTIVITY_BODY_LIMIT, utf8Bytes } from '../../../src/shared/activityBodies'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
-import type { AgentThreadDetail, AgentThreadDetailDelta } from '../../../src/shared/agents'
+import type { AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
 const long = (lines: number): string => Array.from({ length: lines }, (_, index) => `line ${index} `.padEnd(60, 'x')).join('\n')
 const record = (patch: Partial<AgentActivity>): AgentActivity => ({ id: 'build', turnId: 't1', sequence: 0, kind: 'command', status: 'completed', title: 'Ran npm test', ...patch })
@@ -27,11 +27,25 @@ describe("this computer's histories as the main window is sent them (#2737)", ()
     expect(live).toBe(running)
   })
 
+  it('cuts a record restored from disk, whose run Sotto can no longer tell, and keeps whole what the window reads unopened', () => {
+    const restored = record({ id: 'restored', status: 'unknown', output: long(400) })
+    const edit = record({ id: 'edit', kind: 'file-change', title: 'Edit', changes: [{ path: 'a.ts', kind: 'edit', diff: long(400) }] })
+    const browser = record({ id: 'browser', kind: 'tool', title: 'mcp__sotto_browser__browser_action', output: long(400) })
+    const thinking = record({ id: 'thinking', kind: 'reasoning', title: 'Thinking', text: long(400) })
+    const [cut, ...whole] = new WindowActivityBodies(() => null).detail(history([restored, edit, browser, thinking]))!.activities!
+    expect(cut!.cut?.output).toBe(utf8Bytes(restored.output!))
+    expect(whole).toEqual([edit, browser, thinking])
+  })
+
   it('hands the window a history whose size does not grow with its records’ output, at the owner’s 2,000 records', () => {
-    // The owner's largest history held 2,000 records, most with long output (#2737). What crosses is sized by what the rows
-    // draw: ten times the output per record crosses as the same bytes, but for the size each cut names.
-    const sized = (lines: number): number => serialize(new WindowActivityBodies(() => null).detail(history(Array.from({ length: 2000 },
-      (_, index) => record({ id: `r${index}`, sequence: index, output: long(lines) }))))).byteLength
+    // The owner's largest history held 2,000 records, most with long output (#2737). What a click reads through the local
+    // host connection is sized by what the rows draw: ten times the output per record crosses as the same bytes, but for
+    // the size each cut names.
+    const sized = (lines: number): number => {
+      const stored = history(Array.from({ length: 2000 }, (_, index) => record({ id: `r${index}`, sequence: index, output: long(lines) })))
+      const connection = windowHistories({ threadDetail: () => stored, subscribeThreadDetail: () => () => undefined, threadActivity: () => null })
+      return serialize(connection.detail('thread')).byteLength
+    }
     const short = sized(60), longer = sized(600)
     // Only the whole size each record's `cut` names is longer, a few bytes a record.
     expect(longer - short).toBeLessThanOrEqual(2000 * 8)
@@ -49,6 +63,22 @@ describe("this computer's histories as the main window is sent them (#2737)", ()
     expect(again.title).toBe('Ran npm lint')
     const grown = bodies.detail(history([{ ...whole, output: `${whole.output}\nmore` }]))!.activities![0]!
     expect(grown.output!.endsWith('\nmore')).toBe(true)
+  })
+
+  it('streams the local connection with appends asked for, cut, and reads a record whole when its row opens', async () => {
+    const whole = record({ output: long(400) })
+    let listener: ((update: AgentThreadDetailUpdate) => void) | undefined
+    let options: { readonly appends?: boolean } | undefined
+    const connection = windowHistories({ threadDetail: () => history([whole]),
+      subscribeThreadDetail: (heard, asked) => { listener = heard; options = asked; return () => undefined },
+      threadActivity: (threadId, activityId) => threadId === 'thread' && activityId === 'build' ? whole : null })
+    const sent: AgentThreadDetailUpdate[] = []
+    connection.subscribeDetail(update => sent.push(update))
+    expect(options).toEqual({ appends: true })
+    listener!(delta([{ record: whole }]))
+    const item = (sent[0] as AgentThreadDetailDelta).activityDeltas[0]!
+    expect('record' in item && item.record.cut?.output).toBe(utf8Bytes(whole.output!))
+    await expect(connection.activityBody('thread', 'build')).resolves.toBe(whole)
   })
 
   it('sends a history with nothing to cut as it is', () => {
