@@ -18,7 +18,7 @@ import { findAntigravityExecutable, type AntigravityLookup } from './antigravity
 import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, antigravityGeminiModel, antigravityModeIsOption, antigravityModelChoices, antigravityOffersAuto, antigravityRuntimeMode,
   antigravitySessionMode, antigravitySessionSettingsSchema, antigravityThinking, leastEffort, ANTIGRAVITY_RUNTIME_MODES, type AntigravityModelFacts, type AntigravityModelThinking,
   type AntigravityRuntimeMode, type AntigravitySessionSettings } from './antigravityModels'
-import { antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, type AntigravityPending } from './antigravityRequests'
+import { antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, antigravityWatcherAdmission, type AntigravityPending } from './antigravityRequests'
 import { countAntigravityAnswer, countAntigravityFullness, forgetAntigravityFullness } from './antigravityThreadUsage'
 import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, meetsAntigravityFloor, readAntigravityVersion,
   writeAntigravitySettings, ANTIGRAVITY_ACP_VERSION, ANTIGRAVITY_CLI_FLOOR, GOOGLE_ACCOUNT, type AntigravityFrame, type AntigravitySignIn } from './antigravityRpc'
@@ -181,6 +181,7 @@ interface Connection {
   readonly clientRevision: number
   /** Started for Watcher's thread with its launch profile: its session has Watcher's tools and instructions, never the browser. */
   readonly watcher: boolean
+  watcherToolTitles?: ReadonlySet<string>
   readonly client: AntigravityClient
   closing: boolean
   /** The model, effort and session mode this process's session is on, as `agy` last said. */
@@ -432,13 +433,20 @@ export class AntigravityAcpHost implements ProviderHost {
    * Sotto's tool servers for this thread, each with the thread's bearer token, then the user's own from their `agy` setup.
    * Watcher's thread gets its own only: never the browser, never the user's.
    */
-  private async toolServers(id: string, watcher: boolean): Promise<AntigravitySessionServer[]> {
-    if (watcher) {
+  private async toolServers(id: string, connection: Connection): Promise<AntigravitySessionServer[]> {
+    if (connection.watcher) {
       const profile = await this.launchProfile(id)
       if (!profile) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Nothing was sent. Reopen Watcher to recover.')
       if (!this.httpToolServers || !this.appendsSystemPrompt) throw new WatcherProfileRefusal(WATCHER_WITHOUT_TOOLS)
+      const scoped = await scopedThreadServers(watcherThreadTools(this.threadTools), id)
+      // agy 1.5.14 names an MCP permission "Run mcp_<server>_<tool>". Bind those exact names to this launch or resume.
+      connection.watcherToolTitles = new Set([
+        ...profile.toolNames.map(name => `Run mcp_${profile.server.name}_${name}`),
+        ...scoped.flatMap(({ server, tools }) => (tools.definitionsFor?.(id) ?? tools.definitions)
+          .map(tool => `Run mcp_${server.name}_${tool.name}`)),
+      ])
       return [{ name: profile.server.name, type: profile.server.type, url: profile.server.url, headers: profile.server.headers.map(header => ({ ...header })) },
-        ...(await scopedThreadServers(watcherThreadTools(this.threadTools), id)).map(({ server }) => server)]
+        ...scoped.map(({ server }) => server)]
     }
     const servers: AntigravitySessionServer[] = []
     if (this.httpToolServers) {
@@ -711,7 +719,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (generation !== this.generation) { this.close(connection); throw new AntigravityUncertain('Antigravity’s connection changed while the thread was opening.') }
     this.connections.set(id, connection)
     try {
-      const mcpServers = await this.toolServers(id, connection.watcher)
+      const mcpServers = await this.toolServers(id, connection)
       const meta = await this.sessionMeta(id, connection.watcher)
       this.assertGeneration(generation)
       // T3 resumes rather than loads: a resumed session replays nothing, so no earlier tool call runs or shows again.
@@ -825,9 +833,10 @@ export class AntigravityAcpHost implements ProviderHost {
     }
     const index = this.indexOf(id, alias)
     if (index.wasAnswered(requestId) || this.pending.size >= 128) { void connection.rpc.reply(frame.id, antigravityDecline()).catch(() => undefined); return }
-    // Allow edits and Full access answer by the thread's mode, as T3 does (the ADR). Watcher's thread never does: its
-    // approvals are always the user's (ADR-0073).
-    const automatic = connection.watcher ? undefined : antigravityAutoAnswer(alias.runtimeMode, pending)
+    // Admission to Watcher's scoped server is separate from the authority it checks when the tool runs (ADR-0073).
+    const automatic = connection.watcher
+      ? antigravityWatcherAdmission(connection.watcherToolTitles, pending)
+      : antigravityAutoAnswer(alias.runtimeMode, pending)
     if (automatic) { void connection.rpc.reply(frame.id, { outcome: { outcome: 'selected', optionId: automatic } }).catch(() => undefined); return }
     this.pending.set(requestId, pending)
     this.thread(id).requests.push(pending.request)
@@ -987,7 +996,7 @@ export class AntigravityAcpHost implements ProviderHost {
     this.connections.set(command.threadId, connection)
     try {
       this.aliases[command.threadId] = alias; await this.persist()
-      const mcpServers = await this.toolServers(command.threadId, connection.watcher)
+      const mcpServers = await this.toolServers(command.threadId, connection)
       const meta = await this.sessionMeta(command.threadId, connection.watcher)
       this.assertGeneration(generation)
       watcherGuard?.()

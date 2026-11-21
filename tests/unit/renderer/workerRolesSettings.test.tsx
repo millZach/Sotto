@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, publicProviderEntityId, type AgentModel, type AgentState } from '../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../../src/shared/settings'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
+import { MODEL_FAVORITES_KEY } from '../../../src/renderer/src/agents/modelFavorites'
 import { WorkerRolesSettings } from '../../../src/renderer/src/features/settings/WorkerRolesSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
@@ -45,7 +46,14 @@ function show(workerRoles: AppSettings['workerRoles'] = {}, agents = state()) {
   return { update, open }
 }
 const card = (name: string) => screen.getByRole('article', { name })
-afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear(); vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse'])); vi.mocked(useOwlFeature).mockImplementation(() => false) })
+afterEach(() => {
+  cleanup()
+  localStorage.removeItem(MODEL_FAVORITES_KEY)
+  vi.clearAllMocks()
+  firstMessage.clear()
+  vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse']))
+  vi.mocked(useOwlFeature).mockImplementation(() => false)
+})
 
 describe('Settings, under Watcher: worker roles (#1041)', () => {
   it('shows each role on its default with its defaults in order', () => {
@@ -90,6 +98,32 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(screen.queryByRole('option', { name: 'Internal model' })).toBeNull()
     expect(screen.queryByRole('option', { name: 'Unready model' })).toBeNull()
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it.each(['Building', 'Orchestrating'])('keeps Devin favorites and lists only those %s can use', role => {
+    vi.mocked(useOwlFeature).mockImplementation(id => id === 'model-favorites')
+    const agents = state(true, true)
+    agents.host.providers!.push({ id: 'devin', name: 'Devin', version: '', connection: 'connected', capabilities: caps })
+    const devin = { provider: 'Devin', providerId: 'devin', id: publicProviderEntityId('devin', 'model', 'swe-1'), name: 'Devin SWE' }
+    const favorites = JSON.stringify([{ ...devin, id: publicProviderEntityId('devin', 'model', 'retired'), name: 'Retired SWE' }, devin])
+    localStorage.setItem(MODEL_FAVORITES_KEY, favorites)
+    const { update } = show({}, agents)
+    fireEvent.click(within(card(role)).getByRole('combobox', { name: /model/u }))
+    const tab = screen.getByRole('tab', { name: 'Favorites' })
+    if (role === 'Building') {
+      expect(tab).toHaveAttribute('aria-selected', 'true')
+      expect(screen.queryByRole('option', { name: /Retired SWE/u })).toBeNull()
+      fireEvent.click(screen.getByRole('option', { name: 'Devin SWE' }))
+      expect(update).toHaveBeenCalledWith({ workerRoles: { building: expect.objectContaining({ modelId: devin.id }) } })
+    } else {
+      expect(screen.getByRole('tab', { name: 'Claude Code' })).toHaveAttribute('aria-selected', 'true')
+      fireEvent.click(tab)
+      expect(screen.queryAllByRole('option')).toHaveLength(0)
+      expect(screen.getByText('Star a model to keep it here.')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('tab', { name: 'Devin' }))
+      expect(screen.getByRole('note')).toHaveTextContent('Watcher can’t run on Devin yet.')
+    }
+    expect(localStorage.getItem(MODEL_FAVORITES_KEY)).toBe(favorites)
   })
 
   it('keeps a choice whose provider is away and says what starts meanwhile, and Reset puts the default back', () => {
