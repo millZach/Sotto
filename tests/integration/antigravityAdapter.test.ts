@@ -184,6 +184,8 @@ describe('Antigravity ACP adapter', () => {
       usage: { inputTokens: 9086, outputTokens: 2878, cachedReadTokens: 0, cachedWriteTokens: 0, thoughtTokens: 1876, totalTokens: 11964 } })
     await expect.poll(async () => (await thread(id)).usage?.total?.output).toBe(2878)
     const before = (await thread(id)).activities?.filter(row => row.kind !== 'turn').length
+    // agy 1.5.13 lists /compact, so the thread offers Compact context.
+    expect((await thread(id)).manualCompactionSupported).toBe(true)
     expect(await f!.host.execute({ type: 'compact-thread', threadId: id, commandId: 'compact-1' })).toEqual({ accepted: true })
     await expect.poll(prompts).toEqual(['Write about bicycles', '/compact'])
     expect((await thread(id)).compaction).toEqual({ commandId: 'compact-1', status: 'running' })
@@ -212,6 +214,19 @@ describe('Antigravity ACP adapter', () => {
       usage: { inputTokens: 9774, outputTokens: 42, cachedReadTokens: 0, cachedWriteTokens: 0, thoughtTokens: 40, totalTokens: 9816 } })
     await expect.poll(async () => (await thread(id)).usage?.contextUsed).toBe(9816)
     expect((await thread(id)).activities?.find(row => row.kind === 'compaction')?.context).toEqual({ before: 11964, after: 9816 })
+  })
+
+  it('offers compaction only on a client that lists /compact, and never sends it to one that does not', async () => {
+    f = await antigravityFixture()
+    await f.script({ noCompact: true })
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Antigravity thread' })
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => (await thread(id)).manualCompactionSupported).toBe(false)
+    await expect(f.host.execute({ type: 'compact-thread', threadId: id, commandId: 'compact-1' })).rejects.toThrow('This Antigravity client does not offer /compact.')
+    expect((await f.requests()).some(record => record.method === 'session/prompt')).toBe(false)
   })
 
   it('does not call a /compact agy answered in words a compaction', async () => {

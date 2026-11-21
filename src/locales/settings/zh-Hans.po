@@ -1261,7 +1261,7 @@ msgid "AI formatting"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "All four permission modes: on Allow edits Sotto answers Antigravity’s requests to change files for you, on Full access every request, and Auto is Antigravity’s own. Its questions always come to you. Usage shows Antigravity’s token counts. Antigravity has no compaction, and keeps its own history in Sotto’s own Antigravity folder."
+msgid "All four permission modes: on Allow edits Sotto answers Antigravity’s requests to change files for you, on Full access every request, and Auto is Antigravity’s own. Its questions always come to you. Usage shows Antigravity’s token counts. Compact context uses Antigravity’s own /compact, and Antigravity keeps its own history in Sotto’s own Antigravity folder."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx

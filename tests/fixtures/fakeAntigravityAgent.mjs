@@ -56,6 +56,8 @@ const configOptions = session => {
     { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: session.mode ?? 'default', options: modes().map(value => ({ value, name: value })) },
   ]
 }
+/** The commands agy lists, `/compact` among them as on 1.5.13; a script can name a client without it. */
+const commands = script => [{ name: 'plan', description: 'Plan before acting' }, ...(script.noCompact ? [] : [{ name: 'compact', description: 'Compact the conversation' }])]
 const update = (sessionId, body) => send({ method: 'session/update', params: { sessionId, update: body } })
 
 const pending = new Map(); let serial = 0
@@ -123,7 +125,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     save(sessionId); resident.add(sessionId)
     record({ method: 'fixture/session-resident', params: { sessionId, resident: true } })
     send({ id: frame.id, result: { sessionId, configOptions: configOptions(sessions.get(sessionId)) } })
-    update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'plan', description: 'Plan before acting' }, { name: 'compact', description: 'Compact the conversation' }] })
+    update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: commands(script) })
   } else if (frame.method === 'session/resume') {
     if (needsAuth()) return
     const session = loadSession(p.sessionId)
@@ -132,8 +134,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (p._meta?.antigravity?.systemPrompt?.append !== undefined) session.systemAppend = p._meta.antigravity.systemPrompt.append
     save(p.sessionId)
     record({ method: 'fixture/session-resident', params: { sessionId: p.sessionId, resident: true } })
-    // A resumed session replays nothing.
+    // A resumed session replays nothing, but agy 1.5.13 lists its commands again.
     send({ id: frame.id, result: { configOptions: configOptions(session) } })
+    update(p.sessionId, { sessionUpdate: 'available_commands_update', availableCommands: commands(script) })
   } else if (frame.method === 'session/set_config_option') {
     const session = loadSession(p.sessionId)
     if (!session) { send({ id: frame.id, error: { code: -32602, message: 'Session not found' } }); return }

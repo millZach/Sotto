@@ -340,6 +340,7 @@ export class AntigravityAcpHost implements ProviderHost {
     this.observed.delete(id); this.outdated.delete(id); this.dispatching.delete(id); this.loaded.delete(id)
     this.endTurn(id, 'interrupted')
     this.turns.delete(id)
+    this.compactions.delete(id); this.compactedSince.delete(id); this.compactionAnswered.delete(id)
     for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
     this.knownLaunchProfiles.delete(id)
     this.indexes.delete(id)
@@ -826,7 +827,12 @@ export class AntigravityAcpHost implements ProviderHost {
     const kind = String(update.sessionUpdate)
     if (kind === 'available_commands_update') {
       const parsed = commandsSchema.safeParse(update.availableCommands)
-      if (parsed.success) { connection.commands = antigravitySkills(parsed.data); this.commands = connection.commands }
+      if (parsed.success) {
+        connection.commands = antigravitySkills(parsed.data); this.commands = connection.commands
+        // Whether this client compacts is its own `/compact`, so Compact context is offered only where it is listed.
+        const thread = this.threads.get(id), compacts = connection.commands.some(skill => skill.name === 'compact')
+        if (thread && thread.manualCompactionSupported !== compacts) { thread.manualCompactionSupported = compacts; this.changed(id); this.emit() }
+      }
       return
     }
     if (kind === 'config_option_update' || kind === 'current_mode_update') {
@@ -1188,8 +1194,11 @@ export class AntigravityAcpHost implements ProviderHost {
     if (thread.compaction?.commandId === command.commandId) return { accepted: true }
     if ((running && !running.ended) || this.compactions.has(id) || compactionPending(thread.compaction)) throw new Error('Antigravity is still working on this thread. Wait for it to finish before compacting.')
     if (thread.requests.length) throw new Error('Answer Antigravity’s pending request before compacting.')
-    // `agy` takes an unknown `/name` as words, so a client that does not list `/compact` is not sent it.
-    if (connection.commands && !connection.commands.some(skill => skill.name === 'compact')) throw new Error('This Antigravity client does not offer /compact. Nothing was changed. Update Antigravity to compact its threads.')
+    // `agy` takes an unknown `/name` as words, so `/compact` goes only to a client that lists it. Its list comes just
+    // after the session opens, so it is waited for, as the skills are.
+    for (let waited = 0; !connection.commands && waited < 3_000 && this.connections.get(id) === connection; waited += 100) await new Promise(resolve => setTimeout(resolve, 100))
+    if (!connection.commands) throw new Error('Antigravity has not yet said whether it can compact this thread. Nothing was changed. Try again in a moment.')
+    if (!connection.commands.some(skill => skill.name === 'compact')) throw new Error('This Antigravity client does not offer /compact. Nothing was changed. Update Antigravity to compact its threads.')
     await this.applySettings(alias, connection)
     if (generation !== this.generation || this.connections.get(id) !== connection) throw new AntigravityUncertain('Antigravity’s connection changed.')
     // A request may have come while the settings were applied; it is answered first, as before a send.
@@ -1197,7 +1206,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (this.turns.get(id)?.ended === false) throw new Error('Antigravity is still working on this thread. Wait for it to finish before compacting.')
     watcherGuard?.()
     const before = thread.usage?.contextUsed
-    this.compactions.set(id, command.commandId); this.compactedSince.delete(id); this.compactionAnswered.delete(id)
+    this.compactions.set(id, command.commandId); this.compactionAnswered.delete(id)
     thread.compaction = { commandId: command.commandId, status: 'running', ...(command.idle ? { idle: true } : {}) }
     thread.status = 'running'; this.changed(id); this.emit()
     void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: [{ type: 'text', text: '/compact' }] }, value => {
@@ -1349,6 +1358,7 @@ export class AntigravityAcpHost implements ProviderHost {
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
     // Published once, with the rest of the disconnect.
     for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST, false)
+    this.compactedSince.clear(); this.compactionAnswered.clear()
     this.turns.clear()
     for (const thread of this.threads.values()) thread.requests = []
     this.threadChanges.markAll()
