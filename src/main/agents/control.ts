@@ -37,6 +37,7 @@ import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
+import { fitSpeed } from '../../shared/workerRoles'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
@@ -2589,7 +2590,7 @@ export class AgentControl {
     configuration.enabledProviders = enabledThreadProviders(configuration).filter(item => this.providerAvailable(item))
     if (held(configuration.defaultModelId)) configuration.defaultModelId = ''
     if (held(configuration.newThreadModelId)) {
-      configuration.newThreadModelId = ''; configuration.newThreadReasoningEffort = ''; delete configuration.newThreadRuntimeMode
+      configuration.newThreadModelId = ''; configuration.newThreadReasoningEffort = ''; delete configuration.newThreadSpeed; delete configuration.newThreadRuntimeMode
     }
   }
   private parseSaved(input: unknown): Saved {
@@ -3160,7 +3161,7 @@ export class AgentControl {
    * An install with no new-thread defaults saved leaves every option the caller left unset alone, which is
    * today's behaviour: the model's own default effort and the provider's own starting permission mode.
    */
-  private newThreadOptionDefaults(command: Extract<AgentCommand, { type: 'create-thread' }>, model: AgentModel | undefined): Omit<AgentThreadOptions, 'modelId'> {
+  private newThreadOptionDefaults(command: Extract<AgentCommand, { type: 'create-thread' }>, model: AgentModel | undefined, defaultSpeed?: AgentThread['speed']): Omit<AgentThreadOptions, 'modelId'> {
     const configuration = this.state.configuration
     let reasoningEffort = command.reasoningEffort
     if (reasoningEffort === undefined && configuration.newThreadReasoningEffort) {
@@ -3174,8 +3175,9 @@ export class AgentControl {
       runtimeMode = resolved.runtimeMode
       providerMode = resolved.providerMode
     }
+    const speed = command.speed !== undefined ? command.speed : command.fastMode === undefined ? fitSpeed(defaultSpeed, model) ?? undefined : undefined
     return { ...(reasoningEffort !== undefined ? { reasoningEffort } : {}), ...(runtimeMode !== undefined ? { runtimeMode } : {}), ...(providerMode !== undefined ? { providerMode } : {}),
-      ...(command.speed !== undefined ? { speed: command.speed } : command.fastMode !== undefined ? { fastMode: command.fastMode } : {}) }
+      ...(speed !== undefined ? { speed } : command.fastMode !== undefined ? { fastMode: command.fastMode } : {}) }
   }
   private obsoleteDraft(threadId: string, draftId: string): void {
     if (this.state.deliveredDrafts?.some(item => item.threadId === threadId && item.draftId === draftId)) return
@@ -4960,7 +4962,8 @@ export class AgentControl {
         if (!model?.ready) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
         // A create-thread that leaves an option unset takes Settings → Threads' new-thread defaults instead,
         // a caller's explicit choice still wins.
-        const defaults = this.newThreadOptionDefaults(command, model)
+        // Workers have their own speed choices. Only an ordinary creation inherits this host’s speed.
+        const defaults = this.newThreadOptionDefaults(command, model, origin ? undefined : this.state.configuration.newThreadSpeed)
         validateThreadOptions(this.state.host, { modelId: command.modelId, ...defaults }, undefined, origin?.keptSpeed)
         const validatePermission = (): void => { origin?.guard(); if (!origin?.operationId) this.guardThreadPermission(client, defaults, model) }
         validatePermission()

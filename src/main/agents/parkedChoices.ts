@@ -7,7 +7,7 @@ import { providerIdSchema, type ProviderId } from '../../shared/providerIds'
  * what was parked is read back: the configuration's defaults would otherwise fill in a provider and an effort it never had.
  * Taken out of `control.ts` (ADR-0190).
  */
-export const dormantProviderConfigurationSchema = agentConfigurationSchema.pick({ defaultModelId: true, newThreadModelId: true }).partial().extend({
+export const dormantProviderConfigurationSchema = agentConfigurationSchema.pick({ defaultModelId: true, newThreadModelId: true, newThreadSpeed: true }).partial().extend({
   provider: providerIdSchema.optional(), newThreadReasoningEffort: agentConfigurationSchema.shape.newThreadReasoningEffort.unwrap().optional(),
   enabled: z.boolean().optional(), newThreadRuntimeMode: agentConfigurationSchema.shape.newThreadRuntimeMode.nullable() })
 export type DormantProviderConfiguration = z.infer<typeof dormantProviderConfigurationSchema>
@@ -20,6 +20,7 @@ export function parkedChoices(configuration: AgentConfiguration, provider: Provi
   if (parsePublicProviderEntityId(configuration.defaultModelId)?.provider === provider) dormant.defaultModelId = configuration.defaultModelId
   if (parsePublicProviderEntityId(configuration.newThreadModelId)?.provider === provider) {
     dormant.newThreadModelId = configuration.newThreadModelId; dormant.newThreadReasoningEffort = configuration.newThreadReasoningEffort
+    dormant.newThreadSpeed = configuration.newThreadSpeed
     dormant.newThreadRuntimeMode = configuration.newThreadRuntimeMode ?? null
   }
   return dormant

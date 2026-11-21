@@ -8,7 +8,7 @@ export const RUNTIME_MODE_ORDER: readonly AgentRuntimeMode[] = agentRuntimeModeS
  * The settings that make up the new-thread defaults. On the desktop they are this computer's own and apply to a new thread
  * on every host it opens one on, so the router keeps them on the local host whichever host is selected (ADR-0074).
  */
-export const NEW_THREAD_DEFAULT_FIELDS = ['newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode'] as const satisfies readonly (keyof AgentConfiguration)[]
+export const NEW_THREAD_DEFAULT_FIELDS = ['newThreadModelId', 'newThreadReasoningEffort', 'newThreadSpeed', 'newThreadRuntimeMode'] as const satisfies readonly (keyof AgentConfiguration)[]
 
 /**
  * The offered mode nearest a desired one a provider does not have: the closest one at or below it (safer), or,
