@@ -955,7 +955,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const rest = JSON.stringify({ ...state, watcher: undefined }), untimed = JSON.stringify({ ...page, observedAt: undefined })
     const pageDigest = hash(untimed)
     const reuse = heldStamp?.digest === pageDigest && laterTime(heldStamp.observedAt, newest) === heldStamp.observedAt
-    const observedAt = reuse ? heldStamp!.observedAt : page.observedAt
+    // A changed page goes under its read time, but never under one older than a page the phone was sent: after the
+    // computer's clock went back, the phone would leave it unshown and keep showing the page before it.
+    const observedAt = reuse ? heldStamp!.observedAt : laterTime(page.observedAt, newest)!
     const text = rest.slice(0, -1) + ',"watcher":' + untimed.slice(0, -1) + ',"observedAt":' + JSON.stringify(observedAt) + '}}'
     const restDigest = hash(rest), pageWithoutConversation = JSON.stringify({ ...page, observedAt: undefined, conversation: undefined })
     return { text, digest: restDigest + pageDigest, withoutConversation: restDigest + hash(pageWithoutConversation), stamp: { digest: pageDigest, observedAt } }

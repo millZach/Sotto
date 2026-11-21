@@ -1295,18 +1295,20 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
     try {
       const answered = await phone.call('read', { op: 'watcher-phone-read' })
       const answeredAt = (answered as { result: { state: { observedAt: string } } }).result.state.observedAt
-      // The clock goes back a minute and the page changes: it goes under the earlier time, which the iPhone leaves unshown.
+      // The clock goes back a minute and the page changes: it goes at once, and not under the earlier time, which the
+      // iPhone would leave unshown while it showed the page it was answered with.
       vi.setSystemTime(Date.now() - 60_000)
       const before = shells().length
       native.status = native.status === 'running' ? 'idle' : 'running'; f.workspace.adapters.codex.emit()
       await expect.poll(() => shells().slice(before).some(push => push.state.watcher !== undefined)).toBe(true)
+      const changed = shells().slice(before).find(push => push.state.watcher !== undefined)!.state.watcher!
+      expect(Date.parse(changed.observedAt)).toBeGreaterThanOrEqual(Date.parse(answeredAt))
       await received()
-      // The clock comes back. The page is unchanged, but its earlier time is not used again: the next push is shown.
+      // The clock comes back. The page is unchanged and the phone shows it under that time, so the next push keeps it.
       vi.setSystemTime(Date.now() + 120_000)
       await changeOther('running')
-      const last = shells().at(-1)!.state.watcher
-      expect(last).toBeDefined()
-      expect(Date.parse(last!.observedAt)).toBeGreaterThanOrEqual(Date.parse(answeredAt))
+      expect(shells().at(-1)!.state.watcher).toBeUndefined()
+      expect(shells().at(-1)!.state.kept).toContain('watcher')
     } finally { vi.useRealTimers() }
   })
 })
