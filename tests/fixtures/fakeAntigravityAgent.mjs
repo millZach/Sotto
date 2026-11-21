@@ -219,6 +219,10 @@ function run(command) {
     ask(sessionId, toolCall, [{ optionId: 'remember-this', name: 'Allow always', kind: 'allow_always', _meta: { 'agy.security.warning': { message: 'Runs this command from now on.' } } },
       { optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }, { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' }])
   }
+  if (command.type === 'mcp-permission') {
+    ask(sessionId, { toolCallId: randomUUID(), kind: 'other', title: `Run ${command.tool}`, status: 'pending' },
+      [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }, { optionId: 'deny', name: 'Deny', kind: 'reject_once' }])
+  }
   if (command.type === 'question') {
     ask(sessionId, { toolCallId: `interaction_${randomUUID().slice(0, 8)}`, title: command.text, kind: 'other', status: 'pending' },
       [{ optionId: 'Blue', name: 'Blue', kind: 'allow_once' }, { optionId: 'Red', name: 'Red', kind: 'allow_once' }])
