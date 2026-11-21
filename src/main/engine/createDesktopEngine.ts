@@ -133,6 +133,7 @@ import { OwnServers, type OwnServersDeepSeek, type OwnServersHermes, type OwnSer
 import { registerLocalAppsIpc, registerPhonesIpc } from '../phones/ipc'
 import { LocalApps } from '../phones/localApps'
 import { PhoneAccess } from '../phones/phoneAccess'
+import { phoneSendsFor } from '../../host/phoneSends'
 import { TailscaleCli, tailscaleInvoker } from '../phones/tailscale'
 import { PluginAccounts } from '../plugins/accounts'
 import { wordPluginChange } from '../plugins/changeWords'
@@ -911,7 +912,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const phoneAccess = new PhoneAccess({
     featureUsed: feature => productEvents.featureUsed(feature),
     directory: userDataPath,
-    listener: { sottoVersion: hostVersion, delegation: delegationEnabled, ...(phoneCompression ? {} : { compressPhones: false }), ...(phoneModelViews ? { phoneModels: phoneModelViews } : {}) },
+    listener: { sottoVersion: hostVersion, delegation: delegationEnabled, phoneSends: phoneSendsFor(userDataPath), ...(phoneCompression ? {} : { compressPhones: false }), ...(phoneModelViews ? { phoneModels: phoneModelViews } : {}) },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     ...(e2eConfiguration === null ? {} : { hostname: () => E2E_COMPUTER_NAME }),
