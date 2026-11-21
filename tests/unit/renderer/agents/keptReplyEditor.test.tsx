@@ -24,7 +24,7 @@ describe('the pane grid’s kept reply editors (#2746)', () => {
     expect([...assignPaneEditorSlots(opened, ['a']).values()]).toEqual([a])
   })
 
-  it('draws the next thread’s draft in the same editor on a sidebar switch, with an undo history of its own', async () => {
+  it('draws the next thread’s draft in the same editor on a sidebar switch, and each thread’s undo and caret stay its own', async () => {
     const base = stateFixture()
     const [one, two] = base.host.threads.filter(thread => thread.kind === undefined)
     expect(one && two).toBeTruthy()
@@ -38,6 +38,8 @@ describe('the pane grid’s kept reply editors (#2746)', () => {
     // Typing in the first thread leaves an edit to undo there.
     act(() => { editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' more') })
     expect(editor.can().undo()).toBe(true)
+    act(() => { editor.commands.setTextSelection(3) })
+    const caret = editor.state.selection.from
     state.activeThreadId = two!.id
     view.rerender(<ThreadsView now={NOW} />)
     await act(async () => { await new Promise(resolve => { setTimeout(resolve, 20) }) })
@@ -54,6 +56,9 @@ describe('the pane grid’s kept reply editors (#2746)', () => {
     await act(async () => { await new Promise(resolve => { setTimeout(resolve, 20) }) })
     expect(field().editor).toBe(editor)
     expect(field().dataset.promptText).toContain('First thread draft')
+    // Back on the first thread, its own edit is there to undo again, and its caret where it was left.
+    expect(editor.can().undo()).toBe(true)
+    expect(editor.state.selection.from).toBe(caret)
     expect(destroyed).not.toHaveBeenCalled()
   })
 })

@@ -111,6 +111,12 @@ const Ghost = Extension.create({
 
 /** The thread whose draft each editor shows now, for an editor a pane keeps across a switch (`paneEditor.ts`). */
 const editorOwners = new WeakMap<Editor, string | undefined>()
+/**
+ * Each thread's editing as the kept editor left it when another thread took it: its document, selection and undo history,
+ * newest last, so coming back to a thread brings its caret and its undo back with its draft. At most this many are kept.
+ */
+const editorStates = new WeakMap<Editor, Map<string, EditorState>>()
+const EDITOR_STATES_KEPT = 16
 
 /** What a prompt editor's callbacks read: the values and handlers of the component showing it now. */
 interface PromptLatest {
@@ -226,7 +232,17 @@ function PromptEditorView({ editor, text, skills, sigils, catalog, fieldRef, car
     const previousOwner = editorOwners.get(editor)
     editorOwners.set(editor, owner)
     if (owner !== undefined && previousOwner !== undefined && previousOwner !== owner) {
-      editor.view.updateState(EditorState.create({ doc: editor.schema.nodeFromJSON(textToPromptDoc(text, skills, sigils)), plugins: editor.state.plugins }))
+      let states = editorStates.get(editor)
+      if (!states) editorStates.set(editor, states = new Map())
+      states.delete(previousOwner)
+      states.set(previousOwner, editor.state)
+      while (states.size > EDITOR_STATES_KEPT) states.delete(states.keys().next().value!)
+      const doc = editor.schema.nodeFromJSON(textToPromptDoc(text, skills, sigils))
+      // The thread's own editing comes back while its draft is still the one it left; a draft changed meanwhile, as from
+      // another window or computer, starts afresh. Either way the editor's own plugins, as this view mounted them, stay.
+      const left = states.get(owner)
+      states.delete(owner)
+      editor.view.updateState(left !== undefined && left.doc.eq(doc) ? left.reconfigure({ plugins: editor.state.plugins }) : EditorState.create({ doc, plugins: editor.state.plugins }))
     }
     const element = editor.view.dom as PromptEditorElement
     fieldRef.current = element
