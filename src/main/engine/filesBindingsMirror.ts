@@ -146,7 +146,8 @@ export class FilesBindingsTracker {
       seenThreads.add(thread.id)
       if (!projectsChanged && this.threadRefs.get(thread.id) === thread) continue
       this.threadRefs.set(thread.id, thread)
-      const nextBinding = resolveFilesBinding(host, thread.id)
+      let nextBinding: FilesBinding | null
+      try { nextBinding = resolveFilesBinding(host, thread.id) } catch { nextBinding = null }
       const currentBinding = this.bindings.get(thread.id)
       if (nextBinding === null) {
         if (currentBinding !== undefined) {

@@ -1,4 +1,3 @@
-import { performance } from 'node:perf_hooks'
 import type { AgentCommand } from '../../shared/agents'
 import type { HostBrowserThreadRequest } from '../../shared/hostBrowser'
 import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'

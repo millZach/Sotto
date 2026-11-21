@@ -968,19 +968,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       return png && png.byteLength <= 20 * 1024 * 1024 ? { bytes: png, kind: 'image/png' } : { bytes: image.toJPEG(92), kind: 'image/jpeg' }
     },
   }
+  const quitHandles: HostQuitHandles = {}
+  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform, powerMonitor)
   // Behind `out-of-process-engine` (ADR-0210), run the desktop engine in its own child process so coordinator,
   // Watcher, router and store bursts never stall Electron's main UI/input thread.
   const engine = desktopEngine = owlFeatures['out-of-process-engine']
     ? await startOutOfProcessEngine(engineOptions, engineShellBridge)
     : await createDesktopEngine(engineOptions, engineShellBridge)
-
-  const quitHandles: HostQuitHandles = {
-    localRuntime: {
-      close: () => engine.close(),
-      prepareForShutdown: () => { engine.prepareForShutdown(); return Promise.resolve() },
-    },
+  quitHandles.localRuntime = {
+    close: () => engine.close(),
+    prepareForShutdown: () => { engine.prepareForShutdown(); return Promise.resolve() },
   }
-  registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform, powerMonitor)
 
   // The window's panes show their threads only while it has the focus (ADR-0046), and T3's background Git reads
   // check whether the window is showing and focused (or was within the last 45 seconds).

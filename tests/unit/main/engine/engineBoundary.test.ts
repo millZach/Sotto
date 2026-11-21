@@ -102,6 +102,13 @@ describe('FilesBindingsTracker and FilesBindingsMirror', () => {
     mirror.apply(removeDelta!)
     expect(mirror.resolveBinding('t1')).toBeNull()
     expect(mirror.threadTitle('t1')).toBe('t1')
+
+    // A thread whose worktree is still creating (status !== 'ready') must not throw; it resolves to null until ready.
+    const pendingWorktree = makeThread({ id: 't2', projectId: 'p1', title: 'Pending WT', worktree: { status: 'creating', branch: 'sotto/test' } as unknown as AgentThread['worktree'] })
+    const pendingDelta = tracker.syncLocal({ projects: host1.projects, threads: [pendingWorktree] } as unknown as AgentHostSnapshot)
+    expect(pendingDelta).toEqual({ threadTitles: { t2: 'Pending WT' } })
+    mirror.apply(pendingDelta!)
+    expect(mirror.resolveBinding('t2')).toBeNull()
   })
 
   it('tracks hosted terminal folders and SSH hosts and supports full reset snapshots', () => {
