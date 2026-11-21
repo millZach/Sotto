@@ -5445,7 +5445,8 @@ export class WatcherService implements WatcherControlHooks {
       const result = await this.options.control.commandFromWatcher(command, origin)
       const guardedRefusal = dispatchRefusal ?? this.dispatchRefusals.get(operation.id)
       if (result.error && guardedRefusal) throw guardedRefusal
-      if (result.error) this.providerRefusals.set(operation.id, result.error)
+      // A prompt is what Watcher can change and send again; a stop or a settle keeps the general words.
+      if (result.error && operation.draftId) this.providerRefusals.set(operation.id, result.error)
       // Stop and settle are commands, not prompt deliveries; their successful reply is their evidence.
       const outcome = operation.draftId ? sendOutcome(result, operation.target.threadId, operation.draftId) : undefined
       await this.options.control.watcherRecords.update(record => {

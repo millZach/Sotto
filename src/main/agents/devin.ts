@@ -1305,10 +1305,12 @@ export class DevinAcpHost implements ProviderHost {
     // A slash word Devin reads ahead of the prompt runs only when it names a skill the session listed. Devin's own
     // commands change its settings or send the session elsewhere outside Sotto's permissions, so they are refused.
     const slashWord = LEADING_SLASH_WORD.exec(command.text)?.[1]
+    const listed = (): ReadonlySet<string> | undefined => { const skills = connection.skills; return skills && skills.sessionId === alias.devinSessionId ? skills.names : undefined }
     if (slashWord !== undefined) {
-      const listed = (): ReadonlySet<string> | undefined => { const skills = connection.skills; return skills && skills.sessionId === alias.devinSessionId ? skills.names : undefined }
-      if (!listed()) await new Promise<void>(resolve => {
-        const timer = setTimeout(done, SKILLS_LISTED_MS)
+      // A list for another session wakes the wait too, so it waits on until this session's list or the deadline.
+      const deadline = Date.now() + SKILLS_LISTED_MS
+      while (!listed() && Date.now() < deadline) await new Promise<void>(resolve => {
+        const timer = setTimeout(done, deadline - Date.now())
         function done(): void { clearTimeout(timer); connection.skillsListed = connection.skillsListed.filter(wake => wake !== done); resolve() }
         connection.skillsListed.push(done)
       })
@@ -1339,6 +1341,8 @@ export class DevinAcpHost implements ProviderHost {
     // are the whole history, so the stale-input check below needs nothing more.
     if (connection.passedCheck <= checksBefore) await this.revalidate(connection, alias.cwd, generation)
     checkConnection()
+    // Devin may list its commands again while the checks run; a skill it no longer lists is not sent.
+    if (slashWord !== undefined && !listed()?.has(slashWord)) throw new Error(SLASH_REFUSED)
     if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The Devin thread changed before this follow-up. Review the newest input first.')
     if (this.active.has(id) || this.thread(id).requests.length) throw new Error('Devin is still working. Queue this follow-up.')
     const origin: Origin = { nativeMessageId: randomUUID(), messageId: command.messageId, commandId: command.commandId,
