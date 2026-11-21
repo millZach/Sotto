@@ -46,8 +46,7 @@ import { watchAfterSend } from '../watcher/watchOnSend'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
-import { promptSelection, setPromptSelection, type PromptEditorElement } from './PromptEditor'
-import { KeptPromptEditor } from './paneEditor'
+import { PromptEditor, promptSelection, setPromptSelection, type PromptEditorElement } from './PromptEditor'
 import { promptDocText } from './promptDocument'
 import { toolbarApplies } from './branchToolbar.logic'
 import { useDelegationsEnabled } from './delegations'
@@ -742,7 +741,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={anyFile ? attachable : supported}
       imagesSupported={row.model?.supportsImages === true} answering={answering}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
-      <KeptPromptEditor owner={threadId} fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
+      <PromptEditor owner={threadId} fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
         label={fieldLabel} editable={editable} ghost={ghost}
         aria-describedby={ghost !== null ? `${statusId} ${ghostId}` : statusId}
         aria-autocomplete={menus || next !== null ? 'list' : undefined}

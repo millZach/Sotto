@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { assignPaneEditorSlots, PaneEditorHost, PaneEditorProvider, type PaneEditorSlot } from './paneEditor'
+import { assignPaneEditorSlots, PaneEditorProvider, releasePaneEditorSlots, type PaneEditorSlot } from './paneEditor'
 import { useLingui } from '@lingui/react/macro'
 import { Marked, useMark } from '../components/marks'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react'
@@ -300,12 +300,14 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
   const area = useRef<HTMLDivElement>(null)
   // One kept reply editor for each pane, handed to the thread that takes a pane's place, so a switch to another thread in
-  // the sidebar draws the new thread's draft rather than building an editor anew (#2746).
+  // the sidebar shows the new thread's draft in the editor its pane already had rather than building one anew (#2746).
   const editorSlots = useRef<ReadonlyMap<string, PaneEditorSlot>>(new Map())
   const paneKey = paneIds.join(' ')
   // The slots follow the threads in panes, which `paneKey` names.
   const slotted = useMemo(() => assignPaneEditorSlots(editorSlots.current, paneIds), [paneKey])
-  useLayoutEffect(() => { editorSlots.current = slotted }, [slotted])
+  useLayoutEffect(() => { releasePaneEditorSlots(editorSlots.current, slotted); editorSlots.current = slotted }, [slotted])
+  // The grid going takes every pane's kept editor with it.
+  useEffect(() => () => { releasePaneEditorSlots(editorSlots.current, new Map()) }, [])
   const [moving, setMoving] = useState<string | null>(null)
   const moveStart = useRef<number | undefined>(undefined)
   const [announcement, setAnnouncement] = useState('')
@@ -468,7 +470,6 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
       })}
     </div> : null}
     <div className="thread-panes__area" data-room-backdrop="" ref={area} style={areaStyle}>
-      {[...slotted.values()].map(slot => <PaneEditorHost key={slot.key} slot={slot} />)}
       {paneIds.map((id, index) => {
         const focused = id === focusedId
         const hidden = single && id !== shownId

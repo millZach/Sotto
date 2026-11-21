@@ -4,27 +4,24 @@ import { act } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { ThreadsView } from '../../../../src/renderer/src/agents/ThreadsView'
-import { assignPaneEditorSlots, type PaneEditorSlot } from '../../../../src/renderer/src/agents/paneEditor'
+import { assignPaneEditorSlots } from '../../../../src/renderer/src/agents/paneEditor'
 import type { PromptEditorElement } from '../../../../src/renderer/src/agents/promptSelection'
 import type { AgentState } from '../../../../src/shared/agents'
 
-const slot = (key: number): PaneEditorSlot => ({ key, container: document.createElement('div'), props: null, redraw: () => undefined })
-
 describe('the pane grid’s kept reply editors (#2746)', () => {
   it('keeps a thread’s slot while its pane stays, hands a leaving thread’s to the one taking its place, and makes one only past those', () => {
-    let made = 10
-    const create = (): PaneEditorSlot => slot(++made)
-    const first = assignPaneEditorSlots(new Map(), ['a', 'b'], create)
-    expect([...first.values()].map(item => item.key)).toEqual([11, 12])
+    const first = assignPaneEditorSlots(new Map(), ['a', 'b'])
+    const [a, b] = [first.get('a')!, first.get('b')!]
+    expect(a).not.toBe(b)
     // A switch in the sidebar: the second pane's thread is replaced, and the new thread takes the slot it left.
-    const switched = assignPaneEditorSlots(first, ['a', 'c'], create)
-    expect(switched.get('a')).toBe(first.get('a'))
-    expect(switched.get('c')).toBe(first.get('b'))
+    const switched = assignPaneEditorSlots(first, ['a', 'c'])
+    expect(switched.get('a')).toBe(a)
+    expect(switched.get('c')).toBe(b)
     // Moving panes keeps each thread's own slot; opening a pane beside makes one; closing one lets its slot go.
-    expect(assignPaneEditorSlots(switched, ['c', 'a'], create).get('a')).toBe(first.get('a'))
-    const opened = assignPaneEditorSlots(switched, ['a', 'c', 'd'], create)
-    expect(opened.get('d')?.key).toBe(13)
-    expect([...assignPaneEditorSlots(opened, ['a'], create).values()]).toEqual([first.get('a')])
+    expect(assignPaneEditorSlots(switched, ['c', 'a']).get('a')).toBe(a)
+    const opened = assignPaneEditorSlots(switched, ['a', 'c', 'd'])
+    expect([a, b]).not.toContain(opened.get('d'))
+    expect([...assignPaneEditorSlots(opened, ['a']).values()]).toEqual([a])
   })
 
   it('draws the next thread’s draft in the same editor on a sidebar switch, with an undo history of its own', async () => {
@@ -46,6 +43,9 @@ describe('the pane grid’s kept reply editors (#2746)', () => {
     await act(async () => { await new Promise(resolve => { setTimeout(resolve, 20) }) })
     expect(field().editor).toBe(editor)
     expect(field().dataset.promptText).toBe('Second thread draft')
+    // It stands in its own pane's composer, so the pane's focus and the composer's paste, drop and blur handlers hear it.
+    expect(field().closest('.thread-pane')?.getAttribute('data-thread-id')).toBe(two!.id)
+    expect(field().closest('.screenshot-input')).not.toBeNull()
     // The first thread's edit is not the second's to undo.
     expect(editor.can().undo()).toBe(false)
     expect(destroyed).not.toHaveBeenCalled()

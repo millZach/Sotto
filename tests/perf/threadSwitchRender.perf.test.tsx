@@ -95,7 +95,11 @@ describe('thread switch render cost', async () => {
       const rendered = render(view())
       const samples: number[] = []
       for (let index = 0; index < WARMUP + ITERATIONS; index++) {
-        if (index === WARMUP) { commits = 0; committed = 0; parts.sidebar = 0; parts.composer = 0; layoutReads = 0; editorsDestroyed = 0; timed = true }
+        if (index === WARMUP) {
+          // The warm-up's own teardowns land on TipTap's timers first, so none of them counts as a timed switch's.
+          await act(async () => { await new Promise(resolve => { setTimeout(resolve, 50) }) })
+          commits = 0; committed = 0; parts.sidebar = 0; parts.composer = 0; layoutReads = 0; editorsDestroyed = 0; timed = true
+        }
         const target = index % 2 === 0 ? second! : first!
         const answer = { ...state, activeThreadId: target.id, activeProjectId: target.projectId }
         const started = performance.now()
