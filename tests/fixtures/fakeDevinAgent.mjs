@@ -116,6 +116,14 @@ const validServers = (servers, script) => Array.isArray(servers) && (!servers.le
  && server.headers.every(header => typeof header?.name === 'string' && typeof header.value === 'string'))
 const released = name => new Promise(resolve => { const timer = setInterval(() => { if (existsSync(path(name))) { clearInterval(timer); resolve() } }, 10) })
 function update(sessionId, value) { send({ method: 'session/update', params: { sessionId, update: value } }) }
+// What 3000.14.30821 lists once a session is made or loaded: its own commands beside the user's skills, which it marks
+// with the category `Skills`. `noCommands` lists none, as a session that has not said yet.
+function listCommands(sessionId, script) {
+ if (script.noCommands) return
+ const command = (name, category) => ({ name, description: 'Synthetic command.', _meta: { 'cognition.ai/icon': 'zap', 'cognition.ai/category': category } })
+ update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [command('bypass', 'Session'), command('share', 'Session'),
+  command('fixture-skill', 'Skills'), command('fixture:plugin-skill', 'Skills')] })
+}
 function saveMessage(sessionId, message) {
  const session = read(nativePath(sessionId), null)
  if (!session) throw new Error('Missing fixture session')
@@ -209,8 +217,9 @@ createInterface({ input: process.stdin }).on('line', line => {
   const sessionId = randomUUID(); const session = { cwd: p.cwd, model: 'fixture-model', messages: [] }
   write(nativePath(sessionId), session); acquire(sessionId)
   applyScriptedPolicyChange(script, 'new')
-  if (script.delayCreate) setTimeout(() => result(frame.id, { sessionId, ...sessionInfo(session) }), script.delayCreate)
-  else result(frame.id, { sessionId, ...sessionInfo(session) })
+  // 3000.14.30821 lists a new session's commands just before it answers with the session's ID.
+  if (script.delayCreate) setTimeout(() => { listCommands(sessionId, script); result(frame.id, { sessionId, ...sessionInfo(session) }) }, script.delayCreate)
+  else { listCommands(sessionId, script); result(frame.id, { sessionId, ...sessionInfo(session) }) }
  } else if (frame.method === 'session/load') {
   // A held load waits twice for the test: before it takes the session, and again before it answers.
   const held = script.holdLoad === true
@@ -230,7 +239,7 @@ createInterface({ input: process.stdin }).on('line', line => {
    replay(p.sessionId)
    if (!acquire(p.sessionId)) { reject(frame.id, -32015); return }
    if (held) await released('release-reply')
-   const loaded = () => result(frame.id, sessionInfo(script.loadModel ? { ...session, model: script.loadModel } : session))
+   const loaded = () => { listCommands(p.sessionId, script); result(frame.id, sessionInfo(script.loadModel ? { ...session, model: script.loadModel } : session)) }
    // A slow reply holds the session open but not yet confirmed, as a reopen is while Sotto waits on it.
    if (script.delayLoad) setTimeout(loaded, script.delayLoad); else loaded()
   })()

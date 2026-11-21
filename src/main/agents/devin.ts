@@ -154,6 +154,13 @@ interface Connection {
   httpToolServers: boolean
   /** The Sotto tools this process's session was opened with, by the names Devin's permission rules use. */
   sottoTools: ReadonlySet<string>
+  /**
+   * The skills this process listed, by name, with the session it listed them for; undefined until it lists its commands.
+   * Devin lists them before it answers `session/new`, so before Sotto knows the session's ID.
+   */
+  skills: { readonly sessionId: string; readonly names: ReadonlySet<string> } | undefined
+  /** Wakes the sends waiting for the session to list its commands. */
+  skillsListed: (() => void)[]
 }
 interface ActiveTurn {
   origin: Origin
@@ -174,6 +181,18 @@ interface ActiveTurn {
 const TURN_WORK = new Set(['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'plan'])
 /** Whether a session update of this kind, streamed while a prompt is out, shows Devin took the prompt. */
 export const isDevinTurnWork = (kind: unknown): boolean => typeof kind === 'string' && TURN_WORK.has(kind)
+/**
+ * The commands a Devin session lists (`available_commands_update`). Devin 3000.14 lists its own commands, such as
+ * `/bypass`, which changes the permission mode, and `/share` and `/handoff`, which send the session to Devin's cloud,
+ * beside the user's skills, and marks each skill with the category `Skills`.
+ */
+const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), _meta: z.record(z.string(), z.unknown()).optional() }))
+const DEVIN_SKILL_CATEGORY = 'Skills'
+/** The word a prompt starts with when it starts with a slash, which Devin reads as a command or a skill. */
+const LEADING_SLASH_WORD = /^\s*\/([a-z][\w:.-]*)(?:\s|$)/iu
+/** How long a send that starts with a slash word waits for a session that has not listed its commands yet. */
+const SKILLS_LISTED_MS = 5_000
+const SLASH_REFUSED = 'Devin runs a slash word at the start of a prompt only when it names one of Devin’s skills, and this one does not. Nothing was sent. Remove the slash, or start with a skill Devin lists.'
 /** How long a send waits on its thread's own stream before it also reads the replay for its dispatch identity. */
 const ACCEPTANCE_GRACE_MS = 1_500
 /** The read pace of a held thread with a prompt Devin has not yet shown it took, and the replay fallback's pace. */
@@ -474,7 +493,7 @@ export class DevinAcpHost implements ProviderHost {
     const connection: Connection = {
       rpc: undefined as unknown as DevinRpc, nonce: randomUUID(), profile, fresh: false, tools: new Map(), toolBytes: 0,
       transcript: { messages: [], bytes: 0 }, replaying: observer, mode: undefined, thinking: undefined, intentionalClose: false, passedCheck: 0,
-      httpToolServers: false, sottoTools: new Set(),
+      httpToolServers: false, sottoTools: new Set(), skills: undefined, skillsListed: [],
     }
     const rpc: DevinRpc = new DevinRpc(this.executable, [...(this.options.args ?? []), '--config', profile.path, 'acp'], cwd,
       devinEnvironment(this.options.environment), this.options.requestTimeoutMs ?? 15_000,
@@ -1003,8 +1022,16 @@ export class DevinAcpHost implements ProviderHost {
     if (!alias || connection.intentionalClose) return
     const params = record(frame.params)
     if (frame.method === 'session/update') {
+      const update = record(params?.update)
+      if (update?.sessionUpdate === 'available_commands_update' && typeof params?.sessionId === 'string') {
+        // A list that does not read is no skills, so a slash word is refused rather than guessed at.
+        const commands = commandsSchema.safeParse(update.availableCommands)
+        connection.skills = { sessionId: params.sessionId, names: new Set(commands.success
+          ? commands.data.flatMap(command => command._meta?.['cognition.ai/category'] === DEVIN_SKILL_CATEGORY ? [command.name] : []) : []) }
+        for (const wake of connection.skillsListed.splice(0)) wake()
+        return
+      }
       if (!params || params.sessionId !== alias.devinSessionId) return
-      const update = record(params.update)
       if (!update) throw new Error('Invalid Devin update.')
       if (!connection.replaying && alias.settingsConfirmed && update.sessionUpdate === 'config_option_update' && modelConfig(update).current !== alias.modelId) throw new Error('Devin changed the selected model.')
       // Devin announces every mode it is set to, the thread's own included. Until it confirms the mode Sotto set
@@ -1273,8 +1300,20 @@ export class DevinAcpHost implements ProviderHost {
     }
     validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     if (command.skills?.length) throw new Error('Devin skill selection is not supported.')
-    if (/^\s*\/[a-z][\w-]*(?:\s|$)/iu.test(command.text)) throw new Error('Devin slash commands are not supported here. Send a text prompt instead.')
     verifyFileMentions(command.text, command.files)
+    // A slash word Devin reads ahead of the prompt runs only when it names a skill the session listed. Devin's own
+    // commands change its settings or send the session elsewhere outside Sotto's permissions, so they are refused.
+    const slashWord = LEADING_SLASH_WORD.exec(command.text)?.[1]
+    if (slashWord !== undefined) {
+      const listed = (): ReadonlySet<string> | undefined => { const skills = connection.skills; return skills && skills.sessionId === alias.devinSessionId ? skills.names : undefined }
+      if (!listed()) await new Promise<void>(resolve => {
+        const timer = setTimeout(done, SKILLS_LISTED_MS)
+        function done(): void { clearTimeout(timer); connection.skillsListed = connection.skillsListed.filter(wake => wake !== done); resolve() }
+        connection.skillsListed.push(done)
+      })
+      checkConnection()
+      if (!listed()?.has(slashWord)) throw new Error(SLASH_REFUSED)
+    }
     const previous = alias.origins.find(origin => origin.commandId === command.commandId || origin.messageId === command.messageId)
     if (previous) {
       if (previous.digest !== digest(command.text) || previous.messageId !== command.messageId || previous.commandId !== command.commandId) throw new Error('This Devin dispatch identity is already in use.')

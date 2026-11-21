@@ -1197,6 +1197,17 @@ it('refunds a coordinator preparation refusal returned as a failed result', asyn
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
 })
 
+it('answers a start whose first prompt the provider refused with the provider\'s own words (#2778)', async () => {
+  const f = await fixture()
+  const native = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  const refusal = 'Synthetic refusal: start the prompt with a listed skill. Nothing was sent.'
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => { if (command.type === 'send') throw new Error(refusal); return native(command) })
+  const input = f.start()
+  expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: refusal, receipt: { deliveryState: 'failed' } })
+  // The record keeps only the code, so a retry of the same call reads it back without the words.
+  expect(await f.call('start_thread', input)).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'The operation could not be completed. Read its receipt before trying again.' })
+})
+
 it('keeps an unacknowledged native Stop uncertain in its original receipt', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')

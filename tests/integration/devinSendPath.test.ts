@@ -245,3 +245,18 @@ it('polls a running turn at the busy pace until the stream shows it taken, then 
     expect(await loads(f)).toBe(loaded + 2)
   } finally { vi.useRealTimers() }
 })
+
+it('sends a prompt that starts with a skill Devin listed and refuses one that starts with any other slash word', async () => {
+  f = await streamOnly()
+  const id = await opened(f)
+  await f.script({ streamOnPrompt: 'Working on it' })
+  const prompts = async (): Promise<number> => (await f!.driver.requests()).filter(record => record.method === 'session/prompt').length
+  // Devin's own commands change its permission mode or send the session to its cloud, and an unlisted word may be one.
+  for (const text of ['/bypass Synthetic prompt', '/share', '/not-listed Synthetic prompt']) {
+    await expect(send(f, id, text)).rejects.toThrow('only when it names one of Devin’s skills')
+  }
+  expect(await prompts()).toBe(0)
+  // A skill Devin listed for the session goes as it was written (#2778).
+  expect(await send(f, id, '/fixture-skill Synthetic prompt')).toEqual({ accepted: true })
+  expect(await prompts()).toBe(1)
+})
