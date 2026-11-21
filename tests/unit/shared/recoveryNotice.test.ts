@@ -19,6 +19,7 @@ const ALL_CODES = [
   { code: 'PLUGIN_USE_NOT_CLEARED' },
   { code: 'MODEL_WORDS_NOT_CLEARED' },
   { code: 'SOUND_WORDS_NOT_CLEARED' },
+  { code: 'ENGINE_EXITED' },
 ] as const
 
 describe('recoveryNoticeSchema', () => {

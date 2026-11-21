@@ -128,6 +128,9 @@ export interface ActivitySummary {
   /** The minute before Record a minute was pressed, and the minute it recorded. */
   readonly before: Omit<MainLoopReading, 'frozen'>
   readonly during: Omit<MainLoopReading, 'frozen'>
+  readonly engineRecorded?: boolean
+  readonly engineBefore?: Omit<MainLoopReading, 'frozen'>
+  readonly engineDuring?: Omit<MainLoopReading, 'frozen'>
 }
 
 const RECORDING_NAME = /^sotto-activity-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}(-\d+)?$/u
@@ -238,12 +241,13 @@ export interface SaveActivityRecordingOptions {
  * first, renamed once every file is written, then prunes to the newest few. Resolves null when `keep` said the
  * recording was thrown away. On any failure nothing it wrote stays, or the error names what does.
  */
-export async function saveActivityRecording(directory: string, name: string, profiles: { readonly main: CleanCpuProfile; readonly window: CleanCpuProfile | null },
-  summary: Omit<ActivitySummary, 'files' | 'windowRecorded'>, options: SaveActivityRecordingOptions = {}): Promise<SavedActivityRecording | null> {
+export async function saveActivityRecording(directory: string, name: string, profiles: { readonly main: CleanCpuProfile; readonly window: CleanCpuProfile | null; readonly engine?: CleanCpuProfile | null },
+  summary: Omit<ActivitySummary, 'files' | 'windowRecorded' | 'engineRecorded'>, options: SaveActivityRecordingOptions = {}): Promise<SavedActivityRecording | null> {
   const fs = options.fs ?? recordingFileSystem, keep = options.keep ?? (() => true)
-  const files = ['main.cpuprofile', ...(profiles.window ? ['window.cpuprofile'] : []), 'summary.json']
-  const full: ActivitySummary = { ...summary, files, windowRecorded: profiles.window !== null }
-  const contents = [JSON.stringify(profiles.main), ...(profiles.window ? [JSON.stringify(profiles.window)] : []), `${JSON.stringify(full, null, 2)}\n`]
+  const engineProfile = profiles.engine ?? null
+  const files = ['main.cpuprofile', ...(profiles.window ? ['window.cpuprofile'] : []), ...(engineProfile ? ['engine.cpuprofile'] : []), 'summary.json']
+  const full: ActivitySummary = { ...summary, files, windowRecorded: profiles.window !== null, ...(engineProfile ? { engineRecorded: true } : {}) }
+  const contents = [JSON.stringify(profiles.main), ...(profiles.window ? [JSON.stringify(profiles.window)] : []), ...(engineProfile ? [JSON.stringify(engineProfile)] : []), `${JSON.stringify(full, null, 2)}\n`]
   try { await fs.mkdir(directory) } catch { throw new ActivityRecordingSaveError(null) }
   await sweepPartialActivityRecordings(directory, fs)
   const folderName = await freeRecordingName(directory, name, fs)

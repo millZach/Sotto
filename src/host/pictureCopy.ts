@@ -15,16 +15,25 @@ import { encodeJpeg } from './jpegEncoder'
 /** A picture as four bytes a pixel, red, green, blue and alpha. */
 export interface Pixels { readonly width: number; readonly height: number; readonly data: Uint8Array }
 
-/** What the host asks the picture worker: one picture, by its data URL, at one edge. */
-export interface PictureRequest { readonly id: number; readonly dataUrl: string; readonly edge: number }
+/** What the host asks the picture worker: one picture, by its data URL, at one edge, tile size or clean redraw. */
+export type PictureRequest =
+  | { readonly id: number; readonly op?: 'edge'; readonly dataUrl: string; readonly edge: number }
+  | { readonly id: number; readonly op: 'thumbnail'; readonly dataUrl: string; readonly width: number; readonly height: number }
+  | { readonly id: number; readonly op: 'redraw'; readonly dataUrl: string; readonly kind: 'image/jpeg' | 'image/png' }
 /**
  * What the worker answers: the copy as a data URL, or null for a picture already that small or one it cannot read, and
  * the worker's own process ID, which is never the host's.
  */
-export interface PictureAnswer { readonly id: number; readonly copy: string | null; readonly pid: number }
+export interface PictureAnswer { readonly id: number; readonly copy: string | null; readonly kind?: 'image/jpeg' | 'image/png'; readonly pid: number }
 
 /** The JPEG quality the desktop's maker writes at (`mediaThumbnail.ts`). */
 export const PICTURE_COPY_QUALITY = 85
+/** The JPEG quality used when redrawing a Meshy photo without metadata (ADR-0141). */
+const PICTURE_REDRAW_JPEG_QUALITY = 92
+/** The maximum byte length of a redrawn Meshy PNG before falling back to JPEG (ADR-0141). */
+const PICTURE_REDRAW_PNG_MAX_BYTES = 20 * 1024 * 1024
+/** The most pixels a photo redraw decodes, matching `PHOTO_PIXELS_MAX` in `meshy/photo.ts`. */
+const PICTURE_REDRAW_MAX_PIXELS = 40_000_000
 /**
  * The most pixels a picture may have for the host to decode it: a 4K screenshot's, past any photo the iPhone sends (2576
  * on its long side). Decoding and scaling a 4K JPEG holds about 220 MB in the worker for a moment; a larger picture is
@@ -49,14 +58,43 @@ export function pictureCopy(dataUrl: string, edge: number): string | null {
 }
 
 /**
- * The pixels of a PNG or JPEG data URL, or null for any other kind. Throws for one that will not decode, and for one with
- * more than `PICTURE_COPY_MAX_PIXELS`, which is refused from its header before anything is decoded.
+ * A tile thumbnail for `dataUrl` fitted inside `width` by `height` as a JPEG at quality 85 (ADR-0170, ADR-0210).
+ * Returns `dataUrl` unchanged when the image already fits, or null when it is not a readable PNG or JPEG.
  */
-export function decodedPicture(dataUrl: string): Pixels | null {
+export function pictureThumbnail(dataUrl: string, width: number, height: number): string | null {
+  const picture = decodedPicture(dataUrl, { allowProfile: true, maxPixels: PICTURE_REDRAW_MAX_PIXELS })
+  if (!picture) return null
+  const scale = Math.min(1, width / picture.width, height / picture.height)
+  if (scale >= 1) return dataUrl
+  const scaled = scaledDown(picture, Math.max(1, Math.round(picture.width * scale)), Math.max(1, Math.round(picture.height * scale)))
+  return `${JPEG_URL}${encodeJpeg(scaled, PICTURE_COPY_QUALITY).toString('base64')}`
+}
+
+/**
+ * Redraws a PNG or JPEG from its pixels alone so no EXIF, location or camera metadata survives (ADR-0141, ADR-0210).
+ * Keeps PNG while it stays within Meshy's 20 MB limit; otherwise writes a JPEG at quality 92.
+ */
+export function pictureRedraw(dataUrl: string, kind: 'image/jpeg' | 'image/png'): { readonly dataUrl: string; readonly kind: 'image/jpeg' | 'image/png' } | null {
+  const picture = decodedPicture(dataUrl, { allowProfile: true, maxPixels: PICTURE_REDRAW_MAX_PIXELS })
+  if (!picture) return null
+  if (kind === 'image/png') {
+    const png = writePng(picture, { colorType: 6, inputColorType: 6, inputHasAlpha: true, deflateLevel: 6 })
+    if (png.byteLength <= PICTURE_REDRAW_PNG_MAX_BYTES) return { dataUrl: `${PNG_URL}${png.toString('base64')}`, kind: 'image/png' }
+  }
+  return { dataUrl: `${JPEG_URL}${encodeJpeg(picture, PICTURE_REDRAW_JPEG_QUALITY).toString('base64')}`, kind: 'image/jpeg' }
+}
+
+/**
+ * The pixels of a PNG or JPEG data URL, or null for any other kind. Throws for one that will not decode, and for one with
+ * more than `maxPixels`, which is refused from its header before anything is decoded.
+ */
+export function decodedPicture(dataUrl: string, options: { readonly allowProfile?: boolean; readonly maxPixels?: number } = {}): Pixels | null {
   const png = dataUrl.startsWith(PNG_URL)
   if (!png && !dataUrl.startsWith(JPEG_URL)) return null
   const bytes = Buffer.from(dataUrl.slice(png ? PNG_URL.length : JPEG_URL.length), 'base64')
-  return png ? decodedPng(bytes) : decodedJpeg(bytes)
+  const maxPixels = options.maxPixels ?? PICTURE_COPY_MAX_PIXELS
+  const allowProfile = options.allowProfile === true
+  return png ? decodedPng(bytes, maxPixels, allowProfile) : decodedJpeg(bytes, maxPixels, allowProfile)
 }
 
 /** `copy` as a data URL: a PNG when anything in it shows through, as the desktop's maker writes one, else a JPEG at 85. */
@@ -66,15 +104,15 @@ export function encodedCopy(copy: Pixels): string {
     : `${JPEG_URL}${encodeJpeg(copy, PICTURE_COPY_QUALITY).toString('base64')}`
 }
 
-function decodedPng(bytes: Buffer): Pixels {
+function decodedPng(bytes: Buffer, maxPixels: number, allowProfile: boolean): Pixels {
   // Its size is in the header that must come first, read before anything is inflated.
   if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.toString('latin1', 12, 16) !== 'IHDR') throw new Error('Not a PNG')
   const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20)
-  if (width < 1 || height < 1 || width * height > PICTURE_COPY_MAX_PIXELS) throw new Error('Too many pixels')
+  if (width < 1 || height < 1 || width * height > maxPixels) throw new Error('Too many pixels')
   // An interlaced PNG is inflated by pngjs with no limit on what comes out, so a small file could fill the worker's
   // memory: it is sent whole, as the desktop would show it.
   if (bytes[28] !== 0) throw new Error('Interlaced')
-  pngChunksChecked(bytes)
+  pngChunksChecked(bytes, allowProfile)
   const decoded = readPng(bytes)
   return { width: decoded.width, height: decoded.height, data: decoded.data }
 }
@@ -85,12 +123,12 @@ function decodedPng(bytes: Buffer): Pixels {
  * One that carries a colour profile (`iCCP`) is refused too, since the copy keeps the pixels as they are and would show
  * other colours than the picture does; it is sent whole.
  */
-function pngChunksChecked(bytes: Buffer): void {
+function pngChunksChecked(bytes: Buffer, allowProfile: boolean): void {
   let headers = 0
   for (let at = 8; at + 8 <= bytes.length;) {
     const length = bytes.readUInt32BE(at), type = bytes.toString('latin1', at + 4, at + 8)
     if (type === 'IHDR') headers++
-    else if (type === 'iCCP') throw new Error('Colour profile')
+    else if (!allowProfile && type === 'iCCP') throw new Error('Colour profile')
     else if (type === 'IEND') break
     at += 12 + length
   }
@@ -112,13 +150,13 @@ function jpegHasProfile(bytes: Buffer): boolean {
   return false
 }
 
-function decodedJpeg(bytes: Buffer): Pixels {
+function decodedJpeg(bytes: Buffer, maxPixels: number, allowProfile: boolean): Pixels {
   // A damaged JPEG is not guessed at: it is sent whole for the phone's own decoder to show as it can. jpeg-js reads the
   // size from the frame header and refuses one past the limit before it makes room for the pixels.
   // A JPEG with a colour profile is sent whole, as a PNG with one is.
-  if (jpegHasProfile(bytes)) throw new Error('Colour profile')
+  if (!allowProfile && jpegHasProfile(bytes)) throw new Error('Colour profile')
   const decoded = decodeJpeg(bytes, { useTArray: true, formatAsRGBA: true, tolerantDecoding: false,
-    maxResolutionInMP: PICTURE_COPY_MAX_PIXELS / 1_000_000, maxMemoryUsageInMB: 256 })
+    maxResolutionInMP: maxPixels / 1_000_000, maxMemoryUsageInMB: Math.max(256, Math.ceil((maxPixels * 4) / (1024 * 1024)) * 2) })
   if (decoded.width < 1 || decoded.height < 1) throw new Error('No pixels')
   return decoded
 }

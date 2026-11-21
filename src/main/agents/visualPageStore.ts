@@ -19,7 +19,7 @@ const PAGE_ADDRESS = new RegExp(`^${VISUAL_SCHEME}://page/([A-Za-z0-9_-]{43})$`,
 
 export interface VisualPageStoreDependencies {
   /** The visual this computer's thread holds under this ID, from main's own store; undefined when it holds none. */
-  read(threadId: string, visualId: string): AgentVisual | undefined
+  read(threadId: string, visualId: string): AgentVisual | undefined | Promise<AgentVisual | undefined>
   /** The Figtree faces, as `@font-face` rules with data URLs. */
   readonly fontCss: string
   readonly now?: () => number
@@ -45,8 +45,16 @@ export class VisualPageStore {
 
   /** The interactive visual this thread holds under this ID, or undefined, however the store answers. */
   private readPage(threadId: string, visualId: string): AgentVisual | undefined {
-    let visual: AgentVisual | undefined
+    let visual: AgentVisual | undefined | Promise<AgentVisual | undefined>
     try { visual = this.dependencies.read(threadId, visualId) } catch { return undefined }
+    if (visual && typeof (visual as Promise<unknown>).then === 'function') return undefined
+    const resolved = visual as AgentVisual | undefined
+    return resolved?.kind === 'interactive' ? resolved : undefined
+  }
+
+  private async readPageAsync(threadId: string, visualId: string): Promise<AgentVisual | undefined> {
+    let visual: AgentVisual | undefined
+    try { visual = await this.dependencies.read(threadId, visualId) } catch { return undefined }
     return visual?.kind === 'interactive' ? visual : undefined
   }
 
@@ -57,6 +65,15 @@ export class VisualPageStore {
    */
   open(request: VisualPageRequest): VisualPageResult {
     if (!this.readPage(request.threadId, request.visualId)) return { ok: false, reason: t`Sotto no longer has this page, so it is not shown.` }
+    return this.mint(request)
+  }
+
+  async openAsync(request: VisualPageRequest): Promise<VisualPageResult> {
+    if (!await this.readPageAsync(request.threadId, request.visualId)) return { ok: false, reason: t`Sotto no longer has this page, so it is not shown.` }
+    return this.mint(request)
+  }
+
+  private mint(request: VisualPageRequest): VisualPageResult {
     this.sweep()
     while (this.waiting.size >= VISUAL_PAGE_TOKENS_MAX) this.waiting.delete(this.waiting.keys().next().value!)
     const token = randomBytes(32).toString('base64url')
@@ -73,12 +90,24 @@ export class VisualPageStore {
 
   /** The page for a waiting address, once; the address is spent whether or not the page can still be read. */
   serve(url: string): Response {
+    const entry = this.consume(url)
+    if (!entry) return visualPageNotFound()
+    const visual = this.readPage(entry.threadId, entry.visualId)
+    return visual ? visualPageResponse(visual.source, entry.theme, this.dependencies.fontCss) : visualPageNotFound()
+  }
+
+  async serveAsync(url: string): Promise<Response> {
+    const entry = this.consume(url)
+    if (!entry) return visualPageNotFound()
+    const visual = await this.readPageAsync(entry.threadId, entry.visualId)
+    return visual ? visualPageResponse(visual.source, entry.theme, this.dependencies.fontCss) : visualPageNotFound()
+  }
+
+  private consume(url: string): WaitingPage | undefined {
     const token = PAGE_ADDRESS.exec(url)?.[1]
     const entry = token === undefined ? undefined : this.waiting.get(token)
     if (token !== undefined) this.waiting.delete(token)
-    if (!entry || entry.expires <= this.now()) return visualPageNotFound()
-    const visual = this.readPage(entry.threadId, entry.visualId)
-    return visual ? visualPageResponse(visual.source, entry.theme, this.dependencies.fontCss) : visualPageNotFound()
+    return entry && entry.expires > this.now() ? entry : undefined
   }
 
   private sweep(): void {

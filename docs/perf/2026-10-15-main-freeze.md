@@ -73,3 +73,19 @@ watches on every update, as the owner's does. With `SOTTO_PERF_ASSERT=1`
 it fails when main's longest stall or its count of stalls of 100 ms or more passes the spec's limits, and
 `.github/workflows/main-freeze.yml` runs it that way every night (`docs/ci.md`, under Main freeze nightly).
 `docs/perf/2026-10-20-main-lag.md` has the counting gate that pull requests meet.
+
+**November 20, 2026: pre-extraction baseline before moving the engine out of main (`477a70004`, ADR-0210).** One valid run on Windows x64 (`SOTTO_PERF_BENCH=1`, 230 padding threads + owner history + 40 remote threads):
+
+| Case | Main: longest stall, p99, stalls of 100 ms or more | Keystrokes (p50 / p95 / max) | Window (fps, broadcasts/s) |
+| --- | --- | --- | --- |
+| Nothing streaming | 44.63 ms, 12.26 ms, 0 | 9.6 / 14.2 / 16.5 ms | 60.0 fps, 8.0/s |
+| One thread streaming | 18.92 ms, 17.15 ms, 0 | 5.85 / 13.2 / 25.7 ms | 59.8 fps, 18.9/s |
+| Three threads streaming | 24.13 ms, 18.60 ms, 0 | 7.85 / 11.9 / 13.2 ms | 59.9 fps, 19.0/s |
+
+**November 20, 2026: out-of-process engine (`SOTTO_OWL_FEATURES=out-of-process-engine=1`, ADR-0210).** One valid run on Windows x64 (`SOTTO_PERF_BENCH=1`, same 230 padding threads + owner history + 40 remote threads):
+
+| Case | Main: longest stall, p99, stalls of 100 ms or more | Keystrokes (p50 / p95 / max) | Window (fps, broadcasts/s) |
+| --- | --- | --- | --- |
+| Nothing streaming | 13.48 ms, 11.57 ms, 0 | 10.8 / 15.9 / 19.9 ms | 59.9 fps, 7.9/s |
+| One thread streaming | 12.37 ms, 11.55 ms, 0 | 9.5 / 12.3 / 13.6 ms | 59.7 fps, 19.2/s |
+| Three threads streaming | 16.24 ms, 11.68 ms, 0 | 9.0 / 12.7 / 15.5 ms | 59.6 fps, 19.0/s |

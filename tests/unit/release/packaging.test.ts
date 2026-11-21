@@ -179,9 +179,10 @@ describe('release contract', () => {
 
   it('bundles the memory store into the runtime and closes it on quit', () => {
     const main = read('src/main/index.ts')
-    expect(main).toContain("from './memory/runtime'")
-    expect(main).toContain("openRuntimeMemory(join(userDataPath, 'memory.sqlite'), logOperational)")
-    expect(main).toContain('memoryStore?.close()')
+    const engine = read('src/main/engine/createDesktopEngine.ts')
+    expect(engine).toContain("from '../memory/runtime'")
+    expect(engine).toContain("openRuntimeMemory(join(userDataPath, 'memory.sqlite'), log)")
+    expect(engine).toContain('memoryStore?.close()')
     expect(main).toContain("from './memory/probe'")
   })
 

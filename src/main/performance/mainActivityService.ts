@@ -20,6 +20,10 @@ export interface MainActivityServiceOptions {
   readonly durationMs?: number
   /** Main's own profiler; made fresh for each recording. */
   readonly mainProfiler: () => ProfilerTarget
+  /** Optional out-of-process desktop engine profiler (ADR-0210). */
+  readonly engineProfiler?: () => ProfilerTarget | null
+  /** Optional out-of-process desktop engine event-loop reading (ADR-0210). */
+  readonly engineLoopReading?: () => Promise<Omit<MainLoopReading, 'frozen'> | null>
   /** The app's folders, whose scripts a recording keeps by their place inside the app. */
   readonly appRoots: readonly string[]
   /** The development server the window loads from, in development runs only. */
@@ -48,8 +52,10 @@ export function discardLeaving(folder: string): string {
 interface ActiveRecording {
   readonly main: ProfilerTarget
   readonly window: ProfilerTarget | null
+  readonly engine: ProfilerTarget | null
   readonly startedAt: number
   readonly before: MainLoopReading
+  readonly engineBefore: Omit<MainLoopReading, 'frozen'> | null
   timer: unknown
   /** Stop without saving was pressed, or the service was disposed. */
   discarded: boolean
@@ -108,7 +114,7 @@ export class MainActivityService {
     this.monitor.stop()
     const active = this.active
     this.active = null
-    if (active) { active.discarded = true; this.clearTimer(active.timer); void active.main.cancel(); void active.window?.cancel() }
+    if (active) { active.discarded = true; this.clearTimer(active.timer); void active.main.cancel(); void active.window?.cancel(); void active.engine?.cancel() }
     if (this.starting) this.starting.cancelled = true
     this.listeners.clear()
   }
@@ -186,9 +192,18 @@ export class MainActivityService {
         this.options.log('activity-recording-window-unavailable')
       }
     }
-    if (starting.cancelled) { await Promise.all([main.cancel(), windowTarget?.cancel()]); return }
+    let engineTarget = this.options.engineProfiler?.() ?? null
+    if (engineTarget) {
+      try { await engineTarget.start() } catch {
+        await engineTarget.cancel()
+        engineTarget = null
+      }
+    }
+    if (starting.cancelled) { await Promise.all([main.cancel(), windowTarget?.cancel(), engineTarget?.cancel()]); return }
+    const engineBefore = this.options.engineLoopReading ? await this.options.engineLoopReading().catch(() => null) : null
+    if (starting.cancelled) { await Promise.all([main.cancel(), windowTarget?.cancel(), engineTarget?.cancel()]); return }
     const startedAt = this.wallNow()
-    const active: ActiveRecording = { main, window: windowTarget, startedAt, before: this.monitor.reading(), timer: null, discarded: false }
+    const active: ActiveRecording = { main, window: windowTarget, engine: engineTarget, startedAt, before: this.monitor.reading(), engineBefore, timer: null, discarded: false }
     active.timer = this.setTimer(() => { this.finishing = this.finish(active) }, durationMs)
     this.active = active
     this.recording = { phase: 'recording', startedAt, durationMs }
@@ -203,7 +218,7 @@ export class MainActivityService {
     this.active = null
     active.discarded = true
     this.clearTimer(active.timer)
-    await Promise.all([active.main.cancel(), active.window?.cancel()])
+    await Promise.all([active.main.cancel(), active.window?.cancel(), active.engine?.cancel()])
     this.recording = { phase: 'idle' }
     this.changed()
   }
@@ -214,6 +229,7 @@ export class MainActivityService {
     const during = this.monitor.reading()
     let saved: Awaited<ReturnType<typeof saveActivityRecording>>
     let windowProfile = null
+    let engineProfile = null
     try {
       const mainProfile = await active.main.stop()
       if (active.window && !active.discarded) {
@@ -222,17 +238,28 @@ export class MainActivityService {
           this.options.log('activity-recording-window-unavailable')
         }
       }
+      if (active.engine && !active.discarded) {
+        try { engineProfile = await active.engine.stop() } catch {
+          await active.engine.cancel()
+        }
+      }
+      const engineDuring = this.options.engineLoopReading && !active.discarded
+        ? await this.options.engineLoopReading().catch(() => null)
+        : null
       if (active.discarded) return
       const roots = this.options.appRoots, origins = this.options.devOrigins ?? []
       saved = await saveActivityRecording(this.options.directory, activityRecordingName(new Date(active.startedAt)), {
         main: cleanCpuProfile(mainProfile, roots, origins),
         window: windowProfile === null ? null : cleanCpuProfile(windowProfile, roots, origins),
+        engine: engineProfile === null ? null : cleanCpuProfile(engineProfile, roots, origins),
       }, {
         format: 1, sottoVersion: this.options.sottoVersion, platform: this.options.platform, startedAt: new Date(active.startedAt).toISOString(),
         durationMs: Math.max(0, this.wallNow() - active.startedAt), before: numbers(active.before), during: numbers(during),
+        ...(active.engineBefore ? { engineBefore: active.engineBefore } : {}),
+        ...(engineDuring ? { engineDuring } : {}),
       }, { keep: () => !active.discarded, ...(this.options.files ? { fs: this.options.files } : {}) })
     } catch (error) {
-      if (!active.discarded) await Promise.all([active.main.cancel(), active.window?.cancel()])
+      if (!active.discarded) await Promise.all([active.main.cancel(), active.window?.cancel(), active.engine?.cancel()])
       if (this.active === active) this.active = null
       const saveError = error instanceof ActivityRecordingSaveError ? error : null
       const left = saveError?.left ?? null
