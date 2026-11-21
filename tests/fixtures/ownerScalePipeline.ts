@@ -30,7 +30,7 @@ import { DesktopHostRouter, type DesktopHostConnection } from '../../src/main/ho
 import { HostUpdates } from '../../src/main/hosts/hostUpdate'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import type { AgentActivity } from '../../src/shared/agentActivity'
-import { defaultAgentConfiguration, EMPTY_AGENT_HOST, publicProviderEntityId, type AgentHostSnapshot, type AgentModel, type AgentRequest, type AgentState, type AgentThread } from '../../src/shared/agents'
+import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentStateBroadcast, publicProviderEntityId, type AgentHostSnapshot, type AgentModel, type AgentRequest, type AgentState, type AgentThread } from '../../src/shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../src/shared/clientIdentity'
 import type { HeldProviders } from '../../src/shared/heldProviders'
 import { requestDraftProvider, type RequestDraft, type RequestDraftOwner, type RequestDraftTarget } from '../../src/shared/requestDrafts'
@@ -95,6 +95,8 @@ export interface OwnerScalePipeline {
   readonly adapter: StreamingAdapter
   readonly control: AgentControl
   readonly router: DesktopHostRouter
+  /** Encodes what the window is sent: each broadcast, and each command's answer as `registerAgentIpc` does. */
+  readonly broadcaster: AgentStateBroadcaster
   readonly requestDrafts: RequestDraftService
   /** Watcher, open with the owner's record, on Owl. Stable starts none and keeps the record whole. */
   readonly watcher: WatcherService | undefined
@@ -170,6 +172,8 @@ export interface OwnerScalePipelineOptions {
    * every budget that builds main here expects.
    */
   host?: OwnerScaleHost | undefined
+  /** Each broadcast the window is sent, as it leaves main; absent, broadcasts are encoded and dropped. */
+  window?: ((payload: AgentStateBroadcast) => void) | undefined
 }
 
 /** The paired desktop a host-scale main holds Watcher's work for: its pairing's client ID and its own Watcher. */
@@ -530,7 +534,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const statePublisher = coalesceAgentStatePublishes(next => {
     // Every published state asks for answer recovery, as main's does.
     router.scheduleRequestDraftReconcile(requestDrafts)
-    broadcaster.send(next, () => true)
+    broadcaster.send(next, payload => { options.window?.(payload); return true })
   })
   const detailPublisher = coalesceAgentThreadDetailPublishes(() => undefined, { beforeOpening: () => statePublisher.flush() })
   const offState = router.subscribe(next => statePublisher.publish(next))
@@ -684,7 +688,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     },
   }
   return {
-    track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, workspace, question, actions,
+    track, counts, adapter, control, router, broadcaster, requestDrafts, watcher, streamSessions, openThread, workspace, question, actions,
     broadcasts: () => broadcasts,
     adapterChangeRecords: () => shadows.carried.adapter,
     wrapperChangeRecords: () => shadows.carried['identity wrapper'],

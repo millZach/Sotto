@@ -1,6 +1,7 @@
 import { clientCatalogKey, hostCatalogKey } from '../../../shared/agents'
 import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentState, AgentThread, AgentWireBridge, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentThreadsBroadcast } from '../../../shared/agents'
 import { withKeptPartsPutBack, type HeldParts } from '../../../shared/keptParts'
+import type { WholeReadCause } from '../../../shared/mainActivity'
 import { createThreadReassembly, type ThreadReassembly } from './agentStateThreads'
 
 interface CachedCatalog {
@@ -70,6 +71,27 @@ function numbered(state: AgentState, wire: unknown): AgentState {
  * component that re-renders would — returns the same wrapped bridge rather than a new one, which keeps
  * the object stable for callers that key their own effects on it.
  */
+/**
+ * Why the page read the whole state: a broadcast whose kept parts, threads or catalogs it could not put back, or a command's
+ * answer whose threads or catalogs it could not. On November 20, 2026 the owner's window read the whole state 26 times in a
+ * minute of switching threads, each a 3.9 MB state taken in anew, and nothing said why (#2733).
+ */
+export type { WholeReadCause }
+/**
+ * A complete list's records, with each it marks as repeated from the page's own last whole read put back as the page's copy
+ * of it: the record the window already holds, which its sharing meets by identity. A list naming another read, or none, is
+ * taken as it is, so it does not matter whether it reaches the page before or after the read's answer (#2733).
+ */
+type RepeatedRecords = (list: Pick<AgentThreadsBroadcast, 'base' | 'changed'> & { readonly repeats?: AgentThreadsBroadcast['repeats'] | undefined }, broadcast?: boolean) => AgentThread[]
+/** The page's own reads of the whole state, each asked with why: one request each, a retry another, a shared one once. */
+interface WholeStateReader { get(cause?: WholeReadCause): Promise<AgentState> }
+const wholeReadListeners = new Set<(cause: WholeReadCause) => void>()
+/** Hears each whole read of the state the page asks main for to put back what it could not, by why; answers how to stop. */
+export function onWholeRead(listener: (cause: WholeReadCause) => void): () => void {
+  wholeReadListeners.add(listener)
+  return () => { wholeReadListeners.delete(listener) }
+}
+
 export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   const existing = wrapped.get(bridge)
   if (existing) return existing
@@ -77,9 +99,30 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   const lastRead: LastRead = new Map()
   // Reads and commands counted in the order the page asks for them.
   let asked = 0
-  const get = async (): Promise<AgentState> => {
+  // The page's own last whole read: its records by ID under the number main gave it, for the complete list after it (#2733).
+  let read: { readonly revision: number; readonly records: ReadonlyMap<string, AgentThread> } | undefined
+  /** The number main gave the page's latest whole read, or undefined when its answer named none. */
+  let answeredRead: number | undefined
+  const restoreRepeatedRecords: RepeatedRecords = (list, broadcast = false) => {
+    const repeats = list.repeats, held = read
+    // Main marks by a read only until the first complete broadcast after it, so the page lets its copy go there too.
+    if (broadcast && list.base === null) read = undefined
+    if (repeats === undefined || list.base !== null || held === undefined || held.revision !== repeats.read) return list.changed
+    const changed = [...list.changed]
+    for (const position of repeats.positions) {
+      const kept = changed[position] === undefined ? undefined : held.records.get(changed[position]!.id)
+      if (kept !== undefined) changed[position] = kept
+    }
+    return changed
+  }
+  const get = async (cause?: WholeReadCause): Promise<AgentState> => {
+    if (cause !== undefined) for (const listener of wholeReadListeners) listener(cause)
     const at = ++asked
-    const full = await bridge.get()
+    const { readRevision, ...full } = await bridge.get()
+    // Kept by the page alone, with the very records it hands on: the complete list after names them as repeated.
+    answeredRead = typeof readRevision === 'number' ? readRevision : undefined
+    // Only the newest read is kept: an older one whose answer lands last never takes the place of the read main marks by.
+    if (typeof readRevision === 'number' && (read === undefined || readRevision > read.revision)) read = { revision: readRevision, records: new Map(full.host.threads.map(thread => [thread.id, thread] as const)) }
     askedAt.set(full, at)
     lastRead.set(hostCatalogKey(full.host.hostId), full.host.models)
     for (const client of full.host.clientHosts ?? []) {
@@ -90,7 +133,7 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   }
   // The thread records the window's subscription was last broadcast, which a reply's changed thread records are put back from.
   let held: ThreadReassembly | undefined
-  const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead, () => held)
+  const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead, () => held, restoreRepeatedRecords)
   // An end-to-end run marks how many replies the page is still putting back, so a journey can tell a reply waiting for its
   // broadcast, and any read it falls back to, from one already answered before it counts the reads (#1939).
   let puttingBack = 0
@@ -103,7 +146,7 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   const result: AgentBridge = {
     ...bridge,
     get,
-    onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads)) },
+    onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads, restoreRepeatedRecords, () => answeredRead)) },
     // A window holding a broadcast asks for a reply's threads as the changed thread records since it (ADR-0028, October 30 amendment).
     command: async request => {
       const at = ++asked
@@ -234,15 +277,16 @@ function catalogIn(full: AgentState, key: string): AgentModel[] | undefined {
  */
 const OVERTAKEN_REPLY_WAIT_MS = 1_000
 
-function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined): (reply: AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt) => Promise<AgentState> {
+function createReceiptCompleter(bridge: WholeStateReader, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined,
+  repeated: RepeatedRecords = list => list.changed): (reply: AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt) => Promise<AgentState> {
   const recoveries = new Map<string, Promise<AgentState>>()
-  const readAfresh = (reply: Cataloged): Promise<AgentState> => bridge.get().catch(() => bridge.get()).then(full => { rememberRecovered(catalogs, reply, full); return full })
+  const readAfresh = (reply: Cataloged): Promise<AgentState> => bridge.get('answerThreads').catch(() => bridge.get('answerThreads')).then(full => { rememberRecovered(catalogs, reply, full); return full })
   const recover = (reply: Cataloged): Promise<AgentState> => {
     // Main counts revisions per catalog key, so the key names each catalog by the key main files it under.
     const named = catalogRevisions(reply).join(' ')
     let recovery = recoveries.get(named)
     if (recovery === undefined) {
-      recovery = bridge.get().catch(() => bridge.get()).then(full => { rememberRecovered(catalogs, reply, full); return full })
+      recovery = bridge.get('answerCatalog').catch(() => bridge.get('answerCatalog')).then(full => { rememberRecovered(catalogs, reply, full); return full })
       recoveries.set(named, recovery)
       const forget = (): void => { recoveries.delete(named) }
       recovery.then(forget, forget)
@@ -253,7 +297,7 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
     // A reply's changed thread records are put back from the broadcast the window holds; a complete list needs nothing held.
     const wire = reply.host.threads
     // One that overtook the broadcast it was measured from waits for it: main sent it first (#1939).
-    const threads: AgentThread[] | undefined = Array.isArray(wire) ? wire : wire.base === null ? wire.changed : await held()?.peekOnArrival(wire, OVERTAKEN_REPLY_WAIT_MS)
+    const threads: AgentThread[] | undefined = Array.isArray(wire) ? wire : wire.base === null ? repeated(wire) : await held()?.peekOnArrival(wire, OVERTAKEN_REPLY_WAIT_MS)
     const receipt: AgentCommandReceipt = { ...reply, host: { ...reply.host, threads: threads ?? [] } }
     const assembled = assembleState(catalogs, receipt, { newer: true })
     if (assembled !== undefined && threads !== undefined) return numbered(assembled, wire)
@@ -287,11 +331,14 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
  * attempt: from the cache, or a recovery of its own. Nothing but a broadcast ever starts a recovery, so
  * a `get()` that keeps failing is retried at most once per broadcast, never on a timer.
  */
-function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void,
+function createReassembler(bridge: WholeStateReader, catalogs: CatalogCache, listener: (state: AgentState) => void,
   // The thread records this subscription was broadcast, which each broadcast's changed records are applied to (#1330).
-  threads: ThreadReassembly = createThreadReassembly()): (raw: unknown) => void {
+  threads: ThreadReassembly = createThreadReassembly(), repeated: RepeatedRecords = list => list.changed,
+  /** The number main gave the latest whole read the page made, which a broadcast kept during it is newer or older than. */
+  readRevision: () => number | undefined = () => undefined): (raw: unknown) => void {
   let recovering = false
-  let pending: unknown = null
+  /** Broadcasts that landed while a recovery was on its way, oldest first. */
+  const queued: unknown[] = []
   /**
    * The broadcast this subscription last applied, as it crossed with its kept parts put back, under its thread revision: the
    * broadcast a later one's kept parts are read from (ADR-0028, October 30 kept parts).
@@ -316,7 +363,7 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCa
    * are always those of the broadcast whose thread records are held. Undefined when its threads were not applied.
    */
   const applyThreads = (raw: CompleteAgentStateBroadcast | undefined): AgentThread[] | undefined => {
-    const list = raw === undefined ? undefined : threads(raw.host.threads)
+    const list = raw === undefined ? undefined : threads(raw.host.threads.base === null ? { ...raw.host.threads, changed: repeated(raw.host.threads, true) } : raw.host.threads)
     if (list !== undefined) apply(raw!)
     return list
   }
@@ -349,18 +396,44 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCa
     // immediate repeat of it is read from cache instead of asking again, and main lists every thread record in
     // the broadcast after it. Every catalog the broadcast carried in full is cached by the attempt above.
     recovering = true
-    bridge.get().then(full => {
+    let answered = false
+    bridge.get(raw === undefined ? 'broadcastParts' : list === undefined ? 'broadcastThreads' : 'broadcastCatalog').then(full => {
       rememberRecovered(catalogs, raw ?? incoming, full)
       listener(full)
-      // Main answers `get()` in order with its broadcasts, so one kept while this was in flight was sent
-      // before the answer and is older than it. Delivering it now would put an older state on screen after
-      // a newer one; only a catalog it carried in full is worth keeping.
-      if (pending !== null) { seed(pending); pending = null }
+      // A broadcast kept while this was in flight that main sent after answering it is newer than the answer, whichever of
+      // the two reached the window first, which Electron does not promise: it is taken in and shown after the answer, in the
+      // order they landed (#2733). One sent before is older: delivering it would put an older state on screen after a newer
+      // one, so only a catalog it carried in full is kept, from the newest of them. Without the read's number every kept one
+      // is taken as older, as it always was.
+      const read = readRevision()
+      const kept = queued.splice(0)
+      const newer = read === undefined ? [] : kept.filter(raw => (threadsRevisionOf(raw) ?? -1) > read)
+      const older = kept.filter(raw => !newer.includes(raw))
+      if (older.length) seed(older.at(-1))
+      queued.push(...newer)
+      answered = true
     }).catch(() => undefined).finally(() => {
       recovering = false
-      if (pending !== null) { const next = pending; pending = null; process(next) }
+      // A recovery that failed gives the newest broadcast kept its own attempt, as it always did; an answered one, each
+      // newer broadcast in turn.
+      if (!answered && queued.length) queued.splice(0, queued.length - 1)
+      while (queued.length && !recovering) process(queued.shift())
     })
   }
 
-  return raw => { if (recovering) pending = raw; else process(raw) }
+  return raw => {
+    if (!recovering) { process(raw); return }
+    // Held while a read is on its way, up to a bound: the oldest go first, and they would only have lent their catalogs.
+    if (queued.length >= RECOVERY_QUEUE_LIMIT) queued.shift()
+    queued.push(raw)
+  }
+}
+
+/** At most this many broadcasts are held while a recovery's read is on its way: three threads streaming for 15 s. */
+const RECOVERY_QUEUE_LIMIT = 64
+
+/** A broadcast's thread revision, which main's one counter numbers its whole reads by too. */
+function threadsRevisionOf(raw: unknown): number | undefined {
+  const revision = isBroadcastLike(raw) ? (raw.host.threads as { revision?: unknown } | undefined)?.revision : undefined
+  return typeof revision === 'number' ? revision : undefined
 }

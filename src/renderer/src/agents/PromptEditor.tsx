@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Extension, Node } from '@tiptap/core'
+import { usePaneEditorSlot, type PaneEditorSlot } from './paneEditor'
+import { Editor, Extension, Node, type EditorOptions } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
@@ -7,7 +8,7 @@ import HardBreak from '@tiptap/extension-hard-break'
 import History from '@tiptap/extension-history'
 import { Slice } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { EditorState, Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { useLingui } from '@lingui/react/macro'
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from '@tiptap/react'
@@ -108,8 +109,24 @@ const Ghost = Extension.create({
   },
 })
 
-/** A text draft's view. No formatting, HTML paste, persistence or provider protocol lives here. */
-export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAfterInsert, id, label, placeholder = '', editable = true, ghost = null, onChange, onSelection, onKeyDown, ...aria }: {
+/** The thread whose draft each editor shows now, for an editor a pane keeps across a switch (`paneEditor.ts`). */
+const editorOwners = new WeakMap<Editor, string | undefined>()
+/**
+ * Each thread's editing as the kept editor left it when another thread took it: its document, selection and undo history,
+ * newest last, so coming back to a thread brings its caret and its undo back with its draft. At most this many are kept.
+ */
+const editorStates = new WeakMap<Editor, Map<string, EditorState>>()
+const EDITOR_STATES_KEPT = 16
+
+/** What a prompt editor's callbacks read: the values and handlers of the component showing it now. */
+interface PromptLatest {
+  readonly text: string
+  readonly skills: readonly AgentSkillReference[]
+  readonly onChange: (text: string, pills: readonly AgentSkillReference[]) => void
+  readonly onSelection?: ((selection: PromptSelection) => void) | undefined
+}
+
+type PromptEditorProps = {
   readonly text: string
   readonly skills: readonly AgentSkillReference[]
   readonly sigils: readonly SkillSigil[]
@@ -123,6 +140,11 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   readonly editable?: boolean
   /** The rest of the next prompt, drawn after the text and never part of it (ADR-0132); null draws nothing. */
   readonly ghost?: string | null
+  /**
+   * Whose draft this is, for an editor kept across a switch to another thread (`paneEditor.ts`, #2746): when it changes,
+   * the editor takes the new owner's text as a fresh document with an undo history of its own.
+   */
+  readonly owner?: string
   readonly onChange: (text: string, pills: readonly AgentSkillReference[]) => void
   readonly onSelection?: (selection: PromptSelection) => void
   readonly onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
@@ -131,13 +153,13 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   readonly 'aria-controls'?: string | undefined
   readonly 'aria-expanded'?: boolean | undefined
   readonly 'aria-activedescendant'?: string | undefined
-}): ReactNode {
-  const latest = useRef({ text, skills, onChange, onSelection })
-  latest.current = { text, skills, onChange, onSelection }
-  const editor = useEditor({
+}
+
+/** An editor's options: its first draft, and callbacks that read whichever component shows it through `latest`. */
+function promptEditorOptions(latest: { readonly current: PromptLatest }, initial: { readonly text: string; readonly skills: readonly AgentSkillReference[]; readonly sigils: readonly SkillSigil[]; readonly editable: boolean }): Partial<EditorOptions> {
+  return {
     extensions: [Document, Paragraph, Text, HardBreak, History, Skill, Ghost],
-    content: textToPromptDoc(text, skills, sigils), editable,
-    shouldRerenderOnTransaction: false,
+    content: textToPromptDoc(initial.text, initial.skills, initial.sigils), editable: initial.editable,
     editorProps: {
       // A permission makes this div read-only. Keep its tab stop so Chromium
       // retains focus and Tab still leads to the request's decision controls.
@@ -171,9 +193,57 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
     },
     onSelectionUpdate: ({ editor: current }) => latest.current.onSelection?.(promptSelection(current)),
     onFocus: ({ editor: current }) => latest.current.onSelection?.(promptSelection(current)),
-  })
+  }
+}
+
+/** A text draft's view. No formatting, HTML paste, persistence or provider protocol lives here. */
+export function PromptEditor(props: PromptEditorProps): ReactNode {
+  const slot = usePaneEditorSlot()
+  // A thread's composer in the pane grid shows its pane's kept editor (#2746); any other prompt has one of its own.
+  return slot !== null && props.owner !== undefined ? <KeptPromptEditor slot={slot} {...props} /> : <OwnPromptEditor {...props} />
+}
+
+/** An editor of its own, taken down with this component, as TipTap's `useEditor` does. */
+function OwnPromptEditor(props: PromptEditorProps): ReactNode {
+  const { text, skills, sigils, editable = true, onChange, onSelection } = props
+  const latest = useRef<PromptLatest>({ text, skills, onChange, onSelection })
+  latest.current = { text, skills, onChange, onSelection }
+  const editor = useEditor({ ...promptEditorOptions(latest, { text, skills, sigils, editable }), shouldRerenderOnTransaction: false })
+  return <PromptEditorView editor={editor} {...props} />
+}
+
+/** The pane slot's kept editor (#2746): made here the first time a composer shows it, and kept by the slot past this one. */
+function KeptPromptEditor({ slot, ...props }: PromptEditorProps & { readonly slot: PaneEditorSlot }): ReactNode {
+  const { text, skills, sigils, editable = true, onChange, onSelection } = props
+  const latest = slot.latest as { current: PromptLatest }
+  latest.current = { text, skills, onChange, onSelection }
+  if (slot.editor === null || slot.editor.isDestroyed) slot.editor = new Editor(promptEditorOptions(latest, { text, skills, sigils, editable }))
+  return <PromptEditorView editor={slot.editor} {...props} />
+}
+
+/** The editor drawn: its attributes, its draft kept in step with the store's, and its owner's history its own. */
+function PromptEditorView({ editor, text, skills, sigils, catalog, fieldRef, caretAfterInsert, id, label, placeholder = '', editable = true, ghost = null, owner, onKeyDown, ...rest }: PromptEditorProps & { readonly editor: Editor | null }): ReactNode {
+  // Only the field's own ARIA reaches its element; the handlers are the editor's callbacks' (`PromptLatest`).
+  const aria = Object.fromEntries(Object.entries(rest).filter(([key]) => key.startsWith('aria-')))
   useLayoutEffect(() => {
     if (!editor) return
+    // Another thread's draft: its own document and its own undo history, never an edit on top of the last thread's. Kept with
+    // the editor, which a pane's composers show in turn (#2746).
+    const previousOwner = editorOwners.get(editor)
+    editorOwners.set(editor, owner)
+    if (owner !== undefined && previousOwner !== undefined && previousOwner !== owner) {
+      let states = editorStates.get(editor)
+      if (!states) editorStates.set(editor, states = new Map())
+      states.delete(previousOwner)
+      states.set(previousOwner, editor.state)
+      while (states.size > EDITOR_STATES_KEPT) states.delete(states.keys().next().value!)
+      const doc = editor.schema.nodeFromJSON(textToPromptDoc(text, skills, sigils))
+      // The thread's own editing comes back while its draft is still the one it left; a draft changed meanwhile, as from
+      // another window or computer, starts afresh. Either way the editor's own plugins, as this view mounted them, stay.
+      const left = states.get(owner)
+      states.delete(owner)
+      editor.view.updateState(left !== undefined && left.doc.eq(doc) ? left.reconfigure({ plugins: editor.state.plugins }) : EditorState.create({ doc, plugins: editor.state.plugins }))
+    }
     const element = editor.view.dom as PromptEditorElement
     fieldRef.current = element
     editor.setEditable(editable, false)

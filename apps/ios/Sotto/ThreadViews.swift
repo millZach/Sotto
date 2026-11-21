@@ -3525,7 +3525,7 @@ private struct ThreadSettingsPill: View {
         ComposerSettingsSheet(title: String(localized: "Thread settings"), current: panel.model,
                               groups: [ModelGroup(id: panel.providerID ?? panel.provider, name: panel.provider, models: panel.models)],
                               modelsEnabled: panel.pressable(.model), choose: { choose(.model, $0.id) }) {
-            if panel.modelFixed {
+            if panel.effortFixed {
                 Text("\(panel.provider) changes only a started thread’s permissions.", comment: "%@ is the agent's name, such as Devin.")
             }
         } foot: {

@@ -13,6 +13,12 @@ export function fixedEffortReason(provider: string): string {
     comment: 'Why a started thread\'s reasoning effort chip opens nothing. {provider} is a provider\'s name, such as Grok Build.' })
 }
 
+/** Why a model's effort chip opens nothing, where its provider says the model has no levels to choose (Devin). */
+export function noEffortLevelsReason(provider: string, model: string): string {
+  return t({ message: `${provider} offers no effort levels for ${model}. It runs at the model’s own setting.`,
+    comment: 'Why a model\'s reasoning effort chip opens nothing. {provider} is a provider\'s name, such as Devin; {model} is a model\'s name, such as Claude Opus 4.6.' })
+}
+
 /**
  * A started thread's effort where its provider can't change it in place (Grok, #228): a chip with a dashed edge and a
  * lock that opens nothing. Its tip says why when the pointer rests on it or the keyboard reaches it, and a screen reader
@@ -26,7 +32,10 @@ export function FixedEffortChip({ level, provider, quiet, trace, reason }: {
   readonly quiet: boolean
   /** Whether the level is the model's top, where the composer's trace lights, as it does for the chip this replaces. */
   readonly trace: boolean
-  /** Why it is fixed, where the reason is not the provider's: model routing chooses a routed thread's effort (ADR-0207). */
+  /**
+   * Why it is fixed, where the reason is not that the provider keeps a started thread's level: model routing chooses a
+   * routed thread's effort (ADR-0207), and a Devin model with no levels has none to choose (`noEffortLevelsReason`).
+   */
   readonly reason?: string | undefined
 }): ReactNode {
   const id = useId()

@@ -7,7 +7,7 @@ import { fakeClaudeLaunches, fakeClaudePrompts } from '../fixtures/fakeClaudeRec
 import { writeProviderAction } from '../fixtures/providerRecords'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { fillPrompt, promptField } from './support/prompt'
-import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow, toggleTools, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
 import { startMonitoredThread } from './support/monitoredThread'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -101,6 +101,78 @@ test('a detached run stands under the last reply, counts in the readout and keep
     await event(page, { type: 'background-work', threadId: 'workshop', text: '', backgroundWork: [], status: 'idle' })
     await expect(still).toHaveCount(0)
     await expect(pane(page).locator('.thread-monitor')).toHaveCount(0)
+  } finally {
+    await closeSotto(launched)
+  }
+})
+
+/**
+ * Tools › Agents lists the thread's detached runs in a section of their own above its agents and delegated threads (Zach's
+ * pick on November 20, 2026: variant 2, Own section, of docs/prototypes/detached-runs-in-agents-prototype.html), each with
+ * Stop, and the pane's count names them. The run is given to the window as its host would publish it.
+ */
+test('Tools › Agents lists a detached run in its own section, counts it, and stops it from there', async () => {
+  test.setTimeout(180_000)
+  const launched = await launchSotto()
+  try {
+    const { page } = launched
+    await startMonitoredThread(launched, hostKeys.read, pane)
+    const at = (ago: number): string => new Date(Date.now() - ago).toISOString()
+    await event(page, { type: 'history', threadId: 'workshop', text: '', status: 'idle', activities: [], messages: [
+      { id: 'ask', role: 'user', text: 'Push the art direction across the whole Tetherfall set. Run it as its own director so it keeps going after this turn.', createdAt: at(22 * 60_000) },
+      { id: 'reply', role: 'assistant', text: 'The art director is running on its own now, in .claude/worktrees/art-push. I will leave it to finish.', createdAt: at(20 * 60_000) },
+    ] })
+    await event(page, { type: 'background-work', threadId: 'workshop', text: '', backgroundWork: [run], status: 'idle' })
+    await expect(pane(page).getByRole('listitem', { name: 'Detached run: tetherfall-art-director, Working' })).toBeVisible({ timeout: 30_000 })
+
+    await toggleTools(pane(page))
+    const tools = page.getByRole('complementary', { name: 'Tools', exact: true })
+    await tools.getByRole('tab', { name: 'Agents', exact: true }).click()
+    const section = tools.getByRole('region', { name: 'Detached runs' })
+    const row = section.getByRole('listitem', { name: 'Detached run: tetherfall-art-director, Working' })
+    await expect(row).toBeVisible({ timeout: 30_000 })
+    await expect(row).toContainText('claude-fable-5-2, high')
+    await expect(tools.locator('.tools-chrome')).toContainText('1 detached run')
+    await expect(tools.locator('.tools-chrome')).toContainText('1 working')
+    // Nothing else is listed, so the pane does not also say it has no agents.
+    await expect(tools.getByText('No agents spawned in this thread yet.')).toHaveCount(0)
+
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await resizeContentWindow(launched, width, height, [700, 500])
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+        if (!await tools.isVisible()) await toggleTools(pane(page))
+        await expect(row).toBeVisible()
+        const overflow = await tools.evaluate(element => [...element.querySelectorAll<HTMLElement>('.subagents-roster, .subagents-runs, .delegated-work__row')]
+          .filter(item => item.scrollWidth > item.clientWidth + 1).map(item => item.className))
+        expect(overflow, `${appearance} ${width}x${height}`).toEqual([])
+        for (const part of ['.subagents-section__head', '.delegated-work__name > :last-child', '.delegated-work__state', '.delegated-work__stop', '.delegated-work__meta', '.delegated-work__line', '.delegated-work__command summary']) {
+          expect(await elementContrast(tools.locator(part).first()), `${part}, ${appearance} ${width}x${height}`).toBeGreaterThanOrEqual(4.5)
+        }
+        await capture(launched, `agents-detached-run-${appearance}-${width}x${height}`)
+      }
+    }
+
+    // Reduced motion: the section reads the same with the Working ring held still.
+    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark', reducedMotion: 'on' }))
+    await resizeContentWindow(launched, 1280, 800, [700, 500])
+    if (!await tools.isVisible()) await toggleTools(pane(page))
+    await expect(row).toBeVisible()
+    await capture(launched, 'agents-detached-run-dark-reduced-motion-1280x800')
+    await page.evaluate(() => window.sotto!.updateSettings({ reducedMotion: 'system' }))
+
+    // Stop reaches main from the Agents row too. A desktop journey looks for no runs, so nothing was stopped.
+    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
+    await resizeContentWindow(launched, 1280, 800, [700, 500])
+    if (!await tools.isVisible()) await toggleTools(pane(page))
+    await row.getByRole('button', { name: 'Stop the detached run tetherfall-art-director' }).click()
+    await expect(row.getByRole('alert')).toContainText('Nothing was stopped.')
+
+    // The run ends: the section goes and the pane is as it was.
+    await event(page, { type: 'background-work', threadId: 'workshop', text: '', backgroundWork: [], status: 'idle' })
+    await expect(section).toHaveCount(0)
+    await expect(tools.getByText('No agents spawned in this thread yet.')).toBeVisible()
   } finally {
     await closeSotto(launched)
   }

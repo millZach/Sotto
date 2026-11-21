@@ -27,7 +27,7 @@ import { providerKey } from './threadFacts'
 import { nextTurnChoiceOf, nextTurnKinds, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, settingValuesInForce, speedPatch, SPEED_NOT_CARRIED, SPEED_STANDARD, threadSpeed, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
-import { FixedEffortChip } from './FixedEffortChip'
+import { FixedEffortChip, noEffortLevelsReason } from './FixedEffortChip'
 import { isTopEffort } from '../../../shared/topEffort'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
@@ -368,6 +368,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     </div>
   }
   const modelDisabled = locked && capabilities.configureThreadModel === false
+  // A provider that keeps a started thread's model may still change its effort in place, as Devin does.
+  const effortDisabled = modelDisabled && capabilities.configureThreadEffort !== true
   const confirmedModel = resolveModel(models, thread.modelId)
   const keptSpeed = watcher && savedRoleSpeed !== undefined ? savedRoleSpeed : threadSpeed(thread)
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
@@ -522,10 +524,13 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {/* Where the provider keeps a started thread's model, it keeps its effort too, and the chip says so (#228). */}
       {router.routed && (quiet ? levels.length > 0 : efforts.length > 0)
         ? <FixedEffortChip level={reasoning} provider="" reason={t`Model routing chooses the effort.`} quiet={Boolean(quiet)} trace={isTopEffort(levels, reasoning)} />
-      : modelDisabled && (quiet ? levels.length > 0 : efforts.length > 0)
+      : effortDisabled && (quiet ? levels.length > 0 : efforts.length > 0)
         ? <FixedEffortChip level={reasoning} provider={stayingWith ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })} quiet={Boolean(quiet)}
           trace={isTopEffort(levels, reasoning)} />
-      : quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
+      // A model its provider says has no levels holds a chip that says so, where another provider's shows none.
+      : model?.noReasoningEfforts
+        ? <FixedEffortChip level="" provider="" reason={noEffortLevelsReason(stayingWith ?? t({ message: 'The provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' }), modelNameNow)} quiet={Boolean(quiet)} trace={false} />
+      : quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || effortDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('effort') || kept.has('fast')} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
         suggestion={dynamic.overseeing ? null : suggestedEffortIndex(quiet.effortScore, levels, reasoning, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
@@ -534,7 +539,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
         }} />
       : efforts.length > 0 && <EffortPicker ownServer={model?.ownServer} key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
-        disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort')} describedBy={describedFor('effort')} onChange={reasoningEffort => {
+        disabled={fixed || effortDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort')} describedBy={describedFor('effort')} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
         }}

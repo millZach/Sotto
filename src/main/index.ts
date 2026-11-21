@@ -317,6 +317,7 @@ import { MainActivityService, type MainActivityLogEvent } from './performance/ma
 import { HangWatchdog, WindowHangWatch, type HangWatchdogLogEvent } from './performance/hangWatchdog'
 import { saveHangRecording, updateHangRecording } from './performance/hangRecording'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { threadSwitchTimings } from './performance/threadSwitchTimings'
 import { registerMainCheckoutIpc } from './agents/mainCheckoutIpc'
 import type { MainCheckoutEvent } from './agents/mainCheckout'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_RENDERER_ARGUMENT } from '../shared/mainCheckout'
@@ -2792,9 +2793,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const unsubscribeHostNextPrompts = nextPromptEnabled ? hostRouter.subscribeNextPrompts(entry => windows.sendToMain(NEXT_PROMPT_CHANGED, entry)) : undefined
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       const cleanupPopup = popup === null ? () => undefined : registerPopupIpc(ipcMain, popup.ipc, () => trustedRenderers())
-      // A recording profiles the main window that asked, through its own debugger (ADR-0098).
+      // A recording profiles the main window that asked, through its own debugger (ADR-0098). The window's thread switches
+      // are noted beside the recordings (#2733).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
-        event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
+        event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null },
+        threadSwitchTimings(userDataPath))
       // The see-through window (ADR-0150): only while Glass's Owl feature is on, so stable registers nothing.
       const cleanupGlassWindow = registerGlassWindowIpc(ipcMain, glassThemeEnabled ? on => windows.setMainWindowSeeThrough(on) : null, () => windows.getTrustedRenderers())
       // Keep main up to date (ADR-0142): only while its Owl feature is on, so stable registers nothing.
@@ -3046,7 +3049,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       }, () => windows.getTrustedRenderers()) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
-      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => trustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead,
+      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => trustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead, readWhole: agentStateBroadcaster.readWhole,
         popupObserves: threadIds => popup?.feed.observe(threadIds), popupShown: () => popup?.window.isVisible() ?? false, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null

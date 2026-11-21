@@ -60,6 +60,6 @@ export const PHONE_SENT_STATE_PARTS = ['legacyManagement', 'worktreeReclaimPrevi
   'clientScoped', 'connections', 'hostId', 'configuration', 'providerUpgrade', 'clientUpdateRun', 'clientUpdatesDismissedAt', 'installedProviders', 'connection',
   'host', 'activeThreadId', 'activeProjectId', 'draft', 'draftThreadId', 'composing', 'draftAttachments', 'deliveredDrafts', 'deliveries', 'followups',
   'followupReceipts', 'draftRequestId', 'globalLaneBusy', 'notice', 'error', 'busyThreadIds', 'unconfirmedSettings', 'nextTurnSettings', 'routerPicks', 'credentials',
-  'reasoningAccounts', 'historyEnabled', 'stale'] as const
+  'reasoningAccounts', 'historyEnabled', 'stale', 'readRevision'] as const
 export const PHONE_SENT_WIRE_PARTS = ['membership', 'assignments', 'queue', 'pendingRequest', 'speech', 'voice', 'clientCapabilities', 'terminals', 'watcher',
   'settledHeldBack', 'threadRecordsRevision'] as const

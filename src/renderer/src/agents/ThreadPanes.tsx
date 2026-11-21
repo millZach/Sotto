@@ -1,4 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { assignPaneEditorSlots, PaneEditorProvider, releasePaneEditorSlots, type PaneEditorSlot } from './paneEditor'
 import { useLingui } from '@lingui/react/macro'
 import { Marked, useMark } from '../components/marks'
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react'
@@ -298,6 +299,15 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
   const closeChord = claimedThreadChord(app?.settings, 'close-pane', panePlatform)
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
   const area = useRef<HTMLDivElement>(null)
+  // One kept reply editor for each pane, handed to the thread that takes a pane's place, so a switch to another thread in
+  // the sidebar shows the new thread's draft in the editor its pane already had rather than building one anew (#2746).
+  const editorSlots = useRef<ReadonlyMap<string, PaneEditorSlot>>(new Map())
+  const paneKey = paneIds.join(' ')
+  // The slots follow the threads in panes, which `paneKey` names.
+  const slotted = useMemo(() => assignPaneEditorSlots(editorSlots.current, paneIds), [paneKey])
+  useLayoutEffect(() => { releasePaneEditorSlots(editorSlots.current, slotted); editorSlots.current = slotted }, [slotted])
+  // The grid going takes every pane's kept editor with it.
+  useEffect(() => () => { releasePaneEditorSlots(editorSlots.current, new Map()) }, [])
   const [moving, setMoving] = useState<string | null>(null)
   const moveStart = useRef<number | undefined>(undefined)
   const [announcement, setAnnouncement] = useState('')
@@ -489,7 +499,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
             end: () => { window.clearTimeout(moveStart.current); setMoving(null) },
           } : undefined,
         }
-        return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-room-backdrop="" data-region="pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
+        return <React.Fragment key={id}><PaneEditorProvider value={slotted.get(id) ?? null}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-room-backdrop="" data-region="pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
           data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} {...marks}
           aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
@@ -497,7 +507,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}
           onFocusCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}>
           {renderPane(id, stableChrome(id, chrome))}
-        </section>}</Marked>
+        </section>}</Marked></PaneEditorProvider>
         {dividersAfter.get(index)}</React.Fragment>
       })}
     </div>
