@@ -43,7 +43,7 @@ export const PROVIDER_PROFILES: Readonly<Record<ActiveProviderId, ProviderProfil
   cursor: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['$', '/'], compacts: false, reportsContext: false },
   hermes: { writesShortText: false, takesSottoTools: true, runsWatcher: false, skillSigils: ['/'], compacts: false, reportsContext: true },
   deepseek: { writesShortText: false, takesSottoTools: true, runsWatcher: false, skillSigils: [], compacts: false, reportsContext: true },
-  antigravity: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['/'], compacts: false, reportsContext: true },
+  antigravity: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['/'], compacts: true, reportsContext: true },
 }
 
 /**

@@ -92,6 +92,21 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
         saw: { contextUsed: usage?.contextUsed, contextWindow: usage?.contextWindow, latest: usage?.latest, total: usage?.total } }
     })
 
+    // Compaction: agy's own /compact folds the conversation, and the next turn's context is the smaller one.
+    await check('compaction', async () => {
+      const id = await open('approval-required')
+      await send(id, 'Write about 600 words on the history of the bicycle.'); await idle(id)
+      const before = (await thread(id)).usage?.contextUsed ?? 0
+      await host.execute({ type: 'compact-thread', threadId: id, commandId: randomUUID() })
+      await expect.poll(async () => (await thread(id)).compaction?.status, { timeout: 300_000, interval: 1_000 }).not.toBe('running')
+      const compaction = (await thread(id)).compaction
+      await send(id, 'Reply with exactly: ok'); await idle(id)
+      const after = (await thread(id)).usage?.contextUsed ?? 0
+      const boundary = (await thread(id)).activities?.find(row => row.kind === 'compaction')
+      return { passed: compaction?.status === 'completed' && after > 0 && after < before && boundary !== undefined,
+        saw: { compaction, before, after, boundary: boundary?.context, messages: (await thread(id)).messages.length } }
+    })
+
     // Another Gemini model and thinking level for the next prompt.
     await check('model-and-effort-next-prompt', async () => {
       const id = await open('approval-required')

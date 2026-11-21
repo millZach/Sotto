@@ -38,9 +38,9 @@ describe('provider profiles', () => {
     expect(watcherProvidersInWords(new Set(['muse', 'cursor']))).toBe('Codex, Claude Code, Grok Build or Antigravity')
   })
 
-  // Claude Code was the only provider offered the recommendation before ADR-0095; Codex and Muse are new.
-  it('recommends compaction for Claude Code, Codex and Muse, which compact and say how full their context is', () => {
-    expect(providerIdSchema.options.filter(providerRecommendsCompaction)).toEqual(['codex', 'claude', 'muse'])
+  // Claude Code was the only provider offered the recommendation before ADR-0095; Codex and Muse are new, and Antigravity since its /compact (ADR-0212).
+  it('recommends compaction for Claude Code, Codex, Muse and Antigravity, which compact and say how full their context is', () => {
+    expect(providerIdSchema.options.filter(providerRecommendsCompaction)).toEqual(['codex', 'claude', 'muse', 'antigravity'])
     for (const id of ACTIVE_PROVIDERS) {
       const profile = PROVIDER_PROFILES[id]
       expect(providerRecommendsCompaction(id)).toBe(profile.compacts && profile.reportsContext)
