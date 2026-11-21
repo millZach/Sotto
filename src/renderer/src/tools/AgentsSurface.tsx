@@ -327,19 +327,24 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   const blocks = useMemo(() => families.length ? mixedRoster(roster, families) : null, [families, roster])
   const grouped = useMemo(() => groups?.map(group => ({ group, blocks: mixedRoster(group.own ? roster : [], group.families) })).filter(item => item.blocks.length) ?? null, [groups, roster])
   const headingId = useId()
-  // A run that ends while the keyboard is on its row hands focus on: to the next run's Stop, else the first row below,
-  // else the Agents tab, so focus never falls to the page (as a waiting check's row hands it on, #1312).
+  // A run that ends while the keyboard is on its row hands focus on, so focus never falls to the page (as a waiting
+  // check's row hands it on, #1312): to the next run's Command disclosure, never a Stop that a key press would act on,
+  // else the first row below, else the Agents tab. Only the control that had focus going away moves it; focus the user
+  // took elsewhere, even to the page itself, stays where it is (Bug Bot on #2751, L1).
   const runsSection = useRef<HTMLElement>(null)
-  const focusInRuns = useRef(false)
+  const focusedInRuns = useRef<Element | null>(null)
   useEffect(() => {
-    const track = (): void => { focusInRuns.current = runsSection.current?.contains(document.activeElement) === true }
+    const track = (): void => { focusedInRuns.current = runsSection.current?.contains(document.activeElement) ? document.activeElement : null }
     document.addEventListener('focusin', track)
-    return () => document.removeEventListener('focusin', track)
+    document.addEventListener('focusout', track)
+    return () => { document.removeEventListener('focusin', track); document.removeEventListener('focusout', track) }
   }, [])
   useLayoutEffect(() => {
-    if (!focusInRuns.current || runsSection.current?.contains(document.activeElement)) return
-    focusInRuns.current = false
-    const next = runsSection.current?.querySelector<HTMLElement>('.delegated-work__stop:not(:disabled)')
+    const left = focusedInRuns.current
+    if (left === null || left.isConnected) return
+    focusedInRuns.current = null
+    if (document.activeElement !== null && document.activeElement !== document.body) return
+    const next = runsSection.current?.querySelector<HTMLElement>('.delegated-work__command summary')
       ?? surface.current?.querySelector<HTMLElement>('.subagent-head') ?? document.getElementById('tools-tab-agents')
     next?.focus()
   }, [runs])

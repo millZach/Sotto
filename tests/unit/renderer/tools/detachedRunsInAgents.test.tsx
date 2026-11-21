@@ -120,6 +120,22 @@ describe('detached runs in Tools › Agents', () => {
     await waitFor(() => expect(within(panel()).queryByRole('region', { name: 'Detached runs' })).toBeNull())
     expect(document.activeElement).not.toBe(document.body)
     expect(panel().contains(document.activeElement)).toBe(true)
+    // Never onto a Stop, where one key press would end a run.
+    expect(document.activeElement?.classList.contains('delegated-work__stop')).toBe(false)
+  })
+
+  it('leaves focus where the user took it when the runs change later (Bug Bot on #2751, L1)', async () => {
+    owl(false)
+    const other: AgentBackgroundWork = { ...run, id: '1c6e7b62-9d3f-5a4b-8e52-7f8a9b0c1d2e', label: 'Claude Code run' }
+    const { rerender } = setup(stateWith([run, other]))
+    const stop = await within(runs()).findByRole('button', { name: 'Stop the detached run Codex run' })
+    act(() => { stop.focus() })
+    act(() => { stop.blur() })
+    expect(document.activeElement).toBe(document.body)
+    // Minutes later the first run ends: nothing pulls focus back onto the other run's Stop.
+    rerender(stateWith([other]))
+    await waitFor(() => expect(within(runs()).queryByRole('button', { name: 'Stop the detached run Codex run' })).toBeNull())
+    expect(document.activeElement).toBe(document.body)
   })
 
   it('leaves the pane as it was for a thread with no detached run', async () => {
