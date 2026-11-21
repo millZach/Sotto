@@ -171,7 +171,12 @@ describe('Antigravity ACP adapter', () => {
     const id = await open()
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
     await ask(id, [{ question: 'How many?', options: [] }], { count: { type: 'number', title: 'How many?' } })
-    await expect.poll(formReplies).toEqual([{ refused: true }])
+    // A constraint Sotto would not keep makes another shape too.
+    await expect.poll(async () => (await thread(id)).status).not.toBe('running')
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Again' })
+    await ask(id, [{ question: 'Pick two days', options: [] }], { q1: { type: 'array', title: 'Pick two days', minItems: 2, items: { anyOf: [{ const: '1', title: 'Monday' }, { const: '2', title: 'Friday' }] } } })
+    await expect.poll(formReplies).toEqual([{ refused: true }, { refused: true }])
+    await expect.poll(async () => (await thread(id)).messages.filter(message => message.role === 'assistant').map(message => message.text)).toEqual(['How many?', 'Pick two days'])
     expect((await thread(id)).requests).toEqual([])
   })
 

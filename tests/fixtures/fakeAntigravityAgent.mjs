@@ -104,6 +104,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     pending.delete(frame.id)
     const reason = request.refusable && frame.error ? undefined : validate(frame, request)
     if (reason) violation(reason)
+    if (request.fields && frame.error) { update(request.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: request.text } }); finish('end_turn') }
     return
   }
   const p = frame.params ?? {}
@@ -241,7 +242,7 @@ function run(command) {
         [`q${index + 1}_other`, { type: 'string', title: 'Other', description: `Optional free-form answer to: ${item.question}` }]]
     }))
     const id = `antigravity-${++serial}`
-    pending.set(id, { fields: Object.keys(properties), refusable: command.form !== undefined })
+    pending.set(id, { fields: Object.keys(properties), refusable: command.form !== undefined, sessionId, text: command.questions.map(item => item.question).join('\n') })
     send({ id, method: 'elicitation/create', params: { sessionId, toolCallId, mode: 'form', message: command.questions.length === 1 ? 'The agent has a question.' : `The agent has ${command.questions.length} questions.`,
       requestedSchema: { type: 'object', properties } } })
   }

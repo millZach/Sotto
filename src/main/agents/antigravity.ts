@@ -814,7 +814,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!frame.method || frame.id === undefined) return
     if (this.connections.get(id) !== connection) { connection.rpc.refuse(frame.id); return }
     this.taken(id)
-    if ((frame.method === 'session/request_permission' || frame.method === 'elicitation/create') && alias.antigravitySessionId && params?.sessionId !== alias.antigravitySessionId) { connection.rpc.refuse(frame.id); return }
+    if ((frame.method === 'session/request_permission' || frame.method === ANTIGRAVITY_QUESTION) && alias.antigravitySessionId && params?.sessionId !== alias.antigravitySessionId) { connection.rpc.refuse(frame.id); return }
     // Watcher's process is offered no forms, so one that comes anyway is refused: its questions are Sotto's `ask_user`.
     const asked = connection.watcher && frame.method === ANTIGRAVITY_QUESTION ? undefined : antigravityPending(frame.id, frame.method, frame.params, id)
     if (!asked) {

@@ -35,11 +35,13 @@ const permissionSchema = z.object({
 })
 export type AntigravityPermission = z.infer<typeof permissionSchema>
 
-const choiceSchema = z.object({ const: z.string().min(1).max(512), title: z.string().max(TEXT_LIMIT) })
+// Strict, so a field with a constraint Sotto does not keep, such as `minItems`, is a form of another shape and refused.
+const choiceSchema = z.object({ const: z.string().min(1).max(512), title: z.string().max(TEXT_LIMIT) }).strict()
 const choices = z.array(choiceSchema).min(1).max(64)
-const oneSchema = z.object({ type: z.literal('string'), title: z.string().max(TEXT_LIMIT).optional(), oneOf: choices })
-const severalSchema = z.object({ type: z.literal('array'), title: z.string().max(TEXT_LIMIT).optional(), items: z.object({ anyOf: choices }) })
-const wordsSchema = z.object({ type: z.literal('string'), title: z.string().max(TEXT_LIMIT).optional(), description: z.string().max(TEXT_LIMIT).optional() })
+const described = { title: z.string().max(TEXT_LIMIT).optional(), description: z.string().max(TEXT_LIMIT).optional() }
+const oneSchema = z.object({ type: z.literal('string'), ...described, oneOf: choices }).strict()
+const severalSchema = z.object({ type: z.literal('array'), ...described, items: z.object({ anyOf: choices }).strict() }).strict()
+const wordsSchema = z.object({ type: z.literal('string'), ...described }).strict()
 const formSchema = z.object({
   sessionId: z.string().min(1), toolCallId: z.string().min(1).max(512).optional(), mode: z.literal('form'), message: z.string().max(TEXT_LIMIT).optional(),
   requestedSchema: z.object({ type: z.literal('object'), properties: z.record(z.string().min(1).max(64), z.unknown()), required: z.array(z.string()).optional() }),
@@ -203,7 +205,7 @@ function formAnswer(pending: AntigravityPending, form: readonly AntigravityFormQ
     if (match.length === 1) supplied = { [only.id]: { optionIds: [match[0]!.id] } }
     else if (words && only.allowFreeText) supplied = { [only.id]: { optionIds: [], text: words } }
   }
-  if (!supplied) throw new Error('Answer each of Antigravity’s questions.')
+  if (!supplied) throw new Error('Nothing was sent to Antigravity. Answer its questions on the card.')
   questionValues(pending.request, supplied)
   const content: Record<string, string | string[]> = {}
   for (const question of form) {
