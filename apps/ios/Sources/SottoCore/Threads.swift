@@ -104,7 +104,8 @@ public enum ThreadGroups {
     /// Every open thread on the computers the strip admits, as one list: most recent first, and the
     /// threads of a computer that can't be reached after the rest, as it last shared them.
     public static func merged(_ computers: [ComputerThreads], show: ComputerFilter = .all, filter: ThreadFilter = .all) -> [HostedThread] {
-        let rows = computers.filter { show.admits($0.hostID) }.flatMap(hosted).filter { filter.admits($0.thread) }
+        // An owlet lists on the Owlets tab, not here (ADR-0213).
+        let rows = computers.filter { show.admits($0.hostID) }.flatMap(hosted).filter { $0.thread.owlet == nil && filter.admits($0.thread) }
         // Parse each timestamp once, not twice on every comparison. Lists refresh while agents work.
         let dated = rows.enumerated().map { (row: $0.element, offset: $0.offset, date: latest($0.element.thread) ?? .distantPast) }
         return dated.sorted { a, b in

@@ -2828,6 +2828,18 @@ struct RailAsk: Equatable {
     // MARK: What was said in the threads, for Threads' search
 
     func offersThreadWords(_ hostID: String) -> Bool { live[hostID]?.features.contains(Wire.threadWordsFeature) == true }
+    /// Whether this computer makes owlets now (ADR-0213): its Owl answer for Owlets is on, so it lists `owlets`.
+    func offersOwlets(_ hostID: String) -> Bool { live[hostID]?.features.contains(Owlets.feature) == true }
+    /// The computers an owlet can be made on, in the order they were added.
+    var owletHostIDs: [String] { computers.map(\.hostID).filter(offersOwlets) }
+    /// Whether the Owlets tab shows: a computer makes owlets, or one this iPhone reads still lists one.
+    var owletsShown: Bool { !owletHostIDs.isEmpty || lists.contains { $0.threads.contains { $0.owlet != nil } } }
+    /// The owlets as the Owlets tab lists them.
+    func owletList(query: String = "") -> OwletList { OwletList(lists, query: query) }
+    /// The Owlets tab's badge: the owlets waiting on the user, as its Needs you lists them.
+    var owletsBadge: Int { OwletList(lists).needsYouCount }
+    /// The models an owlet can be made with on this computer: Claude Code's and Codex's that are ready there.
+    func owletModels(_ hostID: String) -> [ThreadModel] { creationModels(hostID).filter { Owlets.providerAllowed($0.providerId) } }
     /// The computers Threads' search asks what was said in their threads: admitted by the strip, reachable, offering the read.
     func threadWordsSources(show: ComputerFilter) -> [String] {
         computers.map(\.hostID).filter { show.admits($0) && online($0) && offersThreadWords($0) }
@@ -4734,8 +4746,8 @@ struct RailAsk: Equatable {
             }
             return
         }
-        // A phone-minted Sotto ID identifies this exact creation even after its receipt expired.
-        if item.kind == "create-thread", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
+        // A phone-minted Sotto ID identifies this exact creation even after its receipt expired; an owlet's too.
+        if item.kind == "create-thread" || item.kind == "create-owlet", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
             try forgetMarker(item.id)
             return
         }
@@ -4993,6 +5005,62 @@ struct RailAsk: Equatable {
             }
             return ref
         } catch { creationFeedback = error.localizedDescription; return nil }
+    }
+    /// A new owlet on its home computer (ADR-0213): the computer makes its folder, the project there and its one thread,
+    /// whose ID this iPhone mints, so a lost acknowledgement is never sent again and the list says whether it was made.
+    func createOwlet(on hostID: String, name: String, role: String, modelID: String, effort: String, permissionID: String) async -> ThreadRef? {
+        guard creatingHostID == nil, storageReady, online(hostID), offersOwlets(hostID),
+              !pendingCreations.contains(where: { $0.hostID == hostID }), let computer = computer(hostID),
+              let epoch = generations[hostID] else { return nil }
+        creatingHostID = hostID; creationFeedback = nil
+        defer { creatingHostID = nil }
+        let threadID = UUID().uuidString.lowercased()
+        do {
+            guard let model = owletModels(hostID).first(where: { $0.id == modelID }) else {
+                throw ClientError.rejected(String(localized: "That model is no longer ready on this computer. Choose another.", comment: "Said in New owlet when the chosen model went away"))
+            }
+            let command = try Commands.createOwlet(threadID: threadID, name: name, role: role, model: model, effort: effort,
+                                                   permissionID: permissionID, mayAnswer: mayAnswer(hostID))
+            let marker = PendingOperation(hostID: hostID, clientID: computer.pairing.clientId, threadID: threadID, kind: "create-owlet")
+            try remember(marker)
+            _ = await dispatch(command, operation: marker)
+            let ref = ThreadRef(hostID: hostID, threadID: threadID)
+            guard generations[hostID] == epoch, online(hostID), thread(ref) != nil,
+                  !pending.contains(where: { $0.id == marker.id }) else {
+                creationFeedback = owletResultWords(hostID)
+                return nil
+            }
+            return ref
+        } catch { creationFeedback = error.localizedDescription; return nil }
+    }
+    /// What became of an owlet that wasn't made.
+    private func owletResultWords(_ hostID: String) -> String {
+        if pendingCreations.contains(where: { $0.hostID == hostID }) {
+            return (creationFeedback.map { $0 + " " } ?? "") + String(localized: "Sotto did not hear back from \(name(hostID)), so the owlet may or may not have been made. Nothing was resent. Check the list before trying again.", comment: "%@ is the computer's name")
+        }
+        return creationFeedback ?? feedback ?? String(localized: "The owlet was not made. Try again.")
+    }
+    /// An owlet's new name, role or both. Its folder keeps the name it was made with. Nil when its computer took it, or
+    /// what to tell the user.
+    func setOwlet(_ ref: ThreadRef, name: String?, role: String?) async -> String? {
+        guard online(ref.hostID), offersOwlets(ref.hostID), let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else {
+            return String(localized: "This owlet's computer can't be reached. Nothing was changed.")
+        }
+        let earlierError = live[ref.hostID]?.shell?.error
+        do {
+            let command = try Commands.setOwlet(threadID: ref.threadID, name: name, role: role)
+            let result = try await connection.callReceived(["op": .string("command"), "command": command], as: Shell.self, id: UUID().uuidString.lowercased())
+            guard generations[ref.hostID] == epoch else { return String(localized: "Sotto did not hear back, so the owlet may or may not have changed. Check it before trying again.") }
+            try applyShell(result.value, from: ref.hostID, sequence: result.sequence, reconcileAnswers: false)
+            // The shell's error is the computer's last one; only one that is new is this command's.
+            return result.value.error.flatMap { $0 == earlierError ? nil : $0 }
+        } catch let refusal as HostRefusal {
+            return refusal.localizedDescription
+        } catch ClientError.invalidRequest {
+            return String(localized: "Use letters, numbers, spaces and hyphens in the name. Nothing was changed.")
+        } catch {
+            return String(localized: "Sotto did not hear back, so the owlet may or may not have changed. Check it before trying again.")
+        }
     }
     /// What became of a project's registration (`project`) or a thread's creation that didn't finish.
     private func creationResultWords(_ hostID: String, project: Bool) -> String {

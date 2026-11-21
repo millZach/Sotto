@@ -88,11 +88,12 @@ public extension Wire {
     /// tile ask for a picture at its own size rather than whole (ADR-0170, November 10 amendment). `kept-parts` has a shell push
     /// leave out each part that holds what the push before it held, such as the deliveries and the projects, which the
     /// connection puts back from that push (`KeptPartsCache`, ADR-0028's November 10 amendment). `plugin-meshy-phone` has a
-    /// thread keep its 3D models' lines, which open a sheet that turns them (the Meshy plan's ticket 7).
+    /// thread keep its 3D models' lines, which open a sheet that turns them (the Meshy plan's ticket 7). `owlets` has the
+    /// computer send its owlets' threads, which the Owlets tab lists, and a computer that makes them say so (ADR-0213).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
         "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("provider-deepseek"), .string("changed-thread-records"),
                     .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string(Wire.threadWordsFeature), .string("usable-models"), .string("command-changed-thread-records"),
-                    .string(StepWindow.feature), .string(Photos.edgeFeature), .string("kept-parts"), .string(Models3d.feature)])]
+                    .string(StepWindow.feature), .string(Photos.edgeFeature), .string("kept-parts"), .string(Models3d.feature), .string(Owlets.feature)])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.
     // Awaiting each frame before receiving the next keeps pushes and replies in socket order.

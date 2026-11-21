@@ -57,7 +57,8 @@ public struct ThreadWatch: Sendable {
                 if seenRequests.insert(key).inserted { fresh.append(request) }
             }
             let ref = ThreadRef(hostID: hostID, threadID: thread.id)
-            if first || ref == onScreen { continue }
+            // An owlet never alerts (ADR-0213): its Needs you and unread mark on the Owlets tab are how it is heard.
+            if first || ref == onScreen || thread.owlet != nil { continue }
             // One alert for a thread at a time: a new request first, then an error, then a finish.
             if let request = fresh.first {
                 if switches.needsYou { alerts.append(Self.alert(.request(request), thread: thread, ref: ref, computer: computer)) }

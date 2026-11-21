@@ -692,7 +692,7 @@
     "accepts": [
      "detail-delta", "client-liveness", "activity-summaries", "model-catalog-revision", "provider-opencode", "provider-cursor",
      "provider-deepseek", "changed-thread-records", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
-     "usable-models", "command-changed-thread-records", "step-window", "thread-media-edge", "kept-parts", "plugin-meshy-phone"
+     "usable-models", "command-changed-thread-records", "step-window", "thread-media-edge", "kept-parts", "plugin-meshy-phone", "owlets"
     ],
     "afterSeq": 9007199254740991,
     "id": "iphone-1",

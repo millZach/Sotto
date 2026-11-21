@@ -161,7 +161,7 @@ const READ_AHEAD_LIMIT = 16
 function sentDigest(detail: AgentThreadDetail): string {
   return createHash('sha256').update(JSON.stringify({ ...detail, revision: 0 })).digest('base64')
 }
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { owlets?: boolean | undefined; browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -712,8 +712,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     return provider !== undefined && peer.unknownProviders.has(provider)
   }
   /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
-  // A phone is shown no owlet (ADR-0213) until the iPhone has an Owlets page of its own. The host keeps which threads are
-  // owlets, so no update reads every thread for them, and a host with none leaves the shell as it is.
+  // A phone whose hello did not accept `owlets` is shown no owlet (ADR-0213): it has no Owlets tab to show them on, and its
+  // Threads list would show them as ordinary threads. The host keeps which threads are owlets, so no update reads every
+  // thread for them, and a host with none leaves the shell as it is.
   const NO_OWLETS: ReadonlySet<string> = new Set()
   const owletIds = (): ReadonlySet<string> => service.owletThreadIds?.() ?? NO_OWLETS
   const phoneShellsWithoutOwlets = new WeakMap<AgentState, AgentState>()
@@ -723,7 +724,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!shown) phoneShellsWithoutOwlets.set(state, shown = withoutOwlets(state))
     return shown
   }
-  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? '') || owletIds().has(threadId))
+  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? '') || peer.owlets !== true && owletIds().has(threadId))
   const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
   /**
    * `hiddenThread` for many threads at once, as a search names them: Watcher's phone exclusions read once, and each
@@ -736,6 +737,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (unknownProviderThread(peer, threadId)) return false
       if (!phone) return true
       if (excluded!.has(threadId)) return false
+      if (peer.owlets !== true && owletIds().has(threadId)) return false
       const kind = service.threadKind?.(threadId)
       // A thread whose kind the host cannot say alone is read as `hiddenThread` reads it.
       return kind === undefined ? !hiddenFromPhone(peer, threadId) : kind !== 'watcher' && kind !== 'watcher-history'
@@ -849,7 +851,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
     const original = withoutUnknown(withoutDelegation(read), peer.unknownProviders)
     // A phone says so by accepting activity summaries, which every phone build does and no desktop does (as below).
-    const visible = isPhonePeer(peer) ? withoutOwletsForPhone(visibleWatcherState(forPhone(original, peer.activitySummaries), false)) : original
+    const phoneVisible = isPhonePeer(peer) ? visibleWatcherState(forPhone(original, peer.activitySummaries), false) : original
+    const visible = isPhonePeer(peer) && peer.owlets !== true ? withoutOwletsForPhone(phoneVisible) : phoneVisible
     // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
@@ -1973,6 +1976,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
         peer.pictureEdges = (request.accepts?.includes('thread-media-edge') ?? false) && offers(peer, 'thread-media-edge')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
+        // A phone with an Owlets tab of its own is shown the owlets (ADR-0213); any other is shown none.
+        peer.owlets = (request.accepts?.includes('owlets') ?? false) && offers(peer, 'owlets')
         // A read counts toward the observe after it only with deltas, which carry the revision it moved to (#1990).
         peer.readHeld = peer.deltas && (request.accepts?.includes('detail-read-held') ?? false) && offers(peer, 'detail-read-held')
         peer.readAhead.clear()
