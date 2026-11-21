@@ -277,6 +277,29 @@ describe('the sidebar by status (ADR-0201)', () => {
     expect(within(found).queryByRole('button', { name: /^Show / })).toBeNull()
   })
 
+  it.each(['project', 'status'] as const)('keeps expanded %s navigation through folded groups in its existing order', grouping => {
+    app({ threadListGrouping: grouping })
+    const state = threadsStateFixture()
+    const organization = organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW)
+    const groups = groupByStatus(organization.open)
+    const order = (grouping === 'project' ? organization.open.flatMap(folder => folder.rows) : [...groups.working, ...groups.recent]).map(row => row.thread.id)
+    const onOpen = vi.fn()
+    const view = (currentThreadId: string) => <ThreadSidebar state={state} organization={organization}
+      command={vi.fn(async () => state)} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()} shortcutsLive
+      currentThreadId={currentThreadId} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />
+    const { rerender } = render(view(order[0]!))
+    // Fold every open group; the window's thread chords have always included their threads.
+    for (const toggle of document.querySelectorAll<HTMLButtonElement>('.thread-nav__list [data-roving-toggle][aria-expanded="true"]')) fireEvent.click(toggle)
+    for (const step of [1, -1]) {
+      for (let at = 0; at < order.length; at++) {
+        rerender(view(order[at]!))
+        onOpen.mockClear()
+        fireEvent.keyDown(window, { key: step === 1 ? 'ArrowDown' : 'ArrowUp', ctrlKey: true, altKey: true })
+        expect(onOpen).toHaveBeenCalledExactlyOnceWith(order[(at + step + order.length) % order.length])
+      }
+    }
+  })
+
   it('walks the groups as the thread list walks folders: Left folds a group from its rows, Right opens it (ADR-0164)', () => {
     app()
     mount()
