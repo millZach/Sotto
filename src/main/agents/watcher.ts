@@ -550,6 +550,11 @@ export class WatcherService implements WatcherControlHooks {
   /** The kept choice on its way to Watcher's provider, while it is; Watcher's queue waits for it, and a chip's press joins it. */
   private applyingNextTurn: WatcherNextTurnOptions | null = null
   private readonly dispatchRefusals = new Map<string, Refusal>()
+  /**
+   * What the thread's provider said when it turned down a start or a send, kept for that call's own answer so Watcher
+   * can change what it sends rather than try the same again (#2778). The record keeps only the refusal's code.
+   */
+  private readonly providerRefusals = new Map<string, string>()
   private readonly nativeHeads = new Map<string, string | null>()
   /** Every host's threads as Watcher reads them, looked up rather than walked (#925 step 5). */
   private readonly hosts: WatcherHosts
@@ -5396,6 +5401,7 @@ export class WatcherService implements WatcherControlHooks {
         }
         if (created.error) {
           if (!this.madeThread(operation.target)) await this.releaseMove(landed)
+          this.providerRefusals.set(operation.id, created.error)
           throw new Error('creation-failed')
         }
         origin.guard()
@@ -5439,6 +5445,8 @@ export class WatcherService implements WatcherControlHooks {
       const result = await this.options.control.commandFromWatcher(command, origin)
       const guardedRefusal = dispatchRefusal ?? this.dispatchRefusals.get(operation.id)
       if (result.error && guardedRefusal) throw guardedRefusal
+      // A prompt is what Watcher can change and send again; a stop or a settle keeps the general words.
+      if (result.error && operation.draftId) this.providerRefusals.set(operation.id, result.error)
       // Stop and settle are commands, not prompt deliveries; their successful reply is their evidence.
       const outcome = operation.draftId ? sendOutcome(result, operation.target.threadId, operation.draftId) : undefined
       await this.options.control.watcherRecords.update(record => {
@@ -5454,7 +5462,9 @@ export class WatcherService implements WatcherControlHooks {
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
-    return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true)
+    // The provider's words answer this call and no other, however the operation was started or resumed.
+    try { return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true) }
+    finally { this.providerRefusals.delete(operation.id) }
   }
   queueFailed(operationIds: ReadonlySet<string>): void {
     // Never throws: the queue has already removed or failed the items, and its caller still has to save and publish that.
@@ -5725,6 +5735,9 @@ ${operation.draftId}`)
       // A branch that could not go to where its worker starts says why in the move's own words (#1033).
       const unmoved = this.branchStarts.get(operation.id)
       if (unmoved && 'refused' in unmoved && operation.refusalCode === 'WORKING_COPY_UNAVAILABLE') return { ...watcherRefusal(operation.refusalCode, unmoved.refused), receipt: base.receipt }
+      // The provider's own words, on the call that met them: a brief it refused can be changed and sent again (#2778).
+      const providerSaid = firstRun && operation.refusalCode === 'PROVIDER_UNAVAILABLE' ? this.providerRefusals.get(operation.id) : undefined
+      if (providerSaid && providerSaid.length <= 2_000) return { ...watcherRefusal(operation.refusalCode, providerSaid), receipt: base.receipt }
       return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
         ? watched ? 'The user sent this thread an instruction first, so this was not sent. The thread is still watched. Read it before sending again.'
           : this.takenOverRefusal(this.view(), operation.target, this.view().requests.find(item => item.id === operation.requestId)
