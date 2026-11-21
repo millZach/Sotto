@@ -41,10 +41,47 @@ test('opens one combined picker from model or effort, steps the Power Gauge with
     const effortChip = page.getByRole('combobox', { name: 'Thread reasoning', exact: true })
     const dialog = page.getByRole('dialog', { name: 'Choose model', exact: true })
 
+    // Hovering either half highlights the model, effort word and speed bolt together as one flush control.
+    const unifiedHighlight = () => page.evaluate(() => {
+      const model = document.querySelector<HTMLElement>('.model-picker__trigger')!
+      const effort = document.querySelector<HTMLElement>('.split-chip-effort__trigger')!
+      const ms = getComputedStyle(model)
+      const es = getComputedStyle(effort)
+      const mr = model.getBoundingClientRect()
+      const er = effort.getBoundingClientRect()
+      return {
+        sameBg: ms.backgroundColor === es.backgroundColor && ms.backgroundImage === es.backgroundImage,
+        painted: !/rgba\(0, 0, 0, 0\)|oklab\(0 0 0 \/ 0\)|transparent/u.test(ms.backgroundColor),
+        flush: Math.abs(mr.top - er.top) <= 0.5 && Math.abs(mr.height - er.height) <= 0.5 && Math.abs(er.left - mr.right) <= 0.5,
+      }
+    })
+    await modelChip.hover()
+    await expect.poll(unifiedHighlight).toEqual({ sameBg: true, painted: true, flush: true })
+    await page.screenshot({ path: join(ARTIFACTS, 'hover-unified-dark-1280.png') })
+    await effortChip.hover()
+    await expect.poll(unifiedHighlight).toEqual({ sameBg: true, painted: true, flush: true })
+
     // Opening from the model chip focuses Search models and shows the active inline card.
     await modelChip.click()
     await expect(dialog).toBeVisible()
     await expect(dialog).toHaveAttribute('data-combined', 'true')
+    // The combined picker keeps its full width and shows the Speed switch and all stop labels without clipping.
+    const geometry = await dialog.evaluate(node => {
+      const box = node.getBoundingClientRect()
+      const scroller = node.querySelector<HTMLElement>('.model-picker__models')!.getBoundingClientRect()
+      const speed = node.querySelector<HTMLElement>('.inline-model-card__speeds')?.getBoundingClientRect()
+      const truncatedStops = [...node.querySelectorAll<HTMLElement>('.effort-gauge__stop > span')]
+        .filter(label => label.scrollWidth > label.clientWidth + 1)
+        .map(label => label.textContent)
+      return {
+        width: Math.round(box.width),
+        speedVisible: speed === undefined || (speed.top >= scroller.top - 1 && speed.bottom <= scroller.bottom + 1),
+        truncatedStops,
+      }
+    })
+    expect(geometry.width).toBeGreaterThanOrEqual(400)
+    expect(geometry.speedVisible).toBe(true)
+    expect(geometry.truncatedStops).toEqual([])
     await expect(dialog.getByRole('textbox', { name: 'Search models', exact: true })).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
