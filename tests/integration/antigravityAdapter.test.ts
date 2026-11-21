@@ -117,9 +117,9 @@ describe('Antigravity ACP adapter', () => {
   })
 
   const formReplies = async () => (await f!.requests()).filter(record => record.method === undefined && String(record.id).startsWith('antigravity-')).map(record => record.result ?? { refused: true })
-  const ask = async (id: string, questions: { question: string; options: string[]; several?: boolean }[], form?: Record<string, unknown>) => {
+  const ask = async (id: string, questions: { question: string; options: string[]; several?: boolean }[], form?: Record<string, unknown>, required?: string[]) => {
     const before = (await thread(id)).requests.length
-    await f!.action(id, { type: 'ask-question', questions, ...(form ? { form } : {}) })
+    await f!.action(id, { type: 'ask-question', questions, ...(form ? { form } : {}), ...(required ? { required } : {}) })
     if (form) return undefined
     await expect.poll(async () => (await thread(id)).requests.length).toBe(before + 1)
     return (await thread(id)).requests.at(-1)!
@@ -138,10 +138,15 @@ describe('Antigravity ACP adapter', () => {
     ] })
     expect(await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: card!.id, answer: '',
       questionAnswers: { q1: { optionIds: ['2'] }, q2: { optionIds: ['1', '3'], text: 'Sunday too' } } })).toMatchObject({ accepted: true })
-    // agy's form requires no question, so one may be left unanswered.
+    // A required question takes one of its choices, never words alone, so its own field is always filled.
+    const needed = await ask(id, [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }], undefined, ['q1'])
+    expect(needed!.questions![0]).toMatchObject({ id: 'q1', required: true, allowFreeText: false })
+    await expect(f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: needed!.id, answer: '', questionAnswers: { q1: { optionIds: [], text: 'Green tea' } } })).rejects.toThrow()
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: needed!.id, answer: 'Tea' })
+    // agy's form as 1.5.14 sends it requires no question, so one may be left unanswered.
     const second = await ask(id, [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }, { question: 'Milk?', options: ['Yes', 'No'] }])
     await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: second!.id, answer: '', questionAnswers: { q2: { optionIds: ['1'] } } })
-    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '2', q2: ['1', '3'], q2_other: 'Sunday too' } }, { action: 'accept', content: { q2: '1' } }])
+    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '2', q2: ['1', '3'], q2_other: 'Sunday too' } }, { action: 'accept', content: { q1: '1' } }, { action: 'accept', content: { q2: '1' } }])
     expect((await thread(id)).requests).toEqual([])
   })
 
@@ -175,8 +180,12 @@ describe('Antigravity ACP adapter', () => {
     await expect.poll(async () => (await thread(id)).status).not.toBe('running')
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Again' })
     await ask(id, [{ question: 'Pick two days', options: [] }], { q1: { type: 'array', title: 'Pick two days', minItems: 2, items: { anyOf: [{ const: '1', title: 'Monday' }, { const: '2', title: 'Friday' }] } } })
-    await expect.poll(formReplies).toEqual([{ refused: true }, { refused: true }])
-    await expect.poll(async () => (await thread(id)).messages.filter(message => message.role === 'assistant').map(message => message.text)).toEqual(['How many?', 'Pick two days'])
+    // So does `required` naming a field that is not one of its questions.
+    await expect.poll(async () => (await thread(id)).status).not.toBe('running')
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm3', text: 'Once more' })
+    await ask(id, [{ question: 'Tea?', options: [] }], { q1: { type: 'string', title: 'Tea?', oneOf: [{ const: '1', title: 'Yes' }] }, q1_other: { type: 'string', title: 'Other' } }, ['q1_other'])
+    await expect.poll(formReplies).toEqual([{ refused: true }, { refused: true }, { refused: true }])
+    await expect.poll(async () => (await thread(id)).messages.filter(message => message.role === 'assistant').map(message => message.text)).toEqual(['How many?', 'Pick two days', 'Tea?'])
     expect((await thread(id)).requests).toEqual([])
   })
 

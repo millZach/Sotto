@@ -44,7 +44,7 @@ const severalSchema = z.object({ type: z.literal('array'), ...described, items: 
 const wordsSchema = z.object({ type: z.literal('string'), ...described }).strict()
 const formSchema = z.object({
   sessionId: z.string().min(1), toolCallId: z.string().min(1).max(512).optional(), mode: z.literal('form'), message: z.string().max(TEXT_LIMIT).optional(),
-  requestedSchema: z.object({ type: z.literal('object'), properties: z.record(z.string().min(1).max(64), z.unknown()), required: z.array(z.string()).optional() }),
+  requestedSchema: z.object({ type: z.literal('object'), properties: z.record(z.string().min(1).max(64), z.unknown()), required: z.array(z.string()).max(64).optional() }).strict(),
 })
 /** One of `agy`'s questions: its field, whether it takes several choices, and its field for the user's own words. */
 interface AntigravityFormQuestion { readonly key: string; readonly several: boolean; readonly other?: string }
@@ -93,7 +93,7 @@ const contentText = (content: readonly unknown[] | null | undefined): string[] =
 function antigravityForm(wireId: string | number, params: unknown, threadId: string): AntigravityPending | undefined {
   const parsed = formSchema.safeParse(params)
   if (!parsed.success) return undefined
-  const properties = parsed.data.requestedSchema.properties, keys = Object.keys(properties)
+  const properties = parsed.data.requestedSchema.properties, keys = Object.keys(properties), required = new Set(parsed.data.requestedSchema.required ?? [])
   const form: AntigravityFormQuestion[] = [], questions: NonNullable<AgentRequest['questions']> = []
   for (const key of keys) {
     if (/^q\d+_other$/u.test(key)) { if (!keys.includes(key.slice(0, -'_other'.length)) || !wordsSchema.safeParse(properties[key]).success) return undefined; continue }
@@ -103,12 +103,15 @@ function antigravityForm(wireId: string | number, params: unknown, threadId: str
     if (!field) return undefined
     const ids = new Set(field.choices.map(choice => choice.const))
     if (ids.size !== field.choices.length) return undefined
-    const other = keys.includes(`${key}_other`) ? `${key}_other` : undefined
+    // A required question is answered with one of its choices: words alone would leave its own field empty.
+    const needed = required.has(key), other = keys.includes(`${key}_other`) && !needed ? `${key}_other` : undefined
     form.push({ key, several: !one.success, ...(other ? { other } : {}) })
     questions.push({ id: key, question: bounded(field.title?.trim() || 'Choose an option.'),
       options: field.choices.map(choice => ({ id: choice.const, label: bounded(choice.title.trim() || choice.const, 512) })),
-      multiSelect: !one.success, allowFreeText: other !== undefined, required: parsed.data.requestedSchema.required?.includes(key) ?? false })
+      multiSelect: !one.success, allowFreeText: other !== undefined, required: needed })
   }
+  // `required` naming anything but a question read here, its words' field among them, is a form Sotto could not answer whole.
+  if ([...required].some(key => !form.some(question => question.key === key))) return undefined
   if (!questions.length || questions.length > 20) return undefined
   const text = questions.length === 1 ? questions[0]!.question : bounded(parsed.data.message?.trim() || 'Antigravity has questions.')
   return { wireId, threadId, kind: 'question', toolCallId: parsed.data.toolCallId ?? '', form, request: { id: `antigravity-request-${JSON.stringify(wireId)}`,

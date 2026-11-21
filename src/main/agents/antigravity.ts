@@ -1168,6 +1168,7 @@ export class AntigravityAcpHost implements ProviderHost {
       this.emit()
     }, true).catch((error: unknown) => {
       if (superseded() || turn.ended) return
+      this.closeForms(id)
       this.endTurn(id, 'failed', connection.rpc.alive ? error instanceof AntigravityRejected ? 'Antigravity refused this message. Nothing else was lost. Check the thread’s model, then send again.' : undefined : PROCESS_LOST)
       this.emit()
     })

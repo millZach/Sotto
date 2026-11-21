@@ -244,7 +244,7 @@ function run(command) {
     const id = `antigravity-${++serial}`
     pending.set(id, { fields: Object.keys(properties), refusable: command.form !== undefined, sessionId, text: command.questions.map(item => item.question).join('\n') })
     send({ id, method: 'elicitation/create', params: { sessionId, toolCallId, mode: 'form', message: command.questions.length === 1 ? 'The agent has a question.' : `The agent has ${command.questions.length} questions.`,
-      requestedSchema: { type: 'object', properties } } })
+      requestedSchema: { type: 'object', properties, ...(command.required ? { required: command.required } : {}) } } })
   }
   if (command.type === 'mcp-permission') {
     ask(sessionId, { toolCallId: randomUUID(), kind: 'other', title: `Run ${command.tool}`, status: 'pending' },
