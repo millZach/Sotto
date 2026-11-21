@@ -27,7 +27,7 @@ const NO_EVENTS_AFTER = 9_007_199_254_740_991
  * when its own switches are on. `plain` is a client from before every optional feature: whole shells and whole details.
  */
 export const PROFILES: Record<ClientName, ClientProfile> = {
-  desktop: { offer: 'permessage-deflate; client_no_context_takeover; server_no_context_takeover', summaries: false, hello: { afterSeq: NO_EVENTS_AFTER, accepts: ['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-pi', 'provider-hermes'] } },
+  desktop: { offer: 'permessage-deflate; client_no_context_takeover; server_no_context_takeover', summaries: false, hello: { afterSeq: NO_EVENTS_AFTER, accepts: ['client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-pi', 'provider-hermes'] } },
   iphone: { offer: 'permessage-deflate', summaries: true, hello: { afterSeq: NO_EVENTS_AFTER, accepts: ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'command-changed-thread-records', 'step-window', 'thread-media-edge', 'kept-parts', 'plugin-meshy-phone'] } },
   plain: { offer: undefined, summaries: false, hello: { accepts: ['provider-opencode', 'provider-cursor'] } },
 }
@@ -228,9 +228,12 @@ export function script(provider: RefereeProvider, scenario: ScenarioName = 'main
   if (scenario === 'lost-acknowledgement') return LOSES_ACKNOWLEDGEMENT[provider] && [
     ...opening,
     { say: 'the fake will acknowledge the next prompt late', by: 'fake', drive: () => ({ type: 'lose-acknowledgement' }) },
-    // The send is over once the host has settled what became of it: the delivery says, and the lane is closed.
+    // The send is over once the host has settled what became of it: the delivery says, and the lane is closed. Where the
+    // late acknowledgement shows its turn running after the prompt shows, the step waits for the turn too: the prompt
+    // alone, still idle, lasts only until the acknowledgement lands, and a busy machine can miss it (#2708).
     commandStep({ say: 'desktop sends "Referee prompt one"', by: 'desktop', request: command({ type: 'manual-send', threadId: THREAD, text: 'Referee prompt one' }),
-      until: held => textOf(held).includes('Referee prompt one') && ((held.shell?.deliveries ?? []) as { status?: string }[]).every(delivery => delivery.status !== 'submitting' && delivery.status !== 'queued') }),
+      until: (held, context) => textOf(held).includes('Referee prompt one') && ((held.shell?.deliveries ?? []) as { status?: string }[]).every(delivery => delivery.status !== 'submitting' && delivery.status !== 'queued')
+        && (!LOSES_ACKNOWLEDGEMENT[provider]!.startsTurn || sent(provider, 'Referee prompt one')(held, context)) }),
     { say: 'the fake acknowledges prompts again', by: 'fake', drive: () => ({ type: 'acknowledge-again' }) },
     { ...complete('Referee reply one'), until: recordEnded('Referee reply one') },
     ...reads,
