@@ -126,7 +126,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const [signInFor, setSignInFor] = useState<LocalSignInProvider | null>(null)
   /** Cursor's sign-in from its row (ADR-0128), kept while its row is closed or another row is open. */
   const cursorSignIn = useCursorSignIn(window.sotto?.cursor)
-  /** Antigravity's sign-ins and download from its row (ADR-0211), kept the same way. */
+  /** Antigravity's sign-ins and download from its row (ADR-0212), kept the same way. */
   const antigravitySignIn = useAntigravitySignIn(window.sotto?.providerSignIn, window.sotto?.antigravity)
   const inFlight = useRef(new Set<ProviderId>())
   const checkInFlight = useRef(false)
@@ -286,7 +286,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   // "sign in" does not come back once the sign-in has connected Cursor.
   const cursorPress = <T,>(press: () => Promise<T>) => (): Promise<T> => { setErrors(previous => ({ ...previous, cursor: undefined })); return press() }
   const cursorRowSignIn = { ...cursorSignIn, start: cursorPress(cursorSignIn.start), reopen: cursorPress(cursorSignIn.reopen), signOut: cursorPress(cursorSignIn.signOut) }
-  // Antigravity's row signs in, installs and takes its key from its connection column (ADR-0211, variant B), which says
+  // Antigravity's row signs in, installs and takes its key from its connection column (ADR-0212, variant B), which says
   // what to do while it is not signed in or not installed; main's sentence about that is not repeated under its header.
   const antigravityBridge = window.sotto?.antigravity
   const antigravityExplains = (provider: ProviderId, status: ReturnType<typeof statusFor>): boolean => provider === 'antigravity' && antigravityBridge !== undefined
@@ -457,7 +457,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     // While a sign-in waits on cursor.com, Cursor's row says so, live as a connect is, and holds its switch.
     const signingIn = ((provider === 'cursor' && cursorBridge !== undefined && cursorSignIn.signing)
       || (provider === 'antigravity' && antigravityBridge !== undefined && antigravitySignIn.signing)) && status.connection !== 'connected'
-    // Antigravity signs in and installs from its opened row (ADR-0211), so its header offers neither.
+    // Antigravity signs in and installs from its opened row (ADR-0212), so its header offers neither.
     const ownRow = provider === 'antigravity' && antigravityBridge !== undefined
     // A problem Sotto knows says so in a word, the same word for every provider (ADR-0200); the client's own sentence is in the opened row.
     const problem = status.connection === 'error' && 'problem' in status ? status.problem : undefined

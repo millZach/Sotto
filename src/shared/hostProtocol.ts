@@ -320,7 +320,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `provider-deepseek`: as `provider-opencode`, for DeepSeek (ADR-0138, November 8 amendment). The desktop's phone
  * listener sends DeepSeek's provider row, models, projects and threads only to a client whose hello accepts it. A
  * headless host lists it too but holds the provider (`heldOnHost`), so it sends nothing of it to anyone.
- * `watcher-antigravity`: as `watcher-cursor`, for a desktop whose Watcher runs on Antigravity (ADR-0211).
+ * `watcher-antigravity`: as `watcher-cursor`, for a desktop whose Watcher runs on Antigravity (ADR-0212).
  * `watcher-cursor`: as `watcher-muse`, for a desktop whose Watcher runs on Cursor, whose identity names `cursor` as its
  * provider (ADR-0128). It adds no request, field or push. A desktop whose Watcher is on Cursor reads and directs no thread
  * on a host that does not list it, and says to update that host.

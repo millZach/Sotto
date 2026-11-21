@@ -197,14 +197,14 @@ describe('Omarchy M3 and readability check', () => {
     // caption step's comment came to name code in Changes (ADR-0169, November 5, 2026 amendment), which changes no value, and
     // when a provider's mark drawn as a glyph took tokens of its own (`--tt-provider-codex-mark` and the rest, November 6,
     // 2026), the badge colour by night and mixed halfway toward the text by day, which moves no palette, and when Antigravity's
-    // mark and badge took tokens of their own (ADR-0211, November 20, 2026), constants per mode as Cursor's are, and moved to Google's blue with its official arch (November 21, 2026), which moves no palette. The Sotto theme's
+    // mark and badge took tokens of their own (ADR-0212, November 20, 2026), constants per mode as Cursor's are, and moved to Google's blue with its official arch (November 21, 2026), which moves no palette. The Sotto theme's
     // card by day went from 4% to 7% of the text, with its composer kept on its own card and faint ink, small secondary
     // words took a weight token, and Changes took the reading hairline by day (ADR-0110 and ADR-0024, November 7, 2026
     // amendments): these are tokens.css's own derivations and move no palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('156bb311568f57c2610b051ae62e3d3e8da1a4cc63b4f6e629e92f2b9f4c3037')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('ae83f5cb4b9aae266f7649ad28b2f73d988a80c831ef094151de1d14d93a6bd7')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

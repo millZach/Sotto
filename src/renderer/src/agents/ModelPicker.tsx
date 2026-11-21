@@ -1,15 +1,19 @@
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, Star, X } from 'lucide-react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, Star, X, Zap } from 'lucide-react'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
 import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
 import { compareVersions, inLineup, LINEUP_PROVIDERS, modelVersion } from '../../../shared/modelLineup'
+import { isTopEffort } from '../../../shared/topEffort'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAnchoredMenu } from './anchoredMenu'
+import { effortLabel } from './EffortPicker'
+import { InlineModelCard, type CombinedEffort } from './EffortGauge'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
+import { SPEED_STANDARD } from './pendingSettings'
 import { ProviderMark } from './ProviderMark'
 import { AddOwnServerDialog, OwnServerMenuEntry } from './OwnModelServers'
 import { favoriteKey, toggleModelFavorite, useModelFavorites, type ModelFavorite } from './modelFavorites'
@@ -94,7 +98,7 @@ export function modelSources(models: readonly AgentModel[], provider: string): M
     .sort((left, right) => Number(right.name === OPENCODE_ZEN_SOURCE) - Number(left.name === OPENCODE_ZEN_SOURCE))
 }
 
-/** The providers whose groups are model makers rather than model sources: Cursor's (ADR-0128) and Antigravity's (ADR-0211). */
+/** The providers whose groups are model makers rather than model sources: Cursor's (ADR-0128) and Antigravity's (ADR-0212). */
 const byMakers = (providerId: string | undefined): boolean => providerId === 'cursor' || providerId === 'antigravity'
 const makerGrouped = (models: readonly AgentModel[]): boolean => byMakers(models[0]?.providerId)
 
@@ -145,7 +149,10 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * Favorites while any exist. A favorite whose provider or model has gone stays listed, unavailable, and can be unstarred.
  * Typing there searches every provider's models.
  */
-export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card }: {
+/** Interactive rows inside the picker's list (models, Legacy row, and OpenCode/Cursor source rows), skipping controls inside an expanded inline model card. */
+const LISTBOX_OPTIONS = '[role="option"]:not(:disabled), .model-picker__legacy, :scope > button:not(:disabled)'
+
+export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card, effort, open: controlledOpen, onOpenChange, initialFocus = 'search', returnFocusTo, dialogId: givenDialogId }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -172,12 +179,41 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
    * The card describes the chip, in place of its tooltip. Escape, or opening the menu, puts it away until the chip is left.
    */
   readonly card?: { readonly id: string; readonly render: (shown: boolean) => ReactNode } | undefined
+  /**
+   * Combined composer picker mode: expands the active model inline with its Power Gauge effort slider and speed switch,
+   * moves the provider strip across the top, and keeps the picker open on model selection.
+   */
+  readonly effort?: CombinedEffort | undefined
+  /** Controlled open state when another composer trigger (the effort word) shares this picker. */
+  readonly open?: boolean | undefined
+  readonly onOpenChange?: ((open: boolean) => void) | undefined
+  /** Where focus lands on open: the search input (model trigger) or the Power Gauge slider (effort trigger). */
+  readonly initialFocus?: 'search' | 'effort' | undefined
+  /** Trigger that receives focus back on close when the picker was opened from the effort word. */
+  readonly returnFocusTo?: RefObject<HTMLButtonElement | null> | undefined
+  /** Shared dialog id so the effort trigger's `aria-controls` names this dialog. */
+  readonly dialogId?: string | undefined
 }): ReactNode {
   const { t } = useLingui()
+  const combined = effort !== undefined
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
-  const [open, setOpen] = useState(openOnMount && !disabled)
+  const [localOpen, setLocalOpen] = useState(openOnMount && !disabled)
+  const requestedOpen = controlledOpen !== undefined ? controlledOpen : localOpen
+  const canOpen = !disabled || (combined && !effort.disabled)
+  const open = requestedOpen && canOpen
+  const setOpen = (next: boolean): void => {
+    if (controlledOpen === undefined) setLocalOpen(next)
+    onOpenChange?.(next)
+  }
+  // If the thread locks or its provider disconnects while open, clear the open state so it never reopens unasked later.
+  useEffect(() => {
+    if (requestedOpen && !canOpen) {
+      if (controlledOpen === undefined) setLocalOpen(false)
+      onOpenChange?.(false)
+    }
+  }, [requestedOpen, canOpen, controlledOpen, onOpenChange])
   const [addingServer, setAddingServer] = useState(false)
   const [cardRested, setCardRested] = useState(false)
   const [cardFocused, setCardFocused] = useState(false)
@@ -211,14 +247,17 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
   /** The model source row that holds the list's one tab stop, once focus has been on one; until then, the chosen model's. */
   const [sourceStop, setSourceStop] = useState<string | undefined>(undefined)
   /** Where focus goes once the menu has drawn the step a key or a press asked for. */
-  const pendingFocus = useRef<{ readonly to: 'search' } | { readonly to: 'model' } | { readonly to: 'source'; readonly name: string } | { readonly to: 'row'; readonly index: number } | null>(null)
+  const pendingFocus = useRef<{ readonly to: 'search' } | { readonly to: 'model' } | { readonly to: 'effort' } | { readonly to: 'source'; readonly name: string } | { readonly to: 'row'; readonly index: number } | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const search = useRef<HTMLInputElement>(null)
+  const effortSlider = useRef<HTMLInputElement>(null)
+  const inlineCard = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const rail = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLButtonElement>(null)
-  const dialogId = useId()
+  const fallbackDialogId = useId()
+  const dialogId = givenDialogId ?? fallbackDialogId
   /** Whether the press now ending began on the backdrop, outside every part of the menu. */
   const pressedBackdrop = useRef(false)
   const favoriteKeys = useMemo(() => new Set(favorites.map(favoriteKey)), [favorites])
@@ -250,7 +289,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
   const sources = selectedProvider?.sources
   const makers = sources !== undefined && byMakers(selectedProvider?.providerId)
   const antigravity = selectedProvider?.providerId === 'antigravity'
-  // The words a menu of model makers uses where a menu of model sources uses its own: Cursor's (ADR-0128) and Antigravity's (ADR-0211).
+  // The words a menu of model makers uses where a menu of model sources uses its own: Cursor's (ADR-0128) and Antigravity's (ADR-0212).
   const backToMakers = antigravity ? t`Back to Antigravity’s model makers` : t`Back to Cursor’s model makers`
   const makerModels = (maker: string): string => antigravity
     ? t({ message: `${maker} models in Antigravity`, comment: '{maker} is the company that made the models, such as Google.' })
@@ -275,6 +314,45 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
   const favoritesContinue = favoritesPane && !everywhere && continueOn !== undefined && favorites.some(favorite => continueOn.providers.has(favorite.provider))
   const leaveSource = (): void => { if (openSource) pendingFocus.current = { to: 'source', name: openSource.name }; setStep(null) }
   const continuing = favoritesContinue || selectedProvider !== undefined && continueOn?.providers.has(selectedProvider.name) === true
+  /** Resets search, active provider, source step and legacy fold when opening the picker. */
+  const resetForOpen = (focusTarget: 'search' | 'effort'): void => {
+    if (card) setCardAway(true)
+    const activeInFavorites = current !== undefined && favoriteKeys.has(favoriteKey(current))
+    const openForEffort = combined && focusTarget === 'effort'
+    const nextProvider = current?.provider ?? groups[0]?.name ?? ''
+    const nextOnFavorites = openForEffort ? activeInFavorites : favorites.length > 0
+    const nextStep = openForEffort && !activeInFavorites && current?.source ? { provider: current.provider, source: current.source } : null
+    const nextLegacyOpen = current?.legacy === true
+    const willRerender = nextProvider !== provider || nextOnFavorites !== onFavorites || query !== ''
+      || nextStep?.provider !== step?.provider || nextStep?.source !== step?.source || nextLegacyOpen !== legacyOpen
+    setProvider(nextProvider)
+    setOnFavorites(nextOnFavorites)
+    setQuery('')
+    setStep(nextStep)
+    setSourceStop(undefined)
+    setLegacyOpen(nextLegacyOpen)
+    wheelTurn.current = restingWheel()
+    if (openForEffort) {
+      pendingFocus.current = { to: 'effort' }
+      deferEffortFocus.current = willRerender
+    }
+  }
+  // Reset when opened externally (for example, from the composer's effort word).
+  const wasOpen = useRef(false)
+  const deferEffortFocus = useRef(false)
+  useLayoutEffect(() => {
+    const opening = open && !wasOpen.current
+    wasOpen.current = open
+    if (!opening) return
+    resetForOpen(initialFocus)
+  }, [open])
+  // Scroll the newly expanded inline card into view when the active model changes while combined picker stays open.
+  const lastModelId = useRef(currentEntryId)
+  useLayoutEffect(() => {
+    const changed = currentEntryId !== lastModelId.current
+    lastModelId.current = currentEntryId
+    if (open && combined && changed) inlineCard.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, combined, currentEntryId])
   // Each turn of the wheel over the rail steps one provider and stops at either end. A turn ends when the wheel
   // rests for a moment or turns the other way, so a mouse notch is a step and so is a touchpad swipe with its
   // momentum, whose small movements add up to one. A turn is kept across renders, since the owner may hand over a
@@ -290,13 +368,14 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
     const element = rail.current
     if (!element) return
     const wheel = (event: WheelEvent): void => {
-      if (event.ctrlKey || event.metaKey || event.deltaY === 0) return
+      const delta = combined && event.deltaY === 0 ? event.deltaX : event.deltaY
+      if (event.ctrlKey || event.metaKey || delta === 0) return
       event.preventDefault()
-      const now = performance.now(), direction = Math.sign(event.deltaY), turn = wheelTurn.current
+      const now = performance.now(), direction = Math.sign(delta), turn = wheelTurn.current
       if (now - turn.at > RAIL_WHEEL_PAUSE || direction !== turn.direction) wheelTurn.current = { ...restingWheel(), direction }
       wheelTurn.current.at = now
       if (wheelTurn.current.stepped) return
-      wheelTurn.current.travel += Math.abs(event.deltaY)
+      wheelTurn.current.travel += Math.abs(delta)
       if (event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && wheelTurn.current.travel < RAIL_WHEEL_STEP) return
       wheelTurn.current.stepped = true
       const at = tiles.indexOf(wheelChoice.current ?? '')
@@ -311,18 +390,26 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
     }
     element.addEventListener('wheel', wheel, { passive: false })
     return () => element.removeEventListener('wheel', wheel)
-  }, [tiles, selectedName])
-  useAnchoredMenu(open, trigger, dialog, search)
+  }, [tiles, selectedName, combined])
+  useAnchoredMenu(open, trigger, dialog, combined && initialFocus === 'effort' ? effortSlider : search, returnFocusTo)
   // The step a key or a press asked for has drawn: focus what it said. A source with no model to choose yet puts focus on
   // its back control. Whatever the step, focus stays in the menu: where what held it has gone (a source that left, a
   // model that went), it goes to search, so Escape still steps back rather than reaching the window behind.
   useLayoutEffect(() => {
     if (!open) return
+    if (deferEffortFocus.current && effortSlider.current === null) {
+      deferEffortFocus.current = false
+      return
+    }
+    deferEffortFocus.current = false
     const target = pendingFocus.current
     pendingFocus.current = null
     if (target?.to === 'search') search.current?.focus()
-    else if (target) {
-      const items = [...(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+    else if (target?.to === 'effort') {
+      inlineCard.current?.scrollIntoView?.({ block: 'nearest' })
+      ;(effortSlider.current ?? inlineCard.current?.querySelector<HTMLButtonElement>('[role="option"]') ?? search.current)?.focus()
+    } else if (target) {
+      const items = [...(list.current?.querySelectorAll<HTMLButtonElement>(combined ? LISTBOX_OPTIONS : 'button:not(:disabled)') ?? [])]
       if (target.to === 'model') (items.find(item => item.getAttribute('aria-selected') === 'true') ?? items[0] ?? back.current)?.focus()
       else if (target.to === 'row') items[Math.min(target.index, items.length - 1)]?.focus()
       else items.find(item => item.dataset.source === target.name)?.focus()
@@ -344,32 +431,102 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
   const spoken = spokenSource ? t({ message: `${name} from ${spokenSource}, in ${spokenProvider}`, comment: 'The model chip\'s tooltip: a model, the model source it comes from, and the provider that runs it.' }) : name
   // Starring a row on Favorites takes it away, so focus moves to the row that takes its place.
   const star = (model: AgentModel, row: HTMLElement): void => {
-    if (favoritesPane && !everywhere) pendingFocus.current = { to: 'row', index: [...(list.current?.querySelectorAll('button:not(:disabled)') ?? [])].indexOf(row) }
+    if (favoritesPane && !everywhere) pendingFocus.current = { to: 'row', index: [...(list.current?.querySelectorAll(combined ? LISTBOX_OPTIONS : 'button:not(:disabled)') ?? [])].indexOf(row) }
     toggleModelFavorite(model)
+  }
+  /** Keyboard arrows across the provider strip (horizontal in combined mode, vertical on the rail). */
+  const onProviderKeys = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (combined && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      const tabs = [...(rail.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)') ?? [])]
+      if (tabs.length === 0) return
+      const index = tabs.indexOf(document.activeElement as HTMLButtonElement)
+      const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length
+      event.preventDefault()
+      tabs[next]?.focus()
+      return
+    }
+    moveListboxFocus(event, rail.current)
+  }
+  /** Arrow navigation in model listboxes, leaving Power Gauge and speed controls alone. */
+  const onListKeys = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (combined && (event.target as Element | null)?.closest('.effort-gauge, .inline-model-card__speed')) return
+    moveListboxFocus(event, list.current, undefined, combined ? LISTBOX_OPTIONS : 'button:not(:disabled)')
+  }
+  /** Jump straight to the active model's provider/source and focus its Power Gauge. */
+  const jumpToActive = (): void => {
+    if (!current) return
+    setQuery('')
+    setOnFavorites(false)
+    setProvider(current.provider)
+    setStep(current.source ? { provider: current.provider, source: current.source } : null)
+    if (current.legacy) setLegacyOpen(true)
+    pendingFocus.current = { to: 'effort' }
   }
   /**
    * A model's row. On Favorites (`favorite`) it carries its provider's mark and source, and one that cannot be chosen is
-   * still focusable, so its star can come off.
+   * still focusable, so its star can come off. In combined mode, the active model expands inline into `InlineModelCard`.
    */
   const option = (model: AgentModel, favorite = false): ReactNode => {
     const starred = favoriteKeys.has(favoriteKey(model))
     const unready = disabled || !model.ready
     const starName = starred ? t`Remove from favorites` : t`Add to favorites`
-    return <button type="button" role="option" key={favorite ? favoriteKey(model) : model.id} aria-selected={model.id === currentEntryId} disabled={unready && !favorite} aria-disabled={favorite && unready || undefined} data-favorite={favorite || undefined}
+    const isActive = model.id === currentEntryId
+    const showInline = combined && isActive && !continueOn?.providers.has(model.provider)
+    const button = <button type="button" role="option" key={showInline ? undefined : (favorite ? favoriteKey(model) : model.id)}
+      className={showInline ? 'inline-model-card__head' : undefined}
+      aria-selected={isActive} disabled={unready && !favorite && !showInline} aria-disabled={(favorite && unready) || undefined} data-favorite={favorite || undefined}
       aria-keyshortcuts={favoritesOn ? 'F' : undefined} aria-description={favorite ? continueOn?.providers.has(model.provider) ? continueOn.heading(model.provider) : model.provider : undefined}
       onKeyDown={event => { if (favoritesOn && event.key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); star(model, event.currentTarget) } }}
-      onClick={() => { if (unready) return; onChange(model.id); setOpen(false) }}>
-      <span>{favorite ? <ProviderMark provider={model.providerId} name={model.provider} size={12} /> : null}{model.name}{favorite && model.source ? <small>{model.source}</small> : null}{!model.ready && <small>{t({ message: 'Unavailable', comment: 'Beside a model that cannot be chosen now.' })}</small>}</span>
-      {model.id === currentEntryId && <Check size={14} aria-hidden="true" />}
+      onClick={() => {
+        if (unready) return
+        if (isActive && combined) return
+        const stay = combined && (effort.stayOpenOnModel ? effort.stayOpenOnModel(model.id) : true)
+        if (stay) pendingFocus.current = { to: 'effort' }
+        onChange(model.id)
+        if (!stay) setOpen(false)
+      }}>
+      <span>{favorite || showInline ? <ProviderMark provider={model.providerId} name={model.provider} size={showInline ? 13 : 12} /> : null}{model.name}{(favorite || showInline) && model.source ? <small>{model.source}</small> : null}{!model.ready && <small>{t({ message: 'Unavailable', comment: 'Beside a model that cannot be chosen now.' })}</small>}</span>
+      {isActive && <Check size={14} aria-hidden="true" />}
       {/* Hidden from the row's name: F does the same from the keyboard, and the row's own name stays the model's. */}
       {favoritesOn ? <span className="model-picker__star" data-starred={starred || undefined} title={starName} aria-hidden="true"
         onClick={event => { event.stopPropagation(); star(model, event.currentTarget.parentElement!) }}><Star size={13} fill={starred ? 'currentColor' : 'none'} /></span> : null}
     </button>
+    if (showInline) {
+      return <InlineModelCard key={favorite ? favoriteKey(model) : model.id} modelKey={model.id} header={button} effort={effort} sliderRef={effortSlider} cardRef={inlineCard} />
+    }
+    return button
   }
+  const activeVisible = combined && currentEntryId !== undefined && (() => {
+    if (everywhere) return everywhere.some(group => !continueOn?.providers.has(group.name) && group.models.some(model => model.id === currentEntryId))
+    if (favoritesPane) return favorites.some(favorite => {
+      if (continueOn?.providers.has(favorite.provider)) return false
+      return liveModels.get(favoriteKey(favorite))?.id === currentEntryId
+    })
+    if (selectedProvider && continueOn?.providers.has(selectedProvider.name)) return false
+    if (!sources) return filtered.some(model => model.id === currentEntryId) || ((Boolean(query) || legacyOpen) && legacyFound.some(model => model.id === currentEntryId))
+    if (found) return found.some(source => source.models.some(model => model.id === currentEntryId))
+    if (openSource) return openSource.models.some(model => model.id === currentEntryId)
+    return false
+  })()
+  const pinnedEffortWord = !combined ? '' : effort.routed ? t({ message: 'Auto', comment: 'On a routed thread\'s effort display: model routing chooses the effort.' })
+    : effort.value ? effortLabel(effort.value) : ''
+  const pinnedEffortTop = combined && !effort.routed && isTopEffort(effort.levels, effort.value)
+  const pinnedSpeed = combined ? effort.speed : undefined
   const providerName = selectedProvider?.name ?? ''
   const openSourceName = openSource?.name ?? ''
   const providerModels = t({ message: `${providerName} models`, comment: '{providerName} is a provider\'s name.' })
   const described = [pending ? describedBy : undefined, card?.id].filter(Boolean).join(' ') || undefined
+  const providerTabs = groups.length > 1 ? <div ref={rail} className={combined ? 'model-picker__providers' : 'model-picker__rail'} role="tablist" aria-label={t`Model providers`} aria-orientation={combined ? 'horizontal' : 'vertical'}
+    onKeyDown={onProviderKeys}>
+    {favoritesTile ? <button type="button" role="tab" className="model-picker__favorites-tile" aria-label={t`Favorites`} title={t`Favorites`} aria-selected={favoritesPane} tabIndex={favoritesPane ? 0 : -1}
+      onFocus={showFavorites} onClick={() => { showFavorites(); search.current?.focus() }}><Star size={combined ? 15 : 17} aria-hidden="true" /></button> : null}
+    {groups.map(group => {
+      const chosen = selectedProvider?.name === group.name
+      return <button type="button" role="tab" key={group.name} aria-label={group.name} title={group.name} aria-selected={chosen} tabIndex={chosen ? 0 : -1}
+        onFocus={() => showProvider(group.name)} onClick={() => { showProvider(group.name); search.current?.focus() }}>
+        <ProviderMark provider={group.providerId} name={group.name} size={combined ? 16 : 18} /></button>
+    })}
+  </div> : null
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
       title={card ? undefined : spoken} data-source={current?.source} aria-describedby={described} data-pending={pending ? 'true' : undefined} disabled={disabled}
@@ -378,7 +535,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
       onPointerLeave={card ? event => { pointerOnChip.current = false; clearTimeout(cardRest.current); setCardRested(false); if (document.activeElement !== event.currentTarget) setCardAway(false) } : undefined}
       onFocus={card ? event => { if (event.currentTarget.matches(':focus-visible')) setCardFocused(true) } : undefined}
       onBlur={card ? () => { setCardFocused(false); if (!pointerOnChip.current) setCardAway(false) } : undefined}
-      onClick={() => { if (card) setCardAway(true); setProvider(current?.provider ?? groups[0]?.name ?? ''); setOnFavorites(favorites.length > 0); setQuery(''); setStep(null); setSourceStop(undefined); setLegacyOpen(current?.legacy === true); wheelTurn.current = restingWheel(); setOpen(true) }}>
+      onClick={() => { resetForOpen('search'); setOpen(true) }}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
       {mark}
@@ -387,7 +544,8 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
       <ChevronDown size={12} aria-hidden="true" />
     </button>
     {card ? <div id={card.id} className="model-picker__card" role="tooltip" data-shown={cardShown || undefined}><p className="model-picker__card-name">{spoken}</p>{card.render(cardShown)}</div> : null}
-    {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label={t`Choose model`} data-rail={groups.length > 1 || undefined}
+    {open && <dialog ref={dialog} id={dialogId} className={combined ? 'model-picker__dialog model-picker__dialog--combined' : 'model-picker__dialog'} aria-label={t`Choose model`}
+      data-rail={!combined && groups.length > 1 || undefined} data-combined={combined || undefined}
       onKeyDown={stepBack}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); setOpen(false) }}
       // A click outside closes the menu only when its press began outside too. A press on a provider tile can change the
@@ -396,35 +554,35 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
       onPointerDown={event => { pressedBackdrop.current = event.target === event.currentTarget }}
       onClick={event => { if (event.target === event.currentTarget && pressedBackdrop.current) setOpen(false); pressedBackdrop.current = false; event.stopPropagation() }}>
       {/* One tab stop for the whole rail: the arrows move along it and the tile they land on becomes the list. */}
-      {groups.length > 1 && <div ref={rail} className="model-picker__rail" role="tablist" aria-label={t`Model providers`} aria-orientation="vertical"
-        onKeyDown={event => moveListboxFocus(event, rail.current)}>
-        {favoritesTile ? <button type="button" role="tab" className="model-picker__favorites-tile" aria-label={t`Favorites`} title={t`Favorites`} aria-selected={favoritesPane} tabIndex={favoritesPane ? 0 : -1}
-          onFocus={showFavorites} onClick={() => { showFavorites(); search.current?.focus() }}><Star size={17} aria-hidden="true" /></button> : null}
-        {groups.map(group => {
-          const chosen = selectedProvider?.name === group.name
-          return <button type="button" role="tab" key={group.name} aria-label={group.name} title={group.name} aria-selected={chosen} tabIndex={chosen ? 0 : -1}
-            onFocus={() => showProvider(group.name)} onClick={() => { showProvider(group.name); search.current?.focus() }}>
-            <ProviderMark provider={group.providerId} name={group.name} size={18} /></button>
-        })}
-      </div>}
+      {!combined ? providerTabs : null}
       <div className="model-picker__panel">
         <header className="model-picker__search"><Search size={15} aria-hidden="true" /><input ref={search} aria-label={t`Search models`} placeholder={!selectedProvider ? t`Search models` : sources ? t({ message: `Search all ${providerName} models`, comment: '{providerName} is a provider\'s name.' }) : t({ message: `Search ${providerName} models`, comment: '{providerName} is a provider\'s name.' })} value={query} onChange={event => setQuery(event.target.value)}
           onKeyDown={event => {
             if (event.key === 'Enter') event.preventDefault()
-            if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus() }
+            if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>(combined ? LISTBOX_OPTIONS : 'button:not(:disabled)')?.focus() }
           }} />
           {found ? <span className="model-picker__count">{countModels(found.reduce((sum, source) => sum + source.models.length, 0))}</span> : null}
           <button type="button" aria-label={t`Close model picker`} title={t`Close model picker`} onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
         </header>
+        {combined ? providerTabs : null}
+        {combined && current && !activeVisible ? <button type="button" className="model-picker__pinned"
+          aria-label={t({ message: `Jump to active model, ${current.name}`, comment: '{name} is the currently selected model\'s name.' })}
+          onClick={jumpToActive}>
+          <span className="model-picker__pinned-model"><ProviderMark provider={current.providerId} name={current.provider} size={13} /><span className="model-picker__pinned-name">{current.name}</span></span>
+          <span className="model-picker__pinned-meta">
+            {pinnedEffortWord ? <span className="model-picker__pinned-effort" data-top={pinnedEffortTop || undefined}>{pinnedEffortWord}</span> : null}
+            {pinnedSpeed && pinnedSpeed.value !== SPEED_STANDARD ? <Zap size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" /> : null}
+          </span>
+        </button> : null}
         {continuing && selectedProvider ? <p className="model-picker__heading">{continueOn!.heading(selectedProvider.name)}</p> : null}
-        {everywhere ? <div ref={list} role="listbox" aria-label={t`Models`} className="model-picker__models model-picker__models--grouped" onKeyDown={event => moveListboxFocus(event, list.current)}>
+        {everywhere ? <div ref={list} role="listbox" aria-label={t`Models`} className="model-picker__models model-picker__models--grouped" onKeyDown={onListKeys}>
           {everywhere.map(group => <div key={group.name} role="group" aria-label={continueOn?.providers.has(group.name) ? continueOn.heading(group.name) : group.name}>
             <p className="model-picker__group" aria-hidden="true">{continueOn?.providers.has(group.name) ? continueOn.heading(group.name) : group.name}<span>{group.models.length}</span></p>
             {group.models.map(model => option(model))}
           </div>)}
           {!everywhere.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
         </div>
-        : favoritesPane ? <div ref={list} role="listbox" aria-label={t`Favorites`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+        : favoritesPane ? <div ref={list} role="listbox" aria-label={t`Favorites`} className="model-picker__models" onKeyDown={onListKeys}>
           {favorites.map(favorite => {
             if (models.some(model => favoriteKey(model) === favoriteKey(favorite) && model.hiddenFromMenu)) return null
             const live = liveModels.get(favoriteKey(favorite))
@@ -434,7 +592,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
           })}
           {!favorites.length && <p className="model-picker__empty tt-paragraph">{t`Star a model to keep it here.`}</p>}
         </div>
-        : !sources ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+        : !sources ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models" onKeyDown={onListKeys}>
           {filtered.map(model => option(model))}
           {legacyFound.length > 0 && !query ? <LegacyRow open={legacyOpen} count={legacyFound.length} onToggle={() => setLegacyOpen(shown => !shown)} /> : null}
           {legacyFound.length > 0 && query ? <p className="model-picker__group" aria-hidden="true">{legacyName}<span>{legacyFound.length}</span></p> : null}
@@ -442,7 +600,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
           {selectedProvider?.reason !== undefined ? <p className="model-picker__empty tt-paragraph" role="note">{selectedProvider.reason}</p>
             : !filtered.length && !legacyFound.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
         </div>
-          : found ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models model-picker__models--grouped" onKeyDown={event => moveListboxFocus(event, list.current)}>
+          : found ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models model-picker__models--grouped" onKeyDown={onListKeys}>
             {found.map(source => <div key={source.name} role="group" aria-label={source.name}>
               <p className="model-picker__group" aria-hidden="true">{source.name}<span>{source.models.length}</span></p>
               {source.models.map(model => option(model))}
@@ -454,7 +612,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
               <button ref={back} type="button" aria-label={makers ? backToMakers : t`Back to model sources`} title={makers ? backToMakers : t`Back to model sources`} onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />{makers ? t({ message: 'Makers', comment: 'A back control in the model menu that returns to the list of the companies that made Cursor’s models.' }) : t`Model sources`}</button>
               <b>{openSource.name}</b><span>{countModels(openSource.models.length)}</span>
             </div>
-            <div ref={list} role="listbox" aria-label={makers ? makerModels(openSource.name) : t({ message: `${openSourceName} models`, comment: '{openSourceName} is a model source, such as OpenCode Zen or Anthropic.' })} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+            <div ref={list} role="listbox" aria-label={makers ? makerModels(openSource.name) : t({ message: `${openSourceName} models`, comment: '{openSourceName} is a model source, such as OpenCode Zen or Anthropic.' })} className="model-picker__models" onKeyDown={onListKeys}>
               {openSource.models.map(model => option(model))}
             </div>
           </>

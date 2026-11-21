@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Google's own `agy` (ADR-0211). Never in CI: it needs `agy` 1.5 or newer and a Google sign-in, and it spends a few short
+ * Google's own `agy` (ADR-0212). Never in CI: it needs `agy` 1.5 or newer and a Google sign-in, and it spends a few short
  * turns on that account. Run with
  *
  *   SOTTO_ANTIGRAVITY_LIVE=1 SOTTO_ANTIGRAVITY_EXECUTABLE=<agy> SOTTO_ANTIGRAVITY_LIVE_DIR=<folder> npx vitest run tests/integration/antigravityLive.test.ts

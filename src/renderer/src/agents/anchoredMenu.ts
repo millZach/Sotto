@@ -11,8 +11,16 @@ import { useLayoutEffect, useRef, type RefObject } from 'react'
  * downward. It changes sides only when it no longer fits on its own. A step of the menu can be taller or shorter than
  * the last (a provider's model sources, then one source's models), so each draw places it again before it shows.
  */
-export function useAnchoredMenu(open: boolean, trigger: RefObject<HTMLElement | null>, dialog: RefObject<HTMLDialogElement | null>, focus: RefObject<HTMLElement | null>): void {
+export function useAnchoredMenu(
+  open: boolean,
+  trigger: RefObject<HTMLElement | null>,
+  dialog: RefObject<HTMLDialogElement | null>,
+  focus: RefObject<HTMLElement | null>,
+  returnFocus?: RefObject<HTMLElement | null>,
+): void {
   const placeMenu = useRef<(() => void) | undefined>(undefined)
+  const focusBack = useRef(returnFocus)
+  focusBack.current = returnFocus
   useLayoutEffect(() => {
     if (!open) return
     const element = dialog.current
@@ -42,7 +50,12 @@ export function useAnchoredMenu(open: boolean, trigger: RefObject<HTMLElement | 
     placeMenu.current = place
     addEventListener('resize', place)
     focus.current?.focus()
-    return () => { removeEventListener('resize', place); placeMenu.current = undefined; element.close?.(); trigger.current?.focus() }
+    return () => {
+      removeEventListener('resize', place)
+      placeMenu.current = undefined
+      element.close?.()
+      ;(focusBack.current?.current ?? trigger.current)?.focus()
+    }
   }, [open, trigger, dialog, focus])
   useLayoutEffect(() => { placeMenu.current?.() })
 }

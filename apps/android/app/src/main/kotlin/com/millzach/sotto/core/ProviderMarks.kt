@@ -9,7 +9,7 @@ data class ProviderMarkShape(val width: Float, val height: Float, val shapes: Li
 
 /// The marks Android draws. OpenCode's is the desktop's square frame, with its inner square drawn again at 35%, as OpenCode's
 /// own mark has it (#1107). Cursor's is the desktop's cube of three faces, drawn for Sotto and not Cursor's own logo
-/// (ADR-0128). Antigravity's is Google's own arch, the desktop's path in one colour (ADR-0211).
+/// (ADR-0128). Antigravity's is Google's own arch, the desktop's path in one colour (ADR-0212).
 /// A provider without one here draws nothing, never a guessed logo: its name is beside it.
 object ProviderMarks {
     private val marks = mapOf(

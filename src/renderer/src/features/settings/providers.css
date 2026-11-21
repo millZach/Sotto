@@ -68,7 +68,7 @@
 .provider-row__column p.provider-connection__notice { margin-top: 10px; }
 .provider-connection__waiting i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--tt-accent-text); animation: provider-busy 1s ease-in-out infinite; }
 .provider-connection .provider-detail__error { margin-top: 14px; }
-/* Antigravity's connection (ADR-0211, variant B of its prototype): the sign-in method as a four-way choice, two by two
+/* Antigravity's connection (ADR-0212, variant B of its prototype): the sign-in method as a four-way choice, two by two
    when the row is narrow, then that method's numbered steps, each number a small tag. */
 .antigravity-form { display: grid; gap: 16px; max-width: 38em; margin-top: 16px; min-width: 0; }
 .antigravity-field { display: grid; gap: 6px; min-width: 0; }

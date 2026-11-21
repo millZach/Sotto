@@ -73,7 +73,7 @@ it('draws Cursor’s cube on both phones from the desktop’s path and view box 
   expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"cursor": "ProviderCursor"')
 })
 
-it('draws Antigravity’s arch on both phones from the desktop’s path and view box (ADR-0211)', () => {
+it('draws Antigravity’s arch on both phones from the desktop’s path and view box (ADR-0212)', () => {
   const match = /antigravity: \{\s*viewBox: '([^']+)',\s*path: '([^']+)'/u.exec(read('src/renderer/src/agents/ProviderMark.tsx'))
   if (!match) throw new Error('The desktop has no Antigravity mark.')
   const [, viewBox, path] = match

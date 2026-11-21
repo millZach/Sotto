@@ -1,6 +1,6 @@
 # Antigravity as a thread provider: what was checked live
 
-November 20, 2026, on the Windows laptop, for [ADR-0211](../adr/0211-antigravity-is-a-thread-provider-run-as-t3-code-runs-it.md).
+November 20, 2026, on the Windows laptop, for [ADR-0212](../adr/0212-antigravity-is-a-thread-provider-run-as-t3-code-runs-it.md).
 
 ## Google's own `agy`
 

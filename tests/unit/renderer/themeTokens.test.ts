@@ -315,6 +315,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/styles/glass.css',
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
+      'src/renderer/src/agents/combinedPicker.css',
       'src/renderer/src/agents/effortPicker.css',
       'src/renderer/src/agents/effortTrace.css',
       'src/renderer/src/agents/quietComposer.css',

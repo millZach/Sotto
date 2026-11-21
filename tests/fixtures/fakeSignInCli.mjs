@@ -47,7 +47,7 @@ if (provider === 'claude') {
     process.stderr.write('Login failed: Invalid authorization code\n'); process.exit(1)
   })
 } else if (provider === 'antigravity') {
-  // As `agy acp --login` 1.5.12 printed it into a pipe on forge, November 20, 2026 (ADR-0211). It takes the code or the
+  // As `agy acp --login` 1.5.12 printed it into a pipe on forge, November 20, 2026 (ADR-0212). It takes the code or the
   // whole address of the antigravity.google page Google lands on, and exits 0 once signed in.
   say('Open this link in a browser to log in with Google:\n\n')
   say(`  ${page ?? 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=fixture&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&response_type=code&state=fixture-state'}\n\n`)

@@ -1129,7 +1129,7 @@ export const agentConfigurationSchema = z.object({
    */
   claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).default(DEFAULT_ULTRACODE_EFFORT),
   /**
-   * How Antigravity signs in on this machine, as T3 Code offers it (ADR-0211): a Google account by default, Gemini
+   * How Antigravity signs in on this machine, as T3 Code offers it (ADR-0212): a Google account by default, Gemini
    * Enterprise with a Google Cloud project and location, a Gemini API key, or Agent Platform (Vertex AI) with a key or a
    * project and location. A key is never here: it is the credential store's `antigravity` slot. Read before every start.
    */
@@ -1281,7 +1281,7 @@ export const agentStateSchema = z.object({
   nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   /** Each routed thread's last routing (CONTEXT.md **Router pick**, ADR-0207), kept in memory only. Absent when there is none. */
   routerPicks: z.array(routerPickSchema).max(1_000).optional(),
-  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean(), /** Whether Antigravity's key is saved; the key itself never leaves main (ADR-0211). */ antigravity: z.boolean().optional() }),
+  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean(), /** Whether Antigravity's key is saved; the key itself never leaves main (ADR-0212). */ antigravity: z.boolean().optional() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
   historyEnabled: z.boolean().optional(),
@@ -1586,7 +1586,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
     claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional(), newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional(),
-    // Antigravity's sign-in settings carry defaults, which a partial patch would otherwise fill in (ADR-0211).
+    // Antigravity's sign-in settings carry defaults, which a partial patch would otherwise fill in (ADR-0212).
     antigravitySignInMethod: z.enum(ANTIGRAVITY_SIGN_IN_METHODS).optional(), antigravityProject: z.string().max(256).optional(), antigravityLocation: z.string().max(64).optional(),
     antigravityBinaryPath: z.string().max(4_096).optional() }), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'antigravity']), value: z.string().max(16_384) }).strict(),

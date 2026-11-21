@@ -393,7 +393,7 @@
   --tt-provider-cursor-badge: #f2b9c9;
   /* DeepSeek's whale has no colour elsewhere, so its badge is a pale shade of DeepSeek's own blue (#4d6bfe). */
   --tt-provider-deepseek-badge: #a3b3ff;
-  /* Antigravity's arch is Google's logo (ADR-0211), in Google's blue: a pale shade of it by night and on its badge, a deep one
+  /* Antigravity's arch is Google's logo (ADR-0212), in Google's blue: a pale shade of it by night and on its badge, a deep one
      as a glyph by day. */
   --tt-provider-antigravity-badge: #a8c7fa;
   --tt-provider-ink: #080b0a;

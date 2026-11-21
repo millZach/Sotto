@@ -462,7 +462,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 
-/** What `agy` signs in with, each read when it starts (ADR-0211). */
+/** What `agy` signs in with, each read when it starts (ADR-0212). */
 const ANTIGRAVITY_SIGN_IN_FIELDS = ['antigravitySignInMethod', 'antigravityProject', 'antigravityLocation', 'antigravityBinaryPath'] as const
 
 const GIT_COMMAND_TYPES = ['git-action', 'git-pull', 'bring-changes-back', 'git-switch-branch', 'git-init', 'git-publish', 'git-pull-request-action', 'git-link-pull-request', 'git-unlink-pull-request', 'git-checkout-pull-request'] as const
@@ -2848,11 +2848,11 @@ export class AgentControl {
   }
   /** Main calls this when Sotto finds a new version of itself (ADR-0077). */
   checkClientsAfresh(): Promise<void> { return this.clientUpdates.checkAfresh() }
-  /** The `agy` Sotto downloads and verifies itself (ADR-0211), for the Antigravity row's Install and Remove. */
+  /** The `agy` Sotto downloads and verifies itself (ADR-0212), for the Antigravity row's Install and Remove. */
   antigravityRuntime(): AntigravityRuntime | undefined { return this.clients.antigravity }
   /** Tests wait on this; it goes when they move to the module. */
   get clientChecks(): number { return this.clientUpdates.checksWaiting }
-  /** A connected Antigravity starts again on a new sign-in: a running `agy` keeps the one it started with (ADR-0211). */
+  /** A connected Antigravity starts again on a new sign-in: a running `agy` keeps the one it started with (ADR-0212). */
   private restartAntigravity(): void {
     if (this.state.host.providers?.find(status => status.id === 'antigravity')?.connection !== 'connected') return
     this.dependencies.host.disconnect('antigravity')
@@ -4730,7 +4730,7 @@ export class AgentControl {
         // Turning Muse's shell sandbox off on this machine is this machine's own Settings' to do. A paired client may turn it
         // back on, which grants nothing, and is refused turning it off whatever its answer policy (ADR-0079).
         if (command.patch.museDisableSandbox === true && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
-        // Antigravity's binary path names a program this machine starts, so only this machine's own Settings set it (ADR-0211).
+        // Antigravity's binary path names a program this machine starts, so only this machine's own Settings set it (ADR-0212).
         if (command.patch.antigravityBinaryPath !== undefined && command.patch.antigravityBinaryPath !== this.state.configuration.antigravityBinaryPath && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
         const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
         let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })

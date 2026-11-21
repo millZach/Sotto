@@ -968,7 +968,7 @@ export async function locateClient(provider: ProviderId, options: { readonly ant
     case 'hermes': return findHermesExecutable()
     case 'antigravity': {
       const directory = options.antigravityDirectory
-      // Settings' binary path first, as the adapter looks (ADR-0211), so the update card names the agy threads run.
+      // Settings' binary path first, as the adapter looks (ADR-0212), so the update card names the agy threads run.
       return findAntigravityExecutable(process.env, { ...(directory ? { managed: () => managedAntigravityExecutable(directory) } : {}),
         ...(options.antigravityBinaryPath ? { binaryPath: options.antigravityBinaryPath } : {}) })
     }

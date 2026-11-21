@@ -48,7 +48,7 @@ describe('a client that does not know OpenCode', () => {
     expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor'])]).toEqual(['deepseek', 'pi', 'hermes', 'antigravity'])
     // Pi remains hidden from every client that has not explicitly accepted its provider ID.
     expect([...providersUnknownTo(['provider-opencode', 'provider-cursor', 'provider-deepseek'])]).toEqual(['pi', 'hermes', 'antigravity'])
-    // A client from before Antigravity (ADR-0211) is sent nothing of it; one that accepts it, everything.
+    // A client from before Antigravity (ADR-0212) is sent nothing of it; one that accepts it, everything.
     expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-pi', 'provider-hermes'])]).toEqual(['antigravity'])
     expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor', 'provider-deepseek', 'provider-pi', 'provider-hermes', 'provider-antigravity'])]).toEqual([])
   })

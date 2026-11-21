@@ -29,7 +29,7 @@ export function cursorModeLine(mode: AgentRuntimeMode): string | undefined {
   }
 }
 /**
- * What each of Antigravity's four modes does (ADR-0211, as T3 Code runs them), in the interface language. `agy` has no
+ * What each of Antigravity's four modes does (ADR-0212, as T3 Code runs them), in the interface language. `agy` has no
  * edit-only or skip-everything mode of its own over ACP, so under Allow edits and Full access Sotto answers `agy`'s
  * requests for the thread by its mode; Auto is `agy`'s own. Its questions always come to the user.
  */

@@ -399,7 +399,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
     antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia, usageEnabled: options.usageEnabled === true,
       ...(options.antigravity?.program ? { executable: options.antigravity.program.executable, executableArgs: options.antigravity.program.args } : {}),
-      // The sign-in Settings chose, with the key from the credential store only for the two methods that take one (ADR-0211).
+      // The sign-in Settings chose, with the key from the credential store only for the two methods that take one (ADR-0212).
       signIn: options.antigravity?.signIn ?? (async () => {
         const configuration = agentControl.configuration(), method = configuration.antigravitySignInMethod
         const key = method === 'gemini-api-key' || method === 'agent-platform' ? credentials.get('antigravity') : ''
@@ -1064,7 +1064,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       return provider === 'hermes' && connectedHermes()?.hasChatGptModels() === false ? 'Hermes did not return any ChatGPT models.' : undefined
     },
   }) : undefined
-  // Antigravity's own account actions from its row in Settings › Providers (ADR-0211): Gemini Enterprise's browser
+  // Antigravity's own account actions from its row in Settings › Providers (ADR-0212): Gemini Enterprise's browser
   // sign-in, which connects through the coordinator once it has signed in, and Sign out.
   const antigravityHost = providers.antigravity instanceof AntigravityAcpHost ? providers.antigravity : undefined
   let antigravityProgress: string | undefined

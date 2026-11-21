@@ -65,7 +65,7 @@ export interface AntigravitySignIn {
 }
 
 /**
- * Antigravity's sign-ins and download from its row in Settings › Providers (ADR-0211, variant B of the prototype), held
+ * Antigravity's sign-ins and download from its row in Settings › Providers (ADR-0212, variant B of the prototype), held
  * by the Providers page so closing the row or opening another keeps a sign-in waiting. Main runs `agy`'s sign-in, holds
  * and opens Google's page; the row sees where it stands and hands main the code the user pastes back.
  */
@@ -185,7 +185,7 @@ export interface AntigravitySettings {
 }
 
 /**
- * Antigravity's Local connection in its row (ADR-0211, variant B of the prototype, Cursor's row shape): the sign-in
+ * Antigravity's Local connection in its row (ADR-0212, variant B of the prototype, Cursor's row shape): the sign-in
  * method as a four-way choice, two by two when narrow, then that method's numbered steps inline. A Google account signs in
  * with Google's page and the code pasted back; Gemini Enterprise finishes in the browser once its project and location are
  * filled in; a Gemini API key and Agent Platform connect from the row, the key masked and never shown back. Escape while a

@@ -1979,7 +1979,7 @@ export class DesktopHostRouter {
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
     const named = heldProviderOfCommand(command, this.held)
     if (named) throw new Error(heldProviderRefusal(named))
-    // Antigravity's key is this computer's alone (ADR-0211): it goes to this computer's own host whichever host is selected,
+    // Antigravity's key is this computer's alone (ADR-0212): it goes to this computer's own host whichever host is selected,
     // and nowhere when this computer runs none, so it never crosses a host's socket.
     if (command.type === 'credential' && command.slot === 'antigravity') {
       const local = [...this.hosts.values()].find(entry => entry.connection.kind === 'local')?.connection

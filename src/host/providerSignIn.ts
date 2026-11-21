@@ -38,7 +38,7 @@ export interface ProviderSignInOptions {
   readonly cursorConfigDirectory?: string
   readonly hermesHome?: string
   readonly hermesSignedOut?: () => Promise<void>
-  /** The directory Sotto's own Antigravity folder is under (ADR-0211): the host's data directory, or this computer's user data. */
+  /** The directory Sotto's own Antigravity folder is under (ADR-0212): the host's data directory, or this computer's user data. */
   readonly antigravityDirectory?: string
   /** Settings' binary path for `agy`, read at each sign-in; empty for none. */
   readonly antigravityBinaryPath?: () => string

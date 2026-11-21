@@ -24,7 +24,7 @@ export interface LocalProviderSignInOptions {
   readonly command?: (provider: LocalSignInProvider) => Promise<SignInCommand | undefined>
   readonly hermesHome?: string
   readonly hermesSignedOut?: () => Promise<void>
-  /** The directory Sotto's own Antigravity folder is under: this computer's user data (ADR-0211). */
+  /** The directory Sotto's own Antigravity folder is under: this computer's user data (ADR-0212). */
   readonly antigravityDirectory?: string
   /** Settings' binary path for `agy`, read at each sign-in; empty for none. */
   readonly antigravityBinaryPath?: () => string

@@ -432,7 +432,7 @@ export interface SottoBridge {
   readonly providerSignIn?: import('./localProviderSignIn').LocalProviderSignInBridge
   /** Signing Cursor in and out on this computer (ADR-0128), present only while Cursor's Owl feature is on. */
   readonly cursor?: import('./cursorSignIn').CursorSignInBridge
-  /** Antigravity's Gemini Enterprise sign-in and Sign out on this computer (ADR-0211). */
+  /** Antigravity's Gemini Enterprise sign-in and Sign out on this computer (ADR-0212). */
   readonly antigravity?: import('./antigravityAccount').AntigravityAccountBridge
   /** The user's own model servers (ADR-0124), present only while the `own-model-servers` Owl feature is on and OpenCode runs on this computer. */
   readonly ownServers?: import('./ownModelServers').OwnServersBridge

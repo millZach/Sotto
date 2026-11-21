@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * Antigravity's own account actions from its row in Settings › Providers (ADR-0211). A Google account signs in through
+ * Antigravity's own account actions from its row in Settings › Providers (ADR-0212). A Google account signs in through
  * the provider sign-in's paste-code shape, as Claude Code does, and a key or a Google Cloud project is a setting; these
  * are the rest: Gemini Enterprise's sign-in, which `agy` finishes in a browser on this computer, Sign out, and Sotto's own
  * download of `agy` (Install, its progress, Cancel and Remove downloaded). The window learns only how each went.

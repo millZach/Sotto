@@ -10,6 +10,7 @@ import { handoverLedger } from '../../../shared/handover'
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
 import { EffortPicker } from './EffortPicker'
+import type { CombinedEffort } from './EffortGauge'
 import { suggestedEffortIndex } from './effortSuggestion'
 import { SplitChipEffort } from './SplitChipEffort'
 import { ModelPicker } from './ModelPicker'
@@ -200,6 +201,9 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
 export function ContinueOptions({ thread, state, choice, quiet }: { readonly thread: AgentThread; readonly state: AgentState; readonly choice: ContinueChoice
   readonly quiet?: { readonly effortScore: number; readonly broadWork?: boolean; readonly shieldSlot?: HTMLElement | null | undefined } | undefined }): ReactNode {
   const { t } = useLingui()
+  const [combinedPicker, setCombinedPicker] = useState<{ readonly open: boolean; readonly focus: 'search' | 'effort' }>(() => ({ open: choice.pick === true, focus: 'search' }))
+  const effortTriggerRef = useRef<HTMLButtonElement>(null)
+  const combinedDialogId = useId()
   const models = continueModels(state, thread)
   const unavailable = unavailableProviders(state, thread)
   const model = resolveModel(models, choice.modelId)
@@ -210,6 +214,16 @@ export function ContinueOptions({ thread, state, choice, quiet }: { readonly thr
   // The menu opened from the error's More once; it is not asked to open again.
   useEffect(() => { if (choice.pick) continueStore.update(thread.id, { pick: undefined }) }, [choice.pick, thread.id])
   const levels = efforts.filter(option => !option.disabled).map(option => option.id)
+  const suggestion = quiet ? suggestedEffortIndex(quiet.effortScore, levels, effort, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork) : null
+  const changeEffort = (reasoningEffort: string): void => { continueStore.update(thread.id, { reasoningEffort }) }
+  const combinedEffort: CombinedEffort | undefined = quiet ? {
+    levels,
+    value: effort,
+    disabled: choice.sending,
+    suggestion,
+    ultracodeEffort: ultracodeLevel(state, thread, model),
+    onChange: changeEffort,
+  } : undefined
   const permissions = modes.length > 0 ? <ChoiceChip label={t`Permissions the new thread starts on`} placeholder={t`Provider default`} value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
     options={modes} disabled={choice.sending} pending={false} icon={PERMISSIONS_ICON}
     onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode, narrowed: undefined } : { runtimeMode: mode as AgentRuntimeMode, narrowed: undefined })} /> : null
@@ -217,13 +231,23 @@ export function ContinueOptions({ thread, state, choice, quiet }: { readonly thr
     <div className="thread-options thread-options--chips">
       <ModelPicker models={models} modelId={choice.modelId} disabled={choice.sending} unavailable={unavailable} label={t`Model the new thread starts on`}
         openOnMount={choice.pick === true} note={t`Your first message starts a new thread on the model you pick, with a handover of this one.`}
+        effort={combinedEffort}
+        open={quiet ? combinedPicker.open : undefined}
+        onOpenChange={quiet ? next => setCombinedPicker(prev => next ? { open: true, focus: 'search' } : { ...prev, open: false }) : undefined}
+        initialFocus={quiet ? combinedPicker.focus : undefined}
+        returnFocusTo={quiet && combinedPicker.focus === 'effort' ? effortTriggerRef : undefined}
+        dialogId={quiet ? combinedDialogId : undefined}
         onChange={id => continueStore.set(thread.id, continueChoiceFor(state, thread, id, choice))} />
       {quiet ? levels.length > 0 && <SplitChipEffort key={choice.modelId} levels={levels} value={effort} disabled={choice.sending}
-        suggestion={suggestedEffortIndex(quiet.effortScore, levels, effort, state.configuration.newThreadReasoningEffort || model?.defaultReasoningEffort, quiet.broadWork)}
-        onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} />
+        suggestion={suggestion}
+        triggerRef={effortTriggerRef}
+        pickerOpen={combinedPicker.open}
+        pickerId={combinedDialogId}
+        onOpenPicker={() => setCombinedPicker(prev => prev.open ? { open: false, focus: 'search' } : { open: true, focus: 'effort' })}
+        onChange={changeEffort} />
         : efforts.length > 0 ? <EffortPicker key={choice.modelId} value={effort} options={efforts} disabled={choice.sending}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
-        onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} /> : null}
+        onChange={changeEffort} /> : null}
       {quiet?.shieldSlot && permissions ? createPortal(permissions, quiet.shieldSlot) : permissions}
     </div>
   </div>

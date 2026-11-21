@@ -613,7 +613,7 @@ export function createSottoBridge(
     providerSignIn: Object.freeze<LocalProviderSignInBridge>({
       signIn: async request => invokeParsed(renderer, LOCAL_PROVIDER_SIGN_IN, providerSignInResultSchema, localSignInRequestSchema.parse(request)),
     }),
-    // Antigravity's Gemini Enterprise sign-in and Sign out from its row (ADR-0211).
+    // Antigravity's Gemini Enterprise sign-in and Sign out from its row (ADR-0212).
     antigravity: Object.freeze<AntigravityAccountBridge>({
       enterpriseSignIn: async () => invokeParsed(renderer, ANTIGRAVITY_ENTERPRISE_SIGN_IN, antigravityAccountDoneSchema),
       signOut: async () => invokeParsed(renderer, ANTIGRAVITY_SIGN_OUT, antigravityAccountDoneSchema),

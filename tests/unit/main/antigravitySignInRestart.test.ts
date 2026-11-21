@@ -17,7 +17,7 @@ function antigravity() {
   return Object.assign(host, { connect: vi.fn(host.connect.bind(host)), disconnect: vi.fn(host.disconnect.bind(host)) })
 }
 
-it('starts a connected Antigravity again on a new sign-in, since a running agy keeps the one it started with (ADR-0211)', async () => {
+it('starts a connected Antigravity again on a new sign-in, since a running agy keeps the one it started with (ADR-0212)', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-antigravity-restart-')); roots.push(root)
   const credentials = await testCredentials(root, { mode: 'xor' })
   const host = antigravity()

@@ -15,7 +15,7 @@ export interface AntigravityAccount {
 }
 
 /**
- * The main window's bridge to Antigravity's account actions (ADR-0211). Every answer is checked on the way out, and a
+ * The main window's bridge to Antigravity's account actions (ADR-0212). Every answer is checked on the way out, and a
  * failure answers Sotto's own sentence, never `agy`'s words.
  */
 export function registerAntigravityAccountIpc(ipc: IpcMainAdapter, account: AntigravityAccount | undefined, senders: () => readonly TrustedIpcSender[]): () => void {

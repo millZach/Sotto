@@ -1045,7 +1045,7 @@ export class SocketHostService implements HostService {
   get supportsWatcherCheckStop(): boolean { return this.supportsWatcherCheckQueue && this.features.includes('watcher-check-stop') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
   get supportsWatcherCursor(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-cursor') }
-  /** The host lists `watcher-antigravity`: it takes Watcher requests whose identity names Antigravity (ADR-0211). */
+  /** The host lists `watcher-antigravity`: it takes Watcher requests whose identity names Antigravity (ADR-0212). */
   get supportsWatcherAntigravity(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-antigravity') }
   private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
     return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)

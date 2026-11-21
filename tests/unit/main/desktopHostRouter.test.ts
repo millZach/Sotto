@@ -1238,7 +1238,7 @@ describe('settings on several computers (ADR-0074)', () => {
     expect(remote.command).not.toHaveBeenCalled()
     router.dispose()
   })
-  it('keeps Antigravity’s key on this computer while another host is selected, and sends it nowhere without one (ADR-0211)', async () => {
+  it('keeps Antigravity’s key on this computer while another host is selected, and sends it nowhere without one (ADR-0212)', async () => {
     const { router, local, remote } = twoComputers()
     await router.command({ type: 'credential', slot: 'antigravity', value: 'AIza-synthetic' }, desktopWindowClient())
     expect(local.command.mock.calls.map(([command]) => command)).toEqual([{ type: 'credential', slot: 'antigravity', value: 'AIza-synthetic' }])

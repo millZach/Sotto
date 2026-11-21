@@ -80,7 +80,7 @@ describe('the sign-in on the host', () => {
     } finally { service.close() }
   })
 
-  it('signs Antigravity in with a Google account: the code, or the whole address it landed on, pasted back (ADR-0211)', async () => {
+  it('signs Antigravity in with a Google account: the code, or the whole address it landed on, pasted back (ADR-0212)', async () => {
     const service = signIns()
     try {
       const first = await service.start('antigravity', 'desktop')

@@ -1158,7 +1158,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipc, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, senders)
   const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipc, localRuntime.providerSignIn, senders)
   const cleanupCursorSignIn = registerCursorSignInIpc(ipc, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, senders)
-  // Antigravity's Gemini Enterprise sign-in, Sign out and its own download from its row (ADR-0211).
+  // Antigravity's Gemini Enterprise sign-in, Sign out and its own download from its row (ADR-0212).
   const cleanupAntigravityAccount = registerAntigravityAccountIpc(ipc, localRuntime.antigravityAccount, senders)
   const cleanupOwnServers = registerOwnServersIpc(ipc, ownServers, senders)
   const cleanupOwnServerCleanup = registerOwnServerCleanupIpc(ipc, ownServerCleanup, senders)

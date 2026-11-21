@@ -15,7 +15,7 @@ import { testCredentials } from '../fixtures/testCredentials'
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-/** Sotto's runtime with Watcher on, a fake `agy` and a fake Codex for Watcher's workers (ADR-0211). */
+/** Sotto's runtime with Watcher on, a fake `agy` and a fake Codex for Watcher's workers (ADR-0212). */
 async function fixture() {
   const antigravity = await antigravityFixture(undefined, 10_000)
   cleanups.push(antigravity.cleanup)

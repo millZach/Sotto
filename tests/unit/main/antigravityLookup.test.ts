@@ -25,7 +25,7 @@ it('refuses a batch file for agy, since agy is started without a shell and Windo
   expect(await findAntigravityExecutable(nowhere, { binaryPath: agy })).toBe(agy)
 })
 
-it('names the agy Settings points at in the update card, as threads start it (ADR-0211)', async () => {
+it('names the agy Settings points at in the update card, as threads start it (ADR-0212)', async () => {
   const agy = await program('agy')
   expect(await locateClient('antigravity', { antigravityBinaryPath: agy })).toBe(agy)
 })
