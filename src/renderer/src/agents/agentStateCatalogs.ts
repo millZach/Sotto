@@ -1,6 +1,7 @@
 import { clientCatalogKey, hostCatalogKey } from '../../../shared/agents'
 import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentState, AgentThread, AgentWireBridge, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentThreadsBroadcast } from '../../../shared/agents'
 import { withKeptPartsPutBack, type HeldParts } from '../../../shared/keptParts'
+import type { WholeReadCause } from '../../../shared/mainActivity'
 import { createThreadReassembly, type ThreadReassembly } from './agentStateThreads'
 
 interface CachedCatalog {
@@ -70,6 +71,21 @@ function numbered(state: AgentState, wire: unknown): AgentState {
  * component that re-renders would — returns the same wrapped bridge rather than a new one, which keeps
  * the object stable for callers that key their own effects on it.
  */
+/**
+ * Why the page read the whole state: a broadcast whose kept parts, threads or catalogs it could not put back, or a command's
+ * answer whose threads or catalogs it could not. On November 20, 2026 the owner's window read the whole state 26 times in a
+ * minute of switching threads, each a 3.9 MB state taken in anew, and nothing said why (#2733).
+ */
+export type { WholeReadCause }
+/** The page's own reads of the whole state, each asked with why: one request each, a retry another, a shared one once. */
+interface WholeStateReader { get(cause?: WholeReadCause): Promise<AgentState> }
+const wholeReadListeners = new Set<(cause: WholeReadCause) => void>()
+/** Hears each whole read of the state the page asks main for to put back what it could not, by why; answers how to stop. */
+export function onWholeRead(listener: (cause: WholeReadCause) => void): () => void {
+  wholeReadListeners.add(listener)
+  return () => { wholeReadListeners.delete(listener) }
+}
+
 export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   const existing = wrapped.get(bridge)
   if (existing) return existing
@@ -77,7 +93,8 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   const lastRead: LastRead = new Map()
   // Reads and commands counted in the order the page asks for them.
   let asked = 0
-  const get = async (): Promise<AgentState> => {
+  const get = async (cause?: WholeReadCause): Promise<AgentState> => {
+    if (cause !== undefined) for (const listener of wholeReadListeners) listener(cause)
     const at = ++asked
     const full = await bridge.get()
     askedAt.set(full, at)
@@ -234,15 +251,15 @@ function catalogIn(full: AgentState, key: string): AgentModel[] | undefined {
  */
 const OVERTAKEN_REPLY_WAIT_MS = 1_000
 
-function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined): (reply: AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt) => Promise<AgentState> {
+function createReceiptCompleter(bridge: WholeStateReader, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined): (reply: AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt) => Promise<AgentState> {
   const recoveries = new Map<string, Promise<AgentState>>()
-  const readAfresh = (reply: Cataloged): Promise<AgentState> => bridge.get().catch(() => bridge.get()).then(full => { rememberRecovered(catalogs, reply, full); return full })
+  const readAfresh = (reply: Cataloged): Promise<AgentState> => bridge.get('answerThreads').catch(() => bridge.get('answerThreads')).then(full => { rememberRecovered(catalogs, reply, full); return full })
   const recover = (reply: Cataloged): Promise<AgentState> => {
     // Main counts revisions per catalog key, so the key names each catalog by the key main files it under.
     const named = catalogRevisions(reply).join(' ')
     let recovery = recoveries.get(named)
     if (recovery === undefined) {
-      recovery = bridge.get().catch(() => bridge.get()).then(full => { rememberRecovered(catalogs, reply, full); return full })
+      recovery = bridge.get('answerCatalog').catch(() => bridge.get('answerCatalog')).then(full => { rememberRecovered(catalogs, reply, full); return full })
       recoveries.set(named, recovery)
       const forget = (): void => { recoveries.delete(named) }
       recovery.then(forget, forget)
@@ -287,7 +304,7 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
  * attempt: from the cache, or a recovery of its own. Nothing but a broadcast ever starts a recovery, so
  * a `get()` that keeps failing is retried at most once per broadcast, never on a timer.
  */
-function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void,
+function createReassembler(bridge: WholeStateReader, catalogs: CatalogCache, listener: (state: AgentState) => void,
   // The thread records this subscription was broadcast, which each broadcast's changed records are applied to (#1330).
   threads: ThreadReassembly = createThreadReassembly()): (raw: unknown) => void {
   let recovering = false
@@ -349,7 +366,7 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCa
     // immediate repeat of it is read from cache instead of asking again, and main lists every thread record in
     // the broadcast after it. Every catalog the broadcast carried in full is cached by the attempt above.
     recovering = true
-    bridge.get().then(full => {
+    bridge.get(raw === undefined ? 'broadcastParts' : list === undefined ? 'broadcastThreads' : 'broadcastCatalog').then(full => {
       rememberRecovered(catalogs, raw ?? incoming, full)
       listener(full)
       // Main answers `get()` in order with its broadcasts, so one kept while this was in flight was sent

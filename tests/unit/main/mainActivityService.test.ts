@@ -339,7 +339,7 @@ describe('registerMainActivityIpc', () => {
     expect(() => handlers.get(MAIN_ACTIVITY_READ)!(event(other))).toThrow('Open Settings in the main Sotto window.')
     await expect(Promise.resolve().then(() => handlers.get(MAIN_ACTIVITY_COMMAND)!(event(main), { type: 'delete-everything' }))).rejects.toThrow()
     // A thread switch the main window timed is noted; another window's, or one carrying more than numbers, is refused.
-    const timing = { inputMs: 4, replyMs: 120, historyMs: 300, frameMs: 610, paintedMs: 640, held: false, remote: false, messages: 80, activities: 2_000, threads: 1_065, commits: 3, shareMs: 260, newThreadRecords: 6, newFields: ['deliveries', 'host.projects'] }
+    const timing = { inputMs: 4, replyMs: 120, historyMs: 300, frameMs: 610, paintedMs: 640, held: false, remote: false, messages: 80, activities: 2_000, threads: 1_065, commits: 3, shareMs: 260, newThreadRecords: 6, newFields: ['deliveries', 'host.projects'], wholeReads: { broadcastParts: 0, broadcastThreads: 1, broadcastCatalog: 0, answerThreads: 2, answerCatalog: 0 } }
     handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(main), timing)
     expect(switches).toEqual([timing])
     expect(() => handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(other), timing)).toThrow('Open Settings in the main Sotto window.')

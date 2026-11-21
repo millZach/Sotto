@@ -6,7 +6,7 @@ import { msg } from '@lingui/core/macro'
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
 import { LANELESS_THREAD_COMMAND_TYPES, THREAD_SCOPED_COMMAND_TYPES } from '../../../shared/threadLanes'
-import { askedAtOf, threadRevisionOf, wrapAgentBridge } from './agentStateCatalogs'
+import { askedAtOf, onWholeRead, threadRevisionOf, wrapAgentBridge } from './agentStateCatalogs'
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import { createStateSharing } from './stateSharing'
@@ -448,6 +448,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // In arrival order with what a hidden window hands the store directly: an older state committing late is not handed over.
   const committedAt = snapshot?.session === session ? snapshot.received : 0
   useLayoutEffect(() => { detail.drawn = committedAt }, [committedAt, detail])
+  // The whole reads the page asks main for count towards the switch being timed, by why (#2733).
+  useEffect(() => switches === null ? undefined : onWholeRead(cause => switches.wholeRead(cause)), [switches])
   // A switch being timed ends at the frame painted after the commit that shows its thread with its history (#2733).
   useLayoutEffect(() => { if (state !== null) switches?.committed(state) }, [state, switches])
   useLayoutEffect(() => {

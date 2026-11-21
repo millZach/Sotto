@@ -37,7 +37,8 @@ describe('the window’s clock on a thread switch', () => {
     clock.committed(state('t1', { messages: messages(80), activities: activities(2_000) }))
     paint(2_340, 2_300)
     expect(reports).toEqual([{ inputMs: 60, replyMs: 210, historyMs: 960, frameMs: 1_360, paintedMs: 1_400, held: false, remote: false,
-      messages: 80, activities: 2_000, threads: 1_065, commits: 0, shareMs: 0, newThreadRecords: 0, newFields: [] }])
+      messages: 80, activities: 2_000, threads: 1_065, commits: 0, shareMs: 0, newThreadRecords: 0, newFields: [],
+      wholeReads: { broadcastParts: 0, broadcastThreads: 0, broadcastCatalog: 0, answerThreads: 0, answerCatalog: 0 } }])
   })
 
   it('counts a history the window already held from the press, and a thread its host marks remote as remote', () => {
@@ -143,6 +144,17 @@ describe('the window’s clock on a thread switch', () => {
     paint(1_100)
     expect(reports).toMatchObject([{ commits: 2, shareMs: 201, newThreadRecords: 1, newFields: ['deliveries', 'host.projects'] }])
     expect(clock.timing()).toBe(false)
+  })
+
+  it('counts the whole reads the page needed during the switch, by why, and none outside one', () => {
+    const { clock, reports, paint, show } = rig()
+    show('t1')
+    clock.wholeRead('broadcastThreads')
+    clock.start('t1', { held: true, threads: 2 })
+    clock.wholeRead('answerThreads'); clock.wholeRead('answerThreads'); clock.wholeRead('broadcastCatalog')
+    clock.committed(state('t1', {}))
+    paint(1_100)
+    expect(reports[0]!.wholeReads).toEqual({ broadcastParts: 0, broadcastThreads: 0, broadcastCatalog: 1, answerThreads: 2, answerCatalog: 0 })
   })
 
   it('ignores answers and histories for any other thread', () => {
