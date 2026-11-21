@@ -19,6 +19,7 @@ import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, an
   antigravitySessionMode, antigravitySessionSettingsSchema, antigravityThinking, leastEffort, ANTIGRAVITY_RUNTIME_MODES, type AntigravityModelFacts, type AntigravityModelThinking,
   type AntigravityRuntimeMode, type AntigravitySessionSettings } from './antigravityModels'
 import { antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, type AntigravityPending } from './antigravityRequests'
+import { countAntigravityAnswer, countAntigravityFullness } from './antigravityThreadUsage'
 import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, meetsAntigravityFloor, readAntigravityVersion,
   writeAntigravitySettings, ANTIGRAVITY_ACP_VERSION, ANTIGRAVITY_CLI_FLOOR, GOOGLE_ACCOUNT, type AntigravityFrame, type AntigravitySignIn } from './antigravityRpc'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
@@ -831,6 +832,7 @@ export class AntigravityAcpHost implements ProviderHost {
       else this.readSettings(connection, update)
       return
     }
+    if (kind === 'usage_update') { this.taken(id); if (countAntigravityFullness(this.thread(id), update)) this.emit(true); return }
     if (!['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(kind)) { this.taken(id); return }
     const content = record(update.content)
     const words = content?.type === 'text' && typeof content.text === 'string' ? content.text : undefined
@@ -1107,7 +1109,9 @@ export class AntigravityAcpHost implements ProviderHost {
     const serial = ++turn.prompts
     const superseded = (): boolean => generation !== this.generation || this.turns.get(id) !== turn || serial !== turn.prompts
     void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: blocks }, value => {
-      if (superseded()) return
+      // A steered prompt's answer still carries the tokens its part of the turn spent.
+      const counted = generation === this.generation && this.threads.has(id) && countAntigravityAnswer(this.thread(id), value)
+      if (superseded()) { if (counted) this.emit(); return }
       const stop = promptAnswerSchema.parse(value).stopReason
       this.endTurn(id, stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
         stop === 'refusal' ? 'Antigravity refused this turn, or the account reached its limit. Nothing else was lost.' : undefined)

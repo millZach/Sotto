@@ -50,7 +50,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 |---|---|---|---|---|---|
 | 15 | Delegation from the thread; the Agents pane | Works | Partial: delegation works; `agy`'s own child agents show as a row without their work | Tool calls pass (row 24) | `antigravityActivity.ts:51,71`; T3 reads child work from `agy`'s `brain` folder |
 | 16 | Background work and work-settled | Works (`claudeMonitoring.ts:75`) | Can't: ACP has no background-work lifecycle; rows close at turn end | Not run | `antigravity.ts:876` |
-| 17 | Live token count on the thread | Works (`thread.usage`, `claude.ts:2061,2088`) | Missing: never set, though each prompt's answer carries `usage` | Not run | `antigravity.ts` sets no `thread.usage` |
+| 17 | Live token count on the thread | Works (`thread.usage`, `claude.ts:2061,2088`) | Works since slice 1: context from `usage_update`, the turn's tokens from each prompt's `usage`; held in memory, so a restart shows it again from the next turn | Passed: 9,515 of 1,048,576, with input and output | `antigravityThreadUsage.ts` |
 | 17b | Usage page counts and account limits | Works | Works: counts from `agy`'s conversation files; Google account limits | Passed: limits read | `antigravityHistory.ts:326`, `antigravityUsage.ts:29` |
 | 18 | Titles, branch names, commit and pull request drafts | Works | Works | Passed: a title | `antigravity.ts:1218,1249` |
 | 19 | Checkpoints and undo | Works: files restored with the conversation rewind | Partial: snapshots and turn diffs work; undo needs a rewind `agy` cannot do | Not run | `checkpoints.ts:332,476` |
@@ -71,7 +71,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 
 Missing and Partial rows only, grouped so each slice is one pull request. Can't and Neither rows are not slices.
 
-1. **Token count on the thread** (row 17). Fill the thread's token count from each prompt's `usage`, as Claude's is. No new UI.
+1. **Token count on the thread** (row 17). Fill the thread's token count from each prompt's `usage`, as Claude's is. No new UI. Done.
 2. **Compaction** (row 12). Turn Sotto's compaction on for Antigravity by sending `agy`'s own `/compact`, with its status. No new UI.
 3. **The user's own MCP servers** (row 24b). Hand `agy` the MCP servers the user set up for it in `~/.gemini`, beside Sotto's. No new UI; reads one more file of the user's, which the ADR says.
 4. **Question cards** (row 8). Find how `agy` raises its question tool over ACP, and make it a card; if `agy` only asks in text, say so here and close it as Can't.
