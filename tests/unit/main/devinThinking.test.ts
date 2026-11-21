@@ -4,8 +4,8 @@ import { readThinkingLevels, thinkingConfig, withLevels, type DevinLevels, type 
 import { DevinRejected } from '../../../src/main/agents/devinRpc'
 
 /** A config answer as Devin CLI 3000.14 gives one, with a `thought_level` option where `levels` has any. */
-const answer = (levels: string[], current = levels[0] ?? '') => ({ configOptions: [
-  { id: 'model', currentValue: 'm', options: [{ value: 'm', name: 'M' }] },
+const answer = (levels: string[], current = levels[0] ?? '', model = 'm') => ({ configOptions: [
+  { id: 'model', currentValue: model, options: [{ value: model, name: 'M' }] },
   ...(levels.length ? [{ id: 'thought_level', currentValue: current, options: levels.map(value => ({ value, name: value })) }] : []),
 ] })
 
@@ -33,7 +33,7 @@ describe('Devin thinking levels', () => {
           const model = (params as { value: string }).value
           if (model === 'c') throw new DevinRejected(-32602)
           if (model === 'd') live = false
-          apply(answer(levels[model]!))
+          apply(answer(levels[model]!, undefined, model))
         } }
     }
     await readThinkingLevels({ models: ['a', 'b', 'c', 'd', 'e'], lanes: 1, open, current: () => live, found: (id, value) => found.set(id, value) })
@@ -46,14 +46,26 @@ describe('Devin thinking levels', () => {
     expect(opened).toHaveLength(3)
     expect([...found.keys()].sort()).toEqual(['a', 'b', 'e'])
   })
+  it('reads levels only from a session Devin says is on the model, and takes long model IDs', async () => {
+    const found: string[] = []
+    const long = 'fusion-' + 'x'.repeat(120)
+    await readThinkingLevels({ models: ['a', long], lanes: 1, current: () => true, found: id => found.push(id),
+      open: async () => ({ sessionId: 's', close: async () => undefined,
+        request: async (_method, params, apply) => {
+          const model = (params as { value: string }).value
+          apply(answer(['low'], undefined, model === 'a' ? 'somewhere-else' : model))
+        } }) })
+    expect(found).toEqual([long])
+  })
   it('ends a lane whose process fails, without guessing the rest', async () => {
     const found: string[] = []
     let closed = 0
     await readThinkingLevels({ models: ['a', 'b', 'c'], lanes: 1, current: () => true, found: id => found.push(id),
       open: async () => ({ sessionId: 's', close: async () => { closed++ },
         request: async (_method, params, apply) => {
-          if ((params as { value: string }).value === 'b') throw new Error('Devin stopped.')
-          apply(answer(['low']))
+          const model = (params as { value: string }).value
+          if (model === 'b') throw new Error('Devin stopped.')
+          apply(answer(['low'], undefined, model))
         } }) })
     expect(found).toEqual(['a'])
     expect(closed).toBe(1)

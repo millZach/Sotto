@@ -89,8 +89,10 @@ const offeredModels = () => {
  const script = read('script.json', {})
  return script.signedOut ? [] : [{ value: 'fixture-model', name: 'Fixture Devin' }, ...(script.plainModel ? [{ value: 'fixture-plain', name: 'Fixture Plain' }] : [])]
 }
+// `levelsGone` in the script has every model report none, as a Devin update that dropped them would.
+const levelsOf = model => read('script.json', {}).levelsGone ? [] : LEVELS[model] ?? []
 function configOptions(session) {
- const levels = LEVELS[session.model] ?? []
+ const levels = levelsOf(session.model)
  return [{ id: 'mode', name: 'Mode', type: 'select', currentValue: session.mode ?? 'accept-edits', options: MODES },
   { id: 'model', name: 'Model', type: 'select', currentValue: session.model, options: offeredModels() },
   ...(levels.length ? [{ id: 'thought_level', name: 'Thinking', category: 'thought_level', type: 'select', currentValue: session.thinking ?? DEFAULT_LEVEL,
@@ -235,11 +237,12 @@ createInterface({ input: process.stdin }).on('line', line => {
  } else if (frame.method === 'session/set_config_option') {
   const session = read(nativePath(p.sessionId), null)
   const known = p.configId === 'model' ? offeredModels().some(model => model.value === p.value)
-   : p.configId === 'thought_level' ? (LEVELS[session?.model] ?? []).includes(p.value) && !script.refuseThinking
+   : p.configId === 'thought_level' ? levelsOf(session?.model).includes(p.value) && !script.refuseThinking
    : p.configId === 'mode' && MODES.some(mode => mode.value === p.value)
   if (!session || owner(p.sessionId) !== process.pid || !known) { reject(frame.id); return }
   // A session switched to another model starts on that model's default level.
-  if (p.configId === 'mode') session.mode = p.value; else if (p.configId === 'thought_level') session.thinking = p.value; else { session.model = p.value; delete session.thinking }
+  // `ignoreThinking` in the script answers a level change without making it.
+  if (p.configId === 'mode') session.mode = p.value; else if (p.configId === 'thought_level') { if (!script.ignoreThinking) session.thinking = p.value } else { session.model = p.value; delete session.thinking }
   write(nativePath(p.sessionId), session)
   // Native 3000.10.31 announces a mode change before it answers the request that made it.
   if (p.configId === 'mode') {

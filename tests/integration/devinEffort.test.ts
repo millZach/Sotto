@@ -91,6 +91,44 @@ describe('Devin effort levels', () => {
     expect(records.findLastIndex(record => record.params?.configId === 'thought_level')).toBeLessThan(records.findLastIndex(record => record.method === 'session/prompt'))
   })
 
+  it('keeps the thread on its level and its session open when Devin answers with another level', async () => {
+    await f.host.connect(); await project()
+    const id = await create('high'); f.host.observeThreads([id])
+    await send(id)
+    await f.driver.completeTurn(id, 'Reply')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    const starts = await f.sessions.starts(id)
+    await f.script({ ignoreThinking: true })
+    await expect(configure(id, { reasoningEffort: 'low' })).rejects.toThrow('Devin did not confirm the selected effort.')
+    expect(await thread(id)).toMatchObject({ reasoningEffort: 'high' })
+    expect(JSON.parse(await readFile(join(f.root, 'devin-threads.json'), 'utf8'))[id].reasoningEffort).toBe('high')
+    // The refusal leaves the session it came on running: the next message goes on it.
+    await f.script({})
+    expect(await send(id)).toEqual({ accepted: true })
+    expect(await f.sessions.starts(id)).toBe(starts)
+  })
+
+  it('lets a saved level go when Devin stops offering levels for the model, and runs the thread', async () => {
+    await f.host.connect(); await project()
+    const id = await create('high'); f.host.observeThreads([id])
+    await send(id)
+    await f.driver.completeTurn(id, 'Reply')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    await f.script({ levelsGone: true })
+    f = await f.driver.restart()
+    expect((await f.host.connect()).models.find(entry => entry.id === 'fixture-model')).toMatchObject({ reasoningEfforts: [], noReasoningEfforts: true })
+    f.host.observeThreads([id])
+    expect(await send(id)).toEqual({ accepted: true })
+    expect((await thread(id)).reasoningEffort).toBeUndefined()
+    expect(JSON.parse(await readFile(join(f.root, 'devin-threads.json'), 'utf8'))[id].reasoningEffort).toBeUndefined()
+  })
+
+  it('still refuses a change that is neither an effort nor a permission', async () => {
+    await f.host.connect(); await project()
+    const id = await create('high')
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, speed: null })).rejects.toThrow('Devin does not offer that permission setting.')
+  })
+
   it('leaves the level as it was when Devin will not confirm it', async () => {
     await f.host.connect(); await project()
     const id = await create('high'); f.host.observeThreads([id])

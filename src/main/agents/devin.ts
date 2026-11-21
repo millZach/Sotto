@@ -30,7 +30,7 @@ import type { ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal } from './watcherProfile'
 import { prepareDevinPolicy, verifyDevinPolicy, assertDevinIntegrationsAllowed, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
-import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
+import { DevinRpc, DevinRefusal, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { DEVIN_THINKING_OPTION, DevinThinkingLevels, readThinkingLevels, thinkingConfig, withLevels, type DevinLevels } from './devinThinking'
@@ -145,8 +145,8 @@ interface Connection {
   replaying: boolean
   /** The Devin mode confirmed on this process. Any other mode it announces after that is its own change. */
   mode: string | undefined
-  /** The thinking level Devin last said this process's session is on. */
-  thinking: string | undefined
+  /** The thinking level Devin last said this process's session is on; null where its model offers none, undefined before it said. */
+  thinking: string | null | undefined
   intentionalClose: boolean
   /** The number of the last profile and integrations check this process passed (see `checksStarted`). */
   passedCheck: number
@@ -585,8 +585,7 @@ export class DevinAcpHost implements ProviderHost {
         const model = modelConfig(value)
         const providerModes = offeredModes(sessionModeConfig(value).reported)
         // The catalog session is on Devin's default model, so its levels come with it; the rest are read after connecting.
-        const thinking = thinkingConfig(value)
-        if (thinking) this.levels.set(model.current, thinking.levels)
+        this.levels.set(model.current, thinkingConfig(value)?.levels ?? { levels: [] })
         this.state.models = model.models.map(option => withLevels({
           id: option.value, name: option.name, provider: 'Devin', ready: true, providerModes, supportsImages: false,
         }, this.levels.get(option.value)))
@@ -675,20 +674,29 @@ export class DevinAcpHost implements ProviderHost {
   /** A session just switched to the thread's model says that model's levels too, which keeps the saved ones true. */
   private noteModelLevels(connection: Connection, modelId: string, value: unknown): void {
     const thinking = thinkingConfig(value)
-    connection.thinking = thinking?.current
+    connection.thinking = thinking?.current ?? null
     if (this.learnLevels(modelId, thinking?.levels ?? { levels: [] })) { this.emit(); void this.levels.save().catch(() => undefined) }
   }
   /** Puts the session on the thread's thinking level, where one was chosen, and refuses the thread unless Devin echoes it back. */
-  private async applyThinking(connection: Connection, alias: Alias, current: () => void): Promise<void> {
+  private async applyThinking(id: string, connection: Connection, alias: Alias, current: () => void): Promise<void> {
     const level = alias.reasoningEffort
     if (!level || connection.thinking === level) return
+    // A model Devin no longer gives levels runs at its own setting, so the saved level is let go rather than refused.
+    if (connection.thinking === null) {
+      delete alias.reasoningEffort; await this.persist()
+      delete this.thread(id).reasoningEffort; this.emit()
+      return
+    }
+    let echoed: string | null = null
     await connection.rpc.request('session/set_config_option', {
       sessionId: alias.devinSessionId, configId: DEVIN_THINKING_OPTION, value: level,
     }, value => {
       current()
-      if (thinkingConfig(value)?.current !== level) throw new Error('Devin did not confirm the selected effort.')
-      connection.thinking = level
+      echoed = thinkingConfig(value)?.current ?? null
     })
+    // Judged once the answer is in: a refusal thrown while reading it would stop the process along with it.
+    connection.thinking = echoed
+    if (echoed !== level) throw new DevinRefusal('Devin did not confirm the selected effort. Your thread is kept on its earlier level.')
   }
   /** Sets the session's conversation mode and refuses the thread unless Devin echoes it back. */
   private async applyMode(connection: Connection, alias: Alias, mode: DevinMode, current: () => void): Promise<void> {
@@ -770,7 +778,7 @@ export class DevinAcpHost implements ProviderHost {
           await connection.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers }, value => {
             if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
             loadedModel = modelConfig(value).current
-            connection.thinking = thinkingConfig(value)?.current
+            connection.thinking = thinkingConfig(value)?.current ?? null
           })
         } catch (error) {
           if (!(error instanceof DevinRejected && error.code === -32016 && neverSent())) throw error
@@ -779,7 +787,7 @@ export class DevinAcpHost implements ProviderHost {
         if (loadedModel !== alias.modelId) throw new Error('Devin changed the saved model. Your thread and draft are kept. Restore the original model in Devin and reconnect, or start a new thread. Sotto will not substitute it.')
       }
       // The thread's level is set back on the session, which may have been made again or left on another.
-      await this.applyThinking(connection, alias, () => {
+      await this.applyThinking(id, connection, alias, () => {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       })
       // A session opens on Devin's own default mode, whether it was loaded or made again, so the mode this
@@ -1039,18 +1047,24 @@ export class DevinAcpHost implements ProviderHost {
   private async changeEffort(id: string, alias: Alias, effort: string, generation: number): Promise<void> {
     validateThreadOptions(this.state, { reasoningEffort: effort }, alias.modelId)
     if (alias.reasoningEffort === effort) return
-    if (this.working(id) || this.asking(id)) throw new Error('Devin is working on this thread. Your effort is unchanged. Change it once the thread is idle.')
+    // The history read a finished turn starts is not work the change must wait behind: it waits for the read, as an open does.
+    await this.reading.get(id)?.catch(() => undefined)
+    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
+    if (this.dispatching.has(id) || this.active.has(id) || this.loading.has(id) || this.asking(id)) {
+      throw new Error('Devin is working on this thread. Your effort is unchanged. Change it once the thread is idle.')
+    }
     const connection = this.connections.get(id)
     const previous = alias.reasoningEffort
+    const restore = (): void => { if (previous === undefined) delete alias.reasoningEffort; else alias.reasoningEffort = previous }
+    // Saved before Devin is told, so a level Devin runs at is never one Sotto failed to record.
     alias.reasoningEffort = effort
-    try {
-      if (connection) await this.applyThinking(connection, alias, () => {
-        if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
-      })
-      await this.persist()
-    } catch (error) {
-      if (previous === undefined) delete alias.reasoningEffort; else alias.reasoningEffort = previous
-      throw error
+    try { await this.persist() } catch (error) { restore(); throw error }
+    if (connection) {
+      try {
+        await this.applyThinking(id, connection, alias, () => {
+          if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
+        })
+      } catch (error) { restore(); await this.persist().catch(() => undefined); throw error }
     }
     this.thread(id).reasoningEffort = effort; this.emit()
   }
@@ -1111,7 +1125,7 @@ export class DevinAcpHost implements ProviderHost {
           if (modelConfig(value).current !== alias.modelId) throw new Error('Devin did not confirm the selected model.')
           this.noteModelLevels(connection, alias.modelId, value)
         })
-        await this.applyThinking(connection, alias, () => {
+        await this.applyThinking(command.threadId, connection, alias, () => {
           if (generation !== this.generation || this.connections.get(command.threadId) !== connection) throw new DevinUncertain('Devin connection changed.')
         })
         // Devin opens a session in its own default mode, which is not the one the user chose.
@@ -1132,7 +1146,7 @@ export class DevinAcpHost implements ProviderHost {
         }
         if (!alias?.devinSessionId) throw new Error('Devin did not confirm this session. Your thread is kept.')
         if (command.reasoningEffort !== undefined) await this.changeEffort(command.threadId, alias, command.reasoningEffort, generation)
-        if (command.providerMode === undefined) return { accepted: true, snapshot: this.current(command.historyFromEvents) }
+        if (command.reasoningEffort !== undefined && command.providerMode === undefined) return { accepted: true, snapshot: this.current(command.historyFromEvents) }
         const mode = DEVIN_MODES.find(candidate => candidate.id === command.providerMode)
         if (!mode) throw new Error('Devin does not offer that permission setting.')
         // Already the recorded mode: the snapshot says so, and nothing is stopped or read.

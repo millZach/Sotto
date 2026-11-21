@@ -14,11 +14,11 @@ import { DevinRejected } from './devinRpc'
  */
 export const DEVIN_THINKING_OPTION = 'thought_level'
 
+// The envelope every config answer has; only the thinking option's own choices are held to a level's length, since the
+// same answer lists model IDs, which are longer.
+const optionsSchema = z.object({ configOptions: z.array(z.object({ id: z.string(), currentValue: z.string(), options: z.array(z.unknown()).optional() })) })
 const choiceSchema = z.object({ value: z.string().min(1).max(64) })
-const optionsSchema = z.object({ configOptions: z.array(z.object({
-  id: z.string(), currentValue: z.string(),
-  options: z.array(z.union([choiceSchema, z.object({ options: z.array(choiceSchema) })])).optional(),
-})) })
+const choicesSchema = z.array(z.union([choiceSchema, z.object({ options: z.array(choiceSchema) })]))
 const levelsSchema = z.object({ levels: z.array(z.string().min(1).max(64)).max(20), default: z.string().min(1).max(64).optional() })
 const catalogSchema = z.object({ devinVersion: z.string(), models: z.record(z.string(), levelsSchema) })
 
@@ -33,9 +33,12 @@ type Catalog = z.infer<typeof catalogSchema>
 export function thinkingConfig(value: unknown): { current: string; levels: DevinLevels } | undefined {
   const option = optionsSchema.parse(value).configOptions.find(candidate => candidate.id === DEVIN_THINKING_OPTION)
   if (!option) return undefined
-  const levels = orderReasoningEfforts((option.options ?? []).flatMap(choice => 'value' in choice ? [choice.value] : choice.options.map(inner => inner.value)))
+  const levels = orderReasoningEfforts(choicesSchema.parse(option.options ?? []).flatMap(choice => 'value' in choice ? [choice.value] : choice.options.map(inner => inner.value)))
   return { current: option.currentValue, levels: { levels, ...(levels.includes(option.currentValue) ? { default: option.currentValue } : {}) } }
 }
+
+/** The model a config answer says the session is on. */
+const reportedModel = (value: unknown): string | undefined => optionsSchema.parse(value).configOptions.find(candidate => candidate.id === 'model')?.currentValue
 
 /** What a model's levels make of its catalog entry: none read leaves it as it is, none offered marks it. */
 export function withLevels(model: AgentModel, levels: DevinLevels | undefined): AgentModel {
@@ -103,7 +106,8 @@ export async function readThinkingLevels(options: {
         const modelId = next
         try {
           await lane.request('session/set_config_option', { sessionId: lane.sessionId, configId: 'model', value: modelId }, value => {
-            if (!options.current()) return
+            // Levels count for a model only where Devin says the session is on it.
+            if (!options.current() || reportedModel(value) !== modelId) return
             options.found(modelId, thinkingConfig(value)?.levels ?? { levels: [] })
           })
         } catch (error) {
