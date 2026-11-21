@@ -54,6 +54,27 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect(f.service.shell().host.threads.every(item => item.messages.length === 0)).toBe(true)
     })
 
+    it('keeps a thread read before it is observed current once it is, through its next turn (#1990)', async () => {
+      expect((await send()).error).toBeNull()
+      await sentRunning()
+      await f.driver.completeTurn(threadId, 'First reply')
+      await expect.poll(() => thread().status).toBe('idle')
+      await expect.poll(() => f.service.threadDetail(threadId)?.messages.some(message => message.text.includes('First reply'))).toBe(true)
+      // A click in the sidebar: the thread is let go, selected, read as the window reads it, then observed by its pane.
+      await command({ type: 'observe-threads', threadIds: [] })
+      await command({ type: 'select-thread', threadId })
+      const windowed = f.service as { windowDetail?: (id: string) => Promise<import('../../src/shared/agents').AgentThreadDetail | null> }
+      const read = windowed.windowDetail ? await windowed.windowDetail(threadId) : f.service.threadDetail(threadId)
+      // A host holds a thread's messages only while something observes it, so this read may carry none of them; the observe brings them.
+      expect(read?.threadId).toBe(threadId)
+      await command({ type: 'observe-threads', threadIds: [threadId] })
+      expect((await send('Second prompt')).error).toBeNull()
+      await sentRunning()
+      await f.driver.completeTurn(threadId, 'Second reply')
+      await expect.poll(() => f.service.threadDetail(threadId)?.messages.some(message => message.text.includes('Second reply'))).toBe(true)
+      expect(f.service.threadDetail(threadId)!.messages.filter(message => message.text.includes('First reply'))).toHaveLength(1)
+    })
+
     it('reports its machine’s host facts and running threads, and reads the count again after a change (#1031)', async () => {
       expect(f.service.supportsHostFacts).toBe(true)
       const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
