@@ -33,7 +33,7 @@ async function fixture() {
   await control.commandShell({ type: 'connect', provider: 'antigravity' })
   await control.commandShell({ type: 'connect', provider: 'codex' })
   const model = control.shell().host.models.find(item => item.providerId === 'antigravity' && item.ready)!
-  return { antigravity, control, service, model }
+  return { antigravity, control, service, model, registry: runtime.threadRegistry! }
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>
 const records = async (f: Fixture, method: string): Promise<RecordedRpc[]> => (await f.antigravity.requests()).filter(record => record.method === method)
@@ -59,4 +59,25 @@ it('runs Watcher on Antigravity with its own tools and its instructions in agyâ€
   expect((prompt.params!.prompt as { text: string }[])[0]!.text).toBe(typed + watcherRequestLine(watcherRequestNote(requestId, f.control.hostId()!, true)))
   await f.control.commandShell({ type: 'observe-threads', threadIds: [id] })
   await expect.poll(() => f.control.threadDetail(id)?.messages.find(message => message.role === 'user')?.text).toBe(typed)
+}, 90_000)
+
+it('lets Watcher read a thread twice on Full access without a permission card', async () => {
+  const f = await fixture()
+  expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'ok' })
+  expect(await f.service.open({ provider: 'antigravity', modelId: f.model.id })).toMatchObject({ status: 'ok' })
+  const id = f.service.state().current!.target.threadId
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Check the worker.' })).error).toBeNull()
+  const adapterId = f.registry.byThread(id)!.sessionId
+  const answers = async () => (await f.antigravity.requests()).filter(record => record.result?.outcome).map(record => record.result!.outcome)
+  for (const count of [1, 2]) {
+    await f.antigravity.action(adapterId, { type: 'mcp-permission', tool: 'mcp_sotto_threads_read_thread' })
+    await expect.poll(answers).toEqual(Array.from({ length: count }, () => ({ outcome: 'selected', optionId: 'allow' })))
+  }
+  const thread = async () => (await f.antigravity.host.snapshot()).threads.find(item => item.id === adapterId)!
+  expect((await thread()).requests).toEqual([])
+  await f.antigravity.action(adapterId, { type: 'question', text: 'Run mcp_sotto_threads_read_thread' })
+  await expect.poll(async () => (await thread()).requests.map(request => request.kind)).toEqual(['question'])
+  await f.antigravity.action(adapterId, { type: 'mcp-permission', tool: 'mcp_sotto_threads_read_thread_extra' })
+  await expect.poll(async () => (await thread()).requests.map(request => request.kind)).toEqual(['question', 'permission'])
+  expect(await answers()).toHaveLength(2)
 }, 90_000)
