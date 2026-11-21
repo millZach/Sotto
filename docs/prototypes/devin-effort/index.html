@@ -1,0 +1,168 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway: how a Devin thread's effort chip looks once Devin's levels reach Sotto. ?case=started|none|reading&variant=today|a|b -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devin effort levels: three cases</title>
+<style>
+  :root { --bg:#111214; --pane:#17181b; --elev:#1f2125; --row:#25272c; --text:#e8e8ea; --muted:#9a9ca3; --faint:#6d7078; --line:#2e3036; --accent:#7cc4b5; --focus:#7cc4b5; }
+  html[data-theme=light] { --bg:#f6f5f2; --pane:#ffffff; --elev:#ffffff; --row:#efeee9; --text:#1d1e21; --muted:#5f6168; --faint:#8a8c92; --line:#dddbd5; --accent:#2f7f70; --focus:#2f7f70; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 Figtree, system-ui, sans-serif; padding-bottom: 130px; }
+  main { max-width: 860px; margin: 0 auto; padding: 20px 16px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .note { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 12px 0; }
+  .surface { background:var(--pane); border:1px solid var(--line); border-radius:12px; padding: 12px 14px; margin-top: 14px; }
+  .transcript { min-height: 90px; display:flex; flex-direction:column; gap:8px; }
+  .msg { background: var(--row); border-radius: 10px; padding: 8px 12px; max-width: 85%; }
+  .msg.me { align-self: flex-end; }
+  .empty { color: var(--faint); font-size: 13px; padding: 30px 0; text-align: center; }
+  .composer { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--elev); position: relative; }
+  .composer textarea { width:100%; border:0; background:transparent; color:var(--text); font:inherit; resize:none; outline:0; min-height: 40px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; position: relative; }
+  .chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+  .chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .chip.fact { border-style: dashed; color: var(--muted); cursor: default; }
+  .chip svg { width: 12px; height: 12px; }
+  .menu { position:absolute; left: 130px; bottom: 36px; width: 220px; background: var(--elev); border:1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 16px 48px rgba(0,0,0,.4); z-index: 5; }
+  .menu button { display:flex; justify-content:space-between; width:100%; border:0; background:transparent; color:var(--text); padding:6px 10px; border-radius:8px; font:inherit; font-size:13px; cursor:pointer; text-align:left; }
+  .menu button:hover, .menu button:focus-visible { background: var(--row); outline: 0; }
+  .menu .top { box-shadow: inset 0 0 0 1px var(--accent); }
+  .tip { position:absolute; bottom: 36px; left: 130px; max-width: 280px; padding: 6px 9px; border:1px solid var(--line); border-radius: 8px; background: var(--elev); font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.3); z-index: 5; }
+  .state { margin-top: 12px; font-size: 12.5px; }
+  .state dl { display:grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; }
+  .state dt { color: var(--muted); }
+  .state dd { margin: 0; }
+  .barbtns { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display:flex; gap:6px; background: var(--pane); border:1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.35); flex-wrap: wrap; justify-content: center; max-width: calc(100% - 20px); }
+  .barbtns button { border:0; background:transparent; color:var(--text); padding: 7px 11px; border-radius: 8px; font: inherit; cursor: pointer; }
+  .barbtns button[aria-pressed=true] { background: var(--accent); color: var(--bg); }
+  .sep { width:1px; background: var(--line); margin: 4px 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Devin effort levels: three cases to decide</h1>
+  <p class="muted">Devin offers a thinking level per model (Claude Opus 5.5: Low to Max; GPT-6 Sol: None to Max; SWE-2: Medium, High, Max). Sotto doesn't read it today, so Devin threads show no effort chip at all. Before a thread starts, the chip will look and work exactly as it does for Codex and Claude Code. These are the three cases where Devin differs. Pick a case at the bottom, then flip its variants.</p>
+  <p class="note" id="explain"></p>
+  <section class="surface">
+    <h2 id="where"></h2>
+    <div class="transcript" id="transcript"></div>
+    <div class="composer">
+      <textarea aria-label="Message" placeholder="Message Devin…"></textarea>
+      <div class="chips" id="chips"></div>
+      <div id="pop"></div>
+    </div>
+    <div class="state"><dl id="state"></dl></div>
+  </section>
+</main>
+<div class="barbtns" role="toolbar" aria-label="Cases and variants">
+  <button data-case="started">1. Started thread</button>
+  <button data-case="none">2. Model with no levels</button>
+  <button data-case="reading">3. Levels still being read</button>
+  <span class="sep"></span>
+  <button data-variant="today">Today</button>
+  <button data-variant="a" id="va">A</button>
+  <button data-variant="b" id="vb">B</button>
+  <span class="sep"></span>
+  <button data-theme="dark">Dark</button><button data-theme="light">Light</button>
+</div>
+<script>
+const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>'
+const OPUS = ['Low', 'Medium', 'High', 'XHigh', 'Max']
+const CASES = {
+  started: {
+    where: 'A Devin thread on Claude Opus 5.5 after its first message',
+    model: 'Claude Opus 5.5', started: true,
+    names: { a: 'A. Changes between turns', b: 'B. Locked like Grok' },
+    explain: {
+      today: 'Today: no effort chip. The thread runs at whatever Devin defaults to for the model (Medium for Opus 5.5).',
+      a: 'A. The chip stays open to change, as it is for Codex and Claude Code. A new level takes effect from the next message; if Devin is mid-turn, Sotto sets it once the turn ends. Devin\'s ACP lets a live session change its thinking level, so this is possible.',
+      b: 'B. The chip is held with a dashed edge and a lock, as a started Grok thread\'s is (#2373). The tip is reworded, because "Devin keeps the effort…" would be untrue. To change level, start a new thread.',
+    },
+    tip: 'Sotto keeps the effort a Devin thread started on. To use another level, start a new thread.',
+  },
+  none: {
+    where: 'A new Devin thread on Claude Opus 4.6, which Devin gives no thinking levels',
+    model: 'Claude Opus 4.6', started: false,
+    names: { a: 'A. No chip', b: 'B. Fixed chip with tip' },
+    explain: {
+      today: 'Today: no effort chip, as for every Devin model.',
+      a: 'A. No chip, which is how a model without levels looks for every other provider. Devin offers no levels for Adaptive, Claude Opus 4.6 and Sonnet 4.6 (and their Thinking and 1M models), Kimi K2.6, K2.7 and SWE-1.6.',
+      b: 'B. The fixed chip from #2373 says "Provider default" with a lock, and its tip says why there is nothing to choose. Only Devin\'s no-level models would show it; other providers stay as they are.',
+    },
+    tip: 'Devin offers no effort levels for Claude Opus 4.6. It runs at the model\'s own setting.',
+  },
+  reading: {
+    where: 'A new Devin thread on Claude Opus 5.5, in the first minute after Devin updates',
+    model: 'Claude Opus 5.5', started: false,
+    names: { a: 'A. No chip until read', b: 'B. Chip says Reading' },
+    explain: {
+      today: 'Today: no effort chip, as for every Devin model.',
+      a: 'A. Devin only says a model\'s levels when Sotto switches a session to it, about half a second each, and it has 169 models. So Sotto reads them in the background after connecting and remembers them until Devin updates. Until a model is read it shows no chip; models your threads and Settings use are read first, so the wait is a few seconds for those and about 20 to 90 seconds for the rest. Normally the levels are remembered and this case never shows.',
+      b: 'B. Same background read, but until a model is read its chip is held and says "Reading levels", with a tip. It turns into the normal chip when Devin answers.',
+    },
+    tip: 'Sotto is asking Devin which levels this model offers. This takes under a minute after Devin updates.',
+  },
+}
+const params = new URLSearchParams(location.search)
+let kase = CASES[params.get('case')] ? params.get('case') : 'started'
+let variant = ['today', 'a', 'b'].includes(params.get('variant')) ? params.get('variant') : 'a'
+let menu = false, tip = false, level = 'High'
+function render() {
+  const c = CASES[kase]
+  document.querySelectorAll('[data-case]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.case === kase)))
+  document.querySelectorAll('[data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
+  document.querySelectorAll('button[data-theme]').forEach(b => b.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === b.dataset.theme)))
+  document.getElementById('va').textContent = c.names.a
+  document.getElementById('vb').textContent = c.names.b
+  document.getElementById('explain').textContent = c.explain[variant]
+  document.getElementById('where').textContent = c.where
+  document.getElementById('transcript').innerHTML = c.started
+    ? '<div class="msg me">Tidy the release notes script.</div><div class="msg">Done. I split the changelog step out and added a dry run.</div>'
+    : '<div class="empty">New thread</div>'
+  const model = `<button class="chip">${c.model} ${CHEV}</button>`
+  const perm = `<button class="chip">Code ${CHEV}</button>`
+  let effort = '', reason = ''
+  if (variant === 'today') effort = ''
+  else if (kase === 'started' && variant === 'a') effort = `<button class="chip" id="effort" aria-haspopup="menu" aria-expanded="${menu}" aria-label="Reasoning effort, ${level}">${level} ${CHEV}</button>`
+  else if (kase === 'started' && variant === 'b') { effort = `<button class="chip fact" id="effort" aria-disabled="true" aria-label="Reasoning effort, ${level}" aria-describedby="why">${LOCK} ${level}</button>`; reason = c.tip }
+  else if (kase === 'none' && variant === 'a') effort = ''
+  else if (kase === 'none' && variant === 'b') { effort = `<button class="chip fact" id="effort" aria-disabled="true" aria-label="Reasoning effort, Provider default" aria-describedby="why">${LOCK} Provider default</button>`; reason = c.tip }
+  else if (kase === 'reading' && variant === 'a') effort = ''
+  else if (kase === 'reading' && variant === 'b') { effort = `<button class="chip fact" id="effort" aria-disabled="true" aria-label="Reasoning effort, reading levels" aria-describedby="why">Reading levels…</button>`; reason = c.tip }
+  document.getElementById('chips').innerHTML = model + effort + perm + (reason ? `<span id="why" hidden>${reason}</span>` : '')
+  const e = document.getElementById('effort')
+  if (e && kase === 'started' && variant === 'a') e.onclick = () => { menu = !menu; render(); document.getElementById('effort').focus() }
+  if (e && reason) {
+    e.onmouseenter = e.onfocus = () => { tip = true; pop(reason) }
+    e.onmouseleave = e.onblur = ev => { if (ev.type === 'mouseleave' && document.activeElement === e) return; tip = false; pop(reason) }
+  }
+  pop(reason)
+  document.getElementById('state').innerHTML = [
+    ['Case', kase], ['Variant', variant],
+    ['Effort chip', effort ? (e.classList.contains('fact') ? 'held, opens nothing' : 'opens the levels') : 'not shown'],
+    ['Level sent to Devin', variant === 'today' ? 'none: Devin\'s default for the model' : kase === 'none' ? 'none: the model has no levels' : kase === 'reading' ? 'none until read: Devin\'s default' : level],
+    ['Screen reader hears', !effort ? '(nothing)' : `${e.getAttribute('aria-label')}${reason ? '. ' + reason : ''}`],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')
+  history.replaceState(null, '', `?case=${kase}&variant=${variant}`)
+}
+function pop(reason) {
+  const el = document.getElementById('pop')
+  if (menu && kase === 'started' && variant === 'a') {
+    el.innerHTML = `<div class="menu" role="menu">${OPUS.map(l => `<button role="menuitemradio" aria-checked="${l === level}" class="${l === 'Max' ? 'top' : ''}" data-l="${l}"><span>${l}</span><span>${l === level ? '✓' : ''}</span></button>`).join('')}</div>`
+    el.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { level = b.dataset.l; menu = false; render(); document.getElementById('effort')?.focus() })
+    el.querySelector('[aria-checked=true]')?.focus()
+  } else el.innerHTML = tip && reason ? `<div class="tip" role="tooltip">${reason}</div>` : ''
+}
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { if (menu) { menu = false; render(); document.getElementById('effort')?.focus() } else if (tip) { tip = false; pop('') } } })
+document.querySelectorAll('[data-case]').forEach(b => b.onclick = () => { kase = b.dataset.case; variant = 'a'; menu = tip = false; render() })
+document.querySelectorAll('[data-variant]').forEach(b => b.onclick = () => { variant = b.dataset.variant; menu = tip = false; render() })
+document.querySelectorAll('button[data-theme]').forEach(b => b.onclick = () => { document.documentElement.dataset.theme = b.dataset.theme; render() })
+render()
+</script>
+</body>
+</html>
