@@ -267,6 +267,35 @@ it('reuses the remembered port, so a setting a crash left is still its own, and 
   await access.close()
 })
 
+it('takes up its own setting left by an unfinished quit as it stands, writing nothing to Serve', async () => {
+  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port: 41000, mapped: true }))
+  const fake = fakeTailscale({ other: serveTarget(41000), serve: { ok: false, reason: 'failed' } }), server = fakeServer()
+  vi.mocked(fake.tailscale.unserve).mockResolvedValue(false)
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  await access.start()
+  expect(fake.calls).toEqual(['status', 'serve-status'])
+  expect(access.get()).toMatchObject({ phase: 'on', serve: { status: 'ok' }, address: `https://${DNS}:8443` })
+  expect(server.started).toMatchObject([{ port: 41000, closed: false }])
+  expect(await record()).toEqual({ port: 41000, mapped: true })
+  await access.close()
+})
+
+it('keeps the listener answering when a retry finds its own setting already carrying it', async () => {
+  const fake = fakeTailscale(), server = fakeServer()
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  // The first ask lands but reports a failure, and the removal after it is refused: cleanup is pending with the setting on.
+  vi.mocked(fake.tailscale.serve).mockImplementationOnce(async (_servePort, loopback) => { fake.setOther(serveTarget(loopback)); return { ok: false, reason: 'failed' } })
+  vi.mocked(fake.tailscale.unserve).mockResolvedValue(false)
+  try {
+    await access.start()
+    expect(access.get().phase).toBe('cleanup-failed')
+    await access.command({ type: 'retry' })
+    expect(access.get()).toMatchObject({ phase: 'on', address: `https://${DNS}:8443` })
+    expect(fake.tailscale.serve).toHaveBeenCalledOnce()
+    expect(server.started.at(-1)).toMatchObject({ port: 41000, closed: false })
+  } finally { vi.mocked(fake.tailscale.unserve).mockResolvedValue(true); await access.close() }
+})
+
 it('removes the Serve setting and closes the listener on quit, and keeps the setting for the next start', async () => {
   const fake = fakeTailscale(), server = fakeServer()
   const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })

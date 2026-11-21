@@ -30,12 +30,12 @@ async function expectReserved(port: number): Promise<void> {
   })
 }
 
-it.each([false, true])('reserves pending cleanup at restart with phone access set to %s', async enabled => {
+it('reserves pending cleanup at restart with phone access off', async () => {
   const port = await freePort()
   await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port, mapped: true }))
   const fake = fakeTailscale({ other: serveTarget(port) }), server = fakeServer()
   vi.mocked(fake.tailscale.unserve).mockResolvedValue(false)
-  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: enabled, phoneAccessName: '' })
+  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer }, { phoneAccess: false, phoneAccessName: '' })
   try {
     await access.start()
     expect(access.get().phase).toBe('cleanup-failed')
@@ -45,6 +45,29 @@ it.each([false, true])('reserves pending cleanup at restart with phone access se
     vi.mocked(fake.tailscale.unserve).mockResolvedValue(true)
     await access.command({ type: 'retry' })
     expect(access.get().phase).toBe('off')
+    const rebound = createServer()
+    await new Promise<void>(resolve => rebound.listen(port, '127.0.0.1', resolve))
+    await new Promise<void>(resolve => rebound.close(() => resolve()))
+  } finally { await access.close() }
+})
+
+// Forge, November 21 2026: another app's root-only path entry made Tailscale refuse every Serve change, so the removal a
+// restart began with never went through and the placeholder reset every phone's connection until the entry went.
+it('takes up its own setting at restart with phone access on, without the placeholder, while Tailscale refuses every change', async () => {
+  const port = await freePort()
+  await writeFile(join(root, 'phone-access.json'), JSON.stringify({ port, mapped: true }))
+  const fake = fakeTailscale({ other: serveTarget(port), serve: { ok: false, reason: 'failed' } }), server = fakeServer()
+  vi.mocked(fake.tailscale.unserve).mockResolvedValue(false)
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  try {
+    await access.start()
+    expect(access.get()).toMatchObject({ phase: 'on', servePort: 8443, address: expect.stringMatching(/:8443$/u) })
+    expect(server.started).toMatchObject([{ port, closed: false }])
+    expect(fake.tailscale.serve).not.toHaveBeenCalled()
+    expect(fake.tailscale.unserve).not.toHaveBeenCalled()
+    expect(fake.proxy()).toBe(serveTarget(port))
+    expect(await record()).toEqual({ port, mapped: true })
+    // The placeholder let go of the port for the listener: the stand-in listener holds no socket, so it binds.
     const rebound = createServer()
     await new Promise<void>(resolve => rebound.listen(port, '127.0.0.1', resolve))
     await new Promise<void>(resolve => rebound.close(() => resolve()))
