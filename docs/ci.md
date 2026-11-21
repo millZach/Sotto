@@ -83,6 +83,10 @@ gate, even if the test happens to run.
 
 The job cancels a superseded run on the same ref (`concurrency` with `cancel-in-progress`), has a 40-minute safety timeout, and requests only `contents: read`.
 
+## Sidebar thread navigation evidence
+
+The selected desktop smoke journeys include `tests/e2e/sidebar-thread-navigation.spec.ts`, which sends real Next/Previous key chords through every visible rail tile in both directions, crosses project and resting trays, wraps, and keeps plain arrows on their focus-only path. Its order receipt and screenshot are retained under `thread-list-keyboard/` in the desktop run artifacts.
+
 ## Climb drawer evidence
 
 The selected desktop smoke journey includes `tests/e2e/council-climb.spec.ts`. It uses the fake provider, a plain folder and Owl's Council gate to check source preview, focus/Escape tooltips, both No limit slider endpoints, drawer form retention, setup approval and Stop. It records setup and limit screenshots at 1600×1000, 1280×800 and 820×560 in light/dark themes with reduced motion. Files are named `setup-<width>-<theme>.png` and `limits-<width>-<theme>.png` under `council-climb/` in the desktop run artifacts uploaded by CI. The journey also records the approval proposal and `geometry.json`. A separate node fixture covers the complete build/assess loop and the Claude read-only launch contract. These screenshots are CI evidence, not committed design baselines. On the owner's Mac this work runs no app or desktop gate; inspect the uploaded evidence before declaring visual verification complete.

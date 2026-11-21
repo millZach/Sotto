@@ -1,6 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import type { AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW as NOW } from '../../../src/shared/e2e'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
@@ -19,8 +20,9 @@ vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal =>
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 
 const navigate = vi.fn()
-function owl(on: boolean, queue = false): void {
+function owl(on: boolean, queue = false, grouping?: 'project' | 'status'): void {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', actions: { navigate },
+    ...grouping ? { platform: 'win32', settings: { ...DEFAULT_SETTINGS, threadListGrouping: grouping } } : {},
     update: { currentVersion: '0.1.40', phase: { phase: 'up-to-date' }, checkedAt: null, owlFeatures: { 'sidebar-rail': on, watcher: true, 'needs-you-queue': queue } } } as unknown as AppContextValue)
 }
 beforeEach(() => { vi.mocked(useOptionalApp).mockReset(); vi.mocked(useWatchedThreadIds).mockReturnValue(new Set()); navigate.mockReset(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
@@ -39,6 +41,40 @@ const tile = (rail: HTMLElement, title: string): HTMLElement => within(rail).get
 const follows = (first: Element, second: Element): boolean => (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
 
 describe('the collapsed rail (ADR-0146)', () => {
+  it.each([
+    { grouping: 'project', railOn: true }, { grouping: 'status', railOn: true },
+    { grouping: 'project', railOn: false }, { grouping: 'status', railOn: false },
+  ] as const)('steps both ways through the displayed rail, wrapping across trays ($grouping, rail feature $railOn)', ({ grouping, railOn }) => {
+    owl(railOn, true, grouping)
+    vi.mocked(useWatchedThreadIds).mockReturnValue(new Set(['benchmark']))
+    const state = threadsStateFixture()
+    const organization = organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW)
+    const onOpen = vi.fn()
+    const view = (currentThreadId: string | null) => <ThreadSidebar state={state} organization={organization}
+      command={vi.fn(async () => state)} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()} shortcutsLive
+      currentThreadId={currentThreadId} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />
+    const { rerender } = render(view(null))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    const ids = () => [...document.querySelectorAll<HTMLElement>('.thread-nav__rail-list [data-roving-key]')].map(tile => tile.getAttribute('data-roving-key')!.slice('rail:'.length))
+    const order = ids()
+    expect(order.length).toBeGreaterThan(3)
+    if (railOn) {
+      expect(order).toContain('benchmark') // A watched settled tile is still part of the rail.
+      expect(order).not.toEqual(organization.open.flatMap(folder => folder.rows.map(row => row.thread.id)))
+    }
+    expect(order).not.toEqual(state.host.threads.map(thread => thread.id))
+    for (const step of [1, -1]) {
+      for (let at = 0; at < order.length; at++) {
+        rerender(view(order[at]!))
+        // Selecting a tile must not change this fixture's order, including its settled waiting tiles.
+        expect(ids()).toEqual(order)
+        onOpen.mockClear()
+        fireEvent.keyDown(window, { key: step === 1 ? 'ArrowDown' : 'ArrowUp', ctrlKey: true, altKey: true })
+        expect(onOpen).toHaveBeenCalledExactlyOnceWith(order[(at + step + order.length) % order.length])
+      }
+    }
+  })
+
   it('is today\'s rail while the Owl feature is off', () => {
     owl(false)
     const rail = mountCollapsed(threadsStateFixture())
