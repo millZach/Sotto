@@ -90,6 +90,8 @@ describe('the complete list after a whole read of the state (#2733)', () => {
     link.publish(newest)
     link.releaseAnswers()
     await settle()
+    // The newer list is shown once the older answer has landed, with nothing more from main.
+    expect(delivered.at(-1)).toEqual(newest)
     const next = shell(retitled(newest.host.threads, 5, 'Sixth'))
     link.publish(next)
     await settle()

@@ -124,7 +124,8 @@ describe('the window’s structural sharing at the owner’s scale', () => {
         if (measuring && (payload.host.threads as { base?: unknown } | undefined)?.base === null) everyRecord++
         deliver?.({}, wire(payload))
       } }))
-    // `readWhole` where main has it: a whole read seeds the next broadcast's base (#2733). Without it, main as it was.
+    // `readWhole` where main has it: the complete list after a whole read marks the records it repeats (#2733). Without it,
+    // main as it was.
     const broadcaster = p.broadcaster as typeof p.broadcaster & { readWhole?: (state: AgentState) => AgentState }
     const unregister = registerAgentIpc(registry.ipc, p.router, p.router, () => [registry.main],
       { encodeReceipt: broadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: broadcaster.encodeChangedThreadRecordsReceipt, windowRead: broadcaster.windowRead,
@@ -133,8 +134,9 @@ describe('the window’s structural sharing at the owner’s scale', () => {
     const renderer = {
       invoke: async (channel: string, ...args: unknown[]) => {
         // A whole read takes this long to reach main and be answered while main and the window are busy. Broadcasts keep
-        // landing meanwhile; the answer, once main has made it, is taken in before anything main sends after it, as in the
-        // window, where the reply and the broadcasts after it arrive in order and the page takes the reply in at once.
+        // landing meanwhile. This assumes the answer, once main has made it, reaches the page before what main sends after
+        // it: the order the window most often sees, though Electron does not promise it. The page holds the other order too
+        // (`tests/unit/renderer/wholeReadRepeats.test.ts`); this measures what the usual one costs.
         if (channel === AGENT_GET) { wholeReads++; await new Promise(resolve => { setTimeout(resolve, WHOLE_READ_MS) }) }
         return wire(await registry.invoke(channel, args))
       },
@@ -186,7 +188,11 @@ describe('the window’s structural sharing at the owner’s scale', () => {
     vi.useRealTimers()
     const directory = await perfDataDirectory()
     expect(directory).not.toBeNull()
-    const workspace = JSON.parse(await readFile(join(directory!, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot }
+    // A parse error can quote the file it failed on, and this one holds what the owner's threads said: it is reported
+    // without it.
+    let workspace: { snapshot: AgentHostSnapshot }
+    try { workspace = JSON.parse(await readFile(join(directory!, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot } }
+    catch { throw new Error('The selected folder’s workspace.json could not be read as JSON.') }
     const host = workspace.snapshot
     const broadcaster = new AgentStateBroadcaster()
     let deliver: ((event: unknown, payload: unknown) => void) | null = null
