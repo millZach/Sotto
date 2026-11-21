@@ -24,9 +24,11 @@ export function isUsageProviderId(value: unknown): value is UsageProviderId {
 }
 /**
  * The providers Usage asks for account limits. OpenCode reports none through anything Sotto may use (ADR-0087), so it is
- * left off Subscriptions entirely: no reading, no gauge and no line saying it cannot be read.
+ * left off Subscriptions entirely: no reading, no gauge and no line saying it cannot be read. So is Antigravity: its
+ * limits come only from Google's Antigravity servers with `agy`'s own sign-in token, which Google's terms forbid
+ * (ADR-0212, November 21, 2026).
  */
-export const USAGE_LIMIT_PROVIDERS = ['codex', 'claude', 'grok', 'devin', 'muse', 'antigravity'] as const satisfies readonly UsageProviderId[]
+export const USAGE_LIMIT_PROVIDERS = ['codex', 'claude', 'grok', 'devin', 'muse'] as const satisfies readonly UsageProviderId[]
 export type UsageLimitProviderId = typeof USAGE_LIMIT_PROVIDERS[number]
 export function reportsUsageLimits(value: unknown): value is UsageLimitProviderId {
   return (USAGE_LIMIT_PROVIDERS as readonly unknown[]).includes(value)
@@ -261,9 +263,15 @@ export const usageRefreshQuerySchema = z.object({
   background: z.literal(true).optional(),
 }).strict()
 export type UsageRefreshQuery = z.infer<typeof usageRefreshQuerySchema>
+/**
+ * A host from before November 21, 2026 still reads Antigravity's limits and sends them; Usage no longer shows them, so they
+ * are dropped here rather than refusing the host's whole read.
+ */
+const withoutAntigravityLimits = (value: unknown): unknown =>
+  Array.isArray(value) ? value.filter(quota => (quota as { providerId?: unknown } | null)?.providerId !== 'antigravity') : value
 export const usageLocalHostReadSchema = z.object({
   status: z.enum(['ready', 'error']), activity: usageLocalReadSchema.optional(),
-  quotas: z.array(usageQuotaReadSchema).max(USAGE_LIMIT_PROVIDERS.length), persistence: z.enum(['saved', 'failed']).optional(),
+  quotas: z.preprocess(withoutAntigravityLimits, z.array(usageQuotaReadSchema).max(USAGE_LIMIT_PROVIDERS.length)), persistence: z.enum(['saved', 'failed']).optional(),
 }).strict()
 export type UsageLocalHostRead = z.infer<typeof usageLocalHostReadSchema>
 /**

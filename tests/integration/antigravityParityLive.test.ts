@@ -83,17 +83,17 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
       return { passed: reply.includes('red'), saw: reply.slice(0, 200) }
     })
 
-    // Another model and thinking level for the next prompt, from another maker too.
+    // Another Gemini model and thinking level for the next prompt.
     await check('model-and-effort-next-prompt', async () => {
       const id = await open('approval-required')
       await send(id, 'Reply with exactly: one'); await idle(id)
-      const other = connected.models.find(model => model.source === 'Anthropic') ?? connected.models.find(model => model.id !== MODEL)!
+      const other = connected.models.find(model => model.id !== MODEL && (model.reasoningEfforts?.length ?? 0) > 0) ?? connected.models.find(model => model.id !== MODEL)!
       const effort = other.reasoningEfforts?.at(-1)
       await host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: other.id, ...(effort ? { reasoningEffort: effort } : {}) })
       await send(id, 'Reply with exactly: two'); await idle(id)
       const after = await thread(id)
       return { passed: after.modelId === other.id && (await lastReply(id)).toLowerCase().includes('two') && after.status === 'idle',
-        saw: { model: other.id, source: other.source, effort, modelId: after.modelId, reply: (await lastReply(id)).slice(0, 100) } }
+        saw: { model: other.id, effort, modelId: after.modelId, reply: (await lastReply(id)).slice(0, 100) } }
     })
 
     // Stop a running turn.

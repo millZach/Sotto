@@ -82,6 +82,13 @@
 .provider-connection--antigravity .antigravity-steps .segmented-control { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 26em; }
 .provider-connection--antigravity .segmented-control button { min-width: 0; white-space: normal; line-height: 1.25; }
 .antigravity-steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+/* The notice that the user's own Google account carries the risk under Google's terms (ADR-0212), in the warning roles. */
+.antigravity-risk { display: grid; gap: 8px; margin: 0 0 14px; padding: 12px 14px; border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text); }
+.antigravity-risk p, .antigravity-risk ul { margin: 0; line-height: 1.45; }
+.antigravity-risk ul { display: grid; gap: 4px; padding-left: 20px; }
+.antigravity-risk__head { display: flex; align-items: flex-start; gap: 8px; font-weight: 650; color: var(--tt-warning-on-tint); }
+.antigravity-risk__head svg { flex: none; margin-top: 2px; color: var(--tt-warning-text); }
+.antigravity-risk p.antigravity-risk__foot { color: var(--tt-text-2); }
 .antigravity-steps > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
 .antigravity-steps > li > div { display: grid; gap: 8px; min-width: 0; }
 .antigravity-steps > li > div > .tt-button { justify-self: start; }

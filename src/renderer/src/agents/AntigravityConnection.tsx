@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Check } from 'lucide-react'
+import { Check, TriangleAlert } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -387,6 +387,17 @@ export function AntigravityConnection({ signIn, settings, keySaved, problem, sai
   }}>
     <div>
       <h4>{t({ message: 'Local connection', comment: 'Heading of a provider’s connection on this computer, in Settings > Providers.' })}</h4>
+      {/* Google's Antigravity terms put the user's own account at risk; Zach's pick A: always there when the row is open (ADR-0212). */}
+      <div className="antigravity-risk" role="note" aria-labelledby={`${ids}-risk`}>
+        <p id={`${ids}-risk`} className="antigravity-risk__head tt-paragraph"><TriangleAlert size={15} aria-hidden="true" />{t`Your Google account carries the risk`}</p>
+        <p className="tt-paragraph">{t`Google’s Antigravity terms let it suspend an account it sees used outside its own apps, such as one whose sign-in another app takes or uses to call Google’s servers. Sotto drives Google’s own agy, which keeps its own sign-in, and avoids what the terms name:`}</p>
+        <ul>
+          <li>{t`Sotto never reads agy’s sign-in or calls Google’s servers with it.`}</li>
+          <li>{t`Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them.`}</li>
+          <li>{t`Running agy from another app is still a gray area. Google may count it against the account you sign in with here.`}</li>
+        </ul>
+        <p className="antigravity-risk__foot tt-paragraph">{t`Read Google’s Antigravity terms before you sign in an account you depend on.`}</p>
+      </div>
       {lines()}
       {said ? <p className={typeof said === 'string' ? 'provider-connection__said' : 'provider-connection__said tt-paragraph'}>{shownWords(said)}</p> : null}
       {installing ? waitingLine(install?.text ?? t`Downloading Antigravity from Google…`) : null}
