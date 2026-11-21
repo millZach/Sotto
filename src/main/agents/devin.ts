@@ -332,7 +332,7 @@ export class DevinAcpHost implements ProviderHost {
     })
   }
   /** Whether a request on this connection is still waiting about this tool, which needs the tool's details to answer it. */
-  private askedAbout(connection: Connection, toolCallId: string): boolean {
+  private requestWaitsOn(connection: Connection, toolCallId: string): boolean {
     for (const saved of this.pending.values()) if (saved.connection === connection && saved.decision.toolCallId === toolCallId) return true
     return false
   }
@@ -691,16 +691,21 @@ export class DevinAcpHost implements ProviderHost {
    * echo it; a model Devin no longer offers is refused, and Sotto never chooses another.
    */
   private async restoreModel(connection: Connection, alias: Alias, current: () => void): Promise<void> {
-    const gone = 'Devin no longer offers this thread’s model. Your thread and draft are kept. Start a new thread to choose another model; Sotto will not substitute one.'
+    // Which words depend on whether the models Devin listed at connect still include the thread's.
+    const refusal = this.state.models.some(model => model.id === alias.modelId)
+      ? 'Devin did not put this thread back on its model. Your thread and draft are kept. Reconnect Devin and try again; Sotto will not substitute another model.'
+      : 'Devin no longer offers this thread’s model. Your thread and draft are kept. Start a new thread to choose another model; Sotto will not substitute one.'
     let answer: unknown
     try {
       await connection.rpc.request('session/set_config_option', { sessionId: alias.devinSessionId, configId: 'model', value: alias.modelId }, value => { current(); answer = value })
     } catch (error) {
-      if (error instanceof DevinRejected) throw new Error(gone, { cause: error })
+      if (error instanceof DevinRejected) throw new Error(refusal, { cause: error })
       throw error
     }
     // Judged once the answer is in: a refusal thrown while reading it would stop the process along with it.
-    if (modelConfig(answer).current !== alias.modelId) throw new Error(gone)
+    let echoed: string | undefined
+    try { echoed = modelConfig(answer).current } catch { throw new Error(refusal) }
+    if (echoed !== alias.modelId) throw new Error(refusal)
     this.noteModelLevels(connection, alias.modelId, answer)
   }
   /** Puts the session on the thread's thinking level, where one was chosen, and refuses the thread unless Devin echoes it back. */
@@ -915,9 +920,10 @@ export class DevinAcpHost implements ProviderHost {
     const observer = await this.start(alias.cwd, modeOf(alias.providerMode).allows, id, true)
     try {
       try {
-        await observer.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers: [] }, value => {
-          if (modelConfig(value).current !== alias.modelId) throw new Error('Devin changed this thread’s model.')
-        })
+        // A read never prompts, so the model the session reports is not its concern: a session whose process was stopped
+        // mid-turn loads on Devin's default model, and its replay still confirms what was sent. The owner's open sets the
+        // thread's model back before anything runs on it (#2747).
+        await observer.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers: [] })
       } catch (error) {
         // The native process replays history before reporting that the session is locked.
         // Only our still-live owner can explain that lock for a send or guarded follow-up.
@@ -1012,7 +1018,7 @@ export class DevinAcpHost implements ProviderHost {
         // A tool's details are kept for the request that may ask about it. Once Devin says the tool ended they are needed
         // only by a request still waiting on it, so the bounds count the tools still running, not every tool of a long
         // turn: a turn of edits to a large file sends that file twice on every result, and once passed 8 MiB (#2747).
-        if (settledTool(update.status) && !this.askedAbout(connection, update.toolCallId)) {
+        if (settledTool(update.status) && !this.requestWaitsOn(connection, update.toolCallId)) {
           connection.tools.delete(update.toolCallId); connection.toolBytes -= oldBytes
         } else {
           if (connection.tools.size >= 1000 && !old) throw new Error('Too many pending Devin tools.')
@@ -1373,7 +1379,13 @@ export class DevinAcpHost implements ProviderHost {
   }
   private removeRequest(id: string): void {
     const saved = this.pending.get(id); if (!saved) return
-    this.pending.delete(id); this.thread(saved.decision.threadId).requests = this.thread(saved.decision.threadId).requests.filter(request => request.id !== id); this.emit()
+    this.pending.delete(id); this.thread(saved.decision.threadId).requests = this.thread(saved.decision.threadId).requests.filter(request => request.id !== id)
+    // A tool that ended while this request waited was kept for it alone, and is let go with it.
+    const toolId = saved.decision.toolCallId, tool = toolId === undefined ? undefined : saved.connection.tools.get(toolId)
+    if (toolId !== undefined && tool && settledTool(tool.status) && !this.requestWaitsOn(saved.connection, toolId)) {
+      saved.connection.tools.delete(toolId); saved.connection.toolBytes -= Buffer.byteLength(JSON.stringify(tool))
+    }
+    this.emit()
   }
   private clearRequests(id: string): void {
     for (const [requestId, saved] of this.pending) if (saved.decision.threadId === id) this.pending.delete(requestId)
