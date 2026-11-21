@@ -288,14 +288,14 @@ describe('Antigravity ACP adapter', () => {
     expect(await readdir(join(f.root, 'antigravity', 'scratch')).catch(() => [])).toEqual([])
   })
 
+  const probeTools = [{ name: 'sotto_probe', definitions: [], mcpServer: async () => ({ name: 'sotto_probe', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }) }]
   it('hands Sotto’s tools to agy, which advertises no MCP capability yet takes HTTP servers, and none when agy says it cannot', async () => {
-    const tools = [{ name: 'sotto_probe', definitions: [], mcpServer: async () => ({ name: 'sotto_probe', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }) }]
     const servers = async () => (await f!.requests()).filter(record => record.method === 'session/new' && record.params?.cwd === f!.root).map(record => (record.params?.mcpServers as { name: string }[]).map(server => server.name))
     for (const httpMcp of [undefined, false]) {
       await f?.cleanup()
       f = await antigravityFixture()
       if (httpMcp === false) await f.script({ httpMcp })
-      f.host.useThreadTools(tools)
+      f.host.useThreadTools(probeTools)
       await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       const id = randomUUID()
@@ -307,16 +307,15 @@ describe('Antigravity ACP adapter', () => {
   })
 
   it('hands the user’s own agy servers beside Sotto’s, on a new session and a resumed one, and leaves out one with a name Sotto uses', async () => {
-    const tools = [{ name: 'sotto_probe', definitions: [], mcpServer: async () => ({ name: 'sotto_probe', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }) }]
-    const config = join(await mkdtemp(join(tmpdir(), 'sotto-agy-user-mcp-')), 'mcp_config.json')
+    const root = await mkdtemp(join(tmpdir(), 'sotto-antigravity-thread-')), config = join(root, 'user-mcp_config.json')
     await writeFile(config, JSON.stringify({ mcpServers: {
       files: { command: 'files-mcp', args: ['--root', '.'], env: { FILES_TOKEN: 'user-secret' } },
       remote: { serverUrl: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer user-secret' } },
       sotto_probe: { command: 'not-sotto' },
       off: { command: 'off-mcp', disabled: true },
     } }))
-    f = await antigravityFixture(undefined, undefined, {}, { userMcpConfig: config })
-    f.host.useThreadTools(tools)
+    f = await antigravityFixture(root, undefined, {}, { userMcpConfig: config })
+    f.host.useThreadTools(probeTools)
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     const id = randomUUID()

@@ -60,7 +60,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | 23 | Sotto's browser | Works | Works since the tools fix | Tool calls pass (row 24) | `antigravity.ts:430-433` |
 | 23b | Computer use (desktop control) | Neither: wired to Codex only | Neither | — | `codex.ts:360-378` |
 | 24 | Sotto's own MCP tools | Works | Works since the tools fix | Passed: listed `mcp_sotto_probe_ping` and called it | `antigravity.ts:546` |
-| 24b | The user's own MCP servers | Works: Claude Code reads the user's own setup | Works since slice 3: the servers in the user's own `~/.gemini/config/mcp_config.json`, handed to each session beside Sotto's; not to Watcher | Passed on 1.5.14: a local server from the user's file listed and called | `antigravityUserServers.ts` |
+| 24b | The user's own MCP servers | Works: Claude Code reads the user's own setup | Works since slice 3: the servers in the user's own `~/.gemini/config/mcp_config.json`, handed to each provider session beside Sotto's; not to Watcher | Passed on 1.5.14: a local server from the user's file listed and called | `antigravityUserServers.ts` |
 | 24c | Plugins (`sotto_plugins`) | Works | Works since the tools fix | Tool calls pass | Same servers as row 24 |
 | 25 | The Council | Works | Works since the tools fix | Tool calls pass | `createDesktopEngine.ts:856-882` |
 | 26 | The merge train: `ready_to_merge`, `tell_watcher` | Works | Works since the tools fix | Tool calls pass | `tellWatcherTools.ts:66` |
