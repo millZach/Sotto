@@ -9,7 +9,7 @@
  */
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { MAX_BACKGROUND_WORK, MAX_DETACHED_RUNS, MAX_DETACHED_RUNS_ELSEWHERE, type AgentBackgroundWork, type DetachedRunElsewhere } from '../../shared/agentMonitoring'
+import { detachedRunsElsewhereSchema, MAX_BACKGROUND_WORK, MAX_DETACHED_RUNS, MAX_DETACHED_RUNS_ELSEWHERE, type AgentBackgroundWork, type DetachedRunElsewhere, type RunMarkName } from '../../shared/agentMonitoring'
 import { descendsFrom, runWords, shownCommand, type AgentProcess, type ProcessTable, type RunMark, type ScanProcesses } from './detachedRunScan'
 
 /** How long after Sotto starts it first looks: long enough for the threads to load. */
@@ -63,6 +63,12 @@ function runId(process: AgentProcess): string {
   const hex = createHash('sha256').update(`${process.pid}\0${process.startedAt ?? ''}\0${process.commandLine}`).digest('hex')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${(8 | (parseInt(hex[16]!, 16) & 3)).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
+
+/**
+ * The marks a host reports to its desktops (#2749): the provider sessions a desktop's adapters name a thread by. Hermes's
+ * key only follows the commands Hermes runs, and no adapter names a detached run's thread by it (decision 7's follow-up).
+ */
+const REPORTED_MARKS: ReadonlySet<RunMarkName> = new Set(['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'])
 
 /** A run a paired host reported, by an ID of this desktop's own: its host's ID and the host's ID for it, so two machines never share one (#2749). */
 function reportedRunId(hostId: string, runId: string): string {
@@ -311,7 +317,11 @@ export class DetachedRunWatch {
     const foreign: ForeignRecord[] = []
     for (const agent of table.agents) {
       if (!unownedPids.has(agent.pid) || startedBy(table, agent.pid, parentPid => unownedPids.has(parentPid))) continue
-      foreign.push({ pid: agent.pid, run: { marks: agent.marks.map(mark => ({ name: mark.name, value: mark.value })), work: detachedRunWork(agent) } })
+      const marks = agent.marks.filter(mark => REPORTED_MARKS.has(mark.name)).map(mark => ({ name: mark.name, value: mark.value }))
+      const run: DetachedRunElsewhere = { marks, work: detachedRunWork(agent) }
+      // A run whose report the wire would refuse, such as a mark with a control character in it, is left out alone: one bad
+      // report must not cost a desktop its connection and the good runs beside it.
+      if (marks.length && detachedRunsElsewhereSchema.safeParse([run]).success) foreign.push({ pid: agent.pid, run })
     }
     // The oldest are reported, the same ones at every look.
     const kept = foreign.sort((a, b) => (a.run.work.startedAt ?? '').localeCompare(b.run.work.startedAt ?? '') || a.run.work.id.localeCompare(b.run.work.id))

@@ -51,6 +51,18 @@ describe('a host reports the runs it finds that none of its threads owns', () =>
     expect(heard).toHaveBeenCalledTimes(1)
   })
 
+  it('reports only the marks a desktop can name a thread by, and leaves out alone a run whose report the wire would refuse', async () => {
+    const hermesOnly: RunMark = { name: 'HERMES_SESSION_KEY', value: 'hermes-session' }
+    const bad = mark('laptop\u0007session')
+    const forge = computer([codex(2445800, 1, [mark(), hermesOnly]), codex(2445900, 1, [hermesOnly]), codex(2446000, 1, [bad])])
+    const watch = new DetachedRunWatch({ scan: forge.scan, rootPid: SOTTO, owner: () => undefined })
+    cleanup.push(() => watch.close())
+    watch.subscribeForeign(() => undefined)
+    await watch.lookNow()
+    expect(watch.foreignRuns().map(run => run.marks)).toEqual([[mark()]])
+    expect(detachedRunsElsewhereSchema.safeParse(watch.foreignRuns()).success).toBe(true)
+  })
+
   it('stops a run it reported only once a fresh look finds the same process, and says when it has ended', async () => {
     const forge = computer([codex(2445800, 1, [mark()])])
     const end = vi.fn(async () => { forge.set([]); return true })

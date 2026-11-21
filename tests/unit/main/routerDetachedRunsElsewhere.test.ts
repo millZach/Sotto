@@ -46,21 +46,39 @@ describe('runs from elsewhere through the router (#2749)', () => {
     } finally { router.dispose() }
   })
 
+  it('asks a host to look as it joins, and names its runs by its new name once it is renamed, still hearing its reports', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const heard = vi.fn()
+    router.subscribeDetachedRunsElsewhere(heard)
+    const forge = host(FORGE, 'remote', 'forge', true)
+    router.add(host(LOCAL, 'local', 'This computer').connection)
+    router.add(forge.connection)
+    try {
+      await vi.waitFor(() => expect(forge.look).toHaveBeenCalledTimes(1))
+      router.rename(FORGE, 'forge (home)')
+      expect(heard).toHaveBeenLastCalledWith(FORGE, 'forge (home)', [run])
+      forge.report([])
+      expect(heard).toHaveBeenLastCalledWith(FORGE, 'forge (home)', [])
+    } finally { router.dispose() }
+  })
+
   it('asks only the connected hosts that report runs to look again, and sends Stop to the one that found the run', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
     const forge = host(FORGE, 'remote', 'forge', true)
     router.add(host(LOCAL, 'local', 'This computer').connection)
     router.add(forge.connection)
     try {
-      router.lookForDetachedRunsElsewhere()
+      // Asked once as it joined, and once for the turn that ended here.
       await vi.waitFor(() => expect(forge.look).toHaveBeenCalledTimes(1))
+      router.lookForDetachedRunsElsewhere()
+      await vi.waitFor(() => expect(forge.look).toHaveBeenCalledTimes(2))
       await router.stopDetachedRunElsewhere(FORGE, RUN)
       expect(forge.stop).toHaveBeenCalledWith(RUN)
       await expect(router.stopDetachedRunElsewhere(FORGE, '1c6e7b62-9d3f-5a4b-8e52-7f8a9b0c1d2e')).rejects.toThrow('That detached run has already ended. Nothing was stopped.')
       forge.away()
       router.lookForDetachedRunsElsewhere()
       await Promise.resolve()
-      expect(forge.look).toHaveBeenCalledTimes(1)
+      expect(forge.look).toHaveBeenCalledTimes(2)
       await expect(router.stopDetachedRunElsewhere(FORGE, RUN)).rejects.toThrow('Try Stop again once that computer is connected.')
     } finally { router.dispose() }
   })

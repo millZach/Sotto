@@ -673,12 +673,16 @@ export class DesktopHostRouter {
     const subscribeRuns = connection.service.subscribeDetachedRunsElsewhere?.bind(connection.service)
     const readRuns = connection.service.detachedRunsElsewhere?.bind(connection.service)
     if (connection.kind === 'remote' && subscribeRuns && readRuns) {
-      const report = (): void => { if (this.hosts.get(connection.hostId)?.connection === connection) this.runsElsewhereChanged(connection.hostId, connection.name, readRuns()) }
+      // By the host's own service and its name as it stands, since renaming the host replaces the connection's record.
+      const current = (): DesktopHostConnection | undefined => { const listed = this.hosts.get(connection.hostId)?.connection; return listed?.service === connection.service ? listed : undefined }
+      const report = (): void => { const listed = current(); if (listed) this.runsElsewhereChanged(connection.hostId, listed.name, readRuns()) }
       off.push(subscribeRuns(report))
-      off.push(() => this.runsElsewhereChanged(connection.hostId, connection.name, []))
+      off.push(() => this.runsElsewhereChanged(connection.hostId, current()?.name ?? connection.name, []))
       // What it reports already, as it joins: the router follows a connection before it lists it.
       const already = readRuns()
       if (already.length) this.runsElsewhereChanged(connection.hostId, connection.name, already)
+      // And a look now: a turn may have ended here while this host was away, when no look could be asked for.
+      if (connection.service.supportsDetachedRunsElsewhere === true) void Promise.resolve().then(() => connection.service.lookForDetachedRuns?.()).catch(() => undefined)
     }
     if (connection.kind === 'remote' && connection.service.subscribeCheckQueue) off.push(connection.service.subscribeCheckQueue(() => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.checksChanged()
@@ -916,6 +920,9 @@ export class DesktopHostRouter {
     const entry = this.hosts.get(hostId)
     if (!entry) return
     entry.connection = { ...entry.connection, name }
+    // Its runs from elsewhere are named for it, so they take the new name (#2749).
+    const runs = entry.connection.service.detachedRunsElsewhere?.()
+    if (entry.connection.kind === 'remote' && runs?.length) this.runsElsewhereChanged(hostId, name, runs)
     this.emit()
   }
   subscribe(listener: (state: AgentState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
