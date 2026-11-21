@@ -1096,6 +1096,11 @@ msgstr ""
 msgid "{provider} no longer shows this question. {delivery}"
 msgstr ""
 
+#. Why a model's reasoning effort chip opens nothing. {provider} is a provider's name, such as Devin; {model} is a model's name, such as Claude Opus 4.6.
+#: src/renderer/src/agents/FixedEffortChip.tsx
+msgid "{provider} offers no effort levels for {model}. It runs at the model’s own setting."
+msgstr ""
+
 #. {provider} is the name of the provider, such as Codex.
 #: src/renderer/src/agents/FailedTurnNotice.tsx
 msgid "{provider} reported an error on this thread."
@@ -9649,6 +9654,7 @@ msgstr ""
 msgid "the provider"
 msgstr ""
 
+#. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.

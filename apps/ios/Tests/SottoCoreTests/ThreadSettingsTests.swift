@@ -125,6 +125,15 @@ final class ThreadSettingsTests: XCTestCase {
         XCTAssertEqual(value.effortFixedReason, "Grok Build keeps the effort a thread started on. To use another level, start a new thread.")
         XCTAssertNil(try XCTUnwrap(panel(shell())).effortFixedReason, "An agent that changes a started thread's effort says nothing")
     }
+    /// Where the agent keeps a started thread's model but changes its effort in place (Devin), only the model is held.
+    func testAStartedThreadWhoseAgentChangesItsEffortKeepsOnlyItsModel() throws {
+        let devin = #"{"id":"claude-opus-5-5-medium","name":"Claude Opus 5.5","provider":"Devin","providerId":"devin","ready":true,"reasoningEfforts":["low","medium","high","xhigh","max"],"runtimeModes":["approval-required","full-access"]}"#
+        let json = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Thread","providerId":"devin","requests":[],"modelId":"claude-opus-5-5-medium","status":"idle","reasoningEffort":"high"}],"projects":[],"models":[\#(devin)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true,"configureThread":true,"configureThreadModel":false,"configureThreadEffort":true}}}"#
+        let value = try XCTUnwrap(panel(JSONDecoder().decode(Shell.self, from: Data(json.utf8))))
+        XCTAssertFalse(value.pressable(.model))
+        XCTAssertTrue(value.pressable(.effort))
+        XCTAssertNil(value.effortFixedReason)
+    }
     func testAPhoneThatCantAnswerCanOnlyKeepTheThreadAsking() throws {
         let value = try XCTUnwrap(panel(shell(), mayAnswer: false))
         XCTAssertTrue(value.mayChoose(try XCTUnwrap(value.permissions.first { $0.id == "approval-required" })))
