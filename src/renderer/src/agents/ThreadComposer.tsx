@@ -741,7 +741,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={anyFile ? attachable : supported}
       imagesSupported={row.model?.supportsImages === true} answering={answering}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
-      <PromptEditor fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
+      <PromptEditor owner={threadId} fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
         label={fieldLabel} editable={editable} ghost={ghost}
         aria-describedby={ghost !== null ? `${statusId} ${ghostId}` : statusId}
         aria-autocomplete={menus || next !== null ? 'list' : undefined}
