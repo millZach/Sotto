@@ -235,7 +235,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * thread's store, and takes `load-earlier-messages` with `throughMessageId`, which widens the thread's window back to that
  * message, for the message scrubber (ADR-0109). Only a desktop is offered it. A desktop whose host does not list it marks
  * the messages the window holds, and sends no `throughMessageId`.
- * `owlets`: the host makes and changes owlets (ADR-0211), taking `create-owlet` and `set-owlet`: its Owl answer for Owlets is
+ * `owlets`: the host makes and changes owlets (ADR-0213), taking `create-owlet` and `set-owlet`: its Owl answer for Owlets is
  * on. A desktop offers a host as an owlet's home computer only when it lists it.
  * `thread-words`: the host answers `thread-words` with the threads whose messages hold a search's words, from its thread
  * store, for Search threads (Zach's picks of November 19, 2026): the user's messages and the agents' replies, wake-ups

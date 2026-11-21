@@ -712,7 +712,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     return provider !== undefined && peer.unknownProviders.has(provider)
   }
   /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
-  // A phone is shown no owlet (ADR-0211) until the iPhone has an Owlets page of its own. The host keeps which threads are
+  // A phone is shown no owlet (ADR-0213) until the iPhone has an Owlets page of its own. The host keeps which threads are
   // owlets, so no update reads every thread for them, and a host with none leaves the shell as it is.
   const NO_OWLETS: ReadonlySet<string> = new Set()
   const owletIds = (): ReadonlySet<string> => service.owletThreadIds?.() ?? NO_OWLETS
@@ -1700,7 +1700,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (result.checkoutHold) checkoutHold = result.checkoutHold
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
           // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is, and so is
-          // an owlet's, which its setup shows (ADR-0211).
+          // an owlet's, which its setup shows (ADR-0213).
           if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'create-owlet' || input.type === 'set-owlet' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null

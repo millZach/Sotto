@@ -78,7 +78,7 @@ export const OWL_FEATURES = [
   { id: 'living-night-scene', name: 'Watcher\'s living night scene', owlSince: '2026-11-10', owner: 'docs/adr/0199-watchers-night-scene-comes-to-life.md', sentToStable: true },
   { id: 'model-router', name: 'Model routing', owlSince: '2026-11-13', owner: 'docs/adr/0207-a-routed-threads-model-and-effort-are-chosen-for-each-message.md', sentToStable: true },
   { id: 'plugins', name: 'Plugins', owlSince: '2026-11-11', owner: 'docs/adr/0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md', sentToStable: true },
-  { id: 'owlets', name: 'Owlets', owlSince: '2026-11-20', owner: 'docs/adr/0211-owlets-are-named-helpers-each-one-thread-in-a-folder-of-its-own.md', sentToStable: false },
+  { id: 'owlets', name: 'Owlets', owlSince: '2026-11-20', owner: 'docs/adr/0213-owlets-are-named-helpers-each-one-thread-in-a-folder-of-its-own.md', sentToStable: false },
   { id: 'out-of-process-engine', name: 'Out-of-process engine', owlSince: '2026-11-20', owner: 'docs/adr/0210-the-desktop-engine-runs-in-its-own-process.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 

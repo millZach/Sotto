@@ -313,7 +313,7 @@ export interface SidebarFrameProps {
    * so it covers no row; on the collapsed rail it stands beside the rail's foot.
    */
   readonly toast?: ReactNode
-  /** Add project in the top row; false where the page makes its own folders, as the Owlets page does (ADR-0211). */
+  /** Add project in the top row; false where the page makes its own folders, as the Owlets page does (ADR-0213). */
   readonly projectActions?: boolean
 }
 

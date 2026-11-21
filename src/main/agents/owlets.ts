@@ -7,7 +7,7 @@ import { projectFolderKey } from './projectFolders'
 import type { AgentHost } from './host'
 
 /**
- * Owlets on this host (ADR-0211): the checks a new or changed owlet passes, and the folder each one lives in. The
+ * Owlets on this host (ADR-0213): the checks a new or changed owlet passes, and the folder each one lives in. The
  * coordinator runs the commands; this module says what they may do.
  */
 
@@ -17,7 +17,7 @@ export const owletsRoot = (directory: string): string => resolve(join(directory,
 export const owletFolder = (directory: string, name: string): string => join(owletsRoot(directory), name)
 
 /**
- * Whether a working folder is inside an owlet's folder, so its provider starts with its own memory off (ADR-0211,
+ * Whether a working folder is inside an owlet's folder, so its provider starts with its own memory off (ADR-0213,
  * decision 4). Every thread working there gets it, whether or not it is the owlet's own.
  */
 export function inOwletFolder(directory: string, folder: string | undefined): boolean {
@@ -95,7 +95,7 @@ export interface OwletMaker {
 }
 
 /**
- * Makes an owlet (ADR-0211): its folder, the project for that folder, then its one thread there with a shared working copy,
+ * Makes an owlet (ADR-0213): its folder, the project for that folder, then its one thread there with a shared working copy,
  * marked with its name and role. Resolves with what to tell the user when it refused or stopped part way, or null.
  */
 export async function makeOwlet(maker: OwletMaker, command: OwletCreate): Promise<string | null> {
@@ -122,7 +122,7 @@ async function makeIt(maker: OwletMaker, command: OwletCreate, owlet: AgentOwlet
     ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}), ...(command.providerMode ? { providerMode: command.providerMode } : {}) }), owlet)
 }
 
-/** An owlet's new name and role on its thread (ADR-0211), in the thread's own lane; throws with what to tell the user. */
+/** An owlet's new name and role on its thread (ADR-0213), in the thread's own lane; throws with what to tell the user. */
 export async function changeOwlet(enabled: boolean, snapshot: Snapshot, host: Pick<AgentHost, 'setThreadOwlet'>, command: OwletChange, making: Set<string>): Promise<AgentHostSnapshot> {
   if (!enabled) refuse('off')
   const owlet = checkOwletChange(snapshot, command)
@@ -137,7 +137,7 @@ export async function changeOwlet(enabled: boolean, snapshot: Snapshot, host: Pi
 }
 
 /**
- * Whether a project is an owlet's folder that no owlet holds, as one whose owlet's thread could not be made is (ADR-0211):
+ * Whether a project is an owlet's folder that no owlet holds, as one whose owlet's thread could not be made is (ADR-0213):
  * kept out of view like Watcher's own folder. `root` is `owletsRoot`, resolved once; `path` is resolved; `owletProjects` the
  * projects owlets hold, which the workspace keeps, so no update reads every thread for it.
  */
@@ -147,7 +147,7 @@ export function strayOwletFolder(root: string, path: string, projectId: string, 
 }
 
 /**
- * Whether a model change keeps an owlet on a provider whose own memory Sotto turns off (ADR-0211, decision 5): throws with
+ * Whether a model change keeps an owlet on a provider whose own memory Sotto turns off (ADR-0213, decision 5): throws with
  * what to tell the user when it would not.
  */
 export function assertOwletModel(thread: { readonly owlet?: AgentOwlet | undefined }, model: AgentModel | undefined): void {

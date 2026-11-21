@@ -374,7 +374,7 @@ export interface WorkspaceOptions {
   /** The built worker by default; null explicitly writes on main. */
   readonly storeWorker?: string | StoreWorkerOptions | null
   readonly councilEnabled?: boolean
-  /** Owlets' Owl answer (ADR-0211): off, an owlet's thread is dormant, kept whole and out of view, history clearing included. */
+  /** Owlets' Owl answer (ADR-0213): off, an owlet's thread is dormant, kept whole and out of view, history clearing included. */
   readonly owletsEnabled?: boolean
 }
 /**
@@ -1709,7 +1709,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether an agent in this thread is offered `sotto_watcher`: an ordinary thread this host holds, on a provider that takes Sotto's tools. */
   admitsTellWatcher(threadId: string): boolean {
     const thread = this.threadById(threadId)
-    // An owlet is kept apart from Watcher both ways (ADR-0211), so it has no way to message it either.
+    // An owlet is kept apart from Watcher both ways (ADR-0213), so it has no way to message it either.
     return thread !== undefined && this.visible(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.owlet === undefined && threadTakesSottoTools(thread)
   }
   /** Whether an agent in this thread is offered `sotto_plugins` (ADR-0205): a thread this host holds, Watcher among them, on a provider that takes Sotto's tools. */
@@ -2983,7 +2983,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.streamingPublishCostEnabled = streamingPublishCostEnabled
     this.councilEnabled = councilEnabled
     this.owletsEnabled = owletsEnabled
-    // An owlet is told its name and role at each launch (ADR-0211), on every host that has Owlets, worker roles or none.
+    // An owlet is told its name and role at each launch (ADR-0213), on every host that has Owlets, worker roles or none.
     if (owletsEnabled) inner.useOwletInstructions?.(threadId => { const own = this.threadById(threadId)?.owlet; return own ? owletInstructions(own) : undefined })
     this.held = heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
@@ -4605,10 +4605,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   dormantThreadIds(): readonly string[] {
     return [...new Set([...(this.watcherEnabled ? [] : this.retainedWatcherIds), ...this.state.snapshot.threads.filter(thread => !this.visible(thread)).map(thread => thread.id)])]
   }
-  /** The owlets this run keeps out of view because Owlets are off on it (ADR-0211). */
+  /** The owlets this run keeps out of view because Owlets are off on it (ADR-0213). */
   dormantOwletIds(): readonly string[] { return this.owletsEnabled ? [] : [...this.owlets().keys()] }
   /**
-   * Every owlet's thread and its project (ADR-0211), read from the store once it is loaded and kept as owlets are made, so an
+   * Every owlet's thread and its project (ADR-0213), read from the store once it is loaded and kept as owlets are made, so an
    * update never reads every thread to find them. A deleted owlet may stay listed; nothing reads it as more than a name.
    */
   private owletThreads: Map<string, string> | undefined
@@ -5688,7 +5688,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return this.workspaceSnapshot()
   }
-  /** An owlet's new name and role (ADR-0211). Its thread takes the name as a hand-given title; the provider is not told. */
+  /** An owlet's new name and role (ADR-0213). Its thread takes the name as a hand-given title; the provider is not told. */
   async setThreadOwlet(threadId: string, owlet: AgentOwlet): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)

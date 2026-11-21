@@ -1,7 +1,7 @@
 import React, { type ReactNode } from 'react'
 
 /**
- * The owlet's own mark (ADR-0211), Zach's pick C of `docs/prototypes/owlet-mark/` on November 20, 2026: a small round owl
+ * The owlet's own mark (ADR-0213), Zach's pick C of `docs/prototypes/owlet-mark/` on November 20, 2026: a small round owl
  * whose head dips a little in the middle, as an owl's brows do, with two big eyes and a beak, and a face of its own for
  * each owlet. Drawn in lines in the colour of whatever holds it, with no ear tufts and no fill, so it never reads as
  * Watcher's tufted, filled owl. The face is chosen from the owlet's thread ID, so a rename keeps it.

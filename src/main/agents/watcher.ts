@@ -1149,7 +1149,7 @@ export class WatcherService implements WatcherControlHooks {
     const snapshot = this.owningSnapshot(target.hostId)
     if (!snapshot) refuse('HOST_DISCONNECTED', 'That host is disconnected. Reconnect it before continuing.', true)
     const thread = this.owningThread(target.hostId, target.threadId)
-    // An owlet's thread is kept apart from Watcher (ADR-0211), so to Watcher it is no thread at all.
+    // An owlet's thread is kept apart from Watcher (ADR-0213), so to Watcher it is no thread at all.
     if (!thread || thread.owlet) refuse('UNKNOWN_TARGET', 'That thread is unavailable. Read the thread list again.')
     return thread
   }

@@ -193,7 +193,7 @@ const capital = (name: string): string => name.charAt(0).toUpperCase() + name.sl
  */
 export const THREAD_MOVE_WORDS = {
   watcher: 'Watcher stays on This computer.',
-  /** An owlet lives on one computer (ADR-0211); moving one is not part of the first slice. */
+  /** An owlet lives on one computer (ADR-0213); moving one is not part of the first slice. */
   owlet: 'An owlet stays on the computer it was made on.',
   delegated: 'A delegated thread stays with the thread that delegated it.',
   delegating: 'Threads this one delegated to are still working. Move it once they finish.',

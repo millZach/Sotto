@@ -128,7 +128,7 @@ export interface AgentRuntimeOptions {
   dynamicThreadsEnabled?: boolean
   /** Model routing's Owl answer (ADR-0207), and where its event names are logged. */
   modelRouterEnabled?: boolean
-  /** Owlets' Owl answer (ADR-0211). */
+  /** Owlets' Owl answer (ADR-0213). */
   owletsEnabled?: boolean
   modelRouterLog?: (event: RouterEvent) => void
   threadSnoozeEnabled?: boolean

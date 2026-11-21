@@ -292,7 +292,7 @@ export interface HostService {
   readonly supportsFailureSeen?: boolean
   /** The Owl host owns snoozes and accepts snooze-thread (ADR-0175). */
   readonly supportsThreadSnooze?: boolean
-  /** The host makes and changes owlets (ADR-0211): its Owl answer is on. */
+  /** The host makes and changes owlets (ADR-0213): its Owl answer is on. */
   readonly supportsOwlets?: boolean
   owletThreadIds?(): ReadonlySet<string>
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
@@ -729,9 +729,9 @@ export class LocalHostService implements HostService {
     return this.options.agentsView.delegations?.(threadId, this.view().host.threads) ?? { threadId, threads: [] }
   }
   get supportsThreadSnooze(): boolean { return this.control.supportsThreadSnooze === true }
-  /** Owlets' Owl answer on this host (ADR-0211), so it lists `owlets`. */
+  /** Owlets' Owl answer on this host (ADR-0213), so it lists `owlets`. */
   get supportsOwlets(): boolean { return this.options.owlets === true }
-  /** The threads that are owlets (ADR-0211), which a phone is not shown, kept by the workspace rather than read per update. */
+  /** The threads that are owlets (ADR-0213), which a phone is not shown, kept by the workspace rather than read per update. */
   owletThreadIds(): ReadonlySet<string> { return this.options.owletThreadIds?.() ?? NO_OWLETS }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true

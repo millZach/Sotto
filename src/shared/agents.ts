@@ -742,7 +742,7 @@ export const agentThreadSchema = z.object({
   dynamic: z.literal(true).optional().catch(undefined),
   /** The user turned model routing on for this thread (ADR-0207): Sotto's own record, read through `isRoutedThread`. */
   routed: z.literal(true).optional().catch(undefined),
-  /** The thread is an owlet (ADR-0211): its name and role, Sotto's own record. Absent on every other thread and from older hosts. */
+  /** The thread is an owlet (ADR-0213): its name and role, Sotto's own record. Absent on every other thread and from older hosts. */
   owlet: agentOwletSchema.optional().catch(undefined),
   /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
   dynamicSession: z.object({ created: z.boolean(), told: z.boolean(), createdNote: dynamicNoteDigestSchema.optional(), toldNote: dynamicNoteDigestSchema.optional(),
@@ -1211,7 +1211,7 @@ export const agentStateSchema = z.object({
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean(), browser: z.number().int().positive().optional(),
     /** A paired host that shows its threads' 3D models here (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2). */
     models3d: z.literal(true).optional(),
-    /** The host makes owlets (`owlets`, ADR-0211), so it can be an owlet's home computer. */
+    /** The host makes owlets (`owlets`, ADR-0213), so it can be an owlet's home computer. */
     owlets: z.literal(true).optional() })).optional(),
   hostId: z.uuid().optional(),
   configuration: agentConfigurationSchema,
@@ -1651,13 +1651,13 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   /**
-   * A new owlet (ADR-0211), an Owl feature: its host makes its folder in its data folder, the project for that folder and
+   * A new owlet (ADR-0213), an Owl feature: its host makes its folder in its data folder, the project for that folder and
    * the owlet's one thread there, which the window mints as `threadId`. Its provider must be one whose own memory Sotto
    * turns off there. Nothing is sent to the provider until the user's first message.
    */
   z.object({ type: z.literal('create-owlet'), threadId: z.uuid(), name: z.string().max(OWLET_NAME_MAX * 2), role: z.string().max(OWLET_ROLE_MAX * 2), modelId: providerEntityId,
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
-  /** An owlet's new name, role or both (ADR-0211). Its folder keeps the name it was made with. */
+  /** An owlet's new name, role or both (ADR-0213). Its folder keeps the name it was made with. */
   z.object({ type: z.literal('set-owlet'), threadId: id, name: z.string().max(OWLET_NAME_MAX * 2).optional(), role: z.string().max(OWLET_ROLE_MAX * 2).optional() }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** The thread starts Dynamic (ADR-0191): a person's new thread, where Settings says new threads do. */

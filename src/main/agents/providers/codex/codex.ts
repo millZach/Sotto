@@ -351,7 +351,7 @@ export class CodexAppServerHost implements ProviderHost {
     const model = resolveModel(this.state.models, modelId)
     return model?.speeds?.length || model?.fastMode ? { serviceTier: 'default' } : {}
   }
-  /** `cwd` is the thread's working folder, its alias's once it has one; in an owlet's folder Codex's memories are off (ADR-0211). */
+  /** `cwd` is the thread's working folder, its alias's once it has one; in an owlet's folder Codex's memories are off (ADR-0213). */
   private async threadConfiguration(id: string, effort?: string, cwd = this.aliases[id]?.cwd) {
     if (this.councilJudges.has(id)) return { config: effort ? { model_reasoning_effort: effort } : {} }
     const generation = this.generation
@@ -423,7 +423,7 @@ export class CodexAppServerHost implements ProviderHost {
   private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<LaunchRoles> {
     this.roleModes.delete(id)
     if (this.watcherProfiles.has(id) || this.councilJudges.has(id)) return { instructions: undefined, widest: undefined }
-    // An owlet's name and role go first, whatever else the launch is told, worker roles or none (ADR-0211).
+    // An owlet's name and role go first, whatever else the launch is told, worker roles or none (ADR-0213).
     const owlet = this.owletInstructions?.(id)
     const told = (instructions: string | undefined): string | undefined => [owlet, instructions].filter(Boolean).join('\n\n') || undefined
     if (!this.workerRoles) return { instructions: told(undefined), widest: undefined }

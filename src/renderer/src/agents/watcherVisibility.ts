@@ -20,7 +20,7 @@ export function withoutRoomWatcher(state: AgentState | null, enabled: boolean, c
 /**
  * What the Threads page and the sidebar beside other pages show, one projection for both: the published state with the
  * window's own new threads laid over it, without Watcher where its gate is off, without the room's current Watcher, and
- * without any owlet, which lives on its own page (ADR-0211).
+ * without any owlet, which lives on its own page (ADR-0213).
  */
 export function threadsPageState(published: AgentState | null, drafts: readonly AgentThread[], watcherEnabled: boolean, roomWatcher: string | null): AgentState | null {
   return withoutOwlets(withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher))

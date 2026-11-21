@@ -1,5 +1,5 @@
 // @vitest-environment node
-// ADR-0211: an owlet is one project-bound thread in a folder Sotto makes in its data folder, marked with its name and role.
+// ADR-0213: an owlet is one project-bound thread in a folder Sotto makes in its data folder, marked with its name and role.
 // Making one moves no selection; a provider's own update and a restart keep the mark; with the Owl feature off nothing
 // makes or changes one, and a saved owlet is kept whole and shown nowhere.
 import { randomUUID } from 'node:crypto'

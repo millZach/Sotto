@@ -1116,7 +1116,7 @@ export class SocketHostService implements HostService {
   get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
   /** The host lists `project-git-init`: it runs `git init` in the folder a new project is made in when asked. */
   get supportsProjectGitInit(): boolean { return this.features.includes('project-git-init') }
-  /** The host lists `owlets`: it makes and changes owlets (ADR-0211). */
+  /** The host lists `owlets`: it makes and changes owlets (ADR-0213). */
   get supportsOwlets(): boolean { return this.features.includes('owlets') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)

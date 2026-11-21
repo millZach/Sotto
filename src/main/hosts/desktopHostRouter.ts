@@ -433,7 +433,7 @@ export class DesktopHostRouter {
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
   private readonly held: HeldProviders
-  /** Where Owlets are off here (ADR-0211), the owlets a paired Owl host keeps, by host and thread, so nothing here reaches one. */
+  /** Where Owlets are off here (ADR-0213), the owlets a paired Owl host keeps, by host and thread, so nothing here reaches one. */
   private readonly heldOwlets = new Set<string>()
   /** What the window's Settles did to delegated threads elsewhere (#1316 part 3, Owl `cross-machine-work`). */
   private readonly cascadedSettles: CascadedSettles
@@ -627,7 +627,7 @@ export class DesktopHostRouter {
   private visibleProvider(provider: ProviderId): ProviderId {
     return this.held.has(provider) ? providerIdSchema.options.find(item => !this.held.has(item)) ?? 'codex' : provider
   }
-  /** A host's owlets left out where Owlets are off here, as stable keeps a held feature out of view (ADR-0072, ADR-0211). */
+  /** A host's owlets left out where Owlets are off here, as stable keeps a held feature out of view (ADR-0072, ADR-0213). */
   private withoutHeldOwlets(state: AgentState, hostId: string): AgentState {
     // Only a host that lists `owlets` can hold one, so no other host's update is read for them.
     if (this.options.owletsEnabled === true || this.hosts.get(hostId)?.connection.service.supportsOwlets !== true) return state

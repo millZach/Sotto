@@ -1,4 +1,4 @@
-// ADR-0211: owlets live only on their own page, which the room switch reaches while the Owl feature is on; the setup makes
+// ADR-0213: owlets live only on their own page, which the room switch reaches while the Owl feature is on; the setup makes
 // one on a computer that lists `owlets`, on Claude Code or Codex.
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'

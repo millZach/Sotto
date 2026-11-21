@@ -2,7 +2,7 @@ import type { AgentState } from './agents'
 import { withoutThreads } from './watcherVisibility'
 
 /**
- * The state with every owlet left out (ADR-0211): its thread, its drafts and deliveries, and its folder's project, so the
+ * The state with every owlet left out (ADR-0213): its thread, its drafts and deliveries, and its folder's project, so the
  * Threads page, its Needs you card and its project lists show none of them. Main's records are untouched, and a state
  * with no owlet comes back as it was.
  */

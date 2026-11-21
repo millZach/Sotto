@@ -1,5 +1,5 @@
 // @vitest-environment node
-// ADR-0211, decision 4: a thread working in an owlet's folder starts its provider with the provider's own memory off, so
+// ADR-0213, decision 4: a thread working in an owlet's folder starts its provider with the provider's own memory off, so
 // nothing an owlet reads is kept where other threads would find it. Any other folder starts as before.
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'

@@ -162,7 +162,7 @@ export const POPUP_THREADS_LISTED = 5
 
 /**
  * The threads the list offers, newest first: open ones the sidebar would show at its top level. Never Watcher's own, an
- * owlet's (ADR-0211), one nothing was sent to yet, one that lives under the thread that delegated to it, or one in a settled project. Read on a
+ * owlet's (ADR-0213), one nothing was sent to yet, one that lives under the thread that delegated to it, or one in a settled project. Read on a
  * press, so copying is fine.
  */
 export function recentThreads(threads: readonly AgentThread[], projects: readonly AgentProject[]): readonly AgentThread[] {
