@@ -43,6 +43,7 @@ import {
 } from '../shared/opencodeSignIn'
 import { PI_RENDERER_ARGUMENT, PI_SIGN_IN, piSignInCallSchema, type PiSignInBridge } from '../shared/piSignIn'
 import { LOCAL_PROVIDER_SIGN_IN, localSignInRequestSchema, type LocalProviderSignInBridge } from '../shared/localProviderSignIn'
+import { ANTIGRAVITY_ENTERPRISE_SIGN_IN, ANTIGRAVITY_SIGN_OUT, antigravityAccountDoneSchema, type AntigravityAccountBridge } from '../shared/antigravityAccount'
 import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import {
@@ -610,6 +611,11 @@ export function createSottoBridge(
     // A provider's sign-in from its row in Settings › Providers (ADR-0200). The page's address stays in main.
     providerSignIn: Object.freeze<LocalProviderSignInBridge>({
       signIn: async request => invokeParsed(renderer, LOCAL_PROVIDER_SIGN_IN, providerSignInResultSchema, localSignInRequestSchema.parse(request)),
+    }),
+    // Antigravity's Gemini Enterprise sign-in and Sign out from its row (ADR-0211).
+    antigravity: Object.freeze<AntigravityAccountBridge>({
+      enterpriseSignIn: async () => invokeParsed(renderer, ANTIGRAVITY_ENTERPRISE_SIGN_IN, antigravityAccountDoneSchema),
+      signOut: async () => invokeParsed(renderer, ANTIGRAVITY_SIGN_OUT, antigravityAccountDoneSchema),
     }),
     // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
     ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({

@@ -111,6 +111,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (p.methodId === 'gemini-api-key' && !process.env.GEMINI_API_KEY) { send({ id: frame.id, error: { code: -32000, message: 'Authentication required' } }); return }
     authenticated = true
     send({ id: frame.id, result: {} })
+  } else if (frame.method === 'logout') {
+    authenticated = false
+    send({ id: frame.id, result: {} })
   } else if (frame.method === 'session/new') {
     if (needsAuth()) return
     const sessionId = randomUUID()

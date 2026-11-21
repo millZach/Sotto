@@ -573,6 +573,46 @@ export class AntigravityAcpHost implements ProviderHost {
         ...['', '-wal', '-shm', '-journal'].map(suffix => rm(join(this.folders.appData, 'conversations', `${safe}.db${suffix}`), { force: true }))] : []),
     ].map(work => work.catch(() => undefined)))
   }
+  /** One `agy acp` of its own, for a sign-in or a sign-out, in a scratch folder: initialized, then handed to `work`, then closed. */
+  private async accountProcess<T>(work: (rpc: AntigravityRpc, signIn: AntigravitySignIn) => Promise<T>): Promise<T> {
+    const executable = this.options.executable ?? await findAntigravityExecutable(this.options.environment, await this.options.lookup?.())
+    if (!executable) throw new Error('Install Antigravity from its row in Settings › Providers first. Nothing was signed in.')
+    const signIn = await this.signInNow()
+    await writeAntigravitySettings(this.folders, signIn)
+    const scratch = join(this.folders.scratch, randomUUID())
+    await mkdir(scratch, { recursive: true })
+    const rpc = this.spawn(executable, antigravityArguments(this.folders), scratch, signIn, (frame, process) => {
+      if (frame.method && frame.id !== undefined) void process.reply(frame.id, antigravityDecline()).catch(() => undefined)
+    }, () => undefined)
+    try {
+      await rpc.request('initialize', { protocolVersion: ANTIGRAVITY_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+        clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }, () => undefined, false, this.options.startTimeoutMs ?? 90_000)
+      return await work(rpc, signIn)
+    } finally { rpc.close(); await rpc.closed; await this.removeScratchSession(scratch, undefined) }
+  }
+  /**
+   * Gemini Enterprise's sign-in, as T3 runs it: ACP `authenticate` with `oauth-business`, which `agy` finishes in a
+   * browser on this computer and its own callback on this computer. It runs only on a press of Sign in in Settings, and
+   * the user has up to fifteen minutes. The caller connects Antigravity once it has signed in.
+   */
+  async signInWithBrowser(): Promise<void> {
+    const signIn = await this.signInNow()
+    if (signIn.method !== 'oauth-business') throw new Error('Choose Gemini Enterprise first. Nothing was signed in.')
+    const issue = antigravitySignInIssue(signIn)
+    if (issue) throw new Error(`${issue} Nothing was signed in.`)
+    await this.accountProcess(rpc => rpc.request('authenticate', { methodId: 'oauth-business' }, () => undefined, false, 15 * 60_000))
+      .catch((error: unknown) => { throw new Error('Gemini Enterprise did not finish signing in. Nothing was signed in. Try Sign in again.', { cause: error }) })
+  }
+  /**
+   * Sign out, as T3 does it: Antigravity's processes stop, `agy` is told to log out of Sotto's own folder, and the
+   * account's last limits are forgotten. Threads and their history are kept. A key is the credential store's to clear.
+   */
+  async signOut(): Promise<void> {
+    this.disconnect(); await this.closed()
+    this.forgetAccount()
+    await this.accountProcess(rpc => rpc.request('logout', {}))
+      .catch((error: unknown) => { throw new Error('Antigravity could not sign out. Your threads are kept. Try Sign out again.', { cause: error }) })
+  }
   private markOpenFailed(id: string, error: unknown): void {
     if (!this.aliases[id]) return
     this.thread(id).status = 'error'

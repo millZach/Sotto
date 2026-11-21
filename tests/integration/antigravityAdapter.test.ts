@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
@@ -149,6 +150,24 @@ describe('Antigravity ACP adapter', () => {
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'List files' })
     await f!.action(id, { type: 'tool', command: 'ls -la', output: 'README.md' })
     await expect.poll(async () => (await thread(id)).activities?.find(row => row.kind === 'command')).toMatchObject({ command: 'ls -la', output: 'README.md', exitCode: 0, status: 'completed' })
+  })
+
+  it('signs Gemini Enterprise in with agy’s own authenticate, and refuses it without a project', async () => {
+    let project = ''
+    f = await antigravityFixture(undefined, undefined, {}, { signIn: async () => ({ method: 'oauth-business', ...(project ? { project, location: 'us-central1' } : {}) }) })
+    await expect(f.host.signInWithBrowser()).rejects.toThrow('Gemini Enterprise needs a Google Cloud project and location.')
+    project = 'my-project'
+    await f.host.signInWithBrowser()
+    expect((await f.requests()).filter(record => record.method === 'authenticate').map(record => record.params)).toEqual([{ methodId: 'oauth-business' }])
+    expect(JSON.parse(await readFile(join(f.root, 'antigravity', 'gemini', 'antigravity-acp', 'settings.json'), 'utf8'))).toEqual({ auth: { type: 'oauth-business' }, gcp: { project: 'my-project', location: 'us-central1' } })
+  })
+
+  it('signs out of Sotto’s own folder, stopping its processes and keeping its threads', async () => {
+    const id = await open()
+    await f!.host.signOut()
+    expect((await f!.host.snapshot()).connected).toBe(false)
+    expect((await f!.requests()).some(record => record.method === 'logout')).toBe(true)
+    expect((await f!.host.snapshot()).threads.map(thread => thread.id)).toContain(id)
   })
 
   it('lists agy’s commands as skills', async () => {

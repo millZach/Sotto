@@ -1060,6 +1060,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       return provider === 'hermes' && connectedHermes()?.hasChatGptModels() === false ? 'Hermes did not return any ChatGPT models.' : undefined
     },
   }) : undefined
+  // Antigravity's own account actions from its row in Settings › Providers (ADR-0211): Gemini Enterprise's browser
+  // sign-in, which connects through the coordinator once it has signed in, and Sign out.
+  const antigravityHost = providers.antigravity instanceof AntigravityAcpHost ? providers.antigravity : undefined
+  const antigravityAccount = antigravityHost && options.runsAs !== 'headless-host' ? {
+    signInWithBrowser: async (): Promise<string | undefined> => { await antigravityHost.signInWithBrowser(); return whyNotConnected(await agentControl.command({ type: 'connect', provider: 'antigravity', notice: false }), 'antigravity') },
+    signOut: async (): Promise<void> => { await antigravityHost.signOut(); await agentControl.command({ type: 'disconnect', provider: 'antigravity' }) },
+  } : undefined
   idleCompaction.start()
-  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { antigravityAccount, piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

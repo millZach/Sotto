@@ -346,6 +346,7 @@ import { PiSignIn } from './agents/piSignIn'
 import { PiHost } from './agents/pi'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
+import { registerAntigravityAccountIpc } from './agents/antigravityAccountIpc'
 import { registerLocalProviderSignInIpc } from './agents/localProviderSignInIpc'
 import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
@@ -2817,6 +2818,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipcMain, localRuntime.providerSignIn, () => windows.getTrustedRenderers())
       // Cursor's sign-in from its tile (ADR-0128): only while its Owl feature is on, so stable registers nothing.
       const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
+      // Antigravity's Gemini Enterprise sign-in and Sign out from its row (ADR-0211).
+      const cleanupAntigravityAccount = registerAntigravityAccountIpc(ipcMain, localRuntime.antigravityAccount, () => windows.getTrustedRenderers())
       // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
       const cleanupOwnServers = registerOwnServersIpc(ipcMain, ownServers, () => windows.getTrustedRenderers())
       // Measure for AI cleanup on the user's own servers (ADR-0136): only while its Owl feature runs.
@@ -3234,6 +3237,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupPopup()
         cleanupPiSignIn(); cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
+        cleanupAntigravityAccount()
         cleanupProviderSignIn()
         cleanupOwnServers()
         cleanupOwnServerCleanup()
