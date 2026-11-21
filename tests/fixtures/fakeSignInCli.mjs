@@ -13,6 +13,7 @@
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { URL } from 'node:url'
 
 const [provider, ...args] = process.argv.slice(2)
 const directory = process.env.FAKE_SIGN_IN_DIR
