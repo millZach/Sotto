@@ -80,6 +80,22 @@ describe('the sign-in on the host', () => {
     } finally { service.close() }
   })
 
+  it('signs Antigravity in with a Google account: the code, or the whole address it landed on, pasted back (ADR-0211)', async () => {
+    const service = signIns()
+    try {
+      const first = await service.start('antigravity', 'desktop')
+      expect(first).toMatchObject({ shape: 'paste-code', stage: 'waiting', page: 'accounts.google.com' })
+      expect(JSON.parse(await readFile(join(root, 'antigravity.args.json'), 'utf8'))).toEqual(['--login'])
+      expect(service.code(first.id, 'desktop', 'wrong-code').stage).toBe('finishing')
+      await expect.poll(() => service.read(first.id, 'desktop')?.stage).toBe('refused')
+
+      const second = await service.start('antigravity', 'desktop')
+      service.code(second.id, 'desktop', 'https://antigravity.google/oauth-callback?code=good-code&state=fixture-state')
+      await expect.poll(() => service.read(second.id, 'desktop')?.stage).toBe('connected')
+      expect(connected).toEqual([['antigravity', 'desktop']])
+    } finally { service.close() }
+  })
+
   it('runs Cursor\'s agent login, reads its cursor.com page with no code, and connects once the user signs in there (ADR-0128)', async () => {
     const service = signIns()
     try {
@@ -185,7 +201,7 @@ describe('signing a host\'s provider in from a paired client', () => {
       // A host tries every provider it runs at start (ADR-0036): Muse and OpenCode too, on either track, since 0.1.40, and Cursor
       // since Zach sent it to stable on November 17, 2026.
       await expect.poll(providers).toEqual({ codex: ['error', 'signed-out'], claude: ['error', 'signed-out'], grok: ['error', 'signed-out'], devin: ['error', 'not-installed'],
-        muse: ['error', 'signed-out'], opencode: ['error', 'signed-out'], hermes: ['error', 'signed-out'], cursor: ['error', 'signed-out'] })
+        muse: ['error', 'signed-out'], opencode: ['error', 'signed-out'], hermes: ['error', 'signed-out'], cursor: ['error', 'signed-out'], antigravity: ['error', 'signed-out'] })
 
       // Device code: the code comes back to the client that asked and to no other, and the host connects Codex itself.
       const codex = await desktop.signIn({ op: 'sign-in-start', provider: 'codex' }) as HostSignIn

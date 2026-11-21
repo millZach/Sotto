@@ -12,6 +12,10 @@ import { claudeEnvironment, findClaudeExecutable } from '../main/agents/subscrip
 import { findGrokExecutable, grokEnvironment } from '../main/agents/grokRpc'
 import { cursorEnvironment, findCursorProgram } from '../main/agents/cursorRpc'
 import { findHermesExecutable, hermesEnvironment, hermesPythonCommand, withHermesPath } from '../main/agents/hermesRpc'
+import { antigravityFolders } from '../main/agents/antigravityFolders'
+import { managedAntigravityExecutable } from '../main/agents/antigravityInstall'
+import { findAntigravityExecutable } from '../main/agents/antigravityLookup'
+import { antigravityArguments, antigravityEnvironment, GOOGLE_ACCOUNT, writeAntigravitySettings } from '../main/agents/antigravityRpc'
 
 /**
  * A provider's own sign-in, run on this host for a paired client and finished by the user in that client's browser
@@ -34,6 +38,8 @@ export interface ProviderSignInOptions {
   readonly cursorConfigDirectory?: string
   readonly hermesHome?: string
   readonly hermesSignedOut?: () => Promise<void>
+  /** The directory Sotto's own Antigravity folder is under (ADR-0211): the host's data directory, or this computer's user data. */
+  readonly antigravityDirectory?: string
   /** Connects the provider once its client says it signed in, for the client that asked; answers the provider's error when it did not connect. */
   readonly connect: (provider: ProviderId, clientId: string) => Promise<string | undefined>
   readonly lifetimeMs?: number
@@ -60,7 +66,7 @@ const EXPIRES = /expires in (\d{1,2}) minutes?/iu
 
 /** The client's own sign-in, never an API key: Codex's and Grok Build's device codes, Claude Code's subscription only, and Cursor's page. */
 export const PROVIDER_SIGN_IN_ARGS: Readonly<Record<ProviderId, readonly string[] | null>> = {
-  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: ['login'], deepseek: null, hermes: ['auth', 'add', 'openai-codex', '--type', 'oauth', '--no-browser'], pi: null, antigravity: null,
+  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: ['login'], deepseek: null, hermes: ['auth', 'add', 'openai-codex', '--type', 'oauth', '--no-browser'], pi: null, antigravity: ['--login'],
 }
 
 async function hermesAccountCommand(hermesHome: string, args: readonly string[]): Promise<SignInCommand | undefined> {
@@ -87,9 +93,19 @@ async function hermesAccountCommand(hermesHome: string, args: readonly string[])
  * Where each client is, found the way its adapter finds it (ADR-0036), with the environment its adapter gives it. Cursor's
  * runs with Sotto's own Cursor folder, `cursorConfigDirectory`, and prints its page rather than opening a browser.
  */
-export async function defaultSignInCommand(provider: ProviderId, cursorConfigDirectory?: string, hermesHome?: string): Promise<SignInCommand | undefined> {
+export async function defaultSignInCommand(provider: ProviderId, cursorConfigDirectory?: string, hermesHome?: string, antigravityDirectory?: string): Promise<SignInCommand | undefined> {
   const args = PROVIDER_SIGN_IN_ARGS[provider]
   if (!args) return undefined
+  if (provider === 'antigravity') {
+    // A Google account signs in with T3's argv plus `--login`, into Sotto's own Antigravity folder: `agy` prints an
+    // accounts.google.com page and waits for the code, or the address, of the antigravity.google page it lands on.
+    if (!antigravityDirectory) return undefined
+    const folders = antigravityFolders(antigravityDirectory)
+    const executable = await findAntigravityExecutable(process.env, { managed: () => managedAntigravityExecutable(antigravityDirectory) })
+    if (!executable) return undefined
+    await writeAntigravitySettings(folders, GOOGLE_ACCOUNT)
+    return { executable, args: antigravityArguments(folders, args), env: withCliPath(antigravityEnvironment(folders, GOOGLE_ACCOUNT), executable) }
+  }
   if (provider === 'hermes') return hermesHome ? hermesAccountCommand(hermesHome, args) : undefined
   if (provider === 'cursor') {
     const program = await findCursorProgram()
@@ -147,7 +163,7 @@ export class ProviderSignIns {
     const entry: Entry = { view: { id, provider, shape, stage: 'starting' }, clientId, shape, output: '', codeSent: false, timers: [] }
     this.entries.set(id, entry)
     let command: SignInCommand | undefined
-    try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory, this.options.hermesHome)) } catch { command = undefined }
+    try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory, this.options.hermesHome, this.options.antigravityDirectory)) } catch { command = undefined }
     if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) return this.copy(entry)
     if (!command) {
       this.entries.delete(id)

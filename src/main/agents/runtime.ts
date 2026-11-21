@@ -395,9 +395,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
     // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
     antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia, usageEnabled: options.usageEnabled === true,
-      ...(options.antigravity?.signIn ? { signIn: options.antigravity.signIn } : {}),
-      // The `agy` Sotto downloaded under this directory, unless Settings names a binary path (T3's order).
-      lookup: async () => ({ managed: () => managedAntigravityExecutable(directory), ...await options.antigravity?.lookup?.() }) })),
+      // The sign-in Settings chose, with the key from the credential store only for the two methods that take one (ADR-0211).
+      signIn: options.antigravity?.signIn ?? (async () => {
+        const configuration = agentControl.configuration(), method = configuration.antigravitySignInMethod
+        const key = method === 'gemini-api-key' || method === 'agent-platform' ? credentials.get('antigravity') : ''
+        return { method, ...(key ? { apiKey: key } : {}), ...(configuration.antigravityProject ? { project: configuration.antigravityProject } : {}),
+          ...(configuration.antigravityLocation ? { location: configuration.antigravityLocation } : {}) }
+      }),
+      // Settings' binary path, then the `agy` Sotto downloaded under this directory, then `agy` on PATH (T3's order).
+      lookup: async () => ({ managed: () => managedAntigravityExecutable(directory),
+        ...(agentControl.configuration().antigravityBinaryPath ? { binaryPath: agentControl.configuration().antigravityBinaryPath } : {}), ...await options.antigravity?.lookup?.() }) })),
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
       : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
@@ -1042,6 +1049,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
     ...(providers.hermes instanceof HermesAcpHost ? { hermesHome: providers.hermes.folder, hermesSignedOut: hermesAccountChanged } : {}),
     openExternal: async url => { await options.openExternal(url) },
+    antigravityDirectory: directory,
     ...(options.signInCommand ? { command: options.signInCommand } : {}),
     // Settings connections leave Threads quiet (ADR-0068): the row and the dialog say how it went.
     connect: async provider => {

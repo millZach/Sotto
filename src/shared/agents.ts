@@ -1,3 +1,4 @@
+import { ANTIGRAVITY_SIGN_IN_METHODS } from './antigravity'
 import { scheduledRestartSchema, turnLimitStopSchema } from './limitRestart'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
 import { watcherAsksSchema } from './watcherAsks'
@@ -1128,6 +1129,16 @@ export const agentConfigurationSchema = z.object({
    */
   claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).default(DEFAULT_ULTRACODE_EFFORT),
   /**
+   * How Antigravity signs in on this machine, as T3 Code offers it (ADR-0211): a Google account by default, Gemini
+   * Enterprise with a Google Cloud project and location, a Gemini API key, or Agent Platform (Vertex AI) with a key or a
+   * project and location. A key is never here: it is the credential store's `antigravity` slot. Read before every start.
+   */
+  antigravitySignInMethod: z.enum(ANTIGRAVITY_SIGN_IN_METHODS).default('oauth-personal'),
+  antigravityProject: z.string().max(256).default(''),
+  antigravityLocation: z.string().max(64).default(''),
+  /** The `agy` Settings names, as T3's Binary path: used in place of Sotto's download and `agy` on PATH. Empty for neither. */
+  antigravityBinaryPath: z.string().max(4_096).default(''),
+  /**
    * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
@@ -1145,6 +1156,7 @@ export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   enabled: false, projectsDirectory: '', defaultModelId: '',
   reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true, museDisableSandbox: false, claudeUltracodeEffort: DEFAULT_ULTRACODE_EFFORT,
+  antigravitySignInMethod: 'oauth-personal', antigravityProject: '', antigravityLocation: '', antigravityBinaryPath: '',
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
@@ -1269,7 +1281,7 @@ export const agentStateSchema = z.object({
   nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   /** Each routed thread's last routing (CONTEXT.md **Router pick**, ADR-0207), kept in memory only. Absent when there is none. */
   routerPicks: z.array(routerPickSchema).max(1_000).optional(),
-  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
+  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean(), /** Whether Antigravity's key is saved; the key itself never leaves main (ADR-0211). */ antigravity: z.boolean().optional() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
   historyEnabled: z.boolean().optional(),
@@ -1574,7 +1586,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
     claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional(), newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
-  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
+  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'antigravity']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
   // `hostId` on a provider command is the desktop window's alone, like Update all's: Settings > Providers names this
   // computer, so its buttons never reach whichever host is selected for new work. The router reads it and never sends it on.

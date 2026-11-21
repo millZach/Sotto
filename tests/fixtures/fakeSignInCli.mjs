@@ -45,6 +45,19 @@ if (provider === 'claude') {
     if (code === 'good-code' && state === 'fixture-state') { signedIn(); process.stdout.write('Login successful.\n'); process.exit(0) }
     process.stderr.write('Login failed: Invalid authorization code\n'); process.exit(1)
   })
+} else if (provider === 'antigravity') {
+  // As `agy acp --login` 1.5.12 printed it into a pipe on forge, November 20, 2026 (ADR-0211). It takes the code or the
+  // whole address of the antigravity.google page Google lands on, and exits 0 once signed in.
+  say('Open this link in a browser to log in with Google:\n\n')
+  say(`  ${page ?? 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=fixture&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&response_type=code&state=fixture-state'}\n\n`)
+  say('Then paste the authorization code, or the full URL of the page you land on, and press Enter:\n')
+  const lines = createInterface({ input: process.stdin })
+  lines.on('line', line => {
+    const text = line.trim()
+    const code = text.startsWith('https://antigravity.google/') ? new URL(text).searchParams.get('code') : text
+    if (code === 'good-code') { signedIn(); process.stdout.write('Logged in.\n'); process.exit(0) }
+    process.stderr.write('login failed: invalid authorization code\n'); process.exit(1)
+  })
 } else if (provider === 'cursor') {
   // As Cursor 2026.10.22-27dcf5f prints it into a pipe with NO_OPEN_BROWSER set.
   say('\nCursor Agent\n\nPress any key to sign in...\n')

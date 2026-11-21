@@ -18,7 +18,7 @@ describe('the pages a host sign-in may open (ADR-0037)', () => {
     ] as const) expect(isProviderSignInPage(provider, page), page).toBe(false)
   })
   it('signs Codex and Grok Build in with a device code, Claude Code with a code pasted back, Cursor on a page alone, and leaves Devin to its terminal', () => {
-    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: 'device-code', pi: null, antigravity: null })
+    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: 'device-code', pi: null, antigravity: 'paste-code' })
     expect(isProviderSignInPage('cursor', 'https://cursor.com/loginDeepControl?challenge=x&uuid=y&mode=login')).toBe(true)
     expect(isProviderSignInPage('cursor', 'https://cursor.sh/loginDeepControl')).toBe(false)
   })

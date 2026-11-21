@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { ANTIGRAVITY_APP_DATA, type AntigravityFolders } from './antigravityFolders'
 import { withCliPath } from './cliLookup'
+import { ANTIGRAVITY_SIGN_IN_METHODS, type AntigravitySignInMethod } from '../../shared/antigravity'
+export { ANTIGRAVITY_SIGN_IN_METHODS, type AntigravitySignInMethod }
 import { stderrRateExceeded } from './stderrRate'
 
 /** Antigravity's `agy acp` over stdio, as T3 Code drives it (the research note, "Launch" and "The protocol"). */
@@ -29,9 +31,6 @@ export class AntigravityRejected extends Error {
 /** A version `agy --version` prints: `major.minor.patch`. */
 const VERSION = /^\d+\.\d+\.\d+$/u
 
-/** The four ways `agy` signs in, as its `initialize` names them and T3 offers them. */
-export const ANTIGRAVITY_SIGN_IN_METHODS = ['oauth-personal', 'oauth-business', 'gemini-api-key', 'agent-platform'] as const
-export type AntigravitySignInMethod = typeof ANTIGRAVITY_SIGN_IN_METHODS[number]
 /**
  * The sign-in a process starts with. The key is held in main only, from the credential store, and goes to `agy` in its
  * environment, never in a file, a log or an argument. Project and location are written to `agy`'s own settings.

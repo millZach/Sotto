@@ -2848,7 +2848,7 @@ export class AgentControl {
   get clientChecks(): number { return this.clientUpdates.checksWaiting }
   private updateCredentials(): void {
     const vault = this.dependencies.credentials
-    this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available() }
+    this.state.credentials = { reasoning: vault.has('reasoning'), secure: vault.available(), antigravity: vault.has('antigravity') }
   }
   private async checkReasoning(provider: SubscriptionProvider): Promise<void> {
     const pending = this.accountChecks.get(provider)
@@ -4718,7 +4718,9 @@ export class AgentControl {
         // Turning Muse's shell sandbox off on this machine is this machine's own Settings' to do. A paired client may turn it
         // back on, which grants nothing, and is refused turning it off whatever its answer policy (ADR-0079).
         if (command.patch.museDisableSandbox === true && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
-        const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
+        // Antigravity's binary path names a program this machine starts, so only this machine's own Settings set it (ADR-0211).
+        if (command.patch.antigravityBinaryPath !== undefined && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
+        const patch =newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
         let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })
         const before = this.state.configuration
         // Coordinator account selection has no authority over native thread connections.
@@ -4739,7 +4741,7 @@ export class AgentControl {
         if (command.patch.enabled === false && !this.dependencies.host.concurrentProviders) this.disconnect()
         return
       }
-      case 'credential': await this.dependencies.credentials.set(command.slot, command.value.trim()); return
+      case 'credential': await this.dependencies.credentials.set(command.slot, command.value.trim()); this.updateCredentials(); return
       case 'connect': {
         if (command.provider) {
           this.state.configuration.enabledProviders = [...new Set([...enabledThreadProviders(this.state.configuration), command.provider])]

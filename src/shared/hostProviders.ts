@@ -57,7 +57,7 @@ export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
  * the host's own OpenCode over the host connection (`opencode-sign-in`, #1107).
  */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: 'device-code', pi: null, antigravity: null,
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: 'device-code', pi: null, antigravity: 'paste-code',
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
