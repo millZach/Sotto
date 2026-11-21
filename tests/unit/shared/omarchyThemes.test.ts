@@ -196,14 +196,15 @@ describe('Omarchy M3 and readability check', () => {
     // tokens, with a clearer tint by day (`--tt-success-wash`, November 5, 2026), derived from the status green, and when the
     // caption step's comment came to name code in Changes (ADR-0169, November 5, 2026 amendment), which changes no value, and
     // when a provider's mark drawn as a glyph took tokens of its own (`--tt-provider-codex-mark` and the rest, November 6,
-    // 2026), the badge colour by night and mixed halfway toward the text by day, which moves no palette. The Sotto theme's
+    // 2026), the badge colour by night and mixed halfway toward the text by day, which moves no palette, and when Antigravity's
+    // mark and badge took tokens of their own (ADR-0211, November 20, 2026), constants per mode as Cursor's are, which moves no palette. The Sotto theme's
     // card by day went from 4% to 7% of the text, with its composer kept on its own card and faint ink, small secondary
     // words took a weight token, and Changes took the reading hairline by day (ADR-0110 and ADR-0024, November 7, 2026
     // amendments): these are tokens.css's own derivations and move no palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('4236f331d675f17882cbfd12cc1c37b6b93a5801d218d7303f2fea236c15ed4e')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('49085ab695173b87ad73f4ea930e2b3f8fbcd44b63b75ccfeaee265d4f45d534')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

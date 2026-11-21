@@ -72,3 +72,28 @@ it('draws Cursor’s cube on both phones from the desktop’s path and view box 
   expect(drawn.match(/-?\d*\.?\d+/gu)!.map(Number)).toEqual(path!.match(/-?\d*\.?\d+/gu)!.map(Number))
   expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"cursor": "ProviderCursor"')
 })
+
+it('draws Antigravity’s arrow on both phones from the desktop’s path and view box (ADR-0211)', () => {
+  const match = /antigravity: \{\s*viewBox: '([^']+)',\s*path: '([^']+)'/u.exec(read('src/renderer/src/agents/ProviderMark.tsx'))
+  if (!match) throw new Error('The desktop has no Antigravity mark.')
+  const [, viewBox, path] = match
+  expect(viewBox).toBe('0 0 24 24')
+  expect(path).toBe('M12 3L20 11H15V21H9V11H4Z')
+  // Android draws the desktop's path as it is, in one shape at full strength.
+  expect(read(`${ANDROID}/core/ProviderMarks.kt`)).toContain(`"antigravity" to ProviderMarkShape(24f, 24f, listOf(MarkShape("${path!}", 1f)))`)
+  // The iPhone's asset spells H and V out as lines, so the two are compared by the corners they visit.
+  const corners = (d: string): string[] => {
+    const points: string[] = []
+    let x = 0, y = 0
+    for (const [, command, args] of d.matchAll(/([MLHVZ])([^MLHVZ]*)/gu)) {
+      const n = (args!.match(/-?\d*\.?\d+/gu) ?? []).map(Number)
+      if (command === 'M' || command === 'L') { x = n[0]!; y = n[1]! } else if (command === 'H') { x = n[0]! } else if (command === 'V') { y = n[0]! } else continue
+      points.push(`${x},${y}`)
+    }
+    return points
+  }
+  const asset = read('apps/ios/Sotto/Resources/Assets.xcassets/ProviderAntigravity.imageset/ProviderAntigravity.svg')
+  expect(asset).toContain(`viewBox="${viewBox!}"`)
+  expect(corners(/\bd="([^"]+)"/u.exec(asset)![1]!)).toEqual(corners(path!))
+  expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"antigravity": "ProviderAntigravity"')
+})

@@ -15,6 +15,7 @@ import { ProviderMark } from '../../agents/ProviderMark'
 import { OpenCodeModelSources } from '../../agents/OpenCodeModelSources'
 import { ProviderModelList } from '../../agents/ProviderModelList'
 import { CursorConnection, useCursorSignIn } from '../../agents/CursorConnection'
+import { AntigravityConnection, useAntigravitySignIn, type AntigravitySettings } from '../../agents/AntigravityConnection'
 import { OwnModelServers, useOwnServersBridge } from '../../agents/OwnModelServers'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { localHostId, localProviders } from '../../agents/localAgents'
@@ -125,6 +126,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const [signInFor, setSignInFor] = useState<LocalSignInProvider | null>(null)
   /** Cursor's sign-in from its row (ADR-0128), kept while its row is closed or another row is open. */
   const cursorSignIn = useCursorSignIn(window.sotto?.cursor)
+  /** Antigravity's sign-ins and download from its row (ADR-0211), kept the same way. */
+  const antigravitySignIn = useAntigravitySignIn(window.sotto?.providerSignIn, window.sotto?.antigravity)
   const inFlight = useRef(new Set<ProviderId>())
   const checkInFlight = useRef(false)
   const sandboxActions = useRef<HTMLDivElement>(null)
@@ -283,6 +286,26 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   // "sign in" does not come back once the sign-in has connected Cursor.
   const cursorPress = <T,>(press: () => Promise<T>) => (): Promise<T> => { setErrors(previous => ({ ...previous, cursor: undefined })); return press() }
   const cursorRowSignIn = { ...cursorSignIn, start: cursorPress(cursorSignIn.start), reopen: cursorPress(cursorSignIn.reopen), signOut: cursorPress(cursorSignIn.signOut) }
+  // Antigravity's row signs in, installs and takes its key from its connection column (ADR-0211, variant B), which says
+  // what to do while it is not signed in or not installed; main's sentence about that is not repeated under its header.
+  const antigravityBridge = window.sotto?.antigravity
+  const antigravityExplains = (provider: ProviderId, status: ReturnType<typeof statusFor>): boolean => provider === 'antigravity' && antigravityBridge !== undefined
+    && (('problem' in status && (status.problem === 'signed-out' || status.problem === 'not-installed')) || antigravitySignIn.signing)
+  const antigravitySettings: AntigravitySettings = {
+    antigravitySignInMethod: state.configuration.antigravitySignInMethod, antigravityProject: state.configuration.antigravityProject,
+    antigravityLocation: state.configuration.antigravityLocation, antigravityBinaryPath: state.configuration.antigravityBinaryPath,
+  }
+  const configureAntigravity = async (patch: Partial<AntigravitySettings>): Promise<LaterWords | null> => {
+    const failed = msg`Antigravity’s setting was not saved, so it keeps the one it had. Try again.`
+    try { const result = await command({ type: 'configure', patch, ...here }); return !result || result.error ? result?.error ?? failed : null }
+    catch { return failed }
+  }
+  // The key goes to main once, into the credential store's `antigravity` slot; an empty value removes it. Nothing returns it.
+  const saveAntigravityKey = async (value: string): Promise<LaterWords | null> => {
+    const failed = value ? msg`The key was not saved. Nothing was changed. Try again.` : msg`The key was not removed. It is still saved. Try again.`
+    try { const result = await command({ type: 'credential', slot: 'antigravity', value }); return !result || result.error ? result?.error ?? failed : null }
+    catch { return failed }
+  }
   // Up and Down move between the rows' headers, Home and End to the first and last, and round from one end to the other.
   const moveBetweenRows = (event: KeyboardEvent<HTMLUListElement>): void => {
     if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -327,6 +350,10 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
       <div className="provider-row__column">
         {provider === 'cursor' && cursorBridge ? <CursorConnection signIn={cursorRowSignIn} problem={problem} connected={connected}
           busy={Boolean(working) || providerUpdating} connectButton={connectButtons} onGuide={() => void openCursorGuide()} />
+        : provider === 'antigravity' && antigravityBridge ? <AntigravityConnection signIn={antigravitySignIn} settings={antigravitySettings}
+          keySaved={state.credentials?.antigravity === true} problem={problem} said={named && problem !== 'signed-out' && problem !== 'not-installed' ? status.error : undefined} connected={connected}
+          busy={Boolean(working) || providerUpdating} connectButton={connectButtons} configure={configureAntigravity} saveKey={saveAntigravityKey}
+          connect={() => { setErrors(previous => ({ ...previous, antigravity: undefined })); void perform('antigravity', 'connect') }} />
         : <div className="provider-connection">
           <div>
             <h4>{t`Local connection`}</h4>
@@ -413,6 +440,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'devin' && <p className="provider-models__empty tt-paragraph">{t`Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.`}</p>}
         {provider === 'muse' && <details className="provider-support"><summary>{t`Threads with Muse`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
         {provider === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
+        {provider === 'antigravity' && <details className="provider-support"><summary>{t`Threads with Antigravity`}</summary><p className="tt-paragraph"><Trans>Replies, reasoning, approvals and Antigravity’s questions, steering, images, and skills as /name, on the models your sign-in lists. Watcher runs on Antigravity, and Antigravity threads run on paired hosts and phones too. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>All four permission modes: on Allow edits Sotto answers Antigravity’s requests to change files for you, on Full access every request, and Auto is Antigravity’s own. Its questions always come to you. Usage shows Antigravity’s token counts and your account’s limits. Antigravity has no compaction, and keeps its own history in Sotto’s own Antigravity folder.</Trans></p></details>}
         {provider === 'opencode' && <details className="provider-support"><summary>{t`Threads with OpenCode`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
         {provider === 'pi' && <details className="provider-support"><summary>{t`Threads with Pi`}</summary><p className="tt-paragraph">{t`Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below.`}</p><p className="tt-paragraph">{t`Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet.`}</p></details>}
         {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
@@ -427,7 +455,10 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const active = enabled.includes(provider)
     const connecting = status.connection === 'connecting' || pending[provider]
     // While a sign-in waits on cursor.com, Cursor's row says so, live as a connect is, and holds its switch.
-    const signingIn = provider === 'cursor' && cursorBridge !== undefined && cursorSignIn.signing && status.connection !== 'connected'
+    const signingIn = ((provider === 'cursor' && cursorBridge !== undefined && cursorSignIn.signing)
+      || (provider === 'antigravity' && antigravityBridge !== undefined && antigravitySignIn.signing)) && status.connection !== 'connected'
+    // Antigravity signs in and installs from its opened row (ADR-0211), so its header offers neither.
+    const ownRow = provider === 'antigravity' && antigravityBridge !== undefined
     // A problem Sotto knows says so in a word, the same word for every provider (ADR-0200); the client's own sentence is in the opened row.
     const problem = status.connection === 'error' && 'problem' in status ? status.problem : undefined
     const named = problemWord(problem)
@@ -442,11 +473,11 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     // A press that fails for the same reason answers with the client's sentence again; that is still the opened row's to say.
     const pressed = errors[provider]
     const clientsOwn = plain && typeof pressed === 'string' && Boolean(status.error) && pressed.includes(status.error!)
-    const error = cursorExplains(provider, status) ? undefined : (clientsOwn ? undefined : pressed) ?? (plain ? undefined : status.error)
+    const error = cursorExplains(provider, status) || antigravityExplains(provider, status) ? undefined : (clientsOwn ? undefined : pressed) ?? (plain ? undefined : status.error)
     const id = `${rowId}-${provider}`
     // Sign in runs the client's own sign-in in a dialog (ADR-0200); Cursor signs in from its opened row (ADR-0128).
-    const signInHere = problem === 'signed-out' && provider !== 'hermes' && signsInHere(provider) && window.sotto?.providerSignIn !== undefined && !connecting
-    const installGuide = plain && (problem === 'not-installed' || problem === 'too-old') && !connecting
+    const signInHere = problem === 'signed-out' && provider !== 'hermes' && signsInHere(provider) && window.sotto?.providerSignIn !== undefined && !connecting && !ownRow
+    const installGuide = plain && (problem === 'not-installed' || problem === 'too-old') && !connecting && !ownRow
     // Closes the open row from anywhere in it and gives focus back to its header; a dialog's own Escape is its own.
     const closeOnEscape = (event: KeyboardEvent<HTMLLIElement>): void => {
       if (event.key !== 'Escape' || !isOpen || event.defaultPrevented) return

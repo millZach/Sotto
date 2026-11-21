@@ -94,8 +94,9 @@ export function modelSources(models: readonly AgentModel[], provider: string): M
     .sort((left, right) => Number(right.name === OPENCODE_ZEN_SOURCE) - Number(left.name === OPENCODE_ZEN_SOURCE))
 }
 
-/** Whether a provider's groups are model makers rather than model sources: Cursor's are (ADR-0128). */
-const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.providerId === 'cursor'
+/** The providers whose groups are model makers rather than model sources: Cursor's (ADR-0128) and Antigravity's (ADR-0211). */
+const byMakers = (providerId: string | undefined): boolean => providerId === 'cursor' || providerId === 'antigravity'
+const makerGrouped = (models: readonly AgentModel[]): boolean => byMakers(models[0]?.providerId)
 
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
@@ -247,10 +248,14 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
   const [legacyOpen, setLegacyOpen] = useState(false)
   const legacyName = useLegacyName()
   const sources = selectedProvider?.sources
-  const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
-  // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0128).
-  const backToMakers = t`Back to Cursor’s model makers`
-  const makerModels = (maker: string): string => t({ message: `${maker} models in Cursor`, comment: '{maker} is the company that made the models, such as Anthropic.' })
+  const makers = sources !== undefined && byMakers(selectedProvider?.providerId)
+  const antigravity = selectedProvider?.providerId === 'antigravity'
+  // The words a menu of model makers uses where a menu of model sources uses its own: Cursor's (ADR-0128) and Antigravity's (ADR-0211).
+  const backToMakers = antigravity ? t`Back to Antigravity’s model makers` : t`Back to Cursor’s model makers`
+  const makerModels = (maker: string): string => antigravity
+    ? t({ message: `${maker} models in Antigravity`, comment: '{maker} is the company that made the models, such as Google.' })
+    : t({ message: `${maker} models in Cursor`, comment: '{maker} is the company that made the models, such as Anthropic.' })
+  const makersLabel = antigravity ? t`Antigravity’s model makers` : t`Cursor’s model makers`
   const sourceWords = searchWords(query)
   // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models. Each word
   // matches on its own, so "anthropic sonnet" finds Anthropic's Sonnets though no one name holds both words side by side.
@@ -454,7 +459,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
             </div>
           </>
           // One tab stop, as the rail is: the arrows move along it, and Up from the first row goes back to search.
-          : <div ref={list} role="group" aria-label={makers ? t`Cursor’s model makers` : t({ message: `${providerName} model sources`, comment: '{providerName} is a provider\'s name.' })} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
+          : <div ref={list} role="group" aria-label={makers ? makersLabel : t({ message: `${providerName} model sources`, comment: '{providerName} is a provider\'s name.' })} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
             {sources.map(source => {
               const modelCount = countModels(source.models.length)
               const sourceName = source.name
@@ -470,9 +475,9 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled
             })}
             {ownServers && selectedProvider?.providerId === 'opencode' ? <OwnServerMenuEntry onPress={() => { setOpen(false); setAddingServer(true) }} /> : null}
           </div>}
-        {continuing ? <p className="model-picker__note tt-paragraph">{continueOn!.note}</p> : note || selectedProvider?.providerId === 'cursor'
-          ? selectedProvider?.providerId === 'cursor'
-            ? <p className="model-picker__note tt-paragraph">{[t`Every model here runs through Cursor, on your Cursor plan.`, note].filter(Boolean).join(' ')}</p>
+        {continuing ? <p className="model-picker__note tt-paragraph">{continueOn!.note}</p> : note || byMakers(selectedProvider?.providerId)
+          ? byMakers(selectedProvider?.providerId)
+            ? <p className="model-picker__note tt-paragraph">{[antigravity ? t`Every model here runs through Antigravity, on your Google account.` : t`Every model here runs through Cursor, on your Cursor plan.`, note].filter(Boolean).join(' ')}</p>
             : <p className="model-picker__note tt-paragraph">{note}</p> : null}
       </div>
       {foot ? <div className="model-picker__foot">{foot(() => setOpen(false))}</div> : null}

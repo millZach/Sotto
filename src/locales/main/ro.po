@@ -1005,6 +1005,10 @@ msgstr ""
 msgid "Hyprland reported an error after Sotto’s change. Hyprland said: “{said}”."
 msgstr ""
 
+#: src/main/agents/antigravityAccountIpc.ts
+msgid "Install Antigravity from the main Sotto window."
+msgstr ""
+
 #: src/main/hosts/hostUpdate.ts
 msgid "Install that Node for the SSH account on {name}, then try again."
 msgstr ""
@@ -1657,6 +1661,10 @@ msgstr ""
 
 #: src/main/agents/localProviderSignInIpc.ts
 msgid "Sign a provider in from the main Sotto window."
+msgstr ""
+
+#: src/main/agents/antigravityAccountIpc.ts
+msgid "Sign Antigravity in from the main Sotto window."
 msgstr ""
 
 #: src/main/agents/cursorSignInIpc.ts
