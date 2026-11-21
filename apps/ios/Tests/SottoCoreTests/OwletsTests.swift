@@ -64,6 +64,10 @@ final class OwletsTests: XCTestCase {
         XCTAssertEqual(alerts.map(\.ref.threadID), ["work"])
     }
 
+    func testAnOwletOffersNoWatch() throws {
+        XCTAssertFalse(ThreadGroups.offersWatch(try owlet("o", name: "Tawny")), "Watcher neither sees nor steers an owlet")
+        XCTAssertTrue(ThreadGroups.offersWatch(try thread("t")))
+    }
     func testTheMarkWearsTheFaceTheDesktopDrawsForTheSameThread() {
         // Worked out with the desktop's `owletLook` (src/renderer/src/features/owlets/OwletMark.tsx).
         XCTAssertTrue(Owlets.look(threadID: "0b9f5c2e-7d1a-4c3e-9f00-2a6b8e4d1c77") == (4, 1))
