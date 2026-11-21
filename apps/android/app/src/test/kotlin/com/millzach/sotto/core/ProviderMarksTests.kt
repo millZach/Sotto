@@ -21,6 +21,11 @@ class ProviderMarksTests {
         )
     }
 
+    // Antigravity's mark is a plain upward arrow drawn for Sotto, never Google's logo, in one colour.
+    @Test fun antigravityHasAPlainArrow() {
+        assertEquals(ProviderMarkShape(24f, 24f, listOf(MarkShape("M12 3L20 11H15V21H9V11H4Z", 1f))), ProviderMarks.mark("antigravity"))
+    }
+
     // A provider without a mark on Android draws nothing, never a guessed logo: its name is beside it.
     @Test fun aProviderWithoutAMarkDrawsNothing() {
         assertNull(ProviderMarks.mark("future"))

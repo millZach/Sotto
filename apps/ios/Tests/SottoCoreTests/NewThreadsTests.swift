@@ -103,6 +103,20 @@ final class NewThreadsTests: XCTestCase {
         XCTAssertEqual(cursor.label, "Cursor · Anthropic · Claude Sonnet 5.5")
         XCTAssertEqual(ThreadModel.label(providerID: "cursor", source: "Cursor", name: "Auto"), "Cursor · Auto", "Cursor's own model reads Cursor once")
     }
+    /// A host that names Antigravity sends its threads, projects and models under provider-antigravity. They decode, the
+    /// provider reads Antigravity, a model reads its name as the host sends it, and a phone may open a thread on it.
+    func testAnAntigravityHostDecodesAndItsModelIsAChoiceWhileAntigravityIsConnected() throws {
+        let text = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"a","projectId":"p","title":"On Antigravity","providerId":"antigravity","status":"idle","requests":[]}],"projects":[{"id":"p","title":"Panel","path":"/home/zach/panel","providerId":"antigravity"}],"models":[{"id":"antigravity:gemini-3.1-pro","name":"Gemini 3.1 Pro","provider":"Antigravity","providerId":"antigravity","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"antigravity","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}}"#
+        let shell = try JSONDecoder().decode(Shell.self, from: Data(text.utf8))
+        try shell.validate(hostID: "h")
+        XCTAssertEqual(shell.host.threads.map(\.providerId), ["antigravity"])
+        XCTAssertEqual(shell.host.projects.first?.providerId, "antigravity")
+        XCTAssertEqual(AgentNames.name(shell.host.threads.first?.providerId), "Antigravity")
+        let model = try XCTUnwrap(NewThreads.availableModels(shell.host).first)
+        XCTAssertEqual(model.label, "Antigravity · Gemini 3.1 Pro")
+        let command = try Commands.createProject(providerID: "antigravity", title: "Panel tools", path: "/home/zach/panel")
+        XCTAssertEqual(command["provider"], .string("antigravity"))
+    }
     /// An older phone reads a provider ID as a plain string, so a provider it doesn't know reads "The agent" and breaks
     /// nothing: its threads, projects and models decode, and its models are never offered for a new thread.
     func testAProviderThePhoneDoesNotKnowStillDecodes() throws {

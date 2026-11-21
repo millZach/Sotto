@@ -324,11 +324,11 @@ object Wire {
     /// `activity-summaries` asks for activity as its rows read it, without command output, text or diffs.
     /// `client-liveness` is left out: OkHttp answers the host's own pings, which every other client keeps.
     /// `provider-opencode` asks for OpenCode's provider row, models and threads, which this phone names and opens (ADR-0087),
-    /// and `provider-cursor` the same for Cursor (ADR-0128).
+    /// `provider-cursor` the same for Cursor (ADR-0128), and `provider-antigravity` the same for Antigravity.
     val snapshotHello: JsonObject = buildJsonObject {
         put("op", JsonPrimitive("hello"))
         put("afterSeq", JsonPrimitive(9_007_199_254_740_991L))
-        put("accepts", kotlinx.serialization.json.JsonArray(listOf("detail-delta", "activity-summaries", "model-catalog-revision", "provider-opencode", "provider-cursor").map(::JsonPrimitive)))
+        put("accepts", kotlinx.serialization.json.JsonArray(listOf("detail-delta", "activity-summaries", "model-catalog-revision", "provider-opencode", "provider-cursor", "provider-antigravity").map(::JsonPrimitive)))
     }
 
     /// A JSON object from a host, refused unless it is v1.
