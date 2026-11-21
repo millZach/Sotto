@@ -958,7 +958,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     onE2EExternalLink: url => { openedExternalLink = url },
     onE2EThreadFolder: path => { openedThreadFolder = path },
     onPopupObserved: threadIds => { popup?.feed.observe(threadIds) },
-    ...(!owlFeatures['out-of-process-engine'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {}),
+    // Keep Electron's nativeImage thumbnailer and photo redraw across both modes so GIF tiles, EXIF JPEGs,
+    // and interlaced Meshy PNGs behave identically whether the engine runs in-process or out-of-process.
+    mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)),
+    redrawPhoto: async (bytes, kind) => {
+      const image = nativeImage.createFromBuffer(bytes)
+      if (image.isEmpty()) return null
+      const png = kind === 'image/png' ? image.toPNG() : undefined
+      return png && png.byteLength <= 20 * 1024 * 1024 ? { bytes: png, kind: 'image/png' } : { bytes: image.toJPEG(92), kind: 'image/jpeg' }
+    },
   }
   // Behind `out-of-process-engine` (ADR-0210), run the desktop engine in its own child process so coordinator,
   // Watcher, router and store bursts never stall Electron's main UI/input thread.

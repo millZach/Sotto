@@ -677,8 +677,11 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   }) : undefined
   pluginsStop.signal.addEventListener('abort', () => { hostModels?.close() }, { once: true })
 
-  // Meshy photo redraw runs in the pure-Node picture worker so no metadata survives and no Electron nativeImage is needed.
-  const redrawPhoto: RedrawPhoto = async (bytes, kind) => pictureMaker ? pictureMaker.redraw(bytes, kind) : null
+  // Meshy photo redraw delegates to the shell's nativeImage when available (supporting interlaced PNGs identically
+  // to in-process mode), falling back to the pure-Node picture worker when running without a shell image bridge.
+  const redrawPhoto: RedrawPhoto = async (bytes, kind) => shellBridge.redrawPhoto
+    ? shellBridge.redrawPhoto(bytes, kind)
+    : pictureMaker ? pictureMaker.redraw(bytes, kind) : null
 
   const elevenLabsApiFetch: ElevenLabsApiFetch = e2eConfiguration === null ? (url, init) => fetch(url, init)
     : async (url, init) => { if (!elevenLabsBase || !url.startsWith(`${elevenLabsBase}/`)) throw new Error('E2E_NETWORK_DISABLED'); return fetch(url, init) }

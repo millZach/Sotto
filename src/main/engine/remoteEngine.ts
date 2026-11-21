@@ -191,6 +191,13 @@ export async function startOutOfProcessEngine(
         if (callback) await callback()
         return true
       }
+      case 'shell:mediaThumbnail':
+        return shellBridge.mediaThumbnail ? shellBridge.mediaThumbnail(args[0] as string, args[1] as number) : null
+      case 'shell:redrawPhoto': {
+        if (!shellBridge.redrawPhoto) return null
+        const raw = args[0] as Uint8Array
+        return shellBridge.redrawPhoto(Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength), args[1] as 'image/jpeg' | 'image/png')
+      }
       default:
         throw new Error(`SHELL_METHOD_UNKNOWN: ${method}`)
     }
@@ -217,6 +224,8 @@ export async function startOutOfProcessEngine(
       downloadsFolder: shellBridge.downloadsFolder(),
       browserToolDefinitions: shellBridge.browserTools.definitions,
       hasNotify: shellBridge.notify !== undefined,
+      hasMediaThumbnail: shellBridge.mediaThumbnail !== undefined,
+      hasRedrawPhoto: shellBridge.redrawPhoto !== undefined,
     }
     initResult = await connection.request<EngineInitResult>('engine:init', [initPayload], ENGINE_INIT_TIMEOUT_MS)
   } catch (error) {

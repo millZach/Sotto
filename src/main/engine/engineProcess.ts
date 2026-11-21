@@ -22,6 +22,8 @@ export interface EngineInitPayload {
   readonly downloadsFolder: string
   readonly browserToolDefinitions: readonly BrowserToolDefinition[]
   readonly hasNotify: boolean
+  readonly hasMediaThumbnail?: boolean
+  readonly hasRedrawPhoto?: boolean
 }
 
 export interface EngineInitResult {
@@ -121,9 +123,13 @@ export function attachEngineProcessServer(
   }
 
   connection.onClose(() => {
-    // If the Electron parent exits or crashes, shut down cleanly with a 5 s hard-exit deadline.
-    if (!shuttingDown) void finishShutdown(5_000).catch(() => undefined)
-    else onExit?.(5_000)
+    // If the Electron parent exits or crashes, wait for any in-flight shutdown to finish under a 5 s hard-exit backstop.
+    if (!shuttingDown) {
+      void finishShutdown(5_000).catch(() => undefined)
+    } else {
+      onShutdownStart?.(5_000)
+      void (shutdownPromise ?? Promise.resolve()).catch(() => undefined).finally(() => onExit?.(5_000))
+    }
   })
 
   connection.onPush((event, payload) => {
@@ -194,6 +200,15 @@ export function attachEngineProcessServer(
         onE2EExternalLink: url => { connection.sendPush('shell:e2eExternalLink', url) },
         onE2EThreadFolder: path => { connection.sendPush('shell:e2eThreadFolder', path) },
         onPopupObserved: threadIds => { connection.sendPush('shell:popupObserved', threadIds) },
+        ...(payload.hasMediaThumbnail ? {
+          mediaThumbnail: (dataUrl: string, scale: number) => connection.request<string | null>('shell:mediaThumbnail', [dataUrl, scale]),
+        } : {}),
+        ...(payload.hasRedrawPhoto ? {
+          redrawPhoto: async (bytes: Buffer, kind: 'image/jpeg' | 'image/png') => {
+            const result = await connection.request<{ readonly bytes: Uint8Array; readonly kind: 'image/jpeg' | 'image/png' } | null>('shell:redrawPhoto', [bytes, kind])
+            return result ? { bytes: Buffer.from(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength), kind: result.kind } : null
+          },
+        } : {}),
       }
       if (payload.options.interfaceLanguage) {
         engineLanguage = new MainInterfaceLanguage(payload.options.interfaceLanguage)
@@ -303,7 +318,7 @@ export function attachEngineProcessServer(
       }
       case 'engine:close':
         await finishShutdown(18_000, true)
-        queueMicrotask(() => { onExit?.(18_000) })
+        setTimeout(() => { onExit?.(18_000) }, 20).unref()
         return true
       default:
         throw new Error(`ENGINE_METHOD_UNKNOWN: ${method}`)
@@ -321,12 +336,15 @@ async function main(): Promise<void> {
   if (!endpoint || !token) return
 
   const connection = await connectEngineClient(endpoint, token)
-  let hardExitArmed = false
+  let hardExitTimer: ReturnType<typeof setTimeout> | undefined
+  let hardExitAt = Number.POSITIVE_INFINITY
   const armHardExit = (deadlineMs: number): void => {
-    if (hardExitArmed) return
-    hardExitArmed = true
-    const timer = setTimeout(() => process.exit(0), deadlineMs)
-    timer.unref()
+    const target = Date.now() + deadlineMs
+    if (target >= hardExitAt) return
+    hardExitAt = target
+    if (hardExitTimer) clearTimeout(hardExitTimer)
+    hardExitTimer = setTimeout(() => process.exit(0), deadlineMs)
+    hardExitTimer.unref()
   }
   process.on('unhandledRejection', () => {
     connection.sendPush('shell:log', 'engine-unhandled-rejection')

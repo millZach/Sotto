@@ -124,6 +124,32 @@ describe('EngineTransport server/client over OS named pipe or UDS (ADR-0210)', (
       expect(bin).toBeInstanceOf(Uint8Array)
       expect([...bin]).toEqual([1, 2, 3, 4])
 
+      // Chunked binary response transfer for assets larger than a single chunk (e.g. >48 MiB 3D models).
+      clientConn.setBinaryChunkBytes(1_024)
+      clientConn.onRequest(async (method, args) => {
+        if (method === 'largeModel') {
+          const buf = new Uint8Array(3_500)
+          for (let i = 0; i < buf.length; i++) buf[i] = i % 251
+          return buf
+        }
+        if (method === 'echoBin') return new Uint8Array([1, 2, 3, 4])
+        if (method === 'engine:invokeIpc') {
+          const [channel, role, ipcArgs] = args as [string, string, unknown[]]
+          const payload = ipcArgs[0] as { threadId: string; name: string; mimeType: string; bytes: Uint8Array }
+          if (!(payload.bytes instanceof Uint8Array)) throw new Error('NESTED_BYTES_NOT_UINT8ARRAY')
+          return { channel, role, mimeType: payload.mimeType, bytes: new Uint8Array([...payload.bytes, 99]) }
+        }
+        if (method === 'fail') throw Object.assign(new Error('boom'), { code: 'E_BOOM' })
+        if (method === 'reverse') return await clientConn.request('shell:greet', [args[0]])
+        throw new Error(`unexpected ${method}`)
+      })
+      const large = await serverConn.request<Uint8Array>('largeModel')
+      expect(large).toBeInstanceOf(Uint8Array)
+      expect(large.byteLength).toBe(3_500)
+      expect(large[0]).toBe(0)
+      expect(large[1_024]).toBe(1_024 % 251)
+      expect(large[3_499]).toBe(3_499 % 251)
+
       // Nested Uint8Array preservation inside engine:invokeIpc args and return object (ADR-0031 attachment staging).
       const nestedInput = { threadId: 't1', name: 'shot.png', mimeType: 'image/png', bytes: new Uint8Array([137, 80, 78, 71]) }
       const nestedResult = await serverConn.request<{ channel: string; role: string; mimeType: string; bytes: Uint8Array }>(

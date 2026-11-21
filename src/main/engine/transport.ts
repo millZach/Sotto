@@ -6,6 +6,10 @@ import { join } from 'node:path'
 
 /** Maximum single transport frame size (64 MiB — accommodates video parts and large attachments). */
 export const MAX_ENGINE_FRAME_BYTES = 64 * 1024 * 1024
+/** Raw byte chunk size for streaming large Uint8Array RPC responses (16 MiB raw ≈ 21.3 MiB base64). */
+export const DEFAULT_BINARY_CHUNK_BYTES = 16 * 1024 * 1024
+/** Maximum reassembled binary response size (256 MiB, matching Meshy's local download limit). */
+const MAX_CHUNKED_RESPONSE_BYTES = 256 * 1024 * 1024
 /** Maximum size of the initial unauthenticated hello frame (4 KiB). */
 const MAX_HELLO_FRAME_BYTES = 4 * 1024
 /** Maximum time an unauthenticated peer may stay open before presenting a valid hello frame. */
@@ -25,6 +29,7 @@ export type EngineWireMessage =
   | { readonly kind: 'req'; readonly id: number; readonly method: string; readonly args: readonly unknown[] }
   | { readonly kind: 'res'; readonly id: number; readonly ok: true; readonly value: unknown }
   | { readonly kind: 'res'; readonly id: number; readonly ok: false; readonly error: SerializedEngineError }
+  | { readonly kind: 'res-chunk'; readonly id: number; readonly index: number; readonly total: number; readonly b64: string }
   | { readonly kind: 'push'; readonly event: string; readonly payload: unknown }
 
 interface EncodedBinaryBox {
@@ -247,11 +252,13 @@ export type EnginePushHandler = (event: string, payload: unknown) => void
 export class EngineRpcConnection {
   private readonly decoder: EngineFrameDecoder
   private readonly pending = new Map<number, PendingRequest>()
+  private readonly incomingChunks = new Map<number, { readonly total: number; readonly parts: Buffer[]; received: number; totalBytes: number }>()
   private readonly closeListeners = new Set<(error?: Error) => void>()
   private requestHandler: EngineRequestHandler = method => { throw new Error(`ENGINE_METHOD_UNHANDLED: ${method}`) }
   private pushHandler: EnginePushHandler = () => undefined
   private nextId = 1
   private closed = false
+  private binaryChunkBytes = DEFAULT_BINARY_CHUNK_BYTES
 
   constructor(private readonly socket: Socket, initialDecoder?: EngineFrameDecoder, initialMessages: readonly EngineWireMessage[] = []) {
     this.decoder = initialDecoder ?? new EngineFrameDecoder()
@@ -276,6 +283,9 @@ export class EngineRpcConnection {
   }
 
   get isClosed(): boolean { return this.closed }
+
+  /** Overrides the raw byte chunk threshold for large Uint8Array responses (used by unit tests). */
+  setBinaryChunkBytes(bytes: number): void { this.binaryChunkBytes = bytes }
 
   onRequest(handler: EngineRequestHandler): void { this.requestHandler = handler }
   onPush(handler: EnginePushHandler): void { this.pushHandler = handler }
@@ -303,6 +313,7 @@ export class EngineRpcConnection {
     return new Promise<T>((resolve, reject) => {
       const timer = timeoutMs !== undefined ? setTimeout(() => {
         if (!this.pending.delete(id)) return
+        this.incomingChunks.delete(id)
         reject(new Error(`ENGINE_REQUEST_TIMEOUT: ${method}`))
       }, timeoutMs) : undefined
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
@@ -327,10 +338,48 @@ export class EngineRpcConnection {
       try { this.pushHandler(message.event, message.payload) } catch { /* drop throwing push */ }
       return
     }
+    if (message.kind === 'res-chunk') {
+      const entry = this.pending.get(message.id)
+      if (!entry) return
+      if (!Number.isInteger(message.total) || message.total < 1 || !Number.isInteger(message.index) || message.index < 0 || message.index >= message.total) {
+        this.incomingChunks.delete(message.id)
+        this.pending.delete(message.id)
+        if (entry.timer) clearTimeout(entry.timer)
+        entry.reject(new Error('ENGINE_INVALID_BINARY_CHUNK'))
+        return
+      }
+      const chunk = Buffer.from(message.b64, 'base64')
+      let state = this.incomingChunks.get(message.id)
+      if (!state) {
+        state = { total: message.total, parts: new Array<Buffer>(message.total), received: 0, totalBytes: 0 }
+        this.incomingChunks.set(message.id, state)
+      }
+      if (state.parts[message.index] === undefined) {
+        state.parts[message.index] = chunk
+        state.received += 1
+        state.totalBytes += chunk.byteLength
+      }
+      if (state.totalBytes > MAX_CHUNKED_RESPONSE_BYTES) {
+        this.incomingChunks.delete(message.id)
+        this.pending.delete(message.id)
+        if (entry.timer) clearTimeout(entry.timer)
+        entry.reject(new Error('ENGINE_FRAME_TOO_LARGE'))
+        return
+      }
+      if (state.received === state.total) {
+        this.incomingChunks.delete(message.id)
+        this.pending.delete(message.id)
+        if (entry.timer) clearTimeout(entry.timer)
+        const combined = Buffer.concat(state.parts, state.totalBytes)
+        entry.resolve(new Uint8Array(combined.buffer, combined.byteOffset, combined.byteLength))
+      }
+      return
+    }
     if (message.kind === 'res') {
       const entry = this.pending.get(message.id)
       if (!entry) return
       this.pending.delete(message.id)
+      this.incomingChunks.delete(message.id)
       if (entry.timer) clearTimeout(entry.timer)
       if (message.ok) entry.resolve(decodeRpcValue(message.value))
       else entry.reject(deserializeEngineError(message.error))
@@ -342,6 +391,17 @@ export class EngineRpcConnection {
         .then(() => this.requestHandler(message.method, decodedArgs))
         .then(value => {
           if (this.closed || this.socket.destroyed) return
+          if (value instanceof Uint8Array && value.byteLength > this.binaryChunkBytes) {
+            const total = Math.ceil(value.byteLength / this.binaryChunkBytes)
+            for (let index = 0; index < total; index++) {
+              if (this.closed || this.socket.destroyed) return
+              const start = index * this.binaryChunkBytes
+              const end = Math.min(value.byteLength, start + this.binaryChunkBytes)
+              const slice = Buffer.from(value.buffer, value.byteOffset + start, end - start)
+              this.socket.write(encodeEngineFrame({ kind: 'res-chunk', id: message.id, index, total, b64: slice.toString('base64') }))
+            }
+            return
+          }
           this.socket.write(encodeEngineFrame({ kind: 'res', id: message.id, ok: true, value: encodeRpcValue(value) }))
         })
         .catch(error => {
@@ -361,6 +421,7 @@ export class EngineRpcConnection {
       entry.reject(rejection)
     }
     this.pending.clear()
+    this.incomingChunks.clear()
     for (const listener of this.closeListeners) listener(error)
     this.closeListeners.clear()
   }

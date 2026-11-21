@@ -66,8 +66,10 @@ export interface EngineShellBridge {
   onE2EFileAction?(kind: 'open' | 'show', path: string): void
   onE2EExternalLink?(url: string): void
   onE2EThreadFolder?(path: string): void
-  /** Optional in-process nativeImage thumbnail maker used when `out-of-process-engine` is off (ADR-0210). */
+  /** Optional shell thumbnail maker (`nativeImage`) for PNG/JPEG/GIF/WebP parity (ADR-0210). */
   mediaThumbnail?(dataUrl: string, scale: number): string | null | Promise<string | null>
+  /** Optional shell photo redraw (`nativeImage`) so interlaced PNGs and large photos match in-process behavior. */
+  redrawPhoto?(bytes: Buffer, kind: 'image/jpeg' | 'image/png'): Promise<{ readonly bytes: Buffer; readonly kind: 'image/jpeg' | 'image/png' } | null>
   /** Called in-process when `browserTools` receives a host-setup or other E2E hook. */
   onPopupObserved?(threadIds: readonly string[]): void
 }
