@@ -5,7 +5,8 @@ import { effortRank, orderReasoningEfforts } from '../../shared/reasoningEfforts
 /**
  * Antigravity's model catalog, permission modes and session modes, as T3 Code reads them (the research note, "Models"
  * and "Permissions"). The models are the signed-in account's, read from a session's `model` option, never a list
- * shipped with Sotto: Gemini, and Claude and GPT models when the account is entitled to them.
+ * shipped with Sotto, and only its Gemini models: Google's terms allow Claude and other models only in Google's own
+ * app, CLI and supported IDEs (ADR-0212, November 21, 2026), so the Claude and GPT models `agy` lists are left out.
  */
 
 const choiceSchema = z.object({ value: z.string().min(1).max(256), name: z.string().max(256).optional() }).passthrough()
@@ -26,10 +27,14 @@ type Choice = z.infer<typeof choiceSchema>
 const choicesOf = (option: ConfigOption | undefined): Choice[] =>
   (option?.options ?? []).flatMap(entry => 'value' in entry ? [entry as Choice] : (entry as z.infer<typeof groupSchema>).options)
 
-/** The account's models in `agy`'s order, without repeats; a name two models share gets its ID after it, as T3 does. */
+/** Whether a model is one of Google's Gemini models, the only ones Sotto runs on Antigravity. Every Gemini ID `agy` 1.5 lists starts `gemini-`. */
+export const antigravityGeminiModel = (modelId: string): boolean => /^gemini-/iu.test(modelId.trim())
+
+/** The account's Gemini models in `agy`'s order, without repeats; a name two models share gets its ID after it, as T3 does. */
 export function antigravityModelChoices(settings: AntigravitySessionSettings): { id: string; name: string }[] {
   const seen = new Set<string>()
-  const models = choicesOf(settings.configOptions?.find(option => option.id === 'model')).filter(choice => !seen.has(choice.value) && seen.add(choice.value))
+  const models = choicesOf(settings.configOptions?.find(option => option.id === 'model'))
+    .filter(choice => antigravityGeminiModel(choice.value) && !seen.has(choice.value) && seen.add(choice.value))
   const names = new Map<string, number>()
   for (const model of models) { const name = model.name?.trim() || model.value; names.set(name, (names.get(name) ?? 0) + 1) }
   return models.map(model => { const name = model.name?.trim() || model.value; return { id: model.value, name: names.get(name)! > 1 ? `${name} (${model.value})` : name } })
@@ -84,27 +89,17 @@ export function antigravitySessionMode(mode: AntigravityRuntimeMode, offersAuto:
   return mode === 'auto' && offersAuto ? 'auto' : 'default'
 }
 
-/** The company that made a model, from its ID, for the menu's groups. A model Sotto cannot place is Google's. */
-export const ANTIGRAVITY_MAKERS = ['Google', 'Anthropic', 'OpenAI'] as const
-export type AntigravityMaker = typeof ANTIGRAVITY_MAKERS[number]
-export function antigravityModelMaker(modelId: string): AntigravityMaker {
-  const id = modelId.trim().toLowerCase()
-  return /^claude/u.test(id) ? 'Anthropic' : /^(?:gpt|o\d)/u.test(id) ? 'OpenAI' : 'Google'
-}
-
 /** One Antigravity model as Sotto keeps it, with the option its effort is set by. */
 export interface AntigravityModelFacts { readonly model: AgentModel; readonly effortOption?: string }
 /** The thinking each model offers, read by choosing it in a session of its own (`AntigravityAcpHost.readCatalog`). */
 export interface AntigravityModelThinking { readonly id: string; readonly name: string; readonly thinking?: ReturnType<typeof antigravityThinking> }
 
-/** The account's models as Sotto's catalog, in `agy`'s order within each maker. */
+/** The account's Gemini models as Sotto's catalog, in `agy`'s order, as one list: with one maker there are no groups. */
 export function antigravityCatalog(models: readonly AntigravityModelThinking[], options: { images: boolean; offersAuto: boolean; current?: string | undefined }): AntigravityModelFacts[] {
-  const rank = (maker: AntigravityMaker): number => ANTIGRAVITY_MAKERS.indexOf(maker)
   const runtimeModes: AgentRuntimeMode[] = ANTIGRAVITY_RUNTIME_MODES.filter(mode => mode !== 'auto' || options.offersAuto)
-  return models.map((entry, index) => ({ entry, index, maker: antigravityModelMaker(entry.id) }))
-    .sort((a, b) => rank(a.maker) - rank(b.maker) || a.index - b.index)
-    .map(({ entry, maker }) => ({
-      model: { id: entry.id, name: entry.name, provider: 'Antigravity', providerId: 'antigravity', source: maker, ready: true, runtimeModes: [...runtimeModes],
+  return models.filter(entry => antigravityGeminiModel(entry.id))
+    .map(entry => ({
+      model: { id: entry.id, name: entry.name, provider: 'Antigravity', providerId: 'antigravity', ready: true, runtimeModes: [...runtimeModes],
         supportsImages: options.images, reasoningEfforts: entry.thinking?.levels ?? [],
         ...(entry.thinking?.current ? { defaultReasoningEffort: entry.thinking.current } : {}),
         ...(options.current === entry.id ? { recommended: true } : {}) },

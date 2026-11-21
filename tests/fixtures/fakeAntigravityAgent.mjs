@@ -61,11 +61,12 @@ const update = (sessionId, body) => send({ method: 'session/update', params: { s
 const pending = new Map(); let serial = 0
 let authenticated = false
 const prompts = []
-function finish(reason) {
+function finish(reason, usage) {
   const prompt = prompts.pop()
   // A steer folds into the turn: every earlier prompt of it ends with the newest one.
   for (const earlier of prompts.splice(0)) send({ id: earlier.id, result: { stopReason: 'end_turn' } })
-  if (prompt) send({ id: prompt.id, result: { stopReason: reason } })
+  // agy 1.5.13 answers each prompt with its tokens, inputTokens leaving out what it read from its cache.
+  if (prompt) send({ id: prompt.id, result: { stopReason: reason, ...(usage ? { usage } : {}) } })
 }
 function validate(frame, request) {
   const outcome = frame.result?.outcome
@@ -194,7 +195,9 @@ function run(command) {
   const sessionId = command.sessionId
   if (command.type === 'complete') {
     if (command.text) update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: command.text } })
-    finish(command.reason ?? 'end_turn')
+    // agy 1.5.13 says how full the context is before it answers the prompt.
+    if (command.fullness) update(sessionId, { sessionUpdate: 'usage_update', ...command.fullness })
+    finish(command.reason ?? 'end_turn', command.usage)
   }
   if (command.type === 'takeover') update(sessionId, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: command.text } })
   if (command.type === 'tool') {

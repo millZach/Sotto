@@ -24,7 +24,7 @@ describe('usage dashboard boundaries', () => {
       expect(usagePromptSubmissionSchema.safeParse({ providerId, threadId: 'sotto-thread', messageId: 'message',
         modelId: `${providerId}-model`, at: '2026-10-12T12:00:00.000Z', kind: 'user', inputKind: 'send' }).success).toBe(true)
     }
-    expect(USAGE_LIMIT_PROVIDERS).toEqual(['codex', 'claude', 'grok', 'devin', 'muse', 'antigravity'])
+    expect(USAGE_LIMIT_PROVIDERS).toEqual(['codex', 'claude', 'grok', 'devin', 'muse'])
     expect(usageQuotaReadSchema.safeParse({ providerId: 'muse', status: 'unavailable', windows: [], refreshable: false, reason: 'not-reported' }).success).toBe(true)
     expect(usageQuotaReadSchema.safeParse({ providerId: 'opencode', status: 'unavailable', windows: [], refreshable: false, reason: 'unsupported' }).success).toBe(false)
   })
@@ -65,6 +65,10 @@ describe('usage dashboard boundaries', () => {
     expect(usageLocalHostReadSchema.parse({ status: 'ready', quotas: [], persistence: 'saved' })).toEqual({ status: 'ready', quotas: [], persistence: 'saved' })
     expect(usageLocalHostReadSchema.safeParse({ hostId: 'computer-1', status: 'ready', quotas: [] }).success).toBe(false)
     expect(usageLocalHostReadSchema.safeParse({ status: 'offline', quotas: [] }).success).toBe(false)
+    // A host from before November 21, 2026 still sends Antigravity's limits; they are dropped, and the rest of its read kept (ADR-0212).
+    const codex = { providerId: 'codex', status: 'available', windows: [], refreshable: true }
+    expect(usageLocalHostReadSchema.parse({ status: 'ready', quotas: [codex, { providerId: 'antigravity', status: 'unavailable', windows: [], refreshable: true, reason: 'not-read' }] }))
+      .toEqual({ status: 'ready', quotas: [codex] })
     expect(usageHostReadSchema.safeParse({ hostId: 'computer-1', status: 'offline', quotas: [] }).success).toBe(true)
     const prompts = { user: 0, watcher: 0, wakeUp: 0, total: 0, steered: 0 }
     expect(usageHourlyAggregateSchema.safeParse({ weekday: 0, hour: 0, prompts }).success).toBe(true)

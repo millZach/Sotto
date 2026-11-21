@@ -13,12 +13,12 @@ import { antigravityActivities, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigra
 import { antigravityFolders, type AntigravityFolders } from './antigravityFolders'
 import { leaseAntigravityRuntime } from './antigravityInstall'
 import { antigravityUsageHooks, type AntigravityUsageHooks } from './antigravityUsage'
-import { unavailableProviderQuota } from './providerQuota'
 import { findAntigravityExecutable, type AntigravityLookup } from './antigravityLookup'
-import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, antigravityModeIsOption, antigravityModelChoices, antigravityOffersAuto, antigravityRuntimeMode,
+import { antigravityCatalog, antigravityCurrentMode, antigravityCurrentModel, antigravityGeminiModel, antigravityModeIsOption, antigravityModelChoices, antigravityOffersAuto, antigravityRuntimeMode,
   antigravitySessionMode, antigravitySessionSettingsSchema, antigravityThinking, leastEffort, ANTIGRAVITY_RUNTIME_MODES, type AntigravityModelFacts, type AntigravityModelThinking,
   type AntigravityRuntimeMode, type AntigravitySessionSettings } from './antigravityModels'
 import { antigravityAnswer, antigravityAutoAnswer, antigravityDecline, antigravityPending, type AntigravityPending } from './antigravityRequests'
+import { countAntigravityAnswer, countAntigravityFullness } from './antigravityThreadUsage'
 import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, meetsAntigravityFloor, readAntigravityVersion,
   writeAntigravitySettings, ANTIGRAVITY_ACP_VERSION, ANTIGRAVITY_CLI_FLOOR, GOOGLE_ACCOUNT, type AntigravityFrame, type AntigravitySignIn } from './antigravityRpc'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
@@ -38,8 +38,6 @@ import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import type { UsageHistorySink } from './usageHistory/sink'
-import type { ProviderId } from '../../shared/agents'
-import type { UsageQuotaRead } from '../../shared/usageDashboard'
 import type { MediaCapture } from './threadMedia'
 import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -130,6 +128,8 @@ const sessionNewSchema = antigravitySessionSettingsSchema.extend({ sessionId: z.
 const promptAnswerSchema = z.object({ stopReason: z.string() }).passthrough()
 const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), description: z.string().max(4096).nullish() }).passthrough()).max(500)
 
+/** Google's terms allow other makers' models only in its own apps (ADR-0212), so a thread on one is not sent. */
+const ANTIGRAVITY_GEMINI_ONLY = 'Antigravity threads in Sotto run Gemini models only, under Google’s terms. Nothing was sent, and your thread and draft are kept. Choose a Gemini model, then send.'
 const PROCESS_LOST = 'Antigravity stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const WATCHER_WITHOUT_TOOLS = 'This Antigravity client cannot give Watcher its Sotto tools or instructions, so Watcher did not start. Nothing was sent. Update Antigravity, then connect it again, or choose another model for Watcher.'
 
@@ -203,7 +203,7 @@ export interface AntigravityAcpOptions {
   reaperSweepMs?: number
   sessionIdleMs?: number
   captureMedia?: MediaCapture
-  /** Usage on: `agy`'s token counts and the account's limits, as T3 reads them (`antigravityUsage.ts`). */
+  /** Usage on: `agy`'s token counts from its conversation files (`antigravityUsage.ts`). Never the account's limits (ADR-0212). */
   usageEnabled?: boolean
 }
 
@@ -258,17 +258,12 @@ export class AntigravityAcpHost implements ProviderHost {
   readonly folders: AntigravityFolders
   private readonly usage: AntigravityUsageHooks | undefined
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
 
   constructor(directory: string, private readonly options: AntigravityAcpOptions = {}) {
     this.folders = antigravityFolders(directory)
     // Usage knows each session Sotto owns by its `agy` session ID, so Sotto's own threads count as Sotto's, not Antigravity's app.
     this.usage = options.usageEnabled ? antigravityUsageHooks({ directory, owned: () => new Map(Object.entries(this.aliases).flatMap(([id, alias]) => alias.antigravitySessionId ? [[alias.antigravitySessionId, id] as const] : [])) }) : undefined
-    if (this.usage) { const usage = this.usage; this.scanUsageHistory = (sink, signal) => usage.scanUsageHistory(sink, signal); this.readProviderQuota = async (providerId, refresh, background) => {
-      // Only a Google sign-in has limits to read, as T3 reads them: a key method would show a previous account's.
-      const method = (await this.signInNow()).method
-      return method === 'oauth-personal' || method === 'oauth-business' ? usage.readProviderQuota(providerId, refresh, background) : unavailableProviderQuota(providerId, 'unsupported')
-    } }
+    if (this.usage) { const usage = this.usage; this.scanUsageHistory = (sink, signal) => usage.scanUsageHistory(sink, signal) }
     this.aliasStore = new AtomicJsonStore(join(directory, 'antigravity-threads.json'), aliasesSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(directory, 'antigravity-projects.json'), projectsSchema.parse, () => [])
     this.reaper = new SessionReaper({
@@ -451,8 +446,6 @@ export class AntigravityAcpHost implements ProviderHost {
     this.processes.add(rpc); void rpc.closed.then(() => { this.processes.delete(rpc); release() })
     return rpc
   }
-  /** The account's last limits reading is forgotten, as on sign-out. */
-  forgetAccount(): void { this.usage?.clearQuota() }
   /**
    * `initialize`, then `authenticate` with the sign-in method, as T3 does on every start. A method `agy` does not offer,
    * or no sign-in, is refused in words.
@@ -621,12 +614,11 @@ export class AntigravityAcpHost implements ProviderHost {
       .catch((error: unknown) => { throw new Error('Gemini Enterprise did not finish signing in. Nothing was signed in. Try Sign in again.', { cause: error }) })
   }
   /**
-   * Sign out, as T3 does it: Antigravity's processes stop, `agy` is told to log out of Sotto's own folder, and the
-   * account's last limits are forgotten. Threads and their history are kept. A key is the credential store's to clear.
+   * Sign out, as T3 does it: Antigravity's processes stop and `agy` is told to log out of Sotto's own folder. Threads and
+   * their history are kept. A key is the credential store's to clear.
    */
   async signOut(): Promise<void> {
     this.disconnect(); await this.closed()
-    this.forgetAccount()
     await this.accountProcess(rpc => rpc.request('logout', {}))
       .catch((error: unknown) => { throw new Error('Antigravity could not sign out. Your threads are kept. Try Sign out again.', { cause: error }) })
   }
@@ -831,6 +823,7 @@ export class AntigravityAcpHost implements ProviderHost {
       else this.readSettings(connection, update)
       return
     }
+    if (kind === 'usage_update') { this.taken(id); if (countAntigravityFullness(this.thread(id), update)) this.emit(true); return }
     if (!['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(kind)) { this.taken(id); return }
     const content = record(update.content)
     const words = content?.type === 'text' && typeof content.text === 'string' ? content.text : undefined
@@ -989,6 +982,8 @@ export class AntigravityAcpHost implements ProviderHost {
    */
   private async applySettings(alias: Alias, connection: Connection, rpc: AntigravityRpc = connection.rpc, sessionId = alias.antigravitySessionId, modelId = alias.modelId,
     effort = alias.reasoningEffort, mode: AntigravityRuntimeMode = alias.runtimeMode): Promise<void> {
+    // A thread made before Sotto kept to Gemini may still name a Claude or GPT model; agy is never switched to one (ADR-0212).
+    if (!antigravityGeminiModel(modelId)) throw new Error(ANTIGRAVITY_GEMINI_ONLY)
     if (connection.model !== modelId) {
       await rpc.request('session/set_config_option', { sessionId, configId: 'model', value: modelId }, value => { this.readSettings(connection, value) })
       if (connection.model !== modelId) throw new Error('Antigravity did not confirm this thread’s model. Your thread and draft are kept. Choose the model again, then send.')
@@ -1107,7 +1102,9 @@ export class AntigravityAcpHost implements ProviderHost {
     const serial = ++turn.prompts
     const superseded = (): boolean => generation !== this.generation || this.turns.get(id) !== turn || serial !== turn.prompts
     void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: blocks }, value => {
-      if (superseded()) return
+      // A steered prompt's answer still carries the tokens its part of the turn spent.
+      const counted = generation === this.generation && this.threads.has(id) && countAntigravityAnswer(this.thread(id), value, !superseded())
+      if (superseded()) { if (counted) this.emit(true); return }
       const stop = promptAnswerSchema.parse(value).stopReason
       this.endTurn(id, stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
         stop === 'refusal' ? 'Antigravity refused this turn, or the account reached its limit. Nothing else was lost.' : undefined)

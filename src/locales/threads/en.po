@@ -4898,6 +4898,10 @@ msgstr "Google then lands on an antigravity.google page that shows a code. Copy 
 msgid "Google then shows a code on an antigravity.google page. Paste it here to finish."
 msgstr "Google then shows a code on an antigravity.google page. Paste it here to finish."
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Google’s Antigravity terms let it suspend an account it sees used outside its own apps, such as one whose sign-in another app takes or uses to call Google’s servers. Sotto drives Google’s own agy, which keeps its own sign-in, and avoids what the terms name:"
+msgstr "Google’s Antigravity terms let it suspend an account it sees used outside its own apps, such as one whose sign-in another app takes or uses to call Google’s servers. Sotto drives Google’s own agy, which keeps its own sign-in, and avoids what the terms name:"
+
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Got something in mind?"
 msgstr "Got something in mind?"
@@ -6573,6 +6577,10 @@ msgstr "On hold"
 msgid "one of its agents"
 msgstr "one of its agents"
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them."
+msgstr "Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them."
+
 #. {whole} lists the parts of a handover, such as "the task and the result".
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "only one of {whole}"
@@ -7519,6 +7527,10 @@ msgstr "Quotes from replies"
 msgid "Read all"
 msgstr "Read all"
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Read Google’s Antigravity terms before you sign in an account you depend on."
+msgstr "Read Google’s Antigravity terms before you sign in an account you depend on."
+
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Read it"
 msgstr "Read it"
@@ -8075,6 +8087,10 @@ msgstr "Running {name}..."
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "running {time}"
 msgstr "running {time}"
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Running agy from another app is still a gray area. Google may count it against the account you sign in with here."
+msgstr "Running agy from another app is still a gray area. Google may count it against the account you sign in with here."
 
 #. Shown when the pointer rests on the Ultracode effort level, on the reasoning effort slider or its chip.
 #: src/renderer/src/agents/EffortPicker.tsx
@@ -9141,6 +9157,10 @@ msgstr "Sotto keeps up to 32 servers. Remove one you no longer use, then add thi
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Sotto lost track of it"
 msgstr "Sotto lost track of it"
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sotto never reads agy’s sign-in or calls Google’s servers with it."
+msgstr "Sotto never reads agy’s sign-in or calls Google’s servers with it."
 
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Sotto no longer holds this 3D model."
@@ -11615,6 +11635,10 @@ msgstr "Your draft is saved."
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Your first message starts a new thread on the model you pick, with a handover of this one."
 msgstr "Your first message starts a new thread on the model you pick, with a handover of this one."
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Your Google account carries the risk"
+msgstr "Your Google account carries the risk"
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "Your installed version is unchanged"
