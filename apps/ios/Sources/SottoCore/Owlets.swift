@@ -72,8 +72,9 @@ public struct OwletList {
             if row.reachable && ThreadState(row.thread).waitsOnYou { needsYou.append(row) } else { rest.append(row) }
         }
     }
-    /// Whether an owlet has news nobody has seen: a finish while nothing showed it, or a failed turn.
-    public static func unread(_ row: HostedThread) -> Bool { row.finishedUnread || row.failed }
+    /// Whether an owlet has news nobody has seen: a finish while nothing showed it, or a failed turn no window has shown yet
+    /// (`failureSeen`, ADR-0092).
+    public static func unread(_ row: HostedThread) -> Bool { row.finishedUnread || (row.failed && row.thread.failureSeen != true) }
     /// The owlets waiting on the user, for the tab's badge.
     public var needsYouCount: Int { needsYou.count }
 }

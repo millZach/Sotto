@@ -4937,7 +4937,11 @@ struct RailAsk: Equatable {
         NewThreads.catalogUnion(computers.compactMap { online($0.hostID) ? live[$0.hostID]?.shell?.host : nil })
     }
     func projects(_ hostID: String) -> [Project] {
-        (live[hostID]?.shell?.host.projects ?? []).filter { $0.workspaceSettledAt == nil }
+        guard let host = live[hostID]?.shell?.host else { return [] }
+        // An owlet's folder is its own, so New thread never offers it (ADR-0213); a project another thread works in stays.
+        var owletFolders = Set(host.threads.filter { $0.owlet != nil }.map(\.projectId))
+        owletFolders.subtract(host.threads.filter { $0.owlet == nil }.map(\.projectId))
+        return host.projects.filter { $0.workspaceSettledAt == nil && !owletFolders.contains($0.id) }
     }
     func canBrowseFolders(_ hostID: String) -> Bool { online(hostID) && live[hostID]?.features.contains("host-folders") == true }
     func folders(_ hostID: String, path: JSONValue? = nil) async throws -> FolderResult {
@@ -5133,14 +5137,13 @@ struct RailAsk: Equatable {
         guard online(ref.hostID), offersOwlets(ref.hostID), let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else {
             return String(localized: "This owlet’s computer can’t be reached. Nothing was changed.")
         }
-        let earlierError = live[ref.hostID]?.shell?.error
         do {
             let command = try Commands.setOwlet(threadID: ref.threadID, name: name, role: role)
             let result = try await connection.callReceived(["op": .string("command"), "command": command], as: Shell.self, id: UUID().uuidString.lowercased())
             guard generations[ref.hostID] == epoch else { return String(localized: "Sotto did not hear back, so the owlet may or may not have changed. Check it before trying again.") }
             try applyShell(result.value, from: ref.hostID, sequence: result.sequence, reconcileAnswers: false)
-            // The shell's error is the computer's last one; only one that is new is this command's.
-            return result.value.error.flatMap { $0 == earlierError ? nil : $0 }
+            // A computer that makes owlets answers set-owlet with its own refusal or none, so a refusal said twice is still one.
+            return result.value.error
         } catch let refusal as HostRefusal {
             return refusal.localizedDescription
         } catch ClientError.invalidRequest {

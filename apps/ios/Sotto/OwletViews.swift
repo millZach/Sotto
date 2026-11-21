@@ -414,6 +414,10 @@ struct OwletSetupSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s3) {
                     fields
+                    // An owlet this iPhone asked for and never heard back about: check again or dismiss it, as New thread offers.
+                    if editing == nil {
+                        ForEach(model.pendingCreations.filter { $0.hostID == hostID }) { CreationPendingRow(operation: $0) }
+                    }
                     if let error {
                         Text(error).font(.sotto(.small)).foregroundStyle(Palette.dangerText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -432,12 +436,15 @@ struct OwletSetupSheet: View {
         .preference(key: DuoSheetHeld.self, value: busy)
         .onAppear(perform: start)
         .onChange(of: hostID) { _, _ in chooseModel() }
+        // A home computer that stops being reachable, or stops making owlets, gives way to one that still does.
+        .onChange(of: hosts) { _, now in if editing == nil, !now.contains(hostID) { hostID = now.first ?? "" } }
         .onChange(of: modelID) { _, _ in resetOptions() }
     }
 
     private var header: some View {
         HStack(spacing: Space.s2) {
             Button("Cancel") { dismiss() }
+                .keyboardShortcut(.cancelAction)
                 .font(.sotto(.body))
                 .frame(minWidth: 44, minHeight: 44)
                 .disabled(busy)
@@ -462,7 +469,7 @@ struct OwletSetupSheet: View {
             FieldNote(text: String(localized: "No computer you reach makes owlets now. Owlets come with Sotto Owl on the computer."))
         } else {
             labelled(String(localized: "Name")) {
-                TextField("Such as Tawny", text: $name)
+                TextField("Name", text: $name, prompt: Text("Such as Tawny").foregroundStyle(Palette.placeholder))
                     .focused($nameFocused)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
@@ -471,7 +478,7 @@ struct OwletSetupSheet: View {
             }
             if let nameError { FieldNote(text: nameError, warm: true) }
             labelled(String(localized: "Role")) {
-                TextField("Such as Keeps my inbox", text: $role, axis: .vertical)
+                TextField("Role", text: $role, prompt: Text("Such as Keeps my inbox").foregroundStyle(Palette.placeholder), axis: .vertical)
                     .lineLimit(1...4)
                     .accessibilityIdentifier("owlet-role")
             }
@@ -493,7 +500,7 @@ struct OwletSetupSheet: View {
                     modelFields
                 }
                 if !trimmed.isEmpty, nameError == nil {
-                    FieldNote(text: String(localized: "Its folder: \(Owlets.folderLabel(trimmed)) on \(homeName). Sotto makes it, and its thread and its files live there.", comment: "First %@ is like Owlets/Tawny; second is the computer's name."))
+                    FieldNote(text: String(localized: "Its folder: \(Interface.isolated(Owlets.folderLabel(trimmed))) on \(homeName). Sotto makes it, and its thread and its files live there.", comment: "First %@ is like Owlets/Tawny; second is the computer's name."))
                 }
                 FieldNote(text: String(localized: "It uses the plugin accounts kept for every project. Choose one for its folder alone in Settings › Plugins on the computer."))
             }
