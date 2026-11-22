@@ -160,11 +160,10 @@ describe('attachEngineProcessServer hang watchdog lifecycle (#2733)', () => {
 })
 
 describe('bundled out-of-process engine hang watchdog integration (#2733)', () => {
-  it('captures a blocked engine event loop with kind "engine" and stacks, then exits cleanly with no leaked worker or timers', async () => {
+  async function buildBundledEngineFixture() {
     const repoRoot = resolve(__dirname, '../../../..')
     const workDir = await mkdtemp(join(tmpdir(), 'sotto-engine-watchdog-'))
     tempDirs.push(workDir)
-    const recordingsDir = join(workDir, 'performance-recordings')
     const outMain = join(workDir, 'out', 'main')
 
     // Build two entries that both import HangWatchdog (mirroring index.ts + engineProcess.ts) alongside
@@ -177,7 +176,14 @@ export function blockEngineLoopOnPurpose(ms: number): number {
   while (Date.now() < end) spin += 1
   return spin
 }
-export async function createDesktopEngine() {
+export function blockEngineCloseOnPurpose(ms: number): number {
+  const end = Date.now() + ms
+  let spin = 0
+  while (Date.now() < end) spin += 1
+  return spin
+}
+export async function createDesktopEngine(options: { env?: Record<string, string | undefined> }) {
+  const closeBlockMs = Number(options?.env?.['TEST_CLOSE_BLOCK_MS'] ?? process.env['TEST_CLOSE_BLOCK_MS'] ?? 0)
   return {
     metadata: { localHostId: 'local', hasOwnServers: false, hasOwnServerCleanup: false, hasCouncil: false, hasWatcher: false, keepMainCurrentEnabled: false },
     channels: () => ['test:block'],
@@ -187,7 +193,10 @@ export async function createDesktopEngine() {
       throw new Error('UNKNOWN')
     },
     prepareForShutdown: () => undefined,
-    close: async () => undefined,
+    close: async () => {
+      if (closeBlockMs > 0) return blockEngineCloseOnPurpose(closeBlockMs)
+      return 0
+    },
   }
 }
 `, 'utf8')
@@ -259,94 +268,132 @@ void run()
     // Confirm Rollup emitted a shared chunk under out/main/chunks/ so this test covers chunk path resolution.
     const chunkFiles = await readdir(join(outMain, 'chunks'))
     expect(chunkFiles.length).toBeGreaterThan(0)
+    return { repoRoot, workDir, outMain }
+  }
 
+  async function spawnBundledEngine(
+    fixture: { repoRoot: string; workDir: string; outMain: string },
+    recordingsDir: string,
+    extraEnv: Record<string, string> = {},
+  ) {
     const endpoint = createEngineEndpoint('sotto-engine-wd-test')
     const token = generateEngineToken()
     const server = await listenEngineServer(endpoint, token)
-    const child = spawn(process.execPath, [join(outMain, 'engineProcess.js')], {
-      env: { ...process.env, TEST_ENGINE_ENDPOINT: endpoint, TEST_ENGINE_TOKEN: token },
+    const child = spawn(process.execPath, [join(fixture.outMain, 'engineProcess.js')], {
+      env: { ...process.env, TEST_ENGINE_ENDPOINT: endpoint, TEST_ENGINE_TOKEN: token, ...extraEnv },
       windowsHide: true,
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     let stderr = ''
     child.stderr?.on('data', chunk => { stderr += String(chunk) })
-
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolveExit => {
       child.once('exit', (code, signal) => resolveExit({ code, signal }))
     })
-
-    try {
-      const connection = await server.waitForClient(10_000)
-      const logs: string[] = []
-      connection.onPush((event, payload) => {
-        if (event === 'shell:log' && typeof payload === 'string') logs.push(payload)
-      })
-
-      await connection.request('engine:init', [{
-        options: {
-          userDataPath: workDir,
-          appRunningVersion: '0.1.44-owl.test',
-          appVersion: '0.1.44',
-          isPackaged: false,
-          platform: process.platform,
-          owlFeatures: { 'main-freeze': true },
-          startupSettings: {},
-          phoneCompression: false,
-          desktopNotificationsEnabled: false,
-          e2eConfiguration: null,
-          hangWatchdog: {
-            directory: recordingsDir,
-            appRoots: [workDir, repoRoot],
-            devOrigins: [],
-            hangMs: 3_000,
-            quitForceMs: 10_000,
-          },
-          env: {},
+    const connection = await server.waitForClient(10_000)
+    const logs: string[] = []
+    connection.onPush((event, payload) => {
+      if (event === 'shell:log' && typeof payload === 'string') logs.push(payload)
+    })
+    await connection.request('engine:init', [{
+      options: {
+        userDataPath: fixture.workDir,
+        appRunningVersion: '0.1.44-owl.test',
+        appVersion: '0.1.44',
+        isPackaged: false,
+        platform: process.platform,
+        owlFeatures: { 'main-freeze': true },
+        startupSettings: {},
+        phoneCompression: false,
+        desktopNotificationsEnabled: false,
+        e2eConfiguration: null,
+        hangWatchdog: {
+          directory: recordingsDir,
+          appRoots: [fixture.workDir, fixture.repoRoot],
+          devOrigins: [],
+          hangMs: 5_000,
+          quitForceMs: 15_000,
         },
-        credentials: { available: true, plaintext: {}, sealed: {}, unreadable: {} },
-        downloadsFolder: workDir,
-        browserToolDefinitions: [],
-        hasNotify: false,
-      }], 10_000)
-
-      // Let the watchdog worker start and record an initial heartbeat before blocking the engine loop.
-      await new Promise(resolveWait => setTimeout(resolveWait, 400))
-
-      await connection.request('engine:invokeIpc', ['test:block', 'main', [1_600]], 10_000)
-
-      const readEngineHangs = async (): Promise<HangRecord[]> => {
+        env: extraEnv,
+      },
+      credentials: { available: true, plaintext: {}, sealed: {}, unreadable: {} },
+      downloadsFolder: fixture.workDir,
+      browserToolDefinitions: [],
+      hasNotify: false,
+    }], 10_000)
+    // Let the watchdog worker start and record an initial heartbeat.
+    await new Promise(resolveWait => setTimeout(resolveWait, 400))
+    return {
+      connection,
+      logs,
+      exited,
+      get stderr() { return stderr },
+      readEngineHangs: async (): Promise<HangRecord[]> => {
         const names = (await readdir(recordingsDir).catch(() => [])).filter(name => /^sotto-hang-[\d-]+$/u.test(name))
         return Promise.all(names.map(async name => JSON.parse(await readFile(join(recordingsDir, name, HANG_FILE), 'utf8')) as HangRecord))
-      }
+      },
+      cleanup: async () => {
+        if (child.exitCode === null && child.signalCode === null) child.kill()
+        await server.close().catch(() => undefined)
+      },
+    }
+  }
+
+  it('captures a blocked engine event loop with kind "engine" and stacks, then exits cleanly with no leaked worker or timers', async () => {
+    const fixture = await buildBundledEngineFixture()
+    const run = await spawnBundledEngine(fixture, join(fixture.workDir, 'perf-ipc'))
+    try {
+      await run.connection.request('engine:invokeIpc', ['test:block', 'main', [1_600]], 10_000)
 
       await vi.waitFor(async () => {
-        const records = await readEngineHangs()
-        const engineHang = records.find(record => record.kind === 'engine')
-        expect(engineHang, `stderr: ${stderr}`).toBeDefined()
+        const engineHang = (await run.readEngineHangs()).find(record => record.kind === 'engine')
+        expect(engineHang, `stderr: ${run.stderr}`).toBeDefined()
         expect(engineHang!.answeredAfterMs).not.toBeNull()
         expect(engineHang!.answeredAfterMs!).toBeGreaterThanOrEqual(1_200)
       }, { timeout: 10_000, interval: 100 })
 
-      const saved = (await readEngineHangs()).find(record => record.kind === 'engine')!
+      const saved = (await run.readEngineHangs()).find(record => record.kind === 'engine')!
       expect(saved.format).toBe(1)
       expect(saved.kind).toBe('engine')
       expect(saved.sottoVersion).toBe('0.1.44-owl.test')
       expect(saved.platform).toBe(process.platform)
       expect(saved.stacks!.length).toBeGreaterThan(0)
       expect(saved.stacks!.flatMap(stack => stack.frames).some(frame => frame.functionName === 'blockEngineLoopOnPurpose')).toBe(true)
-      expect(logs).toContain('engine-hang-recording-saved')
+      expect(run.logs).toContain('engine-hang-recording-saved')
 
-      await connection.request('engine:close', [], 10_000)
-      connection.close()
+      await run.connection.request('engine:close', [], 10_000)
+      run.connection.close()
 
       const exit = await Promise.race([
-        exited,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Engine child failed to exit cleanly (leaked handle). stderr: ${stderr}`)), 5_000)),
+        run.exited,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Engine child failed to exit cleanly (leaked handle). stderr: ${run.stderr}`)), 5_000)),
       ])
       expect(exit).toEqual({ code: 0, signal: null })
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill()
-      await server.close().catch(() => undefined)
+      await run.cleanup()
+    }
+  }, 30_000)
+
+  it('flushes remaining stacks and answeredAfterMs when engine.close() stalls before terminating the watchdog', async () => {
+    const fixture = await buildBundledEngineFixture()
+    const run = await spawnBundledEngine(fixture, join(fixture.workDir, 'perf-close'), { TEST_CLOSE_BLOCK_MS: '2400' })
+    try {
+      await run.connection.request('engine:close', [], 10_000)
+      run.connection.close()
+
+      const exit = await Promise.race([
+        run.exited,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Engine child failed to exit cleanly after stalled close. stderr: ${run.stderr}`)), 5_000)),
+      ])
+      expect(exit).toEqual({ code: 0, signal: null })
+
+      const saved = (await run.readEngineHangs()).find(record => record.kind === 'engine')
+      expect(saved, `stderr: ${run.stderr}`).toBeDefined()
+      expect(saved!.answeredAfterMs).not.toBeNull()
+      expect(saved!.answeredAfterMs!).toBeGreaterThanOrEqual(2_000)
+      expect(saved!.stacks!.length).toBeGreaterThanOrEqual(2)
+      expect(saved!.stacks!.flatMap(stack => stack.frames).some(frame => frame.functionName === 'blockEngineCloseOnPurpose')).toBe(true)
+    } finally {
+      await run.cleanup()
     }
   }, 30_000)
 })

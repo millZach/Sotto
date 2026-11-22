@@ -83,6 +83,22 @@ describe('saving hang recordings', () => {
     const kept = (await readdir(folder)).sort()
     expect(kept).toEqual([...windows.slice(1), ...mains.slice(1), ...engines.slice(2)].sort())
   })
+
+  it('saves concurrent same-second main, engine and window hang recordings without colliding on partial or final folders (#2733)', async () => {
+    folder = await mkdtemp(join(tmpdir(), 'sotto-hangs-'))
+    const at = new Date(2026, 10, 22, 12, 0, 0).toISOString()
+    const kinds: HangRecord['kind'][] = ['main', 'engine', 'window', 'main', 'engine']
+    const names = await Promise.all(kinds.map((kind, index) =>
+      saveHangRecording(folder, { ...record(at, kind), writtenAfterMs: 1_000 + index })))
+    // Every concurrent save got a distinct folder name and left no partial folders behind.
+    expect(new Set(names).size).toBe(kinds.length)
+    const entries = (await readdir(folder)).sort()
+    expect(entries).toEqual([...names].sort())
+    const saved = await Promise.all(names.map(async name => JSON.parse(await readFile(join(folder, name, HANG_FILE), 'utf8')) as HangRecord))
+    expect(saved.map(item => `${item.kind}:${item.writtenAfterMs}`).sort()).toEqual(
+      kinds.map((kind, index) => `${kind}:${1_000 + index}`).sort(),
+    )
+  })
 })
 
 describe('hang watchdog worker path and engine role (#2733)', () => {

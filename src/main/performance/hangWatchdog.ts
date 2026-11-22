@@ -107,11 +107,34 @@ export class HangWatchdog {
     this.quitReceived()
   }
 
-  /** Clears the heartbeat interval and terminates the watch worker cleanly (used on engine shutdown and in tests). */
-  async stop(): Promise<void> {
+  /**
+   * Records a final heartbeat so any active hang recording sees the process resumed, lets the watch worker finish
+   * rewriting stacks and `answeredAfterMs` within `drainTimeoutMs`, then clears the interval and terminates cleanly.
+   */
+  async stop(drainTimeoutMs = 1_500): Promise<void> {
     if (this.stopped) return
     this.stopped = true
+    this.heartbeat.beat()
     clearInterval(this.beat)
+    await new Promise<void>(resolve => {
+      let settled = false
+      const done = (): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        this.worker.off('message', onMessage)
+        this.worker.off('exit', done)
+        this.worker.off('error', done)
+        resolve()
+      }
+      const onMessage = (event: unknown): void => { if (event === 'stopped') done() }
+      const timer = setTimeout(done, drainTimeoutMs)
+      timer.unref()
+      this.worker.on('message', onMessage)
+      this.worker.once('exit', done)
+      this.worker.once('error', done)
+      try { this.worker.postMessage('stop') } catch { done() }
+    })
     await this.worker.terminate().catch(() => undefined)
   }
 }

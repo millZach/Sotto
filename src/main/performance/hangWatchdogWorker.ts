@@ -65,9 +65,21 @@ const watch = new MainHangWatch({
   ...(data.quitForceMs ? { quitForceMs: data.quitForceMs } : {}),
 })
 
-let looking = false
-setInterval(() => {
-  if (looking) return
-  looking = true
-  void watch.tick().catch(() => undefined).finally(() => { looking = false })
+let activeTick: Promise<void> | null = null
+let stopping = false
+const timer = setInterval(() => {
+  if (activeTick || stopping) return
+  activeTick = watch.tick().catch(() => undefined).finally(() => { activeTick = null })
 }, WATCH_TICK_MS)
+
+parentPort?.on('message', message => {
+  if (message !== 'stop' || stopping) return
+  stopping = true
+  clearInterval(timer)
+  void (async () => {
+    // Let any in-progress hang recording notice the final heartbeat and rewrite its remaining stacks and answeredAfterMs.
+    if (activeTick) await activeTick
+    await watch.tick().catch(() => undefined)
+    parentPort?.postMessage('stopped')
+  })()
+})
