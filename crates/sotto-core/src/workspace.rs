@@ -312,8 +312,8 @@ pub struct ClientUpdateRow {
     pub checked_at: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct AgentConfiguration {
     pub antigravity_binary_path: String,
     pub antigravity_location: String,
@@ -322,6 +322,8 @@ pub struct AgentConfiguration {
     pub check_client_updates: bool,
     pub claude_ultracode_effort: String,
     pub default_model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disconnected_providers: Option<Vec<String>>,
     pub enabled: bool,
     pub enabled_providers: Vec<String>,
     pub followup_limit: u32,
@@ -345,6 +347,8 @@ pub struct AgentConfiguration {
     pub speech_voice: String,
     pub wake_model_directory: String,
     pub wake_runtime_directory: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 impl Default for AgentConfiguration {
@@ -357,6 +361,7 @@ impl Default for AgentConfiguration {
             check_client_updates: true,
             claude_ultracode_effort: "xhigh".into(),
             default_model_id: String::new(),
+            disconnected_providers: None,
             enabled: false,
             enabled_providers: vec![
                 "codex".into(),
@@ -387,11 +392,42 @@ impl Default for AgentConfiguration {
             speech_voice: "F1".into(),
             wake_model_directory: String::new(),
             wake_runtime_directory: String::new(),
+            extra: serde_json::Map::new(),
         }
     }
 }
 
 impl AgentConfiguration {
+    /// Replaces `disconnected_providers` in `ACTIVE_PROVIDERS` order (`None` when empty,
+    /// matching `withTurnedOff` in `src/main/agents/control.ts`) and updates `enabled_providers`
+    /// to the subset of `available` not turned off.
+    pub fn set_disconnected_providers(&mut self, off: &HashSet<&str>, available: &[String]) {
+        let ordered: Vec<String> = ACTIVE_PROVIDERS
+            .iter()
+            .filter(|provider| off.contains(*provider))
+            .map(|provider| (*provider).to_string())
+            .collect();
+        self.disconnected_providers = if ordered.is_empty() { None } else { Some(ordered) };
+        self.enabled_providers = available
+            .iter()
+            .filter(|provider| !off.contains(provider.as_str()))
+            .cloned()
+            .collect();
+    }
+
+    /// Mirrors `turnedOff` + `withTurnedOff` in `src/main/agents/control.ts` (ADR-0036).
+    pub fn mark_providers_turned_off(&mut self, off: &[&str], on: &[&str], available: &[String]) {
+        let existing: Vec<String> = self.disconnected_providers.clone().unwrap_or_default();
+        let mut next: HashSet<&str> = existing.iter().map(String::as_str).collect();
+        for &provider in off {
+            next.insert(provider);
+        }
+        for &provider in on {
+            next.remove(provider);
+        }
+        self.set_disconnected_providers(&next, available);
+    }
+
     pub fn apply_patch(&mut self, patch: &Map<String, Value>) {
         if let Some(v) = patch.get("provider").and_then(Value::as_str) {
             self.provider = v.to_string();
@@ -402,6 +438,14 @@ impl AgentConfiguration {
                 .filter_map(Value::as_str)
                 .map(ToString::to_string)
                 .collect();
+        }
+        if let Some(arr) = patch.get("disconnectedProviders").and_then(Value::as_array) {
+            let ordered: Vec<String> = ACTIVE_PROVIDERS
+                .iter()
+                .filter(|provider| arr.iter().any(|v| v.as_str() == Some(**provider)))
+                .map(|provider| (*provider).to_string())
+                .collect();
+            self.disconnected_providers = if ordered.is_empty() { None } else { Some(ordered) };
         }
         if let Some(v) = patch.get("enabled").and_then(Value::as_bool) {
             self.enabled = v;

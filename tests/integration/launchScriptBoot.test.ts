@@ -584,6 +584,29 @@ await import('./fake.mjs')
       expect(await readFile(join(configuration.installPath, 'current'), 'utf8')).toBe('1.0.0\n')
       expect(await descriptor(configuration)).toMatchObject({ startedBy: 'boot', entry: expect.stringContaining('1.0.0') })
     }, 60_000)
+
+    it('does not pin use_rust_host or restart the unit after boot-install and launch with useRustHost on a Node-only host', async () => {
+      const configuration = await fixture({ linger: true })
+      const firstLaunch = await run(configuration, { op: 'launch', useRustHost: true })
+      expect(firstLaunch.result, failureReason(firstLaunch.result)).toMatchObject({ type: 'ready', owned: true })
+
+      const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID, useRustHost: true })
+      expect(install.result, failureReason(install.result)).toMatchObject({ type: 'boot-installed', installed: true, stopped: true })
+
+      const bootScript = await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')
+      expect(bootScript).not.toContain("use_rust_host='1'")
+
+      const beforeSecondLaunch = (await systemd!.calls()).length
+      const beforeDescriptor = await descriptor(configuration)
+      const secondLaunch = await run(configuration, { op: 'launch', useRustHost: true })
+      expect(secondLaunch.result, failureReason(secondLaunch.result)).toMatchObject({
+        type: 'ready',
+        pid: beforeDescriptor.pid,
+        owned: true,
+      })
+      expect(await changes(beforeSecondLaunch)).toEqual([])
+      expect((await descriptor(configuration)).instance).toBe(beforeDescriptor.instance)
+    })
   })
 })
 
