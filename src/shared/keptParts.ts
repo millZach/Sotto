@@ -93,7 +93,7 @@ export function withWatcherPhonePartsPutBack<
   if (delta !== undefined) {
     if (Object.hasOwn(wireRecord, 'conversation') || kept.includes('conversation')) return undefined
     const prev = held.conversation.messages
-    if (!Number.isInteger(delta.dropHead) || !Number.isInteger(delta.keep) || delta.dropHead < 0 || delta.keep < 0 || delta.dropHead + delta.keep > prev.length) return undefined
+    if (!Number.isSafeInteger(delta.dropHead) || !Number.isSafeInteger(delta.keep) || delta.dropHead < 0 || delta.keep < 0 || delta.dropHead > prev.length || delta.keep > prev.length - delta.dropHead) return undefined
     if (delta.appendLastText !== undefined && delta.keep === 0) return undefined
     const messages = prev.slice(delta.dropHead, delta.dropHead + delta.keep)
     if (delta.appendLastText !== undefined) {

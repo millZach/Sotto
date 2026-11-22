@@ -169,6 +169,15 @@ describe('watcher-phone-parts encoding and reassembly', () => {
       conversationDelta: { dropHead: -1, keep: 1, tail: [], earlierAvailable: false, revision: 11 },
     }, prev)).toBeUndefined()
     expect(withWatcherPhonePartsPutBack({
+      conversationDelta: { dropHead: Number.MAX_SAFE_INTEGER, keep: 1, tail: [], earlierAvailable: false, revision: 11 },
+    }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({
+      conversationDelta: { dropHead: 1, keep: Number.MAX_SAFE_INTEGER, tail: [], earlierAvailable: false, revision: 11 },
+    }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({
+      conversationDelta: { dropHead: 1e20, keep: 0, tail: [], earlierAvailable: false, revision: 11 },
+    }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({
       conversationDelta: { dropHead: 0, keep: 0, appendLastText: 'bad', tail: [], earlierAvailable: false, revision: 11 },
     }, prev)).toBeUndefined()
   })

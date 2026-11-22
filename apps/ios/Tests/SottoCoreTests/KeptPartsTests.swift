@@ -145,11 +145,15 @@ final class KeptPartsTests: XCTestCase {
         _ = try XCTUnwrap(cache.whole(first))
 
         let outOfBounds = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":5,"tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
+        let overflowDrop = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":\#(Int.max),"keep":1,"tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
+        let overflowKeep = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":1,"keep":\#(Int.max),"tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
         let appendZero = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":0,"appendLastText":"x","tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
         let unheldPart = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice","machines"]}"#, host: keptHost, revision: 2, base: 1))
         let conflict = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":1,"tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
 
         XCTAssertNil(cache.whole(outOfBounds))
+        XCTAssertNil(cache.whole(overflowDrop))
+        XCTAssertNil(cache.whole(overflowKeep))
         XCTAssertNil(cache.whole(appendZero))
         XCTAssertNil(cache.whole(unheldPart))
         XCTAssertNil(cache.whole(conflict))

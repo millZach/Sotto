@@ -87,7 +87,8 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
         if let delta = conversationDelta {
             guard !carried.contains("conversation"), !kept.contains("conversation") else { return false }
             let previous = held.conversation.messages
-            guard delta.dropHead >= 0, delta.keep >= 0, delta.dropHead + delta.keep <= previous.count else { return false }
+            guard delta.dropHead >= 0, delta.keep >= 0, delta.dropHead <= previous.count,
+                  delta.keep <= previous.count - delta.dropHead else { return false }
             if delta.appendLastText != nil, delta.keep == 0 { return false }
             var messages = Array(previous[delta.dropHead..<(delta.dropHead + delta.keep)])
             if let suffix = delta.appendLastText {
