@@ -16,11 +16,13 @@ import { MAX_ACTIVITY_TEXT } from '../../shared/agentActivity'
  *
  * A child is done once its answer is in the parent's inbox, and was stopped when its record says it was killed. Only
  * these records are read: plain files, each bounded, in folders whose real path is inside `brain`, so a link never
- * leads a read anywhere else, `agy`'s sign-in among them (ADR-0212's amendment). Nothing is ever written.
+ * leads a read anywhere else, `agy`'s sign-in among them (ADR-0212's amendment). Nothing is ever written. Every file a
+ * pass reads is taken from one budget the pass shares across all its watches, and what a pass did not reach is read in
+ * the next, so no pass reads more than its budget however many children and messages there are.
  */
 
-/** Most records or messages read in one pass; the rest are read in the next, so none is hidden past a cut. */
-const MOST_FILES = 200
+/** Files one pass reads across all its watches, when the caller gives no budget of its own. */
+export const CHILD_PASS_FILES = 200
 /** A record or message larger than this is not read. */
 const MOST_BYTES = 256 * 1024
 const conversationId = z.string().regex(/^[A-Za-z0-9-]{1,64}$/u)
@@ -41,22 +43,28 @@ export interface AntigravityChild {
 
 /**
  * What one watch has learned so far, so each read does only new work: the child's conversation once found, the
- * children ruled out because their launch named another tool call, and the parent's inbox files already read.
+ * children ruled out because their launch named another call, where the search for the child goes on from, and the
+ * parent's inbox files already read whole.
  */
-export interface AntigravityChildReading { childConversation?: string; readonly ruledOut: Set<string>; readonly readAnswers: Set<string> }
+export interface AntigravityChildReading { childConversation?: string; readonly ruledOut: Set<string>; readonly readAnswers: Set<string>; resumeAt?: string | undefined }
 export const antigravityChildReading = (): AntigravityChildReading => ({ ruledOut: new Set(), readAnswers: new Set() })
+/** The files a pass may still read, shared by every watch the pass reads. */
+export interface AntigravityReadBudget { left: number }
 
 const generated = (appData: string, conversation: string, ...rest: string[]) => join(appData, 'brain', conversation, '.system_generated', ...rest)
 
-/** The `.json` files in a folder inside `brain`, by name, or none when its real path leads elsewhere. */
+/** The `.json` files in a folder inside `brain`, by name in order, or none when its real path leads elsewhere. */
 async function jsonNames(brain: string, directory: string): Promise<string[]> {
   try {
     const real = await realpath(directory), within = relative(brain, real)
     if (!within || within.startsWith('..') || isAbsolute(within)) return []
-    return (await readdir(real)).filter(name => name.endsWith('.json'))
+    return (await readdir(real)).filter(name => name.endsWith('.json')).sort()
   } catch { return [] }
 }
-async function readJson<T>(path: string, schema: z.ZodType<T>): Promise<T | undefined> {
+/** One file read from the budget: undefined when the budget is spent, or the file is not a plain, readable, valid one. */
+async function readJson<T>(path: string, schema: z.ZodType<T>, budget: AntigravityReadBudget): Promise<T | undefined> {
+  if (budget.left <= 0) return undefined
+  budget.left--
   try {
     const info = await lstat(path)
     if (!info.isFile() || info.size > MOST_BYTES) return undefined
@@ -64,45 +72,56 @@ async function readJson<T>(path: string, schema: z.ZodType<T>): Promise<T | unde
     return parsed.success ? parsed.data : undefined
   } catch { return undefined }
 }
-async function messages(directory: string, names: readonly string[]): Promise<Message[]> {
-  const read = await Promise.all(names.map(name => readJson(join(directory, name), messageSchema)))
-  return read.filter((message): message is Message => message !== undefined)
-}
 
 /**
  * The child that the parent's `invoke_subagent` tool call `toolCallId` launched, or undefined when the records do not
- * (yet) name one. `reading` carries what earlier reads of the same watch learned.
+ * (yet) name one or the budget ran out before they did. `reading` carries what earlier passes of the same watch learned.
  */
-export async function readAntigravityChild(appData: string, parent: string, toolCallId: string, reading: AntigravityChildReading = antigravityChildReading()): Promise<AntigravityChild | undefined> {
+export async function readAntigravityChild(appData: string, parent: string, toolCallId: string, reading: AntigravityChildReading = antigravityChildReading(),
+  budget: AntigravityReadBudget = { left: CHILD_PASS_FILES }): Promise<AntigravityChild | undefined> {
   if (!conversationId.safeParse(parent).success) return undefined
   let brain: string
   try { brain = await realpath(join(appData, 'brain')) } catch { return undefined }
-  const recordsAt = generated(appData, parent, 'subagents')
-  const records = (await Promise.all((await jsonNames(brain, recordsAt)).filter(name => !reading.ruledOut.has(name.slice(0, -'.json'.length))).slice(0, MOST_FILES)
-    .map(name => readJson(join(recordsAt, name), childRecordSchema))))
-    .filter((record): record is z.infer<typeof childRecordSchema> => record !== undefined)
-  let record = reading.childConversation ? records.find(item => item.conversationId === reading.childConversation) : undefined
-  if (!record) {
-    for (const candidate of records) {
-      if (reading.ruledOut.has(candidate.conversationId)) continue
-      const inbox = generated(appData, candidate.conversationId, 'messages')
-      const launches = (await messages(inbox, (await jsonNames(brain, inbox)).slice(0, MOST_FILES))).filter(message => message.sender === parent && message.sourceMetadata)
-      if (launches.some(message => message.sourceMetadata!.tool.toolCall.id === toolCallId)) { record = candidate; break }
+  if (!reading.childConversation) {
+    // A child's record is named for its conversation, so the candidates are known without reading a record.
+    const candidates = (await jsonNames(brain, generated(appData, parent, 'subagents'))).map(name => name.slice(0, -'.json'.length))
+      .filter(name => conversationId.safeParse(name).success && !reading.ruledOut.has(name))
+    // The search goes on from the child it reached last, by name: the list shrinks as children are ruled out.
+    const from = Math.max(0, reading.resumeAt === undefined ? 0 : candidates.findIndex(name => name >= reading.resumeAt!))
+    for (let step = 0; step < candidates.length && !reading.childConversation; step++) {
+      const at = (from + step) % candidates.length, candidate = candidates[at]!, inbox = generated(appData, candidate, 'messages')
+      let launched = false, complete = true
+      for (const name of await jsonNames(brain, inbox)) {
+        if (budget.left <= 0) { complete = false; break }
+        const message = await readJson(join(inbox, name), messageSchema, budget)
+        if (message?.sender !== parent || !message.sourceMetadata) continue
+        launched = true
+        if (message.sourceMetadata.tool.toolCall.id === toolCallId) { reading.childConversation = candidate; break }
+      }
+      if (reading.childConversation) break
+      // The search goes on from here next pass, so a later child is reached however the earlier ones stand.
+      if (!complete) { reading.resumeAt = candidate; return undefined }
       // Ruled out only once its launch names another call: a child whose launch is not written yet is read again.
-      if (launches.length) reading.ruledOut.add(candidate.conversationId)
+      if (launched) reading.ruledOut.add(candidate)
+      reading.resumeAt = candidates[(at + 1) % candidates.length]
     }
+    if (!reading.childConversation) return undefined
   }
-  if (!record) return undefined
-  reading.childConversation = record.conversationId
-  const inbox = generated(appData, parent, 'messages')
-  const unread = (await jsonNames(brain, inbox)).filter(name => !reading.readAnswers.has(name)).slice(0, MOST_FILES)
-  for (const name of unread) reading.readAnswers.add(name)
-  const answers = (await messages(inbox, unread)).filter(message => message.sender === record.conversationId && message.content !== undefined)
-    .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''))
-  const answer = answers.at(-1)
+  const child = reading.childConversation
+  const record = await readJson(generated(appData, parent, 'subagents', `${child}.json`), childRecordSchema, budget)
+  const inbox = generated(appData, parent, 'messages'), answers: Message[] = []
+  for (const name of (await jsonNames(brain, inbox)).filter(item => !reading.readAnswers.has(item))) {
+    if (budget.left <= 0) break
+    const message = await readJson(join(inbox, name), messageSchema, budget)
+    // Counted as read only once read whole: a file `agy` is still writing is read again next pass.
+    if (!message) continue
+    reading.readAnswers.add(name)
+    if (message.sender === child && message.content !== undefined) answers.push(message)
+  }
+  const answer = answers.sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? '')).at(-1)
   if (answer) {
-    return { conversationId: record.conversationId, status: 'completed', message: answer.content!.slice(0, MAX_ACTIVITY_TEXT),
+    return { conversationId: child, status: 'completed', message: answer.content!.slice(0, MAX_ACTIVITY_TEXT),
       ...(answer.timestamp && !Number.isNaN(Date.parse(answer.timestamp)) ? { completedAt: new Date(answer.timestamp).toISOString() } : {}) }
   }
-  return { conversationId: record.conversationId, status: /KILL|CANCEL|TERMINAT/iu.test(record.state ?? '') ? 'interrupted' : 'running' }
+  return { conversationId: child, status: /KILL|CANCEL|TERMINAT/iu.test(record?.state ?? '') ? 'interrupted' : 'running' }
 }

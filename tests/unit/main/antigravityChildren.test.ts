@@ -60,6 +60,39 @@ describe('a child agy launched, read from its records', () => {
     expect(child).toMatchObject({ status: 'completed', message: 'KESTREL' })
   })
 
+  it('reads again a file it could not read whole, once it is whole', async () => {
+    await record(); await launch()
+    const reading = antigravityChildReading()
+    await mkdir(generated(PARENT, 'messages'), { recursive: true })
+    await writeFile(generated(PARENT, 'messages', 'answer.json'), '{"sender": "' + CHILD + '", "content": "KES')
+    expect(await readAntigravityChild(appData, PARENT, CALL, reading)).toMatchObject({ status: 'running' })
+    expect(reading.readAnswers.has('answer.json')).toBe(false)
+    await answer('answer', 'KESTREL', '2026-11-22T03:14:03.510280400Z')
+    expect(await readAntigravityChild(appData, PARENT, CALL, reading)).toMatchObject({ status: 'completed', message: 'KESTREL' })
+  })
+
+  it('reads no more files in a pass than its budget, and reaches a later child in later passes', async () => {
+    // Thirty children launched by other calls, then the one this call launched, last by name.
+    for (let index = 0; index < 30; index++) {
+      const other = `a0000000-0000-0000-0000-${String(index).padStart(12, '0')}`
+      await put(generated(PARENT, 'subagents', `${other}.json`), { conversationId: other, state: 'SUBAGENT_STATE_ALIVE' })
+      for (let message = 0; message < 3; message++) await put(generated(other, 'messages', `m${message}.json`), { sender: PARENT, content: 'x', sourceMetadata: { tool: { toolCall: { id: `call_other_${index}` } } } })
+    }
+    await record(); await launch()
+    const reading = antigravityChildReading()
+    let child, passes = 0
+    while (!child && passes < 100) {
+      const budget = { left: 7 }
+      child = await readAntigravityChild(appData, PARENT, CALL, reading, budget)
+      expect(budget.left).toBeGreaterThanOrEqual(0)
+      passes++
+    }
+    expect(child).toMatchObject({ conversationId: CHILD, status: 'running' })
+    // Ninety-one files at seven a pass: never more than seven read in one.
+    expect(passes).toBeGreaterThan(12)
+    expect(reading.ruledOut.size).toBe(30)
+  })
+
   it('never follows a link out of brain: a linked inbox folder is not read', async () => {
     await record()
     const outside = await mkdtemp(join(tmpdir(), 'sotto-agy-outside-'))

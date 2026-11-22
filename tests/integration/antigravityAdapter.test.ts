@@ -458,9 +458,17 @@ describe('Antigravity ACP adapter', () => {
     expect((await child())?.model).toBeUndefined()
     await f!.action(id, { type: 'subagent-answer', text: 'KESTREL' })
     await expect.poll(child, { timeout: 15_000 }).toMatchObject({ status: 'completed', message: 'KESTREL', completedAt: '2026-11-22T03:14:03.510Z' })
+    // A child whose row has left the thread's newest records is put back with its answer, never lost.
+    await f!.action(id, { type: 'subagent', role: 'Third', prompt: 'Later.' })
+    await expect.poll(async () => (await thread(id)).activities?.filter(row => row.kind === 'subagent').length).toBe(2)
+    const live = (f!.host as unknown as { threads: Map<string, { activities?: unknown[] }> }).threads.get(id)!
+    live.activities = (live.activities as { kind: string; agents?: { title?: string }[] }[]).filter(row => row.agents?.[0]?.title !== 'Third')
+    await f!.action(id, { type: 'subagent-answer', text: 'LATE' })
+    await expect.poll(async () => (await thread(id)).activities?.find(row => row.agents?.[0]?.title === 'Third')?.agents?.[0], { timeout: 15_000 })
+      .toMatchObject({ status: 'completed', message: 'LATE' })
     // A second child whose record says it was killed is shown stopped.
     await f!.action(id, { type: 'subagent', role: 'Second', prompt: 'Wait.', model: 'gemini-3.8-flash' })
-    const second = async () => (await thread(id)).activities?.filter(row => row.kind === 'subagent').at(-1)?.agents?.[0]
+    const second = async () => (await thread(id)).activities?.find(row => row.agents?.[0]?.title === 'Second')?.agents?.[0]
     await expect.poll(second).toMatchObject({ status: 'running', title: 'Second', model: 'gemini-3.8-flash' })
     await f!.action(id, { type: 'subagent-killed' })
     await expect.poll(second, { timeout: 15_000 }).toMatchObject({ status: 'interrupted' })

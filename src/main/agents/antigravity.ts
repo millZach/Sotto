@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../shared/agents'
-import { mergeAgentActivities } from '../../shared/agentActivity'
+import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compactionPending, idleMark } from '../../shared/compaction'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -12,7 +12,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import { antigravityActivities, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
-import { antigravityChildReading, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
+import { antigravityChildReading, CHILD_PASS_FILES, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
 import { antigravityFolders, type AntigravityFolders } from './antigravityFolders'
 import { leaseAntigravityRuntime } from './antigravityInstall'
 import { antigravityUsageHooks, type AntigravityUsageHooks } from './antigravityUsage'
@@ -138,8 +138,11 @@ const ANTIGRAVITY_GEMINI_ONLY = 'Antigravity threads in Sotto run Gemini models 
 /** How often a child still at work is read, and how long it is watched before Sotto stops reading it. */
 const CHILD_READ_MS = 1_000
 const CHILD_WATCH_MS = 4 * 60 * 60 * 1_000
-/** One child at work: its thread and row, the launching tool call, the parent's session and, once found, its own. */
-interface ChildWatch { readonly threadId: string; readonly rowId: string; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading }
+/**
+ * One child at work: its thread and its row as launched, the launching tool call, the parent's session, and what the
+ * reading has learned. The row is kept so a child whose row has left the thread's newest records still settles.
+ */
+interface ChildWatch { readonly threadId: string; readonly row: AgentActivity; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading }
 const COMPACTING = 'Antigravity is compacting this thread. Wait for it to finish, then send.'
 const COMPACTION_LOST = 'Antigravity stopped before it confirmed whether it compacted this thread. Nothing was lost. Its next reply shows how full the context is; compact again then if it still needs it.'
 const COMPACTION_ANSWERED = 'Antigravity answered /compact in words rather than compacting this thread. Nothing was lost. Update Antigravity, then compact again.'
@@ -942,24 +945,25 @@ export class AntigravityAcpHost implements ProviderHost {
     if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
     // A launch that finished with its child still at work: watched until `agy`'s records say the child is done.
     if (row?.kind === 'subagent' && row.agents?.[0]?.status === 'running' && update.status === 'completed' && typeof update.toolCallId === 'string' && alias.antigravitySessionId) {
-      this.watchChild({ threadId: id, rowId: row.id, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + CHILD_WATCH_MS, reading: antigravityChildReading() })
+      this.watchChild({ threadId: id, row, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + CHILD_WATCH_MS, reading: antigravityChildReading() })
     }
   }
   private watchChild(watch: ChildWatch): void {
-    this.children.set(watch.rowId, watch)
+    this.children.set(watch.row.id, watch)
     if (!this.childTimer) { this.childTimer = setInterval(() => { void this.readChildren() }, CHILD_READ_MS); this.childTimer.unref?.() }
   }
   /** Each watched child read once: one that is done settles its row, and one past its watch is left as it is. */
   private async readChildren(): Promise<void> {
     if (this.readingChildren) return
     this.readingChildren = true
-    const generation = this.generation
+    // One budget for the whole pass, whatever the number of children: what it does not reach, the next pass reads.
+    const generation = this.generation, budget = { left: CHILD_PASS_FILES }
     try {
       for (const [rowId, watch] of [...this.children]) {
         // A disconnect or a forgotten thread ends the reading before its next file, not only after it.
-        if (generation !== this.generation) break
+        if (generation !== this.generation || budget.left <= 0) break
         if (this.children.get(rowId) !== watch) continue
-        const child = await readAntigravityChild(this.folders.appData, watch.parent, watch.toolCallId, watch.reading)
+        const child = await readAntigravityChild(this.folders.appData, watch.parent, watch.toolCallId, watch.reading, budget)
         if (generation !== this.generation || this.children.get(rowId) !== watch) continue
         if (child && child.status !== 'running') { this.children.delete(rowId); this.settleChild(watch, child) }
         else if (Date.now() > watch.until) this.children.delete(rowId)
@@ -970,8 +974,9 @@ export class AntigravityAcpHost implements ProviderHost {
     }
   }
   private settleChild(watch: ChildWatch, child: AntigravityChild): void {
-    const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.rowId), agent = row?.agents?.[0]
-    if (!thread || !row || !agent || agent.status !== 'running') return
+    // A row no longer among the thread's newest records is put back from the watch, so its answer is never lost.
+    const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.row.id) ?? watch.row, agent = row.agents?.[0]
+    if (!thread || !agent || agent.status !== 'running') return
     thread.activities = mergeAgentActivities(thread.activities, [{ ...row, agents: [{ ...agent, status: child.status,
       ...(child.message !== undefined ? { message: child.message } : {}), ...(child.completedAt ? { completedAt: child.completedAt } : {}) }] }])
     this.changed(watch.threadId); this.emit()
