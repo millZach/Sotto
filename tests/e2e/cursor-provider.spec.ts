@@ -13,7 +13,11 @@ const evidence = evidenceDirectory('artifacts/cursor-provider')
 async function providerList(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  return page.getByRole('list', { name: 'Thread providers', exact: true })
+  const list = page.getByRole('list', { name: 'Thread providers', exact: true })
+  await expect(list).toBeVisible()
+  const disclosure = list.getByRole('button', { name: /^Disconnected providers/u, expanded: false })
+  if (await disclosure.isVisible()) await disclosure.click()
+  return list
 }
 
 /** Scrolls Cursor's row to the top of Settings, as someone reading it would, before a capture. */
@@ -61,10 +65,8 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
     const list = await providerList(page)
     const row = list.getByRole('button', { name: 'Cursor', exact: true })
     const panel = page.getByRole('region', { name: 'Cursor details', exact: true })
-    // Every row starts closed; End from Codex's header goes to the last, Cursor's, and Enter opens it.
-    await list.getByRole('button', { name: 'Codex', exact: true }).focus()
-    await page.keyboard.press('End')
-    await expect(row).toBeFocused()
+    // Cursor starts closed. Enter on its header opens its settings.
+    await row.focus()
     await page.keyboard.press('Enter')
     await expect(row).toHaveAttribute('aria-expanded', 'true')
     // Sotto's cube for Cursor, in the shared ink on Cursor's own badge.

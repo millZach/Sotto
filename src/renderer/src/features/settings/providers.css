@@ -1,7 +1,18 @@
-/* Settings → Providers: one card with a row per provider, each opening in place (variant A of the tag
-   prototype/providers-settings). The card and its 2px inset dividers follow ADR-0110; the list measures its own width. */
 .providers-settings { min-width: 0; container: providers / inline-size; }
-.providers-list { margin: 6px 0 0; padding: 0; list-style: none; border-radius: var(--tt-radius-lg); background: var(--tt-card); overflow: hidden; }
+.providers-heading, .provider-disclosure button { display: flex; align-items: center; gap: 9px; color: var(--tt-text); font: 600 var(--tt-type-reading)/1.4 var(--tt-font-ui); }
+.providers-settings .providers-heading { margin: 0 0 10px; }
+.providers-count { padding: 1px 6px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; font-variant-numeric: tabular-nums; }
+.providers-list { margin: 0; padding: 0; list-style: none; }
+.providers-list > li { overflow: hidden; background: var(--tt-card); }
+.providers-list > :is(:first-child, .provider-disclosure) { border-start-start-radius: var(--tt-radius-lg); border-start-end-radius: var(--tt-radius-lg); }
+.providers-list > :is(:last-child, :has(+ .provider-disclosure)) { border-end-start-radius: var(--tt-radius-lg); border-end-end-radius: var(--tt-radius-lg); }
+.provider-row + .provider-disclosure { margin-top: 14px; }
+.provider-disclosure + .provider-row { border-top: 2px solid var(--tt-card-inset); }
+.provider-disclosure button { width: 100%; min-height: 48px; padding: 8px 24px 8px 16px; border: 0; border-radius: inherit; background: transparent; text-align: start; }
+.provider-disclosure button:hover { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
+.provider-disclosure button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.provider-disclosure svg { margin-inline-start: auto; color: var(--tt-text-muted); }
+.provider-disclosure [aria-expanded='true'] svg { transform: rotate(90deg); }
 .provider-row + .provider-row { border-top: 2px solid var(--tt-card-inset); }
 
 /* The header: the disclosure button, the update, the switch. The button lays its name, status and version out on

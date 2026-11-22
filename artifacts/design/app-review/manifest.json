@@ -1135,9 +1135,9 @@
       "category": "settings",
       "state": "providers",
       "relativePath": "artifacts/design/app-review/baseline/settings-providers.png",
-      "width": 718,
-      "height": 1166,
-      "sha256": "596516fbe0f118f0a577d4a3d4d32b588fb868493066790fca9f6d0f7d2a4b04"
+      "width": 672,
+      "height": 606,
+      "sha256": "230cf45f5f8b22d2c43615a3c8538ccab5b861a89a7bb993888b7be8fd6646c2"
     },
     {
       "theme": "light",
@@ -1149,9 +1149,9 @@
       "category": "settings",
       "state": "providers",
       "relativePath": "artifacts/design/app-review/baseline/settings-providers-light.png",
-      "width": 718,
-      "height": 1166,
-      "sha256": "022ab482b529610f27f48bd37440417a95b173eebfa1c35e883adb7b65cabbcb"
+      "width": 672,
+      "height": 606,
+      "sha256": "8eca3ba0a4dbd958f49f4cdf8d0b012f4e9c69d30c22dfa1a2f679f6f1e8e842"
     },
     {
       "theme": "dark",
@@ -1205,9 +1205,9 @@
       "category": "setup",
       "state": "agents",
       "relativePath": "artifacts/design/app-review/baseline/setup-agents.png",
-      "width": 1080,
+      "width": 1024,
       "height": 720,
-      "sha256": "b26d2b633469725836f84282ae27529fbeb3a6bf13d8fd5bc3d3541e9dac439a"
+      "sha256": "d310987391ff2c54330bbb72f067123b8bb232d1f67d33cefcceb78bc71f1cf6"
     },
     {
       "theme": "dark",

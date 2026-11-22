@@ -51,6 +51,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await page.reload()
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tab', { name: 'Providers', exact: true }).click()
+    await page.getByRole('button', { name: /^Disconnected providers/u }).click()
     // Devin's row opens in place; what it shows is the region its header controls.
     const panel = page.getByRole('region', { name: 'Devin details', exact: true })
     await page.getByRole('button', { name: 'Devin', exact: true }).click()
@@ -85,9 +86,9 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
     await expect(devinModels).toBeFocused()
     // Up and Down move between the rows' headers.
     await page.getByRole('button', { name: 'Devin', exact: true }).focus()
-    await page.keyboard.press('ArrowUp')
-    await expect(page.getByRole('button', { name: 'Grok Build', exact: true })).toBeFocused()
     await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('button', { name: /^Disconnected providers/u })).toBeFocused()
+    await page.keyboard.press('ArrowUp')
     await expect(page.getByRole('button', { name: 'Devin', exact: true })).toBeFocused()
     const prepared = await page.evaluate(async path => {
       await window.sotto!.agents!.command({ type: 'connect', provider: 'codex' })

@@ -53,6 +53,7 @@ async function mount(cursor: Partial<AgentProviderStatus>, { owl = true, enabled
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => ({ currentVersion: '0.1.37-owl.20261023.1', releaseTrack: 'owl', owlFeatures: { watcher: false, cursor: owl }, phase: { phase: 'unsupported' }, checkedAt: null }) as never })} createController={createController}><ProvidersSettings /></AppProvider>)
   await screen.findByRole('button', { name: 'Codex' })
+  if (cursor.connection && cursor.connection !== 'connected') fireEvent.click(await screen.findByRole('button', { name: /^Disconnected providers/u }))
   return { command, state }
 }
 const signedOut: Partial<AgentProviderStatus> = { connection: 'error', problem: 'signed-out', error: 'Cursor is not signed in on this computer. Sign in to Cursor, then connect it again. Your threads are kept.' }
