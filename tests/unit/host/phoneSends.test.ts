@@ -21,17 +21,31 @@ describe('what each phone is sent (#2755)', () => {
     const phone = {}, other = {}
     sends.sent(phone, 'detail-delta', 300, 'thread-a')
     sends.sent(phone, 'detail-delta', 200, 'thread-a')
-    sends.sent(phone, 'answer', 50)
+    sends.sent(phone, 'answer', 50, undefined, 'observe')
+    sends.sent(phone, 'answer', 400, undefined, 'detail')
+    sends.sent(phone, 'answer', 250, undefined, 'detail')
     sends.sent(other, 'shell', 1_000)
     expect(lines).toEqual([])
     pass(PHONE_SENDS_WINDOW_MS)
     sends.sent(phone, 'shell', 10)
     expect(lines).toHaveLength(1)
-    expect(lines[0]).toMatchObject({ phone: 1, seconds: 10, kinds: { 'detail-delta': { frames: 2, bytes: 500 }, answer: { frames: 1, bytes: 50 } },
+    expect(lines[0]).toMatchObject({ phone: 1, seconds: 10, kinds: { 'detail-delta': { frames: 2, bytes: 500 }, answer: { frames: 3, bytes: 700 } },
+      answers: { observe: { frames: 1, bytes: 50 }, detail: { frames: 2, bytes: 650 } },
       threads: { 'thread-a': { frames: 2, bytes: 500 } } })
     sends.flush()
     expect(lines.map(line => line.phone)).toEqual([1, 1, 2])
     expect(lines[1]!.kinds).toEqual({ shell: { frames: 1, bytes: 10 } })
+    expect(lines[1]!.answers).toEqual({})
+    expect(lines[2]!.answers).toEqual({})
+  })
+
+  it('ignores an answer op on non-answer pushes', () => {
+    const { lines, sends } = recorder()
+    const phone = {}
+    sends.sent(phone, 'detail', 120, 'thread-a', 'detail')
+    sends.flush()
+    expect(lines[0]!.kinds).toEqual({ detail: { frames: 1, bytes: 120 } })
+    expect(lines[0]!.answers).toEqual({})
   })
 
   it('names the parts a shell carried whole and the record fields that changed, never a value', () => {
