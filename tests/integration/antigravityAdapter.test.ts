@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { describeAdapterContract } from './adapterContract'
@@ -529,5 +530,125 @@ describe('Antigravity ACP adapter', () => {
     await f!.action(id, { type: 'permission', text: 'cat ../outside-fixture.txt' })
     await expect.poll(async () => (await thread(id)).requests.length).toBe(1)
     expect((await thread(id)).requests[0]!.context?.command).toBe('cat ../outside-fixture.txt')
+  })
+
+  it('marks a turn failed when agy logs a new SQLite error step behind end_turn, then ignores it on the next clean turn', async () => {
+    const id = await open()
+    const sessionId = await f!.realId(id)
+    const convDir = join(f!.root, 'antigravity', 'gemini', 'antigravity-acp', 'conversations')
+    const dbFile = join(convDir, `${sessionId}.db`)
+    const writeStep = (idx: number, type: number, payload: string) => {
+      const db = new DatabaseSync(dbFile)
+      try {
+        db.exec('CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER NOT NULL, step_payload BLOB)')
+        db.prepare('INSERT OR REPLACE INTO steps (idx, step_type, step_payload) VALUES (?, ?, ?)').run(idx, type, Buffer.from(payload, 'utf8'))
+      } finally { db.close() }
+    }
+
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'First turn' })
+    await mkdir(convDir, { recursive: true })
+    writeStep(0, 17, 'Error 429, Message: upstream limit secret, reason:QUOTA_EXHAUSTED, Status: RESOURCE_EXHAUSTED')
+    await f!.driver.completeTurn(id, 'Rate limited text from agent.')
+
+    await expect.poll(async () => (await thread(id)).status).toBe('error')
+    expect((await thread(id)).lastTurn).toEqual({ id: 'm1', status: 'failed' })
+    expect((await thread(id)).messages.map(message => message.text)).toEqual(['First turn', 'Rate limited text from agent.'])
+    expect((await thread(id)).activities?.find(row => row.kind === 'turn')).toMatchObject({
+      turnId: 'm1', status: 'failed', error: 'Antigravity reached its usage limit for this period. Your thread is kept. Try again later.',
+    })
+
+    // The earlier step 0 sits in SQLite, yet a clean next turn settles as completed.
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Retry' })
+    writeStep(1, 15, 'Recovered reply')
+    await f!.driver.completeTurn(id, 'Recovered.')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    expect((await thread(id)).lastTurn).toEqual({ id: 'm2', status: 'completed' })
+  })
+
+  it('resumes watching a detached child across a Sotto restart, keeps newer answers, and settles killed or expired watches', async () => {
+    const id = await open()
+    const parent = await f!.realId(id)
+    const appData = join(f!.root, 'antigravity', 'gemini', 'antigravity-acp')
+    const aliasesFile = join(f!.root, 'antigravity-threads.json')
+    const readWatches = async () => ((JSON.parse(await readFile(aliasesFile, 'utf8')) as Record<string, { childWatches?: { childConversation?: string; answeredAt?: string; until: number }[] }>)[id]?.childWatches ?? [])
+
+    // 1. Running child before restart answers while the restarted host watches it (without storing prompt text).
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Launch' })
+    await f!.action(id, { type: 'subagent', role: 'Kestrel Responder', prompt: 'Reply with KESTREL.' })
+    await expect.poll(async () => (await readWatches()).length).toBe(1)
+    expect(await readFile(aliasesFile, 'utf8')).not.toContain('Reply with KESTREL.')
+    const childFiles = await readdir(join(appData, 'brain', parent, '.system_generated', 'subagents'))
+    const childId = childFiles[0]!.replace(/\.json$/u, '')
+
+    f = await f!.driver.restart()
+    await f!.host.connect()
+    await mkdir(join(appData, 'brain', parent, '.system_generated', 'messages'), { recursive: true })
+    await writeFile(join(appData, 'brain', parent, '.system_generated', 'messages', 'first.json'), JSON.stringify({
+      id: 'first', recipient: parent, sender: childId, content: 'Working on it', timestamp: '2026-11-22T03:14:01.000Z',
+    }))
+    const subagent = async () => (await thread(id)).activities?.find(row => row.kind === 'subagent')?.agents?.[0]
+    await expect.poll(subagent, { timeout: 15_000 }).toMatchObject({ status: 'completed', title: 'Kestrel Responder', message: 'Working on it' })
+    await expect.poll(async () => (await readWatches())[0]?.answeredAt).toBe('2026-11-22T03:14:01.000Z')
+    expect(await readFile(aliasesFile, 'utf8')).not.toContain('Working on it')
+
+    // 2. Restart again with the interim answer already saved, then a newer answer arrives on disk.
+    f = await f!.driver.restart()
+    await f!.host.connect()
+    await writeFile(join(appData, 'brain', parent, '.system_generated', 'messages', 'second.json'), JSON.stringify({
+      id: 'second', recipient: parent, sender: childId, content: 'KESTREL, final', timestamp: '2026-11-22T03:15:00.000Z',
+    }))
+    await expect.poll(subagent, { timeout: 15_000 }).toMatchObject({ status: 'completed', title: 'Kestrel Responder', message: 'KESTREL, final' })
+
+    // 3. Restart after an interrupt + kill on disk settles interrupted and drops the watch.
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    f!.host.observeThreads?.([id])
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Second launch' })
+    await f!.action(id, { type: 'subagent', role: 'Stopped Child', prompt: 'Wait forever.' })
+    await expect.poll(async () => (await readWatches()).length).toBe(2)
+    await f!.host.execute({ type: 'interrupt', threadId: id, commandId: randomUUID() })
+    f!.host.disconnect(); await f!.host.closed()
+    const allSubs = await readdir(join(appData, 'brain', parent, '.system_generated', 'subagents'))
+    const secondChild = allSubs.map(name => name.replace(/\.json$/u, '')).find(candidate => candidate !== childId)!
+    await writeFile(join(appData, 'brain', parent, '.system_generated', 'subagents', `${secondChild}.json`), JSON.stringify({ conversationId: secondChild, state: 'SUBAGENT_STATE_KILLED' }))
+    f = await f!.driver.restart()
+    await f!.host.connect()
+    await expect.poll(async () => (await thread(id)).activities?.find(row => row.agents?.[0]?.title === 'Stopped Child')?.agents?.[0], { timeout: 15_000 })
+      .toMatchObject({ status: 'interrupted' })
+    await expect.poll(async () => (await readWatches()).some(item => item.answeredAt === undefined)).toBe(false)
+
+    // 4. Restart after watch deadline expired while down: one with a waiting answer settles completed, one with none settles unknown.
+    f!.host.observeThreads?.([id])
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm3', text: 'Expire test' })
+    await f!.action(id, { type: 'subagent', role: 'Silent Expired', prompt: 'Never answers.' })
+    await expect.poll(async () => (await readWatches()).filter(item => item.answeredAt === undefined).length).toBe(1)
+    await f!.action(id, { type: 'subagent', role: 'Answered While Down', prompt: 'Answers offline.' })
+    await expect.poll(async () => (await readWatches()).filter(item => item.answeredAt === undefined).length).toBe(2)
+    f!.host.disconnect(); await f!.host.closed()
+
+    const afterSubs = await readdir(join(appData, 'brain', parent, '.system_generated', 'subagents'))
+    const newestIds = afterSubs.map(name => name.replace(/\.json$/u, '')).filter(candidate => candidate !== childId && candidate !== secondChild)
+    expect(newestIds).toHaveLength(2)
+    let answeredChild = ''
+    for (const candidate of newestIds) {
+      const inbox = await readdir(join(appData, 'brain', candidate, '.system_generated', 'messages'))
+      const launchText = await readFile(join(appData, 'brain', candidate, '.system_generated', 'messages', inbox[0]!), 'utf8')
+      if (launchText.includes('Answers offline.')) answeredChild = candidate
+    }
+    expect(answeredChild).not.toBe('')
+    await writeFile(join(appData, 'brain', parent, '.system_generated', 'messages', 'offline-answer.json'), JSON.stringify({
+      id: 'offline-answer', recipient: parent, sender: answeredChild, content: 'OFFLINE', timestamp: '2026-11-22T03:20:00.000Z',
+    }))
+    // Expire every watch's deadline while Sotto is stopped.
+    const savedAliases = JSON.parse(await readFile(aliasesFile, 'utf8')) as Record<string, { childWatches: { until: number }[] }>
+    for (const watch of savedAliases[id]!.childWatches) watch.until = Date.now() - 10_000
+    await writeFile(aliasesFile, JSON.stringify(savedAliases, null, 2))
+
+    f = await f!.driver.restart()
+    await f!.host.connect()
+    await expect.poll(async () => (await thread(id)).activities?.find(row => row.agents?.[0]?.title === 'Answered While Down')?.agents?.[0], { timeout: 15_000 })
+      .toMatchObject({ status: 'completed', message: 'OFFLINE' })
+    await expect.poll(async () => (await thread(id)).activities?.find(row => row.agents?.[0]?.title === 'Silent Expired')?.agents?.[0], { timeout: 15_000 })
+      .toMatchObject({ status: 'unknown' })
+    await expect.poll(async () => (await readWatches()).length).toBe(0)
   })
 })

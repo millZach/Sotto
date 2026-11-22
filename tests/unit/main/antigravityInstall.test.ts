@@ -13,6 +13,7 @@ import {
   ANTIGRAVITY_CLI_FLOOR, ANTIGRAVITY_MANIFEST_BASE, antigravityTarget, compareAntigravityVersions, meetsAntigravityFloor, parseAntigravityRelease,
 } from '../../../src/main/agents/antigravityRelease'
 import { ProviderClients } from '../../../src/main/agents/providerClients'
+import { defaultSignInCommand } from '../../../src/host/providerSignIn'
 
 const sha512 = (bytes: Buffer): string => createHash('sha512').update(bytes).digest('hex')
 const windowsUrl = (version: string): string => `https://storage.googleapis.com/antigravity-public/antigravity-cli/${version}-4021/windows-x64/cli_windows_x64.exe`
@@ -226,5 +227,27 @@ describe('Antigravity in the client update flow', () => {
     expect(await clients.install('antigravity', first.executable, process.env, step => { steps.push(step) })).toEqual({ ok: true, detail: 'Antigravity is now 1.5.13.' })
     expect(steps).toEqual([1])
     expect(await managedAntigravityExecutable(directory, 'win32', 'x64')).toMatch(/1\.5\.13[\\/]agy\.exe$/u)
+  })
+
+  it('keeps a version a paste-code sign-in command leases across removal until its release runs', async () => {
+    const google = fakeGoogle()
+    const runtime = new AntigravityRuntime({ directory, fetchImpl: google.fetchImpl, tar: systemTar(), freeBytes: async () => undefined })
+    const os = process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux'
+    const folder = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch === 'arm64' ? 'arm' : 'x64'}`
+    const ext = process.platform === 'win32' ? 'exe' : 'tar.gz'
+    const cpu = process.arch === 'x64' ? 'x64' : 'arm64'
+    const hostUrl = `https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.12-4021/${folder}/cli_${os}_${cpu}.${ext}`
+    const payload = process.platform === 'win32' ? program('1.5.12') : tarGz({ antigravity: program('1.5.12') })
+    google.publish('1.5.12', hostUrl, payload)
+    const installed = await runtime.install()
+    if (!installed.ok) throw new Error(installed.detail)
+    const command = await defaultSignInCommand('antigravity', undefined, undefined, directory)
+    expect(command?.executable).toBe(installed.executable)
+    expect(command?.release).toBeTypeOf('function')
+    expect(await runtime.remove()).toEqual({ removed: [], kept: ['1.5.12'] })
+    expect(existsSync(installed.executable)).toBe(true)
+    command!.release!()
+    const versionsDir = join(antigravityRuntimeFolder(directory), 'versions')
+    await vi.waitFor(async () => { expect(await readdir(versionsDir).catch(() => [])).toEqual([]) })
   })
 })

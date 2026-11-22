@@ -13,6 +13,7 @@ import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import { antigravityActivities, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
 import { antigravityChildReading, CHILD_PASS_FILES, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
+import { classifyAntigravityTurnOutcome, watchAntigravityTurnOutcome, type AntigravityOutcomeWatcher } from './antigravityTurnOutcome'
 import { antigravityFolders, type AntigravityFolders } from './antigravityFolders'
 import { leaseAntigravityRuntime } from './antigravityInstall'
 import { antigravityUsageHooks, type AntigravityUsageHooks } from './antigravityUsage'
@@ -73,12 +74,30 @@ const attachmentSchema = z.object({ id: z.string(), name: z.string(), mimeType: 
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), turn: z.number().int().nonnegative(),
   attachments: z.array(attachmentSchema).default([]) })
 type Origin = z.infer<typeof originSchema>
+const childWatchSchema = z.object({
+  rowId: z.string().min(1).max(256),
+  turnId: z.string().min(1).max(256),
+  afterMessageId: z.string().max(256).optional(),
+  sequence: z.number().int().nonnegative().default(0),
+  title: z.string().max(512),
+  agentId: z.string().min(1).max(256),
+  agentTitle: z.string().max(512),
+  model: z.string().max(256).optional(),
+  startedAt: z.string().max(64).optional(),
+  toolCallId: z.string().min(1).max(512),
+  until: z.number().int().nonnegative(),
+  childConversation: z.string().regex(/^[A-Za-z0-9-]{1,64}$/u).optional(),
+  answeredAt: z.string().max(64).optional(),
+  answerDigest: z.string().max(64).optional(),
+})
+type SavedChildWatch = z.infer<typeof childWatchSchema>
 const aliasSchema = z.object({
   antigravitySessionId: z.string().min(1).max(512).optional(), projectId: z.string(), cwd: z.string(), title: z.string(), createdAt: z.string(),
   modelId: z.string(), reasoningEffort: z.string().optional(), runtimeMode: z.enum(ANTIGRAVITY_RUNTIME_MODES).default('approval-required'),
   /** How many user turns the session holds, as Sotto last counted them: the place the next prompt takes. */
   turns: z.number().int().nonnegative().default(0),
   origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
+  childWatches: z.array(childWatchSchema).max(64).default([]),
 })
 type Alias = z.infer<typeof aliasSchema>
 const aliasesSchema = z.record(z.string(), aliasSchema)
@@ -138,13 +157,62 @@ const ANTIGRAVITY_GEMINI_ONLY = 'Antigravity threads in Sotto run Gemini models 
 /** How often a child still at work is read, and how long it is watched before Sotto stops reading it. */
 const CHILD_READ_MS = 1_000
 const CHILD_WATCH_MS = 4 * 60 * 60 * 1_000
+const CHILD_WATCHES_KEPT = 64
+const CONVERSATION_ID = /^[A-Za-z0-9-]{1,64}$/u
+const TYPED_ONLY_OUTCOME: AntigravityOutcomeWatcher = { check: async stopReason => classifyAntigravityTurnOutcome(stopReason) }
 /**
  * One child at work: its thread and its row as launched, the launching tool call, the parent's session, and what the
  * reading has learned. The row is kept so a child whose row has left the thread's newest records still settles.
  */
-interface ChildWatch { readonly threadId: string; readonly row: AgentActivity; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading
+interface ChildWatch { readonly threadId: string; row: AgentActivity; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading
   /** When the newest answer read so far was sent: a child that has answered is waiting, no longer at work. */
-  answeredAt?: string }
+  answeredAt?: string
+  /** SHA-256 of the newest answer text seen so far, so restarts neither drop newer answers nor store message text. */
+  answerDigest?: string }
+function serializeChildWatch(watch: ChildWatch): SavedChildWatch | undefined {
+  const agent = watch.row.agents?.[0]
+  if (!agent) return undefined
+  const childConversation = watch.reading.childConversation && CONVERSATION_ID.test(watch.reading.childConversation)
+    ? watch.reading.childConversation : undefined
+  return {
+    rowId: watch.row.id,
+    turnId: watch.row.turnId,
+    ...(watch.row.afterMessageId ? { afterMessageId: watch.row.afterMessageId } : {}),
+    sequence: watch.row.sequence,
+    title: watch.row.title,
+    agentId: agent.id,
+    agentTitle: agent.title ?? watch.row.title,
+    ...(agent.model ? { model: agent.model } : {}),
+    ...(agent.startedAt ? { startedAt: agent.startedAt } : {}),
+    toolCallId: watch.toolCallId,
+    until: watch.until,
+    ...(childConversation ? { childConversation } : {}),
+    ...(watch.answeredAt ? { answeredAt: watch.answeredAt } : {}),
+    ...(watch.answerDigest ? { answerDigest: watch.answerDigest } : {}),
+  }
+}
+function restoreChildRow(saved: SavedChildWatch, cwd: string): AgentActivity {
+  return {
+    id: saved.rowId,
+    turnId: saved.turnId,
+    ...(saved.afterMessageId ? { afterMessageId: saved.afterMessageId } : {}),
+    sequence: saved.sequence,
+    kind: 'subagent',
+    status: 'completed',
+    title: saved.title,
+    cwd,
+    ...(saved.startedAt ? { startedAt: saved.startedAt, timingSource: 'observed' as const } : {}),
+    agents: [{
+      id: saved.agentId,
+      status: saved.answeredAt ? 'completed' : 'running',
+      title: saved.agentTitle,
+      ...(saved.model ? { model: saved.model } : {}),
+      ...(saved.answeredAt
+        ? { completedAt: saved.answeredAt }
+        : saved.startedAt ? { observedAt: saved.startedAt, startedAt: saved.startedAt, timingSource: 'observed' as const } : {}),
+    }],
+  }
+}
 const COMPACTING = 'Antigravity is compacting this thread. Wait for it to finish, then send.'
 const COMPACTION_LOST = 'Antigravity stopped before it confirmed whether it compacted this thread. Nothing was lost. Its next reply shows how full the context is; compact again then if it still needs it.'
 const COMPACTION_ANSWERED = 'Antigravity answered /compact in words rather than compacting this thread. Nothing was lost. Update Antigravity, then compact again.'
@@ -185,6 +253,7 @@ interface LiveTurn {
   ended: boolean
   prompts: number
   wake: (() => void) | undefined
+  readonly outcome: AntigravityOutcomeWatcher
 }
 /** One thread's own `agy` process. */
 interface Connection {
@@ -364,6 +433,7 @@ export class AntigravityAcpHost implements ProviderHost {
     this.turns.delete(id)
     this.compactions.delete(id); this.compactedSince.delete(id); this.compactionAnswered.delete(id)
     for (const [rowId, watch] of [...this.children]) if (watch.threadId === id) this.children.delete(rowId)
+    if (!this.children.size && !this.readingChildren && this.childTimer) { clearInterval(this.childTimer); this.childTimer = undefined }
     for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
     this.knownLaunchProfiles.delete(id)
     this.indexes.delete(id)
@@ -560,6 +630,7 @@ export class AntigravityAcpHost implements ProviderHost {
         this.markOpenFailed(id, error)
       })))
       this.assertGeneration(generation)
+      this.restoreChildWatches()
       this.reaper.start(); this.emit(); return this.current()
     } catch (error) {
       if (generation === this.generation) this.disconnect()
@@ -918,7 +989,7 @@ export class AntigravityAcpHost implements ProviderHost {
       void this.persist().catch(() => undefined)
       const key = `antigravity-user-${index}-${digest(words).slice(0, 16)}`
       this.log.add(id, { id: key, role: 'user', text: words, createdAt: new Date().toISOString() })
-      this.turns.set(id, { places: new TurnPlaces(key), origin: undefined, taken: true, ended: true, prompts: 0, wake: undefined })
+      this.turns.set(id, { places: new TurnPlaces(key), origin: undefined, taken: true, ended: true, prompts: 0, wake: undefined, outcome: TYPED_ONLY_OUTCOME })
       this.emit()
       return
     }
@@ -926,7 +997,7 @@ export class AntigravityAcpHost implements ProviderHost {
     let turn = this.turns.get(id)
     if (!turn) {
       // Work after a turn ended, such as a command `agy` keeps running, belongs to the newest user message.
-      turn = { places: new TurnPlaces(this.log.lastUserMessageId(id) ?? 'antigravity-history'), origin: undefined, taken: true, ended: true, prompts: 0, wake: undefined }
+      turn = { places: new TurnPlaces(this.log.lastUserMessageId(id) ?? 'antigravity-history'), origin: undefined, taken: true, ended: true, prompts: 0, wake: undefined, outcome: TYPED_ONLY_OUTCOME }
       this.turns.set(id, turn)
     }
     const thread = this.thread(id)
@@ -954,7 +1025,57 @@ export class AntigravityAcpHost implements ProviderHost {
   }
   private watchChild(watch: ChildWatch): void {
     this.children.set(watch.row.id, watch)
+    if (this.saveChildWatch(watch)) void this.persist().catch(() => undefined)
+    this.ensureChildTimer()
+  }
+  private ensureChildTimer(): void {
     if (!this.childTimer) { this.childTimer = setInterval(() => { void this.readChildren() }, CHILD_READ_MS); this.childTimer.unref?.() }
+  }
+  private saveChildWatch(watch: ChildWatch): boolean {
+    const alias = this.aliases[watch.threadId]
+    if (!alias) return false
+    const entry = serializeChildWatch(watch)
+    if (!entry) return false
+    const at = alias.childWatches.findIndex(item => item.rowId === entry.rowId)
+    if (at >= 0) alias.childWatches[at] = entry
+    else {
+      alias.childWatches.push(entry)
+      while (alias.childWatches.length > CHILD_WATCHES_KEPT) {
+        const dropped = alias.childWatches.shift()
+        if (dropped) this.children.delete(dropped.rowId)
+      }
+    }
+    return true
+  }
+  private dropSavedChildWatch(threadId: string, rowId: string): boolean {
+    const alias = this.aliases[threadId]
+    if (!alias || !alias.childWatches.length) return false
+    const before = alias.childWatches.length
+    alias.childWatches = alias.childWatches.filter(item => item.rowId !== rowId)
+    return alias.childWatches.length !== before
+  }
+  private restoreChildWatches(): void {
+    for (const [id, alias] of Object.entries(this.aliases)) {
+      if (!alias.antigravitySessionId || !alias.childWatches.length) continue
+      for (const saved of alias.childWatches) {
+        const reading = antigravityChildReading()
+        if (saved.childConversation) reading.childConversation = saved.childConversation
+        this.children.set(saved.rowId, {
+          threadId: id,
+          row: restoreChildRow(saved, alias.cwd),
+          toolCallId: saved.toolCallId,
+          parent: alias.antigravitySessionId,
+          until: saved.until,
+          reading,
+          ...(saved.answeredAt ? { answeredAt: saved.answeredAt } : {}),
+          ...(saved.answerDigest ? { answerDigest: saved.answerDigest } : {}),
+        })
+      }
+    }
+    if (this.children.size) {
+      this.ensureChildTimer()
+      void this.readChildren()
+    }
   }
   /** Each watched child read once: one that is done settles its row, and one past its watch is left as it is. */
   private async readChildren(): Promise<void> {
@@ -962,24 +1083,48 @@ export class AntigravityAcpHost implements ProviderHost {
     this.readingChildren = true
     // One budget for the whole pass, whatever the number of children: what it does not reach, the next pass reads.
     const generation = this.generation, budget = { left: CHILD_PASS_FILES }
+    let dirty = false
     try {
       for (const [rowId, watch] of [...this.children]) {
         // A disconnect or a forgotten thread ends the reading before its next file, not only after it.
         if (generation !== this.generation || budget.left <= 0) break
         if (this.children.get(rowId) !== watch) continue
+        const beforeConversation = watch.reading.childConversation
+        const beforeAnsweredAt = watch.answeredAt
+        const beforeDigest = watch.answerDigest
         const child = await readAntigravityChild(this.folders.appData, watch.parent, watch.toolCallId, watch.reading, budget)
         if (generation !== this.generation || this.children.get(rowId) !== watch) continue
         // agy 1.5.14 marks no final answer: its record stays alive after the child answers, and an interim message ends
         // its transcript as a last one does. So, as T3 reads it, an answer shows the child done or waiting for guidance,
         // and the watch goes on to the end of its time, each newer answer taking the place of the one before.
-        if (child?.status === 'interrupted') { this.children.delete(rowId); this.settleChild(watch, child) }
-        else if (child?.status === 'completed') { watch.answeredAt = child.completedAt ?? new Date().toISOString(); this.settleChild(watch, child) }
+        if (child?.status === 'interrupted') {
+          this.children.delete(rowId)
+          if (this.dropSavedChildWatch(watch.threadId, rowId)) dirty = true
+          this.settleChild(watch, child)
+          continue
+        }
+        if (child?.status === 'completed') {
+          const nextDigest = child.message !== undefined ? digest(child.message) : undefined
+          const changed = watch.answeredAt === undefined
+            || (nextDigest !== undefined && nextDigest !== watch.answerDigest
+              && (child.completedAt === undefined || child.completedAt >= watch.answeredAt))
+          if (changed) {
+            watch.answeredAt = child.completedAt ?? new Date().toISOString()
+            if (nextDigest !== undefined) watch.answerDigest = nextDigest
+            this.settleChild(watch, child)
+          }
+        }
         if (this.children.get(rowId) === watch && Date.now() > watch.until) {
           this.children.delete(rowId)
+          if (this.dropSavedChildWatch(watch.threadId, rowId)) dirty = true
           // One never heard from in all that time is last seen working, never left looking live.
           if (watch.answeredAt === undefined) this.settleChild(watch, { conversationId: watch.reading.childConversation ?? '', status: 'unknown' })
+        } else if (this.children.get(rowId) === watch
+          && (watch.reading.childConversation !== beforeConversation || watch.answeredAt !== beforeAnsweredAt || watch.answerDigest !== beforeDigest)) {
+          if (this.saveChildWatch(watch)) dirty = true
         }
       }
+      if (dirty && generation === this.generation) void this.persist().catch(() => undefined)
     } finally {
       this.readingChildren = false
       if (!this.children.size && this.childTimer) { clearInterval(this.childTimer); this.childTimer = undefined }
@@ -991,8 +1136,13 @@ export class AntigravityAcpHost implements ProviderHost {
     // A running child takes what was read; one that answered takes only a newer answer, which replaces its own.
     const newer = agent?.status === 'completed' && child.status === 'completed' && child.message !== undefined && child.message !== agent?.message
     if (!thread || !agent || (agent.status !== 'running' && !newer)) return
-    thread.activities = mergeAgentActivities(thread.activities, [{ ...row, agents: [{ ...agent, status: child.status,
-      ...(child.message !== undefined ? { message: child.message } : {}), ...(child.completedAt ? { completedAt: child.completedAt } : {}) }] }])
+    const settledRow: AgentActivity = {
+      ...row,
+      agents: [{ ...agent, status: child.status,
+        ...(child.message !== undefined ? { message: child.message } : {}), ...(child.completedAt ? { completedAt: child.completedAt } : {}) }],
+    }
+    watch.row = settledRow
+    thread.activities = mergeAgentActivities(thread.activities, [settledRow])
     this.changed(watch.threadId); this.emit()
   }
   /** A finished edit's changes placed on their lines once the file is read (`antigravityEditLines.ts`); each one that cannot be stays as reported. */
@@ -1081,7 +1231,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!project) throw new Error('Choose an Antigravity project first.')
     const reasoningEffort = command.reasoningEffort ?? this.model(command.modelId)?.defaultReasoningEffort
     const alias: Alias = { projectId: project.id, cwd: await existingWorkingDirectory(command.workingDirectory ?? project.path), title: command.title, createdAt: new Date().toISOString(),
-      modelId: command.modelId, ...(reasoningEffort ? { reasoningEffort } : {}), runtimeMode, turns: 0, origins: [], answeredRequestIds: [] }
+      modelId: command.modelId, ...(reasoningEffort ? { reasoningEffort } : {}), runtimeMode, turns: 0, origins: [], answeredRequestIds: [], childWatches: [] }
     this.assertGeneration(generation)
     const connection = await this.startProcess(command.threadId, alias, alias.cwd, profile !== undefined)
     if (generation !== this.generation) { this.close(connection); throw new AntigravityUncertain('Antigravity’s connection changed.') }
@@ -1215,6 +1365,8 @@ export class AntigravityAcpHost implements ProviderHost {
     const prompt = await this.promptOf(alias, { text: words, ...(command.attachments ? { attachments: command.attachments } : {}) }, note ? watcherRequestLine(note) : '')
     await this.applySettings(alias, connection)
     current()
+    const outcome = await watchAntigravityTurnOutcome(this.folders.appData, alias.antigravitySessionId)
+    current()
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(prompt.text), createdAt: new Date().toISOString(), turn: alias.turns,
       attachments: attachmentReferences(prompt.attachments) }
     index.add(origin); alias.turns++
@@ -1223,7 +1375,7 @@ export class AntigravityAcpHost implements ProviderHost {
     try { watcherGuard?.() } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
     const thread = this.thread(id)
     delete thread.requestNotice
-    const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, taken: false, ended: false, prompts: 0, wake: undefined }
+    const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, taken: false, ended: false, prompts: 0, wake: undefined, outcome }
     this.turns.set(id, turn)
     thread.status = 'running'; thread.lastTurn = { id: origin.messageId, status: 'running' }
     thread.activities = markTurnActivity(thread.activities, { provider: 'antigravity', turnId: origin.messageId, status: 'running', afterMessageId: origin.messageId })
@@ -1243,14 +1395,15 @@ export class AntigravityAcpHost implements ProviderHost {
   private prompt(id: string, alias: Alias, connection: Connection, turn: LiveTurn, generation: number, blocks: unknown[]): void {
     const serial = ++turn.prompts
     const superseded = (): boolean => generation !== this.generation || this.turns.get(id) !== turn || serial !== turn.prompts
-    void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: blocks }, value => {
+    void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: blocks }, async value => {
       // A steered prompt's answer still carries the tokens its part of the turn spent.
       const counted = generation === this.generation && this.threads.has(id) && countAntigravityAnswer(this.thread(id), value, !superseded())
       if (superseded()) { if (counted) this.emit(true); return }
       const stop = promptAnswerSchema.parse(value).stopReason
+      const settled = await turn.outcome.check(stop).catch(() => classifyAntigravityTurnOutcome(stop))
+      if (superseded() || turn.ended) return
       this.closeForms(id)
-      this.endTurn(id, stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
-        stop === 'refusal' ? 'Antigravity refused this turn, or the account reached its limit. Nothing else was lost.' : undefined)
+      this.endTurn(id, settled.status, settled.error)
       this.emit()
     }, true).catch((error: unknown) => {
       if (superseded() || turn.ended) return
