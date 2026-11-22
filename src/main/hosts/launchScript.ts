@@ -153,11 +153,10 @@ const rustMarkerPath = path.join(install, 'use-rust-host');
 const rustEntryOf = version => version ? path.join(versionsPath, version, 'host', rustBinName) : path.join(install, 'host', rustBinName);
 const wantsRustHost = async () => {
   if (typeof cfg.useRustHost === 'boolean') return cfg.useRustHost;
-  if (cfg.op === 'launch') return false;
   return (await exists(rustMarkerPath)) || pinned(await readBootScript(), 'use_rust_host') === '1';
 };
 const syncRustHostMarker = async useRust => {
-  if (cfg.op === 'launch' || typeof cfg.useRustHost === 'boolean') {
+  if (typeof cfg.useRustHost === 'boolean') {
     if (useRust && (await exists(install))) await writeAtomically(rustMarkerPath, '1\n');
     else if (!useRust) await fs.rm(rustMarkerPath, { force: true }).catch(() => undefined);
   }
@@ -400,14 +399,18 @@ const unitRunning = properties => properties.ActiveState !== 'inactive' && prope
 // that is the host that did not come up; so does a start whose script runs another data folder or port, after Edit
 // connection changed them. The unit's script is rewritten before any start the unit makes when it differs from this
 // launch's: another Node, data folder, port or key file.
-const startByUnit = async (properties, fresh) => {
-  const script = await readBootScript(), elsewhere = pinnedElsewhere(script);
+const resolveRustBootMode = async () => {
   const useRust = await wantsRustHost();
   await syncRustHostMarker(useRust);
-  const runtimeChanged = useRust !== (pinned(script, 'use_rust_host') === '1');
+  return useRust && (await rustHostEntry()) !== null;
+};
+const startByUnit = async (properties, fresh) => {
+  const script = await readBootScript(), elsewhere = pinnedElsewhere(script);
+  const wantRustNow = await resolveRustBootMode();
+  const runtimeChanged = wantRustNow !== (pinned(script, 'use_rust_host') === '1');
   if (properties.ActiveState === 'active' && !fresh && !elsewhere && !runtimeChanged) return awaitUnit();
   if ((fresh || elsewhere || runtimeChanged) && unitRunning(properties)) await systemctl(['stop', UNIT], cfg.stopDrainMs + 30000);
-  if (script !== bootScriptText(useRust)) await writeBootScript(useRust);
+  if (script !== bootScriptText(wantRustNow)) await writeBootScript(wantRustNow);
   const found = await running();
   if (found) return found;
   if (!(await rustHostEntry()) && !(await exists(await hostEntry()))) throw new Error('archive-missing');
@@ -820,9 +823,8 @@ const awaitUserManager = async () => {
 const writeUnit = async () => {
   const reinstall = await unitOurs();
   try {
-    const useRust = await wantsRustHost();
-    await syncRustHostMarker(useRust);
-    await writeBootScript(useRust);
+    const wantRustNow = await resolveRustBootMode();
+    await writeBootScript(wantRustNow);
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
     await writeAtomically(unitPath, unitText());
     if ((await systemctl(['daemon-reload'], 30000)).code !== 0 || (await systemctl(['enable', UNIT], 30000)).code !== 0) throw new Error('boot-install-failed');

@@ -24,7 +24,7 @@ export async function packageOwlHost({ version, sourceCommit, checkout = () => r
   for (const path of [resolve(releaseDir, filename), resolve(releaseDir, `${filename}.sha256`)]) {
     if (await lstat(path).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error })) throw new Error('The Owl host version already has an artifact here. Choose a new build number')
   }
-  const archive = await packageArchive({ version, releaseDir })
+  const archive = await packageArchive({ version, releaseDir, includeRust: true })
   checkedSource(version, sourceCommit, checkout())
   if (basename(archive) !== filename) throw new Error('Owl host packaging must produce this machine\'s native archive')
   const artifact = await verifyArchive(archive, { version, sourceCommit })

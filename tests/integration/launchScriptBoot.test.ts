@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { launchScriptChild } from '../fixtures/launchScriptRunner'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir, userInfo } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -584,6 +584,59 @@ await import('./fake.mjs')
       expect(await readFile(join(configuration.installPath, 'current'), 'utf8')).toBe('1.0.0\n')
       expect(await descriptor(configuration)).toMatchObject({ startedBy: 'boot', entry: expect.stringContaining('1.0.0') })
     }, 60_000)
+
+    it('does not pin use_rust_host or restart the unit after boot-install and launch with useRustHost on a Node-only host', async () => {
+      const configuration = await fixture({ linger: true })
+      const firstLaunch = await run(configuration, { op: 'launch', useRustHost: true })
+      expect(firstLaunch.result, failureReason(firstLaunch.result)).toMatchObject({ type: 'ready', owned: true })
+
+      const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID, useRustHost: true })
+      expect(install.result, failureReason(install.result)).toMatchObject({ type: 'boot-installed', installed: true, stopped: true })
+
+      const bootScript = await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')
+      expect(bootScript).not.toContain("use_rust_host='1'")
+
+      const beforeSecondLaunch = (await systemd!.calls()).length
+      const beforeDescriptor = await descriptor(configuration)
+      const secondLaunch = await run(configuration, { op: 'launch', useRustHost: true })
+      expect(secondLaunch.result, failureReason(secondLaunch.result)).toMatchObject({
+        type: 'ready',
+        pid: beforeDescriptor.pid,
+        owned: true,
+      })
+      expect(await changes(beforeSecondLaunch)).toEqual([])
+      expect((await descriptor(configuration)).instance).toBe(beforeDescriptor.instance)
+    })
+
+    it('keeps a Rust-pinned unit running when another desktop launches without useRustHost', async () => {
+      const configuration = await fixture({ linger: true })
+      const rustBinName = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+      const rustBinPath = join(configuration.installPath, 'host', rustBinName)
+      // Executable POSIX shim so Linux fake systemd actually executes boot-start.sh -> host/sotto-host
+      // cleanly into fakeSshHost.mjs; on Windows fakeSystemd runs index.js directly.
+      const escapedNode = process.execPath.replace(/'/gu, "'\\''")
+      await writeFile(rustBinPath, `#!/bin/sh\nexec '${escapedNode}' "$(dirname "$0")/index.js" "$@"\n`, 'utf8')
+      if (process.platform !== 'win32') await chmod(rustBinPath, 0o755)
+      const firstLaunch = await run(configuration, { op: 'launch' })
+      expect(firstLaunch.result, failureReason(firstLaunch.result)).toMatchObject({ type: 'ready', owned: true })
+
+      const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID, useRustHost: true })
+      expect(install.result, failureReason(install.result)).toMatchObject({ type: 'boot-installed', installed: true, stopped: true })
+      expect(await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')).toContain("use_rust_host='1'")
+
+      // A second desktop (such as stable) connecting with `op: 'launch'` and no `useRustHost` field
+      // must keep the pinned runtime instead of ping-pong stopping/restarting the unit.
+      const beforeOtherDesktop = (await systemd!.calls()).length
+      const beforeDescriptor = await descriptor(configuration)
+      const otherLaunch = await run(configuration, { op: 'launch' })
+      expect(otherLaunch.result, failureReason(otherLaunch.result)).toMatchObject({
+        type: 'ready',
+        pid: beforeDescriptor.pid,
+        owned: true,
+      })
+      expect(await changes(beforeOtherDesktop)).toEqual([])
+      expect((await descriptor(configuration)).instance).toBe(beforeDescriptor.instance)
+    })
   })
 })
 
