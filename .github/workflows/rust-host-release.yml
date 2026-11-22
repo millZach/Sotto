@@ -43,15 +43,24 @@ jobs:
           - label: linux-x64
             os: ubuntu-latest
             ext: ''
+            target: x86_64-unknown-linux-musl
           - label: darwin-arm64
             os: macos-15
             ext: ''
+            target: ''
           - label: win32-x64
             os: windows-latest
             ext: '.exe'
+            target: ''
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+      - name: Set up static Linux musl toolchain
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -63,12 +72,15 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
           TARGET_LABEL: ${{ matrix.label }}
           TARGET_EXT: ${{ matrix.ext }}
+          SOTTO_RUST_TARGET: ${{ matrix.target }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: |
           if [[ ! "$RELEASE_VERSION" =~ ^[0-9A-Za-z._-]+$ ]]; then
             echo "Invalid release version format." >&2
             exit 1
           fi
-          node scripts/build-rust-host.mjs
+          SOTTO_HOST_VERSION="$RELEASE_VERSION" node scripts/build-rust-host.mjs
           mkdir -p dist/rust-host/host
           cp "out/rust-host/sotto-host${TARGET_EXT}" "dist/rust-host/host/sotto-host${TARGET_EXT}"
           if [[ -z "$TARGET_EXT" ]]; then

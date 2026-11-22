@@ -8,16 +8,33 @@ import { pathToFileURL } from 'node:url'
 const root = resolve(import.meta.dirname, '..')
 
 export async function buildRustHost(outDir = resolve(root, process.env.SOTTO_RUST_HOST_OUT_DIR || 'out/rust-host')) {
-  const cargoTargetDir = process.env.CARGO_TARGET_DIR || resolve(root, 'target')
-  const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+  const cargoTargetDir = resolve(root, process.env.CARGO_TARGET_DIR || 'target')
+  const rustTarget = (process.env.SOTTO_RUST_TARGET || '').trim()
+  const exe = process.platform === 'win32' || rustTarget.includes('windows') ? 'sotto-host.exe' : 'sotto-host'
+  const hostVersion = (process.env.SOTTO_HOST_VERSION || process.env.RELEASE_VERSION || '').trim()
+  const buildEnv = {
+    ...process.env,
+    CARGO_TARGET_DIR: cargoTargetDir,
+    ...(hostVersion ? { SOTTO_HOST_VERSION: hostVersion } : {}),
+  }
+  const cargoArgs = [
+    'build',
+    '--release',
+    '-p',
+    'sotto-host',
+    '--bin',
+    'sotto-host',
+    '--locked',
+    ...(rustTarget ? ['--target', rustTarget] : []),
+  ]
 
-  execFileSync('cargo', ['build', '--release', '-p', 'sotto-host', '--bin', 'sotto-host', '--locked'], {
+  execFileSync('cargo', cargoArgs, {
     cwd: root,
     stdio: 'inherit',
-    env: { ...process.env, CARGO_TARGET_DIR: cargoTargetDir },
+    env: buildEnv,
   })
 
-  const built = join(cargoTargetDir, 'release', exe)
+  const built = join(cargoTargetDir, ...(rustTarget ? [rustTarget] : []), 'release', exe)
   await mkdir(outDir, { recursive: true })
   const dest = join(outDir, exe)
   await copyFile(built, dest)

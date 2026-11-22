@@ -29,6 +29,7 @@ struct HostCliArgs {
     fake_provider: Option<String>,
     fixtures_dir: Option<PathBuf>,
     started_by: Option<String>,
+    enable_providers: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
@@ -94,6 +95,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
     let started_by = std::env::var("SOTTO_HOST_STARTED_BY")
         .ok()
         .filter(|v| v == "launch-script" || v == "boot");
+    let enable_providers = std::env::var("SOTTO_HOST_ENABLE_PROVIDERS").as_deref() == Ok("1");
 
     Ok(HostCliArgs {
         data_directory,
@@ -104,6 +106,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         fake_provider,
         fixtures_dir,
         started_by,
+        enable_providers,
     })
 }
 
@@ -131,8 +134,7 @@ async fn wait_for_shutdown_signal() {
     }
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
     let parsed = match parse_args(&raw_args) {
         Ok(args) => args,
@@ -141,6 +143,25 @@ async fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    // Clear launch-ownership and provider-enable markers before starting worker threads or
+    // spawning provider child processes (matching `src/host/index.ts`).
+    std::env::remove_var("SOTTO_HOST_STARTED_BY");
+    std::env::remove_var("SOTTO_HOST_ENABLE_PROVIDERS");
+
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(err) => {
+            eprintln!("Could not start async runtime: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    runtime.block_on(run_host(parsed))
+}
+
+async fn run_host(parsed: HostCliArgs) -> ExitCode {
 
     if let Err(err) = std::fs::create_dir_all(&parsed.data_directory) {
         eprintln!("Could not create host data folder: {err}");
@@ -281,9 +302,7 @@ async fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         }
-    } else if parsed.mock_provider.is_none()
-        && std::env::var("SOTTO_HOST_ENABLE_PROVIDERS").as_deref() == Ok("1")
-    {
+    } else if parsed.mock_provider.is_none() && parsed.enable_providers {
         providers.insert(
             "codex".into(),
             Arc::new(CodexAdapter::new(CodexAdapterConfig::native(

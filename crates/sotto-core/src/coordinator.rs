@@ -28,7 +28,10 @@ use crate::workspace::{
 };
 
 const PUBLISH_COALESCE_MS: u64 = 50;
-const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
+const HOST_VERSION: &str = match option_env!("SOTTO_HOST_VERSION") {
+    Some(v) if !v.is_empty() => v,
+    _ => env!("CARGO_PKG_VERSION"),
+};
 
 #[derive(Debug, Clone)]
 pub struct ClientContext {
