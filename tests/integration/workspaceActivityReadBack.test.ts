@@ -270,7 +270,7 @@ describe('a stored thread read back on the store worker', () => {
     f.provider.state.threads[0]!.activities = [record('r1', 7, { output: 'Changed' }), record('late', 0)]
     f.provider.emit()
     await readsArrived(f.host)
-    expect(pieces).toHaveBeenCalledTimes(3)
+    expect(pieces.mock.calls.filter(([message]) => 'read' in message)).toHaveLength(3)
     const shownRecords = shown(f.host)!.activities!
     expect(shownRecords).toHaveLength(many.length + 1)
     expect(shownRecords.map(item => item.id)).toEqual([...many.map(item => item.id), 'late'])

@@ -154,6 +154,7 @@ const THREAD_MIGRATIONS: &[(i64, &str)] = &[
     (8, "ALTER TABLE wake_ups ADD COLUMN watcher_asks TEXT;"),
     (9, "ALTER TABLE wake_ups ADD COLUMN hidden INTEGER;"),
     (10, "ALTER TABLE messages ADD COLUMN provider_error INTEGER;"),
+    (11, "CREATE INDEX IF NOT EXISTS messages_thread_role_position ON messages(thread_id, role, position);"),
 ];
 
 const MEMORY_MIGRATIONS: &[(i64, &str)] = &[
@@ -370,14 +371,14 @@ pub struct StoredThreadEvent {
     pub event: Value,
 }
 
-/// Reads and writes Sotto's `threads.sqlite` database in place (schema v1–v10),
+/// Reads and writes Sotto's `threads.sqlite` database in place (schema v1–v11),
 /// matching `src/main/agents/threadStore.ts`.
 pub struct ThreadStore {
     conn: Connection,
 }
 
 impl ThreadStore {
-    /// Opens `threads.sqlite` and ensures all v1–v10 migrations and meta entries are present.
+    /// Opens `threads.sqlite` and ensures all v1–v11 migrations and meta entries are present.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let conn = open_sqlite(path)?;
         run_migrations(&conn, THREAD_MIGRATIONS)?;

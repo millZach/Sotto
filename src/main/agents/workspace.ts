@@ -324,10 +324,11 @@ const sameCheckout = async (left: string, right: string): Promise<boolean> => {
  * cannot take them, text-free for subagents, unless `keepTaskWords`: the roster, the words' only other copy, lacks
  * them or is not on the disk, so the file keeps them as it had them.
  */
-function organizationOnly(thread: AgentThread, keepActivities = false, keepTaskWords = false): AgentThread {
+function organizationOnly(thread: AgentThread, keepActivities = false, keepTaskWords = false, stripWindowLoading = false): AgentThread {
   // A bring-back outcome and the question it may hold are never saved (#1030): a restart forgets both.
   const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, sottoToolsGiven, bringBack, broughtBack, ...rest } = thread
   void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld; void sottoToolsGiven; void bringBack; void broughtBack
+  if (stripWindowLoading && rest.historyStatus === 'loading') delete rest.historyStatus
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: keepTaskWords ? activities : retainedActivities(activities) } : {}) }
 }
 
@@ -1066,7 +1067,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private readonly activityReads = new Map<string, ActivityRead>()
   /** Watched threads whose pane message windows are loading off main on the store worker (#2733). */
-  private readonly windowReads = new Map<string, { readonly turns: number; readonly markedLoading: boolean; readonly done: Promise<void> }>()
+  private readonly windowReads = new Map<string, { readonly turns: number; readonly markedLoading: boolean; readonly generation: number; readonly done: Promise<void> }>()
+  /** Threads currently carrying a temporary `'loading'` status owned by an off-main window read; never persisted to disk. */
+  private readonly windowLoadingMarked = new Set<string>()
+  /** Per-thread monotonic counter bumped whenever events, history writes, visuals, or wake-ups mutate stored thread state. */
+  private readonly windowGenerations = new Map<string, number>()
   /** The threads the window last said it looks at, which their provider is told once no read holds one back. */
   private observation: ReadonlySet<string> = new Set()
   /**
@@ -2560,6 +2565,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.clearedIds.add(threadId)
       this.forgetting.delete(threadId)
       this.pendingEvents.delete(threadId); this.inFlight.delete(threadId); this.failedEventThreads.delete(threadId); this.recordsFailed.delete(threadId); this.recordsOwed.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
+      this.windowReads.delete(threadId); this.windowLoadingMarked.delete(threadId); this.windowGenerations.delete(threadId)
     }
     this.forgetEnded(deleted)
     this.state.snapshot.threads = this.state.snapshot.threads.flatMap(thread => {
@@ -2799,6 +2805,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.post({ kind: 'visuals-removed', threadId, userMessageIds }, outcome => {
       if (outcome.error !== undefined) { this.saveError = HISTORY_SAVE_ERROR; return }
       if (!outcome.removed) return
+      this.bumpWindowGeneration(threadId)
       this.eventChanged.add(threadId)
       this.publishSoon()
     })
@@ -2834,6 +2841,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.waited(this.commit({ kind: 'visual', threadId, stored }))
     } catch { return { added: false, reason: 'history-unavailable' } }
     const anchor = stored.anchorMessageId === null ? 'none' : this.threadStore.message(threadId, stored.anchorMessageId)?.role ?? 'none'
+    this.bumpWindowGeneration(threadId)
     this.eventChanged.add(threadId)
     this.publishSoon()
     return { added: true, visual: stored.visual, anchor }
@@ -2942,7 +2950,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const ids = this.wakeUpRecords.get(thread.id)
       // A store that refuses them leaves the record to mark its own.
-      if (ids?.length) this.post({ kind: 'wake-ups', threadId: thread.id, messageIds: ids, asks: this.wakeUpAskRecords.get(thread.id), hidden: this.hiddenWakeUpRecords.get(thread.id) ?? [] })
+      if (ids?.length) {
+        this.bumpWindowGeneration(thread.id)
+        this.post({ kind: 'wake-ups', threadId: thread.id, messageIds: ids, asks: this.wakeUpAskRecords.get(thread.id), hidden: this.hiddenWakeUpRecords.get(thread.id) ?? [] })
+      }
     }
   }
   /**
@@ -2973,7 +2984,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const parsed = watcherAsksSchema.safeParse(asks)
     const kept = parsed.success && parsed.data.length ? parsed.data : undefined
     // A store that refuses it leaves the record below to name it, and the record marks it until the store holds it.
-    if (!this.storeUnavailable) this.post({ kind: 'wake-up', threadId, messageId, asks: kept, hidden })
+    if (!this.storeUnavailable) {
+      this.bumpWindowGeneration(threadId)
+      this.post({ kind: 'wake-up', threadId, messageId, asks: kept, hidden })
+    }
     const recorded = this.wakeUpRecords.get(threadId) ?? []
     const askRecord = this.wakeUpAskRecords.get(threadId)
     if (recorded.includes(messageId) && (kept === undefined || askRecord?.has(messageId))) return
@@ -3638,6 +3652,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const waiting = this.pendingEvents.get(threadId)
     if (waiting) waiting.push(event)
     else this.pendingEvents.set(threadId, [event])
+    this.bumpWindowGeneration(threadId)
     this.eventChanged.add(threadId)
     if (this.ready) this.publishSoon(event.kind === 'message-added' && this.inView(threadId))
   }
@@ -3737,6 +3752,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.noteWritten(threadId, events)
       this.recordOwed(threadId)
       this.markChanged(threadId)
+      this.bumpWindowGeneration(threadId)
       this.eventChanged.add(threadId)
       this.known.delete(threadId)
       if (events.some(event => event.kind === 'messages-reset')) this.hidden.delete(threadId)
@@ -4076,10 +4092,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (events.length) {
       let failed = false
       this.recordsInFlight.add(thread.id)
+      this.bumpWindowGeneration(thread.id)
       this.post({ kind: 'events', threadId: thread.id, events }, (outcome, late) => {
         this.recordsInFlight.delete(thread.id)
         if (!writeFailed(outcome)) {
           this.recordsFailed.delete(thread.id)
+          this.bumpWindowGeneration(thread.id)
           this.noteWritten(thread.id, events)
           // What the host published meanwhile is compared with the store as this write left it, and posted in turn.
           this.recordOwed(thread.id)
@@ -4157,12 +4175,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return privateMessages ? messages.filter(message => !privateMessages.has(message.id)) : messages
   }
+  private bumpWindowGeneration(threadId: string): void {
+    this.windowGenerations.set(threadId, (this.windowGenerations.get(threadId) ?? 0) + 1)
+  }
+  /** Clears temporary `'loading'` status owned by an off-main window read. */
+  private clearWindowLoading(threadId: string, thread = this.threadById(threadId)): void {
+    if (!this.windowLoadingMarked.delete(threadId)) return
+    if (thread?.historyStatus === 'loading') delete this.touched(thread).historyStatus
+  }
   /** Cancels any in-flight off-main window read for `threadId` and clears temporary loading state if set by it. */
   private clearWindowRead(threadId: string, thread = this.threadById(threadId)): void {
     const prior = this.windowReads.get(threadId)
-    if (!prior) return
-    this.windowReads.delete(threadId)
-    if (prior.markedLoading && thread?.historyStatus === 'loading') delete this.touched(thread).historyStatus
+    if (prior) this.windowReads.delete(threadId)
+    if (prior?.markedLoading || this.windowLoadingMarked.has(threadId)) this.clearWindowLoading(threadId, thread)
   }
   /** Applies a loaded window (from main or from the store worker) onto `thread`. */
   private applyLoadedWindow(thread: AgentThread, window: ThreadMessageWindow, preloaded?: WindowReadData): void {
@@ -4206,34 +4231,50 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!thread || !this.visible(thread)) return undefined
     if (this.storeUnavailable || this.stopping) { this.loadWindow(threadId); return undefined }
     this.writeEvents()
+    const generation = this.windowGenerations.get(threadId) ?? 0
     const turns = this.watched.get(threadId) ?? FIRST_WINDOW_TURNS
     const offMain = this.writes.readWindow?.(threadId, turns)
     if (!offMain) { this.loadWindow(threadId); return undefined }
     this.clearWindowRead(threadId, thread)
     const markedLoading = publishOnArrival && thread.messages.length === 0 && (thread.summary?.messageCount ?? 0) > 0 && thread.historyStatus === undefined
-    if (markedLoading) this.touched(thread).historyStatus = 'loading'
-    const read: { readonly turns: number; readonly markedLoading: boolean; readonly done: Promise<void> } = {
+    if (markedLoading) {
+      this.windowLoadingMarked.add(threadId)
+      this.touched(thread).historyStatus = 'loading'
+    }
+    const read: { readonly turns: number; readonly markedLoading: boolean; readonly generation: number; readonly done: Promise<void> } = {
       turns,
       markedLoading,
+      generation,
       done: offMain.then(result => this.windowArrived(threadId, read, result, publishOnArrival))
-        .catch(() => { console.warn('thread-window-read-failed') }),
+        .catch(() => {
+          if (this.windowReads.get(threadId) === read) this.windowReads.delete(threadId)
+          if (read.markedLoading && !this.windowReads.has(threadId)) this.clearWindowLoading(threadId)
+          console.warn('thread-window-read-failed')
+        }),
     }
     this.windowReads.set(threadId, read)
     return read
   }
   private async windowArrived(
     threadId: string,
-    read: { readonly turns: number; readonly markedLoading: boolean; readonly done: Promise<void> },
+    read: { readonly turns: number; readonly markedLoading: boolean; readonly generation: number; readonly done: Promise<void> },
     result: WindowReadBack,
     publishOnArrival: boolean,
   ): Promise<void> {
     if (this.windowReads.get(threadId) !== read) return
     this.windowReads.delete(threadId)
     if ('lost' in result) await this.writes.confirmed(threadId)
-    if (this.stopping || !this.watched.has(threadId) || this.windowReads.has(threadId)) return
+    const superseded = this.windowReads.has(threadId)
+    if (this.stopping || !this.watched.has(threadId) || superseded) {
+      if (read.markedLoading && !superseded) this.clearWindowLoading(threadId)
+      return
+    }
     const thread = this.threadById(threadId)
-    if (!thread || !this.visible(thread)) return
-    if (read.markedLoading && thread.historyStatus === 'loading') delete this.touched(thread).historyStatus
+    if (!thread || !this.visible(thread)) {
+      if (read.markedLoading) this.clearWindowLoading(threadId, thread)
+      return
+    }
+    if (read.markedLoading) this.clearWindowLoading(threadId, thread)
     if ('lost' in result) {
       this.loadWindow(threadId)
       if (publishOnArrival) this.publishSoon(true)
@@ -4244,7 +4285,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (publishOnArrival) this.publishSoon(true)
       return
     }
-    if (this.heldEvents(threadId, true).length > 0) this.loadWindow(threadId)
+    this.writeEvents()
+    const stale = (this.windowGenerations.get(threadId) ?? 0) !== read.generation
+      || this.eventChanged.has(threadId)
+      || this.heldEvents(threadId, true).length > 0
+    if (stale) this.loadWindow(threadId)
     else this.applyLoadedWindow(thread, result.data.window, result.data)
     if (publishOnArrival) this.publishSoon(true)
   }
@@ -4568,6 +4613,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Finish command lanes before detaching provider delivery and closing SQLite. */
   async close(): Promise<void> {
     this.stopping = true
+    for (const threadId of [...this.windowReads.keys()]) this.clearWindowRead(threadId)
+    for (const threadId of [...this.windowLoadingMarked]) this.clearWindowLoading(threadId)
     // A check's install stops with its whole process tree (#1312), and every working copy's setup, a check's included, ends
     // before the last save below, so nothing of either is still writing once the store closes.
     this.checkInstallsStop.abort()
@@ -5177,6 +5224,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // The runs it detached are background work too (#2476); a thread with none keeps its provider's list as it is.
     const runs = this.detachedRuns?.runsFor(thread.id)
     if (runs) { const work = withDetachedRuns(thread.backgroundWork, runs); if (work) merged.backgroundWork = work }
+    if (thread.historyStatus !== undefined) this.windowLoadingMarked.delete(thread.id)
+    else if (this.windowReads.get(thread.id)?.markedLoading) merged.historyStatus = 'loading'
     // A provider that is still loading a thread's history has published no history yet, so the
     // store keeps what it already holds and the pane keeps the window it was given.
     if (this.eventSourced) {
@@ -5469,7 +5518,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             if (this.releaseIdleActivities()) this.publishSoon()
           } catch (error) { this.dirty = true; throw error }
           const keepActivities = this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)
-          const savedThread = (thread: AgentThread): AgentThread => this.preservedDormantThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, keepActivities, !rosterSafe))
+          const savedThread = (thread: AgentThread): AgentThread => this.preservedDormantThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, keepActivities, !rosterSafe, this.windowLoadingMarked.has(thread.id)))
           const scrubThread = (thread: AgentThread): void => {
             if (this.historyEnabled() || !this.visible(thread)) return
             thread.requests = []

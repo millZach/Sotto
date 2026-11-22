@@ -4,20 +4,21 @@
  * verifies the SQLite query plan, idempotent migration on an existing pre-v11 database, worker offload with zero
  * main-thread SQLite window reads, cancellation on unwatch, and synchronous fallback when the worker is absent or lost.
  */
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { setTimeout as delay } from 'node:timers/promises'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { StoreWorker } from '../../../src/main/agents/storeWorker'
 import { FIRST_WINDOW_TURNS, prepareThreadDatabase, ThreadStore } from '../../../src/main/agents/threadStore'
+import type { ThreadStoreWriter, WindowReadBack } from '../../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import type { AgentMessage } from '../../../src/shared/agents'
 import { heldProvidersOf } from '../../../src/shared/heldProviders'
 import type { ThreadEvent } from '../../../src/shared/threadEvents'
+import { deferred } from '../../fixtures/deferred'
 import { builtStoreWorker } from '../../fixtures/storeWorker'
-import { EventProvider, visual, WORKSHOP } from '../../fixtures/storeWriterEquivalence'
+import { EventProvider, visual, windowReadsInFlight, WORKSHOP } from '../../fixtures/storeWriterEquivalence'
 
 const AT = '2026-11-22T12:00:00.000Z'
 const makeMessage = (id: string, role: AgentMessage['role'], text: string): AgentMessage => ({ id, role, text, createdAt: AT })
@@ -199,8 +200,10 @@ describe('messages covering index and off-main-thread loadWindow (#2733)', () =>
     // Unwatching while an off-main read is in flight cancels cleanly, keeps the existing summary, and leaves no stuck loading state.
     host.observeThreads([])
     host.observeThreads([WORKSHOP])
+    const pending = windowReadsInFlight(host).get(WORKSHOP)
+    expect(pending).toBeDefined()
     host.observeThreads([])
-    await delay(30)
+    await pending!.done
     const unwatched = host.workspaceSnapshot().threads.find(item => item.id === WORKSHOP)!
     expect(unwatched.messages).toEqual([])
     expect(unwatched.historyStatus).toBeUndefined()
@@ -248,5 +251,123 @@ describe('messages covering index and off-main-thread loadWindow (#2733)', () =>
     const thread = host.workspaceSnapshot().threads.find(item => item.id === WORKSHOP)!
     expect(thread.messages).toHaveLength(FIRST_WINDOW_TURNS * 2)
     expect(thread.earlierAvailable).toBe(true)
+  })
+
+  it('ignores a stale worker window answer when an event is written and confirmed while the read is in flight', async () => {
+    const dir = await folder()
+    const dbPath = join(dir, 'threads.sqlite')
+    const seeded = new ThreadStore(dbPath, undefined, null)
+    seeded.open()
+    seeded.appendMany(WORKSHOP, [
+      { kind: 'message-added', at: AT, message: makeMessage('u-0', 'user', 'Prompt 0') },
+      { kind: 'message-added', at: AT, message: makeMessage('a-0', 'assistant', 'Initial reply') },
+    ])
+    seeded.close()
+
+    const adapter = new EventProvider()
+    const project = join(dir, 'project')
+    await mkdir(project)
+    adapter.state.projects[0]!.path = project
+    const host = new WorkspaceHost(adapter, dir, {
+      historyEnabled: () => true,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: true,
+      storeWorker: { path: worker.path },
+    })
+    cleanups.push(async () => { host.disconnect(); await host.close().catch(() => undefined) })
+    await host.initialize()
+    await host.connect()
+    host.observeThreads([])
+
+    const writes = (host as unknown as { writes: ThreadStoreWriter }).writes
+    const originalReadWindow = writes.readWindow!.bind(writes)
+    const gate = deferred<void>()
+    let staleAnswer: WindowReadBack | undefined
+    vi.spyOn(writes, 'readWindow').mockImplementationOnce((threadId, turns) => {
+      const real = originalReadWindow(threadId, turns)!
+      return real.then(async result => {
+        staleAnswer = result
+        await gate.promise
+        return result
+      })
+    })
+
+    host.observeThreads([WORKSHOP])
+    const pending = windowReadsInFlight(host).get(WORKSHOP)
+    expect(pending).toBeDefined()
+    await vi.waitFor(() => expect(staleAnswer).toBeDefined())
+
+    // Write and confirm a replacement event while the worker window read is still held open (so heldEvents is empty on arrival).
+    adapter.publish({ kind: 'message-replaced', at: AT, message: makeMessage('a-0', 'assistant', 'Replaced reply') })
+    await host.flush()
+    await writes.confirmed(WORKSHOP)
+
+    gate.resolve()
+    await pending!.done
+
+    expect(host.threadMessages(WORKSHOP).find(item => item.id === 'a-0')?.text).toBe('Replaced reply')
+    const shown = host.workspaceSnapshot().threads.find(item => item.id === WORKSHOP)!
+    expect(shown.messages.find(item => item.id === 'a-0')?.text).toBe('Replaced reply')
+  })
+
+  it('never persists temporary loading historyStatus to workspace.json or leaves it stuck after close mid-read', async () => {
+    const dir = await folder()
+    const dbPath = join(dir, 'threads.sqlite')
+    const seeded = new ThreadStore(dbPath, undefined, null)
+    seeded.open()
+    seedTurns(seeded, WORKSHOP, 15)
+    seeded.close()
+
+    const adapter = new EventProvider()
+    const project = join(dir, 'project')
+    await mkdir(project)
+    adapter.state.projects[0]!.path = project
+    const host = new WorkspaceHost(adapter, dir, {
+      historyEnabled: () => true,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: true,
+      storeWorker: { path: worker.path },
+    })
+    await host.initialize()
+    await host.connect()
+    host.observeThreads([])
+
+    const writes = (host as unknown as { writes: ThreadStoreWriter }).writes
+    const gate = deferred<WindowReadBack>()
+    vi.spyOn(writes, 'readWindow').mockImplementationOnce(() => gate.promise)
+
+    host.observeThreads([WORKSHOP])
+    expect(windowReadsInFlight(host).has(WORKSHOP)).toBe(true)
+    expect(host.workspaceSnapshot().threads.find(item => item.id === WORKSHOP)?.historyStatus).toBe('loading')
+
+    // Flushing while the off-main window read is in flight must not write temporary 'loading' to workspace.json.
+    await host.flush()
+    const duringRead = JSON.parse(await readFile(join(dir, 'workspace.json'), 'utf8')) as { snapshot: { threads: Array<{ id: string; historyStatus?: string }> } }
+    expect(duringRead.snapshot.threads.find(item => item.id === WORKSHOP)?.historyStatus).toBeUndefined()
+
+    // Closing mid-read must clear temporary 'loading' and never persist it to workspace.json.
+    host.disconnect()
+    await host.close()
+    gate.resolve({ lost: true })
+    const afterClose = JSON.parse(await readFile(join(dir, 'workspace.json'), 'utf8')) as { snapshot: { threads: Array<{ id: string; historyStatus?: string }> } }
+    expect(afterClose.snapshot.threads.find(item => item.id === WORKSHOP)?.historyStatus).toBeUndefined()
+
+    // Reopening when the provider no longer lists the thread must not show a stuck 'loading' status.
+    const silentAdapter = new EventProvider()
+    silentAdapter.state.projects[0]!.path = project
+    silentAdapter.state.threads = []
+    const reopened = new WorkspaceHost(silentAdapter, dir, {
+      historyEnabled: () => true,
+      watcherEnabled: false,
+      heldProviders: heldProvidersOf({ muse: false }),
+      streamingPublishCostEnabled: true,
+      storeWorker: null,
+    })
+    cleanups.push(async () => { reopened.disconnect(); await reopened.close().catch(() => undefined) })
+    await reopened.initialize()
+    await reopened.connect()
+    expect(reopened.workspaceSnapshot().threads.find(item => item.id === WORKSHOP)?.historyStatus).toBeUndefined()
   })
 })
