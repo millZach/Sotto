@@ -26,7 +26,7 @@ public enum RemoteCommands {
         "load-earlier-messages": ["threadId"],
         "answer": ["threadId", "requestId", "answer", "approved", "questionAnswers", "permissionChoice", "skipped"],
         "create-project": ["provider", "title", "path", "useExisting"],
-        "create-thread": ["projectId", "title", "modelId", "titleSource", "threadId", "workingCopy", "reasoningEffort", "runtimeMode", "providerMode", "managed"],
+        "create-thread": ["projectId", "title", "modelId", "titleSource", "threadId", "workingCopy", "reasoningEffort", "runtimeMode", "providerMode", "speed", "managed"],
         // A running thread's model, effort, permissions and speed from its reply box (ADR-0166). A mode that lets the
         // thread act without asking needs the computer's remote-answer policy, which the computer checks.
         "configure-thread": ["threadId", "modelId", "reasoningEffort", "runtimeMode", "providerMode", "fastMode", "speed"],

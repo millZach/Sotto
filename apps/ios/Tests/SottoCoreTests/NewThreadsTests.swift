@@ -5,9 +5,9 @@ final class NewThreadsTests: XCTestCase {
     private func model(_ extra: String = "") throws -> ThreadModel {
         try JSONDecoder().decode(ThreadModel.self, from: Data(#"{"id":"opaque-model","name":"Model","provider":"Codex","providerId":"codex","ready":true,"reasoningEfforts":["low","high"],"defaultReasoningEffort":"high","runtimeModes":["approval-required","full-access"]\#(extra)}"#.utf8))
     }
-    private func create(_ model: ThreadModel, effort: String = "high", permission: String = "approval-required", mayAnswer: Bool = false) throws -> JSONValue {
+    private func create(_ model: ThreadModel, effort: String = "high", permission: String = "approval-required", mayAnswer: Bool = false, speed: String? = nil) throws -> JSONValue {
         try Commands.createThread(projectID: "opaque-project", threadID: "00000000-0000-4000-8000-000000000001",
-                                  model: model, effort: effort, permissionID: permission, mayAnswer: mayAnswer)
+                                  model: model, effort: effort, permissionID: permission, mayAnswer: mayAnswer, speed: speed)
     }
     func testCreationUsesThePhoneThreadIDAndExplicitAskingMode() throws {
         let command = try create(model())
@@ -19,6 +19,18 @@ final class NewThreadsTests: XCTestCase {
         XCTAssertEqual(command["managed"], .bool(false))
         XCTAssertEqual(command["titleSource"], .string("default"))
         XCTAssertEqual(command["text"], .null)
+    }
+    func testCreationSendsExplicitStandardAndOnlyOfferedSpeeds() throws {
+        let fast = try model(#", "speeds":[{"id":"fast","name":"Fast"}]"#)
+        XCTAssertEqual(try create(fast, speed: "fast")["speed"], .string("fast"))
+        XCTAssertThrowsError(try create(fast, speed: "ultrafast"))
+        guard case .object(let standard) = try create(fast, speed: ThreadSettings.standard),
+              case .object(let inherited) = try create(fast) else { return XCTFail("Expected creation commands") }
+        XCTAssertEqual(standard["speed"], JSONValue.null)
+        XCTAssertNil(inherited["speed"])
+        let older = try model(#", "fastMode":{}"#)
+        XCTAssertTrue(older.creationSpeeds.isEmpty)
+        XCTAssertThrowsError(try create(older, speed: "fast"))
     }
     func testUnknownEffortOrPermissionCannotBeSent() throws {
         XCTAssertThrowsError(try create(model(), effort: "ultra"))

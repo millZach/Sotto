@@ -316,7 +316,7 @@ import UIKit
     // MARK: Journeys
 
     func testCreateThreadInAKnownProject() {
-        launch(Self.fixture)
+        launch(Self.fixture + ["--ui-thread-settings"])
         app.buttons["new-thread"].tap()
         // With only the laptop online, New thread starts on its projects (#1856); the computer's chip still opens the list.
         let project = app.buttons["new-thread-project-sotto"]
@@ -332,11 +332,22 @@ import UIKit
         let open = app.buttons["open-new-thread"]
         XCTAssertTrue(open.waitForExistence(timeout: 5))
         XCTAssertTrue(open.isEnabled)
+        let speed = app.buttons["new-thread-speed"]
+        reveal(speed)
+        XCTAssertEqual(speed.value as? String, "Standard")
+        speed.tap()
+        let ultra = menuItem("Ultra fast")
+        XCTAssertTrue(ultra.waitForExistence(timeout: 5))
+        XCTAssertTrue(menuItem("Fast").exists)
+        capture("new-thread-speed-menu")
+        ultra.tap()
+        XCTAssertEqual(waitForValue(speed, "Ultra fast"), .completed)
         capture("new-thread-options-dark")
         open.tap()
         let title = byID("thread-title")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertEqual(title.label, "New thread")
+        XCTAssertEqual(waitForValue(byID("thread-settings"), containing: "Ultra fast"), .completed)
         capture("new-thread-conversation-dark")
     }
 
