@@ -475,16 +475,16 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0 }); return true }
     return false
   }
-  const toolbar = watcher ? null : <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError}
+  const toolbar = watcher ? null : <BranchToolbar key={`branch:${threadId}`} row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError}
     header={quiet} noticeSlot={quiet ? toolbarNotices : undefined} />
   const metadata = useMemo(() => children?.(quiet), [children, quiet])
 
   return <>
-    <ThreadFollowups row={row} state={state} command={command} store={store}
+    <ThreadFollowups key={`followups:${threadId}`} row={row} state={state} command={command} store={store}
       onRetryAdmission={draftId => { void sendThreadRevision(store, row, command, performance.now(), 'queue', draftId) }} />
     {/* When Sotto restarts what a limit stopped (ADR-0144; Owl only), before the prompt; a begun continuation takes its place, and Watcher's own pane has the band. */}
-    {continuing === undefined && !watcher ? <RestartStrip thread={row.thread} command={command} composerId={composerId} /> : null}
-    {continuing !== undefined ? <ContinueStrip thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
+    {continuing === undefined && !watcher ? <RestartStrip key={`restart:${threadId}`} thread={row.thread} command={command} composerId={composerId} /> : null}
+    {continuing !== undefined ? <ContinueStrip key={`continue:${threadId}`} thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
     <form className="thread-prompt" data-quiet={quiet || undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>

@@ -322,7 +322,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const slimOn = useOwlFeature('composer-shrink') && (watcherOn || !ownPane)
   const [readingBack, setReadingBack] = useState(false)
   const [composeHeld, setComposeHeld] = useState(false)
-  useEffect(() => {
+  useLayoutEffect(() => {
     setRenaming(false)
     restoreRenameFocus.current = false
     setReadingBack(false)
@@ -536,7 +536,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* A symbol the keys reach is named under the header, as the pointer's tooltip names it. */}
       <div className="thread-workspace__actions" onFocus={headerName.onFocus} onBlur={headerName.onBlur} onKeyDown={headerName.onKeyDown}>
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
-        {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
+        {!closed ? <GitActionButton key={`git:${thread.id}`} ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
         {thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined || thread.owlet !== undefined ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
         {/* The Council, in this pane's drawer, for a thread on this computer (ADR-0177; Owl only). */}
@@ -581,7 +581,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       <div className="git-action-notice-slot" ref={setGitNoticeSlot} />
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
       {/* Watcher keeps to its own folder; it switches no working copy (ADR-0073). */}
-      {ownPane ? null : <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />}
+      {ownPane ? null : <ThreadBranchNotice key={`branch-notice:${thread.id}`} thread={thread} project={row.project} command={command} composing={composing} />}
       {/* A prototype waiting for review, with its pages to open (ADR-0108); a waiting question's card carries them instead. */}
       {ownPane ? null : <PrototypeReady thread={thread} />}
       <ThreadRequests place="composer" row={row} below={below} state={state} command={command} onAnswer={focusAnswerComposer} />
@@ -592,7 +592,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           {ownPane ? null : <DelegationComposerNote thread={thread} state={state} hideStop={quiet} />}
           {/* Just continued elsewhere: this thread can still be sent to (ADR-0089; Owl only). */}
           {ownPane ? null : <ContinueComposerNote thread={thread} />}
-          <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
+          <ThreadCompaction key={`compaction:${thread.id}`} thread={thread} supported={compactionOffered(capabilities, thread)}
             connected={rowConnected && !closed} blocked={threadBusy} command={command} />
         </div>}
       </ThreadComposer>

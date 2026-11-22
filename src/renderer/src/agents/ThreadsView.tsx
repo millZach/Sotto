@@ -240,8 +240,14 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
       return
     }
     setPending({ threadId })
-    const settle = (): void => setPending(current => current?.threadId === threadId && current.settled === undefined ? { threadId, settled: stateRef.current } : current)
-    void command({ type: 'select-thread', threadId }).then(settle, settle)
+    void command({ type: 'select-thread', threadId }).then(
+      result => setPending(current => {
+        if (current?.threadId !== threadId) return current
+        if (result === null || result.activeThreadId !== threadId) return null
+        return current.settled === undefined ? { threadId, settled: stateRef.current } : current
+      }),
+      () => setPending(current => current?.threadId === threadId ? null : current),
+    )
   }, [command])
   // A leftover draft taken into a new thread's composer. The coordinator lets its copy go only once main has saved
   // the composer with it, and only if that copy is still the one carried, images included; until then both are kept.
@@ -351,8 +357,14 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const focusPane = useCallback((threadId: string): void => {
     if (threadId === focusedId) return
     setPending({ threadId })
-    const settle = (): void => setPending(current => current?.threadId === threadId && current.settled === undefined ? { threadId, settled: stateRef.current } : current)
-    void command({ type: 'select-thread', threadId }).then(settle, settle)
+    void command({ type: 'select-thread', threadId }).then(
+      result => setPending(current => {
+        if (current?.threadId !== threadId) return current
+        if (result === null || result.activeThreadId !== threadId) return null
+        return current.settled === undefined ? { threadId, settled: stateRef.current } : current
+      }),
+      () => setPending(current => current?.threadId === threadId ? null : current),
+    )
   }, [command, focusedId])
   // macOS paints its own window controls, so the page keeps no room for ours at its right edge.
   const mac = app?.platform === 'darwin'

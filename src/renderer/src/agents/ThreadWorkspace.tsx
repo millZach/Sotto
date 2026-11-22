@@ -16,7 +16,7 @@ import { threadMachineName } from '../tools/TerminalSurface'
 // The pane slots are made once, here rather than inline, so each pane's memo boundary sees the same slot on every update
 // and redraws only for what the slot is handed (#993).
 const tools: ThreadToolsSlot = props => <ToolsPanel {...props} />
-const paneWorkingCopy: ThreadPaneSlot = ({ row, command }) => <ThreadWorkingCopy thread={row.thread} project={row.project} command={command} />
+const paneWorkingCopy: ThreadPaneSlot = ({ row, command }) => <ThreadWorkingCopy key={`working-copy-chip-${row.thread.id}`} thread={row.thread} project={row.project} command={command} />
 const paneNotice: ThreadPaneSlot = ({ row, command, focusPrompt }) => <ThreadWorkingCopyNotice key={`working-copy-${row.thread.id}`} thread={row.thread} project={row.project} command={command} onRecovered={focusPrompt} />
 /** A thread on a paired host has a drawer only where its shell can run over SSH (ADR-0183; Owl only). Otherwise its pane says where its terminal is. */
 const localPaneTerminal = ({ row }: ThreadPaneSlotProps): boolean => row.thread.remoteHost !== true

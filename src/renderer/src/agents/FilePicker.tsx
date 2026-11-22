@@ -62,8 +62,10 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<Catalog>(() => empty(threadId))
   const mounted = useRef(true)
+  const latestThreadId = useRef(threadId)
+  latestThreadId.current = threadId
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  useEffect(() => {
+  useLayoutEffect(() => {
     setSelection(null)
     setActive(null)
     setDismissed(null)
@@ -83,8 +85,9 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
   const activeIndex = options.length === 0 ? null : chosen !== null ? Math.min(chosen, options.length - 1) : 0
 
   const put = useCallback((path: string, state: Listing, workspaceId?: string): void => {
-    if (!mounted.current) return
+    if (!mounted.current || latestThreadId.current !== threadId) return
     setCatalog(previous => {
+      if (latestThreadId.current !== threadId) return previous
       const base = previous.threadId === threadId ? previous : empty(threadId)
       const listings = new Map(base.listings)
       listings.set(path, state)
@@ -100,11 +103,13 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
       let token = workspaceId
       if (path !== '' && token === null) {
         const root = await bridge.list({ threadId, path: '' })
+        if (!mounted.current || latestThreadId.current !== threadId) return
         if (!root.ok) { put(path, { status: 'error', message: root.error.message }); return }
         token = root.value.workspace.workspaceId
         put('', { status: 'ready', entries: root.value.entries, truncated: root.value.truncated }, token)
       }
       const result = await bridge.list({ threadId, path, ...(path === '' || token === null ? {} : { workspaceId: token }) })
+      if (!mounted.current || latestThreadId.current !== threadId) return
       if (!result.ok) { put(path, { status: 'error', message: result.error.message }); return }
       put(path, { status: 'ready', entries: result.value.entries, truncated: result.value.truncated }, result.value.workspace.workspaceId)
     } catch { put(path, { status: 'error', message: msg`Files could not be reached.` }) }
