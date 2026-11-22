@@ -338,7 +338,7 @@ describe.skipIf(!PERF_BENCH && !PERF_ASSERT)('DesktopHostRouter build count, eng
     if (PERF_ASSERT) {
       expect(summary.routerBuildsPerSwitch).toBeLessThanOrEqual(1)
       expect(summary.routerEmitsPerSwitch).toBeLessThanOrEqual(1)
-      expect(summary.detailSendsClonesPerRead).toBeLessThanOrEqual(1)
+      expect(summary.detailSendsClonesPerRead).toBe(0)
     }
   }, 60_000)
 })

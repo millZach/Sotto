@@ -293,7 +293,7 @@ describe('DetailSends.wholeDetail cloning and decoration isolation (#2733)', () 
     return { sends, messages, activities }
   }
 
-  it('shares certified immutableActivities under streamingPublishCost and isolates snapshot messages from decoration', () => {
+  it('keeps returned activities writable and isolated from certified baseline while avoiding structuredClone', () => {
     const { sends, messages, activities } = makeSends(true)
     const origClone = globalThis.structuredClone
     let cloneCalls = 0
@@ -304,25 +304,29 @@ describe('DetailSends.wholeDetail cloning and decoration isolation (#2733)', () 
 
     try {
       const detail = sends.threadDetail('t1')!
-      expect(cloneCalls).toBe(1)
-      expect(detail.activities).toBe(activities)
+      expect(cloneCalls).toBe(0)
+      // Returned activities must be writable and isolated from the certified baseline.
+      expect(detail.activities).not.toBe(activities)
+      detail.activities![0]!.output = 'caller edit'
+      expect(activities[0]!.output).toBe('ok')
       // Decorated detail reflects stripped preview on m1 and added preview attachment on m2.
       expect(detail.messages[0]!.attachments?.[0]?.preview).toBeUndefined()
       expect(detail.messages[1]!.attachments?.[0]?.id).toBe('local-1')
       // Original presented messages are never mutated.
       expect(messages[0]!.attachments?.[0]?.preview).toEqual({ available: true })
       expect(messages[1]!.attachments).toBeUndefined()
-      // Stored undecorated snapshot is never mutated by decorate().
+      // Stored undecorated snapshot is never mutated by decorate() or caller edits.
       const snapshot = (sends as unknown as { detailSnapshots: Map<string, { messages: AgentMessage[]; activities?: AgentActivity[] }> }).detailSnapshots.get('t1')!
       expect(snapshot.messages[0]!.attachments?.[0]?.preview).toEqual({ available: true })
       expect(snapshot.messages[1]!.attachments).toBeUndefined()
       expect(snapshot.activities).toBe(activities)
+      expect(snapshot.activities![0]!.output).toBe('ok')
     } finally {
       globalThis.structuredClone = origClone
     }
   })
 
-  it('keeps cloning activities once when streamingPublishCost is false while still cloning messages only once', () => {
+  it('keeps activities writable when streamingPublishCost is false without calling structuredClone', () => {
     const { sends, activities } = makeSends(false)
     const origClone = globalThis.structuredClone
     let cloneCalls = 0
@@ -333,9 +337,11 @@ describe('DetailSends.wholeDetail cloning and decoration isolation (#2733)', () 
 
     try {
       const detail = sends.threadDetail('t1')!
-      expect(cloneCalls).toBe(2)
+      expect(cloneCalls).toBe(0)
       expect(detail.activities).not.toBe(activities)
       expect(detail.activities).toEqual(activities)
+      detail.activities![0]!.output = 'caller edit'
+      expect(activities[0]!.output).toBe('ok')
     } finally {
       globalThis.structuredClone = origClone
     }

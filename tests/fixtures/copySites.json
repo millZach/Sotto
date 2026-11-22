@@ -28,7 +28,8 @@
     "cloneActivitySnapshot(": 1
   },
   "src/main/agents/detailSends.ts": {
-    "structuredClone(": 3
+    "structuredClone(": 1,
+    "clonePlainData(": 2
   },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
