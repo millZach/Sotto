@@ -1,5 +1,5 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, readdir, readFile, realpath } from 'node:fs/promises'
+import { join, relative, isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { MAX_ACTIVITY_TEXT } from '../../shared/agentActivity'
 
@@ -15,10 +15,11 @@ import { MAX_ACTIVITY_TEXT } from '../../shared/agentActivity'
  *   child: its `content` is the child's result.
  *
  * A child is done once its answer is in the parent's inbox, and was stopped when its record says it was killed. Only
- * these records are read, each bounded, and nothing is ever written.
+ * these records are read: plain files, each bounded, in folders whose real path is inside `brain`, so a link never
+ * leads a read anywhere else, `agy`'s sign-in among them (ADR-0212's amendment). Nothing is ever written.
  */
 
-/** Most children, and most messages in an inbox, read for one parent: past these the reader proves nothing. */
+/** Most records or messages read in one pass; the rest are read in the next, so none is hidden past a cut. */
 const MOST_FILES = 200
 /** A record or message larger than this is not read. */
 const MOST_BYTES = 256 * 1024
@@ -38,41 +39,65 @@ export interface AntigravityChild {
   readonly completedAt?: string
 }
 
+/**
+ * What one watch has learned so far, so each read does only new work: the child's conversation once found, the
+ * children ruled out because their launch named another tool call, and the parent's inbox files already read.
+ */
+export interface AntigravityChildReading { childConversation?: string; readonly ruledOut: Set<string>; readonly readAnswers: Set<string> }
+export const antigravityChildReading = (): AntigravityChildReading => ({ ruledOut: new Set(), readAnswers: new Set() })
+
 const generated = (appData: string, conversation: string, ...rest: string[]) => join(appData, 'brain', conversation, '.system_generated', ...rest)
 
+/** The `.json` files in a folder inside `brain`, by name, or none when its real path leads elsewhere. */
+async function jsonNames(brain: string, directory: string): Promise<string[]> {
+  try {
+    const real = await realpath(directory), within = relative(brain, real)
+    if (!within || within.startsWith('..') || isAbsolute(within)) return []
+    return (await readdir(real)).filter(name => name.endsWith('.json'))
+  } catch { return [] }
+}
 async function readJson<T>(path: string, schema: z.ZodType<T>): Promise<T | undefined> {
   try {
-    if ((await stat(path)).size > MOST_BYTES) return undefined
+    const info = await lstat(path)
+    if (!info.isFile() || info.size > MOST_BYTES) return undefined
     const parsed = schema.safeParse(JSON.parse(await readFile(path, 'utf8')))
     return parsed.success ? parsed.data : undefined
   } catch { return undefined }
 }
-async function jsonFiles(directory: string): Promise<string[]> {
-  try { return (await readdir(directory)).filter(name => name.endsWith('.json')).slice(0, MOST_FILES).map(name => join(directory, name)) }
-  catch { return [] }
-}
-async function messages(appData: string, conversation: string): Promise<Message[]> {
-  const read = await Promise.all((await jsonFiles(generated(appData, conversation, 'messages'))).map(path => readJson(path, messageSchema)))
+async function messages(directory: string, names: readonly string[]): Promise<Message[]> {
+  const read = await Promise.all(names.map(name => readJson(join(directory, name), messageSchema)))
   return read.filter((message): message is Message => message !== undefined)
 }
 
 /**
  * The child that the parent's `invoke_subagent` tool call `toolCallId` launched, or undefined when the records do not
- * (yet) name one. `known` is the child's conversation once found, so a later read goes straight to it.
+ * (yet) name one. `reading` carries what earlier reads of the same watch learned.
  */
-export async function readAntigravityChild(appData: string, parent: string, toolCallId: string, known?: string): Promise<AntigravityChild | undefined> {
+export async function readAntigravityChild(appData: string, parent: string, toolCallId: string, reading: AntigravityChildReading = antigravityChildReading()): Promise<AntigravityChild | undefined> {
   if (!conversationId.safeParse(parent).success) return undefined
-  const records = (await Promise.all((await jsonFiles(generated(appData, parent, 'subagents'))).map(path => readJson(path, childRecordSchema))))
+  let brain: string
+  try { brain = await realpath(join(appData, 'brain')) } catch { return undefined }
+  const recordsAt = generated(appData, parent, 'subagents')
+  const records = (await Promise.all((await jsonNames(brain, recordsAt)).filter(name => !reading.ruledOut.has(name.slice(0, -'.json'.length))).slice(0, MOST_FILES)
+    .map(name => readJson(join(recordsAt, name), childRecordSchema))))
     .filter((record): record is z.infer<typeof childRecordSchema> => record !== undefined)
-  let record = known ? records.find(item => item.conversationId === known) : undefined
+  let record = reading.childConversation ? records.find(item => item.conversationId === reading.childConversation) : undefined
   if (!record) {
     for (const candidate of records) {
-      const launches = await messages(appData, candidate.conversationId)
-      if (launches.some(message => message.sender === parent && message.sourceMetadata?.tool.toolCall.id === toolCallId)) { record = candidate; break }
+      if (reading.ruledOut.has(candidate.conversationId)) continue
+      const inbox = generated(appData, candidate.conversationId, 'messages')
+      const launches = (await messages(inbox, (await jsonNames(brain, inbox)).slice(0, MOST_FILES))).filter(message => message.sender === parent && message.sourceMetadata)
+      if (launches.some(message => message.sourceMetadata!.tool.toolCall.id === toolCallId)) { record = candidate; break }
+      // Ruled out only once its launch names another call: a child whose launch is not written yet is read again.
+      if (launches.length) reading.ruledOut.add(candidate.conversationId)
     }
   }
   if (!record) return undefined
-  const answers = (await messages(appData, parent)).filter(message => message.sender === record.conversationId && message.content !== undefined)
+  reading.childConversation = record.conversationId
+  const inbox = generated(appData, parent, 'messages')
+  const unread = (await jsonNames(brain, inbox)).filter(name => !reading.readAnswers.has(name)).slice(0, MOST_FILES)
+  for (const name of unread) reading.readAnswers.add(name)
+  const answers = (await messages(inbox, unread)).filter(message => message.sender === record.conversationId && message.content !== undefined)
     .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''))
   const answer = answers.at(-1)
   if (answer) {

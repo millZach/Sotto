@@ -85,11 +85,14 @@ const SETTLED = new Set(['completed', 'failed', 'interrupted'])
 function childAgent(key: string, status: string, title: string | undefined, input: Record<string, unknown> | undefined, old: AgentActivity | undefined): ChildAgent {
   const held = old?.agents?.[0]
   if (held && SETTLED.has(held.status)) return held
-  const words = (field: string): string | undefined => typeof input?.[field] === 'string' && (input[field] as string).trim() ? (input[field] as string).trim().slice(0, MAX_ACTIVITY_TEXT) : undefined
+  const words = (field: string): string | undefined => firstString(input, [field])?.slice(0, MAX_ACTIVITY_TEXT)
   const role = words('Role') ?? held?.title, prompt = words('Prompt') ?? held?.prompt, model = words('Model') ?? held?.model
   const detached = status === 'completed' && (prompt !== undefined || title?.includes('invoke_subagent') === true)
-  return { id: `antigravity-child-${key}`, status: detached ? 'running' : status, title: role ?? title ?? 'Subagent',
-    ...(prompt ? { prompt } : {}), ...(model && model !== 'inherit' ? { model } : {}) }
+  const next = detached ? 'running' : status, now = new Date().toISOString()
+  // A child seen at work now is live: without the moment it was seen, the Agents pane reads it as last seen working.
+  return { id: `antigravity-child-${key}`, status: next, title: role ?? title ?? 'Subagent',
+    ...(prompt ? { prompt } : {}), ...(model && model !== 'inherit' ? { model } : {}),
+    ...(next === 'running' ? { observedAt: now, startedAt: held?.startedAt ?? now, timingSource: 'observed' as const } : {}) }
 }
 
 /** The turn's one plan row: `agy` replaces its whole list on every plan update. */

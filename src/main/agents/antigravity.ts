@@ -12,7 +12,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import { antigravityActivities, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
-import { readAntigravityChild, type AntigravityChild } from './antigravityChildren'
+import { antigravityChildReading, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
 import { antigravityFolders, type AntigravityFolders } from './antigravityFolders'
 import { leaseAntigravityRuntime } from './antigravityInstall'
 import { antigravityUsageHooks, type AntigravityUsageHooks } from './antigravityUsage'
@@ -139,7 +139,7 @@ const ANTIGRAVITY_GEMINI_ONLY = 'Antigravity threads in Sotto run Gemini models 
 const CHILD_READ_MS = 1_000
 const CHILD_WATCH_MS = 4 * 60 * 60 * 1_000
 /** One child at work: its thread and row, the launching tool call, the parent's session and, once found, its own. */
-interface ChildWatch { readonly threadId: string; readonly rowId: string; readonly toolCallId: string; readonly parent: string; readonly until: number; known?: string }
+interface ChildWatch { readonly threadId: string; readonly rowId: string; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading }
 const COMPACTING = 'Antigravity is compacting this thread. Wait for it to finish, then send.'
 const COMPACTION_LOST = 'Antigravity stopped before it confirmed whether it compacted this thread. Nothing was lost. Its next reply shows how full the context is; compact again then if it still needs it.'
 const COMPACTION_ANSWERED = 'Antigravity answered /compact in words rather than compacting this thread. Nothing was lost. Update Antigravity, then compact again.'
@@ -720,6 +720,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private working(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || this.compactions.has(id) || (turn !== undefined && !turn.ended)
+      || [...this.children.values()].some(watch => watch.threadId === id)
   }
   private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
   private open(id: string): Promise<Connection> {
@@ -941,7 +942,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
     // A launch that finished with its child still at work: watched until `agy`'s records say the child is done.
     if (row?.kind === 'subagent' && row.agents?.[0]?.status === 'running' && update.status === 'completed' && typeof update.toolCallId === 'string' && alias.antigravitySessionId) {
-      this.watchChild({ threadId: id, rowId: row.id, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + CHILD_WATCH_MS })
+      this.watchChild({ threadId: id, rowId: row.id, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + CHILD_WATCH_MS, reading: antigravityChildReading() })
     }
   }
   private watchChild(watch: ChildWatch): void {
@@ -952,12 +953,14 @@ export class AntigravityAcpHost implements ProviderHost {
   private async readChildren(): Promise<void> {
     if (this.readingChildren) return
     this.readingChildren = true
+    const generation = this.generation
     try {
       for (const [rowId, watch] of [...this.children]) {
-        const generation = this.generation
-        const child = await readAntigravityChild(this.folders.appData, watch.parent, watch.toolCallId, watch.known)
+        // A disconnect or a forgotten thread ends the reading before its next file, not only after it.
+        if (generation !== this.generation) break
+        if (this.children.get(rowId) !== watch) continue
+        const child = await readAntigravityChild(this.folders.appData, watch.parent, watch.toolCallId, watch.reading)
         if (generation !== this.generation || this.children.get(rowId) !== watch) continue
-        if (child) watch.known = child.conversationId
         if (child && child.status !== 'running') { this.children.delete(rowId); this.settleChild(watch, child) }
         else if (Date.now() > watch.until) this.children.delete(rowId)
       }

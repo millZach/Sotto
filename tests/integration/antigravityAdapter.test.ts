@@ -453,6 +453,8 @@ describe('Antigravity ACP adapter', () => {
     await f!.action(id, { type: 'subagent', role: 'Kestrel Responder', prompt: 'Reply with the word KESTREL.' })
     // The launch ends at once, as agy 1.5 runs the child detached; the child is still at work.
     await expect.poll(child).toMatchObject({ status: 'running', title: 'Kestrel Responder', prompt: 'Reply with the word KESTREL.' })
+    // Seen at work now, so the Agents pane shows it working rather than last seen working.
+    expect(Date.now() - Date.parse((await child())!.observedAt!)).toBeLessThan(60_000)
     expect((await child())?.model).toBeUndefined()
     await f!.action(id, { type: 'subagent-answer', text: 'KESTREL' })
     await expect.poll(child, { timeout: 15_000 }).toMatchObject({ status: 'completed', message: 'KESTREL', completedAt: '2026-11-22T03:14:03.510Z' })

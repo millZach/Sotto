@@ -49,7 +49,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | # | Feature | Claude | Antigravity | Live on `agy` | Evidence |
 |---|---|---|---|---|---|
 | 15 | Delegation from the thread; the Agents pane | Works | Works since slice 7: `agy`'s own child shows with its role, prompt and model, working until its answer reaches the parent, then with that answer, or stopped when killed | Raw probe on 1.5.14: the records read here, for a child that answered KESTREL | `antigravityChildren.ts` |
-| 16 | Background work and work-settled | Works (`claudeMonitoring.ts:75`) | Can't: ACP has no background-work lifecycle; rows close at turn end | Not run | `antigravity.ts:876` |
+| 16 | Background work and work-settled | Works (`claudeMonitoring.ts:75`) | Can't: ACP has no background-work lifecycle; rows close at turn end, except a child agent `agy` launched, which Sotto reads from its records after the turn (slice 7) | Not run | `antigravity.ts:876` |
 | 17 | Live token count on the thread | Works (`thread.usage`, `claude.ts:2061,2088`) | Works since slice 1: context from `usage_update`, the turn's tokens from each prompt's `usage`; held in memory, so a restart shows it again from the next turn | Passed: 9,515 of 1,048,576, with input and output | `antigravityThreadUsage.ts` |
 | 17b | Usage page counts and account limits | Works | Partial since November 21: counts from `agy`'s conversation files; no account limits, which only `agy`'s own sign-in can read (ADR-0212's amendment) | Counts not run live | `antigravityHistory.ts:326`, `antigravityUsage.ts` |
 | 18 | Titles, branch names, commit and pull request drafts | Works | Works | Passed: a title | `antigravity.ts:1218,1249` |
