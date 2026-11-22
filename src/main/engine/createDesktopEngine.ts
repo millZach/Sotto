@@ -174,6 +174,7 @@ import { MeshyModels } from '../tools/meshy/service'
 import { modelBytes, modelView, modelViewOf } from '../tools/meshy/view'
 import { FilesBindingsTracker } from './filesBindingsMirror'
 import { EngineIpcRegistry } from './ipcRegistry'
+import { startRustLocalEngine } from './rustLocalEngineClient'
 import type { DesktopEngine, DesktopEngineOptions, EngineShellBridge, EngineWindowFocus, GitChangesMethod, HostedGitChangesMethod } from './types'
 
 /**
@@ -518,6 +519,16 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   // This computer's histories reach the window with their long bodies cut, as a paired host's do, and a record is read
   // whole when its row opens (#2737).
   const localHistories = windowHistories(agentControl)
+  // On Owl builds, start the native Rust `sotto-engine` sidecar in read-only `--accelerator` mode over the
+  // ADR-0210 OS IPC transport (ADR-0215) to offload read-only SQLite thread-word search off the Node event loop.
+  // Hooked inside `WorkspaceHost.threadWords` so pending writes settle and store/visibility guards always run first,
+  // transparently falling back to TypeScript if the binary is absent or exits.
+  const rustLocalEngine = owlFeatures['rust-local-engine'] && startupSettings.localHostEnabled && e2eConfiguration === null && env['SOTTO_DESIGN_CAPTURE'] !== '1'
+    ? await startRustLocalEngine({ userDataPath, isPackaged, log })
+    : undefined
+  if (rustLocalEngine) {
+    agentHost.useThreadWordsAccelerator?.(query => agentHistoryEnabled ? rustLocalEngine.searchThreadWords(query) : Promise.resolve(undefined))
+  }
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: localHistories.detail,
@@ -1455,6 +1466,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       tellTools?.close(),
       councilTools?.close(),
       pictureMaker?.close(),
+      rustLocalEngine?.close(),
     ])
     hostRouter.dispose()
     disposeIpc()

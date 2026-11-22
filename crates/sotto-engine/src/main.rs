@@ -35,6 +35,7 @@ struct EngineCliArgs {
     fake_provider: Option<String>,
     fixtures_dir: Option<PathBuf>,
     enable_providers: bool,
+    accelerator: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
@@ -46,10 +47,16 @@ fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
     let mut mock_provider = None;
     let mut fake_provider = None;
     let mut fixtures_dir = None;
+    let mut accelerator = false;
 
     let mut i = 0;
     while i < args.len() {
         let flag = args[i].as_str();
+        if flag == "--accelerator" {
+            accelerator = true;
+            i += 1;
+            continue;
+        }
         if !matches!(
             flag,
             "--data" | "--endpoint" | "--mock-provider" | "--fake" | "--fixtures-dir"
@@ -91,6 +98,7 @@ fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
         fake_provider,
         fixtures_dir,
         enable_providers,
+        accelerator,
     })
 }
 
@@ -475,8 +483,201 @@ async fn handle_rpc(
     }
 }
 
+async fn handle_accelerator_rpc(
+    data_directory: &Path,
+    method: &str,
+    args: &[Value],
+) -> Result<Value, SerializedEngineError> {
+    let err_invalid = |msg: &str| SerializedEngineError {
+        name: "Error".into(),
+        message: msg.into(),
+        code: Some("invalid_request".into()),
+    };
+
+    match method {
+        "engine.ping" => Ok(json!({
+            "ok": true,
+            "runtime": "rust",
+            "mode": "accelerator",
+            "version": ENGINE_VERSION,
+            "pid": std::process::id(),
+        })),
+        "ops.hostFacts" => {
+            let running = args
+                .first()
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize;
+            let val = tokio::task::spawn_blocking(move || sotto_core::ops::host_facts(running))
+                .await
+                .map_err(|_| err_invalid("hostFacts task failed."))?;
+            Ok(val)
+        }
+        "ops.threadWords" => {
+            let query = args
+                .first()
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let dir = data_directory.to_path_buf();
+            let val = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::search_thread_words(&dir, &query)
+            })
+            .await
+            .map_err(|_| err_invalid("threadWords task failed."))?;
+            Ok(val)
+        }
+        "ops.gitRefsByFolder" => {
+            let folder = args
+                .first()
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| err_invalid("folder is required."))?
+                .to_string();
+            let opts = args.get(1).and_then(Value::as_object);
+            let query = opts
+                .and_then(|o| o.get("query"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let cursor = opts.and_then(|o| o.get("cursor")).and_then(|v| {
+                v.as_u64()
+                    .map(|n| n as usize)
+                    .or_else(|| v.as_str().and_then(|s| s.parse::<usize>().ok()))
+            });
+            let limit = opts
+                .and_then(|o| o.get("limit"))
+                .and_then(Value::as_u64)
+                .map(|n| n as usize);
+            let include_matching_remote = opts
+                .and_then(|o| {
+                    o.get("includeMatchingRemoteRefs")
+                        .or_else(|| o.get("includeMatchingRemote"))
+                        .or_else(|| o.get("includeRemote"))
+                })
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let val = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_refs(
+                    &folder,
+                    query.as_deref(),
+                    cursor,
+                    limit,
+                    include_matching_remote,
+                )
+            })
+            .await
+            .map_err(|_| err_invalid("gitRefsByFolder task failed."))?
+            .map_err(|e| SerializedEngineError {
+                name: "Error".into(),
+                message: e,
+                code: Some("unavailable".into()),
+            })?;
+            Ok(val)
+        }
+        other => Err(SerializedEngineError {
+            name: "Error".into(),
+            message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
+            code: Some("METHOD_NOT_FOUND".into()),
+        }),
+    }
+}
+
+async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
+    let stream = match connect_engine_stream(&parsed.endpoint).await {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("Could not connect to EngineTransport endpoint: {err}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let (mut read_half, mut write_half) = tokio::io::split(stream);
+    if let Err(err) = write_engine_frame(&mut write_half, &hello_frame(&parsed.token)).await {
+        eprintln!("Could not send engine hello frame: {err}");
+        return ExitCode::from(1);
+    }
+
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Value>();
+    let writer_task = tokio::spawn(async move {
+        while let Some(frame) = out_rx.recv().await {
+            if write_engine_frame(&mut write_half, &frame).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let (in_tx, mut in_rx) = mpsc::channel(64);
+    let reader_task = tokio::spawn(async move {
+        while let Ok(Some(msg)) = read_engine_frame(&mut read_half).await {
+            if in_tx.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+    let mut shutdown_req_id: Option<u64> = None;
+    let shutdown_signal = shutdown_future();
+    tokio::pin!(shutdown_signal);
+
+    loop {
+        tokio::select! {
+            _ = &mut shutdown_signal => {
+                break;
+            }
+            maybe_msg = in_rx.recv() => {
+                let Some(msg) = maybe_msg else {
+                    break;
+                };
+                while rpc_tasks.try_join_next().is_some() {}
+                if let IncomingEngineMessage::Req { id, method, args } = msg {
+                    if method == "engine.shutdown" {
+                        shutdown_req_id = Some(id);
+                        break;
+                    }
+                    let data_dir = parsed.data_directory.clone();
+                    let out = out_tx.clone();
+                    rpc_tasks.spawn(async move {
+                        let frame = match handle_accelerator_rpc(&data_dir, &method, &args).await {
+                            Ok(val) => ok_response_frame(id, val),
+                            Err(err) => err_response_frame(id, err),
+                        };
+                        let _ = out.send(frame);
+                    });
+                }
+            }
+        }
+    }
+
+    reader_task.abort();
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while rpc_tasks.join_next().await.is_some() {}
+    })
+    .await;
+    rpc_tasks.abort_all();
+    while rpc_tasks.join_next().await.is_some() {}
+    if let Some(id) = shutdown_req_id {
+        let _ = out_tx.send(ok_response_frame(id, json!({ "ok": true })));
+    }
+    drop(out_tx);
+    let mut writer_task = writer_task;
+    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer_task)
+        .await
+        .is_err()
+    {
+        writer_task.abort();
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if raw_args.len() == 1 && raw_args[0] == "--version" {
+        println!(
+            "{}",
+            json!({ "runtime": "rust", "version": ENGINE_VERSION })
+        );
+        return ExitCode::SUCCESS;
+    }
     let parsed = match parse_args(&raw_args) {
         Ok(a) => a,
         Err(msg) => {
@@ -501,7 +702,11 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let exit_code = runtime.block_on(run_engine(parsed));
+    let exit_code = if parsed.accelerator {
+        runtime.block_on(run_accelerator(parsed))
+    } else {
+        runtime.block_on(run_engine(parsed))
+    };
     // Drop remaining async tasks within a bounded window so `kill_on_drop(true)` child handles
     // terminate owned provider processes before main returns.
     runtime.shutdown_timeout(std::time::Duration::from_secs(2));
