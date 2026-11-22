@@ -13,7 +13,7 @@ import { findGrokExecutable, grokEnvironment } from '../main/agents/grokRpc'
 import { cursorEnvironment, findCursorProgram } from '../main/agents/cursorRpc'
 import { findHermesExecutable, hermesEnvironment, hermesPythonCommand, withHermesPath } from '../main/agents/hermesRpc'
 import { antigravityFolders } from '../main/agents/antigravityFolders'
-import { managedAntigravityExecutable } from '../main/agents/antigravityInstall'
+import { leaseAntigravityRuntime, managedAntigravityExecutable } from '../main/agents/antigravityInstall'
 import { findAntigravityExecutable } from '../main/agents/antigravityLookup'
 import { antigravityArguments, antigravityEnvironment, GOOGLE_ACCOUNT, writeAntigravitySettings } from '../main/agents/antigravityRpc'
 
@@ -30,7 +30,7 @@ import { antigravityArguments, antigravityEnvironment, GOOGLE_ACCOUNT, writeAnti
  */
 
 /** How the host starts one provider's sign-in. Tests stand fake clients in here. */
-export interface SignInCommand { readonly executable: string; readonly args: readonly string[]; readonly env: NodeJS.ProcessEnv }
+export interface SignInCommand { readonly executable: string; readonly args: readonly string[]; readonly env: NodeJS.ProcessEnv; readonly release?: (() => void) | undefined }
 export interface ProviderSignInOptions {
   /** Each provider's sign-in command, or undefined when its client is not on this machine. */
   readonly command?: (provider: ProviderId) => Promise<SignInCommand | undefined>
@@ -105,8 +105,14 @@ export async function defaultSignInCommand(provider: ProviderId, cursorConfigDir
     const folders = antigravityFolders(antigravityDirectory)
     const executable = await findAntigravityExecutable(process.env, { managed: () => managedAntigravityExecutable(antigravityDirectory), ...(antigravityBinaryPath ? { binaryPath: antigravityBinaryPath } : {}) })
     if (!executable) return undefined
-    await writeAntigravitySettings(folders, GOOGLE_ACCOUNT)
-    return { executable, args: antigravityArguments(folders, args), env: withCliPath(antigravityEnvironment(folders, GOOGLE_ACCOUNT), executable) }
+    const release = leaseAntigravityRuntime(executable)
+    try {
+      await writeAntigravitySettings(folders, GOOGLE_ACCOUNT)
+      return { executable, args: antigravityArguments(folders, args), env: withCliPath(antigravityEnvironment(folders, GOOGLE_ACCOUNT), executable), release }
+    } catch (error) {
+      release()
+      throw error
+    }
   }
   if (provider === 'hermes') return hermesHome ? hermesAccountCommand(hermesHome, args) : undefined
   if (provider === 'cursor') {
@@ -166,21 +172,29 @@ export class ProviderSignIns {
     this.entries.set(id, entry)
     let command: SignInCommand | undefined
     try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory, this.options.hermesHome, this.options.antigravityDirectory, this.options.antigravityBinaryPath?.())) } catch { command = undefined }
-    if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) return this.copy(entry)
+    if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) { command?.release?.(); return this.copy(entry) }
     if (!command) {
       this.entries.delete(id)
       throw new ProviderSignInRefusal(`${name} is not installed ${this.placePhrase}, so it cannot sign in. Nothing was changed.`)
     }
+    const rawRelease = command.release ?? (provider === 'antigravity' ? leaseAntigravityRuntime(command.executable) : undefined)
+    let released = false
+    const release = rawRelease ? () => { if (!released) { released = true; rawRelease() } } : undefined
     const printed = new Promise<void>(resolve => { entry.ready = resolve })
     let child: ChildProcess
     try {
       child = spawn(command.executable, [...command.args], { cwd: homedir(), env: command.env, shell: false, windowsHide: true,
         stdio: [shape === 'paste-code' ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
     } catch {
+      release?.()
       this.end(id, 'failed', `${name} could not be started ${this.placePhrase}. Nothing was changed.`)
       return this.copy(entry)
     }
     entry.child = child
+    if (release) {
+      child.once('close', release)
+      child.once('error', () => { if (child.pid === undefined) release() })
+    }
     const read = (chunk: Buffer): void => {
       if (entry.child !== child || entry.output.length >= OUTPUT_LIMIT) return
       entry.output = (entry.output + chunk.toString('utf8')).slice(0, OUTPUT_LIMIT)

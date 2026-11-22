@@ -619,6 +619,10 @@ msgstr "{name} signs in on {page} in this computer's browser. {hostName} finishe
 msgid "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
 msgstr "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
 
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "{name} signs in with your Google account in this computer's browser, then shows a code or page address to bring back here."
+msgstr "{name} signs in with your Google account in this computer's browser, then shows a code or page address to bring back here."
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "{name} still starts at boot"
 msgstr "{name} still starts at boot"

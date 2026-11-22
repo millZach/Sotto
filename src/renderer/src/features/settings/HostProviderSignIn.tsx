@@ -159,7 +159,9 @@ export function HostProviderSignIn({ place, provider, signIn, onClose }: {
       {opened ? <p className="host-sign-in__waiting tt-paragraph" role="status"><LoaderCircle size={14} aria-hidden="true" className="hosts-spin" />{t`Waiting for you on ${page}.`}</p> : null}
     </div>
     return <div className="host-sign-in">
-      <p className="tt-paragraph"><Trans>{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here.</Trans></p>
+      <p className="tt-paragraph">{provider === 'antigravity'
+        ? <Trans>{name} signs in with your Google account in this computer's browser, then shows a code or page address to bring back here.</Trans>
+        : <Trans>{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here.</Trans>}</p>
       <div className="host-sign-in__row">
         <Button variant={opened ? 'secondary' : 'primary'} data-autofocus disabled={busy} onClick={() => void open()}>{opened ? t`Open sign-in page again` : t`Open sign-in page`}</Button>
         {opened ? <span className="host-sign-in__quiet tt-paragraph"><Trans>Opened {page} in your browser.</Trans></span> : null}

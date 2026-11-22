@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { ProviderSignIns } from '../../src/host/providerSignIn'
 import { startSocketServer } from '../../src/host/socketServer'
@@ -94,6 +94,58 @@ describe('the sign-in on the host', () => {
       await expect.poll(() => service.read(second.id, 'desktop')?.stage).toBe('connected')
       expect(connected).toEqual([['antigravity', 'desktop']])
     } finally { service.close() }
+  })
+
+  it('holds and releases Antigravity’s runtime lease across finish, cancel, abort and spawn failure', async () => {
+    const fake = fakeSignInCommand(root)
+    const releases: ReturnType<typeof vi.fn<() => void>>[] = []
+    let failSpawn = false
+    const service = new ProviderSignIns({
+      command: async provider => {
+        const command = await fake(provider)
+        if (!command) return undefined
+        const release = vi.fn<() => void>()
+        releases.push(release)
+        return { ...(failSpawn ? { ...command, executable: join(root, 'missing-agy-binary') } : command), release }
+      },
+      connect: async () => undefined,
+    })
+    try {
+      const finished = await service.start('antigravity', 'desktop')
+      expect(finished.stage).toBe('waiting')
+      expect(releases[0]).not.toHaveBeenCalled()
+      service.code(finished.id, 'desktop', 'https://antigravity.google/oauth-callback?code=good-code&state=fixture-state')
+      await expect.poll(() => service.read(finished.id, 'desktop')?.stage).toBe('connected')
+      await expect.poll(() => releases[0]!.mock.calls.length).toBe(1)
+
+      const cancelled = await service.start('antigravity', 'desktop')
+      expect(cancelled.stage).toBe('waiting')
+      expect(releases[1]).not.toHaveBeenCalled()
+      service.cancel(cancelled.id, 'desktop')
+      await expect.poll(() => releases[1]!.mock.calls.length).toBe(1)
+
+      failSpawn = true
+      const missing = await service.start('antigravity', 'desktop')
+      expect(missing.stage).toBe('failed')
+      await expect.poll(() => releases[2]!.mock.calls.length).toBe(1)
+    } finally { service.close() }
+
+    // Cancelled while command lookup is still in flight still releases what the lookup leased.
+    const lookupGate = deferred<void>()
+    const lateRelease = vi.fn<() => void>()
+    const closing = new ProviderSignIns({
+      command: async provider => {
+        await lookupGate.promise
+        const command = await fake(provider)
+        return command ? { ...command, release: lateRelease } : undefined
+      },
+      connect: async () => undefined,
+    })
+    const inFlight = closing.start('antigravity', 'desktop')
+    closing.close()
+    lookupGate.resolve()
+    expect(await inFlight).toMatchObject({ stage: 'ended' })
+    expect(lateRelease).toHaveBeenCalledTimes(1)
   })
 
   it('runs Cursor\'s agent login, reads its cursor.com page with no code, and connects once the user signs in there (ADR-0128)', async () => {
