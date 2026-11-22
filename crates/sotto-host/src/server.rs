@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::{
@@ -30,6 +30,8 @@ use crate::ws::{
 const MAX_HTTP_BODY_BYTES: usize = 256 * 1024;
 const MAX_HTTP_HEADER_BYTES: usize = 16 * 1024;
 const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_CONCURRENT_CONNECTIONS: usize = 64;
+const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(50);
 const REMOTE_ANSWER_GRANT_NOTE: &str =
     "The user allowed this paired device to answer permission requests on the host.";
 
@@ -196,6 +198,7 @@ impl RunningServer {
 
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
         let server_state = Arc::clone(&state);
+        let conn_limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
         let task = tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -205,12 +208,22 @@ impl RunningServer {
                         }
                     }
                     accepted = listener.accept() => {
-                        if let Ok((stream, _addr)) = accepted {
-                            let peer_state = Arc::clone(&server_state);
-                            let peer_shutdown = shutdown_rx.clone();
-                            tokio::spawn(async move {
-                                let _ = handle_connection(stream, peer_state, peer_shutdown).await;
-                            });
+                        match accepted {
+                            Ok((stream, _addr)) => {
+                                let Ok(permit) = Arc::clone(&conn_limit).try_acquire_owned() else {
+                                    drop(stream);
+                                    continue;
+                                };
+                                let peer_state = Arc::clone(&server_state);
+                                let peer_shutdown = shutdown_rx.clone();
+                                tokio::spawn(async move {
+                                    let _permit = permit;
+                                    let _ = handle_connection(stream, peer_state, peer_shutdown).await;
+                                });
+                            }
+                            Err(_) => {
+                                tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await;
+                            }
                         }
                     }
                 }
@@ -335,6 +348,12 @@ async fn handle_connection(
         }
         Ok(Err(HeaderReadError::Io(err))) => return Err(err),
     };
+
+    if !is_allowed_origin(headers.get("origin").map(String::as_str)) {
+        let mut stream = reader.into_inner();
+        send_http_error(&mut stream, HostErrorCode::Forbidden, None).await?;
+        return Ok(());
+    }
 
     if method == "GET"
         && path == "/v1/socket"
@@ -574,17 +593,19 @@ async fn handle_websocket_upgrade(
     let session = extract_bearer(headers).to_string();
     let auth = {
         let mut pairing = state.pairing.lock().unwrap();
-        pairing.verify_session(&session).map(|cid| {
-            let name = pairing
-                .list()
-                .iter()
-                .find(|c| c.client_id == cid)
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| "Paired client".into());
-            (cid, name)
-        })
+        pairing
+            .verify_session_with_expiry(&session)
+            .map(|(cid, expiry_ms)| {
+                let name = pairing
+                    .list()
+                    .iter()
+                    .find(|c| c.client_id == cid)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| "Paired client".into());
+                (cid, name, expiry_ms)
+            })
     };
-    let Some((client_id, client_name)) = auth else {
+    let Some((client_id, client_name, expiry_ms)) = auth else {
         stream
             .write_all(
                 b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
@@ -622,6 +643,20 @@ async fn handle_websocket_upgrade(
 
     let (mut read_half, mut write_half) = tokio::io::split(stream);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<OutboundFrame>();
+    let (in_tx, mut in_rx) = mpsc::channel(64);
+
+    // Dedicated cancel-safe reader task: `read_ws_message` is never cancelled mid-frame by
+    // coordinator broadcasts, revocations, or timers.
+    let reader_task = tokio::spawn(async move {
+        let mut reader_state = WsReaderState::default();
+        loop {
+            let res = read_ws_message(&mut read_half, deflate, &mut reader_state).await;
+            let done = matches!(&res, Ok(WsMessage::Close) | Err(_));
+            if in_tx.send(res).await.is_err() || done {
+                break;
+            }
+        }
+    });
 
     let writer_task = tokio::spawn(async move {
         while let Some(frame) = out_rx.recv().await {
@@ -640,11 +675,15 @@ async fn handle_websocket_upgrade(
     });
 
     let mut wire = ClientWireState::default();
-    let mut reader_state = WsReaderState::default();
     let mut revoked_rx = state.revoked_tx.subscribe();
     let mut coord_rx = state.coordinator.subscribe();
-    let mut expiry_tick = tokio::time::interval(Duration::from_secs(1));
-    expiry_tick.tick().await;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let remaining_ms = (expiry_ms - now_ms).max(0) as u64;
+    let expiry_sleep = tokio::time::sleep(Duration::from_millis(remaining_ms));
+    tokio::pin!(expiry_sleep);
 
     loop {
         tokio::select! {
@@ -660,11 +699,9 @@ async fn handle_websocket_upgrade(
                     break;
                 }
             }
-            _ = expiry_tick.tick() => {
-                if state.pairing.lock().unwrap().verify_session(&session).as_deref() != Some(client_id.as_str()) {
-                    let _ = out_tx.send(OutboundFrame::Close);
-                    break;
-                }
+            _ = &mut expiry_sleep => {
+                let _ = out_tx.send(OutboundFrame::Close);
+                break;
             }
             bcast = coord_rx.recv() => {
                 if !wire.hello_done {
@@ -718,7 +755,11 @@ async fn handle_websocket_upgrade(
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
-            msg = read_ws_message(&mut read_half, deflate, &mut reader_state) => {
+            maybe_msg = in_rx.recv() => {
+                let Some(msg) = maybe_msg else {
+                    let _ = out_tx.send(OutboundFrame::Close);
+                    break;
+                };
                 match msg {
                     Ok(WsMessage::Text(text)) => {
                         if state.pairing.lock().unwrap().verify_session(&session).as_deref()
@@ -757,6 +798,7 @@ async fn handle_websocket_upgrade(
         }
     }
 
+    reader_task.abort();
     drop(out_tx);
     let _ = writer_task.await;
     Ok(())
@@ -1068,6 +1110,38 @@ async fn handle_ws_request(
             HostErrorCode::InvalidRequest.default_message(),
         ),
     }
+}
+
+fn is_allowed_origin(origin: Option<&str>) -> bool {
+    let Some(raw) = origin else {
+        return true;
+    };
+    let rest = raw
+        .strip_prefix("http://")
+        .or_else(|| raw.strip_prefix("https://"));
+    let Some(host_port) = rest else {
+        return false;
+    };
+    if host_port.contains('/') || host_port.contains('@') || host_port.contains('?') {
+        return false;
+    }
+    let host = if let Some(after_bracket) = host_port.strip_prefix('[') {
+        let Some((ipv6, tail)) = after_bracket.split_once(']') else {
+            return false;
+        };
+        if !tail.is_empty() && !tail.strip_prefix(':').is_some_and(|p| p.parse::<u16>().is_ok()) {
+            return false;
+        }
+        ipv6
+    } else if let Some((h, p)) = host_port.split_once(':') {
+        if p.parse::<u16>().is_err() {
+            return false;
+        }
+        h
+    } else {
+        host_port
+    };
+    host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 fn extract_bearer(headers: &HashMap<String, String>) -> &str {

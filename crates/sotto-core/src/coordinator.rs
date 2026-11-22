@@ -1045,15 +1045,18 @@ impl CoordinatorActor {
         );
         self.push_message_to_detail(tid, user_message);
 
+        let is_accepted = ack.status == "accepted";
         if let Some(t) = self.threads.iter_mut().find(|t| t.id == tid) {
-            t.status = "running".into();
+            if is_accepted {
+                t.status = "running".into();
+                t.last_turn = Some(AgentTurnRecord {
+                    id: ack.turn_id.clone(),
+                    status: "running".into(),
+                    message_id: Some(ack.message_id.clone()),
+                });
+            }
             t.native_session_started = true;
             t.last_user_message_id = Some(ack.message_id.clone());
-            t.last_turn = Some(AgentTurnRecord {
-                id: ack.turn_id.clone(),
-                status: "running".into(),
-                message_id: Some(ack.message_id.clone()),
-            });
             t.updated_at = now.clone();
             if let Some(detail) = self.details.get(tid) {
                 t.summary = summarize_thread(&detail.messages, &detail.activities, &t.status);
@@ -1071,7 +1074,7 @@ impl CoordinatorActor {
             created_at: now.clone(),
             updated_at: now,
             local_feedback_ms: Some(elapsed),
-            provider_latency_ms: Some(ack.provider_latency_ms),
+            provider_latency_ms: is_accepted.then_some(ack.provider_latency_ms),
         });
         self.delivered_drafts.push(DeliveredDraft {
             draft_id,
@@ -1545,23 +1548,26 @@ impl CoordinatorActor {
             configuration: self.configuration.clone(),
         };
         let _ = write_atomic_json(&self.data_directory.join("workspace.json"), &state);
-        // Also write `threads.json` mapping Sotto thread IDs to provider bindings for referee drivers.
-        let bindings: BTreeMap<&str, Value> = self
+        // Also write `threads.json` in Sotto's `ThreadRegistry` schema (`{ version, bindings }`)
+        // so TypeScript restarts and the referee harness resolve each thread's provider binding.
+        let bindings: Vec<Value> = self
             .threads
             .iter()
             .map(|t| {
-                (
-                    t.id.as_str(),
-                    json!({
-                        "id": t.id,
-                        "providerId": t.provider_id,
-                        "projectId": t.project_id,
-                        "title": t.title,
-                    }),
-                )
+                json!({
+                    "threadId": t.id,
+                    "providerId": t.provider_id,
+                    "sessionId": t.id,
+                    "projectId": t.project_id,
+                    "title": t.title,
+                })
             })
             .collect();
-        let _ = write_atomic_json(&self.data_directory.join("threads.json"), &bindings);
+        let registry = json!({
+            "version": 1,
+            "bindings": bindings,
+        });
+        let _ = write_atomic_json(&self.data_directory.join("threads.json"), &registry);
     }
 }
 

@@ -9,11 +9,14 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use sotto_core::{
-    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, HostCredentials,
-    HostLease, MockProviderAdapter, ProviderAdapter,
+    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, ClaudeAdapter,
+    ClaudeAdapterConfig, CodexAdapter, CodexAdapterConfig, HostCredentials, HostLease,
+    MockProviderAdapter, ProviderAdapter,
 };
 
 use crate::server::{RunningServer, ServerConfig, DEFAULT_SOTTO_VERSION};
+
+const REFEREE_OWL_VERSION: &str = "0.1.44-owl.20261118.2";
 
 #[derive(Debug)]
 struct HostCliArgs {
@@ -22,17 +25,20 @@ struct HostCliArgs {
     key_file: Option<PathBuf>,
     sotto_version: String,
     mock_provider: Option<String>,
+    fake_provider: Option<String>,
+    fixtures_dir: Option<PathBuf>,
     started_by: Option<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
     let mut data_directory = std::env::var("SOTTO_HOST_DATA").ok().map(PathBuf::from);
     let mut key_file = std::env::var("SOTTO_HOST_KEY_FILE").ok().map(PathBuf::from);
-    let mut sotto_version = std::env::var("SOTTO_HOST_VERSION")
+    let mut explicit_version = std::env::var("SOTTO_HOST_VERSION")
         .ok()
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_SOTTO_VERSION.to_string());
+        .filter(|v| !v.trim().is_empty());
     let mut mock_provider = None;
+    let mut fake_provider = None;
+    let mut fixtures_dir = None;
     let mut port: u16 = 0;
 
     let mut i = 0;
@@ -43,6 +49,8 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
             && flag != "--key-file"
             && flag != "--sotto-version"
             && flag != "--mock-provider"
+            && flag != "--fake"
+            && flag != "--fixtures-dir"
         {
             return Err("Use --data <folder> and optionally --key-file <file>.".into());
         }
@@ -56,8 +64,10 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         match flag {
             "--data" => data_directory = Some(PathBuf::from(value)),
             "--key-file" => key_file = Some(PathBuf::from(value)),
-            "--sotto-version" => sotto_version = value.clone(),
+            "--sotto-version" => explicit_version = Some(value.clone()),
             "--mock-provider" => mock_provider = Some(value.clone()),
+            "--fake" => fake_provider = Some(value.clone()),
+            "--fixtures-dir" => fixtures_dir = Some(PathBuf::from(value)),
             "--port" => {
                 port = value
                     .parse::<u16>()
@@ -72,9 +82,17 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         return Err("Choose a host data folder with --data or SOTTO_HOST_DATA.".into());
     };
 
+    let sotto_version = explicit_version.unwrap_or_else(|| {
+        if fake_provider.is_some() {
+            REFEREE_OWL_VERSION.to_string()
+        } else {
+            DEFAULT_SOTTO_VERSION.to_string()
+        }
+    });
+
     let started_by = std::env::var("SOTTO_HOST_STARTED_BY")
         .ok()
-        .filter(|v| v == "ssh" || v == "boot");
+        .filter(|v| v == "launch-script" || v == "boot");
 
     Ok(HostCliArgs {
         data_directory,
@@ -82,6 +100,8 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         key_file,
         sotto_version,
         mock_provider,
+        fake_provider,
+        fixtures_dir,
         started_by,
     })
 }
@@ -125,6 +145,14 @@ async fn main() -> ExitCode {
         eprintln!("Could not create host data folder: {err}");
         return ExitCode::from(1);
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(
+            &parsed.data_directory,
+            std::fs::Permissions::from_mode(0o700),
+        );
+    }
 
     let credentials =
         match HostCredentials::open(&parsed.data_directory, parsed.key_file.as_deref()) {
@@ -155,6 +183,54 @@ async fn main() -> ExitCode {
     let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
     if let Some(ref mock_id) = parsed.mock_provider {
         providers.insert(mock_id.clone(), Arc::new(MockProviderAdapter::new(mock_id)));
+    }
+    if let Some(ref fake_id) = parsed.fake_provider {
+        let fixtures = parsed
+            .fixtures_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("tests/fixtures"));
+        match fake_id.as_str() {
+            "codex" => {
+                let script = fixtures.join("fakeCodexAppServer.mjs");
+                providers.insert(
+                    "codex".into(),
+                    Arc::new(CodexAdapter::new(CodexAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "claude" => {
+                let script = fixtures.join("fakeClaudeThread.mjs");
+                providers.insert(
+                    "claude".into(),
+                    Arc::new(ClaudeAdapter::new(ClaudeAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            other => {
+                eprintln!("Unsupported fake provider: {other}");
+                let _ = release_host_lock(&lock_path, &lease);
+                return ExitCode::from(1);
+            }
+        }
+    } else if parsed.mock_provider.is_none()
+        && std::env::var("SOTTO_HOST_ENABLE_PROVIDERS").as_deref() == Ok("1")
+    {
+        providers.insert(
+            "codex".into(),
+            Arc::new(CodexAdapter::new(CodexAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
+        providers.insert(
+            "claude".into(),
+            Arc::new(ClaudeAdapter::new(ClaudeAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
     }
 
     let server = match RunningServer::start(ServerConfig {

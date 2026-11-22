@@ -6,6 +6,7 @@ pub mod lock;
 pub mod pairing;
 pub mod protocol;
 pub mod provider;
+pub mod providers;
 pub mod remote_commands;
 pub mod stores;
 pub mod workspace;
@@ -29,6 +30,10 @@ pub use protocol::{
 pub use provider::{
     AnswerRequestInput, BoxFuture, HeldProviderAdapter, MockProviderAdapter, ProviderAdapter,
     ProviderEvent, SendMessageAck, SendMessageRequest,
+};
+pub use providers::{
+    claude_project_dir, fork_claude_session, read_claude_session_transcript, ClaudeAdapter,
+    ClaudeAdapterConfig, ClaudeTranscriptMessage, CodexAdapter, CodexAdapterConfig,
 };
 pub use remote_commands::{
     allowed_command_fields, validate_remote_command, CommandRefusal, REMOTE_CONFIGURATION_FIELDS,
