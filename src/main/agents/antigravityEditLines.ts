@@ -51,7 +51,8 @@ export function placeAntigravityEdit(edit: Pick<AntigravityEdit, 'oldText' | 'ne
   if (at < 0 || now.indexOf(edit.newText, at + 1) >= 0) return undefined
   // Only the whole lines the new text spans are diffed, then numbered from where they start, so a change is never
   // placed outside the text `agy` named, as a diff of the whole file may when the lines around it repeat.
-  const start = now.lastIndexOf('\n', at - 1) + 1, newline = now.indexOf('\n', end - 1), stop = newline < 0 ? now.length : newline + 1
+  // At the file's start the line starts there: `lastIndexOf` would read a -1 as 0 and find a leading blank line's newline.
+  const start = at === 0 ? 0 : now.lastIndexOf('\n', at - 1) + 1, newline = now.indexOf('\n', end - 1), stop = newline < 0 ? now.length : newline + 1
   const lines = now.slice(start, stop), before = now.slice(start, at) + edit.oldText + now.slice(end, stop)
   const { patch } = turnPatch('file', before, lines, false, 0)
   const hunks = patch.indexOf('\n@@ ')

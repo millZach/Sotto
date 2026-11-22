@@ -28,6 +28,10 @@ describe('Antigravity edits on their lines', () => {
     expect(placeAntigravityEdit({ oldText: 'b', newText: 'B' }, 'one\ntwo\naBc\nfour\n')).toBe('@@ -3 +3 @@\n-abc\n+aBc')
   })
 
+  it('places an edit to a file that starts with a blank line on its own line, with nothing removed but what changed', () => {
+    expect(placeAntigravityEdit({ oldText: '\nalpha\n', newText: '\nALPHA\n' }, '\nALPHA\n')).toBe('@@ -2 +2 @@\n-alpha\n+ALPHA')
+  })
+
   it('places a new file or an insertion as added lines', () => {
     expect(placeAntigravityEdit({ oldText: '', newText: file('a', 'b') }, file('a', 'b'))).toBe('@@ -0,0 +1,2 @@\n+a\n+b')
   })
