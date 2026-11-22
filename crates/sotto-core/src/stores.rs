@@ -581,6 +581,28 @@ impl ThreadStore {
         }
     }
 
+    /// Incrementally inserts or updates a single activity row in O(1) without rewriting history.
+    pub fn upsert_activity(
+        &self,
+        thread_id: &str,
+        position: i64,
+        activity: &Value,
+    ) -> Result<(), StoreError> {
+        let Some(activity_id) = activity.get("id").and_then(Value::as_str) else {
+            return Ok(());
+        };
+        let encoded = serde_json::to_string(activity)?;
+        self.conn.execute(
+            "INSERT INTO activities (thread_id, activity_id, position, payload)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(thread_id, activity_id) DO UPDATE SET
+               position = excluded.position,
+               payload = excluded.payload",
+            rusqlite::params![thread_id, activity_id, position, encoded],
+        )?;
+        Ok(())
+    }
+
     pub fn read_events(
         &self,
         thread_id: Option<&str>,

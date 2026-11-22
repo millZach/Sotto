@@ -362,6 +362,10 @@ impl AcpProcess {
 struct AcpThreadRecord {
     session_id: String,
     cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
 }
 
 struct AcpStreamingMessage {
@@ -686,6 +690,102 @@ impl AcpAdapter {
         map.insert(sotto_thread_id.to_string(), Arc::clone(&proc));
         Ok(proc)
     }
+
+    async fn apply_session_settings(
+        &self,
+        proc: &AcpProcess,
+        thread_id: &str,
+        session_id: &str,
+        model_id: Option<&str>,
+        reasoning_effort: Option<&str>,
+    ) -> Result<(), String> {
+        let flavor = self.config.flavor;
+        let raw_model = model_id.map(|m| {
+            crate::workspace::parse_public_provider_entity_id(m)
+                .map(|(_, _, raw)| raw.to_string())
+                .unwrap_or_else(|| m.to_string())
+        });
+        let raw_effort = reasoning_effort
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string);
+
+        let (prev_model, prev_effort) = self
+            .shared
+            .records
+            .lock()
+            .unwrap()
+            .get(thread_id)
+            .map(|r| (r.model_id.clone(), r.reasoning_effort.clone()))
+            .unwrap_or((None, None));
+
+        let model_changed = raw_model.is_some() && raw_model != prev_model;
+        let effort_changed = raw_effort.is_some() && raw_effort != prev_effort;
+        if !model_changed && !effort_changed {
+            return Ok(());
+        }
+
+        match flavor {
+            AcpFlavor::Grok => {
+                if let Some(ref mid) = raw_model {
+                    let mut params = json!({
+                        "sessionId": session_id,
+                        "modelId": mid,
+                    });
+                    if let Some(ref eff) = raw_effort {
+                        params.as_object_mut().unwrap().insert(
+                            "_meta".into(),
+                            json!({ "reasoningEffort": eff }),
+                        );
+                    }
+                    proc.call("session/set_model", params, self.config.request_timeout_ms)
+                        .await?;
+                }
+            }
+            AcpFlavor::Devin | AcpFlavor::Cursor | AcpFlavor::Antigravity | AcpFlavor::Hermes => {
+                if let Some(ref mid) = raw_model {
+                    if model_changed {
+                        proc.call(
+                            "session/set_config_option",
+                            json!({
+                                "sessionId": session_id,
+                                "configId": "model",
+                                "value": mid,
+                            }),
+                            self.config.request_timeout_ms,
+                        )
+                        .await?;
+                    }
+                }
+                if let Some(ref eff) = raw_effort {
+                    if effort_changed {
+                        let _ = proc
+                            .call(
+                                "session/set_config_option",
+                                json!({
+                                    "sessionId": session_id,
+                                    "configId": "reasoning_effort",
+                                    "value": eff,
+                                }),
+                                self.config.request_timeout_ms,
+                            )
+                            .await;
+                    }
+                }
+            }
+        }
+
+        if let Some(rec) = self.shared.records.lock().unwrap().get_mut(thread_id) {
+            if raw_model.is_some() {
+                rec.model_id = raw_model;
+            }
+            if raw_effort.is_some() {
+                rec.reasoning_effort = raw_effort;
+            }
+        }
+        self.shared.save_records();
+        Ok(())
+    }
 }
 
 impl ProviderAdapter for AcpAdapter {
@@ -885,6 +985,8 @@ impl ProviderAdapter for AcpAdapter {
                         AcpThreadRecord {
                             session_id: sid.clone(),
                             cwd: req.cwd.clone(),
+                            model_id: None,
+                            reasoning_effort: None,
                         },
                     );
                     self.shared
@@ -920,6 +1022,16 @@ impl ProviderAdapter for AcpAdapter {
                 }
             };
 
+            // Apply requested model and reasoning effort via this ACP flavor's session call before sending.
+            self.apply_session_settings(
+                &proc,
+                &req.thread_id,
+                &session_id,
+                req.model_id.as_deref(),
+                req.reasoning_effort.as_deref(),
+            )
+            .await?;
+
             let message_id = Uuid::new_v4().to_string();
             let turn_id = Uuid::new_v4().to_string();
             let act = json!({
@@ -948,7 +1060,7 @@ impl ProviderAdapter for AcpAdapter {
             let mut prompt_blocks = vec![json!({ "type": "text", "text": req.text })];
             if flavor != AcpFlavor::Devin {
                 for att in &req.attachments {
-                    if att.handle.kind == "image" && flavor.supports_images() {
+                    if att.handle.is_image() && flavor.supports_images() {
                         if let Ok(bytes) = fs::read(&att.path) {
                             prompt_blocks.push(json!({
                                 "type": "image",
@@ -956,7 +1068,7 @@ impl ProviderAdapter for AcpAdapter {
                                 "data": STANDARD.encode(bytes),
                             }));
                         }
-                    } else if att.handle.kind != "image" {
+                    } else if !att.handle.is_image() {
                         prompt_blocks.push(json!({
                             "type": "text",
                             "text": format!("Attached file: {} ({})", att.handle.name, att.path.to_string_lossy()),
@@ -1072,6 +1184,39 @@ impl ProviderAdapter for AcpAdapter {
     fn compact(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
         Box::pin(async { Ok(()) })
     }
+
+    fn configure_thread(
+        &self,
+        thread_id: String,
+        model_id: Option<String>,
+        _runtime_mode: Option<String>,
+        reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async move {
+            let sid = self
+                .shared
+                .records
+                .lock()
+                .unwrap()
+                .get(&thread_id)
+                .map(|r| r.session_id.clone());
+            let proc = {
+                let map = self.thread_procs.lock().await;
+                map.get(&thread_id).cloned()
+            };
+            if let (Some(proc), Some(sid)) = (proc, sid) {
+                self.apply_session_settings(
+                    &proc,
+                    &thread_id,
+                    &sid,
+                    model_id.as_deref(),
+                    reasoning_effort.as_deref(),
+                )
+                .await?;
+            }
+            Ok(())
+        })
+    }
 }
 
 fn acp_capabilities() -> AgentCapabilities {
@@ -1132,6 +1277,14 @@ fn load_acp_records(data_directory: &Path, flavor: AcpFlavor) -> HashMap<String,
                 AcpThreadRecord {
                     session_id: sid.to_string(),
                     cwd,
+                    model_id: val
+                        .get("modelId")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string),
+                    reasoning_effort: val
+                        .get("reasoningEffort")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string),
                 },
             );
         }
@@ -1561,6 +1714,7 @@ mod tests {
                 approved: Some(true),
                 permission_choice: None,
                 question_answers: None,
+                skipped: None,
             },
         );
         assert_eq!(res["outcome"]["outcome"], "selected");
