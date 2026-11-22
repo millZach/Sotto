@@ -94,6 +94,9 @@ describe('combined model, effort and speed picker', () => {
     const dialog = screen.getByRole('dialog', { name: 'Choose model' })
     expect(within(dialog).getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAttribute('max', '5')
     expect(within(dialog).getByRole('radio', { name: 'Fast' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('option', { name: 'Opus 5.5', selected: true }))
+    expect(within(dialog).queryByRole('slider')).toBeNull()
+    expect(sent).toEqual([])
 
     // Switch to Haiku 5.5: picker stays open, expands Haiku's 3-level gauge with no speed control, and moves focus into it.
     fireEvent.click(within(dialog).getByRole('option', { name: 'Haiku 5.5' }))
@@ -150,6 +153,7 @@ describe('combined model, effort and speed picker', () => {
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     const dialog = screen.getByRole('dialog', { name: 'Choose model' })
     expect(dialog.querySelector('.model-picker__pinned')).toBeNull()
+    fireEvent.click(within(dialog).getByRole('option', { name: 'Opus 5.5', selected: true }))
 
     // Browse Codex while Claude Opus 5.5 is active: pinned bar appears.
     fireEvent.click(within(dialog).getByRole('tab', { name: 'Codex' }))

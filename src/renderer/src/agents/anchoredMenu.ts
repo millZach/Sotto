@@ -17,6 +17,7 @@ export function useAnchoredMenu(
   dialog: RefObject<HTMLDialogElement | null>,
   focus: RefObject<HTMLElement | null>,
   returnFocus?: RefObject<HTMLElement | null>,
+  holdLeft = false,
 ): void {
   const placeMenu = useRef<(() => void) | undefined>(undefined)
   const focusBack = useRef(returnFocus)
@@ -28,6 +29,7 @@ export function useAnchoredMenu(
     element.showModal?.()
     if (!element.open) element.setAttribute('open', '')
     let side: 'below' | 'above' | undefined
+    let openingLeft: number | undefined
     const place = (): void => {
       const anchor = trigger.current?.getBoundingClientRect()
       if (!anchor) return
@@ -40,7 +42,9 @@ export function useAnchoredMenu(
       if (natural > fit) element.style.maxHeight = `${fit}px`
       const height = Math.min(natural, fit)
       const top = Math.max(16, Math.min(side === 'below' ? anchor.bottom + 6 : anchor.top - height - 6, innerHeight - height - 16))
-      element.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - width - 16))}px`
+      // The composer's effort word can move its model chip while the pointer is still over a stop.
+      const left = holdLeft ? (openingLeft ??= anchor.left) : anchor.left
+      element.style.left = `${Math.max(16, Math.min(left, innerWidth - width - 16))}px`
       // The edge against the trigger is the one set, so the menu's own height moves only its far edge. The other is set
       // to auto, since a modal dialog's own style pins both to the window.
       element.style.top = side === 'below' ? `${top}px` : 'auto'
@@ -48,14 +52,15 @@ export function useAnchoredMenu(
     }
     place()
     placeMenu.current = place
-    addEventListener('resize', place)
+    const onResize = (): void => { openingLeft = undefined; place() }
+    addEventListener('resize', onResize)
     focus.current?.focus()
     return () => {
-      removeEventListener('resize', place)
+      removeEventListener('resize', onResize)
       placeMenu.current = undefined
       element.close?.()
       ;(focusBack.current?.current ?? trigger.current)?.focus()
     }
-  }, [open, trigger, dialog, focus])
+  }, [open, trigger, dialog, focus, holdLeft])
   useLayoutEffect(() => { placeMenu.current?.() })
 }

@@ -40,6 +40,8 @@ test('opens one combined picker from model or effort, steps the Power Gauge with
     const modelChip = page.getByRole('combobox', { name: 'Thread model', exact: true })
     const effortChip = page.getByRole('combobox', { name: 'Thread reasoning', exact: true })
     const dialog = page.getByRole('dialog', { name: 'Choose model', exact: true })
+    const activeModel = dialog.getByRole('option', { selected: true })
+    const slider = dialog.getByRole('slider', { name: 'Thread reasoning effort', exact: true })
 
     // Hovering either half highlights the model, effort word and speed bolt together as one flush control.
     const unifiedHighlight = () => page.evaluate(() => {
@@ -83,6 +85,17 @@ test('opens one combined picker from model or effort, steps the Power Gauge with
     expect(geometry.speedVisible).toBe(true)
     expect(geometry.truncatedStops).toEqual([])
     await expect(dialog.getByRole('textbox', { name: 'Search models', exact: true })).toBeFocused()
+    await activeModel.click()
+    await expect(slider).toBeHidden()
+    await expect(dialog.getByRole('radiogroup')).toBeHidden()
+    await expect(activeModel).toBeFocused()
+    await expect(activeModel).toHaveAccessibleDescription('Show model controls')
+    await expect(dialog.locator('.inline-model-card .lucide-check')).toBeVisible()
+    await activeModel.press('Space')
+    await expect(slider).toHaveAttribute('aria-valuetext', 'Low')
+    await activeModel.press('Enter')
+    await expect(slider).toBeHidden()
+    await page.screenshot({ path: join(ARTIFACTS, 'collapsed-dark-1280.png') })
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(modelChip).toBeFocused()
@@ -90,7 +103,6 @@ test('opens one combined picker from model or effort, steps the Power Gauge with
     // Opening from the effort chip focuses the Power Gauge slider directly.
     await effortChip.click()
     await expect(dialog).toBeVisible()
-    const slider = dialog.getByRole('slider', { name: 'Thread reasoning effort', exact: true })
     const card = dialog.locator('.inline-model-card')
     await expect(slider).toBeFocused()
     await expect(slider).toHaveAttribute('aria-valuetext', 'Low')
@@ -140,6 +152,13 @@ test('opens one combined picker from model or effort, steps the Power Gauge with
         const providers = dialog.getByRole('tablist', { name: 'Model providers' })
         const frame = await dialog.boundingBox()
         const strip = await providers.boundingBox()
+        for (const stop of ['Low', 'Medium']) {
+          await dialog.getByRole('button', { name: stop, exact: true }).click()
+          await expect(slider).toHaveAttribute('aria-valuetext', stop)
+          await expect(effortChip).toContainText(stop)
+          expect(await dialog.boundingBox()).toEqual(frame)
+          expect(await providers.boundingBox()).toEqual(strip)
+        }
         for (const name of ['Codex', 'Favorites', 'Claude']) {
           const tab = providers.getByRole('tab', { name, exact: true })
           await tab.click()

@@ -4970,6 +4970,10 @@ msgstr "Hide commands"
 msgid "Hide it"
 msgstr "Hide it"
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Hide model controls"
+msgstr "Hide model controls"
+
 #: src/renderer/src/agents/SoundLine.tsx
 msgid "Hide the details"
 msgstr "Hide the details"
@@ -8495,6 +8499,10 @@ msgstr "Show in Files"
 #: src/renderer/src/agents/SoundLine.tsx
 msgid "Show in Finder"
 msgstr "Show in Finder"
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Show model controls"
+msgstr "Show model controls"
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Show more"
