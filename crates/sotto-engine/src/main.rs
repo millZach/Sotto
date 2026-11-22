@@ -710,9 +710,27 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     .await;
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), coordinator.shutdown()).await;
+    let shutdown_completed = tokio::time::timeout(
+        std::time::Duration::from_secs(35),
+        coordinator.shutdown(),
+    )
+    .await
+    .is_ok();
     if let Some(id) = shutdown_req_id {
-        let _ = out_tx.send(ok_response_frame(id, json!({ "ok": true })));
+        let frame = if shutdown_completed {
+            ok_response_frame(id, json!({ "ok": true }))
+        } else {
+            err_response_frame(
+                id,
+                SerializedEngineError {
+                    name: "Error".into(),
+                    message: "Engine shutdown timed out before coordinator finished saving state."
+                        .into(),
+                    code: Some("unavailable".into()),
+                },
+            )
+        };
+        let _ = out_tx.send(frame);
     }
     drop(out_tx);
     let mut writer_task = writer_task;
@@ -722,8 +740,14 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     {
         writer_task.abort();
     }
-    let _ = release_host_lock(&lock_path, &lease);
-    ExitCode::SUCCESS
+    if shutdown_completed {
+        let _ = release_host_lock(&lock_path, &lease);
+        ExitCode::SUCCESS
+    } else {
+        // Force immediate process termination so no timed-out coordinator task can write after
+        // shutdown fails; the next start reclaims the dead-PID lock safely.
+        std::process::exit(1);
+    }
 }
 
 async fn shutdown_future() {
