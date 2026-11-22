@@ -2276,7 +2276,7 @@ export class DesktopHostRouter {
   }
 }
 
-function sameRefOrEmpty<T>(next: readonly T[] | undefined, prev: readonly T[] | undefined): boolean {
+function sameRefOrEmpty(next: readonly unknown[] | undefined, prev: readonly unknown[] | undefined): boolean {
   return next === prev || ((next?.length ?? 0) === 0 && (prev?.length ?? 0) === 0)
 }
 function sameStringList(next: readonly string[] | undefined, prev: readonly string[] | undefined): boolean {
@@ -2290,40 +2290,48 @@ function sameThreadList(next: AgentState['host'], prev: AgentState['host']): boo
   const replaced = threadsReplacedSince(next, prev)
   return replaced !== undefined && replaced.size === 0
 }
-/** O(1) identity check that a host's live view still carries the exact inputs a prior publication was built from. */
+function sameHostFields(next: AgentState['host'], prev: AgentState['host']): boolean {
+  if (next === prev) return true
+  const keys = Object.keys(next) as (keyof AgentState['host'])[]
+  if (keys.length !== Object.keys(prev).length) return false
+  for (const key of keys) {
+    if (!Object.hasOwn(prev, key)) return false
+    if (key === 'threads') {
+      if (!sameThreadList(next, prev)) return false
+      continue
+    }
+    if (next[key] !== prev[key]) return false
+  }
+  return true
+}
+/**
+ * O(1) identity check across every top-level field of `AgentState` and `AgentState['host']` (using `sameThreadList`
+ * instead of walking `threads`) so any changed host field — `skillCatalogs`, `globalLaneBusy`, `notice`, `credentials`,
+ * or future additions — forces a fresh `build()` rather than returning a stale `published` snapshot.
+ */
 function sameHostState(next: AgentState, prev: AgentState): boolean {
   if (next === prev) return true
-  return next.hostId === prev.hostId
-    && next.activeThreadId === prev.activeThreadId
-    && next.activeProjectId === prev.activeProjectId
-    && next.error === prev.error
-    && next.stale === prev.stale
-    && next.legacyManagement === prev.legacyManagement
-    && next.historyEnabled === prev.historyEnabled
-    && next.configuration === prev.configuration
-    && next.host.connected === prev.host.connected
-    && next.host.hostId === prev.host.hostId
-    && next.host.name === prev.host.name
-    && next.host.capabilities === prev.host.capabilities
-    && next.host.projects === prev.host.projects
-    && next.host.models === prev.host.models
-    && next.host.providers === prev.host.providers
-    && sameThreadList(next.host, prev.host)
-    && sameRefOrEmpty(next.threadDrafts, prev.threadDrafts)
-    && sameRefOrEmpty(next.threadDraftPersistence, prev.threadDraftPersistence)
-    && sameRefOrEmpty(next.obsoleteDrafts, prev.obsoleteDrafts)
-    && sameRefOrEmpty(next.deliveredDrafts, prev.deliveredDrafts)
-    && sameRefOrEmpty(next.deliveries, prev.deliveries)
-    && sameRefOrEmpty(next.followups, prev.followups)
-    && sameStringList(next.busyThreadIds, prev.busyThreadIds)
-    && sameRefOrEmpty(next.unconfirmedSettings, prev.unconfirmedSettings)
-    && next.nextTurnSettings === prev.nextTurnSettings
-    && next.routerPicks === prev.routerPicks
-    && next.installedProviders === prev.installedProviders
-    && next.clientUpdates === prev.clientUpdates
-    && next.clientUpdateRun === prev.clientUpdateRun
-    && next.reasoningAccounts === prev.reasoningAccounts
-    && (next as HostClientShell).clientCapabilities === (prev as HostClientShell).clientCapabilities
+  const keys = Object.keys(next) as (keyof AgentState)[]
+  if (keys.length !== Object.keys(prev).length) return false
+  for (const key of keys) {
+    if (!Object.hasOwn(prev, key)) return false
+    if (key === 'host') {
+      if (!sameHostFields(next.host, prev.host)) return false
+      continue
+    }
+    if (key === 'busyThreadIds') {
+      if (!sameStringList(next.busyThreadIds, prev.busyThreadIds)) return false
+      continue
+    }
+    if (key === 'threadDrafts' || key === 'threadDraftPersistence' || key === 'obsoleteDrafts'
+      || key === 'deliveredDrafts' || key === 'deliveries' || key === 'followups'
+      || key === 'unconfirmedSettings') {
+      if (!sameRefOrEmpty(next[key], prev[key])) return false
+      continue
+    }
+    if (next[key] !== prev[key]) return false
+  }
+  return true
 }
 
 /** A host's state for a reader that only reads it: its view where it has one, a copy of its shell where it does not. */

@@ -9,6 +9,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentCommand, AgentMessage, AgentState, AgentThread } from '../../../src/shared/agents'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { heldProvidersOf } from '../../../src/shared/heldProviders'
+import { watcherDisabledWords } from '../../../src/shared/interfaceWords'
 import { noteThreadsReplaced } from '../../../src/shared/threadListPatches'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -17,6 +18,7 @@ const REMOTE = '22222222-2222-4222-8222-222222222222'
 function makeHost(hostId: string, kind: 'local' | 'remote', options: {
   readonly emitOnSelect?: boolean
   readonly clearFinishedOnObserve?: boolean
+  readonly mutateOnObserve?: (current: AgentState) => AgentState
   readonly selectError?: string
 } = {}) {
   let state = emptyDesktopState(hostId)
@@ -82,6 +84,10 @@ function makeHost(hostId: string, kind: 'local' | 'remote', options: {
         return replyView()
       }
       if (command.type === 'observe-threads') {
+        if (options.mutateOnObserve) {
+          state = options.mutateOnObserve(state)
+          return replyView()
+        }
         if (options.clearFinishedOnObserve && command.threadIds.includes('t2')) {
           const prevHost = state.host
           const updatedThreads = prevHost.threads.map(t => t.id === 't2' ? { ...t, finishedUnread: undefined } : t)
@@ -193,14 +199,44 @@ describe('DesktopHostRouter thread-switch build deduplication (#2733)', () => {
     router.dispose()
   })
 
-  it('leaves selectedProjectId null for threads hidden by watcherEnabled=false', async () => {
+  it.each([
+    ['notice', (current: AgentState): AgentState => ({ ...current, notice: 'Reconnected to provider.' }), (reply: AgentState) => expect(reply.notice).toBe('Reconnected to provider.')],
+    ['globalLaneBusy', (current: AgentState): AgentState => ({ ...current, globalLaneBusy: true }), (reply: AgentState) => expect(reply.globalLaneBusy).toBe(true)],
+    ['skillCatalogs', (current: AgentState): AgentState => ({ ...current, skillCatalogs: [{ threadId: 't1', providerId: 'codex', cwd: '/repo-a', status: 'ready', skills: [], errors: [] }] }), (reply: AgentState) => expect(reply.skillCatalogs).toHaveLength(1)],
+    ['credentials', (current: AgentState): AgentState => ({ ...current, credentials: { reasoning: true, secure: true } }), (reply: AgentState) => expect(reply.credentials).toEqual({ reasoning: true, secure: true })],
+  ])('rebuilds in observe-threads when %s changes on a host without emitting', async (_field, mutate, assertReply) => {
+    const local = makeHost(LOCAL, 'local', { emitOnSelect: true, mutateOnObserve: mutate })
+    const router = new DesktopHostRouter(emptyDesktopState, { heldProviders: heldProvidersOf({}) })
+    router.add(local.connection)
+    router.subscribe(() => undefined)
+
+    await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 't1') }, desktopWindowClient())
+    const buildSpy = vi.spyOn(router as unknown as { build: (...args: unknown[]) => unknown }, 'build')
+
+    const observed = await router.command({ type: 'observe-threads', threadIds: [hostEntityKey(LOCAL, 't1')] }, desktopWindowClient())
+
+    expect(buildSpy).toHaveBeenCalledTimes(1)
+    assertReply(observed)
+    router.dispose()
+  })
+
+  it('refuses selecting a hidden Watcher thread when watcherEnabled=false and preserves current selection', async () => {
     const local = makeHost(LOCAL, 'local', { emitOnSelect: true })
     const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: false, heldProviders: heldProvidersOf({}) })
     router.add(local.connection)
     router.subscribe(() => undefined)
 
-    const result = await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 't1') }, desktopWindowClient())
-    expect(result.activeProjectId).toBe(hostEntityKey(LOCAL, 'proj-a'))
+    const ordinary = await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 't1') }, desktopWindowClient())
+    expect(ordinary.activeThreadId).toBe(hostEntityKey(LOCAL, 't1'))
+    expect(ordinary.activeProjectId).toBe(hostEntityKey(LOCAL, 'proj-a'))
+
+    await expect(
+      router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'watcher-1') }, desktopWindowClient()),
+    ).rejects.toThrow(watcherDisabledWords())
+
+    const afterRefusal = router.view()
+    expect(afterRefusal.activeThreadId).toBe(hostEntityKey(LOCAL, 't1'))
+    expect(afterRefusal.activeProjectId).toBe(hostEntityKey(LOCAL, 'proj-a'))
     router.dispose()
   })
 })
