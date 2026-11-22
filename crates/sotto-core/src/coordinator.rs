@@ -1106,10 +1106,19 @@ impl CoordinatorActor {
         let events_tx = self.provider_events_tx.clone();
         let self_tx = self.self_tx.clone();
         tokio::spawn(async move {
-            let mut outcomes = Vec::with_capacity(targets.len());
+            let mut join_set = tokio::task::JoinSet::new();
             for (provider_id, adapter) in targets {
-                let result = adapter.connect(events_tx.clone()).await;
-                outcomes.push((provider_id, result));
+                let tx = events_tx.clone();
+                join_set.spawn(async move {
+                    let result = adapter.connect(tx).await;
+                    (provider_id, result)
+                });
+            }
+            let mut outcomes = Vec::new();
+            while let Some(joined) = join_set.join_next().await {
+                if let Ok(item) = joined {
+                    outcomes.push(item);
+                }
             }
             let _ = self_tx.send(ActorMessage::AsyncCommandDone {
                 lane,

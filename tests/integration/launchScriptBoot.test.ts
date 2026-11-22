@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { launchScriptChild } from '../fixtures/launchScriptRunner'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir, userInfo } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -611,9 +611,12 @@ await import('./fake.mjs')
     it('keeps a Rust-pinned unit running when another desktop launches without useRustHost', async () => {
       const configuration = await fixture({ linger: true })
       const rustBinName = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
-      // Stand-in binary marker so resolveRustBootMode() pins use_rust_host='1' on boot-install.
-      // The fake systemd unit runs fakeSshHost.mjs regardless of the shell script's exec line.
-      await writeFile(join(configuration.installPath, 'host', rustBinName), 'stub', 'utf8')
+      const rustBinPath = join(configuration.installPath, 'host', rustBinName)
+      // Executable POSIX shim so Linux fake systemd actually executes boot-start.sh -> host/sotto-host
+      // cleanly into fakeSshHost.mjs; on Windows fakeSystemd runs index.js directly.
+      const escapedNode = process.execPath.replace(/'/gu, "'\\''")
+      await writeFile(rustBinPath, `#!/bin/sh\nexec '${escapedNode}' "$(dirname "$0")/index.js" "$@"\n`, 'utf8')
+      if (process.platform !== 'win32') await chmod(rustBinPath, 0o755)
       const firstLaunch = await run(configuration, { op: 'launch' })
       expect(firstLaunch.result, failureReason(firstLaunch.result)).toMatchObject({ type: 'ready', owned: true })
 
