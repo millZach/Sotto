@@ -14,6 +14,9 @@ import {
   listenEngineServer,
 } from '../../src/main/engine/transport'
 import { publicProviderEntityId } from '../../src/shared/agents'
+import { fileListingSchema, filePreviewSchema } from '../../src/shared/files'
+import { hostMachineReportSchema } from '../../src/shared/hostFacts'
+import { toolsResultSchema } from '../../src/shared/tools'
 import { drive, prepareFake } from '../referee/providers'
 import { THREAD } from '../referee/scenario'
 
@@ -130,14 +133,22 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(pushes.some(p => p.event === 'shell')).toBe(true)
       expect(pushes.some(p => p.event === 'detail')).toBe(true)
 
-      // 4. Native ops over EngineTransport.
-      const facts = await conn.request<{ runtime: string; cpus: number }>('ops.hostFacts')
-      expect(facts.runtime).toBe('rust')
-      expect(facts.cpus).toBeGreaterThanOrEqual(1)
+      // 4. Native ops over EngineTransport validated against real TS Zod schemas.
+      const facts = hostMachineReportSchema.parse(await conn.request('ops.hostFacts'))
+      expect(facts.facts.logicalCpuCount).toBeGreaterThanOrEqual(1)
 
-      const preview = await conn.request<{ ok: boolean; text: string }>('ops.threadFilePreview', [dataDir, 'hello.txt'])
+      const listing = toolsResultSchema(fileListingSchema).parse(
+        await conn.request('ops.threadFiles', [THREAD, '']),
+      )
+      expect(listing.ok).toBe(true)
+      if (!listing.ok) throw new Error('expected ok threadFiles listing')
+      const preview = toolsResultSchema(filePreviewSchema).parse(
+        await conn.request('ops.threadFilePreview', [THREAD, 'hello.txt', listing.value.workspace.workspaceId]),
+      )
       expect(preview.ok).toBe(true)
-      expect(preview.text).toBe('Hello from local desktop engine')
+      if (preview.ok && preview.value.content.kind === 'text') {
+        expect(preview.value.content.text).toBe('Hello from local desktop engine')
+      }
 
       // 5. Unknown RPC method returns a structured serialized error without tearing down the link.
       await expect(conn.request('engine.noSuchMethod')).rejects.toThrow(/ENGINE_METHOD_UNHANDLED/)

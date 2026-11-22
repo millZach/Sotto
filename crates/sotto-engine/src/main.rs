@@ -349,57 +349,115 @@ async fn handle_rpc(
             ))
         }
         "ops.hostFacts" => {
-            let val = tokio::task::spawn_blocking(|| sotto_core::ops::host_facts(ENGINE_VERSION))
+            let running = coordinator.running_threads_count().await.unwrap_or(0);
+            let val = tokio::task::spawn_blocking(move || sotto_core::ops::host_facts(running))
                 .await
                 .unwrap_or_else(|_| json!({}));
             Ok((val, false))
         }
         "ops.threadFiles" => {
-            let root = args
+            let tid = args
                 .first()
                 .and_then(Value::as_str)
-                .map(PathBuf::from)
-                .unwrap_or_else(|| data_directory.to_path_buf());
-            let rel = args.get(1).and_then(Value::as_str).map(ToString::to_string);
-            let val = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::thread_files(&root, rel.as_deref())
-            })
-            .await
-            .unwrap_or_else(|_| json!({ "ok": false }));
+                .ok_or_else(|| err_invalid("threadId is required."))?;
+            let rel = args.get(1).and_then(Value::as_str).unwrap_or("").to_string();
+            let req_ws_id = args.get(2).and_then(Value::as_str);
+            let Some(ws) = coordinator
+                .thread_workspace(tid.to_string())
+                .await
+                .ok()
+                .flatten()
+            else {
+                return Ok((
+                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
+                    false,
+                ));
+            };
+            if let Some(expected_ws) = req_ws_id {
+                if expected_ws != ws.workspace_id {
+                    return Ok((
+                        sotto_core::ops::tools_err(
+                            "workspace-changed",
+                            "This thread's working folder changed. Refresh and try again.",
+                        ),
+                        false,
+                    ));
+                }
+            }
+            let val = tokio::task::spawn_blocking(move || sotto_core::ops::thread_files(&ws, &rel))
+                .await
+                .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read files."));
             Ok((val, false))
         }
         "ops.threadFilePreview" => {
-            let root = args
+            let tid = args
                 .first()
                 .and_then(Value::as_str)
-                .map(PathBuf::from)
-                .unwrap_or_else(|| data_directory.to_path_buf());
+                .ok_or_else(|| err_invalid("threadId is required."))?;
             let rel = args
                 .get(1)
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
+            let expected_ws = args
+                .get(2)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("workspaceId is required."))?;
+            let Some(ws) = coordinator
+                .thread_workspace(tid.to_string())
+                .await
+                .ok()
+                .flatten()
+            else {
+                return Ok((
+                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
+                    false,
+                ));
+            };
+            if expected_ws != ws.workspace_id {
+                return Ok((
+                    sotto_core::ops::tools_err(
+                        "workspace-changed",
+                        "This thread's working folder changed. Refresh and try again.",
+                    ),
+                    false,
+                ));
+            }
             let val = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::thread_file_preview(&root, &rel)
+                sotto_core::ops::thread_file_preview(&ws, &rel)
             })
             .await
-            .unwrap_or_else(|_| json!({ "ok": false }));
+            .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not preview file."));
             Ok((val, false))
         }
         "ops.gitRefs" => {
-            let folder = args
+            let tid = args
                 .first()
                 .and_then(Value::as_str)
-                .ok_or_else(|| err_invalid("folder is required."))?
-                .to_string();
-            let val = tokio::task::spawn_blocking(move || sotto_core::ops::git_refs(&folder))
+                .ok_or_else(|| err_invalid("threadId is required."))?;
+            let Some(ws) = coordinator
+                .thread_workspace(tid.to_string())
                 .await
-                .map_err(|_| err_invalid("gitRefs task failed."))?
-                .map_err(|e| SerializedEngineError {
+                .ok()
+                .flatten()
+            else {
+                return Err(SerializedEngineError {
                     name: "Error".into(),
-                    message: e,
+                    message: "This thread is unavailable.".into(),
                     code: Some("UNAVAILABLE".into()),
-                })?;
+                });
+            };
+            let folder = ws.working_directory;
+            let val = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_refs(&folder, None, None, None, false)
+            })
+            .await
+            .map_err(|_| err_invalid("gitRefs task failed."))?
+            .map_err(|e| SerializedEngineError {
+                name: "Error".into(),
+                message: e,
+                code: Some("UNAVAILABLE".into()),
+            })?;
             Ok((val, false))
         }
         "ops.threadWords" => {
