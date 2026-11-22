@@ -532,7 +532,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {quiet ? <div ref={setShieldSlot} className="thread-prompt__shield" /> : null}
           {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
               Watcher's full composer has New Watcher in that place; the quiet pill keeps it beside Send. */}
-          {watcher && !quiet ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
+          {watcher && !quiet ? <WatcherNewButton key={`watcher-new:${threadId}`} state={state} thread={row.thread} noticeSlot={settingsNotices} />
             : !quiet && threadHost ? <span className="thread-host-chip" title={hostTitle}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}{hostLabel}</span> : null}
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} quiet={quiet ? { effortScore, broadWork, shieldSlot } : undefined} />
@@ -547,7 +547,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">
           {quiet ? <>
-            {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} /> : null}
+            {watcher ? <WatcherNewButton key={`watcher-new:${threadId}`} state={state} thread={row.thread} noticeSlot={settingsNotices} /> : null}
             {working && content ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
               title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
             {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held, and Stop while a turn runs with
