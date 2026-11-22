@@ -163,12 +163,13 @@ export class TerminalService extends ToolOperations {
           this.dependencies.emit({ type: 'output', threadId: owner.threadId, workspaceId: owner.workspaceId, sessionId: record.session.id, data: chunk, sequence: record.sequence, place: record.session.place })
           offset = end
         }
-      }), pty.onExit(({ exitCode }) => {
+      }), pty.onExit(event => {
         if (record.pty !== pty) return
+        const exitCode = (event as { exitCode?: unknown } | undefined)?.exitCode
         record.pendingRun?.cancel()
         record.pty = undefined
         record.session.status = 'exited'
-        record.session.exitCode = exitCode
+        record.session.exitCode = typeof exitCode === 'number' && Number.isInteger(exitCode) ? exitCode : null
         this.publish(record)
         void this.save().catch(() => { record.session.status = 'unavailable'; this.publish(record) })
       }))

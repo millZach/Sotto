@@ -8,7 +8,7 @@ import { FilesService } from '../../../src/main/files/service'
 import { CheckoutMutations } from '../../../src/main/agents/checkoutMutations'
 import { RUN_QUIET_MS, RUN_START_CAP_MS, TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
 import * as clipboard from '../../../src/main/terminals/clipboard'
-import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
+import { TERMINAL_MAX_OUTPUT, terminalEventSchema, terminalListingSchema, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { deferred } from '../../fixtures/deferred'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
@@ -23,12 +23,12 @@ async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 
   const other = join(directory, 'other'); await mkdir(other)
   let cwd = directory
   const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'project', workingDirectory: threadId === 'b' ? other : cwd }), copyPath: vi.fn(), reveal: vi.fn() })
-  const processes: { emit(data: string): void; exit(code: number): void; pty: IPty }[] = []
+  const processes: { emit(data: string): void; exit(code: number): void; exitRaw(event: unknown): void; pty: IPty }[] = []
   const events: TerminalEvent[] = []
   const spawn = vi.fn(() => {
     let dataListener: (data: string) => void = () => {}, exitListener: (exit: { exitCode: number }) => void = () => {}
     const pty = { write: vi.fn(), resize: vi.fn(), kill: vi.fn(), onData: (listener: typeof dataListener) => { dataListener = listener; return { dispose: () => { dataListener = () => {} } } }, onExit: (listener: typeof exitListener) => { exitListener = listener; return { dispose: () => { exitListener = () => {} } } } } as unknown as IPty
-    processes.push({ pty, emit: data => dataListener(data), exit: code => exitListener({ exitCode: code }) })
+    processes.push({ pty, emit: data => dataListener(data), exit: code => exitListener({ exitCode: code }), exitRaw: event => exitListener(event as { exitCode: number }) })
     return pty
   })
   const createService = () => {
@@ -448,5 +448,26 @@ describe('persistent terminal service', () => {
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.place).toBe('tools')
     expect(unwrap(await restored.list({ ...f.target, place: 'drawer' })).sessions).toEqual([])
+  })
+  it.each([
+    ['undefined exitCode', { exitCode: undefined }],
+    ['NaN exitCode', { exitCode: Number.NaN }],
+    ['non-integer exitCode', { exitCode: 1.5 }],
+    ['missing event payload', undefined],
+  ])('normalizes %s from PTY onExit to null so preload schemas stay valid (#2821)', async (_label, payload) => {
+    const f = await fixture()
+    const created = unwrap(await f.service.create(f.target))
+    f.processes[0]!.exitRaw(payload)
+    const listing = unwrap(await f.service.list(f.target))
+    expect(terminalListingSchema.parse(listing).sessions).toEqual([expect.objectContaining({ id: created.session.id, status: 'exited', exitCode: null })])
+    const exitEvent = f.events.findLast(event => event.type === 'session' && event.session.id === created.session.id)
+    expect(terminalEventSchema.parse(exitEvent)).toMatchObject({ type: 'session', session: { id: created.session.id, status: 'exited', exitCode: null } })
+  })
+  it('preserves valid integer exit codes from PTY onExit', async () => {
+    const f = await fixture()
+    const created = unwrap(await f.service.create(f.target))
+    f.processes[0]!.exit(130)
+    const listing = unwrap(await f.service.list(f.target))
+    expect(terminalListingSchema.parse(listing).sessions).toEqual([expect.objectContaining({ id: created.session.id, status: 'exited', exitCode: 130 })])
   })
 })
