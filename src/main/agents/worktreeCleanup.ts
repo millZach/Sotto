@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process'
-import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
+import type { AgentHostSnapshot, AgentProject, AgentThread } from '../../shared/agents'
 import type { WorktreeCleanupRules } from '../../shared/settings'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { isWatcherWorkActive } from '../../shared/watcherOverview'
-import { delegatedThreadsBelow } from '../../shared/delegation'
+import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/delegation'
 import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './git/github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
 import { ghLaunch } from './git/ghCommand'
@@ -19,6 +19,8 @@ import { BASE_BRANCH_COMMITS_READ, type BaseBranchChecks } from './watcherComput
  */
 export interface WorktreeCleanupHost {
   workspaceSnapshot(): AgentHostSnapshot
+  /** Read-only view of visible projects and threads, without copying thread histories or activities. */
+  workspaceView?(): Pick<AgentHostSnapshot, 'projects' | 'threads'>
   reclaimThreadWorktree(threadId: string, options: { automatic: true; expectedMergedTip?: string }): Promise<unknown>
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
   /** Reports the current IDs immediately, then on publication, without copying histories. */
@@ -91,8 +93,46 @@ const HOUR_MS = 3_600_000
  * work may still be writing (October 23, 2026).
  */
 const busy = (thread: AgentThread): boolean => thread.requests.length > 0 || isWatcherWorkActive(thread) || (thread.subagentSummary?.unknown ?? 0) > 0
+const projectsById = (projects: readonly AgentProject[]): ReadonlyMap<string, AgentProject> =>
+  new Map(projects.map(project => [project.id, project]))
+/** Indexed view of one sweep pass so lookup and delegation checks stay O(1) per thread. */
+interface ThreadIndex {
+  readonly byId: ReadonlyMap<string, AgentThread>
+  readonly children: ReadonlyMap<string, readonly string[]>
+}
+const isThreadIndex = (value: readonly AgentThread[] | ThreadIndex): value is ThreadIndex => !Array.isArray(value)
+function indexThreads(threads: readonly AgentThread[]): ThreadIndex {
+  const byId = new Map<string, AgentThread>()
+  const children = new Map<string, string[]>()
+  for (const thread of threads) {
+    byId.set(thread.id, thread)
+    if (thread.delegatedBy) {
+      let list = children.get(thread.delegatedBy)
+      if (!list) { list = []; children.set(thread.delegatedBy, list) }
+      list.push(thread.id)
+    }
+  }
+  return { byId, children }
+}
+function delegatedBelow(children: ReadonlyMap<string, readonly string[]>, threadId: string): string[] {
+  let level = children.get(threadId)
+  if (!level?.length) return []
+  const below: string[] = [], seen = new Set([threadId])
+  for (let depth = 0; depth < DELEGATION_LEVELS_MAX && level.length; depth++) {
+    const next: string[] = []
+    for (const child of level) if (!seen.has(child)) { seen.add(child); below.push(child); next.push(...children.get(child) ?? []) }
+    level = next
+  }
+  return below
+}
 /** The same of a thread or, when it is to be settled, a thread it delegated to (ADR-0081), which settles with it. */
-function atWork(threads: readonly AgentThread[], threadId: string, delegated: boolean): boolean {
+function atWork(threads: readonly AgentThread[] | ThreadIndex, threadId: string, delegated: boolean): boolean {
+  if (isThreadIndex(threads)) {
+    const thread = threads.byId.get(threadId)
+    if (!thread || busy(thread)) return true
+    if (!delegated || !threads.children.size) return false
+    return delegatedBelow(threads.children, threadId).some(id => { const below = threads.byId.get(id); return below !== undefined && busy(below) })
+  }
   const thread = threads.find(item => item.id === threadId)
   if (!thread || busy(thread)) return true
   if (!delegated || !threads.some(item => item.delegatedBy)) return false
@@ -158,7 +198,7 @@ export class WorktreeCleanup {
         else changed(ids)
       })
     } else {
-      this.settled = this.settledThreads(host.workspaceSnapshot())
+      this.settled = this.settledThreads(this.readView())
       this.unsubscribe = host.subscribe(snapshot => changed(this.settledThreads(snapshot)))
     }
     this.timer = setInterval(() => this.request(), this.dependencies.intervalMs ?? HOUR_MS)
@@ -194,11 +234,19 @@ export class WorktreeCleanup {
     this.running = this.running.then(async () => { this.queued = false; await this.sweep() }).catch(() => undefined)
     return this.running
   }
+  /** Reads projects and threads without copying histories when the host exposes a read-only view. */
+  private readView(): Pick<AgentHostSnapshot, 'projects' | 'threads'> {
+    return this.dependencies.host.workspaceView?.() ?? this.dependencies.host.workspaceSnapshot()
+  }
   /** Whether Watcher watches this thread or a thread it delegated to, which would settle with it; an unreadable answer is yes. */
-  private watched(threads: readonly AgentThread[], threadId: string): boolean {
+  private watched(threads: readonly AgentThread[] | ThreadIndex, threadId: string): boolean {
     const watched = this.dependencies.watched
     if (!watched) return false
-    try { return watched(threadId) || delegatedThreadsBelow(threads, threadId).some(id => watched(id)) } catch { return true }
+    try {
+      if (watched(threadId)) return true
+      const below = isThreadIndex(threads) ? delegatedBelow(threads.children, threadId) : delegatedThreadsBelow(threads, threadId)
+      return below.some(id => watched(id))
+    } catch { return true }
   }
   private autoSettleOn(): boolean {
     try { return this.dependencies.autoSettleMerged?.() === true && Boolean(this.dependencies.pullRequestMerged && this.dependencies.host.setWorkspaceSettled) } catch { return false }
@@ -271,13 +319,15 @@ export class WorktreeCleanup {
    * send), never the repository's default branch.
    */
   private async settleMerged(): Promise<void> {
-    const snapshot = this.dependencies.host.workspaceSnapshot()
-    for (const thread of snapshot.threads) {
+    const view = this.readView()
+    const projects = projectsById(view.projects)
+    const indexed = indexThreads(view.threads)
+    for (const thread of view.threads) {
       if (this.disposed || !this.autoSettleOn()) return
       const worktree = thread.worktree
-      const project = snapshot.projects.find(item => item.id === thread.projectId)
+      const project = projects.get(thread.projectId)
       if (thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
-      if (atWork(snapshot.threads, thread.id, true) || this.watched(snapshot.threads, thread.id)) continue
+      if (atWork(indexed, thread.id, true) || this.watched(indexed, thread.id)) continue
       const branch = (worktree?.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree?.sentBranch) ?? null
       const key = `${thread.id}\0${branch ?? ''}`
       if (this.autoSettled.has(key)) continue
@@ -303,12 +353,12 @@ export class WorktreeCleanup {
           }
         }
         // Asked again as it now stands: work may have started, or a pull request been linked, while Git and GitHub were asked.
-        const now = this.dependencies.host.workspaceSnapshot().threads
+        const now = this.readView().threads
         if (atWork(now, thread.id, true) || this.watched(now, thread.id)) continue
         if (asked && [...this.openLinks(now.find(item => item.id === thread.id)).keys()].some(key => !asked.has(key))) continue
         // A watch given while the write waits for the checkout holds it too.
         await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, expected, () => {
-          if (this.watched(this.dependencies.host.workspaceSnapshot().threads, thread.id)) throw new Error('Watcher watches this thread now. It stays unsettled.')
+          if (this.watched(this.readView().threads, thread.id)) throw new Error('Watcher watches this thread now. It stays unsettled.')
         })
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
@@ -320,8 +370,9 @@ export class WorktreeCleanup {
     if (!this.defaults.has(repositoryRoot)) this.defaults.set(repositoryRoot, await this.defaultBranch(repositoryRoot))
     return this.defaults.get(repositoryRoot) ?? null
   }
-  private settledThreads(snapshot: AgentHostSnapshot): Set<string> {
-    return new Set(snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))).map(thread => thread.id))
+  private settledThreads(view: Pick<AgentHostSnapshot, 'projects' | 'threads'>): Set<string> {
+    const projects = projectsById(view.projects)
+    return new Set(view.threads.filter(thread => isWorkspaceThreadSettled(thread, projects.get(thread.projectId))).map(thread => thread.id))
   }
   /** Clear settled threads after's days, or null for Never or when the feature is off. */
   private clearAfterDays(): number | null {
@@ -373,26 +424,36 @@ export class WorktreeCleanup {
     this.linkAnswers = new Map()
     if (settle) await this.settleMerged()
     if (!rulesOn(rules) || this.disposed) return
-    const snapshot = this.dependencies.host.workspaceSnapshot()
+    const view = this.readView()
     const defaults = this.defaults
-    for (const thread of snapshot.threads) {
+    for (const thread of view.threads) {
       if (this.disposed) return
       if (!this.canReclaim(thread)) continue
       try {
         const eligibility = await this.eligible(thread, rules, defaults)
         if (!eligibility) continue
-        // Asked again as it now stands: work may have started while the folder was looked at.
-        if (atWork(this.dependencies.host.workspaceSnapshot().threads, thread.id, false)) continue
-        await this.dependencies.host.reclaimThreadWorktree(thread.id, { automatic: true, ...eligibility })
+        // Asked again as it now stands: work may have started, or the thread or its project been restored, while looked at.
+        const current = this.readView()
+        const live = current.threads.find(item => item.id === thread.id)
+        if (!live || !this.canReclaim(live) || atWork(current.threads, thread.id, false)) continue
+        if (eligibility.onSettle && !isWorkspaceThreadSettled(live, current.projects.find(project => project.id === live.projectId))) continue
+        const reclaimOptions = eligibility.expectedMergedTip !== undefined
+          ? { automatic: true as const, expectedMergedTip: eligibility.expectedMergedTip }
+          : { automatic: true as const }
+        await this.dependencies.host.reclaimThreadWorktree(thread.id, reclaimOptions)
         this.dependencies.log?.('worktree-cleanup-reclaimed')
       } catch { this.dependencies.log?.('worktree-cleanup-skipped') }
     }
   }
-  private async eligible(thread: AgentThread, rules: WorktreeCleanupRules, defaults: Map<string, string | null>): Promise<{ expectedMergedTip?: string } | null> {
-    const snapshot = this.dependencies.host.workspaceSnapshot()
-    const worktree = thread.worktree!
-    if (rules.onSettle && isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))) return {}
-    if (rules.afterDays !== null && lastActivity(thread, this.now()) < this.now() - rules.afterDays * DAY_MS) return {}
+  private async eligible(thread: AgentThread, rules: WorktreeCleanupRules, defaults: Map<string, string | null>): Promise<{ expectedMergedTip?: string; onSettle?: true } | null> {
+    // Re-read the live thread and project on each candidate (without cloning histories) so a project or thread restored
+    // while an earlier candidate was awaited is never reclaimed under stale settlement state.
+    const view = this.readView()
+    const live = view.threads.find(item => item.id === thread.id)
+    if (!live || !this.canReclaim(live)) return null
+    const worktree = live.worktree!
+    if (rules.onSettle && isWorkspaceThreadSettled(live, view.projects.find(project => project.id === live.projectId))) return { onSettle: true }
+    if (rules.afterDays !== null && lastActivity(live, this.now()) < this.now() - rules.afterDays * DAY_MS) return {}
     if (rules.unchanged) {
       const repositoryRoot = worktree.repositoryRoot!
       if (!defaults.has(repositoryRoot)) defaults.set(repositoryRoot, await this.defaultBranch(repositoryRoot))
