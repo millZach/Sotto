@@ -554,6 +554,11 @@ export interface AgentHost extends ProviderHost {
    */
   threadWords?(query: string): AgentThreadWords | null | Promise<AgentThreadWords | null>
   /**
+   * Registers an optional read-only SQLite search accelerator (such as the Rust local engine, ADR-0215)
+   * invoked from `WorkspaceHost.threadWords` only after pending writes have settled and store guards pass.
+   */
+  useThreadWordsAccelerator?(accelerator: ((query: string) => Promise<AgentThreadWords | undefined>) | undefined): void
+  /**
    * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
    * turn above the window waits there with its messages. A view for the thread detail alone; the records
    * themselves stay whole everywhere else. Absent on hosts that keep no window, which give every record.

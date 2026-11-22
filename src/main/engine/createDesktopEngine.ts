@@ -520,33 +520,17 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   // whole when its row opens (#2737).
   const localHistories = windowHistories(agentControl)
   // On Owl builds, start the native Rust `sotto-engine` sidecar in read-only `--accelerator` mode over the
-  // ADR-0210 OS IPC transport (ADR-0215) to offload read-only SQLite thread-word search off the Node event loop,
+  // ADR-0210 OS IPC transport (ADR-0215) to offload read-only SQLite thread-word search off the Node event loop.
+  // Hooked inside `WorkspaceHost.threadWords` so pending writes settle and store/visibility guards always run first,
   // transparently falling back to TypeScript if the binary is absent or exits.
   const rustLocalEngine = owlFeatures['rust-local-engine'] && startupSettings.localHostEnabled && e2eConfiguration === null && env['SOTTO_DESIGN_CAPTURE'] !== '1'
     ? await startRustLocalEngine({ userDataPath, isPackaged, log })
     : undefined
-  const localHostService = rustLocalEngine
-    ? new Proxy(hostService, {
-        get(target, prop) {
-          if (prop === 'threadWords') {
-            return async (query: string) => {
-              if (agentHistoryEnabled) {
-                const accelerated = await rustLocalEngine.searchThreadWords(query)
-                if (accelerated !== undefined) {
-                  const visibleIds = new Set(agentControl.watcherSnapshot().threads.map(thread => thread.id))
-                  return { found: accelerated.found.filter(match => visibleIds.has(match.threadId)) }
-                }
-              }
-              return target.threadWords ? target.threadWords(query) : null
-            }
-          }
-          const value: unknown = Reflect.get(target, prop, target)
-          return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value
-        },
-      })
-    : hostService
+  if (rustLocalEngine) {
+    agentHost.useThreadWordsAccelerator?.(query => agentHistoryEnabled ? rustLocalEngine.searchThreadWords(query) : Promise.resolve(undefined))
+  }
   if (startupSettings.localHostEnabled) hostRouter.add({
-    hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: localHostService,
+    hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: localHistories.detail,
     activityBody: localHistories.activityBody,
     preview: request => agentControl.attachmentPreview(request),

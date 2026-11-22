@@ -23,12 +23,19 @@ export interface RustLocalEngineOptions {
   readonly log?: ((code: string) => void) | undefined
 }
 
+export interface RustLocalEngineGitRefsOptions {
+  readonly query?: string
+  readonly cursor?: number
+  readonly limit?: number
+  readonly includeMatchingRemoteRefs?: boolean
+}
+
 export interface RustLocalEngineClient {
   readonly version: string
   readonly pid: number
   hostFacts(runningThreads?: number): Promise<HostMachineReport | undefined>
   searchThreadWords(query: string): Promise<AgentThreadWords | undefined>
-  gitRefs(folder: string, options?: { readonly filter?: string; readonly limit?: number; readonly offset?: number }): Promise<GitRefsPage | undefined>
+  gitRefs(folder: string, options?: RustLocalEngineGitRefsOptions): Promise<GitRefsPage | undefined>
   close(): Promise<void>
 }
 
@@ -115,7 +122,10 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
       })
     })
 
-    connection = await server.waitForClient(HANDSHAKE_TIMEOUT_MS)
+    connection = await Promise.race([
+      server.waitForClient(HANDSHAKE_TIMEOUT_MS),
+      exited.then<never>(() => { throw new Error('rust-engine-exited-before-handshake') }),
+    ])
     const ping = await connection.request<{ ok?: unknown; runtime?: unknown; version?: unknown; pid?: unknown }>('engine.ping', [], RPC_TIMEOUT_MS)
     if (ping?.ok !== true || ping.runtime !== 'rust' || typeof ping.pid !== 'number') {
       throw new Error('rust-engine-invalid-ping')
@@ -151,7 +161,7 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
           return undefined
         }
       },
-      async gitRefs(folder: string, refOptions?: { readonly filter?: string; readonly limit?: number; readonly offset?: number }): Promise<GitRefsPage | undefined> {
+      async gitRefs(folder: string, refOptions?: RustLocalEngineGitRefsOptions): Promise<GitRefsPage | undefined> {
         if (closed || activeConnection.isClosed) return undefined
         try {
           const raw = await activeConnection.request('ops.gitRefsByFolder', refOptions ? [folder, refOptions] : [folder], RPC_TIMEOUT_MS)

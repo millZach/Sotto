@@ -1025,13 +1025,27 @@ pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
 
 fn build_word_quote(text: &str, needle_lower: &str) -> String {
     let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let lower = normalized.to_lowercase();
+    let chars: Vec<char> = normalized.chars().collect();
+    // Build the lowercased string while recording each lowercased byte's originating index
+    // in `chars` so characters whose lowercase form expands (such as Turkish `İ` -> `i\u{307}`)
+    // never produce an out-of-bounds index into `chars`.
+    let mut lower = String::with_capacity(normalized.len());
+    let mut orig_char_by_lower_byte: Vec<usize> = Vec::with_capacity(normalized.len());
+    for (orig_idx, &ch) in chars.iter().enumerate() {
+        for lower_ch in ch.to_lowercase() {
+            let mut buf = [0u8; 4];
+            let encoded = lower_ch.encode_utf8(&mut buf);
+            lower.push_str(encoded);
+            for _ in 0..encoded.len() {
+                orig_char_by_lower_byte.push(orig_idx);
+            }
+        }
+    }
     let hit_char_idx = lower
         .find(needle_lower)
-        .map(|byte_idx| lower[..byte_idx].chars().count())
+        .and_then(|byte_idx| orig_char_by_lower_byte.get(byte_idx).copied())
         .unwrap_or(0);
-    let chars: Vec<char> = normalized.chars().collect();
-    let start_char = hit_char_idx.saturating_sub(48);
+    let start_char = hit_char_idx.saturating_sub(48).min(chars.len());
     let mut slice = String::new();
     let mut u16_len = 0usize;
     let mut end_char = start_char;
@@ -1266,5 +1280,14 @@ mod tests {
             res["error"]["code"].as_str(),
             Some("invalid-request" | "not-repository")
         ));
+    }
+
+    #[test]
+    fn build_word_quote_handles_expanding_unicode_lowercase_without_panicking() {
+        // Turkish capital dotted I (`İ`) expands to two Unicode scalar values (`i\u{307}`) when lowercased.
+        let text = format!("{} target word here", "İ".repeat(100));
+        let quote = build_word_quote(&text, "target");
+        assert!(quote.contains("target word here"));
+        assert!(quote.encode_utf16().count() <= 182);
     }
 }

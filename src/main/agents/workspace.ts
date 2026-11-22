@@ -495,6 +495,10 @@ const NOTHING_BROUGHT_BACK = 'Nothing was brought back.'
 export class WorkspaceHost implements AgentHost, BabysitStore {
   private watcherPrObserver: ((read: PullRequestObservation) => void) | undefined
   setWatcherPrObserver(observer: (read: PullRequestObservation) => void): void { if (this.watcherEnabled) this.watcherPrObserver = observer }
+  private threadWordsAccelerator: ((query: string) => Promise<AgentThreadWords | undefined>) | undefined
+  useThreadWordsAccelerator(accelerator: ((query: string) => Promise<AgentThreadWords | undefined>) | undefined): void {
+    this.threadWordsAccelerator = accelerator
+  }
   private observePullRequest(view: GitPullRequestView): void {
     if (view.state === 'merged') this.pullRequestMerged(view.url)
     if (!this.watcherPrObserver) return
@@ -4184,16 +4188,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * only with no worker. Null when the store cannot answer, and while a worker's writes are held. Read only when a search asks, and never published.
    */
   async threadWords(query: string): Promise<AgentThreadWords | null> {
-    if (this.storeUnavailable) return null
+    if (this.storeUnavailable || this.writes.writesHeld) return null
     // What waits to be written is posted first, so the read, behind it, finds the messages a publish just added.
-    await this.settled()
-    if (this.storeUnavailable) return null
+    // When an external accelerator reads threads.sqlite directly (ADR-0215), also flush coalesced writeSoon appends
+    // so newly published messages are committed on disk before the read runs.
+    await this.settled(undefined, this.threadWordsAccelerator !== undefined)
+    if (this.storeUnavailable || this.writes.writesHeld) return null
     let read: AgentThreadWords | null = null
-    const offMain = this.writes.readWords?.(query)
-    if (offMain) {
-      const answer = await offMain
-      if ('words' in answer) read = answer.words
-      else if ('unreadable' in answer) return null
+    if (this.threadWordsAccelerator) {
+      const accelerated = await this.threadWordsAccelerator(query).catch(() => undefined)
+      if (accelerated !== undefined) read = accelerated
+    }
+    if (read === null) {
+      const offMain = this.writes.readWords?.(query)
+      if (offMain) {
+        const answer = await offMain
+        if ('words' in answer) read = answer.words
+        else if ('unreadable' in answer) return null
+      }
     }
     if (read === null) {
       if (this.storeUnavailable) return null

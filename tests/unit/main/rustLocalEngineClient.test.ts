@@ -45,4 +45,26 @@ describe('Rust local desktop engine client (ADR-0215)', () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  it('aborts startup immediately instead of waiting for handshake timeout when the binary fails to launch', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sotto-rust-client-badbin-'))
+    try {
+      const badBin = join(dir, rustLocalEngineBinaryName())
+      await writeFile(badBin, 'not-an-executable-binary', 'utf8')
+      const logs: string[] = []
+      const started = Date.now()
+      const client = await startRustLocalEngine({
+        userDataPath: dir,
+        isPackaged: false,
+        binaryPath: badBin,
+        log: code => { logs.push(code) },
+      })
+      const elapsed = Date.now() - started
+      expect(client).toBeUndefined()
+      expect(logs).toContain('rust-engine-start-failed')
+      expect(elapsed).toBeLessThan(3_000)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
