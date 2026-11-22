@@ -85,6 +85,15 @@ struct PendingCommand {
     reply: oneshot::Sender<Result<Value, CoordinatorError>>,
 }
 
+struct InFlightSend {
+    command_id: String,
+    text: String,
+    attachments: Vec<StagedAttachmentEntry>,
+    created_at: String,
+    flushed_message_id: Option<String>,
+    turn_already_completed: Option<String>,
+}
+
 enum AsyncCommandOutcome {
     Connect {
         provider_id: String,
@@ -491,6 +500,7 @@ struct CoordinatorActor {
     global_queue: VecDeque<PendingCommand>,
     busy_thread_ids: HashSet<String>,
     thread_queues: HashMap<String, VecDeque<PendingCommand>>,
+    in_flight_sends: HashMap<String, InFlightSend>,
     staged: StagedAttachments,
 
     shell_dirty: bool,
@@ -577,6 +587,7 @@ impl CoordinatorActor {
             global_queue: VecDeque::new(),
             busy_thread_ids: HashSet::new(),
             thread_queues: HashMap::new(),
+            in_flight_sends: HashMap::new(),
             staged,
             shell_dirty: false,
             dirty_details: HashSet::new(),
@@ -1167,6 +1178,18 @@ impl CoordinatorActor {
         let self_tx = self.self_tx.clone();
         let model_opt = (!thread.model_id.is_empty()).then_some(thread.model_id.clone());
 
+        self.in_flight_sends.insert(
+            tid.clone(),
+            InFlightSend {
+                command_id: command_id.clone(),
+                text: text.clone(),
+                attachments: attachments.clone(),
+                created_at: now_iso(),
+                flushed_message_id: None,
+                turn_already_completed: None,
+            },
+        );
+
         tokio::spawn(async move {
             let started = Instant::now();
             let mut allocated_worktree = None;
@@ -1469,6 +1492,7 @@ impl CoordinatorActor {
                 allocated_worktree,
                 result,
             } => {
+                let in_flight = self.in_flight_sends.remove(&thread_id);
                 if let Some(wt) = allocated_worktree {
                     if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                         t.working_directory = wt.path.clone();
@@ -1477,51 +1501,61 @@ impl CoordinatorActor {
                 }
                 let ack = result.map_err(CoordinatorError::unavailable)?;
                 let now = now_iso();
-                let stored_attachments = if attachments.is_empty() {
-                    None
+                let message_id = if let Some(flushed_id) =
+                    in_flight.as_ref().and_then(|f| f.flushed_message_id.clone())
+                {
+                    flushed_id
                 } else {
-                    Some(Value::Array(
-                        attachments
-                            .iter()
-                            .map(|a| serde_json::to_value(&a.handle).unwrap_or(Value::Null))
-                            .collect(),
-                    ))
-                };
-                let user_message = StoredMessage {
-                    id: ack.message_id.clone(),
-                    role: "user".into(),
-                    text,
-                    created_at: now.clone(),
-                    command_id: Some(command_id.clone()),
-                    turn_message_id: None,
-                    attachments: stored_attachments,
-                    watcher_own_change: None,
-                    watcher_observed_changes: None,
-                    provider_error: None,
-                };
+                    let stored_attachments = encode_stored_attachments(&attachments);
+                    let user_message = StoredMessage {
+                        id: ack.message_id.clone(),
+                        role: "user".into(),
+                        text,
+                        created_at: now.clone(),
+                        command_id: Some(command_id.clone()),
+                        turn_message_id: None,
+                        attachments: stored_attachments,
+                        watcher_own_change: None,
+                        watcher_observed_changes: None,
+                        provider_error: None,
+                    };
 
-                let _ = self.thread_store.append_event(
-                    &thread_id,
-                    &ThreadEvent::MessageAdded {
-                        at: now.clone(),
-                        message: user_message.clone(),
-                        redacted: None,
-                    },
-                );
-                self.push_message_to_detail(&thread_id, user_message);
+                    let _ = self.thread_store.append_event(
+                        &thread_id,
+                        &ThreadEvent::MessageAdded {
+                            at: now.clone(),
+                            message: user_message.clone(),
+                            redacted: None,
+                        },
+                    );
+                    self.push_message_to_detail(&thread_id, user_message);
+                    ack.message_id.clone()
+                };
 
                 let is_accepted = ack.status == "accepted";
+                let turn_already_completed =
+                    in_flight.and_then(|f| f.turn_already_completed);
                 if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                     if is_accepted {
-                        t.status = "running".into();
-                        t.last_turn = Some(AgentTurnRecord {
-                            id: ack.turn_id.clone(),
-                            status: "running".into(),
-                            message_id: Some(ack.message_id.clone()),
-                        });
+                        if let Some(done_status) = turn_already_completed {
+                            if t.last_turn.is_none() {
+                                t.last_turn = Some(AgentTurnRecord {
+                                    id: ack.turn_id.clone(),
+                                    status: done_status,
+                                    message_id: Some(message_id.clone()),
+                                });
+                            }
+                        } else {
+                            t.status = "running".into();
+                            t.last_turn = Some(AgentTurnRecord {
+                                id: ack.turn_id.clone(),
+                                status: "running".into(),
+                                message_id: Some(message_id.clone()),
+                            });
+                        }
                     }
                     t.native_session_started = true;
-                    t.last_user_message_id = Some(ack.message_id.clone());
+                    t.last_user_message_id = Some(message_id.clone());
                     t.updated_at = now.clone();
                     if let Some(detail) = self.details.get(&thread_id) {
                         t.summary =
@@ -1533,7 +1567,7 @@ impl CoordinatorActor {
                     command_id,
                     draft_id: draft_id.clone(),
                     thread_id: thread_id.clone(),
-                    message_id: Some(ack.message_id),
+                    message_id: Some(message_id),
                     status: ack.status,
                     error: None,
                     created_at: now.clone(),
@@ -1692,7 +1726,13 @@ impl CoordinatorActor {
         let base_branch = command
             .get("baseBranch")
             .and_then(Value::as_str)
-            .map(ToString::to_string);
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(ref base) = base_branch {
+            if !crate::ops::is_valid_git_base_ref(base) {
+                return Err(CoordinatorError::invalid("Invalid base branch name."));
+            }
+        }
         let start_from_origin = command
             .get("startFromOrigin")
             .and_then(Value::as_bool);
@@ -1874,13 +1914,14 @@ impl CoordinatorActor {
                 after_message_id,
                 activity,
             } => {
+                let flushed_id = self.flush_in_flight_user_message(&thread_id);
                 self.upsert_activity_in_detail(&thread_id, activity);
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                     thread.status = "running".into();
                     thread.last_turn = Some(AgentTurnRecord {
                         id: turn_id,
                         status: "running".into(),
-                        message_id: after_message_id,
+                        message_id: after_message_id.or(flushed_id),
                     });
                     if let Some(detail) = self.details.get(&thread_id) {
                         thread.summary =
@@ -1890,6 +1931,7 @@ impl CoordinatorActor {
                 self.shell_dirty = true;
             }
             ProviderEvent::MessageAdded { thread_id, message } => {
+                self.flush_in_flight_user_message(&thread_id);
                 let _ = self.thread_store.append_event(
                     &thread_id,
                     &ThreadEvent::MessageAdded {
@@ -1927,6 +1969,7 @@ impl CoordinatorActor {
                 self.shell_dirty = true;
             }
             ProviderEvent::MessageReplaced { thread_id, message } => {
+                self.flush_in_flight_user_message(&thread_id);
                 let _ = self.thread_store.append_event(
                     &thread_id,
                     &ThreadEvent::MessageReplaced {
@@ -1951,11 +1994,13 @@ impl CoordinatorActor {
                 thread_id,
                 activity,
             } => {
+                self.flush_in_flight_user_message(&thread_id);
                 self.upsert_activity_in_detail(&thread_id, activity);
                 self.refresh_thread_summary(&thread_id);
                 self.shell_dirty = true;
             }
             ProviderEvent::RequestOpened { thread_id, request } => {
+                self.flush_in_flight_user_message(&thread_id);
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                     if let Some(rid) = request.get("id").and_then(Value::as_str) {
                         thread
@@ -1984,9 +2029,51 @@ impl CoordinatorActor {
                 turn_id: _,
                 status,
             } => {
+                self.flush_in_flight_user_message(&thread_id);
+                if let Some(in_flight) = self.in_flight_sends.get_mut(&thread_id) {
+                    in_flight.turn_already_completed = Some(status.clone());
+                }
                 self.finish_turn(&thread_id, &status);
             }
         }
+    }
+
+    fn flush_in_flight_user_message(&mut self, thread_id: &str) -> Option<String> {
+        let user_message = {
+            let in_flight = self.in_flight_sends.get_mut(thread_id)?;
+            if let Some(existing) = in_flight.flushed_message_id.as_ref() {
+                return Some(existing.clone());
+            }
+            let message_id = format!("msg-{}", Uuid::new_v4());
+            in_flight.flushed_message_id = Some(message_id.clone());
+            StoredMessage {
+                id: message_id,
+                role: "user".into(),
+                text: in_flight.text.clone(),
+                created_at: in_flight.created_at.clone(),
+                command_id: Some(in_flight.command_id.clone()),
+                turn_message_id: None,
+                attachments: encode_stored_attachments(&in_flight.attachments),
+                watcher_own_change: None,
+                watcher_observed_changes: None,
+                provider_error: None,
+            }
+        };
+        let message_id = user_message.id.clone();
+        let _ = self.thread_store.append_event(
+            thread_id,
+            &ThreadEvent::MessageAdded {
+                at: user_message.created_at.clone(),
+                message: user_message.clone(),
+                redacted: None,
+            },
+        );
+        self.push_message_to_detail(thread_id, user_message);
+        if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+            t.native_session_started = true;
+            t.last_user_message_id = Some(message_id.clone());
+        }
+        Some(message_id)
     }
 
     fn finish_turn(&mut self, thread_id: &str, status: &str) {
@@ -2236,6 +2323,10 @@ impl CoordinatorActor {
             "clearedThreadIds".into(),
             serde_json::to_value(&self.cleared_thread_ids).unwrap_or_else(|_| json!([])),
         );
+        file_obj.insert(
+            "configuration".into(),
+            serde_json::to_value(&self.configuration).unwrap_or_else(|_| json!({})),
+        );
         let _ = write_atomic_json(&self.data_directory.join("workspace.json"), &Value::Object(file_obj));
 
         // Persist `threads.json` in TypeScript `ThreadRegistry` format (`{ bindings: [{ threadId, provider, sessionId, projectId, createdAt }] }`),
@@ -2310,8 +2401,8 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
         .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
         .unwrap_or_default();
     let configuration = root
-        .get("configuration")
-        .and_then(|v| serde_json::from_value::<AgentConfiguration>(v.clone()).ok())
+        .remove("configuration")
+        .and_then(|v| serde_json::from_value::<AgentConfiguration>(v).ok())
         .unwrap_or_default();
 
     Ok(LoadedWorkspace {
@@ -2362,7 +2453,10 @@ fn allocate_independent_worktree(
     let wt_str = wt_path.to_string_lossy().into_owned();
 
     let mut args = vec!["worktree", "add", "-b", &branch, &wt_str];
-    if let Some(base) = base_branch.filter(|b| !b.trim().is_empty()) {
+    if let Some(base) = base_branch.map(str::trim).filter(|b| !b.is_empty()) {
+        if !crate::ops::is_valid_git_base_ref(base) {
+            return Err("Invalid base branch name.".to_string());
+        }
         args.push(base);
     }
     run_git_sync(&repo_root, &args)
@@ -2419,10 +2513,27 @@ fn probe_git_worktree(folder: &str) -> Value {
     }
 }
 
+fn encode_stored_attachments(attachments: &[StagedAttachmentEntry]) -> Option<Value> {
+    if attachments.is_empty() {
+        None
+    } else {
+        Some(Value::Array(
+            attachments
+                .iter()
+                .map(|a| serde_json::to_value(&a.handle).unwrap_or(Value::Null))
+                .collect(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::MockProviderAdapter;
+    use crate::provider::{
+        AnswerRequestInput, BoxFuture, MockProviderAdapter, ProviderAdapter, SendMessageAck,
+        SendMessageRequest,
+    };
+    use std::sync::Mutex;
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -2570,5 +2681,294 @@ mod tests {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("workspace.json"), "{ not valid json").unwrap();
         assert!(load_persisted_workspace(dir.path()).is_err());
+    }
+
+    struct FastStreamingProvider {
+        events_tx: Mutex<Option<mpsc::UnboundedSender<ProviderEvent>>>,
+    }
+
+    impl FastStreamingProvider {
+        fn new() -> Self {
+            Self {
+                events_tx: Mutex::new(None),
+            }
+        }
+    }
+
+    impl ProviderAdapter for FastStreamingProvider {
+        fn id(&self) -> &str {
+            "claude"
+        }
+        fn name(&self) -> &str {
+            "Claude Code"
+        }
+        fn status(&self) -> AgentProviderStatus {
+            AgentProviderStatus {
+                id: "claude".into(),
+                name: "Claude Code".into(),
+                connection: "connected".into(),
+                version: "fixture".into(),
+                capabilities: AgentCapabilities::none(),
+                error: None,
+            }
+        }
+        fn models(&self) -> Vec<AgentModel> {
+            vec![AgentModel {
+                id: "native:claude:model:sonnet".into(),
+                provider_id: "claude".into(),
+                provider: "Claude Code".into(),
+                name: "Sonnet".into(),
+                ready: true,
+                reasoning_efforts: None,
+                default_reasoning_effort: None,
+                runtime_modes: None,
+                provider_modes: None,
+                supports_images: Some(false),
+            }]
+        }
+        fn connect(
+            &self,
+            events: mpsc::UnboundedSender<ProviderEvent>,
+        ) -> BoxFuture<'_, Result<(), String>> {
+            *self.events_tx.lock().unwrap() = Some(events);
+            Box::pin(async { Ok(()) })
+        }
+        fn disconnect(&self) -> BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn create_thread(
+            &self,
+            _thread_id: String,
+            _cwd: String,
+            _model_id: Option<String>,
+            _runtime_mode: Option<String>,
+            _reasoning_effort: Option<String>,
+        ) -> BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
+            // Emit assistant output and TurnCompleted BEFORE returning SendMessageAck,
+            // simulating synchronous or fast-streaming providers like Claude/ACP/Devin.
+            if let Some(tx) = self.events_tx.lock().unwrap().as_ref() {
+                let _ = tx.send(ProviderEvent::MessageAdded {
+                    thread_id: req.thread_id.clone(),
+                    message: StoredMessage {
+                        id: "assistant-1".into(),
+                        role: "assistant".into(),
+                        text: "Fast reply before ack".into(),
+                        created_at: now_iso(),
+                        command_id: None,
+                        turn_message_id: None,
+                        attachments: None,
+                        watcher_own_change: None,
+                        watcher_observed_changes: None,
+                        provider_error: None,
+                    },
+                });
+                let _ = tx.send(ProviderEvent::TurnCompleted {
+                    thread_id: req.thread_id,
+                    turn_id: "turn-fast".into(),
+                    status: "completed".into(),
+                });
+            }
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                Ok(SendMessageAck {
+                    message_id: "ack-msg-1".into(),
+                    turn_id: "turn-fast".into(),
+                    status: "accepted".into(),
+                    provider_latency_ms: 30,
+                })
+            })
+        }
+        fn interrupt(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn answer_request(&self, _input: AnswerRequestInput) -> BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn compact(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn late_manual_send_ack_does_not_overwrite_finished_turn_or_reorder_messages() {
+        let dir = tempdir().unwrap();
+        let fast = Arc::new(FastStreamingProvider::new());
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("claude".into(), fast);
+
+        let coord = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000002".into(),
+            false,
+            providers,
+        )
+        .unwrap();
+        let client = ClientContext {
+            client_id: "c1".into(),
+            user: "Test".into(),
+            may_answer: true,
+        };
+
+        let shell = coord
+            .run_command(
+                client.clone(),
+                json!({
+                    "type": "create-project",
+                    "provider": "claude",
+                    "title": "Fast project",
+                    "path": dir.path().to_string_lossy(),
+                    "useExisting": true
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .await
+            .unwrap();
+        let project_id = shell["host"]["projects"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let thread_id = "00000000-0000-4000-8000-00000000000b";
+        coord
+            .run_command(
+                client.clone(),
+                json!({
+                    "type": "create-thread",
+                    "threadId": thread_id,
+                    "projectId": project_id,
+                    "title": "Fast thread",
+                    "modelId": "native:claude:model:sonnet",
+                    "workingCopy": "shared"
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .await
+            .unwrap();
+
+        let shell = coord
+            .run_command(
+                client,
+                json!({
+                    "type": "manual-send",
+                    "threadId": thread_id,
+                    "text": "User prompt first"
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(shell["host"]["threads"][0]["status"], "idle");
+        assert_eq!(shell["host"]["threads"][0]["lastTurn"]["status"], "completed");
+
+        let detail = coord.detail(thread_id.into()).await.unwrap().unwrap();
+        assert_eq!(detail.messages.len(), 2);
+        assert_eq!(detail.messages[0].role, "user");
+        assert_eq!(detail.messages[0].text, "User prompt first");
+        assert_eq!(detail.messages[1].role, "assistant");
+        assert_eq!(detail.messages[1].text, "Fast reply before ack");
+
+        coord.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn persists_configuration_changes_and_rejects_invalid_base_branch() {
+        let dir = tempdir().unwrap();
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+
+        let coord = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000003".into(),
+            false,
+            providers,
+        )
+        .unwrap();
+        let client = ClientContext {
+            client_id: "c1".into(),
+            user: "Test".into(),
+            may_answer: true,
+        };
+
+        coord
+            .run_command(
+                client.clone(),
+                json!({
+                    "type": "configure",
+                    "patch": {
+                        "provider": "claude",
+                        "newThreadRuntimeMode": "full-access"
+                    }
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .await
+            .unwrap();
+
+        let shell = coord
+            .run_command(
+                client.clone(),
+                json!({
+                    "type": "create-project",
+                    "provider": "codex",
+                    "title": "Base ref project",
+                    "path": dir.path().to_string_lossy(),
+                    "useExisting": true
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .await
+            .unwrap();
+        let project_id = shell["host"]["projects"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let bad_branch = coord
+            .run_command(
+                client,
+                json!({
+                    "type": "create-thread",
+                    "projectId": project_id,
+                    "title": "Bad branch",
+                    "workingCopy": "independent",
+                    "baseBranch": "--detach"
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .await;
+        assert!(bad_branch.is_err());
+
+        coord.shutdown().await;
+
+        let mut providers2: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers2.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+        let coord2 = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000003".into(),
+            false,
+            providers2,
+        )
+        .unwrap();
+        let restored = coord2.shell(true).await.unwrap();
+        assert_eq!(restored["configuration"]["provider"], "claude");
+        assert_eq!(
+            restored["configuration"]["newThreadRuntimeMode"],
+            "full-access"
+        );
+        coord2.shutdown().await;
     }
 }

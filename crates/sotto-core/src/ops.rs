@@ -71,6 +71,24 @@ pub fn tools_err(code: &str, message: &str) -> Value {
     json!({ "ok": false, "error": { "code": code, "message": message } })
 }
 
+/// Validates a Git branch/ref name matching `gitBaseRefSchema` (`src/shared/gitChanges.ts`):
+/// never starts with `-`, never holds whitespace, control characters, revision operators, or glob chars.
+pub fn is_valid_git_base_ref(value: &str) -> bool {
+    if value.is_empty() || value.len() > 240 || value.starts_with('-') {
+        return false;
+    }
+    if value.contains("..") || value.contains("@{") {
+        return false;
+    }
+    !value.chars().any(|c| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '\x00'..='\x1f' | '\x7f' | '~' | '^' | ':' | '?' | '*' | '[' | '\\'
+            )
+    })
+}
+
 /// Validates a canonical slash-separated relative path matching `fileRelativePathSchema`.
 pub fn is_valid_relative_path(path: &str) -> bool {
     if path.is_empty() {
@@ -398,6 +416,25 @@ pub fn thread_changes_review(
     scope: &Value,
     ignore_whitespace: bool,
 ) -> Value {
+    let scope_kind = scope
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("working");
+    let requested_base = if scope_kind == "branch" {
+        match scope.get("base") {
+            Some(Value::String(s)) => {
+                if !is_valid_git_base_ref(s) {
+                    return tools_err("invalid-request", "Use a valid branch name.");
+                }
+                Some(s.clone())
+            }
+            Some(Value::Null) | None => None,
+            Some(_) => return tools_err("invalid-request", "Use a valid branch name."),
+        }
+    } else {
+        None
+    };
+
     let folder = &workspace.working_directory;
     let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
         .map(|s| s.trim() == "true")
@@ -414,24 +451,23 @@ pub fn thread_changes_review(
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
 
-    let scope_kind = scope
-        .get("kind")
-        .and_then(Value::as_str)
-        .unwrap_or("working");
     let (resolved_scope, diff_range) = if scope_kind == "branch" {
-        let requested_base = scope.get("base").and_then(Value::as_str).map(ToString::to_string);
         let automatic = requested_base.is_none();
         let base = requested_base.or_else(|| {
             run_git(folder, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
                 .ok()
                 .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
+                .filter(|s| is_valid_git_base_ref(s))
         });
-        let range = base.as_ref().map(|b| format!("{b}...HEAD"));
+        let verified_base = base.filter(|b| {
+            let commit_spec = format!("{b}^{{commit}}");
+            run_git(folder, &["rev-parse", "--verify", "--end-of-options", &commit_spec]).is_ok()
+        });
+        let range = verified_base.as_ref().map(|b| format!("{b}...HEAD"));
         (
             json!({
                 "kind": "branch",
-                "base": base,
+                "base": verified_base,
                 "automatic": automatic,
                 "head": head_branch,
             }),
@@ -440,6 +476,17 @@ pub fn thread_changes_review(
     } else {
         (json!({ "kind": "working" }), None)
     };
+
+    if scope_kind == "branch" && diff_range.is_none() {
+        let revision = compute_workspace_id(&head_sha, "branch:none", folder);
+        return tools_ok(json!({
+            "workspace": workspace,
+            "revision": revision,
+            "scope": resolved_scope,
+            "files": [],
+            "truncated": false,
+        }));
+    }
 
     let mut numstat_args = vec!["diff", "--numstat"];
     if ignore_whitespace {
@@ -1109,5 +1156,27 @@ mod tests {
         assert_eq!(report["runningThreads"], 2);
         assert!(report["facts"]["observedAt"].is_string());
         assert!(report["facts"]["logicalCpuCount"].as_u64().unwrap() >= 1);
+    }
+
+    #[test]
+    fn thread_changes_review_rejects_git_option_injection_in_base() {
+        assert!(!is_valid_git_base_ref("--output=/tmp/pwn"));
+        assert!(!is_valid_git_base_ref("-n"));
+        assert!(!is_valid_git_base_ref("main..HEAD"));
+        assert!(!is_valid_git_base_ref("main@{0}"));
+        assert!(is_valid_git_base_ref("origin/main"));
+
+        let dir = tempfile::tempdir().unwrap();
+        let ws = ThreadWorkspace::build("t1", "p1", &dir.path().to_string_lossy());
+        let res = thread_changes_review(
+            &ws,
+            &json!({ "kind": "branch", "base": "--output=/tmp/evil" }),
+            false,
+        );
+        assert_eq!(res["ok"], false);
+        assert!(matches!(
+            res["error"]["code"].as_str(),
+            Some("invalid-request" | "not-repository")
+        ));
     }
 }
