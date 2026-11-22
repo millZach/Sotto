@@ -5,12 +5,14 @@ import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../shared/agentMonitoring'
 import { compactionPending, idleMark } from '../../shared/compaction'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
-import { antigravityActivities, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
+import { antigravityActivities, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
+import { AntigravityBackgroundTasks, antigravityBackgroundCommand, mergeAntigravityBackgroundWork, sanitizeAntigravityWorkLabel } from './antigravityBackgroundWork'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
 import { antigravityChildReading, CHILD_PASS_FILES, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
 import { classifyAntigravityTurnOutcome, watchAntigravityTurnOutcome, type AntigravityOutcomeWatcher } from './antigravityTurnOutcome'
@@ -26,9 +28,11 @@ import { countAntigravityAnswer, countAntigravityFullness, forgetAntigravityFull
 import { antigravityArguments, antigravityEnvironment, antigravitySignInIssue, AntigravityRejected, AntigravityRpc, AntigravityUncertain, meetsAntigravityFloor, readAntigravityVersion,
   writeAntigravitySettings, ANTIGRAVITY_ACP_VERSION, ANTIGRAVITY_CLI_FLOOR, GOOGLE_ACCOUNT, type AntigravityFrame, type AntigravitySignIn } from './antigravityRpc'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
+import { BackgroundCommandWatch } from './backgroundCommandWatch'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { markCompactionActivity, type CompactionMark } from './compactionActivity'
+import { childProcesses, type ChildProcessRow } from './detachedRunScan'
 import type { ActivitySubscriptionOptions, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ProviderHost, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { watcherMayWrite } from './host'
@@ -37,6 +41,7 @@ import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { questionInstructions } from './questionInstructions'
 import { markSendStage } from './sendStages'
 import { busyHolds, SessionReaper, type HeldSession } from './sessionReaper'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
@@ -47,7 +52,7 @@ import type { MediaCapture } from './threadMedia'
 import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
-import { readAntigravityUserServers, type AntigravitySessionServer } from './antigravityUserServers'
+import { readAntigravityUserServers, type AntigravitySessionServer, type AntigravityStdioServer } from './antigravityUserServers'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
 import { validateWatcherProfile, WatcherHistoryRefusal, WatcherProfileRefusal } from './watcherProfile'
@@ -164,7 +169,7 @@ const TYPED_ONLY_OUTCOME: AntigravityOutcomeWatcher = { check: async stopReason 
  * One child at work: its thread and its row as launched, the launching tool call, the parent's session, and what the
  * reading has learned. The row is kept so a child whose row has left the thread's newest records still settles.
  */
-interface ChildWatch { readonly threadId: string; row: AgentActivity; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading
+interface ChildWatch { readonly backgroundId: string; readonly threadId: string; row: AgentActivity; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading
   /** When the newest answer read so far was sent: a child that has answered is waiting, no longer at work. */
   answeredAt?: string
   /** SHA-256 of the newest answer text seen so far, so restarts neither drop newer answers nor store message text. */
@@ -222,6 +227,9 @@ const COMPACTION_ANSWERED = 'Antigravity answered /compact in words rather than 
 const COMPACTION_UNCONFIRMED = 'Antigravity did not confirm whether it compacted this thread. Nothing was lost. Its next reply shows how full the context is; compact again then if it still needs it.'
 const PROCESS_LOST = 'Antigravity stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const WATCHER_WITHOUT_TOOLS = 'This Antigravity client cannot give Watcher its Sotto tools or instructions, so Watcher did not start. Nothing was sent. Update Antigravity, then connect it again, or choose another model for Watcher.'
+const LOOK_BEFORE_END_MS = 5_000
+const REACTIVE_TURN_SETTLE_MS = 2_000
+const ANTIGRAVITY_QUESTIONS = questionInstructions('ask_question', false)
 
 /**
  * Where each update of one turn belongs. Replies are counted by segment: a reply runs on until a tool or a thought breaks
@@ -257,6 +265,11 @@ interface LiveTurn {
   prompts: number
   wake: (() => void) | undefined
   readonly outcome: AntigravityOutcomeWatcher
+  reactive: boolean
+  ranCommand: boolean
+  readonly reactiveTools: Set<string>
+  sawReactiveContent: boolean
+  reactiveTimer: NodeJS.Timeout | undefined
 }
 /** One thread's own `agy` process. */
 interface Connection {
@@ -266,6 +279,7 @@ interface Connection {
   /** Started for Watcher's thread with its launch profile: its session has Watcher's tools and instructions, never the browser. */
   readonly watcher: boolean
   watcherToolTitles?: ReadonlySet<string>
+  stdioMcpServers?: readonly AntigravityStdioServer[]
   readonly client: AntigravityClient
   closing: boolean
   /** The model, effort and session mode this process's session is on, as `agy` last said. */
@@ -301,6 +315,12 @@ export interface AntigravityAcpOptions {
   childWatchMs?: number
   /** The user's own `agy` MCP file (`antigravityUserServers.ts`), whose servers a thread gets beside Sotto's. None when unset. */
   userMcpConfig?: string
+  /** Process-children reader override for testing background command detection cleanly. */
+  childProcesses?: (parentPid: number) => Promise<readonly ChildProcessRow[]>
+  /** How long a reactive continuation turn waits after its last update before closing (`endTurn`). */
+  reactiveTurnSettleMs?: number
+  /** Maximum time to wait for the pre-end OS child process check. */
+  lookBeforeEndMs?: number
 }
 
 export class AntigravityAcpHost implements ProviderHost {
@@ -326,6 +346,9 @@ export class AntigravityAcpHost implements ProviderHost {
   private readonly children = new Map<string, ChildWatch>()
   private childTimer: NodeJS.Timeout | undefined
   private readingChildren = false
+  private readonly backgroundCommands = new Map<string, BackgroundCommandWatch>()
+  private readonly backgroundTasks = new Map<string, AntigravityBackgroundTasks>()
+  private readonly reactiveTurnCounts = new Map<string, number>()
   private readonly observed = new Set<string>()
   private readonly outdated = new Set<string>()
   private readonly processes = new Set<AntigravityRpc>()
@@ -432,8 +455,12 @@ export class AntigravityAcpHost implements ProviderHost {
     await this.stopSession(id)
     this.reaper.forget(id)
     this.observed.delete(id); this.outdated.delete(id); this.dispatching.delete(id); this.loaded.delete(id)
+    this.backgroundGone(id)
     this.endTurn(id, 'interrupted')
     this.turns.delete(id)
+    this.reactiveTurnCounts.delete(id)
+    this.backgroundCommands.delete(id)
+    this.backgroundTasks.delete(id)
     this.compactions.delete(id); this.compactedSince.delete(id); this.compactionAnswered.delete(id)
     for (const [rowId, watch] of [...this.children]) if (watch.threadId === id) this.children.delete(rowId)
     if (!this.children.size && !this.readingChildren && this.childTimer) { clearInterval(this.childTimer); this.childTimer = undefined }
@@ -545,15 +572,18 @@ export class AntigravityAcpHost implements ProviderHost {
       if (this.browserTools) servers.push(await this.browserTools.mcpServer(id))
       for (const { server } of await scopedThreadServers(this.threadTools, id)) servers.push(server)
     }
-    if (!this.options.userMcpConfig) return servers
+    if (!this.options.userMcpConfig) { connection.stdioMcpServers = []; return servers }
     // Sotto's own keep their names: a server of the user's with one of them is left out.
     const taken = new Set(servers.map(server => server.name))
     for (const server of await readAntigravityUserServers(this.options.userMcpConfig, this.httpToolServers)) if (!taken.has(server.name)) servers.push(server)
+    connection.stdioMcpServers = servers.filter((server): server is AntigravityStdioServer => 'command' in server)
     return servers
   }
-  /** What a session starts with besides its folder and tools: Watcher's instructions, appended to `agy`'s own system prompt. */
+  /** What a session starts with besides its folder and tools: Watcher's instructions, or Sotto's question panel reminder. */
   private async sessionMeta(id: string, watcher: boolean): Promise<Record<string, unknown> | undefined> {
-    if (!watcher) return undefined
+    if (!watcher) {
+      return this.appendsSystemPrompt ? { antigravity: { systemPrompt: { append: ANTIGRAVITY_QUESTIONS } } } : undefined
+    }
     const profile = await this.launchProfile(id)
     if (!profile) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Nothing was sent. Reopen Watcher to recover.')
     return { antigravity: { systemPrompt: { append: profile.instructions ?? WATCHER_SYSTEM_PROMPT } } }
@@ -802,6 +832,105 @@ export class AntigravityAcpHost implements ProviderHost {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || this.compactions.has(id) || (turn !== undefined && !turn.ended)
       || [...this.children.values()].some(watch => watch.threadId === id && watch.answeredAt === undefined)
+      || Boolean(this.threads.get(id)?.backgroundWork?.length)
+  }
+  private backgroundWatch(id: string): BackgroundCommandWatch {
+    let watch = this.backgroundCommands.get(id)
+    if (!watch) {
+      watch = new BackgroundCommandWatch({
+        children: this.options.childProcesses ?? childProcesses,
+        command: row => antigravityBackgroundCommand(this.connections.get(id)?.stdioMcpServers ?? [], row),
+        changed: () => { if (this.syncBackgroundWork(id)) this.emit() },
+        admitting: () => { const turn = this.turns.get(id); return turn === undefined || turn.ended },
+      })
+      this.backgroundCommands.set(id, watch)
+    }
+    return watch
+  }
+  private backgroundTasksFor(id: string): AntigravityBackgroundTasks {
+    let tasks = this.backgroundTasks.get(id)
+    if (!tasks) { tasks = new AntigravityBackgroundTasks(); this.backgroundTasks.set(id, tasks) }
+    return tasks
+  }
+  private syncBackgroundWork(id: string): boolean {
+    const thread = this.threads.get(id)
+    if (!thread) return false
+    const activeSubagents = new Set<string>()
+    const subagents: AgentBackgroundWork[] = []
+    for (const watch of this.children.values()) {
+      if (watch.threadId !== id || watch.answeredAt !== undefined) continue
+      activeSubagents.add(watch.toolCallId)
+      const label = sanitizeAntigravityWorkLabel(watch.row.agents?.[0]?.title ?? watch.row.title) ?? BACKGROUND_WORK_LABELS.subagent
+      const startedAt = watch.row.agents?.[0]?.startedAt ?? watch.row.startedAt
+      subagents.push({ id: watch.backgroundId, label, type: 'subagent', ...(startedAt ? { startedAt } : {}) })
+    }
+    const turn = this.turns.get(id), turnRunning = turn !== undefined && !turn.ended
+    const commands = this.backgroundCommands.get(id)?.working ?? []
+    const tasks = this.backgroundTasks.get(id)?.working(activeSubagents, commands.length > 0, turnRunning) ?? []
+    const work = mergeAntigravityBackgroundWork([...subagents, ...tasks, ...commands])
+    const before = thread.backgroundWork ?? []
+    if (before.length === work.length && before.every((item, index) => item.id === work[index]!.id && item.label === work[index]!.label)) return false
+    if (work.length) thread.backgroundWork = work; else delete thread.backgroundWork
+    this.changed(id)
+    return true
+  }
+  private watchBackground(id: string): void {
+    const pid = this.connections.get(id)?.rpc.pid
+    if (pid !== undefined) this.backgroundWatch(id).turnEnded(pid)
+  }
+  private async lookBeforeEnd(id: string, turn: LiveTurn): Promise<void> {
+    const pid = this.connections.get(id)?.rpc.pid
+    if (pid === undefined || (!turn.ranCommand && !this.backgroundTasks.get(id)?.hasAny)) return
+    await this.backgroundWatch(id).lookNow(pid, this.options.lookBeforeEndMs ?? LOOK_BEFORE_END_MS)
+  }
+  private backgroundGone(id: string): void {
+    const watch = this.backgroundCommands.get(id)
+    if (watch) { this.backgroundCommands.delete(id); watch.stop() }
+    this.backgroundTasks.get(id)?.clear()
+    this.syncBackgroundWork(id)
+  }
+  private createTurn(placesKey: string, origin: Origin | undefined, outcome: AntigravityOutcomeWatcher, reactive: boolean): LiveTurn {
+    return { places: new TurnPlaces(placesKey), origin, taken: origin === undefined, ended: false, prompts: 0, wake: undefined, outcome,
+      reactive, ranCommand: false, reactiveTools: new Set(), sawReactiveContent: false, reactiveTimer: undefined }
+  }
+  private nextReactiveTurnId(id: string, turn: LiveTurn | undefined): string {
+    const current = this.threads.get(id)?.lastTurn?.id ?? turn?.places.key ?? ''
+    const suffixMatch = current.match(/:wakeup:(\d+)$/u)
+    const parsedSuffix = suffixMatch ? Number(suffixMatch[1]) : 0
+    const next = Math.max(this.reactiveTurnCounts.get(id) ?? 0, Number.isSafeInteger(parsedSuffix) ? parsedSuffix : 0) + 1
+    this.reactiveTurnCounts.set(id, next)
+    const baseRaw = turn?.origin?.messageId ?? this.log.lastUserMessageId(id) ?? 'antigravity-history'
+    const base = baseRaw.replace(/:wakeup:\d+$/u, '')
+    return `${base}:wakeup:${next}`
+  }
+  private startReactiveTurn(id: string, currentTurn: LiveTurn | undefined): LiveTurn {
+    if (currentTurn?.reactiveTimer) { clearTimeout(currentTurn.reactiveTimer); currentTurn.reactiveTimer = undefined }
+    const turnKey = this.nextReactiveTurnId(id, currentTurn)
+    const turn = this.createTurn(turnKey, undefined, TYPED_ONLY_OUTCOME, true)
+    this.turns.set(id, turn)
+    const thread = this.thread(id)
+    thread.status = 'running'
+    thread.lastTurn = { id: turnKey, status: 'running' }
+    thread.activities = markTurnActivity(thread.activities, { provider: 'antigravity', turnId: turnKey, status: 'running' })
+    this.changed(id)
+    this.armReactiveSettle(id, turn)
+    return turn
+  }
+  private armReactiveSettle(id: string, turn: LiveTurn): void {
+    if (turn.reactiveTimer) { clearTimeout(turn.reactiveTimer); turn.reactiveTimer = undefined }
+    if (!turn.reactive || turn.ended || turn.reactiveTools.size > 0 || this.asking(id)) return
+    const generation = this.generation
+    turn.reactiveTimer = setTimeout(() => { turn.reactiveTimer = undefined; void this.settleReactiveTurn(id, turn, generation) },
+      this.options.reactiveTurnSettleMs ?? REACTIVE_TURN_SETTLE_MS)
+    turn.reactiveTimer.unref?.()
+  }
+  private async settleReactiveTurn(id: string, turn: LiveTurn, generation: number): Promise<void> {
+    if (generation !== this.generation || this.turns.get(id) !== turn || !turn.reactive || turn.ended || turn.reactiveTools.size > 0 || this.asking(id)) return
+    await this.lookBeforeEnd(id, turn)
+    if (generation !== this.generation || this.turns.get(id) !== turn || !turn.reactive || turn.ended || turn.reactiveTools.size > 0 || this.asking(id)) return
+    this.closeForms(id)
+    this.endTurn(id, 'completed')
+    this.emit()
   }
   private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
   private open(id: string): Promise<Connection> {
@@ -850,6 +979,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!connection) return Promise.resolve()
     const work = (async () => {
       this.connections.delete(id); this.outdated.delete(id)
+      this.backgroundGone(id)
       if (this.loaded.delete(id)) this.emit()
       this.log.release(id); this.reaper.forget(id)
       this.close(connection); await connection.rpc.closed
@@ -860,6 +990,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private processLost(id: string, connection: Connection): void {
     if (connection.closing || this.connections.get(id) !== connection) return
     this.connections.delete(id); this.outdated.delete(id); this.loaded.delete(id); this.log.release(id); this.reaper.forget(id)
+    this.backgroundGone(id)
     this.clearRequests(id)
     this.endTurn(id, 'failed', PROCESS_LOST)
     this.emit()
@@ -947,6 +1078,8 @@ export class AntigravityAcpHost implements ProviderHost {
     if (automatic) { void connection.rpc.reply(frame.id, { outcome: { outcome: 'selected', optionId: automatic } }).catch(() => undefined); return }
     this.pending.set(requestId, pending)
     this.thread(id).requests.push(pending.request)
+    const activeTurn = this.turns.get(id)
+    if (activeTurn?.reactive && !activeTurn.ended) this.armReactiveSettle(id, activeTurn)
     this.reaper.touch(id); this.emit()
   }
   private liveUpdate(id: string, alias: Alias, connection: Connection, update: Record<string, unknown>): void {
@@ -988,47 +1121,85 @@ export class AntigravityAcpHost implements ProviderHost {
       const turn = this.turns.get(id)
       // `agy` may echo a prompt Sotto sent; Sotto already holds it. Anything else was typed into the session elsewhere.
       if (turn?.origin && !turn.ended && digest(words) === turn.origin.digest) { this.taken(id); return }
+      if (turn?.reactiveTimer) { clearTimeout(turn.reactiveTimer); turn.reactiveTimer = undefined }
       const index = alias.turns; alias.turns++
       void this.persist().catch(() => undefined)
       const key = `antigravity-user-${index}-${digest(words).slice(0, 16)}`
       this.log.add(id, { id: key, role: 'user', text: words, createdAt: new Date().toISOString() })
-      this.turns.set(id, { places: new TurnPlaces(key), origin: undefined, taken: true, ended: true, prompts: 0, wake: undefined, outcome: TYPED_ONLY_OUTCOME })
+      this.turns.set(id, { ...this.createTurn(key, undefined, TYPED_ONLY_OUTCOME, false), ended: true })
       this.emit()
       return
     }
     this.taken(id)
-    let turn = this.turns.get(id)
-    if (!turn) {
-      // Work after a turn ended, such as a command `agy` keeps running, belongs to the newest user message.
-      turn = { places: new TurnPlaces(this.log.lastUserMessageId(id) ?? 'antigravity-history'), origin: undefined, taken: true, ended: true, prompts: 0, wake: undefined, outcome: TYPED_ONLY_OUTCOME }
-      this.turns.set(id, turn)
-    }
     const thread = this.thread(id)
+    let turn = this.turns.get(id)
+    const wasEnded = !turn || turn.ended
     if (kind === 'agent_message_chunk') {
-      if (words === undefined) return
-      const reply = turn.places.reply()
+      if (words === undefined || !words.length) return
+      if (wasEnded) turn = this.startReactiveTurn(id, turn)
+      if (turn!.reactive && !turn!.ended) turn!.sawReactiveContent = true
+      const reply = turn!.places.reply()
       if (reply.opened || !this.log.has(id, reply.id)) {
-        this.log.add(id, { id: reply.id, role: 'assistant', text: words, createdAt: new Date().toISOString(), turnMessageId: turn.places.key })
+        this.log.add(id, { id: reply.id, role: 'assistant', text: words, createdAt: new Date().toISOString(), turnMessageId: turn!.places.key })
         const settled = settledThinking(ANTIGRAVITY_THINKING_ID_PREFIX, thread.activities ?? [], 'completed', true)
         if (settled.length) thread.activities = mergeAgentActivities(thread.activities, settled)
         this.emit()
       } else { this.log.appendText(id, reply.id, words); this.emit(true) }
+      if (turn!.reactive && !turn!.ended) this.armReactiveSettle(id, turn!)
       return
     }
-    const key = kind === 'agent_thought_chunk' ? turn.places.thought()
-      : typeof update.toolCallId === 'string' && (kind === 'tool_call' || kind === 'tool_call_update') ? turn.places.tool(update.toolCallId, kind === 'tool_call') : undefined
-    const rows = antigravityActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, this.options.captureMedia)
+    // A `tool_call_update` that only closes a prior-turn tool/task settles it silently without reopening a turn;
+    // any subsequent thinking/tool/reply starts the reactive continuation turn.
+    const isTool = (kind === 'tool_call' || kind === 'tool_call_update') && typeof update.toolCallId === 'string'
+    if (wasEnded) {
+      if (kind === 'tool_call_update' && isTool && turn) {
+        const priorKey = turn.places.tool(update.toolCallId as string, false)
+        const priorOld = thread.activities?.find(item => item.id === antigravityToolId(priorKey))
+        const priorSignal = antigravityToolCallSignal(update, priorKey, priorOld)
+        if (priorSignal && !priorSignal.backgroundLaunch && priorSignal.status !== 'running') {
+          const rows = antigravityActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key: priorKey }, thread.activities, this.options.captureMedia)
+          if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.changed(id) }
+          this.backgroundTasksFor(id).observe(priorSignal, turn.places.key)
+          this.syncBackgroundWork(id)
+          this.emit()
+          return
+        }
+      }
+      if (kind === 'agent_thought_chunk' || kind === 'plan' || kind === 'tool_call' || isTool) {
+        turn = this.startReactiveTurn(id, turn)
+      } else {
+        return
+      }
+    }
+    const key = kind === 'agent_thought_chunk' ? turn!.places.thought()
+      : isTool ? turn!.places.tool(update.toolCallId as string, kind === 'tool_call') : undefined
+    const previousRow = key ? thread.activities?.find(item => item.id === antigravityToolId(key)) : undefined
+    const signal = key && isTool ? antigravityToolCallSignal(update, key, previousRow) : undefined
+    const rows = antigravityActivities(update, { turnId: turn!.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, this.options.captureMedia)
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
     const edits = antigravityEdits(update), row = key ? rows.find(item => item.id === antigravityToolId(key)) : undefined
     if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
+    if (row?.kind === 'command' || signal?.isCommand) turn!.ranCommand = true
+    if (signal && this.backgroundTasksFor(id).observe(signal, turn!.places.key)) {
+      if (this.syncBackgroundWork(id)) this.emit()
+    }
+    if (turn!.reactive && !turn!.ended) {
+      if (signal) {
+        if (signal.status === 'running') turn!.reactiveTools.add(signal.toolCallId)
+        else if (signal.status !== 'unknown') turn!.reactiveTools.delete(signal.toolCallId)
+      }
+      if (kind === 'agent_thought_chunk' || kind === 'tool_call' || kind === 'plan') turn!.sawReactiveContent = true
+      this.armReactiveSettle(id, turn!)
+    }
     // A launch that finished with its child still at work: watched until `agy`'s records say the child is done.
     if (row?.kind === 'subagent' && row.agents?.[0]?.status === 'running' && update.status === 'completed' && typeof update.toolCallId === 'string' && alias.antigravitySessionId) {
-      this.watchChild({ threadId: id, row, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + (this.options.childWatchMs ?? CHILD_WATCH_MS), reading: antigravityChildReading() })
+      this.watchChild({ backgroundId: randomUUID(), threadId: id, row, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + (this.options.childWatchMs ?? CHILD_WATCH_MS), reading: antigravityChildReading() })
     }
   }
   private watchChild(watch: ChildWatch): void {
     this.children.set(watch.row.id, watch)
     if (this.saveChildWatch(watch)) void this.persist().catch(() => undefined)
+    if (this.syncBackgroundWork(watch.threadId)) this.emit()
     this.ensureChildTimer()
   }
   private ensureChildTimer(): void {
@@ -1049,6 +1220,7 @@ export class AntigravityAcpHost implements ProviderHost {
           const evicted = this.children.get(dropped.rowId)
           this.children.delete(dropped.rowId)
           if (evicted && evicted.answeredAt === undefined) {
+            this.syncBackgroundWork(evicted.threadId)
             this.settleChild(evicted, { conversationId: evicted.reading.childConversation ?? '', status: 'unknown' })
           }
         }
@@ -1064,12 +1236,14 @@ export class AntigravityAcpHost implements ProviderHost {
     return alias.childWatches.length !== before
   }
   private restoreChildWatches(): void {
+    const restoredThreads = new Set<string>()
     for (const [id, alias] of Object.entries(this.aliases)) {
       if (!alias.antigravitySessionId || !alias.childWatches.length) continue
       for (const saved of alias.childWatches) {
         const reading = antigravityChildReading()
         if (saved.childConversation) reading.childConversation = saved.childConversation
         this.children.set(saved.rowId, {
+          backgroundId: randomUUID(),
           threadId: id,
           row: restoreChildRow(saved, alias.cwd),
           toolCallId: saved.toolCallId,
@@ -1079,8 +1253,10 @@ export class AntigravityAcpHost implements ProviderHost {
           ...(saved.answeredAt ? { answeredAt: saved.answeredAt } : {}),
           ...(saved.answerDigest ? { answerDigest: saved.answerDigest } : {}),
         })
+        restoredThreads.add(id)
       }
     }
+    for (const id of restoredThreads) this.syncBackgroundWork(id)
     if (this.children.size) {
       this.ensureChildTimer()
       void this.readChildren()
@@ -1109,6 +1285,7 @@ export class AntigravityAcpHost implements ProviderHost {
         if (child?.status === 'interrupted') {
           this.children.delete(rowId)
           if (this.dropSavedChildWatch(watch.threadId, rowId)) dirty = true
+          this.syncBackgroundWork(watch.threadId)
           this.settleChild(watch, child)
           continue
         }
@@ -1120,6 +1297,7 @@ export class AntigravityAcpHost implements ProviderHost {
           if (changed) {
             watch.answeredAt = child.completedAt ?? new Date().toISOString()
             if (nextDigest !== undefined) watch.answerDigest = nextDigest
+            this.syncBackgroundWork(watch.threadId)
             this.settleChild(watch, child)
           }
         }
@@ -1127,7 +1305,10 @@ export class AntigravityAcpHost implements ProviderHost {
           this.children.delete(rowId)
           if (this.dropSavedChildWatch(watch.threadId, rowId)) dirty = true
           // One never heard from in all that time is last seen working, never left looking live.
-          if (watch.answeredAt === undefined) this.settleChild(watch, { conversationId: watch.reading.childConversation ?? '', status: 'unknown' })
+          if (watch.answeredAt === undefined) {
+            this.syncBackgroundWork(watch.threadId)
+            this.settleChild(watch, { conversationId: watch.reading.childConversation ?? '', status: 'unknown' })
+          }
         } else if (this.children.get(rowId) === watch
           && (watch.reading.childConversation !== beforeConversation || watch.answeredAt !== beforeAnsweredAt || watch.answerDigest !== beforeDigest)) {
           if (this.saveChildWatch(watch)) dirty = true
@@ -1142,9 +1323,10 @@ export class AntigravityAcpHost implements ProviderHost {
   private settleChild(watch: ChildWatch, child: AntigravityChild): void {
     // A row no longer among the thread's newest records is put back from the watch, so its answer is never lost.
     const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.row.id) ?? watch.row, agent = row.agents?.[0]
+    const workChanged = this.syncBackgroundWork(watch.threadId)
     // A running child takes what was read; one that answered takes only a newer answer, which replaces its own.
     const newer = agent?.status === 'completed' && child.status === 'completed' && child.message !== undefined && child.message !== agent?.message
-    if (!thread || !agent || (agent.status !== 'running' && !newer)) return
+    if (!thread || !agent || (agent.status !== 'running' && !newer)) { if (workChanged) this.emit(); return }
     const settledRow: AgentActivity = {
       ...row,
       agents: [{ ...agent, status: child.status,
@@ -1171,17 +1353,24 @@ export class AntigravityAcpHost implements ProviderHost {
   private endTurn(id: string, status: 'completed' | 'interrupted' | 'failed', error?: string): void {
     const turn = this.turns.get(id)
     if (!turn || turn.ended) return
+    if (turn.reactiveTimer) { clearTimeout(turn.reactiveTimer); turn.reactiveTimer = undefined }
     turn.ended = true; turn.taken = true; turn.wake?.()
+    if (status === 'completed') this.backgroundTasks.get(id)?.turnEnded(turn.places.key, turn.reactive, this.backgroundCommands.get(id)?.holds ?? false)
+    else this.backgroundTasks.get(id)?.clear()
+    this.syncBackgroundWork(id)
     const thread = this.threads.get(id); if (!thread) return
     thread.status = status === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: turn.places.key, status }
     const thoughts = settledThinking(ANTIGRAVITY_THINKING_ID_PREFIX, thread.activities ?? [], thinkingSettledAs(status), true)
     const settled = thoughts.length ? mergeAgentActivities(thread.activities, thoughts) : thread.activities
+    const activeChildRow = (rowId: string): boolean => [...this.children.values()].some(watch => watch.threadId === id && watch.row.id === rowId && watch.answeredAt === undefined)
     const closed = settled?.map(row => row.status === 'running' && row.kind !== 'turn' && row.kind !== 'plan' && row.turnId === turn.places.key
+      && !(status === 'completed' && ((row.kind === 'subagent' && activeChildRow(row.id)) || this.backgroundTasks.get(id)?.isToolActive(row.id)))
       ? { ...row, status: status === 'completed' ? 'completed' as const : status === 'interrupted' ? 'interrupted' as const : 'unknown' as const } : row)
     thread.activities = markTurnActivity(closed, { provider: 'antigravity', turnId: turn.places.key, status, ...(error ? { error } : {}) })
     this.changed(id)
     this.reaper.touch(id)
+    if (status === 'completed' && (turn.ranCommand || this.backgroundCommands.get(id)?.holds || this.backgroundTasks.get(id)?.hasAny)) this.watchBackground(id)
   }
 
   // ---- Commands ------------------------------------------------------------------------------------------------------
@@ -1384,7 +1573,7 @@ export class AntigravityAcpHost implements ProviderHost {
     try { watcherGuard?.() } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
     const thread = this.thread(id)
     delete thread.requestNotice
-    const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, taken: false, ended: false, prompts: 0, wake: undefined, outcome }
+    const turn = this.createTurn(origin.messageId, origin, outcome, false)
     this.turns.set(id, turn)
     thread.status = 'running'; thread.lastTurn = { id: origin.messageId, status: 'running' }
     thread.activities = markTurnActivity(thread.activities, { provider: 'antigravity', turnId: origin.messageId, status: 'running', afterMessageId: origin.messageId })
@@ -1410,6 +1599,8 @@ export class AntigravityAcpHost implements ProviderHost {
       if (superseded()) { if (counted) this.emit(true); return }
       const stop = promptAnswerSchema.parse(value).stopReason
       const settled = await turn.outcome.check(stop).catch(() => classifyAntigravityTurnOutcome(stop))
+      if (superseded() || turn.ended) return
+      if (settled.status === 'completed') await this.lookBeforeEnd(id, turn)
       if (superseded() || turn.ended) return
       this.closeForms(id)
       this.endTurn(id, settled.status, settled.error)
@@ -1456,6 +1647,9 @@ export class AntigravityAcpHost implements ProviderHost {
     try { await this.persist() } catch (error) { index.remove(origin); throw error }
     this.assertGeneration(generation)
     this.log.add(id, { id: origin.messageId, role: 'user', text: command.text, commandId: origin.commandId, createdAt: origin.createdAt })
+    if (turn.reactiveTimer) { clearTimeout(turn.reactiveTimer); turn.reactiveTimer = undefined }
+    turn.reactive = false
+    turn.reactiveTools.clear()
     this.emit()
     this.prompt(id, alias, connection, turn, generation, prompt.blocks)
     return { accepted: true }
@@ -1529,6 +1723,17 @@ export class AntigravityAcpHost implements ProviderHost {
     if (this.pending.get(command.requestId) !== pending || this.connections.get(command.threadId) !== connection) return { accepted: false, uncertain: true }
     try { await connection.rpc.reply(pending.wireId, result); this.removeRequest(command.requestId) }
     catch { pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit(); return { accepted: false, uncertain: true } }
+    const thread = this.threads.get(command.threadId)
+    if (thread && !thread.requests.length && thread.status !== 'running') {
+      const turn = this.turns.get(command.threadId)
+      if (turn && !turn.ended) {
+        thread.status = 'running'
+        thread.lastTurn = { id: turn.places.key, status: 'running' }
+      } else {
+        this.startReactiveTurn(command.threadId, turn)
+      }
+      this.changed(command.threadId)
+    }
     this.emit(); return { accepted: true }
   }
   private async interrupt(id: string, alias: Alias, watcherGuard?: () => void): Promise<AgentHostResult> {
@@ -1538,6 +1743,8 @@ export class AntigravityAcpHost implements ProviderHost {
     }
     watcherGuard?.()
     if (connection) connection.rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: alias.antigravitySessionId } })
+    const turn = this.turns.get(id)
+    if (turn?.reactive && !turn.ended) this.endTurn(id, 'interrupted')
     this.emit(); return { accepted: true }
   }
   /** `agy`'s forms still open when the thread's turn ended, as on a Stop that only cancelled: cancelled, their cards gone. */
@@ -1551,6 +1758,8 @@ export class AntigravityAcpHost implements ProviderHost {
     this.pending.delete(requestId)
     const thread = this.threads.get(pending.threadId)
     if (thread) { thread.requests = thread.requests.filter(request => request.id !== requestId); this.changed(pending.threadId) }
+    const turn = this.turns.get(pending.threadId)
+    if (turn?.reactive && !turn.ended && !this.asking(pending.threadId)) this.armReactiveSettle(pending.threadId, turn)
   }
   private clearRequests(id: string): void {
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
@@ -1637,13 +1846,16 @@ export class AntigravityAcpHost implements ProviderHost {
       try { pending.connection.rpc.write({ jsonrpc: '2.0', id: pending.wireId, result: antigravityDecline(pending) }) } catch { /* A closed pipe grants nothing. */ }
     }
     this.pending.clear()
+    for (const turn of this.turns.values()) if (turn.reactiveTimer) { clearTimeout(turn.reactiveTimer); turn.reactiveTimer = undefined }
+    for (const watch of this.backgroundCommands.values()) watch.stop()
+    this.backgroundCommands.clear(); this.backgroundTasks.clear(); this.reactiveTurnCounts.clear()
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
     // Published once, with the rest of the disconnect.
     for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST, false)
     this.compactedSince.clear(); this.compactionAnswered.clear()
     this.children.clear(); if (this.childTimer) { clearInterval(this.childTimer); this.childTimer = undefined }
     this.turns.clear()
-    for (const thread of this.threads.values()) thread.requests = []
+    for (const thread of this.threads.values()) { thread.requests = []; delete thread.backgroundWork }
     this.threadChanges.markAll()
     for (const connection of this.connections.values()) this.close(connection)
     for (const rpc of this.processes) rpc.close()
