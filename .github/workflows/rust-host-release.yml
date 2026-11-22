@@ -68,7 +68,7 @@ jobs:
             echo "Invalid release version format." >&2
             exit 1
           fi
-          node scripts/build-rust-host.mjs
+          SOTTO_HOST_VERSION="$RELEASE_VERSION" node scripts/build-rust-host.mjs
           mkdir -p dist/rust-host/host
           cp "out/rust-host/sotto-host${TARGET_EXT}" "dist/rust-host/host/sotto-host${TARGET_EXT}"
           if [[ -z "$TARGET_EXT" ]]; then

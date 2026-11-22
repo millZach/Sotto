@@ -8,13 +8,19 @@ import { pathToFileURL } from 'node:url'
 const root = resolve(import.meta.dirname, '..')
 
 export async function buildRustHost(outDir = resolve(root, process.env.SOTTO_RUST_HOST_OUT_DIR || 'out/rust-host')) {
-  const cargoTargetDir = process.env.CARGO_TARGET_DIR || resolve(root, 'target')
+  const cargoTargetDir = resolve(root, process.env.CARGO_TARGET_DIR || 'target')
   const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+  const hostVersion = (process.env.SOTTO_HOST_VERSION || process.env.RELEASE_VERSION || '').trim()
+  const buildEnv = {
+    ...process.env,
+    CARGO_TARGET_DIR: cargoTargetDir,
+    ...(hostVersion ? { SOTTO_HOST_VERSION: hostVersion } : {}),
+  }
 
   execFileSync('cargo', ['build', '--release', '-p', 'sotto-host', '--bin', 'sotto-host', '--locked'], {
     cwd: root,
     stdio: 'inherit',
-    env: { ...process.env, CARGO_TARGET_DIR: cargoTargetDir },
+    env: buildEnv,
   })
 
   const built = join(cargoTargetDir, 'release', exe)

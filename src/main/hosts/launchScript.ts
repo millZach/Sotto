@@ -288,9 +288,15 @@ const keyFile = typeof process.env.SOTTO_HOST_KEY_FILE === 'string' && process.e
 const bootScriptText = () => ['#!/bin/sh',
   '# Written by Sotto. The sotto-host user unit runs it to start the host in this folder; Sotto rewrites it.',
   'node=' + shellQuote(process.execPath), 'install=' + shellQuote(install), 'data=' + shellQuote(data), 'port=' + shellQuote(String(cfg.remotePort)),
+  ...(cfg.useRustHost === true ? ["use_rust_host='1'"] : []),
   ...(keyFile ? ['SOTTO_HOST_KEY_FILE=' + shellQuote(keyFile), 'export SOTTO_HOST_KEY_FILE'] : []),
   'entry="$install/host/index.js"',
   'version=$("$node" -e ' + shellQuote("try { const v=require('fs').readFileSync(require('path').join(process.argv[1],'current'),'utf8').trim(); if (/^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-owl\\.[1-9]\\d{7}\\.[1-9]\\d*)?$/.test(v)) process.stdout.write(v); } catch {}") + ' "$install")',
+  ...(cfg.useRustHost === true ? [
+    'rust_entry="$install/host/' + rustBinName + '"',
+    'if [ -n "$version" ] && [ -f "$install/versions/$version/host/' + rustBinName + '" ]; then rust_entry="$install/versions/$version/host/' + rustBinName + '"; fi',
+    'if [ -f "$rust_entry" ]; then SOTTO_HOST_ENABLE_PROVIDERS=1; export SOTTO_HOST_ENABLE_PROVIDERS; exec "$rust_entry" --data "$data" --port "$port"; fi',
+  ] : []),
   'if [ -n "$version" ] && [ -f "$install/versions/$version/host/index.js" ]; then entry="$install/versions/$version/host/index.js"; fi',
   'exec "$node" "$entry" --data "$data" --port "$port"', ''].join('\n');
 const writeBootScript = async () => { await writeAtomically(bootScriptPath, bootScriptText()); await fs.chmod(bootScriptPath, 0o700).catch(() => undefined); };
@@ -383,12 +389,13 @@ const unitRunning = properties => properties.ActiveState !== 'inactive' && prope
 // launch's: another Node, data folder, port or key file.
 const startByUnit = async (properties, fresh) => {
   const script = await readBootScript(), elsewhere = pinnedElsewhere(script);
-  if (properties.ActiveState === 'active' && !fresh && !elsewhere) return awaitUnit();
-  if ((fresh || elsewhere) && unitRunning(properties)) await systemctl(['stop', UNIT], cfg.stopDrainMs + 30000);
+  const runtimeChanged = (cfg.useRustHost === true) !== (pinned(script, 'use_rust_host') === '1');
+  if (properties.ActiveState === 'active' && !fresh && !elsewhere && !runtimeChanged) return awaitUnit();
+  if ((fresh || elsewhere || runtimeChanged) && unitRunning(properties)) await systemctl(['stop', UNIT], cfg.stopDrainMs + 30000);
   if (script !== bootScriptText()) await writeBootScript();
   const found = await running();
   if (found) return found;
-  if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
+  if (!(await rustHostEntry()) && !(await exists(await hostEntry()))) throw new Error('archive-missing');
   await say({ type: 'starting' });
   await systemctl(['reset-failed', UNIT]);
   if ((await systemctl(['start', UNIT], 40000)).code !== 0) throw new Error('boot-start-refused');
@@ -829,7 +836,7 @@ const bootInstall = async () => {
   if (!(await ensureLinger())) return unsupported(before);
   const properties = before || await awaitUserManager();
   if (!properties) return unsupported(null);
-  if (!(await exists(await hostEntry()))) throw new Error('archive-missing');
+  if (!(await rustHostEntry()) && !(await exists(await hostEntry()))) throw new Error('archive-missing');
   const current = await discover().catch(() => null);
   await writeUnit();
   return handOver(current);
@@ -1027,9 +1034,9 @@ export type LaunchOperation =
   /** What start at boot looks like on the host (ADR-0054). */
   | { readonly op: 'boot-status' }
   /** Turn on linger, install and enable the boot unit, and hand the running host over to it when Sotto started it. */
-  | { readonly op: 'boot-install'; readonly hostId: string }
+  | { readonly op: 'boot-install'; readonly hostId: string; readonly useRustHost?: true }
   /** Disable and remove the boot unit; `restart` starts the host again as a launch does, for a host that is switched on. */
-  | { readonly op: 'boot-remove'; readonly restart: boolean }
+  | { readonly op: 'boot-remove'; readonly restart: boolean; readonly useRustHost?: true }
 
 /** The configuration the launch script reads from its argument. It carries paths, IDs and a release URL, never a secret. */
 export function launchConfiguration(configuration: ValidatedSshHostConfiguration, operation: LaunchOperation, readyTimeoutMs: number): string {
