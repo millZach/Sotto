@@ -18,7 +18,7 @@ pub enum StoreError {
 }
 
 /// Opens a SQLite database with the exact pragmas required for parity with Node's `node:sqlite`
-/// (ADR-0212: `recursive_triggers = ON`, `journal_mode = WAL`, 5 s busy timeout).
+/// (ADR-0214: `recursive_triggers = ON`, `journal_mode = WAL`, 5 s busy timeout).
 pub fn open_sqlite(path: &Path) -> Result<Connection, StoreError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

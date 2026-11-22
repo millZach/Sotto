@@ -104,7 +104,8 @@ public enum ThreadGroups {
     /// Every open thread on the computers the strip admits, as one list: most recent first, and the
     /// threads of a computer that can't be reached after the rest, as it last shared them.
     public static func merged(_ computers: [ComputerThreads], show: ComputerFilter = .all, filter: ThreadFilter = .all) -> [HostedThread] {
-        let rows = computers.filter { show.admits($0.hostID) }.flatMap(hosted).filter { filter.admits($0.thread) }
+        // An owlet lists on the Owlets tab, not here (ADR-0213).
+        let rows = computers.filter { show.admits($0.hostID) }.flatMap(hosted).filter { $0.thread.owlet == nil && filter.admits($0.thread) }
         // Parse each timestamp once, not twice on every comparison. Lists refresh while agents work.
         let dated = rows.enumerated().map { (row: $0.element, offset: $0.offset, date: latest($0.element.thread) ?? .distantPast) }
         return dated.sorted { a, b in
@@ -162,8 +163,9 @@ public enum ThreadGroups {
     }
     /// Whether a thread offers Watch and Stop watching: not a delegated thread, which the thread that delegated it directs,
     /// so that thread is the one to watch (ADR-0081, Zach's pick B of #1217 on November 7, 2026). Its computer refuses a
-    /// watch there too; this only keeps the control away, as the desktop does.
-    public static func offersWatch(_ thread: ThreadSummary) -> Bool { thread.delegatedBy == nil }
+    /// watch there too; this only keeps the control away, as the desktop does. Nor an owlet, which Watcher neither sees nor
+    /// steers (ADR-0213).
+    public static func offersWatch(_ thread: ThreadSummary) -> Bool { thread.delegatedBy == nil && thread.owlet == nil }
     /// A thread opened and never sent to, as the desktop's sidebar reads it (`isUnsentThread` in
     /// src/shared/threadActivity.ts): on its default title, at rest, asking nothing, not delegated, not settled, and with no
     /// messages. A computer that doesn't say how many messages it holds or where its title came from never makes one.

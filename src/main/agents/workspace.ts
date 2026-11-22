@@ -1,4 +1,6 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
+import { OWLETS_HELD, owletInstructions, type AgentOwlet } from '../../shared/owlets'
+import { assertOwletModel } from './owlets'
 import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { whyNotRouted } from '../../shared/modelRouter'
@@ -64,7 +66,7 @@ import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirecto
 import { isThreadArchived, isThreadClosed, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { npmCi, preparePackages, type PackageInstaller } from './checkWorktree'
-import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
+import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees, type WorktreeReclaimOptions } from './threadWorktrees'
 import { claudeSkillFolder, claudeSkillPath } from './providers/claude/claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
@@ -372,6 +374,8 @@ export interface WorkspaceOptions {
   /** The built worker by default; null explicitly writes on main. */
   readonly storeWorker?: string | StoreWorkerOptions | null
   readonly councilEnabled?: boolean
+  /** Owlets' Owl answer (ADR-0213): off, an owlet's thread is dormant, kept whole and out of view, history clearing included. */
+  readonly owletsEnabled?: boolean
 }
 /**
  * What each thread babysits as `workspace.json` keeps it (ADR-0061 decision 10): on the thread's record, the published
@@ -518,7 +522,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly preservedDormantThreads = new Map<string, AgentThread>()
   private readonly retainedWatcherIds = new Set<string>()
   private visible(thread: AgentThread): boolean {
-    return (this.councilEnabled || !thread.councilJudge) && (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
+    return (this.councilEnabled || !thread.councilJudge) && (this.owletsEnabled || thread.owlet === undefined) && (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
       && heldProviderOfThreadRecord(thread, this.held) === undefined
   }
   /**
@@ -590,7 +594,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return (this.watcherEnabled || !this.retainedWatcherIds.has(id)) && (!thread || this.visible(thread))
   }
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
-    if (this.watcherEnabled && !this.held.size) return snapshot
+    // A run with Owlets off copies the list only while an owlet is in it.
+    if (this.watcherEnabled && !this.held.size && (this.owletsEnabled || this.owlets().size === 0)) return snapshot
     return { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)),
       ...(this.held.size ? catalogWithoutHeld(snapshot, this.held) : {}) }
   }
@@ -1704,7 +1709,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether an agent in this thread is offered `sotto_watcher`: an ordinary thread this host holds, on a provider that takes Sotto's tools. */
   admitsTellWatcher(threadId: string): boolean {
     const thread = this.threadById(threadId)
-    return thread !== undefined && this.visible(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && threadTakesSottoTools(thread)
+    // An owlet is kept apart from Watcher both ways (ADR-0213), so it has no way to message it either.
+    return thread !== undefined && this.visible(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.owlet === undefined && threadTakesSottoTools(thread)
   }
   /** Whether an agent in this thread is offered `sotto_plugins` (ADR-0205): a thread this host holds, Watcher among them, on a provider that takes Sotto's tools. */
   admitsPluginTools(threadId: string): boolean {
@@ -2368,11 +2374,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return { ...facts, ignored: [...facts.ignored], items: [...facts.items], repositories: [...facts.repositories], untracked: [...facts.untracked] }
     })
   }
-  async reclaimThreadWorktree(threadId: string, options: { withUncommittedChanges?: boolean; automatic?: boolean; confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories']; expectedMergedTip?: string } = {}): Promise<AgentHostSnapshot> {
+  async reclaimThreadWorktree(threadId: string, options: WorktreeReclaimOptions & {
+    expectedMergedTip?: string
+    stillEligible?: (thread: AgentThread) => boolean
+  } = {}): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.initialize()
       const thread = this.thread(threadId)
       const worktree = thread.worktree
+      const { stillEligible, ...removal } = options
+      const canRemove = stillEligible ? () => stillEligible(this.thread(threadId)) : undefined
+      if (canRemove && !canRemove()) return this.workspaceSnapshot()
       if (worktree?.mode !== 'independent' || !worktree.path || worktree.reused) throw new Error('This thread has no worktree of its own to remove.')
       if (worktree.reclaimedAt) return this.workspaceSnapshot()
       if (thread.status === 'running' || thread.requests.length || this.preparations.has(threadId)) throw new Error('This thread is still working. Wait for it to finish and answer its requests before removing its folder.')
@@ -2387,7 +2399,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (options.expectedMergedTip && (await runWorktreeGit(worktree.path!, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim() !== options.expectedMergedTip) {
           throw new Error('This branch changed after its merged pull request was checked. Its folder stays.')
         }
-        const reclaimed = await this.worktrees.reclaim(worktree, options)
+        const reclaimed = await this.worktrees.reclaim(worktree, canRemove ? { ...removal, canRemove } : removal)
+        if (!reclaimed.reclaimedAt) return this.workspaceSnapshot()
         this.touched(this.thread(threadId)).worktree = reclaimed
         this.dirty = true
         try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
@@ -2963,18 +2976,22 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly watcherEnabled: boolean
   private readonly streamingPublishCostEnabled: boolean
   private readonly councilEnabled: boolean
+  private readonly owletsEnabled: boolean
 
   constructor(private readonly inner: ProviderHost, private readonly directory: string, {
     historyEnabled = () => true, worktreeRefreshDelayMs = WORKTREE_REFRESH_DELAY_MS, watcherEnabled = false,
     heldProviders = heldProvidersOf({}), streamingPublishCostEnabled = false,
     storeWriter = (store: ThreadStore) => new ThreadStoreWriterOnWorker(store), storeWorker = BUILT_STORE_WORKER,
-    councilEnabled = false,
+    councilEnabled = false, owletsEnabled = false,
   }: WorkspaceOptions = {}) {
     this.historyEnabled = historyEnabled
     this.worktreeRefreshDelayMs = worktreeRefreshDelayMs
     this.watcherEnabled = watcherEnabled
     this.streamingPublishCostEnabled = streamingPublishCostEnabled
     this.councilEnabled = councilEnabled
+    this.owletsEnabled = owletsEnabled
+    // An owlet is told its name and role at each launch (ADR-0213), on every host that has Owlets, worker roles or none.
+    if (owletsEnabled) inner.useOwletInstructions?.(threadId => { const own = this.threadById(threadId)?.owlet; return own ? owletInstructions(own) : undefined })
     this.held = heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
@@ -4595,6 +4612,29 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   dormantThreadIds(): readonly string[] {
     return [...new Set([...(this.watcherEnabled ? [] : this.retainedWatcherIds), ...this.state.snapshot.threads.filter(thread => !this.visible(thread)).map(thread => thread.id)])]
   }
+  /** The owlets this run keeps out of view because Owlets are off on it (ADR-0213). */
+  dormantOwletIds(): readonly string[] { return this.owletsEnabled ? [] : [...this.owlets().keys()] }
+  /**
+   * Every owlet's thread and its project (ADR-0213), read from the store once it is loaded and kept as owlets are made, so an
+   * update never reads every thread to find them. A deleted owlet may stay listed; nothing reads it as more than a name.
+   */
+  private owletThreads: Map<string, string> | undefined
+  private owletProjects: Set<string> | undefined
+  private owlets(): ReadonlyMap<string, string> {
+    if (this.owletThreads) return this.owletThreads
+    const found = new Map(this.state.snapshot.threads.filter(thread => thread.owlet !== undefined).map(thread => [thread.id, thread.projectId] as const))
+    if (this.ready) this.owletThreads = found
+    return found
+  }
+  private owletIdSet: Set<string> | undefined
+  owletThreadIds(): ReadonlySet<string> {
+    const owlets = this.owlets()
+    return owlets === this.owletThreads ? this.owletIdSet ??= new Set(owlets.keys()) : new Set(owlets.keys())
+  }
+  owletProjectIds(): ReadonlySet<string> {
+    const owlets = this.owlets()
+    return owlets === this.owletThreads ? this.owletProjects ??= new Set(owlets.values()) : new Set(owlets.values())
+  }
   dormantThreadProviders(): ReadonlyMap<string, ProviderId> {
     const providers = new Map<string, ProviderId>()
     for (const thread of this.state.snapshot.threads) {
@@ -4993,6 +5033,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.councilJudge ? { councilJudge: true as const } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
       ...(old?.routed ? { routed: old.routed } : {}),
+      ...(old?.owlet ? { owlet: old.owlet } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
       ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? dynamicSessionAfterCompaction(old.dynamicSession) : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
@@ -5654,6 +5695,31 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return this.workspaceSnapshot()
   }
+  /** An owlet's new name and role (ADR-0213). Its thread takes the name as a hand-given title; the provider is not told. */
+  async setThreadOwlet(threadId: string, owlet: AgentOwlet): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    if (!thread.owlet) throw new Error('This thread is not an owlet. Nothing changed.')
+    if (thread.owlet.name !== owlet.name || thread.owlet.role !== owlet.role || thread.title !== owlet.name) {
+      const previous = { owlet: thread.owlet, title: thread.title, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
+      const touched = this.touched(thread)
+      touched.owlet = { name: owlet.name, role: owlet.role }
+      touched.title = owlet.name; touched.titleSource = 'user'; delete touched.titledFromFirstMessage
+      this.dirty = true
+      // A save that fails leaves the owlet as it was, so the next save cannot keep a change the user was told failed.
+      try { await this.flush() }
+      catch (error) {
+        const restored = this.touched(this.thread(threadId))
+        Object.assign(restored, { owlet: previous.owlet, title: previous.title, titleSource: previous.titleSource })
+        if (previous.titledFromFirstMessage) restored.titledFromFirstMessage = true
+        throw error
+      }
+      this.publish()
+      // Its next launch is told its new name and role.
+      await this.inner.threadInstructionsChanged?.(threadId, thread.providerId)
+    }
+    return this.workspaceSnapshot()
+  }
   async renameThread(threadId: string, title: string, source: ThreadRenameSource = 'user'): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
@@ -5683,6 +5749,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private refuseDormantThread(thread: AgentThread): never {
     const held = heldProviderOfThreadRecord(thread, this.held)
     if (held) throw new Error(heldProviderRefusal(held))
+    if (thread.owlet && !this.owletsEnabled) throw new Error(OWLETS_HELD)
     throw new WatcherProfileRefusal(WATCHER_DISABLED)
   }
   /** Starts working-copy setup, or returns the setup already running for this thread.
@@ -6003,6 +6070,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         ...(commandProfile ? { kind: 'watcher' } : {}),
         ...(command.councilJudge ? { councilJudge: true as const } : {}),
+        ...(command.owlet ? { owlet: { ...command.owlet } } : {}),
         titleSource: command.titleSource ?? 'default',
         ...(model.providerId ? { providerId: model.providerId } : {}),
         ...(command.reasoningEffort ?? model.defaultReasoningEffort ? { reasoningEffort: command.reasoningEffort ?? model.defaultReasoningEffort! } : {}),
@@ -6011,6 +6079,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         worktree: command.councilJudge ? { mode: 'shared', path: command.workingDirectory!, status: 'ready' } : await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (command.dynamic && whyNotDynamic(thread) === undefined) thread.dynamic = true
+      if (thread.owlet && this.owletThreads) { this.owletThreads.set(thread.id, thread.projectId); this.owletProjects = undefined; this.owletIdSet = undefined }
       // A thread that starts Dynamic is not routed as well: Dynamic chooses its own models (ADR-0207).
       if (command.routed && whyNotRouted(thread) === undefined) thread.routed = true
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
@@ -6055,6 +6124,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       validateThreadOptions(this.state.snapshot, command, thread.modelId)
       const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)!
       this.requireCreation(model.providerId)
+      assertOwletModel(thread, model)
       const previous = structuredClone(thread)
       this.touch(thread.id)
       if (command.modelId !== undefined) {

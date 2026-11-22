@@ -5,10 +5,10 @@ import { useOwlFeature } from '../state/owlFeature'
 import { useListedRows } from './unsentThreads'
 import { useOptionalApp } from '../state/AppContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
-import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
+import { threadsPageState } from './watcherVisibility'
 import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents } from './AgentContext'
-import { overlayDraftThreads, useDraftThreads } from './draftThreads'
+import { useDraftThreads } from './draftThreads'
 import { useClock } from './paneGrid'
 import { SidebarFoot, SidebarTop } from './SidebarFrame'
 import { useShared } from './stateSharing'
@@ -43,7 +43,7 @@ export function PageSidebar({ now: fixedNow }: {
   const published = agents.state
   // Watcher's room keeps the current Watcher; this page lists and selects only the other threads.
   const roomWatcher = useRoomWatcherThreadId()
-  const state = useMemo(() => withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher),
+  const state = useMemo(() => threadsPageState(published, drafts, watcherEnabled, roomWatcher),
     [published, drafts, watcherEnabled, roomWatcher])
   // Rows and folders carry words in the interface language, so a change of language or of its messages describes them
   // again. Otherwise the describer describes only the threads an update changed and hands back the rest as they were.

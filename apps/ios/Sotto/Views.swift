@@ -92,14 +92,17 @@ private struct MainTabsInputs: Equatable {
     var alertOpened: ThreadRef?
     var watcherAlertOpened: String?
     var shareOpened: ShareDestination?
+    var owletsShown: Bool
+    var owletsBadge: Int
     @MainActor init(_ model: AppModel) {
         badge = model.threadsBadge; watcherHostID = model.watcherHostID; watcherTab = model.watcherTab
+        owletsShown = model.owletsShown; owletsBadge = model.owletsShown ? model.owletsBadge : 0
         selected = model.selected; railNested = model.railNested; adding = model.adding
         alertOpened = model.alertOpened; watcherAlertOpened = model.watcherAlertOpened; shareOpened = model.shareOpened
     }
 }
 
-/// The tabs: Threads, Watcher when a paired computer runs it, Computers and Settings. The system's tab bar is hidden
+/// The tabs: Threads, Owlets when a paired computer makes them (ADR-0213), Watcher when one runs it, Computers and Settings. The system's tab bar is hidden
 /// for `TabsBar`, which sits on the page with no glass behind it (ADR-0051, amended).
 struct MainTabs: View {
     @Environment(\.unwatchedModel) private var unwatchedModel
@@ -109,6 +112,9 @@ struct MainTabs: View {
     @State private var tab = Tab.threads
     @State private var threadPath = NavigationPath()
     @State private var watcherPath = NavigationPath()
+    @State private var owletPath = NavigationPath()
+    /// New owlet, opened from the Duo's rail while the Owlets tab shows.
+    @State private var creatingOwlet = false
     @State private var covered = Set<UUID>()
     @State private var keyboard = false
     /// Each tab's count of presses asking its first page to scroll to the top.
@@ -131,7 +137,7 @@ struct MainTabs: View {
     @State private var onDuo = false
     /// How much of the page shows: below one while a change that isn't a push or a pop fades it (`crossfade`, `fadeIn`).
     @State private var pageShown = 1.0
-    enum Tab: Hashable { case threads, watcher, computers, settings }
+    enum Tab: Hashable { case threads, owlets, watcher, computers, settings }
     @Environment(\.horizontalSizeClass) private var width
     @Environment(\.verticalSizeClass) private var height
     @Environment(\.sottoGlass) private var glass
@@ -180,6 +186,7 @@ struct MainTabs: View {
         switch tab {
         case .threads: return !threadPath.isEmpty
         case .watcher: return !watcherPath.isEmpty
+        case .owlets: return !owletPath.isEmpty
         case .computers, .settings: return false
         }
     }
@@ -199,8 +206,12 @@ struct MainTabs: View {
         return HStack(spacing: 0) {
             if case .column(leading: true, width: let strip) = place { rail(shown, top: Space.s4, duo: duo).frame(width: strip) }
             if sidebar {
-                // Held sideways, a thread's rail has no room for New thread, which moves to the sidebar's heading.
-                ThreadSidebar(open: openFromSidebar, newThread: threadOpen).equatable()
+                // Held sideways, a thread's rail has no room for New thread, which moves to the sidebar's heading. Beside an
+                // owlet the sidebar lists the owlets (Zach's pick A, November 21, 2026).
+                Group {
+                    if tab == .owlets { OwletSidebar(open: openFromSidebar, newOwlet: threadOpen).equatable() }
+                    else { ThreadSidebar(open: openFromSidebar, newThread: threadOpen).equatable() }
+                }
                     // With Reduce Motion it fades in on its own, so nothing of the page beside it moves.
                     .modifier(FadeOnAppear(enabled: reduceMotion))
                     .transition(reduceMotion ? .identity : .move(edge: .leading).combined(with: .opacity))
@@ -210,13 +221,13 @@ struct MainTabs: View {
                 pages.opacity(pageShown).background { if glass == nil { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
                 if place == .bottom && covered.isEmpty && !keyboard {
                     TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
-                            style: .bar, reselect: reselect)
+                            owlets: model.owletsShown ? model.owletsBadge : nil, style: .bar, reselect: reselect)
                 }
             }
             // Upright, the sidebar comes over the page from its left edge and stops at the rail, which stays in reach.
             .overlay {
                 if upright && sidebarAvailable {
-                    SidebarDrawer(shown: $drawer, pull: pull, open: openFromSidebar).equatable().padding(.trailing, railOver)
+                    SidebarDrawer(shown: $drawer, pull: pull, owlets: tab == .owlets, open: openFromSidebar).equatable().padding(.trailing, railOver)
                 }
             }
             // Upright it starts just under the status bar.
@@ -271,6 +282,12 @@ struct MainTabs: View {
                 threadPath = NavigationPath([ThreadRoute(ref: ref)])
             })
         }
+        .duoSheet(isPresented: $creatingOwlet, onDismiss: { model.creationFeedback = nil }) {
+            OwletSetupSheet(editing: nil, opened: { ref in
+                tab = .owlets
+                owletPath = NavigationPath([ThreadRoute(ref: ref)])
+            })
+        }
         .onChange(of: sidebarAvailable) { _, available in if !available { drawer = false } }
         .onChange(of: duo, initial: true) { before, now in
             if now != .none { onDuo = true }
@@ -306,6 +323,11 @@ struct MainTabs: View {
         .onChange(of: tab) { model.pageLeft() }
         .onChange(of: threadPath) { model.pageLeft() }
         .onChange(of: watcherPath) { model.pageLeft() }
+        .onChange(of: owletPath) { model.pageLeft() }
+        // A computer that stops making owlets, with none of them left, takes the Owlets tab with it.
+        .onChange(of: model.owletsShown) { _, shown in
+            if !shown, tab == .owlets { tab = .threads; owletPath = NavigationPath() }
+        }
         // A computer that stops offering Watcher takes its tab with it.
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
@@ -313,7 +335,7 @@ struct MainTabs: View {
         .environment(\.duoSheetHost, duo.sideways ? sheetHost : nil)
     }
     /// The sidebar has a page to stand beside: every page but the Threads list, which is the same list.
-    private var sidebarAvailable: Bool { !(tab == .threads && threadPath.isEmpty) }
+    private var sidebarAvailable: Bool { !(tab == .threads && threadPath.isEmpty) && !(tab == .owlets && owletPath.isEmpty) }
     /// Whether the sidebar shows held sideways: beside a thread unless the user hid it there, beside another page only
     /// once they bring it.
     private var sidebarShown: Bool {
@@ -356,7 +378,7 @@ struct MainTabs: View {
                 // come back when it goes (Zach's pick A, November 9, 2026, round 5). The thread's pill above them stays.
                 let underKeyboard = keyboard && duo.sideways
                 TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
-                        style: .rail, reselect: reselect)
+                        owlets: model.owletsShown ? model.owletsBadge : nil, style: .rail, reselect: reselect)
                     .opacity(underKeyboard ? 0 : 1)
                     .allowsHitTesting(!underKeyboard)
                     .accessibilityHidden(underKeyboard)
@@ -415,14 +437,24 @@ struct MainTabs: View {
     /// sits on its page rather than on the tab's path. With no thread read yet, the tab's path goes back one.
     private func popThread() {
         if let ref = model.selected { model.railAsked = RailAsk(ref: ref, action: .back); return }
-        if tab == .watcher, !watcherPath.isEmpty { watcherPath.removeLast() } else if !threadPath.isEmpty { threadPath.removeLast() }
+        if tab == .watcher, !watcherPath.isEmpty { watcherPath.removeLast() }
+        else if tab == .owlets, !owletPath.isEmpty { owletPath.removeLast() }
+        else if !threadPath.isEmpty { threadPath.removeLast() }
     }
-    /// New thread on the Duo's rail or row, the round button the Threads page heading has on every other iPhone.
-    private var newThread: some View {
-        Button { creating = true } label: { Image(systemName: "plus") }
-            .buttonStyle(GlassCircleStyle())
-            .accessibilityLabel("New thread")
-            .accessibilityIdentifier("new-thread")
+    /// New thread on the Duo's rail or row, the round button the Threads page heading has on every other iPhone; New owlet
+    /// while the Owlets tab shows, as its heading has it on every other iPhone.
+    @ViewBuilder private var newThread: some View {
+        if tab == .owlets {
+            Button { creatingOwlet = true } label: { Image(systemName: "plus") }
+                .buttonStyle(GlassCircleStyle())
+                .accessibilityLabel("New owlet")
+                .accessibilityIdentifier("new-owlet")
+        } else {
+            Button { creating = true } label: { Image(systemName: "plus") }
+                .buttonStyle(GlassCircleStyle())
+                .accessibilityLabel("New thread")
+                .accessibilityIdentifier("new-thread")
+        }
     }
     private var pages: some View {
         TabView(selection: $tab) {
@@ -432,6 +464,16 @@ struct MainTabs: View {
                 .environment(\.pageTop, tops[.threads, default: 0])
                 .toolbar(.hidden, for: .tabBar)
                 .tag(Tab.threads)
+            // The Owlets tab, after Threads (Zach's pick A, November 21, 2026), only while a computer makes owlets or one
+            // this iPhone reads still lists one.
+            if model.owletsShown {
+                NavigationStack(path: $owletPath) {
+                    OwletsView(open: { ref in owletPath.append(ThreadRoute(ref: ref)) }).equatable().clearOfUprightRail().threadDestination()
+                }
+                    .environment(\.pageTop, tops[.owlets, default: 0])
+                    .toolbar(.hidden, for: .tabBar)
+                    .tag(Tab.owlets)
+            }
             // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
             if let hostID = model.watcherHostID {
                 NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).clearOfUprightRail().threadDestination() }
@@ -488,6 +530,8 @@ struct MainTabs: View {
             if tab == .watcher, !watcherPath.isEmpty {
                 watcherPath.removeLast()
                 watcherPath.append(ThreadRoute(ref: ref))
+            } else if tab == .owlets {
+                owletPath = NavigationPath([ThreadRoute(ref: ref)])
             } else {
                 tab = .threads
                 threadPath = NavigationPath([ThreadRoute(ref: ref)])
@@ -503,6 +547,12 @@ struct MainTabs: View {
             threadPath = NavigationPath([ThreadRoute(ref: ThreadRef(hostID: "11111111-1111-4111-8111-111111111111", threadID: arguments[index + 1]))])
         }
         if arguments.contains("--ui-open-watcher"), model.watcherHostID != nil { tab = .watcher }
+        // `--ui-open-owlets` the Owlets tab, and `--ui-open-owlet <id>` one of the laptop's owlets on it.
+        if arguments.contains("--ui-open-owlets"), model.owletsShown { tab = .owlets }
+        if let index = arguments.firstIndex(of: "--ui-open-owlet"), index + 1 < arguments.count, model.owletsShown {
+            tab = .owlets
+            owletPath = NavigationPath([ThreadRoute(ref: ThreadRef(hostID: "11111111-1111-4111-8111-111111111111", threadID: arguments[index + 1]))])
+        }
         if arguments.contains("--ui-open-settings") { tab = .settings }
         // `--ui-orientation portrait|landscapeLeft|landscapeRight` turns the window, to capture the unfolded Duo upright
         // and sideways; `--ui-open-sidebar` then brings an upright thread's sidebar over it, once the turn has settled.
@@ -520,6 +570,7 @@ struct MainTabs: View {
         switch chosen {
         case .threads where !threadPath.isEmpty: threadPath = NavigationPath()
         case .watcher where !watcherPath.isEmpty: watcherPath = NavigationPath()
+        case .owlets where !owletPath.isEmpty: owletPath = NavigationPath()
         default: tops[chosen, default: 0] += 1
         }
     }
@@ -559,6 +610,8 @@ struct TabsBar: View {
     @Binding var tab: MainTabs.Tab
     let threadsBadge: Int
     let watcher: WatcherTabState?
+    /// The Owlets tab's badge, the owlets waiting on the user, or nil while no computer makes owlets.
+    var owlets: Int? = nil
     /// The bar along the bottom of every other iPhone, or the Duo's pill of icons down its rail.
     enum Style { case bar, rail }
     var style = Style.bar
@@ -566,11 +619,13 @@ struct TabsBar: View {
     var reselect: (MainTabs.Tab) -> Void = { _ in }
     /// A tab's icon: one of the system's symbols, or an image of Sotto's own, the owl.
     enum Icon {
-        case symbol(String), asset(String)
+        /// The owlet mark, drawn rather than an image; the large content viewer shows the system's bird for it.
+        case symbol(String), asset(String), owlet
         var image: Image {
             switch self {
             case .symbol(let name): return Image(systemName: name)
             case .asset(let name): return Image(name)
+            case .owlet: return Image(systemName: "bird")
             }
         }
         var isSymbol: Bool { if case .symbol = self { return true } else { return false } }
@@ -580,6 +635,9 @@ struct TabsBar: View {
         let layout = rail ? AnyLayout(VStackLayout(spacing: DuoRailMetrics.tileGap)) : AnyLayout(HStackLayout(spacing: 0))
         layout {
             item(.threads, .symbol("bubble.left"), Text("Threads"), badge: threadsBadge, spoken: threadsBadge > 0 ? "\(threadsBadge)" : "")
+            if let owlets {
+                item(.owlets, .owlet, Text("Owlets"), badge: owlets, spoken: owlets > 0 ? "\(owlets)" : "")
+            }
             if let watcher {
                 item(.watcher, .asset(watcher.working ? "WatcherTabWorking" : "WatcherTab"), Text("Watcher"), badge: watcher.needs, spoken: watcher.spoken)
             }
@@ -600,7 +658,11 @@ struct TabsBar: View {
         .accessibilityIdentifier("tabs")
     }
     @ViewBuilder private func glyph(_ icon: Icon, chosen: Bool) -> some View {
-        if rail && icon.isSymbol {
+        if case .owlet = icon {
+            // The owlets' own mark, drawn in lines at the size of the system's symbols beside it, as the owl is.
+            OwletMark(threadID: "", size: rail ? DuoRailMetrics.owl : 24, plain: true)
+                .frame(width: rail ? DuoRailMetrics.icon : 24, height: rail ? DuoRailMetrics.icon : 24)
+        } else if rail && icon.isSymbol {
             // Drawn as type rather than stretched to a box, so every symbol keeps the system's own margins and weight.
             icon.image.font(.system(size: DuoRailMetrics.symbol, weight: .medium))
                 .symbolVariant(chosen ? .fill : .none)
@@ -780,10 +842,9 @@ enum DuoLayout: Equatable {
     var isFolded: Bool { if case .folded = self { return true } else { return false } }
     /// How wide the upright rail's column is: room for the tabs' pill and the round buttons, with a margin each side.
     static let uprightRail: CGFloat = 80
-    /// How far down the strip New thread, or a thread's Back, sits: under the clock, battery and page dots, lower on the
-    /// cover screen than unfolded. On Zach's Duo the + overlapped the battery at 156 and 108 points (TestFlight build 45),
-    /// so both moved down a step and a half.
-    var clockClearance: CGFloat { if case .folded = self { return 176 } else { return 124 } }
+    /// With a Live Activity above the folded Duo's clock, the battery and signal dots can reach 198 points
+    /// down the cover screen. Leave room below them for the first button.
+    var clockClearance: CGFloat { isFolded ? 216 : 124 }
     /// How wide the strip is on each side of the window, where a page that reaches it carries its ground on under it.
     var strip: (leading: CGFloat, trailing: CGFloat) {
         switch self {
@@ -1280,10 +1341,12 @@ struct SaidQuote: View {
 private struct SidebarDrawer: View, Equatable {
     @Binding var shown: Bool
     let pull: SidebarPull
+    /// Beside an owlet the drawer lists the owlets, with New owlet; anywhere else the threads.
+    var owlets = false
     let open: (ThreadRef) -> Void
     static let width: CGFloat = 320
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    static func == (lhs: SidebarDrawer, rhs: SidebarDrawer) -> Bool { lhs.shown == rhs.shown && lhs.pull === rhs.pull }
+    static func == (lhs: SidebarDrawer, rhs: SidebarDrawer) -> Bool { lhs.shown == rhs.shown && lhs.pull === rhs.pull && lhs.owlets == rhs.owlets }
     var body: some View {
         let held = pull.progress
         let fraction = held ?? (shown ? 1 : 0)
@@ -1296,7 +1359,10 @@ private struct SidebarDrawer: View, Equatable {
                     .allowsHitTesting(shown && held == nil)
                     .accessibilityHidden(true)
                     .transition(.opacity)
-                ThreadSidebar(open: open, width: Self.width, newThread: true).equatable()
+                Group {
+                    if owlets { OwletSidebar(open: open, width: Self.width, newOwlet: true).equatable() }
+                    else { ThreadSidebar(open: open, width: Self.width, newThread: true).equatable() }
+                }
                     .background { PageGround().ignoresSafeArea() }
                     // Escape on a hardware keyboard puts it away, as VoiceOver's escape gesture does.
                     .background {

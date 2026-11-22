@@ -29,10 +29,12 @@ import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentModel, AgentThread, ProviderId } from '../../shared/agents'
 import { immutableModels } from './activitySnapshots'
+import { antigravityGeminiModel } from './antigravityModels'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { withKeptPartsPutBack, type HeldParts } from '../../shared/keptParts'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, hostThreadWordsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
+import { detachedRunElsewhereStopSchema, type DetachedRunElsewhere, type RunMark } from '../../shared/agentMonitoring'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
 import type { BrowserEvent } from '../../shared/browser'
@@ -63,7 +65,7 @@ import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatche
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
-import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+import { USAGE_LIMIT_PROVIDERS, usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 /** Answers read on every call, checked against schemas built once rather than on every call. */
 const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
@@ -245,6 +247,12 @@ export class SocketHostService implements HostService {
    */
   private readonly lateDetails = new Map<string, string>()
   /**
+   * Each thread's whole read still on its way here, until its answer is held. A delta that arrives with the answer is
+   * handled first, since the answer is held only once its promise settles, so it waits for the read rather than reading
+   * the thread again (#1990).
+   */
+  private readonly reads = new Map<string, Promise<unknown>>()
+  /**
    * The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3
    * amendment), and once a shell naming it has been read, that reading frozen and owned (`certified`). A later shell naming
    * the same revision is read without its catalog and handed the certified one, so no push or answer reads the catalog
@@ -280,6 +288,9 @@ export class SocketHostService implements HostService {
   private readonly nextPromptEntries = new Map<string, NextPromptEntry>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   private readonly checkListeners = new Set<() => void>()
+  /** The detached runs the host last reported with marks none of its threads own (#2749), and who hears them change. */
+  private runsElsewhere: readonly DetachedRunElsewhere[] = []
+  private readonly runsElsewhereListeners = new Set<(runs: readonly DetachedRunElsewhere[]) => void>()
   private readonly spendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
   private readonly elevenLabsSpendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
   private readonly modelListeners = new Set<(news: Model3dHostNews) => void>()
@@ -452,7 +463,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -500,6 +511,12 @@ export class SocketHostService implements HostService {
     if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
     // A queue read on a closed connection is not current: the machine's panel says nothing of it until the host pushes again.
     if (this.checks !== undefined) { this.checks = undefined; this.checksChanged() }
+    // The runs it reported stay as it last reported them: they run on there, and the thread is not called at rest while
+    // its host is away. The host's next report replaces them, and the router lets them go when the host is removed.
+  }
+  private runsElsewhereChanged(runs: readonly DetachedRunElsewhere[]): void {
+    this.runsElsewhere = runs
+    for (const listener of [...this.runsElsewhereListeners]) { try { listener(runs) } catch { /* A listener's failure is its own. */ } }
   }
   private checksChanged(): void {
     for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
@@ -592,6 +609,7 @@ export class SocketHostService implements HostService {
         else if (message.event === 'plugin-meshy-spending') { for (const listener of [...this.spendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
         // And the same for its ElevenLabs copies, pushed only to a desktop whose hello accepted `plugin-elevenlabs-spending`.
         else if (message.event === 'plugin-elevenlabs-spending') { for (const listener of [...this.elevenLabsSpendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
+        else if (message.event === 'detached-runs-elsewhere') this.runsElsewhereChanged(message.runs)
         else if (message.event === 'check-queue') { if (this.options.crossMachineEnabled === true) { this.checks = message.checks; this.checksChanged() } }
         // Pushed only to a desktop whose hello accepted `next-prompts` and that said it wants them (ADR-0173).
         else if (message.event === 'next-prompts') {
@@ -707,7 +725,8 @@ export class SocketHostService implements HostService {
     const held = this.readCatalogs.get(wire)
     if (held) { host.models = held; return }
     const revision = this.namedCatalogs.get(wire), catalog = this.catalog
-    if (revision !== undefined && catalog?.revision === revision) host.models = catalog.certified ??= immutableModels(host.models)
+    // A host from before November 21, 2026 still lists the Claude and GPT models its agy offers; Antigravity is Gemini only (ADR-0212).
+    if (revision !== undefined && catalog?.revision === revision) host.models = catalog.certified ??= immutableModels(host.models.filter(model => model.providerId !== 'antigravity' || antigravityGeminiModel(model.id)))
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
@@ -758,6 +777,8 @@ export class SocketHostService implements HostService {
     const held = this.details.get(threadId)
     if (held && delta.revision <= held.revision) return
     const applied = held ? applyAgentThreadDetailDelta(held, delta) : null
+    const reading = applied === null ? this.reads.get(threadId) : undefined
+    if (reading) { void reading.then(() => { this.applyDelta(threadId, delta) }, () => { this.behind.add(threadId); this.resync(threadId) }); return }
     if (applied === null) { this.behind.add(threadId); this.resync(threadId); return }
     this.details.set(threadId, applied)
     for (const listener of this.detailListeners) listener(structuredClone(delta))
@@ -980,7 +1001,19 @@ export class SocketHostService implements HostService {
     const state = this.read(protocolAgentStateSchema, await this.call({ op: 'check-answer', answer }))
     this.sameGeneration(generation); this.publish(state)
   }
-  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { if (!this.threadAvailable(threadId)) return null; const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
+  async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> {
+    if (!this.threadAvailable(threadId)) return null
+    const generation = this.generation
+    // The answer itself is what a waiting delta waits on, so the read takes no more turns to settle than it did: what
+    // follows a failed read, such as a resync's end, happens when it did (#1990). Its own continuation holds the answer
+    // before a waiting delta's, which was made after it.
+    const answer = this.call({ op: 'detail', threadId })
+    this.reads.set(threadId, answer)
+    let result: unknown
+    try { result = await answer } finally { if (this.reads.get(threadId) === answer) this.reads.delete(threadId) }
+    const detail = this.read(agentThreadDetailResultSchema, result); this.sameGeneration(generation); this.cacheDetail(threadId, detail)
+    return this.threadDetail(threadId)
+  }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
   /** `shown`: false while this desktop's window is behind another app (ADR-0092); absent, its threads are shown. */
@@ -1025,6 +1058,8 @@ export class SocketHostService implements HostService {
   get supportsWatcherCheckStop(): boolean { return this.supportsWatcherCheckQueue && this.features.includes('watcher-check-stop') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
   get supportsWatcherCursor(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-cursor') }
+  /** The host lists `watcher-antigravity`: it takes Watcher requests whose identity names Antigravity (ADR-0212). */
+  get supportsWatcherAntigravity(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-antigravity') }
   private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
     return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)
   }
@@ -1085,6 +1120,8 @@ export class SocketHostService implements HostService {
   get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
   /** The host lists `project-git-init`: it runs `git init` in the folder a new project is made in when asked. */
   get supportsProjectGitInit(): boolean { return this.features.includes('project-git-init') }
+  /** The host lists `owlets`: it makes and changes owlets (ADR-0213). */
+  get supportsOwlets(): boolean { return this.features.includes('owlets') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
@@ -1098,6 +1135,7 @@ export class SocketHostService implements HostService {
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     if ((admitted.type === 'delete-thread' || admitted.type === 'preview-delete-thread') && !this.supportsThreadDelete) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     if (admitted.type === 'create-project' && admitted.gitInit && !this.supportsProjectGitInit) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    if (admitted.type === 'reclaim-thread-worktree' && admitted.afterSettle) this.offers('settle-worktree-cleanup')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
@@ -1903,6 +1941,29 @@ export class SocketHostService implements HostService {
     this.delegationListeners.add(listener)
     return () => { this.delegationListeners.delete(listener) }
   }
+  /**
+   * The host lists `detached-runs-elsewhere` (#2749): it reports the detached runs it finds with a mark none of its own
+   * threads owns, such as one a thread on this desktop started there over ssh, looks again when asked, and stops one of
+   * them when this desktop's user presses its Stop.
+   */
+  get supportsDetachedRunsElsewhere(): boolean { return this.features.includes('detached-runs-elsewhere') }
+  /** The runs the host last reported on this connection; none once it closes. */
+  detachedRunsElsewhere(): readonly DetachedRunElsewhere[] { return this.runsElsewhere }
+  /** Hears the host report them, and this connection closing. Returns the way to stop. */
+  subscribeDetachedRunsElsewhere(listener: (runs: readonly DetachedRunElsewhere[]) => void): () => void {
+    this.runsElsewhereListeners.add(listener)
+    return () => { this.runsElsewhereListeners.delete(listener) }
+  }
+  /** Asks the host to look for detached runs again, a few seconds from now, as a turn ending on this desktop may have started one there. */
+  async lookForDetachedRuns(): Promise<void> {
+    this.offers('detached-runs-elsewhere')
+    await this.call({ op: 'detached-runs-look' })
+  }
+  /** Stops a run the host reported, by its ID, after the host looks again and finds the same process: null once it ended, or why not. */
+  async stopDetachedRunElsewhere(runId: string, mark: RunMark): Promise<string | null> {
+    this.offers('detached-runs-elsewhere')
+    return this.read(detachedRunElsewhereStopSchema, await this.call({ op: 'detached-run-elsewhere-stop', runId, mark })).error
+  }
   /** The host lists `check-queue-views` and this desktop accepted it (#1312): it pushes its own check queue. */
   get supportsCheckQueueViews(): boolean { return this.options.crossMachineEnabled === true && this.features.includes('check-queue-views') }
   /** The host's check queue as it last pushed it on this connection, the running check first, by the host's own thread IDs. */
@@ -2023,16 +2084,21 @@ export class SocketHostService implements HostService {
     const { sources, since, ...older } = usageLocalQuerySchema.parse(query)
     // One from before Muse and OpenCode were counted refuses a query naming either, and has none of their work to read.
     if (!this.features.includes('usage-muse-opencode') && older.providerIds !== undefined) older.providerIds = usageProvidersBeforeMuse(older.providerIds)
+    // One from before Antigravity was counted refuses a query naming it the same way.
+    if (!this.features.includes('usage-antigravity') && older.providerIds !== undefined) older.providerIds = usageProvidersBeforeAntigravity(older.providerIds)
     const sent = this.features.includes('usage-history') ? { ...older, ...(sources ? { sources } : {}), ...(since ? { since } : {}) } : older
     return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: sent }, undefined, undefined, 15000))
   }
   async usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    const named = providerIds === undefined ? undefined : usageProviderIdsSchema.parse(providerIds)
-    const parsed = named === undefined || this.features.includes('usage-muse-opencode') ? named : usageProvidersBeforeMuse(named)
+    // Named even when the caller names none: a host from before November 21, 2026 would otherwise read Antigravity's limits with
+    // agy's own token, which Google's terms forbid (ADR-0212). Every limit provider but Antigravity is named.
+    const named = usageProviderIdsSchema.parse(providerIds ?? [...USAGE_LIMIT_PROVIDERS])
+    const known = this.features.includes('usage-antigravity') ? named : usageProvidersBeforeAntigravity(named)
+    const parsed = this.features.includes('usage-muse-opencode') ? known : usageProvidersBeforeMuse(known)
     // A host from before `usage-background-refresh` refuses the field, and reads every refresh afresh.
     const quiet = background && this.features.includes('usage-background-refresh')
-    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', ...(parsed ? { providerIds: parsed } : {}), ...(quiet ? { background: true } : {}) }, undefined, undefined, 15000))
+    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', providerIds: parsed, ...(quiet ? { background: true } : {}) }, undefined, undefined, 15000))
   }
   async usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
     void client // This socket's authenticated pairing supplies its own host authority.

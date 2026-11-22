@@ -1231,12 +1231,24 @@ describe('settings on several computers (ADR-0074)', () => {
   }
   it('keeps new-thread defaults on this computer while another host is selected', async () => {
     const { router, local, remote } = twoComputers()
-    for (const patch of [{ newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' }, { newThreadRuntimeMode: null }] as const)
+    for (const patch of [{ newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' }, { newThreadSpeed: 'ultrafast' }, { newThreadRuntimeMode: null }] as const)
       await router.command({ type: 'configure', patch }, desktopWindowClient())
     expect(local.command.mock.calls.map(([command]) => command)).toEqual([{ type: 'configure', patch: { newThreadModelId: 'claude:sonnet' } },
-      { type: 'configure', patch: { newThreadReasoningEffort: 'high' } }, { type: 'configure', patch: { newThreadRuntimeMode: null } }])
+      { type: 'configure', patch: { newThreadReasoningEffort: 'high' } }, { type: 'configure', patch: { newThreadSpeed: 'ultrafast' } }, { type: 'configure', patch: { newThreadRuntimeMode: null } }])
     expect(remote.command).not.toHaveBeenCalled()
     router.dispose()
+  })
+  it('keeps Antigravity’s key on this computer while another host is selected, and sends it nowhere without one (ADR-0212)', async () => {
+    const { router, local, remote } = twoComputers()
+    await router.command({ type: 'credential', slot: 'antigravity', value: 'AIza-synthetic' }, desktopWindowClient())
+    expect(local.command.mock.calls.map(([command]) => command)).toEqual([{ type: 'credential', slot: 'antigravity', value: 'AIza-synthetic' }])
+    expect(remote.command).not.toHaveBeenCalled()
+    router.dispose()
+    const alone = new DesktopHostRouter(emptyDesktopState), only = fixture(REMOTE, 'remote')
+    alone.add(only.connection); alone.select(REMOTE)
+    await expect(alone.command({ type: 'credential', slot: 'antigravity', value: 'AIza-synthetic' }, desktopWindowClient())).rejects.toThrow('Antigravity’s key is kept on this computer')
+    expect(only.command).not.toHaveBeenCalled()
+    alone.dispose()
   })
   it('changes the named computer’s own settings without telling it which host it is, and the selected one’s when none is named', async () => {
     const { router, local, remote } = twoComputers()
@@ -1286,11 +1298,11 @@ describe('settings on several computers (ADR-0074)', () => {
   })
   it('shows this computer’s new-thread defaults over the selected host’s, and each computer’s folder and answer policy', () => {
     const { router, local, remote } = twoComputers()
-    Object.assign(local.state.configuration, { projectsDirectory: 'D:\\Projects', newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high', newThreadRuntimeMode: undefined })
-    Object.assign(remote.state.configuration, { projectsDirectory: '/home/zach/projects', newThreadModelId: 'codex:gpt', newThreadReasoningEffort: 'low', newThreadRuntimeMode: 'full-access' })
+    Object.assign(local.state.configuration, { projectsDirectory: 'D:\\Projects', newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high', newThreadSpeed: 'ultrafast', newThreadRuntimeMode: undefined })
+    Object.assign(remote.state.configuration, { projectsDirectory: '/home/zach/projects', newThreadModelId: 'codex:gpt', newThreadReasoningEffort: 'low', newThreadSpeed: 'fast', newThreadRuntimeMode: 'full-access' })
     Object.assign(remote.state, { clientCapabilities: { mayAnswer: false } })
     const state = router.shell()
-    expect(state.configuration).toMatchObject({ projectsDirectory: '/home/zach/projects', newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high' })
+    expect(state.configuration).toMatchObject({ projectsDirectory: '/home/zach/projects', newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high', newThreadSpeed: 'ultrafast' })
     expect(state.configuration).not.toHaveProperty('newThreadRuntimeMode')
     expect(state.host.clientHosts?.map(({ hostId, projectsDirectory, mayAnswer }) => ({ hostId, projectsDirectory, mayAnswer }))).toEqual([
       { hostId: LOCAL, projectsDirectory: 'D:\\Projects', mayAnswer: true }, { hostId: REMOTE, projectsDirectory: '/home/zach/projects', mayAnswer: false }])

@@ -8,6 +8,10 @@
     "copyUnshared(": 1,
     "copyOver(": 1
   },
+  "src/main/agents/antigravity.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
   "src/main/agents/cloneHostSnapshot.ts": {
     "cloneHostSnapshot(": 1
   },
@@ -62,10 +66,6 @@
   },
   "src/main/agents/opencode.ts": {
     "structuredClone(": 1,
-    "cloneHostSnapshot(": 1,
-    "cloneActivitySnapshot(": 1
-  },
-  "src/main/agents/pi.ts": {
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },

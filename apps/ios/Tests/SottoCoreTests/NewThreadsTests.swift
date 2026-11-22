@@ -5,9 +5,9 @@ final class NewThreadsTests: XCTestCase {
     private func model(_ extra: String = "") throws -> ThreadModel {
         try JSONDecoder().decode(ThreadModel.self, from: Data(#"{"id":"opaque-model","name":"Model","provider":"Codex","providerId":"codex","ready":true,"reasoningEfforts":["low","high"],"defaultReasoningEffort":"high","runtimeModes":["approval-required","full-access"]\#(extra)}"#.utf8))
     }
-    private func create(_ model: ThreadModel, effort: String = "high", permission: String = "approval-required", mayAnswer: Bool = false) throws -> JSONValue {
+    private func create(_ model: ThreadModel, effort: String = "high", permission: String = "approval-required", mayAnswer: Bool = false, speed: String? = nil) throws -> JSONValue {
         try Commands.createThread(projectID: "opaque-project", threadID: "00000000-0000-4000-8000-000000000001",
-                                  model: model, effort: effort, permissionID: permission, mayAnswer: mayAnswer)
+                                  model: model, effort: effort, permissionID: permission, mayAnswer: mayAnswer, speed: speed)
     }
     func testCreationUsesThePhoneThreadIDAndExplicitAskingMode() throws {
         let command = try create(model())
@@ -19,6 +19,18 @@ final class NewThreadsTests: XCTestCase {
         XCTAssertEqual(command["managed"], .bool(false))
         XCTAssertEqual(command["titleSource"], .string("default"))
         XCTAssertEqual(command["text"], .null)
+    }
+    func testCreationSendsExplicitStandardAndOnlyOfferedSpeeds() throws {
+        let fast = try model(#", "speeds":[{"id":"fast","name":"Fast"}]"#)
+        XCTAssertEqual(try create(fast, speed: "fast")["speed"], .string("fast"))
+        XCTAssertThrowsError(try create(fast, speed: "ultrafast"))
+        guard case .object(let standard) = try create(fast, speed: ThreadSettings.standard),
+              case .object(let inherited) = try create(fast) else { return XCTFail("Expected creation commands") }
+        XCTAssertEqual(standard["speed"], JSONValue.null)
+        XCTAssertNil(inherited["speed"])
+        let older = try model(#", "fastMode":{}"#)
+        XCTAssertTrue(older.creationSpeeds.isEmpty)
+        XCTAssertThrowsError(try create(older, speed: "fast"))
     }
     func testUnknownEffortOrPermissionCannotBeSent() throws {
         XCTAssertThrowsError(try create(model(), effort: "ultra"))
@@ -102,6 +114,20 @@ final class NewThreadsTests: XCTestCase {
         XCTAssertEqual(cursor.source, "Anthropic")
         XCTAssertEqual(cursor.label, "Cursor · Anthropic · Claude Sonnet 5.5")
         XCTAssertEqual(ThreadModel.label(providerID: "cursor", source: "Cursor", name: "Auto"), "Cursor · Auto", "Cursor's own model reads Cursor once")
+    }
+    /// A host that names Antigravity sends its threads, projects and models under provider-antigravity. They decode, the
+    /// provider reads Antigravity, a model reads its name as the host sends it, and a phone may open a thread on it.
+    func testAnAntigravityHostDecodesAndItsModelIsAChoiceWhileAntigravityIsConnected() throws {
+        let text = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"a","projectId":"p","title":"On Antigravity","providerId":"antigravity","status":"idle","requests":[]}],"projects":[{"id":"p","title":"Panel","path":"/home/zach/panel","providerId":"antigravity"}],"models":[{"id":"antigravity:gemini-3.1-pro","name":"Gemini 3.1 Pro","provider":"Antigravity","providerId":"antigravity","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"antigravity","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}}"#
+        let shell = try JSONDecoder().decode(Shell.self, from: Data(text.utf8))
+        try shell.validate(hostID: "h")
+        XCTAssertEqual(shell.host.threads.map(\.providerId), ["antigravity"])
+        XCTAssertEqual(shell.host.projects.first?.providerId, "antigravity")
+        XCTAssertEqual(AgentNames.name(shell.host.threads.first?.providerId), "Antigravity")
+        let model = try XCTUnwrap(NewThreads.availableModels(shell.host).first)
+        XCTAssertEqual(model.label, "Antigravity · Gemini 3.1 Pro")
+        let command = try Commands.createProject(providerID: "antigravity", title: "Panel tools", path: "/home/zach/panel")
+        XCTAssertEqual(command["provider"], .string("antigravity"))
     }
     /// An older phone reads a provider ID as a plain string, so a provider it doesn't know reads "The agent" and breaks
     /// nothing: its threads, projects and models decode, and its models are never offered for a new thread.

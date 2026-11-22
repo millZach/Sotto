@@ -13,6 +13,7 @@ import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { UsageView } from './features/usage/UsageView'
+import { OwletsView } from './features/owlets/OwletsView'
 import { SetupWalk } from './features/setup/SetupWalk'
 import { UpdateControl } from './features/updates/UpdateControl'
 import { installConfirmation } from './features/updates/updateControlLogic'
@@ -156,6 +157,7 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
   const watcherEnabled = useWatcherEnabled()
   const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
+  const owletsEnabled = useOwlFeature('owlets')
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
   // Set when main refused the last choice, so the picker can say why nothing changed.
@@ -304,7 +306,7 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
     // Watcher's room is reachable only while its gate is on, and Dictate only while dictation is on (ADR-0107);
     // without them the navigation lands on Threads.
     const watcherPage = navigation === 'watcher' && watcherEnabled
-    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'home' && !dictationOn)
+    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'owlets' && !owletsEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'home' && !dictationOn)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
@@ -331,6 +333,9 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
         break
       case 'usage':
         view = usageEnabled ? <UsageView /> : threadWorkspace
+        break
+      case 'owlets':
+        view = owletsEnabled ? <OwletsView now={captureNow} /> : threadWorkspace
         break
       case 'settings':
         view = <SettingsView

@@ -531,37 +531,61 @@ private struct DraftVideoLine: View {
 struct AttachPhotosButton: View {
     @EnvironmentObject var model: AppModel
     let box: PhotoBox
+    let small: Bool
+    private enum Source { case library, camera, files }
+    @State private var showingSources = false
+    @State private var distanceToCardTop: CGFloat = 0
+    @State private var nextPicker: Source?
     @State private var choosing = false
     @State private var shooting = false
     @State private var choosingFiles = false
     @State private var picked: [PhotosPickerItem] = []
+    @ScaledMetric(relativeTo: .body) private var menuWidth: CGFloat = 208
+
     var body: some View {
         let reason = self.reason, fileReason = self.fileReason
-        // Videos go only where files can (a computer with `attach-any-file`); elsewhere the library offers photos, as before.
         let takesVideos = fileReason == nil
-        Menu {
-            Section {
-                Button { choosing = true } label: {
-                    if takesVideos { Label("Photos and videos", systemImage: "photo.on.rectangle") }
-                    else { Label("Photo library", systemImage: "photo.on.rectangle") }
-                }
-                    .disabled(reason != nil && fileReason != nil)
-                Button { openCamera() } label: { Label("Camera", systemImage: "camera") }
-                    .disabled(reason != nil || !CameraPicker.available)
-                if let reason { Text(reason) }
-            }
-            Section {
-                Button { choosingFiles = true } label: { Label("Files", systemImage: "folder") }
-                    .disabled(fileReason != nil)
-                if let fileReason { Text(fileReason) }
-            }
-        } label: {
-            // The first of the row's round buttons, inside the box; it takes a press across 44 points.
-            Image(systemName: "plus").fontWeight(.semibold)
-                .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
-                .composerDisc(Palette.fillSoft)
+        let ink = reason == nil || takesVideos ? Palette.ink : Palette.muted
+        let lift = small ? ComposerMetrics.rowInset : distanceToCardTop
+        let anchor = CGRect(x: 0, y: -lift, width: ComposerMetrics.button, height: 1)
+        Button { showingSources.toggle() } label: {
+            Image(systemName: showingSources ? "xmark" : "plus").fontWeight(.semibold)
+                .foregroundStyle(showingSources ? Palette.accentText : ink)
+                .composerDisc(showingSources ? Palette.accent.opacity(0.16) : Palette.fillSoft)
         }
-        .accessibilityLabel(takesVideos ? String(localized: "Attach photos, videos or files") : String(localized: "Attach photos or files"))
+        .buttonStyle(PressStyle())
+        // Measure the full reply box so drafts and attachments stay below the popover.
+        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(ComposerMetrics.space)).minY }) { distanceToCardTop = $0 }
+        .popover(isPresented: $showingSources, attachmentAnchor: .rect(.rect(anchor)), arrowEdge: .bottom) {
+            let rows = VStack(alignment: .leading, spacing: 0) {
+                sourceRow(takesVideos ? String(localized: "Photos and videos") : String(localized: "Photo library"),
+                          icon: "photo.on.rectangle", source: .library, enabled: reason == nil || takesVideos)
+                sourceRow(String(localized: "Camera"), icon: "camera", source: .camera, enabled: reason == nil && CameraPicker.available)
+                if let reason { sourceNote(reason) }
+                sourceRow(String(localized: "Files"), icon: "folder", source: .files, enabled: fileReason == nil)
+                if let fileReason, fileReason != reason { sourceNote(fileReason) }
+            }
+            .padding(Space.s1)
+            .frame(width: min(menuWidth, 280))
+            ViewThatFits(in: .vertical) {
+                rows.fixedSize(horizontal: false, vertical: true)
+                ScrollView { rows }
+            }
+            .presentationCompactAdaptation(.popover)
+            .presentationBackground(Palette.overlay)
+            .accessibilityAction(.escape) { showingSources = false }
+            .onDisappear {
+                // Let iOS dismiss this presentation before handing off to the system picker.
+                switch nextPicker {
+                case .library: choosing = true
+                case .camera: openCamera()
+                case .files: choosingFiles = true
+                case nil: break
+                }
+                nextPicker = nil
+            }
+        }
+        .accessibilityLabel(showingSources ? String(localized: "Close") : takesVideos ? String(localized: "Attach photos, videos or files") : String(localized: "Attach photos or files"))
         .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? (takesVideos
             ? String(localized: "Choose photos and videos from the library, take a photo with the camera, or choose files.")
             : String(localized: "Choose photos from the library, take one with the camera, or choose files.")))
@@ -598,6 +622,32 @@ struct AttachPhotosButton: View {
         }
         .sensoryFeedback(.selection, trigger: model.attachHaptics[box.id] ?? 0)
     }
+    private func sourceRow(_ title: String, icon: String, source: Source, enabled: Bool) -> some View {
+        Button {
+            nextPicker = source
+            showingSources = false
+        } label: {
+            HStack(spacing: Space.s3) {
+                Image(systemName: icon).frame(width: 21).foregroundStyle(enabled ? Palette.accentText : Palette.muted)
+                    .accessibilityHidden(true)
+                Text(verbatim: title).font(.sotto(.body)).foregroundStyle(enabled ? Palette.ink : Palette.muted)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, Space.s3).padding(.vertical, Space.s1)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!enabled)
+    }
+
+    private func sourceNote(_ reason: String) -> some View {
+        Text(verbatim: reason).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Space.s3).padding(.bottom, Space.s2)
+    }
+
     private var watcher: Bool { if case .watcher = box { return true }; return false }
     /// What the library shows: photos where the box takes photos, videos where it takes files, or both.
     private var libraryFilter: PHPickerFilter {

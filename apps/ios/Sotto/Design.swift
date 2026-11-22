@@ -1052,6 +1052,7 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
 /// The reply box's measures, shared by a thread's and Watcher's: a card with the words on top and a row of round buttons
 /// inside it under them, as in Claude's iPhone app (Zach, November 1, 2026).
 enum ComposerMetrics {
+    static let space = "composer-card"
     static let radius: CGFloat = 24
     /// From the card's leading edge to the words, and above them.
     static let wordsInset: CGFloat = 16

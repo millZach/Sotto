@@ -1606,7 +1606,7 @@ private struct WatcherDock: View {
         } words: {
             words(box: box, working: working, preparing: preparing, small: small)
         } plus: {
-            if listening { ListeningLine() } else { AttachPhotosButton(box: box) }
+            if listening { ListeningLine() } else { AttachPhotosButton(box: box, small: small) }
         } pill: {
             if !listening, model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil { WatcherSettingsPill(hostID: hostID, stopAll: stopAll) }
         } trailing: {

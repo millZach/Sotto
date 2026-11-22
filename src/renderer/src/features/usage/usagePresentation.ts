@@ -15,7 +15,7 @@ import {
 /* ---------- Names ---------- */
 
 export const USAGE_PROVIDERS: readonly UsageProviderId[] = usageProviderIdSchema.options
-export const PROVIDER_NAMES: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode' }
+export const PROVIDER_NAMES: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', antigravity: 'Antigravity' }
 export const PROVIDER_ORDER = Object.keys(PROVIDER_NAMES) as UsageProviderId[]
 /** What a provider's limits belong to, when its client does not name the plan. OpenCode has none to show. */
 export const PROVIDER_ACCOUNTS: Record<UsageLimitProviderId, MessageDescriptor> = {
@@ -24,7 +24,7 @@ export const PROVIDER_ACCOUNTS: Record<UsageLimitProviderId, MessageDescriptor> 
 /** The short name a sentence about the provider's own report uses. */
 const PROVIDER_SHORT: Record<UsageLimitProviderId, string> = { codex: 'Codex', claude: 'Claude', grok: 'Grok', devin: 'Devin', muse: 'Muse' }
 /** Providers whose own records Usage reads outside Sotto (ADR-0083). The others are counted in Sotto only. */
-export const READ_OUTSIDE_SOTTO: ReadonlySet<UsageProviderId> = new Set(['codex', 'claude'])
+export const READ_OUTSIDE_SOTTO: ReadonlySet<UsageProviderId> = new Set(['codex', 'claude', 'antigravity'])
 /** Devin reports no token counts at all; its prompts still count. */
 export const NO_TOKENS: ReadonlySet<UsageProviderId> = new Set(['devin'])
 
@@ -40,11 +40,12 @@ export function clientName(client: UsageClient): string {
     case 't3-code': return 'T3 Code'
     case 'codex-in-claude-code': return t`Codex plugin in Claude Code`
     case 'other': return t`Other apps`
+    case 'antigravity': return 'Antigravity'
   }
 }
 /** The provider whose client each app outside Sotto drives, as its own records name it. */
 export const CLIENT_PROVIDER: Partial<Record<UsageClient, UsageProviderId>> = {
-  'claude-code': 'claude', 'codex-app': 'codex', 'codex-cli': 'codex', 'codex-exec': 'codex', 'codex-ide': 'codex', 't3-code': 'codex', 'codex-in-claude-code': 'codex',
+  'claude-code': 'claude', 'codex-app': 'codex', 'codex-cli': 'codex', 'codex-exec': 'codex', 'codex-ide': 'codex', 't3-code': 'codex', 'codex-in-claude-code': 'codex', antigravity: 'antigravity',
 }
 
 

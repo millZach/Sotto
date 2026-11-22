@@ -8,7 +8,7 @@ import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/thread
 import { cloneSnapshotSharingActivities, immutableActivities, immutableModels, isImmutableActivity } from '../../../src/main/agents/activitySnapshots'
 import { cloneHostSnapshot } from '../../../src/main/agents/cloneHostSnapshot'
 
-import { EMPTY_AGENT_HOST, agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, selectInstalledProviders, type AgentConfiguration, type ProviderId, } from '../../../src/shared/agents'
+import { EMPTY_AGENT_HOST, agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, selectInstalledProviders, type AgentConfiguration, type ActiveProviderId, type ProviderId } from '../../../src/shared/agents'
 import { MemoryStore } from '../../../src/main/memory/store'
 import { MemoryProfile } from '../../../src/main/memory/profile'
 import { PolicyStore } from '../../../src/main/memory/policies'
@@ -46,7 +46,7 @@ async function fixture() {
   let configuration: AgentConfiguration = { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'] }
   const host = new ConfiguredProviderHost({
     directory: root,
-    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), pi: new FakeProviderHost(), hermes: new FakeProviderHost() },
+    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), antigravity: new FakeProviderHost(), hermes: new FakeProviderHost() },
     provider: () => configuration.provider, enabledProviders: () => enabledThreadProviders(configuration), threadProvider: id => registry.byThread(id)?.provider,
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -68,7 +68,7 @@ describe('independent thread providers', () => {
   it('ignores snapshot and event callbacks retained from an earlier provider connection', async () => {
     const codex = new RetainedCallbacksProvider()
     const host = new ConfiguredProviderHost({
-      hosts: { codex, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), pi: new FakeProviderHost(), hermes: new FakeProviderHost() },
+      hosts: { codex, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), antigravity: new FakeProviderHost(), hermes: new FakeProviderHost() },
       provider: () => 'codex', enabledProviders: () => ['codex'],
     })
     const events: ThreadHostEvent[] = []
@@ -166,8 +166,8 @@ describe('independent thread providers', () => {
     const connections = {
       codex: 'connected', claude: 'connected', grok: 'connected',
       devin: 'disconnected', muse: 'disconnected', opencode: 'disconnected', cursor: 'disconnected',
-      deepseek: 'disconnected', hermes: 'disconnected', pi: 'disconnected',
-    } satisfies Record<ProviderId, 'connected' | 'disconnected'>
+      deepseek: 'disconnected', hermes: 'disconnected', antigravity: 'disconnected',
+    } satisfies Record<ActiveProviderId, 'connected' | 'disconnected'>
     expect(snapshot.providers?.map(provider => [provider.id, provider.connection])).toEqual(Object.entries(connections))
     expect(new Set(snapshot.models.map(model => model.id)).size).toBe(3)
     expect(new Set(snapshot.projects.map(project => project.id)).size).toBe(3)
@@ -340,7 +340,7 @@ await pending2.promise; return connect() })
     const registry = new ThreadRegistry(f.root)
     const host = new ConfiguredProviderHost({ directory: f.root, provider: () => 'codex', enabledProviders: () => ['codex', 'claude'],
       threadProvider: id => registry.byThread(id)?.provider,
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok, devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), pi: new FakeProviderHost(), hermes: new FakeProviderHost() } })
+      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok, devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), antigravity: new FakeProviderHost(), hermes: new FakeProviderHost() } })
     cleanup.push(async () => { host.disconnect(); await registry.flush() })
     await host.connect()
     await expect(host.execute({ ...create, commandId: 'retry' })).rejects.toThrow('earlier project registration')
@@ -366,7 +366,7 @@ await pending2.promise; return connect() })
     f.host.disconnect()
     const registry = new ThreadRegistry(f.root)
     const host = new ConfiguredProviderHost({ directory: f.root, provider: () => 'grok', enabledProviders: () => ['codex', 'claude', 'grok'],
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: new SottoThreadHost('grok', f.adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), pi: new FakeProviderHost(), hermes: new FakeProviderHost() } })
+      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: new SottoThreadHost('grok', f.adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost(), antigravity: new FakeProviderHost(), hermes: new FakeProviderHost() } })
     cleanup.push(async () => { host.disconnect(); await registry.flush() })
     const restarted = await host.connect()
     for (const project of restarted.projects) {

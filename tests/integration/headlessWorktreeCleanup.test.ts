@@ -9,10 +9,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { AgentControl } from '../../src/main/agents/control'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
+import { WorktreeCleanup } from '../../src/main/agents/worktreeCleanup'
 import { ThreadWorktrees, runWorktreeGit as git } from '../../src/main/agents/threadWorktrees'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { SettingsRepository } from '../../src/main/storage/settingsRepository'
-import { defaultAgentConfiguration, type AgentCommand } from '../../src/shared/agents'
+import { defaultAgentConfiguration, RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentCommand } from '../../src/shared/agents'
 import { providerIdSchema } from '../../src/shared/providerIds'
 import { DEFAULT_WORKTREE_CLEANUP } from '../../src/shared/settings'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
@@ -32,14 +33,14 @@ afterEach(async () => {
 const exists = (path: string): Promise<boolean> => stat(path).then(() => true, () => false)
 
 /** A headless host whose own settings turn the on-settle rule on, with a committed project to make worktrees from. */
-async function host() {
+async function host(onSettle = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-cleanup-')); roots.push(root)
   const data = join(root, 'data'), project = join(root, 'project')
   await mkdir(data); await mkdir(project)
   await writeFile(join(project, 'tracked.txt'), 'baseline')
   await initializeGitRepository(project, { files: {}, message: "Baseline", identity: { name: "Fixture", email: "fixture@example.invalid" } })
   // The host reads its rules from its own data folder at start, as the desktop reads them from its settings.
-  await new SettingsRepository(join(data, 'settings.json')).update({ worktreeCleanup: { ...DEFAULT_WORKTREE_CLEANUP, onSettle: true } })
+  await new SettingsRepository(join(data, 'settings.json')).update({ worktreeCleanup: { ...DEFAULT_WORKTREE_CLEANUP, onSettle } })
   // A host connects every provider not turned off when it starts (ADR-0036). The scripted ones here hold stand-in
   // sessions in a folder that does not exist, which would make sole ownership unprovable, so only Codex is left on.
   // Every other provider is named from the list itself: Hermes, sent to stable after this list last named its providers,
@@ -88,6 +89,43 @@ describe('worktree cleanup on the headless host', () => {
     expect(f.events).toContain('worktree-cleanup-reclaimed')
     // Stable event names only; a path or a branch never reaches the log.
     expect(f.events.join('\n')).not.toContain(branch!)
+  })
+
+  it('keeps a settled folder when the host has its rule turned off', async () => {
+    const f = await host(false)
+    const threadId = await f.worktreeThread()
+    await f.command({ type: 'settle-thread', threadId })
+    const result = await f.command({ type: 'reclaim-thread-worktree', threadId, afterSettle: true })
+    expect(result.host.threads.find(thread => thread.id === threadId)?.worktree?.reclaimedAt).toBeUndefined()
+    expect(await exists(f.thread(threadId).worktree!.path!)).toBe(true)
+  })
+
+  it('takes a merged detached folder on Settle and keeps local edits and commits until they are safe', async () => {
+    // The desktop's immediate request must work even when the background sweep has not reached this thread.
+    vi.spyOn(WorktreeCleanup.prototype, 'request').mockResolvedValue()
+    const f = await host()
+    const threadId = await f.worktreeThread()
+    const path = f.thread(threadId).worktree!.path!
+    const cleanup = { type: 'reclaim-thread-worktree', threadId, afterSettle: true } as const
+    await git(path, ['checkout', '--detach'])
+    await f.command(cleanup)
+    expect(await exists(path)).toBe(true)
+    await f.command({ type: 'settle-thread', threadId })
+    await writeFile(join(path, 'tracked.txt'), 'local work')
+    const client = desktopWindowClient('host-cleanup')
+    const dirty = await f.host.service.command({ ...cleanup, withUncommittedChanges: true }, client)
+    expect(dirty.error).toBe(RECLAIM_WORKTREE_NEEDS_CONFIRMATION)
+    expect(await exists(path)).toBe(true)
+    await git(path, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-am', 'Local work'])
+    const head = (await git(path, ['rev-parse', 'HEAD'])).trim()
+    const unmerged = await f.host.service.command(cleanup, client)
+    expect(unmerged.error).toContain('would lose that commit')
+    expect(await exists(path)).toBe(true)
+    await git(f.project, ['merge', '--ff-only', head])
+    const removed = await f.command(cleanup)
+    expect(removed.host.threads.find(thread => thread.id === threadId)?.worktree).toMatchObject({ detachedCommit: head, reclaimedAt: expect.any(String) })
+    expect(await exists(path)).toBe(false)
+    await f.command(cleanup)
   })
 
   it('drains a sweep on shutdown: the worktree in hand finishes and is saved, and no other is started', async () => {

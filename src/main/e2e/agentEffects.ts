@@ -47,6 +47,8 @@ export class E2EAgentHost implements AgentHost {
         ...(scenario === 'composer-speed' ? { speeds: [{ id: 'fast', name: 'Fast', description: 'Faster output at a higher price.' }] } : {}) }))
       for (const thread of this.state.threads) thread.providerId = 'claude'
     }
+    if (scenario === 'composer-speed') this.state.models.push({ ...this.state.models[0]!, id: 'codex:astra', providerId: 'codex',
+      provider: 'Codex', name: 'GPT-6.2-Astra', speeds: [{ id: 'fast', name: 'Fast' }, { id: 'ultrafast', name: 'Ultra fast' }] })
     if (scenario === 'grok-fixed-effort') {
       this.state.capabilities.configureThreadModel = false
       this.state.models = this.state.models.map(model => ({ ...model, providerId: 'grok', provider: 'Grok Build', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'], defaultReasoningEffort: 'high' }))
@@ -155,8 +157,9 @@ export class E2EAgentHost implements AgentHost {
     if (command.type === 'create-project') this.state.projects.push({ id: command.projectId, title: command.title, path: command.path })
     else if (command.type === 'create-thread') {
       const providerId = resolveModel(this.state.models, command.modelId)?.providerId
+      const speed = command.speed !== undefined ? command.speed : command.fastMode ? 'fast' : null
       this.state.threads.push({ id: command.threadId, title: command.title, projectId: command.projectId, modelId: command.modelId,
-        ...(providerId ? { providerId } : {}),
+        ...(providerId ? { providerId } : {}), ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         runtimeMode: command.runtimeMode ?? 'approval-required', reasoningEffort: command.reasoningEffort ?? 'low', status: 'idle', messages: [], requests: [] })
     }
     else {
@@ -167,6 +170,7 @@ export class E2EAgentHost implements AgentHost {
         if (command.reasoningEffort !== undefined) thread.reasoningEffort = command.reasoningEffort
         if (command.runtimeMode !== undefined) thread.runtimeMode = command.runtimeMode
         if (command.providerMode !== undefined) thread.providerMode = command.providerMode
+        if (command.speed !== undefined) { if (command.speed === null) delete thread.speed; else thread.speed = command.speed }
       } else if (command.type === 'send' || command.type === 'steer') {
         if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (thread.messages.findLast(m => m.role === 'user')?.id ?? null)) return { accepted: false }
         thread.settledAt = null; thread.settledOverride = null; thread.updatedAt = new Date().toISOString()

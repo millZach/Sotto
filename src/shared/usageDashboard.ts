@@ -15,7 +15,7 @@ export const USAGE_QUOTA_WINDOWS_MAX = 8
 export const USAGE_CLIENT_ROWS_MAX = 64
 export const USAGE_HISTORY_BATCH_MAX = 2_048
 
-const providers = ['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'] as const satisfies readonly ProviderId[]
+const providers = ['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'antigravity'] as const satisfies readonly ProviderId[]
 export const usageProviderIdSchema = z.enum(providers)
 export type UsageProviderId = z.infer<typeof usageProviderIdSchema>
 /** Numeric collection is verified only for these providers. */
@@ -24,7 +24,9 @@ export function isUsageProviderId(value: unknown): value is UsageProviderId {
 }
 /**
  * The providers Usage asks for account limits. OpenCode reports none through anything Sotto may use (ADR-0087), so it is
- * left off Subscriptions entirely: no reading, no gauge and no line saying it cannot be read.
+ * left off Subscriptions entirely: no reading, no gauge and no line saying it cannot be read. So is Antigravity: its
+ * limits come only from Google's Antigravity servers with `agy`'s own sign-in token, which Google's terms forbid
+ * (ADR-0212, November 21, 2026).
  */
 export const USAGE_LIMIT_PROVIDERS = ['codex', 'claude', 'grok', 'devin', 'muse'] as const satisfies readonly UsageProviderId[]
 export type UsageLimitProviderId = typeof USAGE_LIMIT_PROVIDERS[number]
@@ -43,6 +45,17 @@ export function usageProvidersBeforeMuse(providerIds: readonly UsageProviderId[]
   return providerIds === undefined ? [...USAGE_PROVIDERS_BEFORE_MUSE] : providerIds.filter(knownBeforeMuse)
 }
 
+/**
+ * The providers Usage knew before Antigravity was counted (November 20, 2026). A peer without the `usage-antigravity`
+ * host feature is never sent a query naming Antigravity, and never sent a row, quota or client naming it.
+ */
+export const USAGE_PROVIDERS_BEFORE_ANTIGRAVITY = ['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'] as const satisfies readonly UsageProviderId[]
+const knownBeforeAntigravity = (id: UsageProviderId): boolean => (USAGE_PROVIDERS_BEFORE_ANTIGRAVITY as readonly UsageProviderId[]).includes(id)
+/** A provider filter a peer from before Antigravity can read, as `usageProvidersBeforeMuse` is for an earlier one. */
+export function usageProvidersBeforeAntigravity(providerIds: readonly UsageProviderId[] | undefined): UsageProviderId[] {
+  return providerIds === undefined ? [...USAGE_PROVIDERS_BEFORE_ANTIGRAVITY] : providerIds.filter(knownBeforeAntigravity)
+}
+
 /** Where the work ran: a Sotto thread, or the same provider client used outside Sotto on this computer. */
 export const USAGE_SOURCES = ['sotto', 'outside'] as const
 export const usageSourceSchema = z.enum(USAGE_SOURCES)
@@ -51,7 +64,7 @@ export type UsageSource = z.infer<typeof usageSourceSchema>
  * The app that sent the work, read from the provider's own local records (Codex's session originator,
  * Claude Code's session ownership). Sotto never guesses one from content.
  */
-export const USAGE_CLIENTS = ['sotto', 'claude-code', 'codex-app', 'codex-cli', 'codex-exec', 'codex-ide', 't3-code', 'codex-in-claude-code', 'other'] as const
+export const USAGE_CLIENTS = ['sotto', 'claude-code', 'codex-app', 'codex-cli', 'codex-exec', 'codex-ide', 't3-code', 'codex-in-claude-code', 'other', 'antigravity'] as const
 export const usageClientSchema = z.enum(USAGE_CLIENTS)
 export type UsageClient = z.infer<typeof usageClientSchema>
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
@@ -250,9 +263,15 @@ export const usageRefreshQuerySchema = z.object({
   background: z.literal(true).optional(),
 }).strict()
 export type UsageRefreshQuery = z.infer<typeof usageRefreshQuerySchema>
+/**
+ * A host from before November 21, 2026 still reads Antigravity's limits and sends them; Usage no longer shows them, so they
+ * are dropped here rather than refusing the host's whole read.
+ */
+const withoutAntigravityLimits = (value: unknown): unknown =>
+  Array.isArray(value) ? value.filter(quota => (quota as { providerId?: unknown } | null)?.providerId !== 'antigravity') : value
 export const usageLocalHostReadSchema = z.object({
   status: z.enum(['ready', 'error']), activity: usageLocalReadSchema.optional(),
-  quotas: z.array(usageQuotaReadSchema).max(USAGE_LIMIT_PROVIDERS.length), persistence: z.enum(['saved', 'failed']).optional(),
+  quotas: z.preprocess(withoutAntigravityLimits, z.array(usageQuotaReadSchema).max(USAGE_LIMIT_PROVIDERS.length)), persistence: z.enum(['saved', 'failed']).optional(),
 }).strict()
 export type UsageLocalHostRead = z.infer<typeof usageLocalHostReadSchema>
 /**
@@ -280,6 +299,22 @@ export function usageReadBeforeMuse(read: UsageLocalHostRead): UsageLocalHostRea
   if (read.activity.clients !== undefined) activity.clients = read.activity.clients
     .flatMap(row => row.providerIds === undefined ? [row] : row.providerIds.some(knownBeforeMuse) || row.providerIds.length === 0
       ? [{ ...row, providerIds: row.providerIds.filter(knownBeforeMuse) }] : [])
+  return { ...read, quotas, activity }
+}
+/**
+ * A read for a peer from before Antigravity was counted: no provider, model, quota or client row names Antigravity, and
+ * no client row is Antigravity's own app, since that peer's strict schemas refuse a read naming either.
+ */
+export function usageReadBeforeAntigravity(read: UsageLocalHostRead): UsageLocalHostRead {
+  const quotas = read.quotas.filter(quota => knownBeforeAntigravity(quota.providerId))
+  if (read.activity === undefined) return { ...read, quotas }
+  const activity = { ...read.activity,
+    providers: read.activity.providers.filter(row => knownBeforeAntigravity(row.providerId)),
+    models: read.activity.models.filter(row => knownBeforeAntigravity(row.providerId)) }
+  if (read.activity.clients !== undefined) activity.clients = read.activity.clients
+    .filter(row => row.clientId !== 'antigravity')
+    .flatMap(row => row.providerIds === undefined ? [row] : row.providerIds.some(knownBeforeAntigravity) || row.providerIds.length === 0
+      ? [{ ...row, providerIds: row.providerIds.filter(knownBeforeAntigravity) }] : [])
   return { ...read, quotas, activity }
 }
 export const usageHostReadSchema = usageLocalHostReadSchema.extend({

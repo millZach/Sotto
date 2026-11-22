@@ -10,7 +10,7 @@ import { PASTED_CODE_MAX, PROVIDER_SIGN_IN_SHAPES, type ProviderSignInView } fro
 export const LOCAL_PROVIDER_SIGN_IN = 'sotto:providers:sign-in'
 
 /** The providers whose own sign-in prints a page and a code Sotto can show: Codex, Claude Code and Grok Build. Cursor signs in from its own row (ADR-0128). */
-export const LOCAL_SIGN_IN_PROVIDERS = ['codex', 'claude', 'grok', 'hermes'] as const
+export const LOCAL_SIGN_IN_PROVIDERS = ['codex', 'claude', 'grok', 'hermes', 'antigravity'] as const
 export const localSignInProviderSchema = z.enum(LOCAL_SIGN_IN_PROVIDERS)
 export type LocalSignInProvider = z.infer<typeof localSignInProviderSchema>
 

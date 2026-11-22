@@ -1,4 +1,4 @@
-# Sotto Rust dependency and license policy (ADR-0212, extending ADR-0018).
+# Sotto Rust dependency and license policy (ADR-0214, extending ADR-0018).
 # Checked in CI via `cargo deny check licenses bans sources`.
 
 [graph]

@@ -122,6 +122,7 @@ describe('main-window theme tokens', () => {
     }
     expect(contrast(color('provider-ink'), color('provider-cursor-badge')), 'cursor badge').toBeGreaterThanOrEqual(4.5)
     expect(contrast(color('provider-ink'), color('provider-deepseek-badge')), 'deepseek badge').toBeGreaterThanOrEqual(4.5)
+    expect(contrast(color('provider-ink'), color('provider-antigravity-badge')), 'antigravity badge').toBeGreaterThanOrEqual(4.5)
   })
 
   it.each(combinations)('%s mode of %s draws Cursor’s mark at 3:1 wherever it sits', (mode, id) => {
@@ -129,6 +130,7 @@ describe('main-window theme tokens', () => {
     // Cursor's token is drawn straight in both modes, as OpenCode's is: the model menu's rail and chip, the sidebar and a host tile.
     for (const surface of ['canvas', 'surface', 'surface-elevated', 'sidebar', 'card', 'card-selected', 'selected'] as const) {
       expect(contrast(color('provider-cursor'), color(surface)), `Cursor's mark on ${surface}`).toBeGreaterThanOrEqual(3)
+      expect(contrast(color('provider-antigravity'), color(surface)), `Antigravity's mark on ${surface}`).toBeGreaterThanOrEqual(3)
     }
   })
 
@@ -255,7 +257,7 @@ describe('main-window theme tokens', () => {
     expect(css).not.toMatch(/data-accent/u)
     // The token block is also declared on a theme scope (the Appearance preview), which re-derives it from its own roles.
     const derived = tokenBlocks.find(block => block.selectors[0] === ':root' && block.selectors.every(selector => selector === ':root' || selector === '[data-theme-scope]') && block.declarations.has('--tt-canvas'))!
-    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-cursor', '--tt-provider-muse', '--tt-provider-opencode-badge', '--tt-provider-cursor-badge', '--tt-provider-deepseek-badge', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
+    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-cursor', '--tt-provider-muse', '--tt-provider-opencode-badge', '--tt-provider-cursor-badge', '--tt-provider-deepseek-badge', '--tt-provider-antigravity', '--tt-provider-antigravity-badge', '--tt-provider-ink', ...CHART_SERIES.map(name => `--tt-${name}`), '--tt-chart-other', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
       if (constants.has(name) || !/^(#|rgb\(|oklch\((?!from (var|color-mix)\())/u.test(value)) continue
@@ -273,6 +275,7 @@ describe('main-window theme tokens', () => {
     const owned = [
       'src/renderer/src/styles/seeThrough.css',
       'src/renderer/src/features/settings/dynamicThreads.css',
+      'src/renderer/src/features/owlets/owlets.css',
       'src/renderer/src/features/productEvents/productEvents.css',
       'src/renderer/src/features/omarchy/omarchySetup.css',
       'src/renderer/src/features/setup/setupWalk.css',
@@ -313,6 +316,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/styles/glass.css',
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
+      'src/renderer/src/agents/combinedPicker.css',
       'src/renderer/src/agents/effortPicker.css',
       'src/renderer/src/agents/effortTrace.css',
       'src/renderer/src/agents/quietComposer.css',

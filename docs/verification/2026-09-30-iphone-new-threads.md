@@ -57,3 +57,9 @@ Reviewed independently by gpt-6.1-sol at high reasoning against the plan and Zac
 Original review: Standards 2 findings (1 fixed, 1 dismissed with source evidence); Spec 2 findings (both fixed). No unresolved review finding remains. The native checks above are separate evidence.
 
 The new surfaces use the existing native theme roles. Measured contrast from the asset catalog (light/dark): Ink on Canvas 15.66/19.51, Muted on Canvas 5.64/8.21, Muted on Surface 5.84/7.98, Accent on Canvas 4.70/8.44, Warning on Canvas 4.92/11.83, and ActionInk on Action 4.87/8.02. Folder-field placeholders now use Muted explicitly, as the existing Threads search does.
+
+## Choosing a starting speed on November 21, 2026
+
+On an iPhone 18 Pro Max simulator running iOS 27.2, New thread showed Speed between Effort and Permissions. The menu opened with Standard checked and showed the fixture model’s descriptions for Fast and Ultra fast. After choosing Ultra fast and opening the thread, the thread settings pill also reported Ultra fast. The journey used the in-memory host fixture. [Speed menu](../../artifacts/iphone-new-threads/speed-menu.png) · [Selected speed](../../artifacts/iphone-new-threads/speed-selected.png)
+
+The command check confirmed that choosing Standard sends an explicit null, leaving speed unspecified omits the field, and a model offering only Fast rejects Ultra fast.

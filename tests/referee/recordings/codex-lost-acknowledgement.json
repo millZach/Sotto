@@ -18,17 +18,18 @@
        "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
        "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
        "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
-       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
-       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
-       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
-       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
-       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
-       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
-       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
-       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
-       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
-       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
-       "thread-words"
+       "agents-view", "provider-cursor", "watcher-cursor", "watcher-antigravity", "usage-background-refresh", "client-update-not-listed",
+       "thread-prompts", "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views",
+       "branch-moves", "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views",
+       "project-setup", "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation",
+       "watcher-new-owner", "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep",
+       "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists",
+       "settled-threads-on-request", "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window",
+       "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-hermes",
+       "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
+       "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
+       "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
+       "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -64,17 +65,18 @@
        "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
        "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
        "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
-       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
-       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
-       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
-       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
-       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
-       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
-       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
-       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
-       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
-       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
-       "thread-words"
+       "agents-view", "provider-cursor", "watcher-cursor", "watcher-antigravity", "usage-background-refresh", "client-update-not-listed",
+       "thread-prompts", "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views",
+       "branch-moves", "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views",
+       "project-setup", "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation",
+       "watcher-new-owner", "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep",
+       "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists",
+       "settled-threads-on-request", "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window",
+       "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-hermes",
+       "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
+       "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
+       "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
+       "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -110,17 +112,18 @@
        "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
        "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
        "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
-       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
-       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
-       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
-       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
-       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
-       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
-       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
-       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
-       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
-       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
-       "thread-words"
+       "agents-view", "provider-cursor", "watcher-cursor", "watcher-antigravity", "usage-background-refresh", "client-update-not-listed",
+       "thread-prompts", "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views",
+       "branch-moves", "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views",
+       "project-setup", "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation",
+       "watcher-new-owner", "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep",
+       "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists",
+       "settled-threads-on-request", "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window",
+       "thread-snooze", "watcher-ready", "browser", "provider-deepseek", "video-staging", "provider-hermes",
+       "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
+       "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
+       "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
+       "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -149,10 +152,10 @@
    "by": "desktop",
    "sent": {
     "accepts": [
-     "client-liveness", "detail-delta", "message-aliases", "client-updates", "client-update-not-listed", "answer-receipts", "usage-history",
-     "usage-muse-opencode", "model-catalog-revision", "host-update", "activity-bodies", "changed-thread-records", "kept-parts",
-     "plugin-meshy-spending", "plugin-elevenlabs-spending", "provider-opencode", "provider-cursor", "provider-deepseek", "provider-pi",
-     "provider-hermes"
+     "client-liveness", "detail-delta", "detail-read-held", "message-aliases", "client-updates", "client-update-not-listed",
+     "answer-receipts", "usage-history", "usage-muse-opencode", "model-catalog-revision", "host-update", "activity-bodies",
+     "changed-thread-records", "kept-parts", "plugin-meshy-spending", "plugin-elevenlabs-spending", "provider-opencode", "provider-cursor",
+     "provider-deepseek", "provider-hermes"
     ],
     "afterSeq": 9007199254740991,
     "id": "desktop-1",
@@ -180,8 +183,9 @@
          "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
          "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
-         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
-         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-hermes",
+         "provider-antigravity", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "usage-antigravity",
+         "detail-read-held", "owlets", "settle-worktree-cleanup"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -195,6 +199,10 @@
          "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
          "composing": false,
          "configuration": {
+          "antigravityBinaryPath": "",
+          "antigravityLocation": "",
+          "antigravityProject": "",
+          "antigravitySignInMethod": "oauth-personal",
           "checkClientUpdates": true,
           "claudeUltracodeEffort": "xhigh",
           "defaultModelId": "",
@@ -219,7 +227,7 @@
           "wakeRuntimeDirectory": ""
          },
          "connection": "connected",
-         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "credentials": {"antigravity":false,"grokSpeech":false,"reasoning":false,"secure":false},
          "deliveredDrafts": [],
          "deliveries": [],
          "draft": "",
@@ -446,6 +454,10 @@
         "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
         "composing": false,
         "configuration": {
+         "antigravityBinaryPath": "",
+         "antigravityLocation": "",
+         "antigravityProject": "",
+         "antigravitySignInMethod": "oauth-personal",
          "checkClientUpdates": true,
          "claudeUltracodeEffort": "xhigh",
          "defaultModelId": "",
@@ -470,7 +482,7 @@
          "wakeRuntimeDirectory": ""
         },
         "connection": "connected",
-        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "credentials": {"antigravity":false,"grokSpeech":false,"reasoning":false,"secure":false},
         "deliveredDrafts": [],
         "deliveries": [],
         "draft": "",
@@ -695,7 +707,7 @@
     "accepts": [
      "detail-delta", "client-liveness", "activity-summaries", "model-catalog-revision", "provider-opencode", "provider-cursor",
      "provider-deepseek", "changed-thread-records", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
-     "usable-models", "command-changed-thread-records", "step-window", "thread-media-edge", "kept-parts", "plugin-meshy-phone"
+     "usable-models", "command-changed-thread-records", "step-window", "thread-media-edge", "kept-parts", "plugin-meshy-phone", "owlets"
     ],
     "afterSeq": 9007199254740991,
     "id": "iphone-1",
@@ -724,8 +736,9 @@
          "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
          "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
-         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
-         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-hermes",
+         "provider-antigravity", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "usage-antigravity",
+         "detail-read-held", "owlets", "settle-worktree-cleanup"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -739,6 +752,10 @@
          "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
          "composing": false,
          "configuration": {
+          "antigravityBinaryPath": "",
+          "antigravityLocation": "",
+          "antigravityProject": "",
+          "antigravitySignInMethod": "oauth-personal",
           "checkClientUpdates": true,
           "claudeUltracodeEffort": "xhigh",
           "defaultModelId": "",
@@ -763,7 +780,7 @@
           "wakeRuntimeDirectory": ""
          },
          "connection": "connected",
-         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "credentials": {"antigravity":false,"grokSpeech":false,"reasoning":false,"secure":false},
          "deliveredDrafts": [],
          "deliveries": [],
          "draft": "",
@@ -974,6 +991,10 @@
         "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
         "composing": false,
         "configuration": {
+         "antigravityBinaryPath": "",
+         "antigravityLocation": "",
+         "antigravityProject": "",
+         "antigravitySignInMethod": "oauth-personal",
          "checkClientUpdates": true,
          "claudeUltracodeEffort": "xhigh",
          "defaultModelId": "",
@@ -998,7 +1019,7 @@
          "wakeRuntimeDirectory": ""
         },
         "connection": "connected",
-        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "credentials": {"antigravity":false,"grokSpeech":false,"reasoning":false,"secure":false},
         "deliveredDrafts": [],
         "deliveries": [],
         "draft": "",
@@ -1224,8 +1245,9 @@
          "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
          "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
-         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
-         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-hermes",
+         "provider-antigravity", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "usage-antigravity",
+         "detail-read-held", "owlets", "settle-worktree-cleanup"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -1239,6 +1261,10 @@
          "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
          "composing": false,
          "configuration": {
+          "antigravityBinaryPath": "",
+          "antigravityLocation": "",
+          "antigravityProject": "",
+          "antigravitySignInMethod": "oauth-personal",
           "checkClientUpdates": true,
           "claudeUltracodeEffort": "xhigh",
           "defaultModelId": "",
@@ -1263,7 +1289,7 @@
           "wakeRuntimeDirectory": ""
          },
          "connection": "connected",
-         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "credentials": {"antigravity":false,"grokSpeech":false,"reasoning":false,"secure":false},
          "deliveredDrafts": [],
          "deliveries": [],
          "draft": "",
@@ -1471,6 +1497,10 @@
         "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
         "composing": false,
         "configuration": {
+         "antigravityBinaryPath": "",
+         "antigravityLocation": "",
+         "antigravityProject": "",
+         "antigravitySignInMethod": "oauth-personal",
          "checkClientUpdates": true,
          "claudeUltracodeEffort": "xhigh",
          "defaultModelId": "",
@@ -1495,7 +1525,7 @@
          "wakeRuntimeDirectory": ""
         },
         "connection": "connected",
-        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "credentials": {"antigravity":false,"grokSpeech":false,"reasoning":false,"secure":false},
         "deliveredDrafts": [],
         "deliveries": [],
         "draft": "",
@@ -2202,6 +2232,22 @@
      ],
      "held": [
       {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "afterMessageId": "<id:9>",
+         "id": "codex-activity-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "timingSource": "provider",
+         "title": "Working",
+         "turnId": "<id:11>"
+        }
+       ]
+      },
+      {
        "path": ["details","<id:6>","messages",0],
        "value": {"commandId":"<id:7>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
       },
@@ -2224,11 +2270,15 @@
        "path": ["shell","error"],
        "value": "The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it."
       },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
       {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
       {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":true},
       {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
       {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
       {"path":["shell","host","threads",0,"runtimeMode"],"value":"auto-accept-edits"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
       {
        "path": ["shell","host","threads",0,"subagentSummary"],
        "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
@@ -2236,6 +2286,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {
        "path": ["shell","notice"],
        "value": "The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it."
@@ -2246,6 +2297,20 @@
      "frames": [],
      "held": [
       {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "id": "codex-activity-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "title": "Working",
+         "turnId": "<id:11>"
+        }
+       ]
+      },
+      {
        "path": ["details","<id:6>","messages",0],
        "value": {"commandId":"<id:7>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
       },
@@ -2268,11 +2333,15 @@
        "path": ["shell","error"],
        "value": "The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it."
       },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
       {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
       {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":true},
       {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
       {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
       {"path":["shell","host","threads",0,"runtimeMode"],"value":"auto-accept-edits"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
       {
        "path": ["shell","host","threads",0,"subagentSummary"],
        "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
@@ -2280,6 +2349,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {
        "path": ["shell","notice"],
        "value": "The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it."
@@ -2290,6 +2360,22 @@
      "frames": [],
      "held": [
       {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "afterMessageId": "<id:9>",
+         "id": "codex-activity-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "timingSource": "provider",
+         "title": "Working",
+         "turnId": "<id:11>"
+        }
+       ]
+      },
+      {
        "path": ["details","<id:6>","messages",0],
        "value": {"commandId":"<id:7>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
       },
@@ -2312,11 +2398,15 @@
        "path": ["shell","error"],
        "value": "The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it."
       },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
       {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
       {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":true},
       {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
       {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
       {"path":["shell","host","threads",0,"runtimeMode"],"value":"auto-accept-edits"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
       {
        "path": ["shell","host","threads",0,"subagentSummary"],
        "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
@@ -2324,6 +2414,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {
        "path": ["shell","notice"],
        "value": "The provider did not confirm the result. Sotto will reconcile the existing action when reconnected; it will not resend it."
@@ -2346,27 +2437,13 @@
     "desktop": {
      "frames": [],
      "held": [
-      {
-       "path": ["details","<id:6>","activities"],
-       "value": [
-        {
-         "afterMessageId": "<id:9>",
-         "completedAt": "<time>",
-         "id": "codex-activity-<id:10>",
-         "kind": "turn",
-         "sequence": 0,
-         "startedAt": "<time>",
-         "status": "completed",
-         "timingSource": "provider",
-         "title": "Turn completed",
-         "turnId": "<id:11>"
-        }
-       ]
-      },
+      {"path":["details","<id:6>","activities",0,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
       {"path":["details","<id:6>","messages",1],"value":{"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"}},
-      {"path":["shell","host","threads",0,"activities"],"value":[]},
-      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"completed"}},
-      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
@@ -2378,24 +2455,12 @@
     "iphone": {
      "frames": [],
      "held": [
-      {
-       "path": ["details","<id:6>","activities"],
-       "value": [
-        {
-         "id": "codex-activity-<id:10>",
-         "kind": "turn",
-         "sequence": 0,
-         "startedAt": "<time>",
-         "status": "completed",
-         "title": "Turn completed",
-         "turnId": "<id:11>"
-        }
-       ]
-      },
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
       {"path":["details","<id:6>","messages",1],"value":{"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"}},
-      {"path":["shell","host","threads",0,"activities"],"value":[]},
-      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"completed"}},
-      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
@@ -2407,27 +2472,13 @@
     "plain": {
      "frames": [],
      "held": [
-      {
-       "path": ["details","<id:6>","activities"],
-       "value": [
-        {
-         "afterMessageId": "<id:9>",
-         "completedAt": "<time>",
-         "id": "codex-activity-<id:10>",
-         "kind": "turn",
-         "sequence": 0,
-         "startedAt": "<time>",
-         "status": "completed",
-         "timingSource": "provider",
-         "title": "Turn completed",
-         "turnId": "<id:11>"
-        }
-       ]
-      },
+      {"path":["details","<id:6>","activities",0,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
       {"path":["details","<id:6>","messages",1],"value":{"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"}},
-      {"path":["shell","host","threads",0,"activities"],"value":[]},
-      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"completed"}},
-      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],

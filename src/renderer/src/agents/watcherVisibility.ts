@@ -1,5 +1,7 @@
-import type { AgentState } from '../../../shared/agents'
-import { withoutThreads } from '../../../shared/watcherVisibility'
+import type { AgentState, AgentThread } from '../../../shared/agents'
+import { visibleWatcherState, withoutThreads } from '../../../shared/watcherVisibility'
+import { withoutOwlets } from '../../../shared/owletVisibility'
+import { overlayDraftThreads } from './draftThreads'
 
 export { visibleWatcherState, watcherThreadVisible } from '../../../shared/watcherVisibility'
 
@@ -13,4 +15,13 @@ export function withoutRoomWatcher(state: AgentState | null, enabled: boolean, c
 export function withoutRoomWatcher(state: AgentState | null, enabled: boolean, current: string | null): AgentState | null {
   if (state === null || !enabled) return state
   return withoutThreads(state, new Set(state.host.threads.filter(thread => thread.kind === 'watcher' || thread.id === current).map(thread => thread.id)))
+}
+
+/**
+ * What the Threads page and the sidebar beside other pages show, one projection for both: the published state with the
+ * window's own new threads laid over it, without Watcher where its gate is off, without the room's current Watcher, and
+ * without any owlet, which lives on its own page (ADR-0213).
+ */
+export function threadsPageState(published: AgentState | null, drafts: readonly AgentThread[], watcherEnabled: boolean, roomWatcher: string | null): AgentState | null {
+  return withoutOwlets(withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher))
 }

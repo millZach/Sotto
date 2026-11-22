@@ -12,7 +12,7 @@ import { RequestDraftService, requestQuestionsDigest } from '../../src/main/agen
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
-import { type AgentRequest, type ProviderId } from '../../src/shared/agents'
+import { type AgentRequest, type ActiveProviderId } from '../../src/shared/agents'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { HostOperation, HostReceipt } from '../../src/shared/hostProtocol'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../src/shared/requestDrafts'
@@ -23,10 +23,10 @@ const question: AgentRequest = { id: 'question-one', kind: 'question', text: 'Sy
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function fixture(provider: ProviderId, onPushError?: (message: string) => void) {
+async function fixture(provider: ActiveProviderId, onPushError?: (message: string) => void) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-remote-answer-'))
   cleanups.push(async () => { if (dirname(root) === tmpdir() && root.includes('sotto-remote-answer-')) await rm(root, { recursive: true, force: true }) })
-  const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(), deepseek: new E2EAgentHost(), pi: new E2EAgentHost(), hermes: new E2EAgentHost() }
+  const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(), deepseek: new E2EAgentHost(), antigravity: new E2EAgentHost(), hermes: new E2EAgentHost() }
   const native = providers[provider]
   const startHost = () => startHeadlessHost({ dataDirectory: join(root, 'host'), port: 0,
     providers, reasoner: e2eAgentReasoner })

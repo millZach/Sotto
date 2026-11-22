@@ -5,7 +5,7 @@ import { capRuntimeMode, fitEffort, fitSpeed, isRoleDefault, messageNamesModel, 
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
 const FIVE = ['low', 'medium', 'high', 'xhigh', 'max']
-const LABEL: Record<ProviderId, string> = { claude: 'Claude Code', codex: 'Codex', grok: 'Grok Build', muse: 'Muse', devin: 'Devin', opencode: 'OpenCode', cursor: 'OpenCode', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi' }
+const LABEL: Record<ProviderId, string> = { claude: 'Claude Code', codex: 'Codex', grok: 'Grok Build', muse: 'Muse', devin: 'Devin', opencode: 'OpenCode', cursor: 'OpenCode', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi', antigravity: 'Antigravity' }
 function model(provider: ProviderId, native: string, name: string, efforts: readonly string[], options: Partial<AgentModel> = {}): AgentModel {
   return { id: publicProviderEntityId(provider, 'model', native), provider: LABEL[provider], providerId: provider, name, ready: true,
     reasoningEfforts: [...efforts], ...(efforts.length ? { defaultReasoningEffort: efforts.includes('medium') ? 'medium' : efforts[0]! } : {}),
@@ -226,8 +226,8 @@ describe('worker roles', () => {
 
 describe('Watcher’s providers in words', () => {
   it('names those this run does not hold, so stable never names Muse and Owl does', () => {
-    expect(watcherProvidersInWords(new Set(['muse', 'opencode', 'cursor']))).toBe('Codex, Claude Code or Grok Build')
-    expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build, Muse or Cursor')
+    expect(watcherProvidersInWords(new Set(['muse', 'opencode', 'cursor']))).toBe('Codex, Claude Code, Grok Build or Antigravity')
+    expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build, Muse, Cursor or Antigravity')
   })
 })
 

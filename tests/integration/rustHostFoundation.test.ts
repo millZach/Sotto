@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Cross-language parity test (ADR-0212): seeds a data folder using Sotto's TypeScript stores and pairing,
+// Cross-language parity test (ADR-0214): seeds a data folder using Sotto's TypeScript stores and pairing,
 // then launches the compiled Rust `sotto-host` binary against that folder and speaks protocol v1 + RFC 7692
 // `permessage-deflate` using Sotto's real `SocketFrames`.
 // Runs when `SOTTO_TEST_RUST_HOST=1` (enabled in the Rust host CI job and locally after `cargo build`).

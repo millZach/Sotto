@@ -39,6 +39,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'select-project': ['projectId'], 'settle-project': ['projectId'], 'restore-project': ['projectId'],
   'settle-thread': ['threadId'], 'restore-thread': ['threadId'],
   'rename-thread': ['threadId', 'title'], 'regenerate-thread-title': ['threadId'],
+  // An owlet (ADR-0213) is the user's own setup, as a new thread is: its mode is held to the same remote permission rules.
+  'create-owlet': ['threadId', 'name', 'role', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'], 'set-owlet': ['threadId', 'name', 'role'],
   'create-thread': ['projectId', 'title', 'modelId', 'titleSource', 'threadId', 'workingCopy', 'baseBranch', 'startFromOrigin',
     'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode', 'speed', 'fastMode'],
   // Continuing an agent as its own thread makes a new thread on the new-thread defaults, as create-thread does, and asks
@@ -54,7 +56,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // on the computer whose Settings set them, so neither is a remote command.
   'preview-delete-thread': ['threadId'],
   'delete-thread': ['threadId', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
-  'reclaim-thread-worktree': ['threadId', 'withUncommittedChanges', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
+  'reclaim-thread-worktree': ['threadId', 'afterSettle', 'withUncommittedChanges', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
   'configure-thread-working-copy': ['threadId', 'workingCopy', 'baseBranch', 'startFromOrigin', 'existingWorktreePath'],
   // The Git actions run on the host's own folder and discard nothing: Git refuses a switch that would lose work,
   // a push is never forced, and a pull is fast-forward only (ADR-0027).
@@ -89,6 +91,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'start-thread-session': ['threadId'],
   interrupt: ['threadId'], 'compact-thread': ['threadId'],
   // Stopping a run the thread detached is the user's own press, like Stop on the thread; it answers no request (#2476).
+  // Stop on a thread's detached run (ADR-0204). On a desktop that a phone reaches, the thread's run may be one a paired
+  // host reported (#2749): the desktop then asks that host, which ends it only after it looks again.
   'stop-detached-run': ['threadId', 'runId'],
   answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice', 'skipped', 'attachments'],
 }
@@ -132,7 +136,7 @@ export function remoteHostUpdateRefusal(client: { readonly desktop: boolean; rea
  * Settings' to do, whatever the client's answer policy (ADR-0079, `remoteCommandRefusal`).
  */
 export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] = ['provider', 'enabledProviders', 'enabled', 'defaultModelId',
-  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode', 'museDisableSandbox']
+  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadSpeed', 'newThreadRuntimeMode', 'museDisableSandbox']
 
 /**
  * Whether a remote command changes what a thread may do without asking, or discards work the user has

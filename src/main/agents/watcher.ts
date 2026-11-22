@@ -1,4 +1,5 @@
 import { sendOutcome } from './sendOutcome'
+import { inOwletFolder, owletsRoot } from './owlets'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, posix, relative, resolve, win32 } from 'node:path'
@@ -549,6 +550,11 @@ export class WatcherService implements WatcherControlHooks {
   /** The kept choice on its way to Watcher's provider, while it is; Watcher's queue waits for it, and a chip's press joins it. */
   private applyingNextTurn: WatcherNextTurnOptions | null = null
   private readonly dispatchRefusals = new Map<string, Refusal>()
+  /**
+   * What the thread's provider said when it turned down a start or a send, kept for that call's own answer so Watcher
+   * can change what it sends rather than try the same again (#2778). The record keeps only the refusal's code.
+   */
+  private readonly providerRefusals = new Map<string, string>()
   private readonly nativeHeads = new Map<string, string | null>()
   /** Every host's threads as Watcher reads them, looked up rather than walked (#925 step 5). */
   private readonly hosts: WatcherHosts
@@ -1138,7 +1144,7 @@ export class WatcherService implements WatcherControlHooks {
     const fold = (value: string) => process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value
     const real = async (value: string) => fold(await realpath(value).catch(() => resolve(value)))
     const target = await real(path)
-    for (const own of [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')]) {
+    for (const own of [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup'), owletsRoot(this.options.directory)]) {
       const between = relative(await real(own), target)
       if (between === '' || !between.startsWith('..') && !isAbsolute(between)) return true
     }
@@ -1148,7 +1154,8 @@ export class WatcherService implements WatcherControlHooks {
     const snapshot = this.owningSnapshot(target.hostId)
     if (!snapshot) refuse('HOST_DISCONNECTED', 'That host is disconnected. Reconnect it before continuing.', true)
     const thread = this.owningThread(target.hostId, target.threadId)
-    if (!thread) refuse('UNKNOWN_TARGET', 'That thread is unavailable. Read the thread list again.')
+    // An owlet's thread is kept apart from Watcher (ADR-0213), so to Watcher it is no thread at all.
+    if (!thread || thread.owlet) refuse('UNKNOWN_TARGET', 'That thread is unavailable. Read the thread list again.')
     return thread
   }
   private checkCaller(threadId: string): void {
@@ -1645,10 +1652,10 @@ export class WatcherService implements WatcherControlHooks {
   }
   private reservedProject(path: string): boolean {
     const normalized = (value: string) => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
-    return [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')].some(folder => normalized(path) === normalized(folder))
+    return [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')].some(folder => normalized(path) === normalized(folder)) || inOwletFolder(this.options.directory, path)
   }
   private protectedThread(thread: AgentThread): boolean {
-    return Boolean(thread.kind && thread.kind !== 'project' || this.owningSnapshot(thread.hostId ?? this.hostId())?.projects.some(project => project.id === thread.projectId && this.reservedProject(project.path)))
+    return Boolean(thread.kind && thread.kind !== 'project' || thread.owlet || this.owningSnapshot(thread.hostId ?? this.hostId())?.projects.some(project => project.id === thread.projectId && this.reservedProject(project.path)))
   }
   private protect(thread: AgentThread): void {
     if (this.protectedThread(thread)) refuse('RESERVED_THREAD', 'This thread has a special job and cannot be directed by Watcher.')
@@ -5394,6 +5401,7 @@ export class WatcherService implements WatcherControlHooks {
         }
         if (created.error) {
           if (!this.madeThread(operation.target)) await this.releaseMove(landed)
+          this.providerRefusals.set(operation.id, created.error)
           throw new Error('creation-failed')
         }
         origin.guard()
@@ -5437,6 +5445,8 @@ export class WatcherService implements WatcherControlHooks {
       const result = await this.options.control.commandFromWatcher(command, origin)
       const guardedRefusal = dispatchRefusal ?? this.dispatchRefusals.get(operation.id)
       if (result.error && guardedRefusal) throw guardedRefusal
+      // A prompt is what Watcher can change and send again; a stop or a settle keeps the general words.
+      if (result.error && operation.draftId) this.providerRefusals.set(operation.id, result.error)
       // Stop and settle are commands, not prompt deliveries; their successful reply is their evidence.
       const outcome = operation.draftId ? sendOutcome(result, operation.target.threadId, operation.draftId) : undefined
       await this.options.control.watcherRecords.update(record => {
@@ -5452,7 +5462,9 @@ export class WatcherService implements WatcherControlHooks {
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
-    return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true)
+    // The provider's words answer this call and no other, however the operation was started or resumed.
+    try { return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true) }
+    finally { this.providerRefusals.delete(operation.id) }
   }
   queueFailed(operationIds: ReadonlySet<string>): void {
     // Never throws: the queue has already removed or failed the items, and its caller still has to save and publish that.
@@ -5723,6 +5735,9 @@ ${operation.draftId}`)
       // A branch that could not go to where its worker starts says why in the move's own words (#1033).
       const unmoved = this.branchStarts.get(operation.id)
       if (unmoved && 'refused' in unmoved && operation.refusalCode === 'WORKING_COPY_UNAVAILABLE') return { ...watcherRefusal(operation.refusalCode, unmoved.refused), receipt: base.receipt }
+      // The provider's own words, on the call that met them: a brief it refused can be changed and sent again (#2778).
+      const providerSaid = firstRun && operation.refusalCode === 'PROVIDER_UNAVAILABLE' ? this.providerRefusals.get(operation.id) : undefined
+      if (providerSaid && providerSaid.length <= 2_000) return { ...watcherRefusal(operation.refusalCode, providerSaid), receipt: base.receipt }
       return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
         ? watched ? 'The user sent this thread an instruction first, so this was not sent. The thread is still watched. Read it before sending again.'
           : this.takenOverRefusal(this.view(), operation.target, this.view().requests.find(item => item.id === operation.requestId)
@@ -5760,11 +5775,12 @@ ${operation.draftId}`)
   }
   /**
    * An older host refuses a Watcher identity that names a provider it did not know Watcher on, so a Watcher on Muse asks only
-   * hosts that list `watcher-muse`, and one on Cursor only hosts that list `watcher-cursor` (ADR-0079, ADR-0128).
+   * hosts that list `watcher-muse`, one on Cursor only hosts that list `watcher-cursor`, and one on Antigravity only hosts that
+   * list `watcher-antigravity` (ADR-0079, ADR-0128, ADR-0212).
    */
-  private takesMaster(host: { readonly muse?: boolean; readonly cursor?: boolean }): boolean {
+  private takesMaster(host: { readonly muse?: boolean; readonly cursor?: boolean; readonly antigravity?: boolean }): boolean {
     const provider = this.view().current?.provider
-    return provider === 'muse' ? host.muse === true : provider === 'cursor' ? host.cursor === true : true
+    return provider === 'muse' ? host.muse === true : provider === 'cursor' ? host.cursor === true : provider === 'antigravity' ? host.antigravity === true : true
   }
   private takingHost(hostId: string | undefined) {
     const host = this.remote?.hosts().find(item => item.hostId === hostId)

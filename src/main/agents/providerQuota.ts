@@ -466,3 +466,4 @@ export function parseMuseQuota(value: unknown): UsageQuotaRead | undefined {
   const current = windows.filter(window => !expired(window, observedAt))
   return read('muse', current, observedAt, true)
 }
+

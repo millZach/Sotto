@@ -215,9 +215,13 @@ test('opens OpenCode’s model menu on its model sources, steps back with Escape
     await expect(menu.getByRole('option', { name: 'GPT-6-Sol', exact: true })).toBeFocused()
     await page.keyboard.press('ArrowDown')
     await page.keyboard.press('Enter')
-    await expect(menu).toBeHidden()
+    // The combined composer picker stays open after picking a model so effort can be adjusted in the same visit.
+    await expect(menu).toBeVisible()
     await expect(chip).toHaveText('OpenAI/GPT-6-Luna')
     await expect(chip).toHaveAttribute('title', 'GPT-6-Luna from OpenAI, in OpenCode')
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
     await expect(chip).toBeFocused()
 
     // Each size, light and dark: the sources, one source and a search, nothing cut off, text readable.
@@ -276,6 +280,9 @@ test('opens OpenCode’s model menu on its model sources, steps back with Escape
     await search.fill('super vl')
     await menu.getByRole('option', { name: 'Nemotron 3.5 Super VL Free', exact: true }).click()
     await expect(chip).toHaveText('OpenCode Zen/Nemotron 3.5 Super VL Free')
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
     const longName = await chip.evaluate(element => {
       const name = element.querySelector<HTMLElement>('.model-picker__name')!
       const path = element.querySelector<HTMLElement>('.model-picker__path')!

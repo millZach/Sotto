@@ -350,7 +350,7 @@ describe('Devin dispatch and decision boundaries', () => {
 
   it('rejects model changes and unsupported prompt controls before native dispatch', async () => {
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, modelId: 'another-model' })).rejects.toThrow('only change this thread')
-    await expect(send(threadId, '/compact')).rejects.toThrow('not supported')
+    await expect(send(threadId, '/compact')).rejects.toThrow('only when it names one of Devin’s skills')
     expect((await f.driver.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(0)
   })
 

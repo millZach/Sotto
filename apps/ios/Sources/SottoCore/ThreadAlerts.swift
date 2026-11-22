@@ -57,7 +57,8 @@ public struct ThreadWatch: Sendable {
                 if seenRequests.insert(key).inserted { fresh.append(request) }
             }
             let ref = ThreadRef(hostID: hostID, threadID: thread.id)
-            if first || ref == onScreen { continue }
+            // An owlet never alerts (ADR-0213): its Needs you and unread mark on the Owlets tab are how it is heard.
+            if first || ref == onScreen || thread.owlet != nil { continue }
             // One alert for a thread at a time: a new request first, then an error, then a finish.
             if let request = fresh.first {
                 if switches.needsYou { alerts.append(Self.alert(.request(request), thread: thread, ref: ref, computer: computer)) }
@@ -103,7 +104,7 @@ public struct ThreadWatch: Sendable {
 public enum AgentNames {
     public static func name(_ providerID: String?) -> String {
         ["claude": "Claude Code", "codex": "Codex", "grok": "Grok Build", "devin": "Devin", "muse": "Muse", "opencode": "OpenCode",
-         "cursor": "Cursor", "deepseek": "DeepSeek"][providerID ?? ""]
+         "cursor": "Cursor", "deepseek": "DeepSeek", "antigravity": "Antigravity"][providerID ?? ""]
             ?? String(localized: "The agent", bundle: .module, comment: "Stands in for an agent's name when Sotto doesn't know its provider")
     }
 }

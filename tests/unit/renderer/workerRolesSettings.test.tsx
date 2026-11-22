@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, publicProviderEntityId, type AgentModel, type AgentState } from '../../../src/shared/agents'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../../src/shared/settings'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
+import { MODEL_FAVORITES_KEY } from '../../../src/renderer/src/agents/modelFavorites'
 import { WorkerRolesSettings } from '../../../src/renderer/src/features/settings/WorkerRolesSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
@@ -37,8 +38,7 @@ function state(claudeReady = true, devin = false): AgentState {
           ? { ...item, speeds: [{ id: 'fast' as const, name: 'Fast', description: '2x speed, increased usage' }, { id: 'ultrafast' as const, name: 'Ultrafast', description: '4x speed, highest usage' }] } : item) },
     topLevel: { activeThreadId: null, activeProjectId: null } })
 }
-function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, devin = false) {
-  const agents = state(claudeReady, devin)
+function show(workerRoles: AppSettings['workerRoles'] = {}, agents = state()) {
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(agents, vi.fn(async () => agents)))
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   const open = vi.fn()
@@ -46,7 +46,14 @@ function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, 
   return { update, open }
 }
 const card = (name: string) => screen.getByRole('article', { name })
-afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear(); vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse'])); vi.mocked(useOwlFeature).mockImplementation(() => false) })
+afterEach(() => {
+  cleanup()
+  localStorage.removeItem(MODEL_FAVORITES_KEY)
+  vi.clearAllMocks()
+  firstMessage.clear()
+  vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse']))
+  vi.mocked(useOwlFeature).mockImplementation(() => false)
+})
 
 describe('Settings, under Watcher: worker roles (#1041)', () => {
   it('shows each role on its default with its defaults in order', () => {
@@ -77,8 +84,51 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(chosen.update).toHaveBeenLastCalledWith({ workerRoles: {} })
   })
 
+  it.each(['Building', 'Orchestrating'])('only offers models that can start a thread in %s', role => {
+    const agents = state(true, true)
+    const muse = { id: publicProviderEntityId('muse', 'model', 'wonder'), name: 'Muse Wonder', provider: 'Muse', providerId: 'muse' as const, ready: true }
+    agents.host.models.push(muse, { ...model('claude', 'internal', 'Internal model', []), hiddenFromMenu: true },
+      model('claude', 'unready', 'Unready model', [], false))
+    agents.host.providers!.push({ id: 'muse', name: 'Muse', version: '', connection: 'disconnected', capabilities: caps },
+      { id: 'devin', name: 'Devin', version: '', connection: 'connected', capabilities: { ...caps, threads: false } })
+    const { update } = show({}, agents)
+    fireEvent.click(within(card(role)).getByRole('combobox', { name: /model/u }))
+    expect(screen.getAllByRole('tab').map(tab => tab.getAttribute('aria-label')).sort()).toEqual(['Claude Code', 'Codex'])
+    expect(screen.getByRole('option', { name: 'Sonnet 5.5' })).toBeEnabled()
+    expect(screen.queryByRole('option', { name: 'Internal model' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'Unready model' })).toBeNull()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it.each(['Building', 'Orchestrating'])('keeps Devin favorites and lists only those %s can use', role => {
+    vi.mocked(useOwlFeature).mockImplementation(id => id === 'model-favorites')
+    const agents = state(true, true)
+    agents.host.providers!.push({ id: 'devin', name: 'Devin', version: '', connection: 'connected', capabilities: caps })
+    const devin = { provider: 'Devin', providerId: 'devin', id: publicProviderEntityId('devin', 'model', 'swe-1'), name: 'Devin SWE' }
+    const favorites = JSON.stringify([{ ...devin, id: publicProviderEntityId('devin', 'model', 'retired'), name: 'Retired SWE' }, devin])
+    localStorage.setItem(MODEL_FAVORITES_KEY, favorites)
+    const { update } = show({}, agents)
+    fireEvent.click(within(card(role)).getByRole('combobox', { name: /model/u }))
+    const tab = screen.getByRole('tab', { name: 'Favorites' })
+    if (role === 'Building') {
+      expect(tab).toHaveAttribute('aria-selected', 'true')
+      expect(screen.queryByRole('option', { name: /Retired SWE/u })).toBeNull()
+      fireEvent.click(screen.getByRole('option', { name: 'Devin SWE' }))
+      expect(update).toHaveBeenCalledWith({ workerRoles: { building: expect.objectContaining({ modelId: devin.id }) } })
+    } else {
+      expect(screen.getByRole('tab', { name: 'Claude Code' })).toHaveAttribute('aria-selected', 'true')
+      fireEvent.click(tab)
+      expect(screen.queryAllByRole('option')).toHaveLength(0)
+      expect(screen.getByText('Star a model to keep it here.')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('tab', { name: 'Devin' }))
+      expect(screen.getByRole('note')).toHaveTextContent('Watcher can’t run on Devin yet.')
+    }
+    expect(localStorage.getItem(MODEL_FAVORITES_KEY)).toBe(favorites)
+  })
+
   it('keeps a choice whose provider is away and says what starts meanwhile, and Reset puts the default back', () => {
-    const { update } = show({ building: { modelId: publicProviderEntityId('claude', 'model', 'sonnet'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } }, false)
+    const { update } = show({ building: { modelId: publicProviderEntityId('claude', 'model', 'sonnet'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } }, state(false))
+    expect(within(card('Building')).getByRole('combobox', { name: /model/u })).toHaveTextContent('Sonnet 5.5')
     expect(within(card('Building')).getByText('Your choice, not available')).toBeInTheDocument()
     expect(within(card('Building')).getByText('Your choice, Sonnet 5.5, stays. Claude Code is not connected, so until it is, workers start on GPT-6.1 Sol, the next default.')).toBeInTheDocument()
     expect(within(card('UI')).getByText('Next default')).toBeInTheDocument()
@@ -122,7 +172,7 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
   })
 
   it('lists every provider for Orchestrating, saying why Watcher cannot run on one yet, beside a drawing of its composer', () => {
-    show({}, true, true)
+    show({}, state(true, true))
     const orchestrating = card('Orchestrating')
     fireEvent.click(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
     fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))
@@ -140,12 +190,12 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
   it('names Muse among Watcher’s providers only while Muse is not held to Owl on this run, and Cursor while it is not', () => {
     show()
     fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
-    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build or Cursor\.$/u)).toBeInTheDocument()
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build, Cursor or Antigravity\.$/u)).toBeInTheDocument()
     cleanup()
     vi.mocked(useHeldProviders).mockReturnValue(new Set())
     show()
     fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
-    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build, Muse or Cursor\.$/u)).toBeInTheDocument()
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build, Muse, Cursor or Antigravity\.$/u)).toBeInTheDocument()
   })
 
   it('lets a change to Orchestrating replace the first message’s own pick before Watcher exists', () => {

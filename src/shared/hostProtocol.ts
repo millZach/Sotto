@@ -4,6 +4,7 @@ import { nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptEntry } 
 import { tellWatcherAnswerSchema, watcherTellPushSchema, type WatcherTellPush } from './tellWatcher'
 import { delegationRelayAskSchema, delegationRelayNewsSchema, delegationRemoteAskSchema, DELEGATION_REMOTE_CALLER_MAX, relayedRepliesSchema, type DelegationRelayAsk } from './delegationRelay'
 import { z } from 'zod'
+import { detachedRunsElsewhereSchema, runMarkSchema, type DetachedRunElsewhere } from './agentMonitoring'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhonePreviewSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, watcherPhoneOpenSchema, watcherPhoneCurrentSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, watcherHostProgressSchema } from './watcherHost'
 import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, AGENT_MAX_VIDEO_BYTES, agentMimeTypeSchema, isVideoAttachment, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, agentThreadMediaRequestSchema, agentThreadMediaPartRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
@@ -234,6 +235,10 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * thread's store, and takes `load-earlier-messages` with `throughMessageId`, which widens the thread's window back to that
  * message, for the message scrubber (ADR-0109). Only a desktop is offered it. A desktop whose host does not list it marks
  * the messages the window holds, and sends no `throughMessageId`.
+ * `owlets`: the host makes and changes owlets (ADR-0213), taking `create-owlet` and `set-owlet`: its Owl answer for Owlets is
+ * on. A desktop offers a host as an owlet's home computer only when it lists it. A phone whose hello accepts it is sent the
+ * owlets' threads and projects for its Owlets tab; a phone that does not is sent none of them, in its shell, its thread
+ * records or a search.
  * `thread-words`: the host answers `thread-words` with the threads whose messages hold a search's words, from its thread
  * store, for Search threads (Zach's picks of November 19, 2026): the user's messages and the agents' replies, wake-ups
  * left out, each with a quote of its newest match. For a phone whose hello accepts it, its `settled-threads` search
@@ -260,6 +265,10 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `usage-muse-opencode`: Usage reads and refreshes may name Muse and OpenCode, and their rows come back (October 21, 2026,
  * ADR-0083). A desktop names neither to a host that does not list it, and a host reads and sends a desktop whose hello does
  * not accept it only the providers Usage counted before, since that desktop's strict schemas refuse a read naming another.
+ * `usage-antigravity`: Usage reads and refreshes may name Antigravity, its rows come back, and a client row may be
+ * Antigravity's own app (November 20, 2026, ADR-0083). Its limits came back too until November 21, 2026, when Sotto stopped
+ * reading them under Google's terms (ADR-0212). A desktop names it to no host that does not list it, and a host
+ * reads and sends a desktop whose hello does not accept it only the providers Usage counted before.
  * `usage-background-refresh`: `usage-refresh` takes `background`, a refresh the desktop's Usage made on its own when it
  * opened, which a provider whose read is costly may answer from a reading of the last few minutes (#1456). Read again
  * never sends it. A desktop strips the field for a host that does not list it, which then reads that refresh afresh.
@@ -317,6 +326,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `provider-deepseek`: as `provider-opencode`, for DeepSeek (ADR-0138, November 8 amendment). The desktop's phone
  * listener sends DeepSeek's provider row, models, projects and threads only to a client whose hello accepts it. A
  * headless host lists it too but holds the provider (`heldOnHost`), so it sends nothing of it to anyone.
+ * `watcher-antigravity`: as `watcher-cursor`, for a desktop whose Watcher runs on Antigravity (ADR-0212).
  * `watcher-cursor`: as `watcher-muse`, for a desktop whose Watcher runs on Cursor, whose identity names `cursor` as its
  * provider (ADR-0128). It adds no request, field or push. A desktop whose Watcher is on Cursor reads and directs no thread
  * on a host that does not list it, and says to update that host.
@@ -494,7 +504,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * with its Meshy copies, and served only to a client that listener counts as a phone (Bug Bot on #2622, N5); host
  * protocol version 1 is unchanged, so an older phone, which does not accept it, is sent the words alone.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi', 'provider-hermes', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-meshy-phone', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending', 'plugin-elevenlabs-sounds', 'thread-words'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'watcher-antigravity', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-hermes', 'provider-antigravity', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-meshy-phone', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending', 'plugin-elevenlabs-sounds', 'thread-words', 'usage-antigravity', 'detail-read-held', 'detached-runs-elsewhere', 'owlets', 'settle-worktree-cleanup'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -503,13 +513,13 @@ export type HostFeature = typeof HOST_FEATURES[number]
 /** A desktop's answer for product events, and what a sender runs by (ADR-0179). */
 export const productEventPermissionSchema = z.enum(['off', 'waiting', 'on'])
 export type ProductEventPermission = z.infer<typeof productEventPermissionSchema>
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['thread-file-links', 'thread-linked-files', 'provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'next-prompts', 'product-events', 'watcher-tell', 'watcher-ready', 'browser', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending', 'plugin-elevenlabs-sounds']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['detached-runs-elsewhere', 'thread-file-links', 'thread-linked-files', 'provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'watcher-antigravity', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'next-prompts', 'product-events', 'watcher-tell', 'watcher-ready', 'browser', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending', 'plugin-elevenlabs-sounds', 'detail-read-held']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
  * the host leaves the provider's rows, models, projects and threads out of what it sends that client.
  */
-export const PROVIDER_HOST_FEATURES = { opencode: 'provider-opencode', cursor: 'provider-cursor', deepseek: 'provider-deepseek', pi: 'provider-pi', hermes: 'provider-hermes' } as const satisfies Partial<Record<ProviderId, HostFeature>>
+export const PROVIDER_HOST_FEATURES = { opencode: 'provider-opencode', cursor: 'provider-cursor', deepseek: 'provider-deepseek', hermes: 'provider-hermes', antigravity: 'provider-antigravity' } as const satisfies Partial<Record<ProviderId, HostFeature>>
 /** The providers a client's hello does not accept the feature of, which the host leaves out of everything it sends it. */
 export function providersUnknownTo(accepts: readonly string[] | undefined): HeldProviders {
   return new Set((Object.entries(PROVIDER_HOST_FEATURES) as [ProviderId, HostFeature][]).filter(([, feature]) => !accepts?.includes(feature)).map(([provider]) => provider))
@@ -784,6 +794,12 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
+  /**
+   * `detached-runs-elsewhere` (#2749): a recorded desktop asks the host to look for detached runs again, as a turn ending
+   * there may have started one here, and stops one it reported, by the user's Stop, with the host's own look-again rule.
+   */
+  z.object({ ...base, op: z.literal('detached-runs-look') }).strict(),
+  z.object({ ...base, op: z.literal('detached-run-elsewhere-stop'), runId: z.uuid(), mark: runMarkSchema }).strict(),
   /** The GitHub repository of each of the host's projects, read on request and never pushed (#1032). */
   z.object({ ...base, op: z.literal('project-origins') }).strict(),
   /** A copy of a GitHub repository set up on the host for a worker placed there (#1690). */
@@ -953,6 +969,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell | KeptPartsS
   /** One thread's next prompt changed, or was let go (`prompt` null); to the same desktops. */
   | { v: 1; event: 'next-prompt'; entry: NextPromptEntry }
   /** A delegation this host holds for a thread on another machine changed (#1316 part 2); only to the desktop that asked, whose hello accepted `delegation-remote`. */
+  /** Detached runs found here with a mark no thread here owns (#2749), whole, to a recorded desktop whose hello accepted them. */
+  | { v: 1; event: 'detached-runs-elsewhere'; runs: DetachedRunElsewhere[] }
   | { v: 1; event: 'delegation-remote-news'; caller: string; news: z.infer<typeof delegationRelayNewsSchema>; replies?: z.infer<typeof relayedRepliesSchema> | undefined }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**
@@ -1059,6 +1077,7 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('plugin-elevenlabs-spending'), reports: spendingReportsSchema }),
   z.object({ v: z.literal(1), event: z.literal('plugin-meshy-models'), news: model3dHostNewsSchema }),
   z.object({ v: z.literal(1), event: z.literal('plugin-elevenlabs-sounds'), news: soundHostNewsSchema }),
+  z.object({ v: z.literal(1), event: z.literal('detached-runs-elsewhere'), runs: detachedRunsElsewhereSchema }),
   /** News of a delegation this host holds for a thread on another machine (`delegation-remote`), only to the desktop that asked. */
   z.object({ v: z.literal(1), event: z.literal('delegation-remote-news'), caller: z.string().min(1).max(DELEGATION_REMOTE_CALLER_MAX), news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }),
 ])

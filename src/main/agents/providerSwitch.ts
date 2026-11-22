@@ -8,7 +8,8 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { cloneHostSnapshot, clonePlainData } from './cloneHostSnapshot'
 import { ActivitySubscribers, cloneSnapshotSharingActivities, immutableModels, immutableRecord, immutableUpdates, isImmutableModels, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
 import { join, resolve } from 'node:path'
-import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentModel, type AgentProviderStatus, type AgentThread, type ProviderId } from '../../shared/agents'
+import { ACTIVE_PROVIDERS, EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentModel, type AgentProviderStatus, type AgentThread, type ActiveProviderId, type ProviderId } from '../../shared/agents'
+import { HeldProviderHost } from './heldProviderGate'
 import { restOf } from './adapterThreadChanges'
 import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, threadChangesBetween, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges,
   type AgentHostRest, type ThreadChangeSet, type ThreadPlacement } from './threadChanges'
@@ -79,10 +80,17 @@ function slotThreads(records: readonly AgentThread[] = []): ThreadMap {
   return map
 }
 
+interface ProviderSwitchOptions {
+  hosts: Record<ActiveProviderId, ProviderHost>; provider: () => ProviderId
+  directory?: string
+  enabledProviders?: () => readonly ProviderId[]
+  threadProvider?: (threadId: string) => string | undefined
+}
+
 /** Independent native connections; durable Sotto thread identity selects the transport, never reasoning settings. */
 export class ConfiguredProviderHost implements ProviderHost {
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void {
-    for (const id of providerIdSchema.options) this.options.hosts[id].useLaunchProfiles?.(profiles)
+    for (const id of ACTIVE_PROVIDERS) this.options.hosts[id].useLaunchProfiles?.(profiles)
   }
   profileRefusalHandler(threadId: string) {
     // Each SottoThreadHost stops only its bound or early-start runtime. Include early starts
@@ -124,34 +132,32 @@ export class ConfiguredProviderHost implements ProviderHost {
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
-  constructor(private readonly options: {
-    hosts: Record<ProviderId, ProviderHost>; provider: () => ProviderId
-    directory?: string
-    enabledProviders?: () => readonly ProviderId[]
-    threadProvider?: (threadId: string) => string | undefined
-  }) {
+  private readonly options: ProviderSwitchOptions & { hosts: Record<ProviderId, ProviderHost> }
+  constructor(options: ProviderSwitchOptions) {
+    // A legacy binding always refuses work, even when an old caller addresses it directly.
+    this.options = { ...options, hosts: { ...options.hosts, pi: new HeldProviderHost('pi') } }
     if (options.directory) this.registrationStore = new AtomicJsonStore(join(options.directory, 'provider-project-registrations.json'), value => z.array(z.string()).parse(value), () => [])
     for (const id of providerIdSchema.options) {
       this.slots.set(id, { view: restOf(structuredClone(EMPTY_AGENT_HOST)), threads: slotThreads(), diverged: false, named: new Map(), wanted: false, epoch: 0,
         status: { id, name: PROVIDER_LABELS[id], version: '', connection: 'disconnected', capabilities: structuredClone(EMPTY_AGENT_HOST.capabilities) } })
     }
-    if (providerIdSchema.options.some(id => options.hosts[id].subscribeEvents)) {
+    if (ACTIVE_PROVIDERS.some(id => this.options.hosts[id].subscribeEvents)) {
       this.subscribeEvents = listener => { this.eventListeners.add(listener); return () => this.eventListeners.delete(listener) }
     }
-    if (providerIdSchema.options.some(id => isUsageProviderId(id) && options.hosts[id].subscribeUsage)) {
+    if (ACTIVE_PROVIDERS.some(id => isUsageProviderId(id) && this.options.hosts[id].subscribeUsage)) {
       this.subscribeUsage = listener => {
         this.usageListeners.add(listener)
         return () => this.usageListeners.delete(listener)
       }
     }
-    if (providerIdSchema.options.some(id => isUsageProviderId(id) && options.hosts[id].visitUsage)) this.visitUsage = (threadId, visitor) => {
-      for (const id of providerIdSchema.options) if (isUsageProviderId(id)) options.hosts[id].visitUsage?.(threadId, record => visitor({ ...record, providerId: id,
+    if (ACTIVE_PROVIDERS.some(id => isUsageProviderId(id) && this.options.hosts[id].visitUsage)) this.visitUsage = (threadId, visitor) => {
+      for (const id of ACTIVE_PROVIDERS) if (isUsageProviderId(id)) this.options.hosts[id].visitUsage?.(threadId, record => visitor({ ...record, providerId: id,
         modelId: providerEntityId(id, 'model', record.modelId) }))
     }
     // Each provider reads its own local records in turn, connected or not: reading them starts no session.
-    if (providerIdSchema.options.some(id => isUsageProviderId(id) && options.hosts[id].scanUsageHistory)) this.scanUsageHistory = async (sink, signal) => {
-      for (const id of providerIdSchema.options) {
-        const host = options.hosts[id]
+    if (ACTIVE_PROVIDERS.some(id => isUsageProviderId(id) && this.options.hosts[id].scanUsageHistory)) this.scanUsageHistory = async (sink, signal) => {
+      for (const id of ACTIVE_PROVIDERS) {
+        const host = this.options.hosts[id]
         if (signal.aborted) return
         if (!isUsageProviderId(id) || !host.scanUsageHistory) continue
         const project = <T extends { providerId: string; modelId: string }>(record: T): T => ({ ...record, providerId: id, modelId: providerEntityId(id, 'model', record.modelId) })
@@ -159,11 +165,11 @@ export class ConfiguredProviderHost implements ProviderHost {
         catch { /* One provider's unreadable records leave the others' to read. */ }
       }
     }
-    if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh, background) => {
+    if (ACTIVE_PROVIDERS.some(id => this.options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh, background) => {
       if (!reportsUsageLimits(providerId)) throw new Error('Usage reads no limits for this provider.')
       const slot = this.slots.get(providerId), epoch = slot?.epoch
       if (slot?.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
-      const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh, background)
+      const quota = await this.options.hosts[providerId].readProviderQuota?.(providerId, refresh, background)
         ?? unavailableProviderQuota(providerId, 'unsupported')
       if (slot.epoch !== epoch || slot.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
       return { ...quota, windows: quota.windows.map(window => ({ ...window,
@@ -172,16 +178,19 @@ export class ConfiguredProviderHost implements ProviderHost {
   }
   /** Each provider asks the store about the threads it owns; a thread it does not own answers nothing. */
   useBrowserTools(tools: BrowserAgentTools): void {
-    for (const id of providerIdSchema.options) this.options.hosts[id].useBrowserTools?.(tools)
+    for (const id of ACTIVE_PROVIDERS) this.options.hosts[id].useBrowserTools?.(tools)
   }
   useThreadTools(tools: readonly ScopedThreadTools[]): void {
-    for (const id of providerIdSchema.options) this.options.hosts[id].useThreadTools?.(tools)
+    for (const id of ACTIVE_PROVIDERS) this.options.hosts[id].useThreadTools?.(tools)
   }
   useWorkerRoles(roles: WorkerRoleSource): void {
-    for (const id of providerIdSchema.options) this.options.hosts[id].useWorkerRoles?.(roles)
+    for (const id of ACTIVE_PROVIDERS) this.options.hosts[id].useWorkerRoles?.(roles)
+  }
+  useOwletInstructions(read: (threadId: string) => string | undefined): void {
+    for (const id of ACTIVE_PROVIDERS) this.options.hosts[id].useOwletInstructions?.(read)
   }
   useThreadHistory(source: ThreadHistorySource): void {
-    for (const id of providerIdSchema.options) this.options.hosts[id].useThreadHistory?.(source)
+    for (const id of ACTIVE_PROVIDERS) this.options.hosts[id].useThreadHistory?.(source)
   }
   /** Capture the restored legacy project scope before UI configuration can change the default. */
   initialize(): Promise<void> {
@@ -323,7 +332,7 @@ export class ConfiguredProviderHost implements ProviderHost {
   private aggregate(threads: false): AgentHostRest
   private aggregate(threads = true): AgentHostSnapshot | AgentHostRest {
     // One copy of every provider's status, not one per provider, so a new provider adds no copy to each publish.
-    const providers = clonePlainData([...this.slots.values()].map(slot => slot.status))
+    const providers = clonePlainData(ACTIVE_PROVIDERS.map(id => this.slots.get(id)!.status))
     const capabilities = { ...EMPTY_AGENT_HOST.capabilities }
     for (const provider of providers.filter(provider => provider.connection === 'connected')) {
       for (const key of Object.keys(provider.capabilities) as (keyof AgentCapabilities)[]) if (provider.capabilities[key]) capabilities[key] = true
@@ -556,7 +565,7 @@ export class ConfiguredProviderHost implements ProviderHost {
     if (reread) void this.snapshot().catch(() => undefined)
   }
   async snapshot(provider?: ProviderId): Promise<AgentHostSnapshot> {
-    await Promise.all((provider ? [provider] : providerIdSchema.options).map(async id => {
+    await Promise.all((provider ? [provider] : ACTIVE_PROVIDERS).map(async id => {
       const slot = this.slots.get(id)!
       if (!slot.wanted || slot.status.connection !== 'connected') return
       const epoch = slot.epoch
@@ -591,7 +600,7 @@ export class ConfiguredProviderHost implements ProviderHost {
   }
   /** Every provider sees the whole offer and keeps the threads it owns; no binding is needed here. */
   async restoreThreadHistory(threads: readonly RestoredThreadHistory[]): Promise<void> {
-    await Promise.all(providerIdSchema.options.map(id => this.options.hosts[id].restoreThreadHistory?.(threads)))
+    await Promise.all(ACTIVE_PROVIDERS.map(id => this.options.hosts[id].restoreThreadHistory?.(threads)))
   }
   async refreshThread(threadId: string, purpose?: ThreadReadPurpose): Promise<AgentHostSnapshot> {
     const id = this.owner(threadId); this.requireConnected(id)
@@ -791,7 +800,7 @@ export class ConfiguredProviderHost implements ProviderHost {
     for (const [id, slot] of this.slots) if (slot.wanted) this.options.hosts[id].keepSessionsLive?.(ids)
   }
   disconnect(provider?: ProviderId): void {
-    for (const id of provider ? [provider] : providerIdSchema.options) {
+    for (const id of provider ? [provider] : ACTIVE_PROVIDERS) {
       const slot = this.slots.get(id)!; slot.wanted = false; ++slot.epoch; slot.connecting = undefined
       slot.unsubscribeSnapshot?.(); slot.unsubscribeEvents?.(); slot.unsubscribeUsage?.()
       slot.unsubscribeSnapshot = undefined; slot.unsubscribeEvents = undefined; slot.unsubscribeUsage = undefined

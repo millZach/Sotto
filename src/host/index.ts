@@ -282,7 +282,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], owletsEnabled: owlFeatures.owlets, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
       nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
@@ -340,7 +340,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A deleted thread takes its waiting cards and its mail grants with it.
     if (plugins) { const held = plugins; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
-    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
+    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'), antigravityDirectory: directory,
+      antigravityBinaryPath: () => runtime.agentControl.configuration().antigravityBinaryPath,
       ...(heldProviders.has('hermes') ? {} : { hermesHome: join(directory, 'hermes'), hermesSignedOut: runtime.hermesAccountChanged }),
       connect: async (provider, clientId) => {
         const hermes = provider === 'hermes' ? runtime.connectedHermes() : undefined

@@ -377,6 +377,7 @@
   --tt-provider-devin: #a5d8f5;
   --tt-provider-opencode: #ece3d0;
   --tt-provider-cursor: #f2b9c9;
+  --tt-provider-antigravity: #a8c7fa;
   /* A provider's mark drawn as a glyph rather than on its badge. By night the badge colours read at 10:1 or more as
      glyphs; by day they are too pale (Codex's grey sits under 2:1 on the room), so the light block mixes them halfway
      toward the text colour, keeping the provider's hue at about 4:1 on the room, the sidebar and a card. */
@@ -392,6 +393,9 @@
   --tt-provider-cursor-badge: #f2b9c9;
   /* DeepSeek's whale has no colour elsewhere, so its badge is a pale shade of DeepSeek's own blue (#4d6bfe). */
   --tt-provider-deepseek-badge: #a3b3ff;
+  /* Antigravity's arch is Google's logo (ADR-0212), in Google's blue: a pale shade of it by night and on its badge, a deep one
+     as a glyph by day. */
+  --tt-provider-antigravity-badge: #a8c7fa;
   --tt-provider-ink: #080b0a;
   /* Chart series (Usage's split chart). Constants per mode like the provider marks: a theme carries T3 Code's
      roles, which name no categorical hues. Six hues and an Other grey, each at least 3:1 on every built-in theme's
@@ -494,10 +498,12 @@
   --tt-provider-opencode: #625843;
   /* Cursor's, like OpenCode's, is drawn straight from its token in both modes: a pale rose by night, a deep one by day. */
   --tt-provider-cursor: #94405a;
+  --tt-provider-antigravity: #0b57d0;
   --tt-provider-muse: #d9d3c4;
   --tt-provider-opencode-badge: #e4dac4;
   --tt-provider-cursor-badge: #eaaabd;
   --tt-provider-deepseek-badge: #93a6ff;
+  --tt-provider-antigravity-badge: #a8c7fa;
   --tt-provider-ink: #0b0d0c;
   --tt-chart-1: #0554a3;
   --tt-chart-2: #883c04;

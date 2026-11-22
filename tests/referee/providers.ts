@@ -31,7 +31,7 @@ interface FakeLayout {
 
 /**
  * Every provider a host takes that has a fake program (`HOST_PROVIDERS` in `src/shared/hostProviders.ts`). Hermes is a
- * host provider too and has no fake program yet, so it has no recording; Pi and DeepSeek Harness are held on every host
+ * host provider too and has no fake program yet, so it has no recording; DeepSeek Harness is held on every host
  * (ADR-0138, `heldOnHost`), so a host starts nothing for them.
  */
 export const REFEREE_FAKES = {
@@ -73,12 +73,17 @@ const scriptAlso = async (data: string, value: Record<string, unknown>): Promise
  * referee host (the fixture's own, `tests/referee/fixtures.ts`), as each fixture's `delayNextAck` does. Each forgets the
  * delay once it has used it; Codex's also stops its notifications, so the turn says nothing until it is told to again. Grok Build's, Devin's
  * and Cursor's fixtures shorten their adapter's deadline in process instead, so a host cannot be made to lose theirs.
+ * `startsTurn`: the thread shows the prompt before the late acknowledgement lands, and the acknowledgement then shows its
+ * turn running, so the send is over once the turn runs (#2708).
  */
-export const LOSES_ACKNOWLEDGEMENT: Readonly<Partial<Record<RefereeProvider, { lose: LostAcknowledgement; restore: LostAcknowledgement }>>> = {
-  codex: { lose: data => scriptAlso(data, { delay: { method: 'turn/start', ms: 3000 }, suppressNotifications: true }), restore: data => scriptAlso(data, { suppressNotifications: false }) },
+export const LOSES_ACKNOWLEDGEMENT: Readonly<Partial<Record<RefereeProvider, { lose: LostAcknowledgement; restore: LostAcknowledgement; startsTurn?: true }>>> = {
+  // Codex's session file shows the prompt at once, and the late answer to `turn/start` carries the turn a second later.
+  codex: { lose: data => scriptAlso(data, { delay: { method: 'turn/start', ms: 3000 }, suppressNotifications: true }), restore: data => scriptAlso(data, { suppressNotifications: false }), startsTurn: true },
   claude: { lose: data => writeFile(join(data, 'script.json'), JSON.stringify({ delay: 3000 })), restore: async () => undefined },
   muse: { lose: data => scriptAlso(data, { delayTurnMs: 3000 }), restore: async () => undefined },
-  opencode: { lose: data => scriptAlso(data, { delay: { 'session.prompt': 4000 } }), restore: async () => undefined },
+  // OpenCode's server says the prompt is in its inbox and that the session started working back to back, and the host
+  // publishes each, so a client may read both at once.
+  opencode: { lose: data => scriptAlso(data, { delay: { 'session.prompt': 4000 } }), restore: async () => undefined, startsTurn: true },
 }
 
 async function readJson(path: string): Promise<unknown> {

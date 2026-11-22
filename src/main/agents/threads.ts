@@ -224,6 +224,10 @@ export class SottoThreadHost implements ProviderHost {
   useThreadTools(tools: readonly ScopedThreadTools[]): void {
     this.inner.useThreadTools?.(tools.map(entry => ({ name: entry.name, definitions: entry.definitions,
       ...(entry.timeoutMs === undefined ? {} : { timeoutMs: entry.timeoutMs }),
+      definitionsFor: (id: string) => {
+        const threadId = this.threadFor(id)
+        return threadId ? entry.definitionsFor?.(threadId) ?? entry.definitions : []
+      },
       mcpServer: async (id: string) => {
         const threadId = this.threadFor(id)
         return threadId ? entry.mcpServer(threadId) : undefined
@@ -240,6 +244,10 @@ export class SottoThreadHost implements ProviderHost {
     const { overseer, overseerNote } = roles
     this.inner.useWorkerRoles?.({ table: () => roles.table(), onChange: listener => roles.onChange(listener),
       ...overseer ? { overseer: bySession(threadId => overseer.call(roles, threadId)) } : {}, ...overseerNote ? { overseerNote: bySession(threadId => overseerNote.call(roles, threadId)) } : {} })
+  }
+  /** An owlet's instructions cross as Dynamic's do: the adapter asks by session, and they are kept by Sotto thread ID. */
+  useOwletInstructions(read: (threadId: string) => string | undefined): void {
+    this.inner.useOwletInstructions?.(sessionId => { const threadId = this.threadFor(sessionId); return threadId ? read(threadId) : undefined })
   }
   async closeCouncilJudge(threadId: string): Promise<void> {
     const binding = this.registry.byThread(threadId)

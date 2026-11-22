@@ -1260,6 +1260,10 @@ msgstr ""
 msgid "AI formatting"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "All four permission modes: on Allow edits Sotto answers Antigravity’s requests to change files for you, on Full access every request, and Auto is Antigravity’s own. Its questions always come to you. Usage shows Antigravity’s token counts. Compact context uses Antigravity’s own /compact, and Antigravity keeps its own history in Sotto’s own Antigravity folder."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "All shortcuts are back to their defaults."
 msgstr ""
@@ -1378,6 +1382,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Answer SSH's question for {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Antigravity’s setting was not saved, so it keeps the one it had. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
@@ -2661,6 +2669,10 @@ msgstr ""
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Default projects directory"
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Default speed for new threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4180,6 +4192,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Model, reasoning effort and permissions."
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Model, reasoning effort, speed and permissions."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -5826,10 +5842,6 @@ msgid "Replies in threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below."
-msgstr ""
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 msgstr ""
 
@@ -5843,6 +5855,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, reasoning, approvals and Antigravity’s questions, steering, images, and skills as /name, on the Gemini models your sign-in lists. Watcher runs on Antigravity, and Antigravity threads run on paired hosts and phones too. Change models and permissions in a thread."
 msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
@@ -6815,10 +6831,6 @@ msgstr ""
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
 msgstr ""
 
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources."
-msgstr ""
-
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Sotto runs Tailscale Serve on {name}, port 8443, or 10000 when another app uses 8443, so Sotto on your iPhone can reach {name}’s threads over your tailnet. Only phones you pair can connect. Phones reach {name} while its host runs. Turning this off removes the setting and disconnects them."
 msgstr ""
@@ -7125,10 +7137,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Steer now"
-msgstr ""
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
@@ -7636,6 +7644,14 @@ msgstr ""
 msgid "The key could not be saved. Nothing was changed."
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The key was not removed. It is still saved. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "The key was not saved. Nothing was changed. Try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "The last check stopped here."
 msgstr ""
@@ -8110,6 +8126,10 @@ msgid "Threads with a turn running on each machine, unless you set its own numbe
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Antigravity"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Threads with Cursor"
 msgstr ""
 
@@ -8123,10 +8143,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Threads with OpenCode"
-msgstr ""
-
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Threads with Pi"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx

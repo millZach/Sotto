@@ -7,7 +7,7 @@ import type { ReducedPictures } from './mediaThumbnail'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { FilesBinding } from '../files/service'
 import { join } from 'node:path'
-import type { AgentState, AgentThread, ProviderId } from '../../shared/agents'
+import type { ActiveProviderId, AgentState, AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { AppSettings } from '../../shared/settings'
 import type { ProjectSetupRequest } from '../../shared/workerMachine'
@@ -27,11 +27,15 @@ import { WorkerRoles } from './subagentRoles'
 import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
+import { AntigravityAcpHost } from './antigravity'
+import { describeAntigravityProgress, managedAntigravityExecutable, removeDownloadedAntigravity } from './antigravityInstall'
+import { withAntigravityBinaryPath } from './antigravityLookup'
+import { antigravityUserMcpConfig } from './antigravityUserServers'
+import type { AntigravitySignIn } from './antigravityRpc'
+import type { AntigravityLookup } from './antigravityLookup'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
-import type { PiSignIn, PiSignInOptions } from './piSignIn'
-import type { PiHost, PiOptions } from './pi'
 import { HermesAcpHost } from './hermes'
 import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
@@ -105,16 +109,13 @@ import type { DelegationNews } from '../../shared/delegation'
 import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
 import { DetachedRunWatch } from './detachedRuns'
+import { locateClient } from './providerClients'
 import { scanProcesses, type RunMark } from './detachedRunScan'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = ProviderHost & { closed?: () => Promise<void> }
 
 export interface AgentRuntimeOptions {
-  /** Only the desktop supplies Pi's terminal sign-in implementation; the headless bundle must not import it. */
-  createPiSignIn?: (host: PiHost, options: PiSignInOptions) => PiSignIn
-  /** Pi and its account support run only on the desktop; absence leaves a held provider. */
-  createPiHost?: (directory: string, options: PiOptions) => PiHost
   directory: string
   /**
    * Sotto's browser tools for this runtime's threads (a paired host's, ADR-0198), made once their working copies can be
@@ -128,6 +129,8 @@ export interface AgentRuntimeOptions {
   dynamicThreadsEnabled?: boolean
   /** Model routing's Owl answer (ADR-0207), and where its event names are logged. */
   modelRouterEnabled?: boolean
+  /** Owlets' Owl answer (ADR-0213). */
+  owletsEnabled?: boolean
   modelRouterLog?: (event: RouterEvent) => void
   threadSnoozeEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
@@ -263,6 +266,10 @@ export interface AgentRuntimeOptions {
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
    */
   ownServers?: () => Promise<readonly OwnServer[]>
+  /** Antigravity's sign-in and where its program is, read from Settings and the credential store before each start. */
+  antigravity?: { readonly signIn?: () => Promise<AntigravitySignIn>; readonly lookup?: () => Promise<AntigravityLookup>
+    /** An end-to-end run's fake `agy`, started in place of finding the real one. */
+    readonly program?: { readonly executable: string; readonly args: readonly string[] } }
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -292,7 +299,7 @@ export interface AgentRuntimeOptions {
   /** Desktop design fixtures replace the whole provider boundary. */
   host?: ProviderHost
   /** Native process overrides keep tests on the production coordinator path. */
-  providers?: Partial<Record<ProviderId, NativeHost>>
+  providers?: Partial<Record<ActiveProviderId, NativeHost>>
   reasoner?: ControlDependencies['reasoner']
   /** A journey's stand-ins for the client update check and installer, and for where each client is (#480). */
   clients?: ControlDependencies['clients']
@@ -362,7 +369,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Restarting stopped threads (ADR-0144): the adapters that can tell a usage limit report it on the failed turn, only with it on.
   const restartStopped = options.restartStoppedThreads === true
   const limitStops = restartStopped ? { limitStops: true } : {}
-  const held = heldProvidersOption(options)
+  const requestedHolds = heldProvidersOption(options)
+  const held = requestedHolds.has('pi') ? requestedHolds : new Set<ProviderId>([...requestedHolds, 'pi'])
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
   // Pictures in threads (ADR-0170): one store for this runtime, built only with the Owl feature on.
@@ -372,8 +380,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   let showEveryAgentPicture: () => boolean = options.showEveryAgentPicture ?? (() => true)
   const showEvery = (): boolean => showEveryAgentPicture()
   const captureMedia = threadMedia ? agentCaptures(threadMedia, showEvery) : {}
-  let piHost: PiHost | undefined
-  const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
+  const providers: Partial<Record<ActiveProviderId, NativeHost>> = options.host ? {} : {
     codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
     claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}), ultracodeEffort: () => agentControl.configuration().claudeUltracodeEffort })),
@@ -386,9 +393,21 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
-    // Pi starts only on this computer, where its own-model-server record lives.
-    pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
-      : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
+    // Antigravity runs with Sotto's own Gemini folder under this runtime's directory, as T3 Code keeps a profile of its own.
+    antigravity: adapter('antigravity', () => options.providers?.antigravity ?? new AntigravityAcpHost(directory, { ...captureMedia, usageEnabled: options.usageEnabled === true,
+      // The MCP servers the user set up for their own `agy` on this computer, handed to each thread beside Sotto's.
+      userMcpConfig: antigravityUserMcpConfig(),
+      ...(options.antigravity?.program ? { executable: options.antigravity.program.executable, executableArgs: options.antigravity.program.args } : {}),
+      // The sign-in Settings chose, with the key from the credential store only for the two methods that take one (ADR-0212).
+      signIn: options.antigravity?.signIn ?? (async () => {
+        const configuration = agentControl.configuration(), method = configuration.antigravitySignInMethod
+        const key = method === 'gemini-api-key' || method === 'agent-platform' ? credentials.get('antigravity') : ''
+        return { method, ...(key ? { apiKey: key } : {}), ...(configuration.antigravityProject ? { project: configuration.antigravityProject } : {}),
+          ...(configuration.antigravityLocation ? { location: configuration.antigravityLocation } : {}) }
+      }),
+      // Settings' binary path, then the `agy` Sotto downloaded under this directory, then `agy` on PATH (T3's order).
+      lookup: async () => ({ managed: () => managedAntigravityExecutable(directory),
+        ...(agentControl.configuration().antigravityBinaryPath ? { binaryPath: agentControl.configuration().antigravityBinaryPath } : {}), ...await options.antigravity?.lookup?.() }) })),
     // Hermes uses the account on the machine running the thread. The desktop also supplies its own model servers.
     hermes: adapter('hermes', () => options.providers?.hermes ?? new HermesAcpHost(directory, { heldProviders: held,
       ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })),
@@ -397,7 +416,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
       : new DeepSeekAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
   }
-  const threadHosts: Record<ProviderId, SottoThreadHost> | undefined = options.host ? undefined : {
+  const threadHosts: Record<ActiveProviderId, SottoThreadHost> | undefined = options.host ? undefined : {
     codex: new SottoThreadHost('codex', providers.codex!, threadRegistry!),
     claude: new SottoThreadHost('claude', providers.claude!, threadRegistry!),
     grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
@@ -405,7 +424,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
     opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
     cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
-    pi: new SottoThreadHost('pi', providers.pi!, threadRegistry!),
+    antigravity: new SottoThreadHost('antigravity', providers.antigravity!, threadRegistry!),
     hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
     deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
   }
@@ -423,7 +442,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, { historyEnabled: options.historyEnabled, watcherEnabled: options.watcherEnabled ?? false,
-    heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false })
+    heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false, owletsEnabled: options.owletsEnabled === true })
   if (detachedRuns) agentHost.watchDetachedRuns(detachedRuns)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
@@ -508,7 +527,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, modelRouterEnabled: options.modelRouterEnabled === true, modelRouter: () => options.settings().modelRouter, ...(options.modelRouterLog ? { modelRouterLog: options.modelRouterLog } : {}), watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, modelRouterEnabled: options.modelRouterEnabled === true, owletsEnabled: options.owletsEnabled === true, modelRouter: () => options.settings().modelRouter, ...(options.modelRouterLog ? { modelRouterLog: options.modelRouterLog } : {}), watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -520,6 +539,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
     ...(options.openThreadFolder ? { openThreadFolder: options.openThreadFolder } : {}),
+    reclaimAfterSettle: threadId => agentHost.reclaimThreadWorktree(threadId, {
+      automatic: true, stillEligible: thread => worktreeCleanup.canReclaimOnSettle(thread),
+    }),
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
@@ -529,8 +551,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
-    ...(options.locateClient ? { locateClient: options.locateClient } : {}),
-    ...(options.installedProviders ? { installedProviders: options.installedProviders } : {}),
+    // Antigravity's lookup also asks for the copy Sotto downloaded under this directory.
+    locateClient: options.locateClient ?? (provider => locateClient(provider, { antigravityDirectory: directory, antigravityBinaryPath: agentControl.configuration().antigravityBinaryPath })),
+    ...(options.installedProviders ? { installedProviders: async () => withAntigravityBinaryPath(await options.installedProviders!(), agentControl.configuration().antigravityBinaryPath) } : {}),
     writeThreadTitle: threadTitleWriter(shortTextWriter, options.writingSettings),
     writeCommandSummary: commandSummaryWriter(shortTextWriter, options.writingSettings),
     writeFirstMessageTitle: firstMessageTitleWriter(options.writingSettings),
@@ -842,7 +865,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     movesHere?.close()
     closingWatcherTools = watcherTools?.close()
   }
-  let piSignIn: PiSignIn | undefined
   let stoppingProviders: Promise<void> | undefined
   const stopProviders = (): Promise<void> => {
     if (stoppingProviders) return stoppingProviders
@@ -854,7 +876,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     stoppingProviders = (async () => {
       // The record's last write runs beside the providers' closing; nothing they do changes it now. A thread title still
       // being written gets up to two seconds before the side calls are stopped, so `closed()` saves it (#980).
-      const results = await Promise.allSettled([(async () => piSignIn?.close())(), reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
+      const results = await Promise.allSettled([reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
         ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : []), ...(limitClosed ? [limitClosed] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain
@@ -906,16 +928,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // desktop ends it again whenever the switch is saved off.
   const switchedOff = babysitter && options.babysitting?.agentTool?.() === false ? babysitter : undefined
   try {
-    // The desktop owns the terminal implementation. Its lifetime belongs to this runtime, including failed startup.
-    const nativePi = piHost
-    piSignIn = nativePi && options.runsAs !== 'headless-host' ? options.createPiSignIn?.(nativePi, {
-      modelsChanged: models => nativePi.setAccountModels(models),
-      openExternal: async url => { await options.openExternal(url) },
-      changed: async () => {
-        if (nativePi.isConnected()) await nativePi.accountsChanged()
-        else await agentControl.command({ type: 'connect', provider: 'pi', notice: false })
-      },
-    }) : undefined
     // Read every startup record inside the cleanup boundary, before a provider can start.
     await desktopDefaults?.load()
     await delegationRemote?.load()
@@ -946,7 +958,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       async () => watchedPullRequests?.close(),
       async () => toolReads.dispose(),
       async () => agentControl.dispose(),
-      async () => piSignIn?.close(),
       async () => reasoner.close?.(),
       async () => shortTextWriter.close(),
       ...Object.values(providers).map(provider => async () => provider.closed?.()),
@@ -958,7 +969,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   const delegationRecord = delegation
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+  const hostService = new LocalHostService({ control: agentControl, owlets: options.owletsEnabled === true, owletThreadIds: () => agentHost.owletThreadIds(), events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+    // A headless host reports the detached runs it finds that its desktops' threads may own (#2749).
+    ...(detachedRuns && options.runsAs === 'headless-host' ? { detachedRuns } : {}),
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
     ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {
       nextPromptListeners.add(listener)
@@ -1011,7 +1024,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
   // Hermes keeps its own copy of a keyed server's key (ADR-0124), only where its adapter runs.
   const ownServersHermes = options.ownServers && providers.hermes instanceof HermesAcpHost ? providers.hermes : undefined
-  const ownServersDeepSeek = options.ownServers && (piHost || deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { piHost?.ownServersChanged(); deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
+  const ownServersDeepSeek = options.ownServers && (deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
@@ -1028,6 +1041,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
     ...(providers.hermes instanceof HermesAcpHost ? { hermesHome: providers.hermes.folder, hermesSignedOut: hermesAccountChanged } : {}),
     openExternal: async url => { await options.openExternal(url) },
+    antigravityDirectory: directory, antigravityBinaryPath: () => agentControl.configuration().antigravityBinaryPath,
     ...(options.signInCommand ? { command: options.signInCommand } : {}),
     // Settings connections leave Threads quiet (ADR-0068): the row and the dialog say how it went.
     connect: async provider => {
@@ -1038,6 +1052,29 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       return provider === 'hermes' && connectedHermes()?.hasChatGptModels() === false ? 'Hermes did not return any ChatGPT models.' : undefined
     },
   }) : undefined
+  // Antigravity's own account actions from its row in Settings › Providers (ADR-0212): Gemini Enterprise's browser
+  // sign-in, which connects through the coordinator once it has signed in, and Sign out.
+  const antigravityHost = providers.antigravity instanceof AntigravityAcpHost ? providers.antigravity : undefined
+  let antigravityProgress: string | undefined
+  const antigravityAccount = antigravityHost && options.runsAs !== 'headless-host' ? {
+    signInWithBrowser: async (): Promise<string | undefined> => { await antigravityHost.signInWithBrowser(); return whyNotConnected(await agentControl.command({ type: 'connect', provider: 'antigravity', notice: false }), 'antigravity') },
+    signOut: async (): Promise<void> => { await antigravityHost.signOut(); await agentControl.command({ type: 'disconnect', provider: 'antigravity' }) },
+    // Install downloads Google's agy, checks its SHA-512 and connects Antigravity; the row reads how far it has got.
+    install: async (): Promise<string | undefined> => {
+      const runtime = agentControl.antigravityRuntime()
+      if (!runtime) return 'Sotto cannot download Antigravity here. Nothing was installed.'
+      const result = await runtime.install({ onProgress: progress => { antigravityProgress = describeAntigravityProgress(progress) } }).finally(() => { antigravityProgress = undefined })
+      if (!result.ok) return result.detail
+      return whyNotConnected(await agentControl.command({ type: 'connect', provider: 'antigravity', notice: false }), 'antigravity')
+    },
+    installProgress: (): string | undefined => antigravityProgress,
+    cancelInstall: (): boolean => agentControl.antigravityRuntime()?.cancel() ?? false,
+    removeDownloaded: async (): Promise<string> => {
+      const runtime = agentControl.antigravityRuntime()
+      if (!runtime) return 'There is no downloaded Antigravity to remove.'
+      return removeDownloadedAntigravity(runtime, antigravityHost, () => agentControl.command({ type: 'disconnect', provider: 'antigravity' }))
+    },
+  } : undefined
   idleCompaction.start()
-  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { antigravityAccount, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, detachedRuns, prepareForShutdown, close }
 }

@@ -48,7 +48,7 @@ describe('Usage routing', () => {
     held.add(first); open.add(second)
     try {
       await held.usageRead({ timeZone: 'UTC' })
-      expect(first.service.usageRead).toHaveBeenLastCalledWith({ timeZone: 'UTC', providerIds: ['codex', 'claude', 'grok', 'devin', 'opencode'] })
+      expect(first.service.usageRead).toHaveBeenLastCalledWith({ timeZone: 'UTC', providerIds: ['codex', 'claude', 'grok', 'devin', 'opencode', 'antigravity'] })
       await held.usageRead({ providerIds: ['muse'] })
       expect(first.service.usageRead).toHaveBeenLastCalledWith({ providerIds: [] })
       await held.usageRefresh({ providerIds: ['muse', 'codex'] })
@@ -210,7 +210,7 @@ describe('Usage transport boundary', () => {
     expect(hostRequestSchema.safeParse({ ...base, op: 'shell' }).success).toBe(true)
     expect(hostRequestSchema.safeParse({ ...base, op: 'usage-read', query: { timeZone: 'UTC', providerIds: ['codex'] } }).success).toBe(true)
     expect(hostRequestSchema.safeParse({ ...base, op: 'usage-read', query: { hostIds: [LOCAL] } }).success).toBe(false)
-    expect(hostRequestSchema.safeParse({ ...base, op: 'usage-refresh', providerIds: Array(7).fill('codex') }).success).toBe(false)
+    expect(hostRequestSchema.safeParse({ ...base, op: 'usage-refresh', providerIds: Array(8).fill('codex') }).success).toBe(false)
     expect(hostRequestSchema.safeParse({ ...base, op: 'usage-clear', request: { expectedRevision: 1, approved: true } }).success).toBe(false)
   })
   it('registers nothing on stable and authorizes bounded main-window requests before invoking the service', async () => {

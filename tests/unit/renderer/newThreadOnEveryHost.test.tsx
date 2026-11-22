@@ -39,6 +39,17 @@ describe('a new thread on any computer starts on this computer’s defaults (ADR
     const sent = await create(computers({ newThreadModelId: 'claude:sonnet', newThreadReasoningEffort: 'high' }, { models: [codex] }), FORGE)
     expect(sent).toMatchObject({ modelId: 'codex:gpt', reasoningEffort: 'high' })
   })
+  it('uses the project host’s speed catalog, including an older host’s Fast choice', async () => {
+    const defaults = { newThreadModelId: codex.id, newThreadSpeed: 'ultrafast' } as const
+    const available = computers(defaults, { models: [{ ...codex, speeds: [{ id: 'ultrafast', name: 'Ultra fast' }] }] })
+    expect(await create(available, FORGE)).toMatchObject({ modelId: codex.id, speed: 'ultrafast' })
+    const older = computers(defaults, { models: [{ ...codex, fastMode: {} }] })
+    const standard = await create(older, FORGE)
+    expect(standard).toMatchObject({ fastMode: false })
+    expect(standard.speed).toBeUndefined()
+    older.configuration.newThreadSpeed = 'fast'
+    expect(await create(older, FORGE)).toMatchObject({ fastMode: true })
+  })
   it('maps the effort by its position among the default model’s levels, on the host’s model', async () => {
     const opus: AgentModel = { ...sonnet, id: 'claude:opus', name: 'Claude Opus', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] }
     // The router hands the window this computer's model already resolved, inherited or chosen.

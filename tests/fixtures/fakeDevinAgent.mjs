@@ -20,6 +20,9 @@ const olderThan = target => {
  for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] < b[index]
  return false
 }
+// The user's own skills a session lists, each with the frontmatter its file sets past its name and description: one
+// that only keeps the model from running it, one that lets a tool run unasked while it runs, and one named as Devin's own `share`.
+const LISTED_SKILLS = { 'fixture-skill': 'disable-model-invocation: true\n', 'fixture-granting-skill': 'allowed-tools: Exec\n', share: '' }
 // Every process Sotto starts says what it is, so a test can count the processes a send costs.
 record({ method: 'fixture/spawn', params: { kind: process.argv.includes('--version') ? 'version' : process.argv.includes('plugins') ? 'plugins'
  : process.argv.includes('skills') ? 'skills' : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
@@ -41,6 +44,14 @@ if (process.argv.includes('plugins') && process.argv.includes('info')) {
 }
 if (process.argv.includes('skills') && process.argv.includes('show')) {
  const skill = process.argv[process.argv.indexOf('show') + 1]
+ // A skill of the user's own, outside any plugin: its frontmatter is what it is listed with below.
+ if (Object.hasOwn(LISTED_SKILLS, skill)) {
+  const base = join(root, 'listed-skills', skill)
+  mkdirSync(base, { recursive: true })
+  writeFileSync(join(base, 'SKILL.md'), `---\nname: ${skill}\ndescription: Synthetic skill.\n${LISTED_SKILLS[skill]}---\n\nSynthetic skill body.\n`)
+  process.stdout.write(`Skill: ${skill}\n\nProvider: Devin\nDescription: Synthetic skill.\nBase directory: ${base}\nTriggers: user\n\nContent:\n${'─'.repeat(60)}\nSynthetic skill body.\n${'─'.repeat(60)}\n`)
+  process.exit(0)
+ }
  const plugin = plugins.find(candidate => skill === `${candidate.name}:welcome`)
  if (!plugin) { process.stderr.write('Error: skill not found\n'); process.exit(1) }
  const base = join(root, 'plugin-skills', plugin.name)
@@ -116,6 +127,13 @@ const validServers = (servers, script) => Array.isArray(servers) && (!servers.le
  && server.headers.every(header => typeof header?.name === 'string' && typeof header.value === 'string'))
 const released = name => new Promise(resolve => { const timer = setInterval(() => { if (existsSync(path(name))) { clearInterval(timer); resolve() } }, 10) })
 function update(sessionId, value) { send({ method: 'session/update', params: { sessionId, update: value } }) }
+// What 3000.14.30821 lists once a session is made or loaded: its own commands beside the user's skills, which it marks
+// with the category `Skills`.
+function listCommands(sessionId) {
+ const command = (name, category) => ({ name, description: 'Synthetic command.', _meta: { 'cognition.ai/icon': 'zap', 'cognition.ai/category': category } })
+ update(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [command('bypass', 'Session'), command('share', 'Session'),
+  ...Object.keys(LISTED_SKILLS).map(name => command(name, 'Skills'))] })
+}
 function saveMessage(sessionId, message) {
  const session = read(nativePath(sessionId), null)
  if (!session) throw new Error('Missing fixture session')
@@ -209,8 +227,9 @@ createInterface({ input: process.stdin }).on('line', line => {
   const sessionId = randomUUID(); const session = { cwd: p.cwd, model: 'fixture-model', messages: [] }
   write(nativePath(sessionId), session); acquire(sessionId)
   applyScriptedPolicyChange(script, 'new')
-  if (script.delayCreate) setTimeout(() => result(frame.id, { sessionId, ...sessionInfo(session) }), script.delayCreate)
-  else result(frame.id, { sessionId, ...sessionInfo(session) })
+  // 3000.14.30821 lists a new session's commands just before it answers with the session's ID.
+  if (script.delayCreate) setTimeout(() => { listCommands(sessionId); result(frame.id, { sessionId, ...sessionInfo(session) }) }, script.delayCreate)
+  else { listCommands(sessionId); result(frame.id, { sessionId, ...sessionInfo(session) }) }
  } else if (frame.method === 'session/load') {
   // A held load waits twice for the test: before it takes the session, and again before it answers.
   const held = script.holdLoad === true
@@ -230,7 +249,7 @@ createInterface({ input: process.stdin }).on('line', line => {
    replay(p.sessionId)
    if (!acquire(p.sessionId)) { reject(frame.id, -32015); return }
    if (held) await released('release-reply')
-   const loaded = () => result(frame.id, sessionInfo(script.loadModel ? { ...session, model: script.loadModel } : session))
+   const loaded = () => { listCommands(p.sessionId); result(frame.id, sessionInfo(script.loadModel ? { ...session, model: script.loadModel } : session)) }
    // A slow reply holds the session open but not yet confirmed, as a reopen is while Sotto waits on it.
    if (script.delayLoad) setTimeout(loaded, script.delayLoad); else loaded()
   })()

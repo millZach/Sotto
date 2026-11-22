@@ -29,6 +29,19 @@ export function cursorModeLine(mode: AgentRuntimeMode): string | undefined {
   }
 }
 /**
+ * What each of Antigravity's four modes does (ADR-0212, as T3 Code runs them), in the interface language. `agy` has no
+ * edit-only or skip-everything mode of its own over ACP, so under Allow edits and Full access Sotto answers `agy`'s
+ * requests for the thread by its mode; Auto is `agy`'s own. Its questions always come to the user.
+ */
+export function antigravityModeLine(mode: AgentRuntimeMode): string {
+  switch (mode) {
+    case 'approval-required': return t`Antigravity asks before it edits files or runs commands, and you answer each request.`
+    case 'auto-accept-edits': return t`Sotto answers Antigravity’s requests to change files for you. Commands and anything else still come to you, and so do its questions.`
+    case 'auto': return t`Antigravity’s own Auto decides what runs without asking. What it asks about comes to you.`
+    case 'full-access': return t`Sotto answers every Antigravity request for you, so it edits files and runs commands without asking. Its questions still come to you.`
+  }
+}
+/**
  * What each of DeepSeek's three modes does, said as the harness doing it (ADR-0138), in the interface
  * language. Its permissions are a sandbox boundary: Ask for approval denies a first attempt and the model asks to
  * retry it, and Allow edits also lets commands and network run inside the sandbox, so both say so.
@@ -112,8 +125,7 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
     const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
-      : model?.providerId === 'pi' ? t`Pi has Full access and does not ask before running tools, changing files or using the network.`
-      : model?.providerId === 'codex' ? codexModeLine(mode, computer) : undefined
+      : model?.providerId === 'codex' ? codexModeLine(mode, computer) : model?.providerId === 'antigravity' ? antigravityModeLine(mode) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }

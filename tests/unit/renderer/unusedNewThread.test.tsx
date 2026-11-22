@@ -29,6 +29,15 @@ describe('an unused new thread', () => {
     expect(unusedNewThread(state([thread({ speed: null })]), project)?.id).toBe('thread')
   })
 
+  it('reuses only the speed new work will start at on the project’s model', () => {
+    const current = state([thread({}), thread({ id: 'quick', speed: 'ultrafast' })])
+    current.configuration.newThreadSpeed = 'ultrafast'
+    current.host.models[0]!.speeds = [{ id: 'ultrafast', name: 'Ultra fast' }]
+    expect(unusedNewThread(current, project)?.id).toBe('quick')
+    current.host.models[0]!.speeds = [{ id: 'fast', name: 'Fast' }]
+    expect(unusedNewThread(current, project)?.id).toBe('thread')
+  })
+
   it('does not reopen an empty thread from workspace-settled work', () => {
     expect(unusedNewThread(state([thread({ workspaceSettledAt: '2026-09-26T00:00:00.000Z' })]), project)).toBeUndefined()
     expect(unusedNewThread(state([thread({})]), { ...project, workspaceSettledAt: '2026-09-26T00:00:00.000Z' })).toBeUndefined()

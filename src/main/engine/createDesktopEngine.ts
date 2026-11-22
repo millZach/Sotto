@@ -38,6 +38,7 @@ import { registerContinueIpc } from '../agents/continueThreadIpc'
 import { CouncilToolServer, councilUserMessage } from '../agents/councilTools'
 import { CursorAcpHost } from '../agents/cursor'
 import { registerCursorSignInIpc } from '../agents/cursorSignInIpc'
+import { registerAntigravityAccountIpc } from '../agents/antigravityAccountIpc'
 import { registerDelegationIpc } from '../agents/delegationIpc'
 import { DelegationToolServer } from '../agents/delegationTools'
 import { DevinAcpHost } from '../agents/devin'
@@ -57,9 +58,6 @@ import { registerNextPromptIpc, windowNextPrompt } from '../agents/nextPromptIpc
 import { nextPromptWatcherFacts } from '../agents/nextPromptProject'
 import { OpenCodeHost } from '../agents/opencode'
 import { registerOpenCodeSignInIpc } from '../agents/opencodeSignInIpc'
-import { PiHost } from '../agents/pi'
-import { PiSignIn } from '../agents/piSignIn'
-import { registerPiSignInIpc } from '../agents/piSignInIpc'
 import { ClaudeStreamJsonHost } from '../agents/providers/claude/claude'
 import { CodexAppServerHost } from '../agents/providers/codex/codex'
 import { PullRequestToolServer } from '../agents/pullRequestTools'
@@ -241,7 +239,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   })
   productEvents.setPermission(productEventsPermission(workingCopySettings))
 
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes') || !heldProviders.has('pi')) && startupSettings.localHostEnabled
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
     ? new OwnServers({
         directory: userDataPath,
         ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}),
@@ -290,12 +288,18 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   if (cursorFixtureRoot && (!isAbsolute(cursorFixtureRoot) || !cursorFixtureExecutable || !isAbsolute(cursorFixtureExecutable))) {
     throw new Error('The Cursor test fixture requires absolute paths.')
   }
-  const nativeFixtureRoot = e2eConfiguration !== null && !isPackaged && !devinFixtureRoot && !museFixtureRoot && !opencodeFixtureRoot && !cursorFixtureRoot ? env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
+  // Antigravity's real adapter over the fake `agy`, the same way; the runtime builds it, so its sign-in reads Settings as in use.
+  const antigravityFixtureRoot = e2eConfiguration !== null && !isPackaged ? env['SOTTO_E2E_ANTIGRAVITY_ROOT'] : undefined
+  const antigravityFixtureExecutable = env['SOTTO_E2E_ANTIGRAVITY_EXECUTABLE']
+  if (antigravityFixtureRoot && (!isAbsolute(antigravityFixtureRoot) || !antigravityFixtureExecutable || !isAbsolute(antigravityFixtureExecutable))) {
+    throw new Error('The Antigravity test fixture requires absolute paths.')
+  }
+  const nativeFixtureRoot = e2eConfiguration !== null && !isPackaged && !devinFixtureRoot && !museFixtureRoot && !opencodeFixtureRoot && !cursorFixtureRoot && !antigravityFixtureRoot ? env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
   const nativeFixtureExecutable = env['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE']
   if (nativeFixtureRoot && (!isAbsolute(nativeFixtureRoot) || !nativeFixtureExecutable || !isAbsolute(nativeFixtureExecutable))) {
     throw new Error('The native test fixture requires absolute paths.')
   }
-  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || opencodeFixtureRoot || cursorFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || opencodeFixtureRoot || cursorFixtureRoot || antigravityFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
   const ghStandInScript = e2eConfiguration !== null && !isPackaged ? env['SOTTO_E2E_GH_SCRIPT'] : undefined
   const ghStandInExecutable = env['SOTTO_E2E_GH_EXECUTABLE']
   if (ghStandInScript && (!isAbsolute(ghStandInScript) || !ghStandInExecutable || !isAbsolute(ghStandInExecutable))) throw new Error('The gh test stand-in requires absolute paths.')
@@ -334,7 +338,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ...e2eConfiguration ? { fetch: e2eTeamFetch(userDataPath) } : {},
   }) : undefined
 
-  const fixtureScript = (name: string): string => join(__dirname, '../../tests/fixtures', name)
+  const fixtureScript = (name: string): string => join(process.cwd(), 'tests', 'fixtures', name)
   const localRuntime: DesktopLocalRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
     directory: userDataPath,
@@ -344,6 +348,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     threadSnoozeEnabled: owlFeatures['thread-snooze'],
     dynamicThreadsEnabled: owlFeatures['dynamic-threads'],
     modelRouterEnabled: owlFeatures['model-router'],
+    owletsEnabled: owlFeatures.owlets,
     heldProviders,
     usageEnabled,
     productEvents,
@@ -387,8 +392,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     },
     babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
     ...(e2eConfiguration !== null ? { signInCommand: async () => undefined } : {}),
-    createPiHost: (directory, hostOptions) => new PiHost(directory, hostOptions),
-    createPiSignIn: (host, signInOptions) => new PiSignIn(host.accounts, signInOptions),
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}\n`, 'utf8') : shellBridge.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { shellBridge.onE2EThreadFolder?.(path); return }
@@ -398,7 +401,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ...(authority === undefined ? {} : { authority }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
-    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
+    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders, directory: userDataPath }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
@@ -429,6 +432,11 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
         ...fixtureCaptures,
       }) } : {}),
     } } : {}),
+    // Antigravity is left out of `providers`, so the runtime's own host starts the fake `agy` in its place.
+    ...(antigravityFixtureRoot ? {
+      providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost() },
+      antigravity: { program: { executable: antigravityFixtureExecutable!, args: [fixtureScript('fakeAntigravityAgent.mjs'), antigravityFixtureRoot] } },
+    } : {}),
     ...(nativeFixtureRoot ? { providers: {
       claude: new ClaudeStreamJsonHost({ userDataPath, executable: nativeFixtureExecutable!,
         args: [fixtureScript('fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...fixtureCaptures }),
@@ -457,6 +465,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), {
     replyBuilt: agentStateBroadcaster.replyBuilt,
     watcherEnabled,
+    owletsEnabled: owlFeatures.owlets,
     heldProviders,
     crossMachineWork: crossMachineEnabled,
     streamingPublishCost: owlFeatures['streaming-publish-cost'],
@@ -475,6 +484,14 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
   })
+  // Detached runs a thread here started on a paired host, as over ssh (#2749): that host reports the runs it found with marks
+  // it does not own, this computer's watch claims the ones its own threads' marks name, a turn ending here asks each host to
+  // look again, and Stop on one goes to the host that found it.
+  const detachedRunWatch = localRuntime.detachedRuns
+  if (detachedRunWatch) {
+    detachedRunWatch.useElsewhere({ look: () => hostRouter.lookForDetachedRunsElsewhere(), stop: (hostId, runId, mark) => hostRouter.stopDetachedRunElsewhere(hostId, runId, mark) })
+    hostRouter.subscribeDetachedRunsElsewhere((hostId, machine, runs) => detachedRunWatch.setElsewhere(hostId, machine, runs))
+  }
 
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
   const threadMoves = 'threadMoves' in localRuntime ? localRuntime.threadMoves : undefined
@@ -1142,10 +1159,11 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const cleanupMainCheckout = registerMainCheckoutIpc(ipc, localRuntime.mainCheckout, senders,
     async path => { const error = await shellBridge.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
   const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { shellBridge.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
-  const cleanupPiSignIn = registerPiSignInIpc(ipc, heldProviders.has('pi') ? undefined : localRuntime.piSignIn, senders)
   const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipc, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, senders)
   const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipc, localRuntime.providerSignIn, senders)
   const cleanupCursorSignIn = registerCursorSignInIpc(ipc, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, senders)
+  // Antigravity's Gemini Enterprise sign-in, Sign out and its own download from its row (ADR-0212).
+  const cleanupAntigravityAccount = registerAntigravityAccountIpc(ipc, localRuntime.antigravityAccount, senders)
   const cleanupOwnServers = registerOwnServersIpc(ipc, ownServers, senders)
   const cleanupOwnServerCleanup = registerOwnServerCleanupIpc(ipc, ownServerCleanup, senders)
   const cleanupMemory = registerMemoryIpc(ipc, startupSettings.memoryEnabled ? memoryProfile : undefined, senders, snapshot => shellBridge.sendToMain(MEMORY_CHANGED, snapshot))
@@ -1379,9 +1397,9 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     unsubscribeHostNextPrompts?.()
     cleanupMainCheckout()
     unsubscribeMainCheckout?.()
-    cleanupPiSignIn()
     cleanupOpenCodeSignIn()
     cleanupCursorSignIn()
+    cleanupAntigravityAccount()
     cleanupProviderSignIn()
     cleanupOwnServers()
     cleanupOwnServerCleanup()

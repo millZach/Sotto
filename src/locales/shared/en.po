@@ -227,6 +227,10 @@ msgstr "OpenRouter was too busy to take the recording. Your recording is kept un
 msgid "Orchestrating"
 msgstr "Orchestrating"
 
+#: src/shared/interfaceWords.ts
+msgid "Owlets are available in Sotto Owl. Open an Owl build to continue. Nothing was sent."
+msgstr "Owlets are available in Sotto Owl. Open an Owl build to continue. Nothing was sent."
+
 #. The name of an effort colourway.
 #: src/shared/interfaceWords.ts
 msgid "Plasma"

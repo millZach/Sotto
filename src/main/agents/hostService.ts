@@ -1,3 +1,5 @@
+import type { DetachedRunElsewhere, RunMark } from '../../shared/agentMonitoring'
+import { DETACHED_RUN_NOT_STOPPED, type DetachedRunWatch } from './detachedRuns'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { AgentThreadWords } from '../../shared/threadWords'
 import { startHandoverPrefix } from '../../shared/threadStarts'
@@ -118,6 +120,7 @@ export interface HostService {
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
+  readonly supportsWatcherAntigravity?: boolean
   readonly supportsWatcherCursor?: boolean
   /**
    * Tells `listener` each time the host's Watcher projection changes, with the projection now held: undefined when a
@@ -237,6 +240,17 @@ export interface HostService {
   checkQueue?(): readonly CheckQueueEntry[] | undefined
   subscribeCheckQueue?(listener: () => void): () => void
   /**
+   * The detached runs found on this machine with a mark none of its threads owns (`detached-runs-elsewhere`, #2749), for
+   * its recorded desktops: one a desktop's thread started here, as over ssh. `lookForDetachedRuns` looks again a few
+   * seconds from now; `stopDetachedRunElsewhere` ends one, by the user's Stop on a desktop, answering null once it ended
+   * or why it did not. Present only where this machine looks for detached runs.
+   */
+  readonly supportsDetachedRunsElsewhere?: boolean
+  detachedRunsElsewhere?(): readonly DetachedRunElsewhere[]
+  subscribeDetachedRunsElsewhere?(listener: () => void): () => void
+  lookForDetachedRuns?(): void
+  stopDetachedRunElsewhere?(runId: string, mark: RunMark): Promise<string | null>
+  /**
    * The next prompts the host holds for its threads (`next-prompts`, ADR-0132, ADR-0173), by its own thread IDs, and each
    * change, a let-go one with `prompt` null. On a desktop's connection to a host, what the host last pushed, and
    * `setNextPromptsWanted` tells the host whether this desktop wants them now.
@@ -279,6 +293,9 @@ export interface HostService {
   readonly supportsFailureSeen?: boolean
   /** The Owl host owns snoozes and accepts snooze-thread (ADR-0175). */
   readonly supportsThreadSnooze?: boolean
+  /** The host makes and changes owlets (ADR-0213): its Owl answer is on. */
+  readonly supportsOwlets?: boolean
+  owletThreadIds?(): ReadonlySet<string>
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
   /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
@@ -496,6 +513,8 @@ export interface LocalHostControl {
  * carries between them. Every command arrives with the identity of the client that sent it, so the
  * boundary is the same one a socket would cross.
  */
+const NO_OWLETS: ReadonlySet<string> = new Set()
+
 export class LocalHostService implements HostService {
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } { return this.control.watcherPhoneExclusions?.() ?? { threadIds: [], projectIds: [] } }
   get watcherPhone(): WatcherPhoneService | undefined { return this.options.watcherPhone }
@@ -528,7 +547,7 @@ export class LocalHostService implements HostService {
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
   /** `facts` reads this machine's report, the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
+  constructor(private readonly options: { control: LocalHostControl; owlets?: boolean; owletThreadIds?: () => ReadonlySet<string>; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
@@ -583,6 +602,8 @@ export class LocalHostService implements HostService {
     delegationViews?: DelegationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
     checks?: CheckQueue
+    /** The watch for detached runs (ADR-0204), present only where this machine looks for them: its runs from elsewhere (#2749). */
+    detachedRuns?: Pick<DetachedRunWatch, 'foreignRuns' | 'subscribeForeign' | 'turnEnded' | 'stopForeign'>
     /** The next prompts this host builds for its threads (ADR-0173), present only while its `next-prompt` Owl answer is on. */
     nextPrompts?: { list(): readonly NextPromptEntry[]; subscribe(listener: (entry: NextPromptEntry) => void): () => void }
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
@@ -676,6 +697,15 @@ export class LocalHostService implements HostService {
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
   }
+  get supportsDetachedRunsElsewhere(): boolean { return this.options.detachedRuns !== undefined }
+  detachedRunsElsewhere(): readonly DetachedRunElsewhere[] { return this.options.detachedRuns?.foreignRuns() ?? [] }
+  subscribeDetachedRunsElsewhere(listener: () => void): () => void { return this.options.detachedRuns?.subscribeForeign(listener) ?? (() => undefined) }
+  lookForDetachedRuns(): void { this.options.detachedRuns?.turnEnded() }
+  async stopDetachedRunElsewhere(runId: string, mark: RunMark): Promise<string | null> {
+    if (!this.options.detachedRuns) return DETACHED_RUN_NOT_STOPPED
+    // Only a run it reports now, and only the same process: the watch's own words say why not.
+    try { await this.options.detachedRuns.stopForeign(runId, mark); return null } catch (error) { return error instanceof Error ? error.message : DETACHED_RUN_NOT_STOPPED }
+  }
   get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }
   /** The queue's own view, taken only after it changed, so a read copies nothing. */
   checkQueue(): readonly CheckQueueEntry[] | undefined { return this.options.checks?.view() }
@@ -700,6 +730,10 @@ export class LocalHostService implements HostService {
     return this.options.agentsView.delegations?.(threadId, this.view().host.threads) ?? { threadId, threads: [] }
   }
   get supportsThreadSnooze(): boolean { return this.control.supportsThreadSnooze === true }
+  /** Owlets' Owl answer on this host (ADR-0213), so it lists `owlets`. */
+  get supportsOwlets(): boolean { return this.options.owlets === true }
+  /** The threads that are owlets (ADR-0213), which a phone is not shown, kept by the workspace rather than read per update. */
+  owletThreadIds(): ReadonlySet<string> { return this.options.owletThreadIds?.() ?? NO_OWLETS }
   /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
   readonly supportsFailureSeen = true
   get supportsBringBack(): boolean { return this.options.bringBack === true }

@@ -228,7 +228,6 @@ import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLang
 import { INTERFACE_LANGUAGE_SHOWN } from '../shared/interfaceLanguages'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
-import { PI_RENDERER_ARGUMENT } from '../shared/piSignIn'
 import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
 import { OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, type OwnCleanupChoice } from '../shared/ownServerCleanup'
@@ -859,7 +858,6 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(popupEnabled ? [POPUP_RENDERER_ARGUMENT] : []),
         ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
-        ...(!heldProviders.has('pi') && startupSettings.localHostEnabled ? [PI_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
         ...(desktopEngine?.metadata.hasOwnServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : []),

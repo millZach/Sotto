@@ -13,6 +13,7 @@ import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
+import { OwletsIcon } from '../features/owlets/OwletsIcon'
 import { SottoMark } from './SottoMark'
 import { WindowControls } from './WindowControls'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
@@ -57,14 +58,17 @@ export interface Room { readonly id: AppRoom; readonly label: string; readonly d
 const dictate = (): Room => ({ id: 'dictate', label: interfaceI18n._(msg({ message: 'Dictate', comment: 'The room switch: the page you dictate on' })), destination: 'home' })
 const watcher: Room = { id: 'watcher', label: 'Watcher', destination: 'watcher' }
 const threads = (): Room => ({ id: 'threads', label: interfaceI18n._(msg({ message: 'Threads', comment: 'The room switch and page links: the Threads page' })), destination: 'threads' })
+// Owlets is a name, as Watcher is (ADR-0213).
+const owlets: Room = { id: 'owlets', label: 'Owlets', destination: 'owlets' }
 
 /**
  * The room switch, the one definition every switch draws: Dictate | Threads, with Watcher's owl between them
- * while the Watcher gate is on (ADR-0072, ADR-0073). Dictate leaves while dictation is off (ADR-0107). A switch
- * left with one room is not drawn. The Council is no room: it is a tab of a thread pane's drawer (ADR-0177).
+ * while the Watcher gate is on (ADR-0072, ADR-0073), and Owlets after Threads while its Owl feature is (ADR-0213).
+ * Dictate leaves while dictation is off (ADR-0107). A switch left with one room is not drawn. The Council is no room:
+ * it is a tab of a thread pane's drawer (ADR-0177).
  */
-export function appRooms({ watcher: watcherOn, dictation }: { readonly watcher: boolean; readonly dictation: boolean }): ReadonlyArray<Room> {
-  return [...(dictation ? [dictate()] : []), ...(watcherOn ? [watcher] : []), threads()]
+export function appRooms({ watcher: watcherOn, owlets: owletsOn = false, dictation }: { readonly watcher: boolean; readonly owlets?: boolean; readonly dictation: boolean }): ReadonlyArray<Room> {
+  return [...(dictation ? [dictate()] : []), ...(watcherOn ? [watcher] : []), threads(), ...(owletsOn ? [owlets] : [])]
 }
 
 
@@ -97,7 +101,7 @@ export interface RoomTabProps {
  */
 export function RoomTabFace({ room, named = true }: { readonly room: Room; readonly named?: boolean }): ReactNode {
   return <>
-    {room.id === 'dictate' ? <Mic size={16} aria-hidden="true" /> : room.id === 'watcher' ? <WatcherOwl size={16} /> : <MessagesSquare size={16} aria-hidden="true" />}
+    {room.id === 'dictate' ? <Mic size={16} aria-hidden="true" /> : room.id === 'watcher' ? <WatcherOwl size={16} /> : room.id === 'owlets' ? <OwletsIcon size={16} /> : <MessagesSquare size={16} aria-hidden="true" />}
     {named ? <span className="room-tab__name" aria-hidden="true">{room.label}</span> : null}
   </>
 }
@@ -159,6 +163,7 @@ const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: MessageDescr
 export function roomFor(navigation: ManagementNavigation | null): AppRoom | null {
   if (navigation === 'home') return 'dictate'
   if (navigation === 'watcher') return 'watcher'
+  if (navigation === 'owlets') return 'owlets'
   if (navigation === 'threads' || navigation === 'memory') return 'threads'
   return null
 }
@@ -170,7 +175,7 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
  * included; Watcher's room is the Threads page while its gate is off.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
-  if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
+  if (threadsPage || navigation === 'settings' || navigation === 'watcher' || navigation === 'owlets') return 'page'
   if (navigation === 'home' || navigation === 'usage' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
@@ -209,7 +214,7 @@ export function AppShell({
   const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
-  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
+  const rooms = appRooms({ watcher: useWatcherEnabled(), owlets: useOwlFeature('owlets'), dictation: useDictationOn() })
   // Memory is hidden for the beta: its link goes with it.
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')

@@ -16,7 +16,7 @@ describe('usage dashboard boundaries', () => {
     const parsed = usageTokenObservationSchema.parse(observation)
     expect(parsed.tokens).toEqual({ input: 0, cached: 0 })
     // Muse and OpenCode are counted in Sotto threads (October 21, 2026); OpenCode reports no account limits.
-    expect(usageProviderIdSchema.options).toEqual(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
+    expect(usageProviderIdSchema.options).toEqual(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'antigravity'])
     expect(usageProviderIdSchema.options.every(id => providerIdSchema.options.includes(id))).toBe(true)
     for (const providerId of ['muse', 'opencode'] as const) {
       expect(usageTokenObservationSchema.safeParse({ ...observation, providerId }).success).toBe(true)
@@ -65,6 +65,10 @@ describe('usage dashboard boundaries', () => {
     expect(usageLocalHostReadSchema.parse({ status: 'ready', quotas: [], persistence: 'saved' })).toEqual({ status: 'ready', quotas: [], persistence: 'saved' })
     expect(usageLocalHostReadSchema.safeParse({ hostId: 'computer-1', status: 'ready', quotas: [] }).success).toBe(false)
     expect(usageLocalHostReadSchema.safeParse({ status: 'offline', quotas: [] }).success).toBe(false)
+    // A host from before November 21, 2026 still sends Antigravity's limits; they are dropped, and the rest of its read kept (ADR-0212).
+    const codex = { providerId: 'codex', status: 'available', windows: [], refreshable: true }
+    expect(usageLocalHostReadSchema.parse({ status: 'ready', quotas: [codex, { providerId: 'antigravity', status: 'unavailable', windows: [], refreshable: true, reason: 'not-read' }] }))
+      .toEqual({ status: 'ready', quotas: [codex] })
     expect(usageHostReadSchema.safeParse({ hostId: 'computer-1', status: 'offline', quotas: [] }).success).toBe(true)
     const prompts = { user: 0, watcher: 0, wakeUp: 0, total: 0, steered: 0 }
     expect(usageHourlyAggregateSchema.safeParse({ weekday: 0, hour: 0, prompts }).success).toBe(true)

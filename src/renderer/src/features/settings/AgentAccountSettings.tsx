@@ -3,13 +3,16 @@ import { FolderOpen, SlidersHorizontal } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import { PROVIDER_LABELS, type AgentCommand, type AgentConfiguration, type AgentRuntimeMode, type AgentState } from '../../../../shared/agents'
+import { PROVIDER_LABELS, type AgentCommand, type AgentConfiguration, type AgentRuntimeMode, type AgentSpeed, type AgentState } from '../../../../shared/agents'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
+import { fitSpeed } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { newThreadDefaultModelId, newThreadDefaultsCatalog, newThreadOptionsOn } from '../../agents/newThread'
 import { useNewThreadsDynamicSwitch } from '../../agents/DynamicSwitch'
 import { useNewThreadsRouterSwitch } from '../../agents/RouterSwitch'
+import { offeredSpeeds, speedChoices, speedName } from '../../agents/ThreadOptions'
+import { SPEED_STANDARD } from '../../agents/pendingSettings'
 import { ChoiceChip } from '../../agents/ChoiceChip'
 import { effortChoices, RUNTIME_LABELS } from '../../agents/permissionPresentation'
 import { EffortPicker } from '../../agents/EffortPicker'
@@ -20,7 +23,7 @@ import { SettingsGroup } from './SettingsGroup'
 import '../../agents/agents.css'
 
 /**
- * Settings → Threads' "New threads start with" row: the composer's own model, reasoning and permission chips,
+ * Settings → Threads' "New threads start with" row: the model, reasoning, speed and permission chips,
  * saving on change (issue #347). The permissions chip always lists Sotto's four modes, whatever the chosen
  * model offers, because the default is a Sotto-wide preference; the note under the row says when the chosen
  * model's provider starts a thread on a different mode instead (the nearest safer one it offers, or, for a
@@ -37,6 +40,8 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
   const model = resolveModel(models, modelId)
   const reasoning = configuration.newThreadReasoningEffort || model?.defaultReasoningEffort || ''
   const efforts = effortChoices(model, reasoning)
+  const speeds = offeredSpeeds(model, model?.providerId)
+  const speed = fitSpeed(configuration.newThreadSpeed, model) ?? SPEED_STANDARD
   const chosenMode = configuration.newThreadRuntimeMode
   const provider = (model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider) ?? t({ message: 'This provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })
   // An unset option at the top, so a chosen default can go back to the provider's own once it is set.
@@ -66,13 +71,16 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
   const router = useNewThreadsRouterSwitch({ provider: model?.providerId })
   return <div className="account-row account-row--chips">
     {dynamic.dialog}
-    <span className="account-row__heading"><strong>{t`New threads start with`}</strong><span>{t`Model, reasoning effort and permissions.`}</span></span>
+    <span className="account-row__heading"><strong>{t`New threads start with`}</strong><span>{speeds.length ? t`Model, reasoning effort, speed and permissions.` : t`Model, reasoning effort and permissions.`}</span></span>
     <fieldset className="account-row__control" data-setting="thread-defaults">
       <legend className="tt-visually-hidden">{t`New threads start with`}</legend>
       <ModelPicker foot={dynamic.foot || router.foot ? close => <>{dynamic.foot?.(close)}{router.foot?.()}</> : undefined} suffix={router.routing ? t({ message: 'routed', comment: 'After a model\'s name on the New threads start with chip: new threads start with model routing on.' }) : dynamic.suffix}
         label={router.routing ? t`Choose model. New threads start with model routing` : dynamic.overseeing ? t`Choose model. ${modelName} oversees new threads` : undefined} models={models} modelId={modelId} disabled={false} onChange={pressed => save({ newThreadModelId: chosenModelId(models, pressed, modelId) })} />
       {efforts.length > 0 && <EffortPicker value={reasoning} options={efforts} disabled={false}
         onChange={effort => save({ newThreadReasoningEffort: effort })} defaultValue={model?.defaultReasoningEffort} modelName={model?.name} />}
+      {speeds.length > 0 && <ChoiceChip label={t`Default speed for new threads`} placeholder={speedName(SPEED_STANDARD, speeds)}
+        value={speed} options={speedChoices(speeds, model?.providerId)} disabled={false} pending={false} flip
+        onChange={id => save({ newThreadSpeed: id === SPEED_STANDARD ? null : id as AgentSpeed })} />}
       <ChoiceChip label={t`Default permissions for new threads`} placeholder={t`Provider default`} value={chosenMode ?? ''} options={permissionOptions} disabled={false} pending={false}
         onChange={mode => save({ newThreadRuntimeMode: (mode || null) as AgentRuntimeMode | null })} />
     </fieldset>

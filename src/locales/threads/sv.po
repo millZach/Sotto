@@ -106,6 +106,12 @@ msgstr ""
 msgid "{0} of {1} models selected"
 msgstr ""
 
+#. A detached run on another machine: {0} is its name, such as "Codex run"; {machine} is the machine, such as forge.
+#. placeholder {0}: work.label
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "{0} on {machine}"
+msgstr ""
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -596,6 +602,11 @@ msgstr ""
 msgid "{kindWord}: {name}, {stateWord}"
 msgstr ""
 
+#. {label} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/EffortGauge.tsx
+msgid "{label} — suggested for this draft"
+msgstr ""
+
 #. {label} is the code's language, such as TypeScript, or the word "Code".
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "{label} code block"
@@ -681,6 +692,11 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{machine} is not connected, so Sotto cannot read how it went since. It reads it again when {machine} reconnects."
+msgstr ""
+
+#. {maker} is the company that made the models, such as Google.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "{maker} models in Antigravity"
 msgstr ""
 
 #. {maker} is the company that made the models, such as Anthropic.
@@ -1244,6 +1260,8 @@ msgid "{secondsLeft, plural, other {# seconds left to answer}}"
 msgstr ""
 
 #. {setLevel} is a reasoning effort level, or "Provider default".
+#. {setLevel} is a reasoning effort level, or "Provider default".
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "{setLevel} is set. Choose a level this model offers."
 msgstr ""
@@ -1686,6 +1704,10 @@ msgstr ""
 msgid "A folder named {trimmed} is already here."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "A key from Google AI Studio."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "a Linux machine"
 msgstr ""
@@ -1777,10 +1799,6 @@ msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Access token"
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Account"
 msgstr ""
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
@@ -1955,12 +1973,29 @@ msgstr ""
 msgid "Agent controls are unavailable. Reopen Sotto to reconnect."
 msgstr ""
 
+#. A way Antigravity signs in: Google Cloud’s Agent Platform (Vertex AI). Agent Platform is Google’s product name; keep it.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Agent Platform"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Agent Platform API key"
+msgstr ""
+
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Agent setting"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "Agents"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "agy to use instead of Sotto’s download"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "agy uses this computer’s Google Cloud application default credentials for that project."
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -2092,6 +2127,46 @@ msgstr ""
 msgid "Answered, while {who} waited for it."
 msgstr ""
 
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "Antigravity asks before it edits files or runs commands, and you answer each request."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Antigravity could not be installed. Nothing was changed. Try Install again."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Antigravity could not sign out. Your threads are kept. Try Sign out again."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Antigravity did not accept that code. Nothing was signed in. Sign in again for a new code."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Antigravity did not finish signing in, so Sotto is not connected to it. Nothing was saved. Sign in again to try once more."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Antigravity is signed out on this computer. Your threads are kept."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Antigravity’s CLI, agy, is not on this computer. Sotto can download it from Google and check it, which needs about 1.25 GB free while it unpacks. Sotto works with agy 1.5.0 or newer."
+msgstr ""
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Antigravity’s model makers"
+msgstr ""
+
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "Antigravity’s own Auto decides what runs without asking. What it asks about comes to you."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Antigravity’s sign-in is not available right now. Nothing was changed."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Any provider until your first message."
 msgstr ""
@@ -2100,6 +2175,7 @@ msgstr ""
 msgid "API actions"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "API key"
 msgstr ""
@@ -2222,7 +2298,11 @@ msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file
 msgstr ""
 
 #. A permission mode: the agent decides what to ask about.
+#. On a routed thread's effort display: model routing chooses the effort.
+#. On a routed thread's effort display: model routing chooses the effort.
 #. On a routed thread's model chip, in place of a model's name: model routing chooses the model.
+#: src/renderer/src/agents/EffortGauge.tsx
+#: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/permissionPresentation.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Auto"
@@ -2277,6 +2357,10 @@ msgctxt "walkthrough"
 msgid "Back"
 msgstr ""
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Back to Antigravity’s model makers"
+msgstr ""
+
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Back to computers"
 msgstr ""
@@ -2304,6 +2388,10 @@ msgstr ""
 
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "being babysat"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Binary path"
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -2402,6 +2490,8 @@ msgid "Callouts from {by}"
 msgstr ""
 
 #. Stops a sign-in that is waiting for the user.
+#. Stops a sign-in that is waiting for the user.
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/DeleteThread.tsx
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -2419,9 +2509,21 @@ msgstr ""
 msgid "Cancel (Esc)"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Cancel install"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Cancel installing Antigravity"
+msgstr ""
+
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Cancel signing in to {sourceName}"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Cancel signing in to Antigravity"
 msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
@@ -2666,6 +2768,10 @@ msgstr ""
 msgid "Choose branch"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Choose how Agent Platform connects."
+msgstr ""
+
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Choose model"
@@ -2885,6 +2991,10 @@ msgstr ""
 msgid "Code from the {sourceName} page"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Code from the Antigravity page"
+msgstr ""
+
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Codex asks before every edit, and before every command your Codex rules don’t already allow, even one that only reads."
 msgstr ""
@@ -3039,6 +3149,18 @@ msgstr ""
 #. A changed file's Git status.
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Conflicted"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Connect"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Connect Agent Platform with"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Connect Antigravity to Agent Platform with this project and location"
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
@@ -3792,6 +3914,7 @@ msgstr ""
 #. A button that sets the model's own default reasoning effort.
 #. The model uses its own default thinking.
 #. The quiet composer's effort word while the thread is on the model's own default reasoning effort.
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/effortNames.ts
 #: src/renderer/src/agents/EffortPicker.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
@@ -4055,6 +4178,14 @@ msgstr ""
 msgid "Download {to}"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Download and install Antigravity’s agy from Google"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Downloading Antigravity from Google…"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Draft not saved. <0>Save again</0>"
 msgstr ""
@@ -4202,6 +4333,10 @@ msgstr ""
 msgid "ElevenLabs would not make this speech from these words in this voice."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Empty: Sotto’s download, or agy on your PATH"
+msgstr ""
+
 #. A body its host sent cut shows only this part.
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "End of the output only"
@@ -4291,6 +4426,10 @@ msgstr ""
 msgid "Enter this code on the {sourceName} page that opened in your browser."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Enter your organisation’s Google Cloud project and location."
+msgstr ""
+
 #. A keyboard hint: Escape closes the list.
 #: src/renderer/src/agents/NextList.tsx
 msgid "Escape closes"
@@ -4302,6 +4441,10 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Every API, A to Z"
+msgstr ""
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Every model here runs through Antigravity, on your Google account."
 msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx
@@ -4467,6 +4610,10 @@ msgstr ""
 msgid "Finish or clear the current prompt, or choose another thread, before using this saved draft."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Finish sign-in"
+msgstr ""
+
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Finish signing in"
 msgstr ""
@@ -4488,6 +4635,10 @@ msgstr ""
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Finish signing in to {sourceName} with this code"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Finish signing in with Google in your browser."
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -4635,6 +4786,20 @@ msgstr ""
 msgid "Full access"
 msgstr ""
 
+#. A way Antigravity signs in: with a key from Google AI Studio.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Gemini API key"
+msgstr ""
+
+#. A way Antigravity signs in. Gemini Enterprise is Google’s product name; keep it.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Gemini Enterprise"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Gemini Enterprise did not finish signing in. Nothing was signed in. Try Sign in again."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Get a key"
 msgstr ""
@@ -4710,6 +4875,27 @@ msgstr ""
 #. {said} is the start of the message the user sent.
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "Go to your message at {time}: {said}"
+msgstr ""
+
+#. A way Antigravity signs in: with the user’s own Google account.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Google account"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Google Cloud project"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Google then lands on an antigravity.google page that shows a code. Copy the code, or the page’s whole address."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Google then shows a code on an antigravity.google page. Paste it here to finish."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Google’s Antigravity terms let it suspend an account it sees used outside its own apps, such as one whose sign-in another app takes or uses to call Google’s servers. Sotto drives Google’s own agy, which keeps its own sign-in, and avoids what the terms name:"
 msgstr ""
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
@@ -4929,6 +5115,10 @@ msgstr ""
 msgid "Input"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Install Antigravity"
+msgstr ""
+
 #. {from} is the version the host runs now.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Install beside {from}"
@@ -5117,10 +5307,6 @@ msgstr ""
 msgid "Its models join the model menu under OpenCode, billed to your {sourceName} account."
 msgstr ""
 
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Its models join the model menu under Pi, billed to your {sourceName} account."
-msgstr ""
-
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Its models will leave the menu. Existing threads keep their messages. Add it again before sending to it from those threads."
 msgstr ""
@@ -5214,6 +5400,12 @@ msgstr ""
 msgid "its worktree is in use"
 msgstr ""
 
+#. {name} is the currently selected model's name.
+#. placeholder {0}: current.name
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Jump to active model, {0}"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Jump to latest"
 msgstr ""
@@ -5259,6 +5451,10 @@ msgstr ""
 msgid "Keep the callouts in the copy"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Keep the saved key"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Keep this branch"
 msgstr ""
@@ -5277,6 +5473,10 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Key kept by OpenCode"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Key saved"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
@@ -5375,12 +5575,18 @@ msgid "local changes block the update"
 msgstr ""
 
 #. Heading of a provider’s connection on this computer, in Settings > Providers.
+#. Heading of a provider’s connection on this computer, in Settings > Providers.
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Local connection"
 msgstr ""
 
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Local folder"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Location"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -5428,6 +5634,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Made from words"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Make a key in Google AI Studio, under API keys."
 msgstr ""
 
 #: src/renderer/src/agents/bringChangesBack.logic.ts
@@ -5614,6 +5824,7 @@ msgstr ""
 msgid "Model routing"
 msgstr ""
 
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Model routing chooses the effort."
 msgstr ""
@@ -5642,10 +5853,6 @@ msgstr ""
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Model sources Sotto’s OpenCode on {host} can use"
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Model sources Sotto’s Pi can use"
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -5974,6 +6181,10 @@ msgstr ""
 #: src/renderer/src/agents/gitActionButton.logic.ts
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "No changes to commit."
+msgstr ""
+
+#: src/renderer/src/agents/EffortGauge.tsx
+msgid "No effort levels."
 msgstr ""
 
 #: src/renderer/src/agents/FilePicker.tsx
@@ -6354,6 +6565,10 @@ msgstr ""
 msgid "one of its agents"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Only Gemini models. Google allows Claude and other models only in its own app, CLI and IDEs, so Sotto does not list them."
+msgstr ""
+
 #. {whole} lists the parts of a handover, such as "the task and the result".
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "only one of {whole}"
@@ -6489,6 +6704,18 @@ msgstr ""
 msgid "Open folder"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Open Google’s sign-in page and sign in with your Google account."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Open Google’s sign-in page in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Open Google’s sign-in page in your browser again"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Open here"
 msgstr ""
@@ -6573,10 +6800,12 @@ msgstr ""
 msgid "Open Settings at APIs and your own model servers"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Open sign-in page"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Open sign-in page again"
 msgstr ""
@@ -6726,10 +6955,6 @@ msgstr ""
 msgid "Opens the {sourceName} sign-in page in your browser on this computer. Sotto’s OpenCode on {host} keeps the sign-in in its own folder there, and Sotto keeps no copy."
 msgstr ""
 
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Opens the {sourceName} sign-in page in your browser. Pi keeps the sign-in in Sotto’s own Pi folder."
-msgstr ""
-
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Opens the {sourceName} sign-in page in your browser. Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy."
@@ -6835,8 +7060,21 @@ msgstr ""
 msgid "Paste the code"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Paste the code or the page’s address"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Paste the code, or the whole address of that page. Sotto hands it to Antigravity and keeps nothing."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Paste the key"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Paste the new key"
 msgstr ""
 
 #: src/renderer/src/agents/MessageContent.tsx
@@ -6909,26 +7147,6 @@ msgstr ""
 #. Where a skill comes from: skills the user set up for themselves.
 #: src/renderer/src/agents/composerSkills.ts
 msgid "Personal"
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Pi checks the key when a thread first uses it. If it is refused, sign out and paste the key again."
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Pi could not confirm sign-out. Check its model sources before trying again."
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Pi could not read its model sources. Try again."
-msgstr ""
-
-#: src/renderer/src/agents/permissionPresentation.tsx
-msgid "Pi has Full access and does not ask before running tools, changing files or using the network."
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Pi keeps the key in Sotto’s own Pi folder. Sotto keeps no copy."
 msgstr ""
 
 #. Snooze a thread until a date and time the user picks.
@@ -7121,6 +7339,10 @@ msgctxt "skill source"
 msgid "Project"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Project and location"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadSidebar.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Project folder"
@@ -7269,6 +7491,10 @@ msgstr ""
 msgid "Read all"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Read Google’s Antigravity terms before you sign in an account you depend on."
+msgstr ""
+
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Read it"
 msgstr ""
@@ -7315,10 +7541,6 @@ msgstr ""
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Reading what Sotto’s OpenCode on {host} is signed in to…"
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Reading what Sotto’s Pi is signed in to…"
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -7478,12 +7700,20 @@ msgstr ""
 msgid "Remove comment on {label}"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Remove downloaded Antigravity"
+msgstr ""
+
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Remove from favorites"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Remove its worktree too?"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Remove key"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -7509,6 +7739,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Remove the restart note. The thread waits for your next message."
+msgstr ""
+
+#. {keyName} is the kind of key, such as Gemini API key.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Remove the saved {keyName} from this computer"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -7543,10 +7778,15 @@ msgstr ""
 msgid "Removed {name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Removes the agy Sotto downloaded. A version a running thread uses goes once that thread lets go of it."
+msgstr ""
+
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Removes the worktree folder it made. Its branch and commits stay."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Removing…"
 msgstr ""
@@ -7574,6 +7814,11 @@ msgstr ""
 msgid "Renamed"
 msgstr ""
 
+#. Replaces a saved key with a new one.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Replace"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Replace key"
 msgstr ""
@@ -7584,6 +7829,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Replace the placeholders with your API address before checking."
+msgstr ""
+
+#. {keyName} is the kind of key, such as Gemini API key.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Replace the saved {keyName}"
 msgstr ""
 
 #. Where an action's time came from; {provider} is the provider's name.
@@ -7798,6 +8048,10 @@ msgstr ""
 msgid "running {time}"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Running agy from another app is still a gray area. Google may count it against the account you sign in with here."
+msgstr ""
+
 #. Shown when the pointer rests on the Ultracode effort level, on the reasoning effort slider or its chip.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Runs a multi-agent workflow; uses many more tokens."
@@ -7837,6 +8091,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Save choices"
+msgstr ""
+
+#. {keyName} is the kind of key, such as Gemini API key.
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Save this {keyName} and connect Antigravity"
 msgstr ""
 
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
@@ -8100,7 +8359,7 @@ msgstr ""
 
 #. A toast after the user settled a thread and Sotto removed its worktree folder; {title} is the thread's name.
 #: src/renderer/src/agents/SettleToast.tsx
-msgid "Settled {title} and removed its worktree. The branch is kept."
+msgid "Settled {title} and removed its worktree. Its commits are kept."
 msgstr ""
 
 #. A toast while a cleanup rule removes a settled thread's worktree folder; {title} is the thread's name.
@@ -8301,6 +8560,9 @@ msgid "Showing all panes"
 msgstr ""
 
 #. A button that signs in to a provider.
+#. A button that signs in to a provider.
+#. A button that signs in to a provider.
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Sign in"
@@ -8316,10 +8578,6 @@ msgstr ""
 msgid "Sign in to {sourceName} with this key"
 msgstr ""
 
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Sign in to a model source to use its models in Pi threads. That account pays for them."
-msgstr ""
-
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads on {host}. That account pays for them."
@@ -8329,8 +8587,28 @@ msgstr ""
 msgid "Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads. That account pays for them."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign in to Antigravity with your Google account"
+msgstr ""
+
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Sign in to Cursor in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign in to Gemini Enterprise with Google in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign in with Google in your browser, then paste back the code Google shows."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign in with Google in your browser. Google tells agy when you are done; there is no code to paste."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign in with your Google account in your browser."
 msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
@@ -8345,6 +8623,14 @@ msgstr ""
 #. {sourceName} is a model source; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Sign out of {sourceName} on {host}"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign out of Antigravity"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign out of Antigravity on this computer"
 msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
@@ -8364,12 +8650,8 @@ msgstr ""
 msgid "Sign Sotto’s OpenCode on {host} in to a model source to use its models in OpenCode threads there. That account pays for them."
 msgstr ""
 
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Sign Sotto’s Pi in to a model source to use its models in Pi threads. That account pays for them."
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Sign-in needs attention. Sign out and sign in again."
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sign-in method"
 msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
@@ -8380,16 +8662,8 @@ msgstr ""
 msgid "Signed in on cursor.com. Connecting Cursor…"
 msgstr ""
 
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Signed in to {source}. Its available models are listed under Pi."
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Signed in to {source}. Pi lists no models for it yet, so none are in the model menu."
-msgstr ""
-
-#: src/renderer/src/agents/OpenCodeModelSources.tsx
-msgid "Signed out of {source}. Its sign-in is gone from Sotto’s Pi."
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Signed in with Google. Connecting Antigravity…"
 msgstr ""
 
 #. {sourceName} is a model source, such as Anthropic.
@@ -8401,6 +8675,7 @@ msgstr ""
 msgid "Signing in…"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Signing out…"
@@ -8499,6 +8774,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto · Wake-up"
+msgstr ""
+
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "Sotto answers Antigravity’s requests to change files for you. Commands and anything else still come to you, and so do its questions."
+msgstr ""
+
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "Sotto answers every Antigravity request for you, so it edits files and runs commands without asking. Its questions still come to you."
 msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
@@ -8811,6 +9094,10 @@ msgstr ""
 msgid "Sotto lost track of it"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sotto never reads agy’s sign-in or calls Google’s servers with it."
+msgstr ""
+
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Sotto no longer holds this 3D model."
 msgstr ""
@@ -8825,6 +9112,14 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto restarted while it worked. Nothing was resent. Open it to see where it got to."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sotto runs agy with a folder of its own, so the agy you run yourself, and its sign-in, stay as they are."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sotto runs agy with a folder of its own. Choose how it signs in: a Google account, Gemini Enterprise, a Gemini API key or Agent Platform."
 msgstr ""
 
 #: src/renderer/src/agents/SoundLine.tsx
@@ -8853,6 +9148,10 @@ msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Sotto uses Cursor’s own sign-in on this computer and keeps no Cursor key. You need a Cursor account."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Sotto uses the saved key while one is saved. Remove it under API key to use this project instead."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -8902,6 +9201,11 @@ msgstr ""
 
 #: src/renderer/src/agents/SoundLine.tsx
 msgid "Speech"
+msgstr ""
+
+#. Label beside the speed segmented switch inside the combined model picker.
+#: src/renderer/src/agents/EffortGauge.tsx
+msgid "Speed"
 msgstr ""
 
 #. {voice} is the name of an ElevenLabs voice, such as Rachel.
@@ -8992,6 +9296,10 @@ msgstr ""
 msgid "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."
 msgstr ""
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Started from this thread on {machine} and left running there. Sotto on {machine} found it running; its provider does not report it."
+msgstr ""
+
 #. A background agent's status.
 #. A delegated thread's state: its brief is still being started or sent.
 #: src/renderer/src/agents/delegationWords.ts
@@ -9002,6 +9310,10 @@ msgstr ""
 #. {replacingName} is a provider's name.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Starting a new Watcher on {replacingName}…"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Starting Antigravity’s sign-in…"
 msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
@@ -9032,6 +9344,7 @@ msgstr ""
 msgid "Starting the page."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Starting…"
 msgstr ""
@@ -9422,6 +9735,10 @@ msgstr ""
 msgid "The code could not be copied. Select it and copy it yourself."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "The code could not be sent. Nothing was changed. Try again."
+msgstr ""
+
 #. {until} is a time of day.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "The code works until {until}."
@@ -9434,6 +9751,14 @@ msgstr ""
 
 #: src/renderer/src/agents/diagrams/MermaidDiagram.tsx
 msgid "The diagram renderer could not load."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "The downloaded Antigravity could not be removed. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "The downloaded Antigravity was removed."
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
@@ -9534,6 +9859,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "The key could not be read"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "The key stays on this computer, in Sotto’s credential store. Sotto hands it to agy and never shows it again."
 msgstr ""
 
 #: src/renderer/src/agents/FailedTurnNotice.tsx
@@ -9659,6 +9988,8 @@ msgstr ""
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
 #. Stands for a provider whose name is not known, at the start of a sentence.
+#. Stands for a provider whose name is not known, at the start of a sentence.
+#. Stands for a provider whose name is not known, at the start of a sentence.
 #: src/renderer/src/agents/ThreadOptions.tsx
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "The provider"
@@ -9714,6 +10045,7 @@ msgstr ""
 msgid "The shape is ready to turn. The texture follows, then the files go to {where}."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
 msgstr ""
@@ -10129,6 +10461,7 @@ msgstr ""
 msgid "Thread reasoning"
 msgstr ""
 
+#: src/renderer/src/agents/EffortGauge.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Thread reasoning effort"
 msgstr ""
@@ -10686,6 +11019,10 @@ msgstr ""
 msgid "Verify"
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Vertex AI on Google Cloud, with an API key or with a Google Cloud project and location."
+msgstr ""
+
 #. {number} is the place of an agent's video among the pictures and videos of one turn.
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Video {number}"
@@ -10764,8 +11101,16 @@ msgstr ""
 msgid "Waiting for Cursor. This connects by itself."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Waiting for Google. This connects by itself; there is no code to paste."
+msgstr ""
+
 #: src/renderer/src/agents/requests/threadRequests.ts
 msgid "Waiting for Sotto…"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Waiting for the code."
 msgstr ""
 
 #. The working line while a question waits on the user, above its card.
@@ -11227,6 +11572,10 @@ msgstr ""
 msgid "Your first message starts a new thread on the model you pick, with a handover of this one."
 msgstr ""
 
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Your Google account carries the risk"
+msgstr ""
+
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "Your installed version is unchanged"
 msgstr ""
@@ -11237,6 +11586,10 @@ msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Your marks"
+msgstr ""
+
+#: src/renderer/src/agents/AntigravityConnection.tsx
+msgid "Your organisation’s Gemini Enterprise: its Google Cloud project and location, then a Google sign-in in your browser. No code to paste."
 msgstr ""
 
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx

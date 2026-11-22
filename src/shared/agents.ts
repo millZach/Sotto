@@ -1,4 +1,6 @@
+import { ANTIGRAVITY_SIGN_IN_METHODS } from './antigravity'
 import { scheduledRestartSchema, turnLimitStopSchema } from './limitRestart'
+import { agentOwletSchema, OWLET_NAME_MAX, OWLET_ROLE_MAX } from './owlets'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
 import { watcherAsksSchema } from './watcherAsks'
 import { z } from 'zod'
@@ -43,7 +45,7 @@ export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
 export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
 /** One activity record whole, for a remote row whose body its host sent cut (ADR-0025, October 18 amendment). */
 export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
-export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+export { ACTIVE_PROVIDERS, everyProvider, providerIdSchema, type ActiveProviderId, type ProviderId } from './providerIds'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from './threadPrompts'
 import type { AgentThreadWords, AgentThreadWordsRequest } from './threadWords'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
@@ -741,6 +743,8 @@ export const agentThreadSchema = z.object({
   dynamic: z.literal(true).optional().catch(undefined),
   /** The user turned model routing on for this thread (ADR-0207): Sotto's own record, read through `isRoutedThread`. */
   routed: z.literal(true).optional().catch(undefined),
+  /** The thread is an owlet (ADR-0213): its name and role, Sotto's own record. Absent on every other thread and from older hosts. */
+  owlet: agentOwletSchema.optional().catch(undefined),
   /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
   dynamicSession: z.object({ created: z.boolean(), told: z.boolean(), createdNote: dynamicNoteDigestSchema.optional(), toldNote: dynamicNoteDigestSchema.optional(),
     noteHeard: z.literal(true).optional(), noteOwed: z.literal(true).optional() }).strict().optional().catch(undefined),
@@ -1081,7 +1085,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi', antigravity: 'Antigravity',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -1128,6 +1132,16 @@ export const agentConfigurationSchema = z.object({
    */
   claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).default(DEFAULT_ULTRACODE_EFFORT),
   /**
+   * How Antigravity signs in on this machine, as T3 Code offers it (ADR-0212): a Google account by default, Gemini
+   * Enterprise with a Google Cloud project and location, a Gemini API key, or Agent Platform (Vertex AI) with a key or a
+   * project and location. A key is never here: it is the credential store's `antigravity` slot. Read before every start.
+   */
+  antigravitySignInMethod: z.enum(ANTIGRAVITY_SIGN_IN_METHODS).default('oauth-personal'),
+  antigravityProject: z.string().max(256).default(''),
+  antigravityLocation: z.string().max(64).default(''),
+  /** The `agy` Settings names, as T3's Binary path: used in place of Sotto's download and `agy` on PATH. Empty for neither. */
+  antigravityBinaryPath: z.string().max(4_096).default(''),
+  /**
    * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
@@ -1138,6 +1152,8 @@ export const agentConfigurationSchema = z.object({
    */
   newThreadModelId: z.string().max(6_144),
   newThreadReasoningEffort: z.string().max(64).default(''),
+  /** The speed a person’s New thread opens at where its model offers it. Standard is null or absent. */
+  newThreadSpeed: agentSpeedSchema.nullable().optional(),
   newThreadRuntimeMode: agentRuntimeModeSchema.optional(),
 }).strict()
 export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
@@ -1145,6 +1161,7 @@ export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   enabled: false, projectsDirectory: '', defaultModelId: '',
   reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true, museDisableSandbox: false, claudeUltracodeEffort: DEFAULT_ULTRACODE_EFFORT,
+  antigravitySignInMethod: 'oauth-personal', antigravityProject: '', antigravityLocation: '', antigravityBinaryPath: '',
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
@@ -1207,7 +1224,9 @@ export const agentStateSchema = z.object({
    */
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean(), browser: z.number().int().positive().optional(),
     /** A paired host that shows its threads' 3D models here (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2). */
-    models3d: z.literal(true).optional() })).optional(),
+    models3d: z.literal(true).optional(),
+    /** The host makes owlets (`owlets`, ADR-0213), so it can be an owlet's home computer. */
+    owlets: z.literal(true).optional() })).optional(),
   hostId: z.uuid().optional(),
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
@@ -1269,7 +1288,7 @@ export const agentStateSchema = z.object({
   nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
   /** Each routed thread's last routing (CONTEXT.md **Router pick**, ADR-0207), kept in memory only. Absent when there is none. */
   routerPicks: z.array(routerPickSchema).max(1_000).optional(),
-  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
+  credentials: z.object({ reasoning: z.boolean(), secure: z.boolean(), /** Whether Antigravity's key is saved; the key itself never leaves main (ADR-0212). */ antigravity: z.boolean().optional() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
   historyEnabled: z.boolean().optional(),
@@ -1573,8 +1592,11 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // `hostId` is the desktop window's alone: the connected host whose own settings the patch changes, which the router
   // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
   z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
-    claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional(), newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
-  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
+    claudeUltracodeEffort: z.enum(ULTRACODE_EFFORTS).optional(), newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional(),
+    // Antigravity's sign-in settings carry defaults, which a partial patch would otherwise fill in (ADR-0212).
+    antigravitySignInMethod: z.enum(ANTIGRAVITY_SIGN_IN_METHODS).optional(), antigravityProject: z.string().max(256).optional(), antigravityLocation: z.string().max(64).optional(),
+    antigravityBinaryPath: z.string().max(4_096).optional() }), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('credential'), slot: z.enum(['reasoning', 'antigravity']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
   // `hostId` on a provider command is the desktop window's alone, like Update all's: Settings > Providers names this
   // computer, so its buttons never reach whichever host is selected for new work. The router reads it and never sends it on.
@@ -1645,6 +1667,15 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set-thread-routed'), threadId: id, routed: z.boolean() }).strict(),
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
+  /**
+   * A new owlet (ADR-0213), an Owl feature: its host makes its folder in its data folder, the project for that folder and
+   * the owlet's one thread there, which the window mints as `threadId`. Its provider must be one whose own memory Sotto
+   * turns off there. Nothing is sent to the provider until the user's first message.
+   */
+  z.object({ type: z.literal('create-owlet'), threadId: z.uuid(), name: z.string().max(OWLET_NAME_MAX * 2), role: z.string().max(OWLET_ROLE_MAX * 2), modelId: providerEntityId,
+    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
+  /** An owlet's new name, role or both (ADR-0213). Its folder keeps the name it was made with. */
+  z.object({ type: z.literal('set-owlet'), threadId: id, name: z.string().max(OWLET_NAME_MAX * 2).optional(), role: z.string().max(OWLET_ROLE_MAX * 2).optional() }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** The thread starts Dynamic (ADR-0191): a person's new thread, where Settings says new threads do. */
     dynamic: z.literal(true).optional(),
@@ -1693,7 +1724,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Remove the thread's own worktree folder and keep its branch (ADR-0041). `withUncommittedChanges`
    * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
   z.object({ type: z.literal('preview-reclaim-thread-worktree'), threadId: id }).strict(),
-  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional(), ...worktreeConfirmations }).strict(),
+  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, afterSettle: z.literal(true).optional(), withUncommittedChanges: z.boolean().optional(), ...worktreeConfirmations }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   /** T3's stacked Git action on the thread's folder: commit, push, create the pull request, or a prefix of the three (ADR-0027).
    * `filePaths` limits the commit to those files; `featureBranch` commits on a new `feature/` branch first; `allowDefaultBranch`
@@ -1867,7 +1898,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'antigravity'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

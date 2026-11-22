@@ -32,6 +32,7 @@ struct NewThreadSheet: View {
     @State private var folder: FolderListing?
     @State private var modelID = ""
     @State private var effort = ""
+    @State private var pickedSpeed: String?
     @State private var permissionID = ""
     @State private var workingCopy = WorkingCopy.shared
     /// A permission default that would let the thread act without asking, held back because this computer doesn't
@@ -44,6 +45,11 @@ struct NewThreadSheet: View {
     @State private var stepHeight: CGFloat?
     private var models: [ThreadModel] { model.creationModels(hostID) }
     private var chosenModel: ThreadModel? { models.first { $0.id == modelID } }
+    private var speeds: [ModelSpeed] { chosenModel?.creationSpeeds ?? [] }
+    private var speed: String {
+        let preferred = pickedSpeed ?? model.live[hostID]?.shell?.configuration?.newThreadSpeed
+        return speeds.first { $0.id == preferred }?.id ?? ThreadSettings.standard
+    }
     private var busy: Bool { model.creatingHostID != nil }
     private var computerName: String { model.name(hostID) }
     private var project: Project? { model.projects(hostID).first { $0.id == projectID } }
@@ -220,7 +226,8 @@ struct NewThreadSheet: View {
             presses += 1
             Task {
                 if let ref = await model.createThread(on: hostID, projectID: projectID, folder: folder, modelID: modelID,
-                                                     effort: effort, permissionID: permissionID, workingCopy: workingCopy) {
+                                                     effort: effort, permissionID: permissionID, workingCopy: workingCopy,
+                                                     speed: speeds.isEmpty ? nil : speed) {
                     self.openedCount += 1
                     dismiss(); opened(ref)
                 }
@@ -398,6 +405,12 @@ struct NewThreadSheet: View {
                     }
                 }
             }
+            if !speeds.isEmpty {
+                FieldBox(label: String(localized: "Speed", comment: "The thread setting for how fast its agent answers."),
+                         value: ThreadSettings.speedName(speed, offered: speeds), identifier: "new-thread-speed") {
+                    SpeedChoices(speeds: speeds, speed: speed, providerID: chosenModel?.providerId) { pickedSpeed = $0 }
+                }
+            }
             if let chosenModel { permissionField(chosenModel) }
             FieldBox(label: String(localized: "Working copy"), value: workingCopy.title, identifier: "new-thread-working-copy") {
                 Picker("Working copy", selection: $workingCopy) {
@@ -487,6 +500,7 @@ struct NewThreadSheet: View {
 
     private func chooseOptions() {
         modelID = model.initialCreationModelID(hostID)
+        pickedSpeed = nil
         workingCopy = model.initialCreationWorkingCopy
         resetOptions()
         go(.options, forward: true)
@@ -650,7 +664,7 @@ private struct Crumb: View {
 }
 
 /// A field on step 3. The whole box opens its choices, shows the current one, and carries a chevron.
-private struct FieldBox<Choices: View>: View {
+struct FieldBox<Choices: View>: View {
     let label: String
     let value: String
     let identifier: String
@@ -670,7 +684,7 @@ private struct FieldBox<Choices: View>: View {
     }
 }
 
-private struct FieldBoxLabel: View {
+struct FieldBoxLabel: View {
     let label: String
     let value: String
     var body: some View {
@@ -693,7 +707,7 @@ private struct FieldBoxLabel: View {
 }
 
 /// A short line under a field. A warm one carries a warning light, for a default that didn't apply.
-private struct FieldNote: View {
+struct FieldNote: View {
     let text: String
     var warm = false
     var body: some View {
