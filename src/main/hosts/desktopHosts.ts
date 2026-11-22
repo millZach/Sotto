@@ -289,6 +289,8 @@ export class DesktopHosts {
      */
     waitingClientVersion?: () => string | undefined;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
+    /** Opt into launching the native Rust `sotto-host` binary when installed on the remote host (ADR-0214). */
+    useRustHost?: boolean;
     launcher?: () => SshHostLauncher;
     retryDelayMs?: (attempt: number) => number;
     /** Opens a Tailscale approval page in the default browser, on the user's press. */
@@ -307,7 +309,7 @@ export class DesktopHosts {
     this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, heldProviders: this.heldProviders })
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
-    this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
+    this.admins = new AdminConnections({ launcher: () => this.createLauncher(), report: (id, report) => this.adminSignIn(id, report),
       node: (id, node) => this.nodePaths.set(id, node), system: (id, system) => void this.rememberSystem(id, system), identityChanged: () => new FinalHostError(CONNECT_FAILURES.identityChanged()) })
   }
   /**
@@ -1296,7 +1298,7 @@ export class DesktopHosts {
     // Add host's own add turns the host's tailnet connections on, once it is saved; the setup's add leaves the host on SSH.
     const fromDialog = this.adding === host
     const note = miss.note
-    const launcher = this.options.launcher?.() ?? new SshHostLauncher()
+    const launcher = this.createLauncher()
     const active: LiveHost = { via: 'ssh', launcher, generation: ++this.generation }
     this.live.set(host.id, active)
     this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: this.retries.has(host.id) && !this.retries.get(host.id)!.first, error: undefined,
@@ -1478,8 +1480,11 @@ export class DesktopHosts {
     await pending
     return this.attempt(host.id)
   }
+  private createLauncher(): SshHostLauncher {
+    return this.options.launcher?.() ?? new SshHostLauncher(this.options.useRustHost === true ? { useRustHost: true } : undefined)
+  }
   private async runCheck(host: SavedHost): Promise<void> {
-    const launcher = this.options.launcher?.() ?? new SshHostLauncher()
+    const launcher = this.createLauncher()
     const active: LiveHost = { via: 'ssh', launcher, generation: ++this.generation }
     this.live.set(host.id, active)
     try {

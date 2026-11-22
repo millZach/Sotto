@@ -7,13 +7,23 @@ import { pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '..')
 
-export async function buildRustHost(outDir = resolve(root, process.env.SOTTO_RUST_HOST_OUT_DIR || 'out/rust-host')) {
+export async function buildRustHost(
+  outDir = resolve(root, process.env.SOTTO_RUST_HOST_OUT_DIR || 'out/rust-host'),
+  { version, target } = {},
+) {
   const cargoTargetDir = resolve(root, process.env.CARGO_TARGET_DIR || 'target')
-  const rustTarget = (process.env.SOTTO_RUST_TARGET || '').trim()
+  const rustTarget = (target ?? process.env.SOTTO_RUST_TARGET ?? '').trim()
   const exe = process.platform === 'win32' || rustTarget.includes('windows') ? 'sotto-host.exe' : 'sotto-host'
-  const hostVersion = (process.env.SOTTO_HOST_VERSION || process.env.RELEASE_VERSION || '').trim()
+  const hostVersion = (version ?? process.env.SOTTO_HOST_VERSION ?? process.env.RELEASE_VERSION ?? '').trim()
+  const muslEnv = rustTarget === 'x86_64-unknown-linux-musl'
+    ? {
+        CC_x86_64_unknown_linux_musl: process.env.CC_x86_64_unknown_linux_musl || 'musl-gcc',
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: process.env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER || 'musl-gcc',
+      }
+    : {}
   const buildEnv = {
     ...process.env,
+    ...muslEnv,
     CARGO_TARGET_DIR: cargoTargetDir,
     ...(hostVersion ? { SOTTO_HOST_VERSION: hostVersion } : {}),
   }

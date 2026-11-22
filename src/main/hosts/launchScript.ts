@@ -404,10 +404,11 @@ const startByUnit = async (properties, fresh) => {
   const script = await readBootScript(), elsewhere = pinnedElsewhere(script);
   const useRust = await wantsRustHost();
   await syncRustHostMarker(useRust);
-  const runtimeChanged = useRust !== (pinned(script, 'use_rust_host') === '1');
+  const wantRustNow = useRust && (await rustHostEntry()) !== null;
+  const runtimeChanged = wantRustNow !== (pinned(script, 'use_rust_host') === '1');
   if (properties.ActiveState === 'active' && !fresh && !elsewhere && !runtimeChanged) return awaitUnit();
   if ((fresh || elsewhere || runtimeChanged) && unitRunning(properties)) await systemctl(['stop', UNIT], cfg.stopDrainMs + 30000);
-  if (script !== bootScriptText(useRust)) await writeBootScript(useRust);
+  if (script !== bootScriptText(wantRustNow)) await writeBootScript(wantRustNow);
   const found = await running();
   if (found) return found;
   if (!(await rustHostEntry()) && !(await exists(await hostEntry()))) throw new Error('archive-missing');

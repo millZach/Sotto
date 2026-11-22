@@ -577,6 +577,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     localHostRunning: startupSettings.localHostEnabled,
     localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => shellBridge.relaunchApp(),
+    useRustHost: owlFeatures['rust-remote-host'],
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
     ...(tailnetStandIn ? { resolveTailnet: tailnetStandIn } : {}),
     openExternal: async url => { if (e2eConfiguration === null) await shellBridge.openExternal(url); else shellBridge.onE2EExternalLink?.(url) },

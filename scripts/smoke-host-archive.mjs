@@ -77,6 +77,54 @@ export async function smokeHostArchive(directory, { expectedVersion, expectedSou
     await exited.catch(() => {})
     await rm(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
+  if (manifest.rustBinary) await smokeRustHostBinary(join(resolve(directory), manifest.rustBinary), manifest.sottoVersion)
+}
+
+async function smokeRustHostBinary(binaryPath, expectedVersion) {
+  const data = await mkdtemp(join(tmpdir(), 'sotto-rust-host-smoke-'))
+  const child = spawn(binaryPath, ['--data', data, '--port', '0'], {
+    cwd: data,
+    env: { ...process.env, SOTTO_HOST_DATA: '', SOTTO_HOST_KEY_FILE: '', SOTTO_HOST_ENABLE_PROVIDERS: '', SOTTO_HOST_STARTED_BY: '' },
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let deadline
+  const timeout = new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Packaged Rust host did not start and stop within 30 seconds')), 30000) })
+  let output = '', readyResolve, readyReject
+  const ready = new Promise((resolveReady, reject) => { readyResolve = resolveReady; readyReject = reject })
+  const exited = new Promise((resolveExit, reject) => {
+    child.once('error', reject)
+    child.once('exit', (code, signal) => { readyReject(new Error('Packaged Rust host exited before readiness')); resolveExit({ code, signal }) })
+  })
+  child.stderr.on('data', () => {})
+  child.stdout.on('data', chunk => {
+    output += String(chunk)
+    if (output.length > 8192) { readyReject(new Error('Unexpected packaged Rust host output')); return }
+    for (const line of output.split('\n')) {
+      try { const value = JSON.parse(line); if (value.v === 1 && value.event === 'ready') readyResolve(value) } catch { /* incomplete line */ }
+    }
+  })
+  try {
+    await Promise.race([timeout, (async () => {
+      const descriptor = await ready
+      const response = await globalThis.fetch('http://127.0.0.1:' + descriptor.port + '/v1/health', { signal: globalThis.AbortSignal.timeout(5000) })
+      const health = await response.json()
+      if (!response.ok || health.hostId !== descriptor.hostId || health.pid !== child.pid || health.status !== 'ready' ||
+        descriptor.sottoVersion !== expectedVersion || health.sottoVersion !== expectedVersion) {
+        throw new Error('Packaged Rust host health identity or version did not match')
+      }
+      child.kill('SIGTERM')
+      const result = await exited
+      if (process.platform !== 'win32' && (result.code !== 0 || result.signal !== null)) {
+        throw new Error('Packaged Rust host did not shut down cleanly')
+      }
+    })()])
+  } finally {
+    clearTimeout(deadline)
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    await exited.catch(() => {})
+    await rm(data, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

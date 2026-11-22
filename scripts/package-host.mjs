@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process'
-import { cp, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, cp, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { smokeHostArchive } from './smoke-host-archive.mjs'
 import { buildHost } from './build-host.mjs'
+import { buildRustHost } from './build-rust-host.mjs'
 import { inventoryFiles, sha256, verifyHostArchive } from './verify-host-archive.mjs'
 import { verifyHostExternalDependencies } from './release-external-dependencies.mjs'
 import { verifyThirdPartyNotices } from './verify-notices.mjs'
@@ -16,6 +17,7 @@ export async function packageHost({
   outDir = resolve(root, process.env.SOTTO_HOST_OUT_DIR || 'out/host'),
   releaseDir = resolve(root, process.env.SOTTO_HOST_RELEASE_DIR || 'release'),
   version,
+  includeRust = false,
 } = {}) {
   const [major, minor, patch] = process.versions.node.split('.').map(Number)
   if (major !== 24 || minor < 22 || (minor === 22 && patch < 1)) throw new Error('Build and verify the host archive with Node 24.22.1 or a later Node 24')
@@ -31,14 +33,38 @@ export async function packageHost({
     const stage = join(temporary, 'stage'), unpacked = join(temporary, 'unpacked')
     await mkdir(stage); await mkdir(unpacked)
     await cp(outDir, join(stage, 'host'), { recursive: true })
+    let rustBinary
+    if (includeRust) {
+      const rustBinName = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+      const built = await buildRustHost(join(temporary, 'rust-host'), { version: packagedVersion })
+      const dest = join(stage, 'host', rustBinName)
+      await copyFile(built.binary, dest)
+      if (process.platform !== 'win32') await chmod(dest, 0o755)
+      rustBinary = `host/${rustBinName}`
+    }
     await cp(join(root, 'node_modules/zod'), join(stage, 'node_modules/zod'), { recursive: true, dereference: false })
     for (const name of ['LICENSE.md', 'THIRD_PARTY_NOTICES.md']) await copyFile(join(root, name), join(stage, name))
     const writeJson = (file, value) => writeFile(join(stage, file), JSON.stringify(value, null, 2) + '\n')
     await writeJson('package.json', { name: 'sotto-host', private: true, version: packagedVersion, type: 'commonjs', main: 'host/index.js', engines: { node: '>=24.22.1 <25' }, dependencies })
-    await writeJson('runtime-manifest.json', { version: 1, kind: 'sotto-host', sottoVersion: packagedVersion, node: '>=24.22.1 <25', platform: process.platform, arch: process.arch, dependencies, bundledNode: false, nativeModules: [] })
+    await writeJson('runtime-manifest.json', {
+      version: 1,
+      kind: 'sotto-host',
+      sottoVersion: packagedVersion,
+      node: '>=24.22.1 <25',
+      platform: process.platform,
+      arch: process.arch,
+      dependencies,
+      bundledNode: false,
+      nativeModules: [],
+      ...(rustBinary ? { rustBinary } : {}),
+    })
     const inputs = []
-    for (const dir of ['src', 'scripts']) for (const entry of await inventoryFiles(join(root, dir))) inputs.push({ ...entry, path: dir + '/' + entry.path })
-    for (const file of ['package.json', 'package-lock.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE.md']) {
+    for (const dir of includeRust ? ['src', 'scripts', 'crates'] : ['src', 'scripts']) {
+      for (const entry of await inventoryFiles(join(root, dir))) inputs.push({ ...entry, path: dir + '/' + entry.path })
+    }
+    for (const file of includeRust
+      ? ['package.json', 'package-lock.json', 'Cargo.toml', 'Cargo.lock', 'THIRD_PARTY_NOTICES.md', 'LICENSE.md']
+      : ['package.json', 'package-lock.json', 'THIRD_PARTY_NOTICES.md', 'LICENSE.md']) {
       const bytes = await readFile(join(root, file)); inputs.push({ path: file, bytes: bytes.length, sha256: sha256(bytes) })
     }
     const artifacts = await inventoryFiles(stage)

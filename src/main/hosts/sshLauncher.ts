@@ -124,6 +124,8 @@ export interface SshLauncherDependencies {
   readonly localPort?: () => Promise<number>
   /** The Node the askpass helper runs under. In the app this is Electron's own binary, run as Node. */
   readonly askpassNode?: string
+  /** Opt into launching the native Rust `sotto-host` binary when present on the remote host (ADR-0214). */
+  readonly useRustHost?: boolean
 }
 const healthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535) })
 const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boolean(),
@@ -315,7 +317,10 @@ export class SshHostLauncher {
       if (attempt.closed) { await broker.close(); throw attempt.failure ?? new SshFailure('cancelled') }
       timeout = setTimeout(expire, authentication)
       const route = attempt.route = await this.resolve(attempt)
-      const result = await this.control(attempt, { op: 'launch', ...(options.start === false ? { start: false as const, ...(options.removeBoot ? { removeBoot: true as const } : {}) } : {}) }, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
+      const launchOperation: LaunchOperation = options.start === false
+        ? { op: 'launch', start: false as const, ...(options.removeBoot ? { removeBoot: true as const } : {}) }
+        : { op: 'launch', ...(this.dependencies.useRustHost === true ? { useRustHost: true as const } : {}) }
+      const result = await this.control(attempt, launchOperation, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
       if (result.type === 'error') throw this.launchFailure(result)
       const parsed = readySchema.safeParse(result)
       if (!parsed.success) throw new SshFailure('host-start-failed')
@@ -713,7 +718,12 @@ export class SshHostLauncher {
   private boot(attempt: Attempt, operation: SshBootOperation): Promise<SshBootResult> {
     if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before changing whether it starts at boot.`))
     const hostId = attempt.ready.hostId
-    const launch: LaunchOperation = operation.op === 'boot-install' ? { op: 'boot-install', hostId } : operation
+    const rustFlag = this.dependencies.useRustHost === true ? { useRustHost: true as const } : {}
+    const launch: LaunchOperation = operation.op === 'boot-install'
+      ? { op: 'boot-install', hostId, ...rustFlag }
+      : operation.op === 'boot-remove'
+        ? { ...operation, ...rustFlag }
+        : operation
     const budget = operation.op === 'boot-status' ? REQUEST_BUDGET_MS : HOST_STOP_DRAIN_MS + 2 * this.readyTimeout() + 60_000
     return this.request(attempt, launch, 'boot-failed', budget, (value): SshBootResult | undefined => {
       const parsed = bootResultSchema.safeParse(value)

@@ -55,7 +55,7 @@ describe('explicit native Owl host package', () => {
     const root = await directory(), checkout = vi.fn(() => ({ sourceCommit, clean: true }))
     const packageArchive = vi.fn(async () => archive(root)), writeReceipt = vi.fn(async () => undefined)
     const result = await packageOwlHost({ version, sourceCommit, checkout, packageArchive, releaseDir: root, writeReceipt })
-    expect(packageArchive).toHaveBeenCalledExactlyOnceWith({ version, releaseDir: root })
+    expect(packageArchive).toHaveBeenCalledExactlyOnceWith({ version, releaseDir: root, includeRust: true })
     expect(checkout).toHaveBeenCalledTimes(3)
     expect(result.receipt).toMatchObject({ kind: 'sotto-owl-host', sottoVersion: version, sourceCommit, platform: process.platform, arch: process.arch })
     expect(writeReceipt).toHaveBeenCalledWith(result.archive + '.owl-receipt.json', result.receipt)
@@ -90,6 +90,43 @@ describe('host bytes accepted for the same Owl publication', () => {
   it('extracts and verifies bytes independently of any receipt, without comparing desktop and host input hashes', async () => {
     const path = await archive(await directory())
     expect(await verifyOwlHostArtifact(path, { version, sourceCommit })).toMatchObject({ version, sourceCommit, platform: process.platform, arch: process.arch })
+  })
+  it('accepts a declared platform Rust host binary and rejects undeclared or mismatched native binaries', async () => {
+    const rustPath = process.platform === 'win32' ? 'host/sotto-host.exe' : 'host/sotto-host'
+    const buildArchiveWith = async mutate => {
+      const root = await directory()
+      const files = contents()
+      mutate(files)
+      const artifacts = Object.entries(files)
+        .filter(([p]) => p !== 'build-provenance.json')
+        .map(([p, value]) => ({ path: p, bytes: Buffer.byteLength(value), sha256: sha256(value) }))
+        .sort((a, b) => a.path.localeCompare(b.path, 'en'))
+      const provenance = JSON.parse(files['build-provenance.json'])
+      files['build-provenance.json'] = JSON.stringify({ ...provenance, artifacts, buildSha256: sha256(JSON.stringify(artifacts)) })
+      const name = `Sotto-host-${version}-${process.platform}-${process.arch}.tar.gz`, path = join(root, name)
+      const bytes = tarGz(files)
+      await writeFile(path, bytes); await writeFile(path + '.sha256', `${sha256(bytes)}  ${name}\n`)
+      return path
+    }
+    const valid = await buildArchiveWith(files => {
+      const manifest = JSON.parse(files['runtime-manifest.json'])
+      files['runtime-manifest.json'] = JSON.stringify({ ...manifest, rustBinary: rustPath })
+      files[rustPath] = 'rust-binary-fixture'
+    })
+    expect(await verifyOwlHostArtifact(valid, { version, sourceCommit })).toMatchObject({ version, sourceCommit })
+
+    const undeclared = await buildArchiveWith(files => {
+      files[rustPath] = 'undeclared-rust-binary'
+    })
+    await expect(verifyOwlHostArtifact(undeclared, { version, sourceCommit })).rejects.toThrow('Unreviewed native binary')
+
+    const rogue = await buildArchiveWith(files => {
+      const manifest = JSON.parse(files['runtime-manifest.json'])
+      files['runtime-manifest.json'] = JSON.stringify({ ...manifest, rustBinary: rustPath })
+      files[rustPath] = 'rust-binary-fixture'
+      files['host/other.dll'] = 'rogue-native-binary'
+    })
+    await expect(verifyOwlHostArtifact(rogue, { version, sourceCommit })).rejects.toThrow('Unreviewed native binary')
   })
   it('accepts the native tar tool\'s directory and long-path metadata after safe inspection', async () => {
     const root = await directory(), stage = join(root, 'stage'); await mkdir(stage)

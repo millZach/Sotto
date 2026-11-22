@@ -233,8 +233,16 @@ jobs:
       - name: Run the socket contract
         run: npm run test:socket
 
+      - name: Set up static Linux musl toolchain for Rust host
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
       # Refuses a checkout that is not clean and at the source, verifies the archive's bytes and starts the host.
       - name: Package and verify the Linux host archive
+        env:
+          SOTTO_RUST_TARGET: x86_64-unknown-linux-musl
         run: npm run package:host:owl -- --version "$VERSION" --source "$SOURCE"
 
       - name: Keep the Linux host archive

@@ -45,7 +45,17 @@ export async function verifyHostArchive(directory, { expectedVersion, expectedSo
       JSON.stringify(provenance.artifacts) !== JSON.stringify(artifacts) || provenance.buildSha256 !== sha256(JSON.stringify(artifacts))) {
     throw new Error('Host archive provenance or artifact hashes do not match')
   }
-  if (artifacts.some(file => /\.(?:node|dll|exe|so|dylib)$/iu.test(file.path))) throw new Error('Unreviewed native binary in host archive')
+  const expectedRust = manifest.platform === 'win32' ? 'host/sotto-host.exe' : 'host/sotto-host'
+  if (manifest.rustBinary !== undefined) {
+    if (manifest.rustBinary !== expectedRust || !artifacts.some(file => file.path === expectedRust)) {
+      throw new Error('Invalid Rust host binary declaration in host archive')
+    }
+  } else if (artifacts.some(file => file.path === 'host/sotto-host' || file.path === 'host/sotto-host.exe')) {
+    throw new Error('Unreviewed native binary in host archive')
+  }
+  if (artifacts.some(file => file.path !== manifest.rustBinary && /\.(?:node|dll|exe|so|dylib)$/iu.test(file.path))) {
+    throw new Error('Unreviewed native binary in host archive')
+  }
   for (const path of ['LICENSE.md', 'THIRD_PARTY_NOTICES.md', 'node_modules/zod/LICENSE']) {
     if (!(await readFile(join(root, path), 'utf8')).trim()) throw new Error('Host archive is missing license text')
   }
