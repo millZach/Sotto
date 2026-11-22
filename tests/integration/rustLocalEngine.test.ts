@@ -118,20 +118,24 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
 
       await drive(dataDir, 'codex', { type: 'complete', thread: THREAD, text: 'Reply from local Rust engine' })
 
-      // Wait for push broadcast + stored detail to reflect the completed reply.
+      // Wait for the live `detail` push itself (and stored detail) to carry the completed reply.
       const replyDeadline = Date.now() + 15_000
-      let gotReply = false
+      let pushedReply = false
       while (Date.now() < replyDeadline) {
-        const detail = await conn.request<{ messages: { role: string; text: string }[] }>('agent.detail', [THREAD])
-        if (detail?.messages?.some(m => m.role === 'assistant' && m.text.includes('Reply from local Rust engine'))) {
-          gotReply = true
-          break
-        }
+        pushedReply = pushes.some(p => {
+          if (p.event !== 'detail' || !p.payload || typeof p.payload !== 'object') return false
+          const detailPayload = p.payload as { threadId?: string; messages?: { role?: string; text?: string }[] }
+          return detailPayload.threadId === THREAD && !!detailPayload.messages?.some(
+            m => m.role === 'assistant' && typeof m.text === 'string' && m.text.includes('Reply from local Rust engine'),
+          )
+        })
+        if (pushedReply) break
         await new Promise(r => setTimeout(r, 25))
       }
-      expect(gotReply).toBe(true)
+      expect(pushedReply).toBe(true)
       expect(pushes.some(p => p.event === 'shell')).toBe(true)
-      expect(pushes.some(p => p.event === 'detail')).toBe(true)
+      const detail = await conn.request<{ messages: { role: string; text: string }[] }>('agent.detail', [THREAD])
+      expect(detail?.messages?.some(m => m.role === 'assistant' && m.text.includes('Reply from local Rust engine'))).toBe(true)
 
       // 4. Native ops over EngineTransport validated against real TS Zod schemas.
       const facts = hostMachineReportSchema.parse(await conn.request('ops.hostFacts'))

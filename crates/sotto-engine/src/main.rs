@@ -452,9 +452,35 @@ async fn handle_rpc(
                     code: Some("UNAVAILABLE".into()),
                 });
             };
+            let opts = args.get(1).and_then(Value::as_object);
+            let query = opts
+                .and_then(|o| o.get("query"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let cursor = opts
+                .and_then(|o| o.get("cursor"))
+                .and_then(|v| {
+                    v.as_u64()
+                        .map(|n| n as usize)
+                        .or_else(|| v.as_str().and_then(|s| s.parse::<usize>().ok()))
+                });
+            let limit = opts
+                .and_then(|o| o.get("limit"))
+                .and_then(Value::as_u64)
+                .map(|n| n as usize);
+            let include_matching_remote = opts
+                .and_then(|o| o.get("includeMatchingRemote").or_else(|| o.get("includeRemote")))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let folder = ws.working_directory;
             let val = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::git_refs(&folder, None, None, None, false)
+                sotto_core::ops::git_refs(
+                    &folder,
+                    query.as_deref(),
+                    cursor,
+                    limit,
+                    include_matching_remote,
+                )
             })
             .await
             .map_err(|_| err_invalid("gitRefs task failed."))?
@@ -656,7 +682,13 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
     drop(out_tx);
-    let _ = writer_task.await;
+    let mut writer_task = writer_task;
+    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer_task)
+        .await
+        .is_err()
+    {
+        writer_task.abort();
+    }
     coordinator.shutdown().await;
     ExitCode::SUCCESS
 }
