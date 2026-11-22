@@ -50,6 +50,7 @@ async function captureProviders(page: Page, path: string): Promise<void> {
 /** Opens a provider's row in Settings > Providers, leaving it open if it already is. */
 async function openProviderRow(page: Page, provider: ProviderId): Promise<void> {
   const header = page.getByRole('button', { name: PROVIDER_LABELS[provider], exact: true })
+  if (!await header.isVisible()) await page.getByRole('button', { name: /^Disconnected providers/u, expanded: false }).click()
   if (await header.getAttribute('aria-expanded') !== 'true') await header.click()
   await expect(header).toHaveAttribute('aria-expanded', 'true')
 }

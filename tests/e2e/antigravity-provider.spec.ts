@@ -14,7 +14,11 @@ const APPEARANCES = ['dark', 'light'] as const
 async function providerList(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  return page.getByRole('list', { name: 'Thread providers', exact: true })
+  const list = page.getByRole('list', { name: 'Thread providers', exact: true })
+  await expect(list).toBeVisible()
+  const disclosure = list.getByRole('button', { name: /^Disconnected providers/u, expanded: false })
+  if (await disclosure.isVisible()) await disclosure.click()
+  return list
 }
 
 /** Scrolls Antigravity's row to the top of Settings, as someone reading it would, before a capture. */

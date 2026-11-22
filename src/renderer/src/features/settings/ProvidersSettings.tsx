@@ -98,7 +98,7 @@ function shortVersion(version: string): string {
 }
 
 /**
- * Settings → Providers: one list with a row per provider, each opening in place to its connection, client and models
+ * Settings → Providers: connected clients first, with a disclosure for the rest. Each row opens to its connection, client and models
  * (Zach's pick, variant A of the tag prototype/providers-settings). One row is open at a time; every row starts closed
  * unless a link aimed at one, and pressing an open row's header closes it.
  */
@@ -115,6 +115,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const { t } = useLingui()
   // A link elsewhere, such as a thread's Turn off, or Find a setting, can open the row that holds one provider's setting.
   const [open, setOpen] = useState<ProviderId | null>(() => takeAimedProvider() ?? null)
+  const [showDisconnected, setShowDisconnected] = useState(false)
+  const disclosure = useRef<HTMLButtonElement>(null)
   useEffect(() => onProviderAimed(setOpen), [])
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
   const [errors, setErrors] = useState<Partial<Record<ProviderId, LaterWords | undefined>>>({})
@@ -153,6 +155,21 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const enabled = local?.enabledProviders ?? enabledThreadProviders(state.configuration)
   const statusFor = (id: ProviderId) => providers.find(provider => provider.id === id)
     ?? { connection: !hasHostConnections && id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined, sandboxDisabled: undefined }
+  const connectedProviders: ActiveProviderId[] = []
+  const disconnected: ActiveProviderId[] = []
+  for (const provider of ACTIVE_PROVIDERS) {
+    if (held.has(provider)) continue
+    const group = statusFor(provider).connection === 'connected' ? connectedProviders : disconnected
+    group.push(provider)
+  }
+  // A settings link or a live disconnect keeps the open provider in view.
+  const openIsDisconnected = disconnected.some(provider => provider === open)
+  if (openIsDisconnected && !showDisconnected) setShowDisconnected(true)
+  const closeDisconnected = (): void => {
+    if (openIsDisconnected) setOpen(null)
+    setShowDisconnected(false)
+    disclosure.current?.focus()
+  }
   const updateFor = (id: ProviderId) => clientUpdates?.find(item => item.id === id)
   const updating = (clientUpdates ?? []).some(item => item.state === 'updating' || item.state === 'queued') || Object.values(updatePending).some(Boolean)
   const updatingNow = (id: ProviderId): boolean => {
@@ -238,6 +255,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   }
   const perform = async (provider: ProviderId, type: 'connect' | 'disconnect' | 'refresh'): Promise<void> => {
     if (inFlight.current.has(provider)) return
+    const restoreFocus = type !== 'refresh' && triggerOf(provider)?.closest('.provider-row')?.contains(document.activeElement)
     inFlight.current.add(provider)
     setPending(previous => ({ ...previous, [provider]: type }))
     setErrors(previous => ({ ...previous, [provider]: undefined }))
@@ -247,7 +265,14 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         : { type, provider, ...here })
       if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? msg`Could not update this provider. Try again.` }))
     } catch { setErrors(previous => ({ ...previous, [provider]: msg`Could not update this provider. Try again.` })) }
-    finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }
+    finally {
+      inFlight.current.delete(provider)
+      setPending(previous => ({ ...previous, [provider]: undefined }))
+      // A switch can lose focus when the row moves or folds away after the connection changes.
+      if (restoreFocus) requestAnimationFrame(() => {
+        if (document.activeElement === document.body) (triggerOf(provider) ?? disclosure.current)?.focus()
+      })
+    }
   }
   // Muse's shell sandbox is set when each of its hosts starts, so this computer's saved switch and its running hosts
   // can disagree until Muse reconnects; the page says so instead of implying the change is live.
@@ -308,6 +333,14 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   }
   // Up and Down move between the rows' headers, Home and End to the first and last, and round from one end to the other.
   const moveBetweenRows = (event: KeyboardEvent<HTMLUListElement>): void => {
+    if (event.key === 'Escape' && showDisconnected && !event.defaultPrevented &&
+      (event.target === disclosure.current || (event.target as HTMLElement).closest('[data-disconnected-row]')) &&
+      !(event.target as HTMLElement).closest('dialog, [role="dialog"], [role="alertdialog"]')) {
+      event.preventDefault()
+      event.stopPropagation()
+      closeDisconnected()
+      return
+    }
     if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
     const triggers = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-provider-trigger]')]
     const at = triggers.indexOf(event.target as HTMLElement)
@@ -485,7 +518,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
       setOpen(null)
       triggerOf(provider)?.focus()
     }
-    return <li key={provider} className="provider-row" data-open={isOpen} onKeyDown={closeOnEscape}>
+    return <li key={provider} className="provider-row" data-disconnected-row={status.connection !== 'connected' || undefined} data-open={isOpen} onKeyDown={closeOnEscape}>
       <div className="provider-row__head">
         <button type="button" id={`${id}-trigger`} className="provider-row__trigger" data-provider-trigger aria-label={label} aria-expanded={isOpen} aria-controls={isOpen ? `${id}-panel` : undefined} aria-describedby={`${id}-meta`}
           onClick={() => setOpen(isOpen ? null : provider)}>
@@ -515,12 +548,27 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     </li>
   }
 
+  // Keep row keys under the same parent so moving a provider preserves its open form.
+  const rows = connectedProviders.map(row)
+  if (disconnected.length) {
+    rows.push(<li key="disclosure" className="provider-disclosure" role="presentation">
+      <button type="button" ref={disclosure} data-provider-trigger aria-expanded={showDisconnected}
+        onClick={() => showDisconnected ? closeDisconnected() : setShowDisconnected(true)}>
+        {t`Disconnected providers`}{' '}<span className="providers-count">{disconnected.length}</span><ChevronRight size={16} aria-hidden="true" />
+      </button>
+    </li>)
+    if (showDisconnected) rows.push(...disconnected.map(row))
+  }
+
   return <div className="providers-settings">
     {/* APIs and your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     {signInFor && window.sotto?.providerSignIn ? <HostProviderSignIn place={t({ message: 'This computer', comment: 'The computer Sotto runs on, named where a paired host would be.' })} provider={signInFor}
       signIn={step => window.sotto!.providerSignIn!.signIn(step as LocalSignInRequest)} onClose={closeSignIn} /> : null}
-    <ul className="providers-list" aria-label={t`Thread providers`} data-setting="thread-providers" onKeyDown={moveBetweenRows}>{ACTIVE_PROVIDERS.filter(provider => !held.has(provider)).map(row)}</ul>
+    <div data-setting="thread-providers">
+      <h3 className="providers-heading">{t`Connected providers`}{' '}<span className="providers-count">{connectedProviders.length}</span></h3>
+      <ul className="providers-list" aria-label={t`Thread providers`} onKeyDown={moveBetweenRows}>{rows}</ul>
+    </div>
     <p className="providers-note tt-paragraph">{t`Choose what new threads start with in Settings > Threads.`}</p>
     <div className="providers-updates">
       <div>

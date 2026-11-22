@@ -34,6 +34,10 @@ async function textContrast(locator: Locator): Promise<number> {
 async function providerPanel(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
+  const list = page.getByRole('list', { name: 'Thread providers', exact: true })
+  await expect(list).toBeVisible()
+  const disclosure = list.getByRole('button', { name: /^Disconnected providers/u, expanded: false })
+  if (await disclosure.isVisible()) await disclosure.click()
   return page.getByRole('region', { name: 'Muse details', exact: true })
 }
 

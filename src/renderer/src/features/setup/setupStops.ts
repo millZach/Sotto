@@ -51,7 +51,7 @@ export const SIDEBAR_RAIL = '[data-setup="expand-sidebar"]'
 
 const STOPS: readonly SetupStop[] = [
   { id: 'welcome', page: { navigation: 'threads' }, target: [] },
-  { id: 'agents', page: { navigation: 'settings', section: 'settings-providers' }, target: ['#settings-providers .providers-list', '#settings-providers'] },
+  { id: 'agents', page: { navigation: 'settings', section: 'settings-providers' }, target: ['#settings-providers [data-setting="thread-providers"]', '#settings-providers'] },
   // In a narrow window the sidebar is a rail, and Add project and New thread are behind its Expand sidebar.
   { id: 'project', page: { navigation: 'threads' }, target: ['[data-setup="add-project"]', SIDEBAR_RAIL], needsAgent: true },
   { id: 'thread', page: { navigation: 'threads' }, target: ['form.thread-prompt', '[data-setup="new-thread"]', SIDEBAR_RAIL], needsAgent: true },

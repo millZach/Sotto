@@ -35,8 +35,13 @@ function provide(state = fixture()) {
   return { state, command }
 }
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+function showDisconnected(): void {
+  fireEvent.click(screen.getByRole('button', { name: /^Disconnected providers/u, expanded: false }))
+}
+
 /** Opens a provider's row, leaving it open if it already is, and returns what it shows. */
 function openRow(provider: string): HTMLElement {
+  if (!screen.queryByRole('button', { name: provider })) showDisconnected()
   const header = screen.getByRole('button', { name: provider })
   if (header.getAttribute('aria-expanded') !== 'true') fireEvent.click(header)
   return screen.getByRole('region', { name: `${provider} details` })
@@ -166,6 +171,8 @@ describe('independent provider settings', () => {
     devin.connection = 'disconnected'
     const { command } = provide(state)
     render(<ProvidersSettings />)
+    expect(screen.queryByRole('switch', { name: 'Enable Devin' })).toBeNull()
+    showDisconnected()
     expect(screen.getByRole('switch', { name: 'Enable Devin' })).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Devin' }))
     expect(screen.getByText(/Install Devin CLI and run devin auth login/)).toBeVisible()
@@ -173,6 +180,29 @@ describe('independent provider settings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Connect Devin' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin', notice: false }))
     expect(state.configuration.reasoning).toBe('claude')
+  })
+  it('regroups an open provider when its local connection changes and folds the disconnected rows with Escape', () => {
+    const state = fixture()
+    const claude = state.host.providers!.find(provider => provider.id === 'claude')!
+    claude.connection = 'connecting'
+    provide(state)
+    const view = render(<ProvidersSettings />)
+    expect(screen.queryByRole('button', { name: 'Claude Code' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Disconnected providers 1', expanded: false })).toBeVisible()
+    showDisconnected()
+    const panel = openRow('Claude Code')
+    claude.connection = 'connected'
+    view.rerender(<ProvidersSettings />)
+    expect(screen.queryByRole('button', { name: /^Disconnected providers/u })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Claude Code details' })).toBe(panel)
+    claude.connection = 'disconnected'
+    view.rerender(<ProvidersSettings />)
+    const header = screen.getByRole('button', { name: 'Claude Code' })
+    fireEvent.keyDown(header, { key: 'Escape' })
+    expect(header).toHaveFocus()
+    fireEvent.keyDown(header, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Disconnected providers 1', expanded: false })).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Claude Code' })).toBeNull()
   })
   it('opens one row at a time in place, and closes the open row from its header or with Escape', () => {
     provide()
@@ -249,6 +279,7 @@ describe('independent provider settings', () => {
     state.host.providers![1] = { ...state.host.providers![1]!, connection: 'error', error: 'Sign in to Claude Code.' }
     const { command } = provide(state)
     render(<ProvidersSettings />)
+    showDisconnected()
     // The error shows under Claude Code's row while it is closed.
     expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('alert')).toHaveTextContent('Sign in to Claude Code.')
@@ -573,10 +604,13 @@ describe('idle compaction on Claude Code’s page (ADR-0127)', () => {
     expect(onChange).toHaveBeenCalledWith(false)
   })
   it('opens at Claude Code when a thread’s Turn off sent the user here, and only that once', () => {
-    provide()
+    const state = fixture()
+    state.host.providers!.find(provider => provider.id === 'claude')!.connection = 'disconnected'
+    provide(state)
     aimProviderSettings('claude')
     const view = render(<ProvidersSettings compactIdle={{ checked: true, onChange: vi.fn() }} />)
     expect(screen.getByRole('switch', { name: 'Compact idle threads' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Disconnected providers/u })).toHaveAttribute('aria-expanded', 'true')
     expect(takeAimedProvider()).toBeUndefined()
     view.unmount()
     render(<ProvidersSettings compactIdle={{ checked: true, onChange: vi.fn() }} />)
@@ -599,6 +633,7 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
     vi.stubGlobal('sotto', { providerSignIn: { signIn } })
     const { command } = provide(withProblem('codex', 'signed-out', 'Could not connect Codex. Sign in to Codex on this machine, then connect it again.'))
     render(<ProvidersSettings />)
+    showDisconnected()
     expect(within(screen.getByRole('button', { name: 'Codex' })).getByText('Not signed in')).toBeInTheDocument()
     // The folded row names the problem and offers the way past it; the client's own sentence is not an alert under it.
     expect(screen.queryByRole('alert')).toBeNull()
@@ -620,6 +655,7 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
     vi.stubGlobal('sotto', { providerSignIn: { signIn: vi.fn() }, deliverOutput })
     provide(withProblem('devin', 'signed-out', 'Sign in to Devin.'))
     render(<ProvidersSettings />)
+    showDisconnected()
     expect(within(screen.getByRole('button', { name: 'Devin' })).getByText('Not signed in')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sign in to Devin' })).toBeNull()
     const row = openRow('Devin')
@@ -633,6 +669,7 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
     vi.stubGlobal('sotto', { openExternalLink })
     provide(withProblem('grok', 'not-installed', 'Grok Build was not found.'))
     const view = render(<ProvidersSettings />)
+    showDisconnected()
     expect(within(screen.getByRole('button', { name: 'Grok Build' })).getByText('Not installed')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sign in to Grok Build' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Open the Grok Build install guide' }))
@@ -641,6 +678,7 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
     view.unmount()
     vi.stubGlobal('sotto', { openExternalLink: vi.fn(async () => ({ ok: false as const })) })
     render(<ProvidersSettings />)
+    showDisconnected()
     fireEvent.click(screen.getByRole('button', { name: 'Open the Grok Build install guide' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Your browser did not open. Go to docs.x.ai/build/overview to install Grok Build.')
   })
@@ -669,6 +707,7 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
       command: 'npm install -g @anthropic-ai/claude-code@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }]
     provide(state)
     const view = render(<ProvidersSettings />)
+    showDisconnected()
     expect(screen.getByRole('button', { name: 'Sign in to Claude Code' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Update Claude Code to 2.1.7' })).toBeNull()
     view.unmount()
@@ -682,6 +721,7 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
   it.each([['too-old', 'Too old to use'], ['cannot-start', 'Can’t be started']] as const)('says %s in the same words for every provider', (problem, word) => {
     provide(withProblem('claude', problem, 'Claude Code said something of its own.'))
     render(<ProvidersSettings />)
+    showDisconnected()
     expect(within(screen.getByRole('button', { name: 'Claude Code' })).getByText(word.replace('’', "'"))).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -691,6 +731,7 @@ describe('a provider that cannot connect yet, on its folded row (ADR-0200)', () 
     state.host.providers![1] = { ...state.host.providers![1]!, connection: 'error', error: 'Claude Code stopped answering.' }
     provide(state)
     render(<ProvidersSettings />)
+    showDisconnected()
     expect(within(screen.getByRole('button', { name: 'Claude Code' })).getByText('Needs attention')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Claude Code stopped answering.')
   })

@@ -24,6 +24,8 @@ Amended November 5, 2026, by Zach's pick of variant B: where the thread beside C
 
 Amends ADR-0011 (main window themes): the look keeps its character and its colours still come only from theme roles through `--tt-*` tokens, but a container is no longer a hairline box and a control is no longer a pill. Amends ADR-0084 (solid glass) for the composer only: it is painted as a card, not in the field colour; the skill list that opens from it keeps the field colour.
 
+Amended November 22, 2026. Settings → Providers shows the clients connected on this computer first. The rest are under **Disconnected providers**, folded when the page opens. A link to a provider opens its group and its row. Each group gives its count. The rows use the existing marks, switches and details. [Approved mock-up](../prototypes/provider-connection-groups.html).
+
 ## Context
 
 Almost every container in the main window was a 1px line in the faintest border role, so cards, filters and Settings groups barely separated from the room. Every button was a pill, and so were segmented controls, chips, tags and fields, so a control's shape said nothing about what it was. The providers sat in a row with no edges, each toggle far from its name. Usage's index and chart had fixed sizes that looked cramped at 1280 and thin at 1600, and below a 780 pixel room the index scrolled sideways and cut off its first card. The sidebar's text was small beside a 320 pixel default width.

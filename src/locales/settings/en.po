@@ -2345,6 +2345,10 @@ msgstr "Connect to Tailscale to see the machines on your tailnet here."
 msgid "Connected"
 msgstr "Connected"
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Connected providers"
+msgstr "Connected providers"
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Connected. Copies kept there: {kept}."
 msgstr "Connected. Copies kept there: {kept}."
@@ -2804,6 +2808,10 @@ msgstr "Disconnect {label}"
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Disconnect {name} on {hostName}"
 msgstr "Disconnect {name} on {hostName}"
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Disconnected providers"
+msgstr "Disconnected providers"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx

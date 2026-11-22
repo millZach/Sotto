@@ -85,6 +85,7 @@ describe('OpenCode in provider settings', () => {
       Object.assign(opencode, { connection: 'error', account: undefined, ...problem })
       state.clientUpdates = []
     })
+    fireEvent.click(screen.getByRole('button', { name: /^Disconnected providers/u }))
     fireEvent.click(await screen.findByRole('button', { name: 'OpenCode' }))
     fireEvent.click(screen.getByText('Installation steps'))
     expect(screen.getByText(words)).toBeVisible()

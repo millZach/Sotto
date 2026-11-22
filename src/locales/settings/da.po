@@ -2345,6 +2345,10 @@ msgstr ""
 msgid "Connected"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Connected providers"
+msgstr ""
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Connected. Copies kept there: {kept}."
 msgstr ""
@@ -2803,6 +2807,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Disconnect {name} on {hostName}"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Disconnected providers"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx

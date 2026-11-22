@@ -48,6 +48,7 @@ async function mount(status: Partial<AgentProviderStatus>, { method = 'oauth-per
   const command = vi.fn<(command: AgentCommand) => Promise<AgentState | null>>(async () => state)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   render(<AppProvider bridge={createBridge()} createController={createController}><ProvidersSettings /></AppProvider>)
+  if (status.connection && status.connection !== 'connected') fireEvent.click(await screen.findByRole('button', { name: /^Disconnected providers/u }))
   const header = await screen.findByRole('button', { name: 'Antigravity' })
   fireEvent.click(header)
   return { command, signIn: signInFn, account, header, details: screen.getByRole('region', { name: 'Antigravity details' }) }

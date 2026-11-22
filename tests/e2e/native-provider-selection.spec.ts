@@ -10,6 +10,7 @@ test('provider configuration and new-thread defaults have separate settings', as
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Providers', exact: true }).click()
     const providers = page.getByRole('list', { name: 'Thread providers', exact: true })
+    await providers.getByRole('button', { name: /^Disconnected providers/u, expanded: false }).click()
     for (const [index, label] of ['Codex', 'Claude Code', 'Grok Build'].entries()) {
       const header = providers.getByRole('button', { name: label, exact: true })
       // Every row starts closed. Codex's opens with Enter; each next row is reached with Down from the one before and opened with Enter.
