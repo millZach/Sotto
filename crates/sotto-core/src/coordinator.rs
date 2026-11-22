@@ -86,11 +86,12 @@ struct PendingCommand {
 }
 
 struct InFlightSend {
+    message_id: String,
     command_id: String,
     text: String,
     attachments: Vec<StagedAttachmentEntry>,
     created_at: String,
-    flushed_message_id: Option<String>,
+    flushed: bool,
     turn_already_completed: Option<String>,
 }
 
@@ -1178,14 +1179,16 @@ impl CoordinatorActor {
         let self_tx = self.self_tx.clone();
         let model_opt = (!thread.model_id.is_empty()).then_some(thread.model_id.clone());
 
+        let message_id = Uuid::new_v4().to_string();
         self.in_flight_sends.insert(
             tid.clone(),
             InFlightSend {
+                message_id: message_id.clone(),
                 command_id: command_id.clone(),
                 text: text.clone(),
                 attachments: attachments.clone(),
                 created_at: now_iso(),
-                flushed_message_id: None,
+                flushed: false,
                 turn_already_completed: None,
             },
         );
@@ -1232,6 +1235,7 @@ impl CoordinatorActor {
             let result = adapter
                 .send_message(SendMessageRequest {
                     thread_id: tid.clone(),
+                    message_id,
                     cwd,
                     model_id: model_opt,
                     reasoning_effort: thread.reasoning_effort.clone(),
@@ -1502,7 +1506,7 @@ impl CoordinatorActor {
                 let ack = result.map_err(CoordinatorError::unavailable)?;
                 let now = now_iso();
                 let message_id = if let Some(flushed_id) =
-                    in_flight.as_ref().and_then(|f| f.flushed_message_id.clone())
+                    in_flight.as_ref().filter(|f| f.flushed).map(|f| f.message_id.clone())
                 {
                     flushed_id
                 } else {
@@ -2041,13 +2045,12 @@ impl CoordinatorActor {
     fn flush_in_flight_user_message(&mut self, thread_id: &str) -> Option<String> {
         let user_message = {
             let in_flight = self.in_flight_sends.get_mut(thread_id)?;
-            if let Some(existing) = in_flight.flushed_message_id.as_ref() {
-                return Some(existing.clone());
+            if in_flight.flushed {
+                return Some(in_flight.message_id.clone());
             }
-            let message_id = format!("msg-{}", Uuid::new_v4());
-            in_flight.flushed_message_id = Some(message_id.clone());
+            in_flight.flushed = true;
             StoredMessage {
-                id: message_id,
+                id: in_flight.message_id.clone(),
                 role: "user".into(),
                 text: in_flight.text.clone(),
                 created_at: in_flight.created_at.clone(),
@@ -2747,9 +2750,26 @@ mod tests {
             Box::pin(async { Ok(()) })
         }
         fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
-            // Emit assistant output and TurnCompleted BEFORE returning SendMessageAck,
+            // Emit TurnStarted, assistant output, and TurnCompleted BEFORE returning SendMessageAck,
             // simulating synchronous or fast-streaming providers like Claude/ACP/Devin.
+            let msg_id = req.message_id;
             if let Some(tx) = self.events_tx.lock().unwrap().as_ref() {
+                let _ = tx.send(ProviderEvent::TurnStarted {
+                    thread_id: req.thread_id.clone(),
+                    turn_id: "turn-fast".into(),
+                    after_message_id: Some(msg_id.clone()),
+                    activity: json!({
+                        "id": "act-fast",
+                        "kind": "turn",
+                        "sequence": 0,
+                        "startedAt": now_iso(),
+                        "status": "running",
+                        "timingSource": "provider",
+                        "title": "Working",
+                        "turnId": "turn-fast",
+                        "afterMessageId": msg_id,
+                    }),
+                });
                 let _ = tx.send(ProviderEvent::MessageAdded {
                     thread_id: req.thread_id.clone(),
                     message: StoredMessage {
@@ -2758,7 +2778,7 @@ mod tests {
                         text: "Fast reply before ack".into(),
                         created_at: now_iso(),
                         command_id: None,
-                        turn_message_id: None,
+                        turn_message_id: Some(msg_id.clone()),
                         attachments: None,
                         watcher_own_change: None,
                         watcher_observed_changes: None,
@@ -2771,10 +2791,10 @@ mod tests {
                     status: "completed".into(),
                 });
             }
-            Box::pin(async {
+            Box::pin(async move {
                 tokio::time::sleep(Duration::from_millis(30)).await;
                 Ok(SendMessageAck {
-                    message_id: "ack-msg-1".into(),
+                    message_id: msg_id,
                     turn_id: "turn-fast".into(),
                     status: "accepted".into(),
                     provider_latency_ms: 30,
@@ -2874,6 +2894,18 @@ mod tests {
         assert_eq!(detail.messages[0].text, "User prompt first");
         assert_eq!(detail.messages[1].role, "assistant");
         assert_eq!(detail.messages[1].text, "Fast reply before ack");
+        assert_eq!(
+            detail.messages[1].turn_message_id.as_deref(),
+            Some(detail.messages[0].id.as_str())
+        );
+        assert_eq!(
+            detail.activities[0]["afterMessageId"].as_str(),
+            Some(detail.messages[0].id.as_str())
+        );
+        assert_eq!(
+            shell["host"]["threads"][0]["lastTurn"]["messageId"].as_str(),
+            Some(detail.messages[0].id.as_str())
+        );
 
         coord.shutdown().await;
     }

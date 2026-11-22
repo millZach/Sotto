@@ -1052,7 +1052,7 @@ impl ProviderAdapter for CodexAdapter {
                 }
             };
 
-            let message_id = Uuid::new_v4().to_string();
+            let message_id = req.message_id.clone();
             self.shared
                 .last_user_message_id
                 .lock()
