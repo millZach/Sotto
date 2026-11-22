@@ -73,9 +73,10 @@ function usePrismIgnition(modelKey: string, highest: boolean, still: boolean): b
  * header row, the Power Gauge effort slider with Prism Ignition at the highest tier, and the
  * speed switch when the model offers faster tiers.
  */
-export function InlineModelCard({ modelKey, header, effort, sliderRef, cardRef }: {
+export function InlineModelCard({ modelKey, header, expanded, effort, sliderRef, cardRef }: {
   readonly modelKey: string
   readonly header: ReactNode
+  readonly expanded: boolean
   readonly effort: CombinedEffort
   readonly sliderRef?: RefObject<HTMLInputElement | null> | undefined
   readonly cardRef?: RefObject<HTMLDivElement | null> | undefined
@@ -178,17 +179,17 @@ export function InlineModelCard({ modelKey, header, effort, sliderRef, cardRef }
   const wordUltracode = !effort.routed && known && shownId === ULTRACODE
   const heat = effort.routed || !known ? 0 : x
 
-  return <div ref={cardRef} className="inline-model-card"
+  return <div ref={cardRef} className="inline-model-card" data-collapsed={!expanded || undefined}
     data-top={top} data-highest={highest} data-arriving={arriving} data-dragging={dragging} data-still={still}
     style={{ '--effort-x': x.toFixed(4), '--effort-heat': heat.toFixed(3), '--effort-cell-center': cellCenter } as CSSProperties}
-    onKeyDown={event => { speedKey(event) }}>
+    onKeyDown={event => { if (expanded) speedKey(event) }}>
     <div className="inline-model-card__sheen" aria-hidden="true" />
     <div className="inline-model-card__comet" aria-hidden="true"><div className="inline-model-card__comet-spin" /></div>
 
     <div className="inline-model-card__content">
       {header}
 
-      <div className="effort-gauge">
+      {expanded && <div className="effort-gauge">
         {(count > 0 || effort.routed || effort.lockedReason) ? <div className="effort-gauge__head">
           <p className="effort-gauge__word" data-top={top && !dragging}>
             {wordUltracode ? <Workflow className="effort-gauge__mark" size={13} aria-hidden="true" /> : null}
@@ -263,9 +264,9 @@ export function InlineModelCard({ modelKey, header, effort, sliderRef, cardRef }
             })}
           </div>
         </> : null}
-      </div>
+      </div>}
 
-      {effort.speed && effort.speed.options.length > 1 ? <div className="inline-model-card__speed">
+      {expanded && effort.speed && effort.speed.options.length > 1 ? <div className="inline-model-card__speed">
         <span className="inline-model-card__speed-label">{t({ message: 'Speed', comment: 'Label beside the speed segmented switch inside the combined model picker.' })}</span>
         <div className="inline-model-card__speeds" role="radiogroup" aria-label={OPTION_CHIP_NAMES.fast} onKeyDown={speedArrows}>
           {effort.speed.options.map(option => {
