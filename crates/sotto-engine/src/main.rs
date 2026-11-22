@@ -20,7 +20,10 @@ use crate::transport::{
     read_engine_frame, write_engine_frame, IncomingEngineMessage, SerializedEngineError,
 };
 
-const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+const ENGINE_VERSION: &str = match option_env!("SOTTO_HOST_VERSION") {
+    Some(v) if !v.is_empty() => v,
+    _ => env!("CARGO_PKG_VERSION"),
+};
 
 #[derive(Debug)]
 struct EngineCliArgs {
@@ -30,6 +33,7 @@ struct EngineCliArgs {
     mock_provider: Option<String>,
     fake_provider: Option<String>,
     fixtures_dir: Option<PathBuf>,
+    enable_providers: bool,
 }
 
 fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
@@ -76,6 +80,8 @@ fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
         return Err("SOTTO_ENGINE_TOKEN is required.".into());
     };
 
+    let enable_providers = std::env::var("SOTTO_ENGINE_ENABLE_PROVIDERS").as_deref() == Ok("1");
+
     Ok(EngineCliArgs {
         data_directory,
         endpoint,
@@ -83,6 +89,7 @@ fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
         mock_provider,
         fake_provider,
         fixtures_dir,
+        enable_providers,
     })
 }
 
@@ -175,9 +182,7 @@ fn build_providers(args: &EngineCliArgs) -> Result<BTreeMap<String, Arc<dyn Prov
             }
             other => return Err(format!("Unsupported fake provider: {other}")),
         }
-    } else if args.mock_provider.is_none()
-        && std::env::var("SOTTO_ENGINE_ENABLE_PROVIDERS").as_deref() == Ok("1")
-    {
+    } else if args.mock_provider.is_none() && args.enable_providers {
         providers.insert(
             "codex".into(),
             Arc::new(CodexAdapter::new(CodexAdapterConfig::native(
@@ -482,8 +487,7 @@ async fn handle_rpc(
     }
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
     let parsed = match parse_args(&raw_args) {
         Ok(a) => a,
@@ -492,6 +496,27 @@ async fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    // Scrub engine IPC secret and launch env vars before starting worker threads or
+    // spawning provider child processes so no AI provider ever inherits SOTTO_ENGINE_TOKEN.
+    std::env::remove_var("SOTTO_ENGINE_TOKEN");
+    std::env::remove_var("SOTTO_ENGINE_ENDPOINT");
+    std::env::remove_var("SOTTO_ENGINE_DATA");
+    std::env::remove_var("SOTTO_ENGINE_ENABLE_PROVIDERS");
+
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(err) => {
+            eprintln!("Could not start async runtime: {err}");
+            return ExitCode::from(1);
+        }
+    };
+    runtime.block_on(run_engine(parsed))
+}
+
+async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
 
     if let Err(err) = std::fs::create_dir_all(&parsed.data_directory) {
         eprintln!("Could not create engine data folder: {err}");
