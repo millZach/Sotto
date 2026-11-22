@@ -59,8 +59,8 @@ jobs:
         run: |
           # The iOS job reads only the native client, the host protocol its wire types mirror and this file.
           ios_paths='^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)'
-          # The Rust host job reads the Cargo workspace, its dependency policy, its parity/launch tests, launch script, build/release wiring and this file.
-          rust_paths='^(crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|tests/integration/rustHost[^/]*\.test\.ts$|src/main/hosts/launchScript\.ts$|scripts/build-rust-host\.mjs$|\.github/workflows/rust-host-release\.yml$|\.github/workflows/ci\.yml$)'
+          # The Rust host job reads the Cargo workspace, its dependency policy, its parity/launch/engine tests, launch script, build/release wiring and this file.
+          rust_paths='^(crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|tests/integration/rust(Host|LocalEngine)[^/]*\.test\.ts$|src/main/hosts/launchScript\.ts$|scripts/build-rust-host\.mjs$|\.github/workflows/rust-host-release\.yml$|\.github/workflows/ci\.yml$)'
           # The Core ML speech helper job reads only the Swift helper, its build script and this file.
           coreml_paths='^(native/coreml-asr/|scripts/build-coreml-asr\.mjs$|\.github/workflows/ci\.yml$)'
           if [ "$EVENT" = "push" ]; then
@@ -606,14 +606,14 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test workspace
         run: cargo test --workspace --locked
-      - name: Build sotto-host binary
-        run: cargo build -p sotto-host --bin sotto-host --locked
+      - name: Build sotto-host and sotto-engine binaries
+        run: cargo build -p sotto-host --bin sotto-host -p sotto-engine --bin sotto-engine --locked
       - name: Install Node test dependencies
         run: npm ci --ignore-scripts
       - name: Cross-language parity test
         env:
           SOTTO_TEST_RUST_HOST: '1'
-        run: npx vitest run tests/integration/rustHostFoundation.test.ts tests/integration/rustHostProviders.test.ts tests/integration/rustHostAllProviders.test.ts tests/integration/rustHostLaunchScript.test.ts
+        run: npx vitest run tests/integration/rustHostFoundation.test.ts tests/integration/rustHostProviders.test.ts tests/integration/rustHostAllProviders.test.ts tests/integration/rustHostLaunchScript.test.ts tests/integration/rustLocalEngine.test.ts
       - name: Check crate licenses and sources
         if: matrix.label == 'Linux'
         uses: EmbarkStudios/cargo-deny-action@v2

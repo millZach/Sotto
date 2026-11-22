@@ -19,6 +19,18 @@ pub enum HostErrorCode {
 }
 
 impl HostErrorCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HostErrorCode::Unauthenticated => "unauthenticated",
+            HostErrorCode::InvalidRequest => "invalid_request",
+            HostErrorCode::StaleRequest => "stale_request",
+            HostErrorCode::Forbidden => "forbidden",
+            HostErrorCode::Unavailable => "unavailable",
+            HostErrorCode::Busy => "busy",
+            HostErrorCode::TooLarge => "too_large",
+        }
+    }
+
     pub fn default_message(self) -> &'static str {
         match self {
             HostErrorCode::Unauthenticated => {

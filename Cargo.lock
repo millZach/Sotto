@@ -740,6 +740,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotto-engine"
+version = "0.1.43"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "sotto-core",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "sotto-host"
 version = "0.1.43"
 dependencies = [
