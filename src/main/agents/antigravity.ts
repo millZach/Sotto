@@ -927,14 +927,15 @@ export class AntigravityAcpHost implements ProviderHost {
     const rows = antigravityActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, this.options.captureMedia)
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
     const edits = antigravityEdits(update), row = key ? rows.find(item => item.id === antigravityToolId(key)) : undefined
-    if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, alias.cwd)
+    if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
   }
   /** A finished edit's changes placed on their lines once the file is read (`antigravityEditLines.ts`); each one that cannot be stays as reported. */
-  private async placeEdits(id: string, rowId: string, edits: readonly AntigravityEdit[], cwd: string): Promise<void> {
+  private async placeEdits(id: string, rowId: string, edits: readonly AntigravityEdit[], reported: readonly (string | undefined)[], cwd: string): Promise<void> {
     const generation = this.generation
-    const placed = await placeAntigravityEdits(edits, cwd)
+    const placed = await placeAntigravityEdits(edits, cwd, this.folders.root)
     const thread = generation === this.generation ? this.threads.get(id) : undefined, row = thread?.activities?.find(item => item.id === rowId)
-    if (!thread || !row?.changes || row.changes.length !== placed.length || !placed.some(Boolean)) return
+    // The row must still hold exactly what was reported when the read began, so a later report never takes an earlier read's lines.
+    if (!thread || !row?.changes || row.changes.length !== placed.length || !placed.some(Boolean) || row.changes.some((change, index) => change.diff !== reported[index])) return
     thread.activities = mergeAgentActivities(thread.activities, [{ ...row, changes: row.changes.map((change, index) => placed[index] ? { ...change, diff: placed[index] } : change) }])
     this.changed(id); this.emit()
   }

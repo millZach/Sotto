@@ -25,7 +25,8 @@ export function agentActivitySignature(record: AgentActivity): string {
     record.context?.before ?? '', record.context?.after ?? '', record.truncated === true ? '1' : '', record.taskUpdatesExcluded === true ? '1' : '',
     // A failed change reread as one the user denied (#2159) keeps its status, so the mark itself is what changed.
     record.denied === true ? '1' : '',
-    (record.changes ?? []).map(change => `${change.path.length}:${change.kind.length}:${size(change.diff)}`).join('~'),
+    // Its first characters too: a diff that changed form, such as a before and after placed on its lines, can keep its length.
+    (record.changes ?? []).map(change => `${change.path.length}:${change.kind.length}:${size(change.diff)}:${change.diff?.slice(0, 3) ?? ''}`).join('~'),
     (record.steps ?? []).map(step => `${step.text.length}:${step.status}:${size(step.active)}`).join('~'),
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),
     // A picture the step captured (ADR-0170) is named by its digest; a record that gained one is sent again.

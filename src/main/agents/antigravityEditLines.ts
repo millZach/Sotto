@@ -1,5 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
+import { posix, win32 } from 'node:path'
 import { MAX_ACTIVITY_TEXT } from '../../shared/agentActivity'
 import { turnPatch } from '../../shared/turnDiff'
 
@@ -29,10 +29,16 @@ export function antigravityEdits(update: Record<string, unknown>): AntigravityEd
   })
 }
 
-/** The file `agy` names, as this computer opens it: `/C:/…` is `C:/…` on Windows, and a relative path is the thread's folder's. */
-export function antigravityFilePath(path: string, cwd: string, platform: NodeJS.Platform = process.platform): string {
+/**
+ * The file `agy` names, as this computer opens it: `/C:/…` is `C:/…` on Windows, and a relative path is the thread's
+ * folder's. Undefined for a file outside the thread's folder, which Sotto does not read to place an edit: a path `agy`
+ * names could be a network share, and only the user's own folder is read.
+ */
+export function antigravityFilePath(path: string, cwd: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  const paths = platform === 'win32' ? win32 : posix
   const local = platform === 'win32' && /^\/[A-Za-z]:[\\/]/u.test(path) ? path.slice(1) : path
-  return isAbsolute(local) ? local : resolve(cwd, local)
+  const full = paths.resolve(cwd, local), within = paths.relative(paths.resolve(cwd), full)
+  return within && !within.startsWith('..') && !paths.isAbsolute(within) ? full : undefined
 }
 
 /**
@@ -41,22 +47,32 @@ export function antigravityFilePath(path: string, cwd: string, platform: NodeJS.
  */
 export function placeAntigravityEdit(edit: Pick<AntigravityEdit, 'oldText' | 'newText'>, now: string): string | undefined {
   if (!edit.newText) return undefined
-  const at = now.indexOf(edit.newText)
+  const at = now.indexOf(edit.newText), end = at + edit.newText.length
   if (at < 0 || now.indexOf(edit.newText, at + 1) >= 0) return undefined
-  const before = now.slice(0, at) + edit.oldText + now.slice(at + edit.newText.length)
-  const { patch } = turnPatch('file', before, now, false, 0)
+  // Only the whole lines the new text spans are diffed, then numbered from where they start, so a change is never
+  // placed outside the text `agy` named, as a diff of the whole file may when the lines around it repeat.
+  const start = now.lastIndexOf('\n', at - 1) + 1, newline = now.indexOf('\n', end - 1), stop = newline < 0 ? now.length : newline + 1
+  const lines = now.slice(start, stop), before = now.slice(start, at) + edit.oldText + now.slice(end, stop)
+  const { patch } = turnPatch('file', before, lines, false, 0)
   const hunks = patch.indexOf('\n@@ ')
   if (hunks < 0) return undefined
+  let offset = 0
+  for (let index = now.indexOf('\n'); index >= 0 && index < start; index = now.indexOf('\n', index + 1)) offset++
   const placed = patch.slice(hunks + 1).replace(/\n$/u, '')
+    .replace(/^@@ -(\d+)(,\d+)? \+(\d+)(,\d+)? @@/gmu, (_, from: string, fromCount = '', to: string, toCount = '') => `@@ -${Number(from) + offset}${fromCount} +${Number(to) + offset}${toCount} @@`)
   return placed.length <= MAX_ACTIVITY_TEXT ? placed : undefined
 }
 
-/** Each edit placed on its lines from the file as it is now, or undefined for one that cannot be. Never throws. */
-export async function placeAntigravityEdits(edits: readonly AntigravityEdit[], cwd: string): Promise<(string | undefined)[]> {
+/**
+ * Each edit placed on its lines from the file as it is now, or undefined for one that cannot be. Never throws. Nothing
+ * under `kept`, Sotto's own Antigravity folder where `agy` keeps its sign-in, is ever read (ADR-0212's amendment), even
+ * when the thread's folder holds it.
+ */
+export async function placeAntigravityEdits(edits: readonly AntigravityEdit[], cwd: string, kept: string): Promise<(string | undefined)[]> {
   return Promise.all(edits.map(async edit => {
     try {
       const path = antigravityFilePath(edit.path, cwd)
-      if ((await stat(path)).size > MOST_BYTES) return undefined
+      if (!path || antigravityFilePath(path, kept) || (await stat(path)).size > MOST_BYTES) return undefined
       return placeAntigravityEdit(edit, await readFile(path, 'utf8'))
     } catch { return undefined }
   }))

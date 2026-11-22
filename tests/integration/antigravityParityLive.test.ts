@@ -190,7 +190,8 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
       await send(id, 'In lines.txt, replace the line charlie with CHARLIE. Use your file editing tool, not the shell. Then reply done.')
       await idle(id)
       const diffs = (await thread(id)).activities?.filter(row => row.kind === 'file-change').flatMap(row => row.changes?.map(change => change.diff ?? '') ?? []) ?? []
-      return { passed: diffs.some(diff => diff.startsWith('@@ -3 +3 @@') && diff.includes('-charlie') && diff.includes('+CHARLIE')), saw: { diffs: diffs.map(diff => diff.slice(0, 200)) } }
+      // The report keeps each diff's first line only, a hunk's place, never the file's text.
+      return { passed: diffs.some(diff => diff.startsWith('@@ -3 +3 @@') && diff.includes('-charlie') && diff.includes('+CHARLIE')), saw: { heads: diffs.map(diff => diff.startsWith('@@') ? diff.split('\n')[0] : 'as reported') } }
     })
 
     // A question agy asks the user, as a card.

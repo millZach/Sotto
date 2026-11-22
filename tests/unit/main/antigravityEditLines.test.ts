@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -23,6 +23,11 @@ describe('Antigravity edits on their lines', () => {
     expect(placeAntigravityEdit({ oldText: whole, newText: now }, now)).toBe('@@ -3 +3 @@\n-three\n+THREE\n@@ -8 +8 @@\n-eight\n+EIGHT')
   })
 
+  it('places a change inside the text agy named, even where the lines after it repeat it', () => {
+    expect(placeAntigravityEdit({ oldText: 'a\n', newText: 'a\nx\n' }, 'a\nx\nx\n')).toBe('@@ -1,0 +2 @@\n+x')
+    expect(placeAntigravityEdit({ oldText: 'b', newText: 'B' }, 'one\ntwo\naBc\nfour\n')).toBe('@@ -3 +3 @@\n-abc\n+aBc')
+  })
+
   it('places a new file or an insertion as added lines', () => {
     expect(placeAntigravityEdit({ oldText: '', newText: file('a', 'b') }, file('a', 'b'))).toBe('@@ -0,0 +1,2 @@\n+a\n+b')
   })
@@ -41,16 +46,28 @@ describe('Antigravity edits on their lines', () => {
     expect(antigravityEdits({ sessionUpdate: 'tool_call', status: 'completed', content })).toEqual([])
   })
 
-  it('opens the file agy names: its Windows form without the leading slash, and a relative path in the thread’s folder', () => {
-    expect(antigravityFilePath('/C:/Users/someone/notes.txt', 'D:\\work', 'win32')).toBe('C:/Users/someone/notes.txt')
-    expect(antigravityFilePath('/home/someone/notes.txt', '/work', 'linux')).toBe('/home/someone/notes.txt')
-    expect(antigravityFilePath('src/a.ts', join(tmpdir(), 'work'))).toBe(resolve(tmpdir(), 'work', 'src/a.ts'))
+  it('opens the file agy names in the thread’s folder only: its Windows form without the leading slash, or a relative path', () => {
+    const work = join(tmpdir(), 'work')
+    expect(antigravityFilePath('src/a.ts', work)).toBe(resolve(work, 'src/a.ts'))
+    expect(antigravityFilePath(resolve(work, 'b.ts'), work)).toBe(resolve(work, 'b.ts'))
+    if (process.platform === 'win32') expect(antigravityFilePath(`/${resolve(work, 'c.ts').replace(/\\/gu, '/')}`, work)).toBe(resolve(work, 'c.ts'))
+    // Outside the thread's folder, a network share among them, it is not read.
+    expect(antigravityFilePath(resolve(tmpdir(), 'elsewhere.ts'), work)).toBeUndefined()
+    expect(antigravityFilePath('../up.ts', work)).toBeUndefined()
+    expect(antigravityFilePath('\\\\server\\share\\a.ts', 'C:\\work', 'win32')).toBeUndefined()
   })
 
   it('reads each file once the edit is done, and leaves one it cannot read', async () => {
     folder = await mkdtemp(join(tmpdir(), 'sotto-agy-edit-'))
     await writeFile(join(folder, 'notes.txt'), file('alpha', 'BRAVO'))
-    expect(await placeAntigravityEdits([{ path: 'notes.txt', oldText: 'bravo\n', newText: 'BRAVO\n' }, { path: 'missing.txt', oldText: 'a', newText: 'b' }], folder))
+    expect(await placeAntigravityEdits([{ path: 'notes.txt', oldText: 'bravo\n', newText: 'BRAVO\n' }, { path: 'missing.txt', oldText: 'a', newText: 'b' }], folder, join(tmpdir(), 'sotto-kept')))
       .toEqual(['@@ -2 +2 @@\n-bravo\n+BRAVO', undefined])
+  })
+
+  it('never reads a file in Sotto’s own Antigravity folder, where agy keeps its sign-in', async () => {
+    folder = await mkdtemp(join(tmpdir(), 'sotto-agy-edit-'))
+    const kept = join(folder, 'antigravity')
+    await mkdir(kept, { recursive: true }); await writeFile(join(kept, 'token.json'), 'NEW\n')
+    expect(await placeAntigravityEdits([{ path: join(kept, 'token.json'), oldText: 'OLD\n', newText: 'NEW\n' }], folder, kept)).toEqual([undefined])
   })
 })
