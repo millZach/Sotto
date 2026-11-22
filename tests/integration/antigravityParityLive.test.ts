@@ -15,6 +15,8 @@ import { expect, it } from 'vitest'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { AntigravityAcpHost } from '../../src/main/agents/antigravity'
 import { ThreadToolServer } from '../../src/main/agents/threadToolServer'
+import { PluginToolServer } from '../../src/main/plugins/pluginTools'
+import { PLUGIN_ACCOUNTS_TOOL } from '../../src/shared/plugins'
 import { promptImageOf } from '../fixtures/stagedImages'
 
 const live = process.env.SOTTO_ANTIGRAVITY_LIVE === '1'
@@ -78,11 +80,31 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
   await writeFile(join(userSetup, 'server.mjs'), USER_SERVER)
   await writeFile(join(userSetup, 'mcp_config.json'), JSON.stringify({ mcpServers: { user_probe: { command: process.execPath, args: [join(userSetup, 'server.mjs')], env: { USER_PROBE_CALLS: userCalls } } } }))
   const host = new AntigravityAcpHost(directory, { executable, requestTimeoutMs: 120_000, userMcpConfig: join(userSetup, 'mcp_config.json') })
-  let calls = 0
+  let calls = 0, pluginAccountReads = 0
   const tools = new ThreadToolServer({ name: 'sotto_probe', serverName: 'Sotto probe', instructions: 'A local test tool.', unavailable: 'Unavailable', failed: 'Failed' },
     [{ name: 'ping', description: 'Return the test value.', inputSchema: { type: 'object', properties: {} } }],
     async () => { calls++; return { content: [{ type: 'text', text: 'PONG-7731' }] } })
-  host.useThreadTools([{ name: 'sotto_probe', definitions: tools.definitions, mcpServer: (id: string) => tools.mcpServer(id) }])
+  const pluginTools = new PluginToolServer({
+    admits: () => true,
+    gitHubSignIn: async () => { pluginAccountReads++; return { state: 'signed-in', login: 'example-user' } },
+    readGitHub: async () => ({ ok: true, text: '[]', truncated: false }),
+    accounts: async () => [{ id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-21T00:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }],
+    findAccount: async () => 'none',
+    holdsAccount: async () => false,
+    readVercel: async () => ({ ok: true, text: '{}', truncated: false }),
+    record: async () => undefined,
+    isWatcher: () => false,
+    askChange: async () => 'denied',
+    commentOnGitHub: async () => ({ ok: false, reason: 'failed' }),
+    openGitHubIssue: async () => ({ ok: false, reason: 'failed' }),
+    describeGitHubIssue: async () => ({ ok: false, reason: 'failed' }),
+    setGitHubIssueState: async () => ({ ok: false, reason: 'failed' }),
+    moveVercelProduction: async () => ({ ok: false, reason: 'failed' }),
+    describeVercelDeployment: async () => ({}),
+    cancelVercelDeployment: async () => ({ ok: false, reason: 'failed' }),
+  })
+  const probeServer = { name: 'sotto_probe', definitions: tools.definitions, mcpServer: (id: string) => tools.mcpServer(id) }
+  host.useThreadTools([probeServer])
   const results: Record<string, { passed: boolean; saw: unknown }> = {}
   const check = async (name: string, run: () => Promise<{ passed: boolean; saw: unknown }>): Promise<void> => {
     try { results[name] = await run() } catch (error) { results[name] = { passed: false, saw: error instanceof Error ? error.message : String(error) } }
@@ -110,6 +132,26 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
       await idle(id)
       const reply = await lastReply(id)
       return { passed: calls > 0 && reply.includes('PONG-7731'), saw: { calls, reply: reply.slice(0, 200), activities: (await thread(id)).activities?.map(row => [row.kind, row.title]).slice(0, 10) } }
+    })
+
+    // The real sotto_plugins catalog (GitHub write tools included) loads in agy's toolbox on both session/new and session/resume.
+    await check('sotto-plugins-catalog', async () => {
+      host.useThreadTools([probeServer, pluginTools])
+      try {
+        const id = await open('full-access')
+        await send(id, `Call the ${PLUGIN_ACCOUNTS_TOOL} tool on the sotto_plugins MCP server once, then reply with the GitHub login name it returned.`)
+        await idle(id)
+        const freshReply = await lastReply(id), freshReads = pluginAccountReads
+        host.disconnect(); await host.closed(); await host.connect()
+        host.observeThreads([id])
+        await send(id, `Call the ${PLUGIN_ACCOUNTS_TOOL} tool on the sotto_plugins MCP server once again, then reply with the GitHub login name it returned.`)
+        await idle(id)
+        const resumedReply = await lastReply(id), resumedReads = pluginAccountReads
+        return {
+          passed: freshReads === 1 && resumedReads === 2 && freshReply.includes('example-user') && resumedReply.includes('example-user'),
+          saw: { freshReads, resumedReads, freshReply: freshReply.slice(0, 200), resumedReply: resumedReply.slice(0, 200) },
+        }
+      } finally { host.useThreadTools([probeServer]) }
     })
 
     // A server from the user's own `agy` file reaches agy beside Sotto's (parity slice 3).
@@ -239,7 +281,7 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
     })
   } finally {
     if (reportPath) await writeFile(reportPath, JSON.stringify(results, null, 2))
-    host.disconnect(); await host.closed(); await tools.close()
+    host.disconnect(); await host.closed(); await tools.close(); await pluginTools.close()
     await rm(project, { recursive: true, force: true })
     await rm(userSetup, { recursive: true, force: true })
   }

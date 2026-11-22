@@ -29,7 +29,7 @@ import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentModel, AgentThread, ProviderId } from '../../shared/agents'
 import { immutableModels } from './activitySnapshots'
-import { antigravityGeminiModel } from './antigravityModels'
+import { antigravityCatalogGeminiModel } from './antigravityModels'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { withKeptPartsPutBack, type HeldParts } from '../../shared/keptParts'
@@ -68,6 +68,7 @@ import type { CheckQueueEntry } from '../../shared/checkQueue'
 import { USAGE_LIMIT_PROVIDERS, usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 /** Answers read on every call, checked against schemas built once rather than on every call. */
+const keepCatalogModel = (model: AgentModel): boolean => model.providerId !== 'antigravity' || antigravityCatalogGeminiModel(model.id)
 const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
 const signInAnswerSchema = hostSignInSchema.nullable()
 const fileListingResultSchema = filesResultSchema(fileListingSchema)
@@ -726,7 +727,12 @@ export class SocketHostService implements HostService {
     if (held) { host.models = held; return }
     const revision = this.namedCatalogs.get(wire), catalog = this.catalog
     // A host from before November 21, 2026 still lists the Claude and GPT models its agy offers; Antigravity is Gemini only (ADR-0212).
-    if (revision !== undefined && catalog?.revision === revision) host.models = catalog.certified ??= immutableModels(host.models.filter(model => model.providerId !== 'antigravity' || antigravityGeminiModel(model.id)))
+    if (revision !== undefined && catalog?.revision === revision) {
+      host.models = catalog.certified ??= immutableModels(host.models.filter(keepCatalogModel))
+      return
+    }
+    // Legacy full shells without `modelsRevision` get the same Gemini-only filter without extra copying when already clean.
+    if (Array.isArray(host.models) && !host.models.every(keepCatalogModel)) host.models = immutableModels(host.models.filter(keepCatalogModel))
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }

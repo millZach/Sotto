@@ -39,7 +39,7 @@ const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value))
 it('never sends a paired host the keys only the desktop reads', () => {
   expect(watcherHostInput('list_threads', { includeSettled: true, limit: 100, watchedOnly: true, detail: 'slim' })).toEqual({ includeSettled: true, limit: 100 })
   expect(watcherHostInput('read_thread', { target: target('a'), limit: 1, includeActivities: false, evidence: 'full' })).toEqual({ target: target('a'), limit: 1, includeActivities: false })
-  expect(watcherHostInput('list_projects', { hostId, projectId: 'p', query: 'sotto', includeModels: true, limit: 100 })).toEqual({ hostId, limit: 100 })
+  expect(watcherHostInput('list_projects', { hostId, projectId: 'p', query: 'sotto', provider: 'antigravity', includeModels: true, limit: 100 })).toEqual({ hostId, limit: 100 })
   const unchanged = { includeSettled: true, limit: 100 }
   expect(watcherHostInput('list_threads', unchanged)).toBe(unchanged)
 })
@@ -74,8 +74,11 @@ it('reads a thread with its pull requests summed up unless every fact is asked f
   expect(watcherSlimRead('read_thread', { evidence: 'full' }, read, () => false)).toBe(read)
 })
 
-it('lists projects without their models unless asked, narrowed by project or a query', () => {
-  const workers = [{ provider: 'codex' as const, modelId: 'model', reasoningEfforts: ['high'], defaultPermission: null, permissionComparable: false }]
+it('lists projects without their models unless asked, narrowed by project, provider or a query', () => {
+  const workers = [
+    { provider: 'codex' as const, modelId: 'model', reasoningEfforts: ['high'], defaultPermission: null, permissionComparable: false },
+    { provider: 'antigravity' as const, modelId: 'native:antigravity:model:gemini-4-neon', reasoningEfforts: ['high'], defaultPermission: null, permissionComparable: false },
+  ]
   const project = (projectId: string, title: string) => ({ target: { hostId, projectId }, title, displayRoot: `C:\\work\\${title}`, workers,
     controlAvailable: true, readsAvailable: true, readOnlyProfileAvailable: true, freshness: 'fresh' as const })
   const result = { status: 'ok', projects: [project('a', 'Sotto'), project('b', 'Forge')], nextCursor: null, observedAt: at, staleHosts: [] }
@@ -84,6 +87,8 @@ it('lists projects without their models unless asked, narrowed by project or a q
   expect(watcherToolSchemas.list_projects.output.parse(slim)).toBeTruthy()
   expect((watcherSlimRead('list_projects', { query: 'forge' }, result, () => false) as typeof result).projects.map(item => item.title)).toEqual(['Forge'])
   expect((watcherSlimRead('list_projects', { projectId: 'a', includeModels: true }, result, () => false) as typeof result).projects).toEqual([project('a', 'Sotto')])
+  expect((watcherSlimRead('list_projects', { projectId: 'a', provider: 'antigravity', includeModels: true }, result, () => false) as typeof result).projects[0]!.workers)
+    .toEqual([workers[1]])
 })
 
 it('measures what the slim reads save on a roster the size of the October 19 session', () => {

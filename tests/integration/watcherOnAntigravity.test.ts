@@ -83,22 +83,129 @@ it('admits plugin reads on Ask for approval and shows a card for a tool outside 
     .toEqual(['Run mcp_sotto_plugins_mail_send'])
 }, 90_000)
 
-it('lets Watcher read a thread twice on Full access without a permission card', async () => {
+it('leaves native execute and edit permissions on cards in Ask for approval, and admits only scoped MCP tools', async () => {
+  const f = await fixture()
+  expect(await f.service.open({ provider: 'antigravity', modelId: f.model.id })).toMatchObject({ status: 'ok' })
+  const id = f.service.state().current!.target.threadId
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Check files.' })).error).toBeNull()
+  const adapterId = f.registry.byThread(id)!.sessionId
+  const thread = async () => (await f.antigravity.host.snapshot()).threads.find(item => item.id === adapterId)!
+
+  await f.antigravity.action(adapterId, { type: 'mcp-permission', tool: 'mcp_sotto_threads_read_thread' })
+  await expect.poll(() => answers(f)).toEqual([{ outcome: 'selected', optionId: 'allow' }])
+
+  await f.antigravity.action(adapterId, { type: 'edit-permission' })
+  await expect.poll(async () => (await thread()).requests.length).toBe(1)
+  await f.antigravity.action(adapterId, { type: 'permission', text: 'pwd' })
+  await expect.poll(async () => (await thread()).requests.length).toBe(2)
+  expect(await answers(f)).toHaveLength(1)
+}, 90_000)
+
+it('allows Watcher native file edits once on Allow edits while keeping native commands on cards', async () => {
+  const f = await fixture()
+  expect(await f.service.setPermission({ runtimeMode: 'auto-accept-edits' })).toMatchObject({ status: 'ok' })
+  expect(await f.service.open({ provider: 'antigravity', modelId: f.model.id })).toMatchObject({ status: 'ok' })
+  const id = f.service.state().current!.target.threadId
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Check and edit.' })).error).toBeNull()
+  const adapterId = f.registry.byThread(id)!.sessionId
+  const thread = async () => (await f.antigravity.host.snapshot()).threads.find(item => item.id === adapterId)!
+
+  await f.antigravity.action(adapterId, { type: 'mcp-permission', tool: 'mcp_sotto_threads_read_thread' })
+  await expect.poll(() => answers(f)).toEqual([{ outcome: 'selected', optionId: 'allow' }])
+  await f.antigravity.action(adapterId, { type: 'edit-permission' })
+  await expect.poll(() => answers(f)).toEqual([{ outcome: 'selected', optionId: 'allow' }, { outcome: 'selected', optionId: 'allow-once' }])
+  expect((await thread()).requests).toEqual([])
+
+  await f.antigravity.action(adapterId, { type: 'permission', text: 'git status' })
+  await expect.poll(async () => (await thread()).requests.length).toBe(1)
+  await f.antigravity.action(adapterId, { type: 'mcp-permission', tool: 'mcp_sotto_threads_read_thread_extra' })
+  await expect.poll(async () => (await thread()).requests.length).toBe(2)
+  expect(await answers(f)).toHaveLength(2)
+}, 90_000)
+
+it('lets Watcher run native permissions once and scoped tools on Full access across resume while keeping questions and always-only asks on cards', async () => {
   const f = await fixture()
   expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'ok' })
   expect(await f.service.open({ provider: 'antigravity', modelId: f.model.id })).toMatchObject({ status: 'ok' })
   const id = f.service.state().current!.target.threadId
   expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Check the worker.' })).error).toBeNull()
   const adapterId = f.registry.byThread(id)!.sessionId
+  const thread = async () => (await f.antigravity.host.snapshot()).threads.find(item => item.id === adapterId)!
+
   for (const count of [1, 2]) {
     await f.antigravity.action(adapterId, { type: 'mcp-permission', tool: 'mcp_sotto_threads_read_thread' })
     await expect.poll(() => answers(f)).toEqual(Array.from({ length: count }, () => ({ outcome: 'selected', optionId: 'allow' })))
   }
-  const thread = async () => (await f.antigravity.host.snapshot()).threads.find(item => item.id === adapterId)!
-  expect((await thread()).requests).toEqual([])
-  await f.antigravity.action(adapterId, { type: 'question', text: 'Run mcp_sotto_threads_read_thread' })
-  await expect.poll(async () => (await thread()).requests.map(request => request.kind)).toEqual(['question'])
+  await f.antigravity.action(adapterId, { type: 'permission', text: 'Get-ChildItem' })
+  await expect.poll(() => answers(f)).toEqual([
+    { outcome: 'selected', optionId: 'allow' },
+    { outcome: 'selected', optionId: 'allow' },
+    { outcome: 'selected', optionId: 'allow-once' },
+  ])
+  await f.antigravity.action(adapterId, { type: 'edit-permission' })
+  await expect.poll(() => answers(f)).toEqual([
+    { outcome: 'selected', optionId: 'allow' },
+    { outcome: 'selected', optionId: 'allow' },
+    { outcome: 'selected', optionId: 'allow-once' },
+    { outcome: 'selected', optionId: 'allow-once' },
+  ])
+  // Unadvertised MCP tools fall through to Full access once (never allow_always) instead of blocking Watcher.
   await f.antigravity.action(adapterId, { type: 'mcp-permission', tool: 'mcp_sotto_threads_read_thread_extra' })
-  await expect.poll(async () => (await thread()).requests.map(request => request.kind)).toEqual(['question', 'permission'])
-  expect(await answers(f)).toHaveLength(2)
+  await expect.poll(() => answers(f)).toEqual([
+    { outcome: 'selected', optionId: 'allow' },
+    { outcome: 'selected', optionId: 'allow' },
+    { outcome: 'selected', optionId: 'allow-once' },
+    { outcome: 'selected', optionId: 'allow-once' },
+    { outcome: 'selected', optionId: 'allow' },
+  ])
+  expect((await thread()).requests).toEqual([])
+
+  // Reconnect and resume Watcher on Full access: native permissions still answer once without a card.
+  await f.antigravity.driver.completeTurn(adapterId, 'Checked once.')
+  await expect.poll(async () => (await thread()).status).toBe('idle')
+  f.antigravity.host.disconnect(); await f.antigravity.host.closed()
+  await f.antigravity.host.connect()
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [id] })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Check again after resume.' })).error).toBeNull()
+  await f.antigravity.action(adapterId, { type: 'permission', text: 'git status' })
+  await expect.poll(async () => (await answers(f)).length).toBe(6)
+  expect((await answers(f)).at(-1)).toEqual({ outcome: 'selected', optionId: 'allow-once' })
+
+  // Always-only options, interaction_* questions and forms never auto-allow on Full access.
+  await f.antigravity.action(adapterId, { type: 'permission-always-only', text: 'rm -rf temp' })
+  await expect.poll(async () => (await thread()).requests.map(request => request.kind)).toEqual(['permission'])
+  await f.antigravity.action(adapterId, { type: 'question', text: 'Which worker?' })
+  await expect.poll(async () => (await thread()).requests.map(request => request.kind)).toEqual(['permission', 'question'])
+  // Watcher's initialize capability omits elicitation.form, so ask-question falls back to text and adds no card.
+  await f.antigravity.action(adapterId, { type: 'ask-question', questions: [{ question: 'Pick a branch', options: ['main', 'dev'] }] })
+  await expect.poll(async () => (await thread()).status).toBe('idle')
+  expect((await thread()).requests.map(request => request.kind)).toEqual(['permission', 'question'])
+  expect((await answers(f)).some(item => (item as { optionId?: string }).optionId === 'remember-this')).toBe(false)
+}, 90_000)
+
+it('takes a waiting permission off Watcher when moved to Full access and restores cards when narrowed back to Ask for approval', async () => {
+  const f = await fixture()
+  expect(await f.service.open({ provider: 'antigravity', modelId: f.model.id })).toMatchObject({ status: 'ok' })
+  const id = f.service.state().current!.target.threadId
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Run check.' })).error).toBeNull()
+  const adapterId = f.registry.byThread(id)!.sessionId
+  const thread = async () => (await f.antigravity.host.snapshot()).threads.find(item => item.id === adapterId)!
+
+  await f.antigravity.action(adapterId, { type: 'permission', text: 'git status' })
+  await expect.poll(async () => (await thread()).requests.length).toBe(1)
+
+  // Moving the Watcher session to Full access clears its waiting permission card once.
+  expect(await f.antigravity.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: adapterId, runtimeMode: 'full-access' })).toMatchObject({ accepted: true })
+  await expect.poll(() => answers(f)).toEqual([{ outcome: 'selected', optionId: 'allow-once' }])
+  expect((await thread()).requests).toEqual([])
+  await f.antigravity.driver.completeTurn(adapterId, 'Done.')
+  await expect.poll(async () => (await thread()).status).toBe('idle')
+
+  // Narrowing back via WatcherService.setPermission makes the next native command prompt again.
+  expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'ok' })
+  expect(await f.service.setPermission({ runtimeMode: 'approval-required' })).toMatchObject({ status: 'ok' })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Run again in ask mode.' })).error).toBeNull()
+  await f.antigravity.action(adapterId, { type: 'permission', text: 'git status' })
+  await expect.poll(async () => (await thread()).requests.length).toBe(1)
+  expect(await answers(f)).toHaveLength(1)
 }, 90_000)

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from '../../../../src/main/plugins/github/changes'
+import { commentOnGitHub, describeGitHubIssue, GITHUB_REPO, openGitHubIssue, setGitHubIssueState } from '../../../../src/main/plugins/github/changes'
 import type { GitCommandOptions, RunGitCommand } from '../../../../src/main/agents/git/gitStatus'
 import { wordPluginChange } from '../../../../src/main/plugins/changeWords'
 import { PluginChangeRequests, type PluginChangeAnswer, type PluginChangeWait } from '../../../../src/main/plugins/pendingChanges'
@@ -162,6 +162,37 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
     }
     expect(asked).toEqual([])
     expect(ghCalls).toEqual([])
+  })
+
+  it('keeps GITHUB_REPO equivalent to the non-dot-path rule across boundary cases and blocks invalid targets before gh or a card', async () => {
+    const legacy = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/u
+    const alphabet = ['a', 'Z', '0', '_', '-', '.', '/', '\\', ' ', 'é', '\n']
+    const samples = ['', '.', '..', '...', '.a', 'a.', '._', '-.', '..a', 'a..', '.github', 'repo-1_a.b', 'a'.repeat(100), 'a'.repeat(101), '.'.repeat(100), '.'.repeat(101),
+      ...alphabet, ...alphabet.flatMap(first => alphabet.map(second => first + second))]
+    for (const candidate of samples) expect(GITHUB_REPO.test(candidate), JSON.stringify(candidate)).toBe(legacy.test(candidate))
+
+    for (const invalid of ['', '.', '..', 'a/b', 'a\\b', 'répò', 'a'.repeat(101)]) {
+      const { server, asked, ghCalls } = tools({ answer: 'allowed' })
+      for (const [toolName, args] of [
+        [GITHUB_COMMENT_TOOL, { ...comment, repo: invalid }],
+        [GITHUB_OPEN_ISSUE_TOOL, { owner: comment.owner, repo: invalid, title: 'Bug', body: 'Details' }],
+        [GITHUB_CLOSE_ISSUE_TOOL, { owner: comment.owner, repo: invalid, number: 12 }],
+        [GITHUB_REOPEN_ISSUE_TOOL, { owner: comment.owner, repo: invalid, number: 12 }],
+      ] as const) {
+        const result = await server.call('admitted', toolName, args)
+        expect(result.isError, `${toolName}:${JSON.stringify(invalid)}`).toBe(true)
+      }
+      expect(asked, JSON.stringify(invalid)).toEqual([])
+      expect(ghCalls, JSON.stringify(invalid)).toEqual([])
+    }
+
+    for (const valid of ['a', '_', '.a', 'a.', '.github', 'my.repo_1-a', 'a'.repeat(100)]) {
+      const { server, asked, ghCalls } = tools({ answer: 'denied' })
+      const result = await server.call('admitted', GITHUB_COMMENT_TOOL, { ...comment, repo: valid })
+      expect(result.isError, valid).toBe(true)
+      expect(asked, valid).toEqual([{ kind: 'github-comment', ...comment, repo: valid, account: 'example-user' }])
+      expect(ghCalls, valid).toEqual([])
+    }
   })
 
   it('asks nobody when gh cannot post, and asks without a name when gh would not say who it is', async () => {

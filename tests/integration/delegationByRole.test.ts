@@ -2,10 +2,18 @@
 // #1041 over ADR-0081: with worker roles on, `delegate` names the kind of work and main fills the provider, model, effort
 // and permission from the user's Settings for that role, within the delegation's ceiling.
 import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { createAgentRuntime } from '../../src/main/agents/runtime'
 import { DelegationService } from '../../src/main/agents/delegation'
 import type { AgentRuntimeMode, ProviderId } from '../../src/shared/agents'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import type { WorkerRoleChoices } from '../../src/shared/workerRoles'
+import { codexFixture } from '../fixtures/codexFixture'
+import { antigravityFixture } from '../fixtures/fakeAntigravityFixture'
+import { FakeProviderHost } from '../fixtures/fakeProviderHost'
+import { testCredentials } from '../fixtures/testCredentials'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
@@ -227,3 +235,49 @@ it('with worker roles off, refuses a new thread that names no provider and model
   expect(named).not.toHaveProperty('role')
   expect(await f.service.read(parent, {})).not.toHaveProperty('roles')
 })
+
+it('delegates to Antigravity Gemini 4 Neon explicitly and via worker role, and refuses when Antigravity disconnects', async () => {
+  const antigravity = await antigravityFixture(undefined, 10_000)
+  cleanups.push(antigravity.cleanup)
+  await antigravity.script({ newModels: [{ value: 'gemini-4-neon', name: 'Gemini 4 Neon', thinking: ['low', 'high'] }] })
+  const codex = await codexFixture(undefined, false, 10_000)
+  cleanups.push(codex.cleanup)
+  const directory = join(antigravity.root, 'sotto'), projectPath = join(antigravity.root, 'project')
+  await mkdir(projectPath, { recursive: true })
+  const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
+  const settings = { ...DEFAULT_SETTINGS, threadTitles: false, newThreadRuntimeMode: 'full-access' as AgentRuntimeMode,
+    workerRoles: { research: { modelId: 'native:antigravity:model:gemini-4-neon', reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' as AgentRuntimeMode } } }
+  const runtime = await createAgentRuntime({
+    directory, credentials, watcherEnabled: false, delegationEnabled: true, workerRolesEnabled: true,
+    settings: () => settings, writingSettings: async () => settings,
+    historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
+    providers: { antigravity: antigravity.adapter, codex: codex.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() },
+  })
+  cleanups.push(runtime.close)
+
+  await runtime.agentControl.commandShell({ type: 'connect', provider: 'codex' })
+  await runtime.agentControl.commandShell({ type: 'connect', provider: 'antigravity' })
+  await runtime.agentControl.commandShell({ type: 'create-project', provider: 'codex', title: 'Project', path: projectPath, useExisting: true })
+  const codexProject = runtime.agentControl.shell().host.projects.find(item => item.providerId === 'codex' && item.path === projectPath)!
+  const codexModel = runtime.agentControl.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
+  const parent = randomUUID()
+  expect((await runtime.agentControl.commandShell({
+    type: 'create-thread', threadId: parent, projectId: codexProject.id, title: 'Delegating parent', modelId: codexModel.id, runtimeMode: 'full-access',
+  })).error).toBeNull()
+  expect((await runtime.agentControl.commandShell({ type: 'manual-send', threadId: parent, draftId: randomUUID(), text: 'Have Antigravity Neon check this.' })).error).toBeNull()
+
+  const neonModelId = 'native:antigravity:model:gemini-4-neon'
+  const byRole = await runtime.delegation!.delegate(parent, { work: 'research', brief: 'Role Neon delegation.', wait_seconds: 0 }) as Result
+  if (byRole.status !== 'ok') throw new Error(`role Neon delegation refused: ${byRole.message}`)
+  expect(runtime.agentControl.shell().host.threads.find(item => item.id === byRole.delegation.thread)?.modelId).toBe(neonModelId)
+  await expect.poll(async () => (await antigravity.requests()).filter(record => record.method === 'session/prompt').length).toBe(1)
+
+  const explicit = await runtime.delegation!.delegate(parent, { work: 'building', provider: 'antigravity', model: neonModelId, brief: 'Explicit Neon delegation.', wait_seconds: 0 }) as Result
+  if (explicit.status !== 'ok') throw new Error(`explicit Neon delegation refused: ${explicit.message}`)
+  expect(runtime.agentControl.shell().host.threads.find(item => item.id === explicit.delegation.thread)?.modelId).toBe(neonModelId)
+  await expect.poll(async () => (await antigravity.requests()).filter(record => record.method === 'session/prompt').length).toBe(2)
+
+  await runtime.agentControl.commandShell({ type: 'disconnect', provider: 'antigravity' })
+  const unavailable = await runtime.delegation!.delegate(parent, { work: 'building', provider: 'antigravity', model: neonModelId, brief: 'Unavailable Neon.', wait_seconds: 0 }) as Result
+  expect(unavailable).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
+}, 90_000)

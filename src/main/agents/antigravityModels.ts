@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { AgentModel, AgentRuntimeMode } from '../../shared/agents'
+import { parsePublicProviderEntityId, type AgentModel, type AgentRuntimeMode } from '../../shared/agents'
 import { effortRank, orderReasoningEfforts } from '../../shared/reasoningEfforts'
 
 /**
@@ -29,6 +29,16 @@ const choicesOf = (option: ConfigOption | undefined): Choice[] =>
 
 /** Whether a model is one of Google's Gemini models, the only ones Sotto runs on Antigravity. Every Gemini ID `agy` 1.5 lists starts `gemini-`. */
 export const antigravityGeminiModel = (modelId: string): boolean => /^gemini-/iu.test(modelId.trim())
+
+/**
+ * Whether an Antigravity model ID carried on a host wire is one of Google's Gemini models (ADR-0212): either a
+ * qualified public Antigravity model ID whose decoded native value starts `gemini-`, or a legacy bare Gemini ID.
+ */
+export function antigravityCatalogGeminiModel(modelId: string): boolean {
+  const parsed = parsePublicProviderEntityId(modelId)
+  if (parsed) return parsed.provider === 'antigravity' && parsed.kind === 'model' && antigravityGeminiModel(parsed.value)
+  return antigravityGeminiModel(modelId)
+}
 
 /** The account's Gemini models in `agy`'s order, without repeats; a name two models share gets its ID after it, as T3 does. */
 export function antigravityModelChoices(settings: AntigravitySessionSettings): { id: string; name: string }[] {

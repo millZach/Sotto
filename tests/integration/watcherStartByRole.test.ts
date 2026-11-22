@@ -2,13 +2,21 @@
 // #1041: Watcher's start_thread names a worker role, and main fills the model, effort, speed and permission from the user's
 // Settings for that role, once, when the start is asked; never wider than the new-thread default.
 import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { createAgentRuntime } from '../../src/main/agents/runtime'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { watcherToolSchemas, type WatcherToolOutput } from '../../src/shared/watcher'
 import { watcherHostControlSchema, type WatcherHostControl, type WatcherRemoteHosts } from '../../src/shared/watcherHost'
 import { roleInForce, type WorkerRoleChoices } from '../../src/shared/workerRoles'
+import { codexFixture } from '../fixtures/codexFixture'
+import { antigravityFixture } from '../fixtures/fakeAntigravityFixture'
+import { FakeProviderHost } from '../fixtures/fakeProviderHost'
+import { testCredentials } from '../fixtures/testCredentials'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
@@ -230,3 +238,87 @@ it('sends a paired host the concrete start, with no role key an older host would
   expect(input).toMatchObject({ modelId: f.other.id, reasoningEffort: 'medium', permission: { kind: 'runtime', mode: 'approval-required' } })
   expect(watcherHostControlSchema.safeParse(packets[0]).success).toBe(true)
 })
+
+it('starts Antigravity Gemini 4 Neon explicitly and by role, delivers the first prompt to agy, preserves retry receipts and never falls back on explicit disconnection', async () => {
+  const antigravity = await antigravityFixture(undefined, 10_000)
+  cleanups.push(antigravity.cleanup)
+  await antigravity.script({ newModels: [{ value: 'gemini-4-neon', name: 'Gemini 4 Neon', thinking: ['low', 'high'] }] })
+  const codex = await codexFixture(undefined, false, 10_000)
+  cleanups.push(codex.cleanup)
+  const directory = join(antigravity.root, 'sotto'), projectPath = join(antigravity.root, 'project')
+  await mkdir(projectPath, { recursive: true })
+  const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
+  const settings = { ...DEFAULT_SETTINGS, threadTitles: false, newThreadRuntimeMode: 'auto-accept-edits' as AgentRuntimeMode,
+    workerRoles: { building: { modelId: 'native:antigravity:model:gemini-4-neon', reasoningEffort: 'high', runtimeMode: 'full-access' as AgentRuntimeMode } } }
+  const runtime = await createAgentRuntime({
+    directory, credentials, watcherEnabled: true, workerRolesEnabled: true, settings: () => settings,
+    writingSettings: async () => settings,
+    historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
+    providers: { antigravity: antigravity.adapter, codex: codex.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() },
+  })
+  cleanups.push(runtime.close)
+
+  await runtime.agentControl.commandShell({ type: 'connect', provider: 'codex' })
+  await runtime.agentControl.commandShell({ type: 'connect', provider: 'antigravity' })
+  await runtime.agentControl.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'auto-accept-edits' } })
+  await runtime.agentControl.commandShell({ type: 'create-project', provider: 'codex', title: 'Project', path: projectPath, useExisting: true })
+  const codexModel = runtime.agentControl.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
+  const neonModelId = 'native:antigravity:model:gemini-4-neon'
+  expect(runtime.agentControl.shell().host.models.some(item => item.id === neonModelId && item.ready)).toBe(true)
+
+  expect(await runtime.watcher!.open({ provider: 'codex', modelId: codexModel.id })).toMatchObject({ status: 'ok' })
+  const watcherId = runtime.watcher!.state().current!.target.threadId
+  expect((await runtime.agentControl.commandShell({ type: 'manual-send', threadId: watcherId, draftId: randomUUID(), text: 'Start a worker on Gemini 4 Neon.' })).error).toBeNull()
+  const requestId = runtime.watcher!.state().requests.at(-1)!.id
+  const projects = watcherToolSchemas.list_projects.output.parse((await runtime.watcherTools!.call(watcherId, 'list_projects', { includeModels: true })).structuredContent)
+  if (projects.status !== 'ok') throw new Error('list_projects refused')
+  const project = projects.projects[0]!.target
+
+  const promptText = 'Verify Gemini 4 Neon worker prompt delivery.'
+  const explicitKey = randomUUID()
+  const explicit = watcherToolSchemas.start_thread.output.parse((await runtime.watcherTools!.call(watcherId, 'start_thread', {
+    requestId, retryKey: explicitKey, project, role: 'research', modelId: neonModelId, permission: { kind: 'runtime', mode: 'auto-accept-edits' },
+    title: 'Explicit Neon worker', workingCopy: { kind: 'shared' }, sharedReason: 'Fixture test checkout.', firstPrompt: promptText,
+  })).structuredContent)
+  if (explicit.status !== 'ok' || !('target' in explicit)) throw new Error(`explicit Neon refused: ${explicit.status === 'refused' ? explicit.message : ''}`)
+  expect(explicit.effectiveChoices).toMatchObject({ modelId: neonModelId, permission: { kind: 'runtime', mode: 'auto-accept-edits' } })
+  await expect.poll(async () => (await antigravity.requests()).filter(record => record.method === 'session/prompt').length).toBe(1)
+  const sentPrompt = (await antigravity.requests()).find(record => record.method === 'session/prompt')!
+  expect(JSON.stringify(sentPrompt.params?.prompt)).toContain(promptText)
+
+  // Repeating the same retryKey returns the original receipt without duplicating the thread or prompt.
+  const retry = watcherToolSchemas.start_thread.output.parse((await runtime.watcherTools!.call(watcherId, 'start_thread', {
+    requestId, retryKey: explicitKey, project, role: 'research', modelId: neonModelId, permission: { kind: 'runtime', mode: 'auto-accept-edits' },
+    title: 'Explicit Neon worker', workingCopy: { kind: 'shared' }, sharedReason: 'Fixture test checkout.', firstPrompt: promptText,
+  })).structuredContent)
+  expect(retry).toEqual(explicit)
+  expect((await antigravity.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
+
+  // Saved-role Neon start applies the role's model/effort and caps permission to the new-thread default.
+  const byRole = watcherToolSchemas.start_thread.output.parse((await runtime.watcherTools!.call(watcherId, 'start_thread', {
+    requestId, retryKey: randomUUID(), project, role: 'building',
+    title: 'Role Neon worker', workingCopy: { kind: 'shared' }, sharedReason: 'Fixture test checkout.', firstPrompt: 'Role Neon prompt.',
+  })).structuredContent)
+  if (byRole.status !== 'ok' || !('target' in byRole)) throw new Error(`role Neon refused: ${byRole.status === 'refused' ? byRole.message : ''}`)
+  expect(byRole.effectiveChoices).toMatchObject({ modelId: neonModelId, reasoningEffort: 'high', permission: { kind: 'runtime', mode: 'auto-accept-edits' } })
+  expect(byRole.role).toMatchObject({ id: 'building', named: [] })
+  await expect.poll(async () => (await antigravity.requests()).filter(record => record.method === 'session/prompt').length).toBe(2)
+
+  // Signing out / disconnecting Antigravity refuses an explicit Neon start rather than falling back to another provider.
+  await runtime.agentControl.commandShell({ type: 'disconnect', provider: 'antigravity' })
+  const explicitMissing = watcherToolSchemas.start_thread.output.parse((await runtime.watcherTools!.call(watcherId, 'start_thread', {
+    requestId, retryKey: randomUUID(), project, modelId: neonModelId,
+    title: 'Disconnected explicit Neon', workingCopy: { kind: 'shared' }, sharedReason: 'Fixture test checkout.', firstPrompt: 'Should fail.',
+  })).structuredContent)
+  expect(explicitMissing).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
+
+  // A role-only start when the role's Antigravity model is absent keeps its existing fallback to a ready provider.
+  const roleFallback = watcherToolSchemas.start_thread.output.parse((await runtime.watcherTools!.call(watcherId, 'start_thread', {
+    requestId, retryKey: randomUUID(), project, role: 'building',
+    title: 'Role fallback worker', workingCopy: { kind: 'shared' }, sharedReason: 'Fixture test checkout.', firstPrompt: 'Fallback prompt.',
+  })).structuredContent)
+  if (roleFallback.status !== 'ok' || !('target' in roleFallback)) throw new Error('role fallback refused')
+  expect(roleFallback.effectiveChoices.modelId).toBe(codexModel.id)
+  expect(roleFallback.role?.note).toContain('Started as Building')
+  expect(roleFallback.role?.note).toContain("Its permission, Full access, was held to the user's new-thread default, Allow edits.")
+}, 90_000)

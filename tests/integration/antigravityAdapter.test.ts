@@ -490,4 +490,44 @@ describe('Antigravity ACP adapter', () => {
     const id = await open()
     await expect.poll(async () => (await f!.host.listThreadSkills!(id)).skills.map(skill => skill.invocation)).toEqual(['/plan', '/compact'])
   })
+
+  it('keeps answering ordinary Full access execute permissions once across disconnect and resume, leaves always-only on a card, and leaves Auto asks to the user', async () => {
+    const id = await open({ runtimeMode: 'full-access' })
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Read fixture file' })
+    await f!.action(id, { type: 'permission', text: 'cat ../outside-fixture.txt' })
+    await expect.poll(answers).toEqual([{ outcome: 'selected', optionId: 'allow-once' }])
+    expect((await thread(id)).requests).toEqual([])
+    await f!.driver.completeTurn(id, 'Read it.')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+
+    // Reconnect and resume the session: Full access stays active and still answers once without a card.
+    f!.host.disconnect(); await f!.host.closed()
+    await f!.host.connect()
+    f!.host.observeThreads?.([id])
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Read again after resume' })
+    await f!.action(id, { type: 'permission', text: 'cat ../outside-fixture.txt' })
+    await expect.poll(answers).toEqual([{ outcome: 'selected', optionId: 'allow-once' }, { outcome: 'selected', optionId: 'allow-once' }])
+    expect((await thread(id)).requests).toEqual([])
+
+    // When agy offers only allow_always (no allow_once), Sotto never selects allow_always and leaves the card for the user.
+    await f!.action(id, { type: 'permission-always-only', text: 'npm run risky' })
+    await expect.poll(async () => (await thread(id)).requests.length).toBe(1)
+    expect((await thread(id)).requests[0]!.kind).toBe('permission')
+    expect((await answers()).some(item => (item as { optionId?: string } | undefined)?.optionId === 'remember-this')).toBe(false)
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: (await thread(id)).requests[0]!.id, answer: '', approved: false })
+    await expect.poll(answers).toEqual([
+      { outcome: 'selected', optionId: 'allow-once' },
+      { outcome: 'selected', optionId: 'allow-once' },
+      { outcome: 'selected', optionId: 'reject-once' },
+    ])
+
+    // Auto mode leaves still-raised execute requests with the user.
+    await f!.driver.completeTurn(id, 'Done.')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    await f!.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'auto' })
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm3', text: 'Check auto ask' })
+    await f!.action(id, { type: 'permission', text: 'cat ../outside-fixture.txt' })
+    await expect.poll(async () => (await thread(id)).requests.length).toBe(1)
+    expect((await thread(id)).requests[0]!.context?.command).toBe('cat ../outside-fixture.txt')
+  })
 })
