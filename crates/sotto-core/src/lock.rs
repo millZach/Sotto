@@ -1,6 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+#[cfg(any(target_os = "macos", windows))]
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
