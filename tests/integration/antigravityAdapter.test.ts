@@ -410,6 +410,25 @@ describe('Antigravity ACP adapter', () => {
     await expect.poll(() => handed('session/resume')).toEqual([[expected[0], { name: 'files', command: 'files-mcp', args: [], env: [] }]])
   })
 
+  it('reads the account’s models again when agy updates, and keeps the list it had when that read fails', async () => {
+    f = await antigravityFixture()
+    await f.host.connect()
+    const before = (await f.host.snapshot()).models.map(model => model.id)
+    expect(before).not.toContain('gemini-4-pro')
+    await f.script({ cliVersion: '1.5.14', newModels: [{ value: 'gemini-4-pro', name: 'Gemini 4 Pro', thinking: ['low', 'high'] }, { value: 'gpt-7', name: 'GPT-7' }] })
+    await f.host.clientUpdated!()
+    const after = await f.host.snapshot()
+    expect(after.version).toMatch(/^1\.5\.14 /u)
+    // Still Gemini only (ADR-0212's amendment), each with the thinking it offers.
+    expect(after.models.map(model => model.id)).toEqual([...before, 'gemini-4-pro'])
+    expect(after.models.find(model => model.id === 'gemini-4-pro')?.reasoningEfforts).toEqual(['low', 'high'])
+    // A newer agy whose models cannot be read keeps the list from before; the update itself still holds.
+    await f.script({ cliVersion: '1.5.15', newModels: [{ value: 'gemini-5', name: 'Gemini 5' }], signedOut: true })
+    await f.host.clientUpdated!()
+    expect((await f.host.snapshot()).version).toMatch(/^1\.5\.15 /u)
+    expect((await f.host.snapshot()).models.map(model => model.id)).toEqual([...before, 'gemini-4-pro'])
+  })
+
   it('lists agy’s commands as skills', async () => {
     const id = await open()
     await expect.poll(async () => (await f!.host.listThreadSkills!(id)).skills.map(skill => skill.invocation)).toEqual(['/plan', '/compact'])
