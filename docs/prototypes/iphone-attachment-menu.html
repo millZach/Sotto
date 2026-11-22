@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en" data-appearance="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attachment menu · Sotto</title>
+  <style>
+    @font-face { font-family: Figtree; src: url("../../src/shared/fonts/figtree-latin.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: #f2f2ef; color: #242a28; font: 16px/1.4 Figtree, -apple-system, system-ui, sans-serif; }
+    button, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid #238b7c; outline-offset: 2px; }
+    .board { max-width: 980px; margin: auto; padding: clamp(16px, 3vw, 40px); }
+    header, .controls, .caption, footer, .conditions { display: flex; align-items: center; }
+    header { justify-content: space-between; gap: 16px; margin: 0 0 24px; }
+    h1 { font-size: clamp(22px, 3.5vw, 32px); letter-spacing: -.045em; line-height: 1.2; font-weight: 650; margin: 0; }
+    .controls { gap: 6px; }
+    .controls button, .mobile-switch button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px;
+      border: 1px solid #ced1cb; background: transparent; border-radius: 24px; padding: 0 14px; font-size: 14px; font-weight: 600;
+    }
+    .controls button:hover, .mobile-switch button:hover { background: #e4e7e0; }
+    .controls .appearance { width: 44px; padding: 0; }
+    .controls button[aria-pressed="true"], .mobile-switch button[aria-pressed="true"] { background: #263b35; color: white; border-color: #263b35; }
+    .icons { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .icon { width: 21px; height: 21px; display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+    .controls .icon { width: 17px; height: 17px; }
+    .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(22px, 3.5vw, 44px); }
+    .gallery.original { grid-template-columns: minmax(0, 430px); justify-content: center; }
+    article { min-width: 0; }
+    .mobile-switch { display: none; }
+    .caption { gap: 12px; margin: 16px 2px 4px; }
+    h2 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.025em; }
+    .caption + p { margin: 0 2px; font-size: 14px; max-width: 37ch; color: #525b56; }
+    footer { flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; margin-top: 24px; border-top: 1px solid #d3d6cf; padding-top: 10px; color: #515a54; font-size: 13px; }
+    footer p { margin: 0; }
+    .conditions { gap: 4px; }
+    select { font-weight: 600; min-height: 44px; background: transparent; border: 0; }
+    .phone {
+      --canvas: #090b0c; --ink: #f5f6f6; --muted: #a3a7a9; --panel: #202325; --raised: #292d2f;
+      --line: #3c4041; --soft: #343839; --accent: #78cfbf; --accent-soft: #29423e;
+      --keyboard: #202023; --key: #414144; --keyink: #fff; --orig: rgba(54,54,59,.93);
+      position: relative; isolation: isolate; overflow: hidden; container-type: inline-size;
+      width: 100%; aspect-ratio: 466 / 678; border-radius: 25px;
+      background: var(--canvas); color: var(--ink); box-shadow: 0 0 0 1px #1a201822, 0 5px 14px #222a2310;
+      -webkit-font-smoothing: antialiased;
+    }
+    [data-appearance="light"] .phone {
+      --canvas: #f6f7f6; --ink: #191f1d; --muted: #5c6662; --panel: #fff; --raised: #fff;
+      --line: #cbd2cd; --soft: #e7ebe8; --accent: #14695b; --accent-soft: #deeee8;
+      --keyboard: #d3d6da; --key: #fefefe; --keyink: #1c2022; --orig: rgba(245,246,245,.96);
+    }
+    .workspace { position: absolute; inset: 0 0 39% 0; }
+    .thread { position: absolute; inset: 0 18% 0 0; padding: 3% 3.5%; }
+    .thread strong { font-size: 13px; color: var(--muted); font-weight: 650; }
+    .empty { margin: 11% 0 0; text-align: center; color: var(--muted); font-size: clamp(11px, 2.9cqw, 14px); line-height: 1.25; }
+    .rail { position: absolute; right: 0; top: 6%; width: 18%; display: flex; align-items: center; flex-direction: column; gap: 7px; color: var(--ink); }
+    .timer { border: 1.5px solid var(--line); border-radius: 22px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; width: 33px; height: 63px; padding-bottom: 6px; line-height: 1.12; }
+    .timer b { font-size: 13px; } .timer small { font-size: 9px; }
+    .time { font-weight: 650; font-size: 16px; margin-top: 7px; }
+    .radio { position: relative; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--line); border-left-color: var(--ink); border-bottom-color: transparent; width: 34px; height: 34px; }
+    .radio span { position: absolute; left: 50%; top: -8px; transform: translateX(-50%); font: 700 10px/1 system-ui; padding: 1px 2px; background: var(--canvas); }
+    .radio .icon { width: 16px; height: 16px; }
+    .back { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--accent-soft); border-radius: 50%; color: var(--accent); }
+    .back .icon { width: 16px; }
+    .dock { position: absolute; left: 2.55%; right: 20.55%; bottom: 8px; }
+    .composer { position: relative; border: 1px solid var(--line); border-radius: 21px; background: var(--panel); }
+    .draft { padding: 11px 12px 7px; color: var(--muted); font-size: 14px; }
+    .composer-row { display: flex; align-items: center; gap: 5px; padding: 0 6px 5px; height: 43px; }
+    .opener { width: 44px; height: 44px; margin: 0 -5px; display: grid; place-items: center; border: 0; background: none; border-radius: 50%; flex: none; }
+    .disc, .pill { display: inline-flex; align-items: center; justify-content: center; background: var(--soft); }
+    .disc { width: 31px; height: 31px; border-radius: 50%; }
+    .disc .icon { width: 17px; height: 17px; }
+    .opener[aria-expanded="true"] .disc { background: var(--accent-soft); color: var(--accent); }
+    .opener[aria-expanded="true"] .icon { transform: rotate(45deg); }
+    .pill { gap: 5px; padding: 0 9px; min-width: 0; height: 29px; border-radius: 30px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .pill .icon { width: 12px; height: 12px; }
+    .pill .effort { color: var(--muted); font-weight: 500; }
+    .mic { margin-left: auto; } .send { color: var(--muted); }
+    .menu { position: relative; }
+    .choice { color: var(--ink); background: none; border: 0; display: flex; align-items: center; font-weight: 550; }
+    .choice .glyph { display: grid; place-items: center; flex-shrink: 0; }
+    .choice .icon { width: 23px; height: 23px; }
+    .choice:disabled { color: var(--muted); }
+    .choice:disabled .glyph { opacity: .58; }
+    .choice:enabled:hover, .choice:enabled:active { background: var(--soft); }
+    .choice:focus-visible { outline-color: var(--accent); outline-offset: -2px; }
+    .reason { margin: 2px 8px 6px; font-size: 12px; line-height: 1.3; color: var(--muted); }
+    .tray-menu { padding: 7px 5px 6px; margin: 0 6px; border-bottom: 1px solid var(--line); }
+    .tray-menu .actions { display: grid; grid-template-columns: minmax(max-content, 1fr) repeat(2, minmax(0, 1fr)); }
+    .tray-menu .choice { flex-direction: column; gap: 5px; justify-content: center; padding: 5px 1px; min-height: 58px; border-radius: 13px; line-height: 1.18; font-size: 13.5px; }
+    .tray-menu .glyph { color: var(--accent); height: 25px; }
+    .list-menu, .original-menu { position: absolute; left: 0; bottom: calc(100% + 7px); max-width: 100%; border: 1px solid var(--line); border-radius: 17px; background: var(--raised); box-shadow: 0 5px 18px #0003; padding: 4px; }
+    .list-menu { width: max-content; min-width: 174px; }
+    .list-menu .choice, .original-menu .choice { width: 100%; text-align: left; gap: 11px; min-height: 44px; padding: 7px 12px; border-radius: 12px; font-size: 15px; line-height: 1.2; }
+    .list-menu .glyph { color: var(--accent); width: 21px; } .list-menu .icon { width: 20px; height: 20px; }
+    .original-menu { width: min(250px, 94%); left: 7px; bottom: 7px; background: var(--orig); backdrop-filter: blur(14px); }
+    .original-menu .choice { font-weight: 400; } .original-menu .icon { color: var(--accent); width: 20px; }
+    .original-menu .choice:first-child { margin-bottom: 7px; border-bottom: 1px solid var(--line); border-radius: 0; }
+    .phone[data-large="true"] .tray-menu .actions { display: flex; flex-direction: column; }
+    .phone[data-large="true"] .choice { flex-direction: row; text-align: left; justify-content: flex-start; gap: 10px; font-size: 19px; min-height: 44px; padding: 6px 9px; }
+    .phone[data-large="true"] .reason { font-size: 15px; }
+    .phone[data-large="true"] .list-menu { min-width: 195px; }
+    .keyboard { position: absolute; bottom: 0; width: 100%; height: 39%; border-radius: 24px 24px 0 0; background: var(--keyboard); border-top: 1px solid var(--line); padding: 2.5% 1.2% 8%; display: grid; grid-template-rows: repeat(4,1fr); gap: 3%; pointer-events: none; user-select: none; }
+    .keys { display: flex; justify-content: center; gap: 1.1%; }
+    .key { display: grid; place-items: center; border-radius: 6px; background: var(--key); color: var(--keyink); width: 9%; font: 500 clamp(12px,4.2cqw,19px)/1 -apple-system,system-ui,sans-serif; }
+    .keys:last-child .key { font-size: clamp(11px,3.5cqw,15px); }
+    .key.wide { width: 11.5%; } .key.space { flex: 1; }
+    .key .icon { width: 5cqw; height: 5cqw; }
+    @media (max-width: 700px) {
+      .board { max-width: 470px; }
+      header { margin-bottom: 12px; }
+      .gallery { display: block; }
+      .gallery:not(.original) article:not(.selected) { display: none; }
+      .mobile-switch { display: flex; gap: 5px; margin: 0 0 14px; }
+      .mobile-switch button { font-size: 13px; min-height: 44px; }
+      footer { margin-top: 16px; }
+    }
+    @container (max-width: 340px) {
+      .pill .effort { display: none; } .pill { padding: 0 7px; }
+      .empty { margin-top: 7%; }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .opener .icon { transition: transform 140ms ease; }
+      .menu.enter { animation: appear 140ms ease-out; }
+      @keyframes appear { from { opacity: 0; transform: translateY(3px); } }
+    }
+  </style>
+</head>
+<body>
+  <svg class="icons" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="library" viewBox="0 0 24 24"><rect x="5.5" y="7" width="16" height="13" rx="2.4"/><path d="M2.5 15V6a2 2 0 0 1 2-2h12M6 17l4.2-4 3.3 2.8 3.6-3.9 4.1 4.4"/><circle cx="16.6" cy="10.7" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="camera" viewBox="0 0 24 24"><path d="M3.5 7.2h3.2L8.4 4.6h6.8l1.8 2.6h3.2A1.8 1.8 0 0 1 22 9v9.1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a1.8 1.8 0 0 1 1.5-1.8Z"/><circle cx="12" cy="13" r="3.8"/><circle cx="18.6" cy="9.9" r=".7" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="folder" viewBox="0 0 24 24"><path d="M2.4 7V6.1A1.9 1.9 0 0 1 4.3 4.2h4.5l2.5 2.5h8.5a1.9 1.9 0 0 1 1.9 1.9v9.3a2 2 0 0 1-2 2H4.3a2 2 0 0 1-2-2V7Z"/><path d="M2.8 9h18.4"/></symbol>
+    <symbol id="plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" stroke-width="2.2"/></symbol>
+    <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="13" rx="3"/><path d="M5 11v1.5a7 7 0 0 0 14 0V11m-7 8.5v2M8 22h8" stroke-width="1.9"/></symbol>
+    <symbol id="up" viewBox="0 0 24 24"><path d="M12 21V3m-7 7 7-7 7 7" stroke-width="2.5"/></symbol>
+    <symbol id="back" viewBox="0 0 24 24"><path d="m15 4-8 8 8 8" stroke-width="2.6"/></symbol>
+    <symbol id="wifi" viewBox="0 0 24 24"><path d="M2 8a16 16 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 16a4.5 4.5 0 0 1 6 0" stroke-width="2.8"/><circle cx="12" cy="19" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></symbol>
+    <symbol id="moon" viewBox="0 0 24 24"><path d="M20.5 15.8A9.4 9.4 0 0 1 8.1 3.4 9.4 9.4 0 1 0 20.5 15.8Z"/></symbol>
+    <symbol id="delete" viewBox="0 0 24 24"><path d="m2 12 7-8h11a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H9l-7-8Z"/><path d="m12 9 6 6m0-6-6 6"/></symbol>
+    <symbol id="shift" viewBox="0 0 24 24"><path d="m2 12 10-10 10 10h-6v9H8v-9Z" fill="currentColor" stroke-width="1"/></symbol>
+    <symbol id="return" viewBox="0 0 24 24"><path d="M21 5v7a2 2 0 0 1-2 2H3m5-5-5 5 5 5" stroke-width="2"/></symbol>
+    <symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><ellipse cx="12" cy="12" rx="4.5" ry="9.5"/><path d="M3 9h18M3 15h18"/></symbol>
+    <symbol id="smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M7.5 14.5a5.2 5.2 0 0 0 9 0M8.7 9h.1m6.4 0h.1" stroke-width="2"/></symbol>
+  </svg>
+  <main class="board">
+    <header>
+      <h1>Attachment menu</h1>
+      <div class="controls">
+        <button id="original" aria-pressed="false">Original</button>
+        <button class="appearance" aria-label="Preview light appearance" title="Preview light appearance"></button>
+      </div>
+    </header>
+    <nav class="mobile-switch" aria-label="Choose a design">
+      <button data-show="tray" aria-pressed="true">Inline tray</button>
+      <button data-show="list" aria-pressed="false">Compact list</button>
+    </nav>
+    <div class="gallery"></div>
+    <footer>
+      <p id="feedback" role="status">Tap × to close a menu and + to reopen it.</p>
+      <label class="conditions">Preview
+        <select id="condition">
+          <option value="normal">Standard</option>
+          <option value="large">Larger text</option>
+          <option value="no-files">Photos only</option>
+        </select>
+      </label>
+    </footer>
+  </main>
+  <script>
+    const gallery = document.querySelector('.gallery');
+    const feedback = document.querySelector('#feedback');
+    const baseline = document.querySelector('#original');
+    const appearance = document.querySelector('.appearance');
+    const condition = document.querySelector('#condition');
+    const mobileSwitch = document.querySelector('.mobile-switch');
+    const designs = {
+      tray: ['Inline tray', 'The three sources open inside the reply box, just above your draft.'],
+      list: ['Compact list', 'Three full-width rows open above the + button and leave the draft in view.'],
+      original: ['Original menu', 'The system menu covers the draft and gives Files a separate section.']
+    };
+    const statusText = 'Tap × to close a menu and + to reopen it.';
+    const svg = name => '<svg class="icon" aria-hidden="true"><use href="#' + name + '"></use></svg>';
+    function keyboard() {
+      const rows = [
+        [...'QWERTYUIOP'], [...'ASDFGHJKL'], ['shift', ...'ZXCVBNM', 'delete'],
+        ['123', 'globe', 'smile', 'space', 'mic', 'return']
+      ];
+      return '<div class="keyboard" aria-hidden="true">' + rows.map(row =>
+        '<div class="keys">' + row.map(key => {
+          const style = key === 'space' ? 'space' : ['shift', 'delete', 'return', '123'].includes(key) ? 'wide' : '';
+          const content = key.length === 1 || key === '123' ? key : key === 'space' ? '' : svg(key);
+          return '<span class="key ' + style + '">' + content + '</span>';
+        }).join('') + '</div>'
+      ).join('') + '</div>';
+    }
+    function menu(kind) {
+      const photosOnly = condition.value === 'no-files';
+      const actions = [
+        ['library', photosOnly ? 'Photo library' : kind === 'tray' ? 'Photos &amp; videos' : 'Photos and videos'],
+        ['camera', 'Camera'], ['folder', 'Files']
+      ];
+      if (kind === 'original') actions.reverse();
+      return '<div class="menu ' + kind + '-menu" id="menu-' + kind + '" role="group" aria-label="Attachment sources"><div class="actions">' +
+        actions.map(([image, label]) => '<button type="button" class="choice" data-source="' + image + '"' +
+          (image === 'folder' && photosOnly ? ' disabled aria-describedby="reason-' + kind + '"' : '') +
+          '><span class="glyph">' + svg(image) + '</span><span>' + label + '</span></button>').join('') +
+        '</div>' + (photosOnly ? '<p class="reason" id="reason-' + kind + '">This computer can’t receive files.</p>' : '') + '</div>';
+    }
+    function preview(kind) {
+      const [title, caption] = designs[kind];
+      return '<article data-kind="' + kind + '" aria-label="' + title + '"><div class="phone" data-large="' + (condition.value === 'large') + '">' +
+        '<div class="workspace"><div class="thread" aria-hidden="true"><strong>New thread</strong><p class="empty">This thread is open on drakes-macbook-pro. Write the first message below.</p></div>' +
+        '<div class="rail" aria-hidden="true"><div class="timer"><b>3</b><small>Min</small></div><div class="time">3:39</div><div class="radio"><span>26</span>' + svg('wifi') + '</div><div class="back">' + svg('back') + '</div></div>' +
+        '<div class="dock"><div class="composer">' + (kind === 'tray' ? menu(kind) : '') +
+        '<div class="draft" aria-hidden="true">Reply to this thread</div><div class="composer-row">' +
+        '<button class="opener" aria-label="Close attachment menu" aria-controls="menu-' + kind + '" aria-expanded="true"><span class="disc">' + svg('plus') + '</span></button>' +
+        '<span class="pill" aria-hidden="true">GPT-6.1 Sol <span class="effort">High ⌄</span></span><span class="disc mic" aria-hidden="true">' + svg('mic') + '</span><span class="disc send" aria-hidden="true">' + svg('up') + '</span></div></div>' +
+        (kind === 'tray' ? '' : menu(kind)) + '</div></div>' + keyboard() + '</div>' +
+        '<div class="caption"><h2>' + title + '</h2></div><p>' + caption + '</p></article>';
+    }
+    let mobileKind = 'list';
+    function render() {
+      const original = baseline.getAttribute('aria-pressed') === 'true';
+      gallery.classList.toggle('original', original);
+      gallery.innerHTML = (original ? ['original'] : ['tray', 'list']).map(preview).join('');
+      mobileSwitch.hidden = original;
+      gallery.querySelector('[data-kind="' + mobileKind + '"]')?.classList.add('selected');
+      for (const btn of mobileSwitch.querySelectorAll('button')) btn.setAttribute('aria-pressed', btn.dataset.show === mobileKind);
+      feedback.textContent = original ? 'Tap outside the menu to dismiss it.' : statusText;
+    }
+    function setOpen(card, open, focus = false) {
+      const menu = card.querySelector('.menu');
+      const toggle = card.querySelector('.opener');
+      menu.hidden = !open;
+      menu.classList.toggle('enter', open);
+      toggle.setAttribute('aria-expanded', open);
+      toggle.setAttribute('aria-label', open ? 'Close attachment menu' : 'Open attachment menu');
+      if (focus) (open ? menu.querySelector('button:enabled') : toggle).focus({preventScroll: true});
+    }
+    gallery.addEventListener('click', event => {
+      const card = event.target.closest('article');
+      if (!card) return;
+      const toggle = event.target.closest('.opener');
+      const action = event.target.closest('.choice');
+      if (toggle) {
+        setOpen(card, toggle.getAttribute('aria-expanded') !== 'true', event.detail === 0);
+        feedback.textContent = statusText;
+      } else if (action) {
+        const destination = {library:'the photo library', camera:'the camera', folder:'Files'}[action.dataset.source];
+        feedback.textContent = 'On iPhone, this opens ' + destination + '.';
+        setOpen(card, false, true);
+      } else if (event.target.closest('.phone') && !event.target.closest('.menu')) {
+        setOpen(card, false);
+      }
+    });
+    gallery.addEventListener('keydown', event => {
+      const card = event.target.closest('article');
+      if (!card) return;
+      if (event.key === 'Escape' && !card.querySelector('.menu').hidden) {
+        event.preventDefault();
+        setOpen(card, false, true);
+      } else if (event.target.closest('.choice') && ['ArrowDown','ArrowUp','ArrowRight','ArrowLeft'].includes(event.key)) {
+        event.preventDefault();
+        const items = [...card.querySelectorAll('.choice:enabled')];
+        const offset = ['ArrowDown','ArrowRight'].includes(event.key) ? 1 : -1;
+        items[(items.indexOf(event.target) + offset + items.length) % items.length].focus();
+      }
+    });
+    baseline.addEventListener('click', () => {
+      baseline.setAttribute('aria-pressed', baseline.getAttribute('aria-pressed') !== 'true');
+      render();
+    });
+    mobileSwitch.addEventListener('click', event => {
+      if (!event.target.dataset.show) return;
+      mobileKind = event.target.dataset.show;
+      render();
+    });
+    function theme(dark) {
+      document.documentElement.dataset.appearance = dark ? 'dark' : 'light';
+      appearance.innerHTML = svg(dark ? 'sun' : 'moon');
+      appearance.title = dark ? 'Preview light appearance' : 'Preview dark appearance';
+      appearance.setAttribute('aria-label', appearance.title);
+    }
+    appearance.addEventListener('click', () => theme(document.documentElement.dataset.appearance !== 'dark'));
+    condition.addEventListener('change', render);
+    theme(true);
+    render();
+  </script>
+</body>
+</html>

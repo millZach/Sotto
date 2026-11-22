@@ -104,6 +104,7 @@ struct ComposerCard<Attachments: View, Words: View, Plus: View, Pill: View, Trai
                     .accessibilityHidden(true)
             }
         }
+        .coordinateSpace(.named(ComposerMetrics.space))
         .composerSurface(in: ComposerShape(top: shaped ? lowered : 0))
         .effortTrace(lit, radius: ComposerMetrics.radius, top: shaped ? lowered : 0)
         .onChange(of: small) { _, nowSmall in

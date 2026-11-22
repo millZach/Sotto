@@ -125,3 +125,6 @@ Consequences:
 - **Privacy.** A video waiting in an iPhone reply is on the phone's disk, protected while the phone is locked and kept out of backups, until it is sent or removed. On the computer a video is written to disk even with history off, and its parts are on disk while they arrive. The README's "Privacy and cost" says both.
 - **Cost.** A 500 MB video takes 500 MB in the store for its hour, and as much again in the working folder until the user removes it. Over cellular it takes as long to upload as the phone's connection needs.
 
+## November 21, 2026 amendment – the iPhone attachment menu
+
+Drake chose **Compact list** in the [attachment menu prototype](../prototypes/iphone-attachment-menu.html). In a thread or Watcher, the list opens above the reply box with the library, Camera and Files in that order. Each choice gets a whole row. The library label follows what the computer accepts, and an unavailable source keeps its place with the existing explanation.

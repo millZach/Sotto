@@ -809,6 +809,26 @@ import UIKit
         XCTAssertEqual(away, 0, message + "\n" + readings.joined(separator: "\n"))
     }
 
+    /// The compact attachment list clears the draft, then hands the presentation to the system picker.
+    func testAttachmentListAboveTheDraftOpensFiles() {
+        launch(Self.fixture + ["--ui-open-thread", "iphone", "--ui-files"], opensOnThreads: false)
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 15))
+        reply.tap()
+        reply.typeText("Keep this draft")
+        let draftTop = reply.frame.minY
+        byID("thread-attach-photos").tap()
+        let library = app.buttons["Photos and videos"], files = app.buttons["Files"]
+        XCTAssertTrue(files.waitForExistence(timeout: 10))
+        XCTAssertLessThan(library.frame.maxY, files.frame.minY)
+        XCTAssertLessThanOrEqual(files.frame.maxY, draftTop)
+        files.tap()
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15), "Files opens after the list closes")
+        cancel.tap()
+        XCTAssertTrue(reply.waitForValue("Keep this draft"))
+    }
+
     /// A paste into the reply box attaches a copied file as a pill, as if chosen in Files, and copied words still paste as words.
     func testPastingACopiedFileAttachesItAndWordsStayWords() {
         launch(Self.fixture + ["--ui-files"])
