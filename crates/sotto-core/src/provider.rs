@@ -17,6 +17,7 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[derive(Debug, Clone)]
 pub struct SendMessageRequest {
     pub thread_id: String,
+    pub message_id: String,
     pub cwd: String,
     pub model_id: Option<String>,
     pub reasoning_effort: Option<String>,
@@ -368,7 +369,7 @@ impl ProviderAdapter for MockProviderAdapter {
     }
 
     fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
-        let message_id = Uuid::new_v4().to_string();
+        let message_id = req.message_id;
         let turn_id = Uuid::new_v4().to_string();
         self.active_turns
             .lock()

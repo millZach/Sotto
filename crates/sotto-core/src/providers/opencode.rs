@@ -788,7 +788,7 @@ impl ProviderAdapter for OpenCodeAdapter {
                 }
             };
 
-            let message_id = Uuid::new_v4().to_string();
+            let message_id = req.message_id.clone();
             self.shared
                 .last_user_msg
                 .lock()

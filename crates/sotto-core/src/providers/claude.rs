@@ -1008,7 +1008,7 @@ impl ProviderAdapter for ClaudeAdapter {
         Box::pin(async move {
             let started = Instant::now();
             let (proc, _session_id) = self.ensure_thread_session(&req).await?;
-            let message_id = Uuid::new_v4().to_string();
+            let message_id = req.message_id.clone();
 
             self.shared
                 .active_turns

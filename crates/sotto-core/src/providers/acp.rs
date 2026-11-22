@@ -1032,7 +1032,7 @@ impl ProviderAdapter for AcpAdapter {
             )
             .await?;
 
-            let message_id = Uuid::new_v4().to_string();
+            let message_id = req.message_id.clone();
             let turn_id = Uuid::new_v4().to_string();
             let act = json!({
                 "id": acp_activity_id(flavor.id(), &session_id, &turn_id),
