@@ -2,7 +2,8 @@
 // methods, `Authentication required`) and on T3 Code's recorded Antigravity frames: config options for the model (in
 // groups), a `thinking_level` option per Gemini model, a `mode` option with default, accept-edits, auto and plan,
 // `session/resume` that replays nothing, permissions as allow_once / allow_always / reject_once, and questions as
-// permission requests whose tool call ID starts `interaction_`.
+// permission requests whose tool call ID starts `interaction_`. Its `ask_question` asks as 1.5.14 does: an
+// `elicitation/create` form to a client offering `elicitation.form`, and the question as reply text otherwise.
 //
 // `node fakeAntigravityAgent.mjs <root> --version` answers as `agy` does; `node fakeAntigravityAgent.mjs <root> acp ...`
 // speaks ACP on stdio as one thread's process. Sessions are kept one file each under <root>/sessions. script.json may
@@ -63,7 +64,7 @@ const commands = script => [{ name: 'plan', description: 'Plan before acting' },
 const update = (sessionId, body) => send({ method: 'session/update', params: { sessionId, update: body } })
 
 const pending = new Map(); let serial = 0
-let authenticated = false
+let authenticated = false, forms = false
 const prompts = []
 function finish(reason, usage) {
   const prompt = prompts.pop()
@@ -73,6 +74,14 @@ function finish(reason, usage) {
   if (prompt) send({ id: prompt.id, result: { stopReason: reason, ...(usage ? { usage } : {}) } })
 }
 function validate(frame, request) {
+  if (request.fields) {
+    if (frame.error) return 'A form Sotto reads is answered, not refused'
+    const { action, content } = frame.result ?? {}
+    if (!['accept', 'decline', 'cancel'].includes(action)) return 'Expected accept, decline or cancel'
+    if (action !== 'accept') return content === undefined ? undefined : 'Only an accepted form has content'
+    if (!content || typeof content !== 'object' || Object.keys(content).some(key => !request.fields.includes(key))) return 'Expected the form’s own fields'
+    return undefined
+  }
   const outcome = frame.result?.outcome
   if (frame.error) return 'A request Sotto reads is answered, not refused'
   if (!outcome || typeof outcome.outcome !== 'string') return 'Expected an outcome'
@@ -95,8 +104,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     const request = pending.get(frame.id)
     if (!request) { violation('Unknown or repeated response ID'); return }
     pending.delete(frame.id)
-    const reason = validate(frame, request)
+    const reason = request.refusable && frame.error ? undefined : validate(frame, request)
     if (reason) violation(reason)
+    if (request.fields && frame.error) { update(request.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: request.text } }); finish('end_turn') }
     return
   }
   const p = frame.params ?? {}
@@ -104,6 +114,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   const needsAuth = () => { if (authenticated) return false; send({ id: frame.id, error: { code: -32000, message: 'Authentication required' } }); return true }
   if (frame.method === 'initialize') {
     if (p.clientCapabilities?.fs?.writeTextFile !== false || p.clientCapabilities?.terminal !== false) violation('Sotto offers no file or terminal capability')
+    forms = p.clientCapabilities?.elicitation?.form !== undefined
     const ready = () => send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1,
       agentCapabilities: { loadSession: true, ...(script.httpMcp === false ? { mcpCapabilities: { http: false } } : {}), promptCapabilities: { image: script.images === true, audio: false, embeddedContext: true },
         sessionCapabilities: { resume: {}, close: {}, load: {}, list: {} }, auth: { logout: {} }, _meta: { antigravity: { tier: true, systemPrompt: { append: script.noAppend !== true } } } },
@@ -220,6 +231,22 @@ function run(command) {
     update(sessionId, { sessionUpdate: 'tool_call', ...toolCall })
     ask(sessionId, toolCall, [{ optionId: 'remember-this', name: 'Allow always', kind: 'allow_always', _meta: { 'agy.security.warning': { message: 'Runs this command from now on.' } } },
       { optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }, { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' }])
+  }
+  if (command.type === 'ask-question') {
+    // `questions`: [{ question, options, several }]; `form` replaces the form's fields, to send one of another shape.
+    const toolCallId = `call_${randomUUID().slice(0, 8)}`, rawInput = { questions: command.questions.map(item => ({ question: item.question, options: item.options, is_multi_select: item.several === true })) }
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, name: 'ask_question', kind: 'other', title: 'Run ask_question', status: 'in_progress', rawInput })
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, name: 'ask_question', kind: 'other', title: 'Run ask_question', status: 'pending', rawInput })
+    if (!forms) { update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: command.questions.map(item => item.question).join('\n') } }); finish('end_turn'); return }
+    const properties = command.form ?? Object.fromEntries(command.questions.flatMap((item, index) => {
+      const choices = item.options.map((title, at) => ({ const: String(at + 1), title }))
+      return [[`q${index + 1}`, item.several ? { type: 'array', title: item.question, items: { anyOf: choices } } : { type: 'string', title: item.question, oneOf: choices }],
+        [`q${index + 1}_other`, { type: 'string', title: 'Other', description: `Optional free-form answer to: ${item.question}` }]]
+    }))
+    const id = `antigravity-${++serial}`
+    pending.set(id, { fields: Object.keys(properties), refusable: command.form !== undefined, sessionId, text: command.questions.map(item => item.question).join('\n') })
+    send({ id, method: 'elicitation/create', params: { sessionId, toolCallId, mode: 'form', message: command.questions.length === 1 ? 'The agent has a question.' : `The agent has ${command.questions.length} questions.`,
+      requestedSchema: { type: 'object', properties, ...(command.required ? { required: command.required } : {}) } } })
   }
   if (command.type === 'mcp-permission') {
     ask(sessionId, { toolCallId: randomUUID(), kind: 'other', title: `Run ${command.tool}`, status: 'pending' },

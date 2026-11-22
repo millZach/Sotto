@@ -116,6 +116,79 @@ describe('Antigravity ACP adapter', () => {
     await expect.poll(answers).toEqual([{ outcome: 'selected', optionId: 'allow-once' }, { outcome: 'selected', optionId: 'Red' }])
   })
 
+  const formReplies = async () => (await f!.requests()).filter(record => record.method === undefined && String(record.id).startsWith('antigravity-')).map(record => record.result ?? { refused: true })
+  const ask = async (id: string, questions: { question: string; options: string[]; several?: boolean }[], form?: Record<string, unknown>, required?: string[]) => {
+    const before = (await thread(id)).requests.length
+    await f!.action(id, { type: 'ask-question', questions, ...(form ? { form } : {}), ...(required ? { required } : {}) })
+    if (form) return undefined
+    await expect.poll(async () => (await thread(id)).requests.length).toBe(before + 1)
+    return (await thread(id)).requests.at(-1)!
+  }
+
+  it('asks agy’s own questions as one card, offering forms, and answers its form with each question’s choices and words, even on Full access', async () => {
+    const id = await open({ runtimeMode: 'full-access' })
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+    // The thread's own process takes forms; the probe that reads the account's models does not.
+    expect((await f!.requests()).filter(record => record.method === 'initialize').map(record => (record.params?.clientCapabilities as { elicitation?: unknown }).elicitation))
+      .toEqual([undefined, { form: {} }])
+    const card = await ask(id, [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }, { question: 'Which days are you free?', options: ['Monday', 'Tuesday', 'Friday'], several: true }])
+    expect(card).toMatchObject({ kind: 'question', text: 'The agent has 2 questions.', skippable: true, questions: [
+      { id: 'q1', question: 'Tea or coffee?', options: [{ id: '1', label: 'Tea' }, { id: '2', label: 'Coffee' }], multiSelect: false, allowFreeText: true, required: false },
+      { id: 'q2', question: 'Which days are you free?', options: [{ id: '1', label: 'Monday' }, { id: '2', label: 'Tuesday' }, { id: '3', label: 'Friday' }], multiSelect: true, allowFreeText: true, required: false },
+    ] })
+    expect(await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: card!.id, answer: '',
+      questionAnswers: { q1: { optionIds: ['2'] }, q2: { optionIds: ['1', '3'], text: 'Sunday too' } } })).toMatchObject({ accepted: true })
+    // A required question takes one of its choices, never words alone, so its own field is always filled.
+    const needed = await ask(id, [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }], undefined, ['q1'])
+    expect(needed!.questions![0]).toMatchObject({ id: 'q1', required: true, allowFreeText: false })
+    await expect(f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: needed!.id, answer: '', questionAnswers: { q1: { optionIds: [], text: 'Green tea' } } })).rejects.toThrow()
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: needed!.id, answer: 'Tea' })
+    // agy's form as 1.5.14 sends it requires no question, so one may be left unanswered.
+    const second = await ask(id, [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }, { question: 'Milk?', options: ['Yes', 'No'] }])
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: second!.id, answer: '', questionAnswers: { q2: { optionIds: ['1'] } } })
+    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '2', q2: ['1', '3'], q2_other: 'Sunday too' } }, { action: 'accept', content: { q1: '1' } }, { action: 'accept', content: { q2: '1' } }])
+    expect((await thread(id)).requests).toEqual([])
+  })
+
+  it('answers one of agy’s questions from words, as its option or as the user’s own, declines a skipped one and cancels one left when the turn stops', async () => {
+    const id = await open()
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+    const tea = [{ question: 'Tea or coffee?', options: ['Tea', 'Coffee'] }]
+    let card = await ask(id, tea)
+    expect(card).toMatchObject({ text: 'Tea or coffee?', options: [{ id: '1', label: 'Tea' }, { id: '2', label: 'Coffee' }] })
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: card!.id, answer: 'tea' })
+    card = await ask(id, tea)
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: card!.id, answer: 'Green tea, please' })
+    card = await ask(id, tea)
+    await f!.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: card!.id, answer: '', skipped: true })
+    await ask(id, tea)
+    await f!.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: id })
+    // A form still open when its turn ends, as after a Stop that only cancelled, goes with the turn.
+    await expect.poll(async () => (await thread(id)).status).not.toBe('running')
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Again' })
+    await ask(id, tea)
+    await f!.action(id, { type: 'complete', reason: 'cancelled' })
+    await expect.poll(formReplies).toEqual([{ action: 'accept', content: { q1: '1' } }, { action: 'accept', content: { q1_other: 'Green tea, please' } }, { action: 'decline' }, { action: 'cancel' }, { action: 'cancel' }])
+    expect((await thread(id)).requests).toEqual([])
+  })
+
+  it('refuses a form of another shape, so agy asks in its reply instead, and leaves the user no card', async () => {
+    const id = await open()
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+    await ask(id, [{ question: 'How many?', options: [] }], { count: { type: 'number', title: 'How many?' } })
+    // A constraint Sotto would not keep makes another shape too.
+    await expect.poll(async () => (await thread(id)).status).not.toBe('running')
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Again' })
+    await ask(id, [{ question: 'Pick two days', options: [] }], { q1: { type: 'array', title: 'Pick two days', minItems: 2, items: { anyOf: [{ const: '1', title: 'Monday' }, { const: '2', title: 'Friday' }] } } })
+    // So does `required` naming a field that is not one of its questions.
+    await expect.poll(async () => (await thread(id)).status).not.toBe('running')
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm3', text: 'Once more' })
+    await ask(id, [{ question: 'Tea?', options: [] }], { q1: { type: 'string', title: 'Tea?', oneOf: [{ const: '1', title: 'Yes' }] }, q1_other: { type: 'string', title: 'Other' } }, ['q1_other'])
+    await expect.poll(formReplies).toEqual([{ refused: true }, { refused: true }, { refused: true }])
+    await expect.poll(async () => (await thread(id)).messages.filter(message => message.role === 'assistant').map(message => message.text)).toEqual(['How many?', 'Pick two days', 'Tea?'])
+    expect((await thread(id)).requests).toEqual([])
+  })
+
   it('takes a waiting request off the user when the thread moves to Full access', async () => {
     const id = await open()
     await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
