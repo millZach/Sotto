@@ -425,25 +425,35 @@ export class WorktreeCleanup {
     if (settle) await this.settleMerged()
     if (!rulesOn(rules) || this.disposed) return
     const view = this.readView()
-    const projects = projectsById(view.projects)
     const defaults = this.defaults
     for (const thread of view.threads) {
       if (this.disposed) return
       if (!this.canReclaim(thread)) continue
       try {
-        const eligibility = await this.eligible(thread, projects, rules, defaults)
+        const eligibility = await this.eligible(thread, rules, defaults)
         if (!eligibility) continue
-        // Asked again as it now stands: work may have started while the folder was looked at.
-        if (atWork(this.readView().threads, thread.id, false)) continue
-        await this.dependencies.host.reclaimThreadWorktree(thread.id, { automatic: true, ...eligibility })
+        // Asked again as it now stands: work may have started, or the thread or its project been restored, while looked at.
+        const current = this.readView()
+        const live = current.threads.find(item => item.id === thread.id)
+        if (!live || !this.canReclaim(live) || atWork(current.threads, thread.id, false)) continue
+        if (eligibility.onSettle && !isWorkspaceThreadSettled(live, current.projects.find(project => project.id === live.projectId))) continue
+        const reclaimOptions = eligibility.expectedMergedTip !== undefined
+          ? { automatic: true as const, expectedMergedTip: eligibility.expectedMergedTip }
+          : { automatic: true as const }
+        await this.dependencies.host.reclaimThreadWorktree(thread.id, reclaimOptions)
         this.dependencies.log?.('worktree-cleanup-reclaimed')
       } catch { this.dependencies.log?.('worktree-cleanup-skipped') }
     }
   }
-  private async eligible(thread: AgentThread, projects: ReadonlyMap<string, AgentProject>, rules: WorktreeCleanupRules, defaults: Map<string, string | null>): Promise<{ expectedMergedTip?: string } | null> {
-    const worktree = thread.worktree!
-    if (rules.onSettle && isWorkspaceThreadSettled(thread, projects.get(thread.projectId))) return {}
-    if (rules.afterDays !== null && lastActivity(thread, this.now()) < this.now() - rules.afterDays * DAY_MS) return {}
+  private async eligible(thread: AgentThread, rules: WorktreeCleanupRules, defaults: Map<string, string | null>): Promise<{ expectedMergedTip?: string; onSettle?: true } | null> {
+    // Re-read the live thread and project on each candidate (without cloning histories) so a project or thread restored
+    // while an earlier candidate was awaited is never reclaimed under stale settlement state.
+    const view = this.readView()
+    const live = view.threads.find(item => item.id === thread.id)
+    if (!live || !this.canReclaim(live)) return null
+    const worktree = live.worktree!
+    if (rules.onSettle && isWorkspaceThreadSettled(live, view.projects.find(project => project.id === live.projectId))) return { onSettle: true }
+    if (rules.afterDays !== null && lastActivity(live, this.now()) < this.now() - rules.afterDays * DAY_MS) return {}
     if (rules.unchanged) {
       const repositoryRoot = worktree.repositoryRoot!
       if (!defaults.has(repositoryRoot)) defaults.set(repositoryRoot, await this.defaultBranch(repositoryRoot))

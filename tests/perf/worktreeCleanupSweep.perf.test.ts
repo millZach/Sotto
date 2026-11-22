@@ -254,7 +254,7 @@ describe('WorktreeCleanup owner-scale sweep (1,200 threads, 240 settled ready wo
       })}`)
 
       expect(afterClones).toBe(0)
-      expect(beforeSampleClones).toBe(1 + beforeSampleCandidates)
+      expect(beforeSampleClones).toBe(1 + beforeSampleCandidates * 2)
     } finally {
       host.disconnect()
       host.dispose()

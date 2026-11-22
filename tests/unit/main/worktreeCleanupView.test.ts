@@ -185,8 +185,8 @@ describe('WorkspaceHost.workspaceView and WorktreeCleanup read path', () => {
     vi.spyOn(host, 'workspaceView').mockImplementation(() => {
       viewCalls += 1
       const view = originalView()
-      // Calls: 1 settleMerged start, 2 settleMerged post-GitHub recheck, 3 sweepWorktrees start, 4 sweepWorktrees live atWork recheck.
-      if (viewCalls === 4) {
+      // Calls: 1 settleMerged start, 2 settleMerged post-GitHub recheck, 3 sweepWorktrees start, 4 eligible live check, 5 post-eligible live check.
+      if (viewCalls === 5) {
         const live = view.threads.find(item => item.id === 'becomes-busy')
         if (live) live.status = 'running'
       }
@@ -247,17 +247,82 @@ describe('WorkspaceHost.workspaceView and WorktreeCleanup read path', () => {
     expect(snapshotSpy).not.toHaveBeenCalled()
   })
 
-  it('does not make a redundant snapshot call inside eligible for hosts without workspaceView', async () => {
+  it('does not reclaim a later thread when its project is restored mid-sweep while an earlier candidate is awaited', async () => {
+    const first = makeThread('project-thread-1')
+    const second = makeThread('project-thread-2')
+    const { host } = await hostFixture(makeSnapshot([first, second]))
+    await host.setWorkspaceSettled('project', 'project-1', true)
+
+    const snapshotSpy = vi.spyOn(host, 'workspaceSnapshot')
+    const reclaimed: string[] = []
+    vi.spyOn(host, 'reclaimThreadWorktree').mockImplementation(async threadId => {
+      reclaimed.push(threadId)
+      if (threadId === 'project-thread-1') {
+        // User restores the project while the first thread's worktree is being reclaimed.
+        const project = host.workspaceView().projects.find(item => item.id === 'project-1')
+        if (project) project.workspaceSettledAt = null
+      }
+      return EMPTY_AGENT_HOST
+    })
+
+    await new WorktreeCleanup({
+      host,
+      rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, onSettle: true }),
+    }).sweep()
+
+    expect(snapshotSpy).not.toHaveBeenCalled()
+    expect(reclaimed).toEqual(['project-thread-1'])
+  })
+
+  it('aborts reclamation if a thread or its project is restored between eligible and reclaimThreadWorktree', async () => {
+    const first = makeThread('restored-before-reclaim')
+    const { host } = await hostFixture(makeSnapshot([first]))
+    await host.setWorkspaceSettled('project', 'project-1', true)
+
+    const snapshotSpy = vi.spyOn(host, 'workspaceSnapshot')
+    const reclaimed: string[] = []
+    vi.spyOn(host, 'reclaimThreadWorktree').mockImplementation(async threadId => { reclaimed.push(threadId); return EMPTY_AGENT_HOST })
+
+    const originalView = host.workspaceView.bind(host)
+    let viewCalls = 0
+    vi.spyOn(host, 'workspaceView').mockImplementation(() => {
+      viewCalls += 1
+      const view = originalView()
+      // Calls: 1 sweepWorktrees start, 2 eligible live check, 3 post-eligible live re-verification.
+      if (viewCalls === 3) {
+        const project = view.projects.find(item => item.id === 'project-1')
+        if (project) project.workspaceSettledAt = null
+      }
+      return view
+    })
+
+    await new WorktreeCleanup({
+      host,
+      rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, onSettle: true }),
+    }).sweep()
+
+    expect(snapshotSpy).not.toHaveBeenCalled()
+    expect(reclaimed).toEqual([])
+  })
+
+  it('re-reads live project settlement on hosts without workspaceView when a project object is replaced mid-sweep', async () => {
     const threads = [
-      makeThread('settled-1', { workspaceSettledAt: '2026-11-20T00:00:00.000Z' }),
-      makeThread('settled-2', { workspaceSettledAt: '2026-11-20T00:00:00.000Z' }),
+      makeThread('settled-1'),
+      makeThread('settled-2'),
     ]
-    const snapshot = makeSnapshot(threads)
-    let snapshotCalls = 0
+    let snapshot = makeSnapshot(threads, {
+      projects: [{ id: 'project-1', title: 'Repo', path: '/repo', workspaceSettledAt: '2026-11-20T00:00:00.000Z' }],
+    })
     const reclaimed: string[] = []
     const legacyHost: WorktreeCleanupHost = {
-      workspaceSnapshot: () => { snapshotCalls += 1; return snapshot },
-      reclaimThreadWorktree: async id => { reclaimed.push(id) },
+      workspaceSnapshot: () => snapshot,
+      reclaimThreadWorktree: async id => {
+        reclaimed.push(id)
+        if (id === 'settled-1') {
+          // Replace the project record with a fresh unsettled object mid-sweep.
+          snapshot = { ...snapshot, projects: [{ id: 'project-1', title: 'Repo', path: '/repo', workspaceSettledAt: null }] }
+        }
+      },
       subscribe: () => () => undefined,
     }
 
@@ -266,8 +331,6 @@ describe('WorkspaceHost.workspaceView and WorktreeCleanup read path', () => {
       rules: () => ({ ...DEFAULT_WORKTREE_CLEANUP, onSettle: true }),
     }).sweep()
 
-    expect(reclaimed).toEqual(['settled-1', 'settled-2'])
-    // 1 initial sweep read + 1 live atWork re-check per eligible candidate (previously 1 + 2 per candidate).
-    expect(snapshotCalls).toBe(3)
+    expect(reclaimed).toEqual(['settled-1'])
   })
 })
