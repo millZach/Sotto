@@ -17,6 +17,8 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  /* Only declared transitions take the reduced-motion duration. Layout must settle before menus measure their anchors. */
+  transition-property: none;
 }
 
 html,

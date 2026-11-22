@@ -136,6 +136,20 @@ test('opens one combined picker from model or effort, steps the Power Gauge with
         })
         expect(bounds, `${appearance} ${width}x${height}`).toEqual({ inWindow: true, dialogOverflow: false, pageOverflow: false })
         await page.screenshot({ path: join(ARTIFACTS, `combined-${appearance}-${width}.png`), animations: 'disabled' })
+        // A short list, empty Favorites and Claude's expanded card keep the same frame and tab positions.
+        const providers = dialog.getByRole('tablist', { name: 'Model providers' })
+        const frame = await dialog.boundingBox()
+        const strip = await providers.boundingBox()
+        for (const name of ['Codex', 'Favorites', 'Claude']) {
+          const tab = providers.getByRole('tab', { name, exact: true })
+          await tab.click()
+          await expect(tab).toHaveAttribute('aria-selected', 'true')
+          expect(await dialog.boundingBox()).toEqual(frame)
+          expect(await providers.boundingBox()).toEqual(strip)
+          if (name === 'Codex' && width === 1280 && appearance === 'dark') {
+            await page.screenshot({ path: join(ARTIFACTS, 'combined-codex-dark-1280.png'), animations: 'disabled' })
+          }
+        }
       }
     }
 

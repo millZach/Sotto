@@ -5,9 +5,10 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   width: min(420px, calc(100vw - 32px));
-  height: auto;
   max-height: min(560px, calc(100vh - 32px));
 }
+/* Keep the provider strip in place. The model list scrolls within the space available beside the chip. */
+.model-picker__dialog--combined:has(.model-picker__providers) { height: 100%; }
 .model-picker__dialog.model-picker__dialog--combined:has(> .model-picker__foot) { grid-template-rows: minmax(0, 1fr) auto; }
 .model-picker__dialog.model-picker__dialog--combined > .model-picker__foot { padding: 6px 12px; }
 
