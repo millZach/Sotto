@@ -71,8 +71,11 @@ pub async fn read_engine_frame<R: AsyncRead + Unpin>(
             "ENGINE_FRAME_TOO_LARGE",
         ));
     }
-    let mut body = vec![0u8; len];
-    reader.read_exact(&mut body).await?;
+    let mut body = Vec::with_capacity(len.min(64 * 1024));
+    let read = reader.take(len as u64).read_to_end(&mut body).await?;
+    if read != len {
+        return Ok(None);
+    }
     let parsed: IncomingEngineMessage = serde_json::from_slice(&body)
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
     Ok(Some(parsed))

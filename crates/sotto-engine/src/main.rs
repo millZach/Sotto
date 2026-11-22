@@ -606,17 +606,20 @@ async fn main() -> ExitCode {
                     break;
                 };
                 if let IncomingEngineMessage::Req { id, method, args } = msg {
-                    match handle_rpc(&coordinator, &parsed.data_directory, &method, &args).await {
-                        Ok((val, should_shutdown)) => {
-                            let _ = out_tx.send(ok_response_frame(id, val));
-                            if should_shutdown {
-                                break;
-                            }
-                        }
-                        Err(err) => {
-                            let _ = out_tx.send(err_response_frame(id, err));
-                        }
+                    if method == "engine.shutdown" {
+                        let _ = out_tx.send(ok_response_frame(id, json!({ "ok": true })));
+                        break;
                     }
+                    let coord = coordinator.clone();
+                    let data_dir = parsed.data_directory.clone();
+                    let out = out_tx.clone();
+                    tokio::spawn(async move {
+                        let frame = match handle_rpc(&coord, &data_dir, &method, &args).await {
+                            Ok((val, _)) => ok_response_frame(id, val),
+                            Err(err) => err_response_frame(id, err),
+                        };
+                        let _ = out.send(frame);
+                    });
                 }
             }
         }
