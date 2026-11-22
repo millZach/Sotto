@@ -122,6 +122,67 @@ it('keeps routed agent and remote answer references intact, passes a paired host
   expect(raw.files.reveal).not.toHaveBeenCalled()
 })
 
+it('passes routed kept-parts onState broadcasts through untouched across LOC <-> REM switches and refreshes hostId when connections change (#2733)', async () => {
+  const { raw, state } = setup()
+  const remote = '22222222-2222-4222-8222-222222222222'
+  let stateListener: ((payload: unknown) => void) | undefined
+  ;(raw.agents as Record<string, unknown>).onState = (listener: (payload: unknown) => void) => {
+    stateListener = listener
+    return () => { stateListener = undefined }
+  }
+  state.clientScoped = true
+  state.connections = [
+    { hostId: HOST, name: 'This computer', kind: 'local', connected: true },
+    { hostId: remote, name: 'Forge', kind: 'remote', connected: true },
+  ]
+  const bridge = hostClientBridge(raw)
+  const received: unknown[] = []
+  ;(bridge.agents as unknown as { onState: (cb: (payload: unknown) => void) => () => void }).onState(payload => { received.push(payload) })
+  await bridge.agents.get()
+
+  // LOC -> REM kept-parts broadcast: configuration changed, clientScoped and connections omitted in kept, hostId is remote.
+  const toRemote = {
+    kept: ['clientScoped', 'connections'],
+    configuration: { ...defaultAgentConfiguration(), projectsDirectory: '/home/forge/projects' },
+    hostId: remote,
+    host: { hostId: remote, kept: ['projects', 'models'], threads: { revision: 2, base: 1, changed: [] } },
+  }
+  stateListener!(toRemote)
+  expect(received.at(-1)).toBe(toRemote)
+
+  // REM -> LOC kept-parts broadcast: configuration changed back, hostId is local, host.threads is incremental (not an array).
+  const toLocal = {
+    kept: ['clientScoped', 'connections'],
+    configuration: { ...defaultAgentConfiguration(), projectsDirectory: 'C:\\projects' },
+    hostId: HOST,
+    host: { hostId: HOST, kept: ['projects', 'models'], threads: { revision: 3, base: 2, changed: [] } },
+  }
+  stateListener!(toLocal)
+  expect(received.at(-1)).toBe(toLocal)
+
+  // Ordinary incremental broadcast with configuration in kept: returned by identity without walking/cloning via mapHostReferences.
+  const streaming = {
+    kept: ['clientScoped', 'connections', 'configuration'],
+    host: { kept: ['hostId', 'projects', 'models'], threads: { revision: 4, base: 3, changed: [] } },
+  }
+  stateListener!(streaming)
+  expect(received.at(-1)).toBe(streaming)
+
+  // Local hostId remained intact because connections stayed in kept.
+  expect(await bridge.files.list({ threadId: hostEntityKey(HOST, 'thread') })).toEqual({ ok: true, value: { threadId: hostEntityKey(HOST, 'thread') } })
+  expect(raw.files.list).toHaveBeenLastCalledWith({ threadId: 'thread' })
+
+  // Incremental broadcast carrying updated connections without a local host clears hostId.
+  const remoteOnly = {
+    kept: ['clientScoped', 'configuration'],
+    connections: [{ hostId: remote, name: 'Forge', kind: 'remote', connected: true }],
+    host: { kept: ['hostId', 'projects', 'models'], threads: { revision: 5, base: 4, changed: [] } },
+  }
+  stateListener!(remoteOnly)
+  expect(received.at(-1)).toBe(remoteOnly)
+  await expect(bridge.files.reveal({ threadId: hostEntityKey(remote, 'thread') })).rejects.toThrow('host machine')
+})
+
 it('rejects invalid main and popup requests without dispatching IPC', async () => {
   const ipc = preloadElectron().ipcRenderer
   const bridge = createSottoBridge(ipc, 'win32', false, true)
