@@ -96,11 +96,12 @@ export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
   const { t } = useLingui()
   const enabled = useOwlFeature('dynamic-threads')
   const app = useOptionalApp()
-  const [asking, setAsking] = useState(false)
+  const [askingFor, setAskingFor] = useState<string | null>(null)
+  const asking = askingFor === thread.id
   const overseeing = isDynamicThread(thread, enabled)
   // A routed thread's models are the router's to choose (ADR-0207), so Dynamic waits until routing is off.
   const routed = isRoutedThread(thread, useOwlFeature('model-router'))
-  const set = (dynamic: boolean): void => { void command({ type: 'set-thread-dynamic', threadId: thread.id, dynamic }) }
+  const set = (dynamic: boolean, targetThreadId = thread.id): void => { void command({ type: 'set-thread-dynamic', threadId: targetThreadId, dynamic }) }
   const list = app?.settings?.dynamicThreads
   const offered = enabled && whyNotDynamic(thread) === undefined
   // The thread's own provider has its code already, whether or not it is ready just now.
@@ -109,13 +110,14 @@ export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
   return { overseeing, suffix: overseeing ? t({ message: 'oversees', comment: 'After a model\'s name on a Dynamic thread\'s chip: Opus 5.5 oversees.' }) : undefined,
     foot: !offered ? undefined : close => <Toggle label={t`Dynamic`} {...routed ? { description: t`Turn model routing off to make this thread Dynamic.` } : fixed ? { description: t`It can change once this turn finishes.` } : {}} checked={overseeing} disabled={fixed || routed}
       onCheckedChange={next => {
-        if (next && list?.providers === undefined) { close(); setAsking(true); return }
+        if (next && list?.providers === undefined) { close(); setAskingFor(thread.id); return }
         set(next)
       }} />,
-    dialog: asking ? <FirstUseQuestion title={t`Turn on Dynamic for this thread?`} modelName={modelName} providers={providers} onDismiss={() => setAsking(false)}
+    dialog: asking ? <FirstUseQuestion key={thread.id} title={t`Turn on Dynamic for this thread?`} modelName={modelName} providers={providers} onDismiss={() => setAskingFor(null)}
       turnOn={async () => {
+        const startedThreadId = thread.id
         if (await makeList() === false) return false
-        set(true)
+        set(true, startedThreadId)
         return true
       }} /> : null }
 }

@@ -41,13 +41,13 @@ describe('the window’s clock on a thread switch', () => {
       wholeReads: { broadcastParts: 0, broadcastThreads: 0, broadcastCatalog: 0, answerThreads: 0, answerCatalog: 0 } }])
   })
 
-  it('counts a history the window already held from the press, and a thread its host marks remote as remote', () => {
+  it('counts a history the window already held from the press, reports replyMs null when painted before replyDrawn, and marks remote threads', () => {
     const { clock, reports, paint, show } = rig()
     show('t2')
     clock.start('t2', { held: true, threads: 12 }, press('keydown', 990))
     clock.committed(state('t2', { messages: messages(3), remoteHost: true }))
     paint(1_120)
-    expect(reports).toMatchObject([{ inputMs: 10, historyMs: 10, replyMs: 130, paintedMs: 130, held: true, remote: true, messages: 3, activities: 0 }])
+    expect(reports).toMatchObject([{ inputMs: 10, historyMs: 10, replyMs: null, paintedMs: 130, held: true, remote: true, messages: 3, activities: 0 }])
   })
 
   it('starts from the handler when there is no press to read, and never from a press stamped after it', () => {

@@ -80,8 +80,8 @@ export type MainActivityCommand = z.infer<typeof mainActivityCommandSchema>
 export const threadSwitchTimingSchema = z.object({
   /** From the press to the window's own handler: how long the press waited for the window to be free. */
   inputMs: milliseconds,
-  /** To the commit that drew main's answer to the selection. */
-  replyMs: milliseconds,
+  /** To the commit that drew main's answer to the selection, or null when the thread painted before that answer arrived. */
+  replyMs: milliseconds.nullable(),
   /** To the window holding the thread's history; the same as `inputMs` when it already held it. */
   historyMs: milliseconds,
   /** To the start of the frame that paints the thread with its history, just before its layout and paint. */
