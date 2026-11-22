@@ -1,10 +1,10 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { Worker } from 'node:worker_threads'
 import type { Writable } from 'node:stream'
+import { resolveBuiltWorkerPath } from '../../builtWorkerPath'
 import type { LaunchError, LauncherEvent, LauncherRequest } from './gitLauncherWorker'
 
 /**
@@ -68,7 +68,8 @@ export interface InteractiveProcess extends LaunchedProcess {
 }
 
 /** The worker file the build puts beside this module's bundle (`electron.vite.config.ts`, `scripts/build-host.mjs`). */
-const BUILT_WORKER = join(__dirname, 'gitLauncherWorker.js')
+export const BUILT_GIT_LAUNCHER_WORKER = resolveBuiltWorkerPath('gitLauncherWorker.js', __dirname)
+const BUILT_WORKER = BUILT_GIT_LAUNCHER_WORKER
 
 /**
  * Stops a process the worker started, and what it started, from this thread: the worker's own loop is gone or going,

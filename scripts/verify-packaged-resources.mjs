@@ -327,6 +327,7 @@ export async function verifyPackagedResources(input, options = {}) {
   for (const required of [
     'out/main/index.js',
     'out/main/gitLauncherWorker.js',
+    'out/main/pictureWorker.js',
     'out/main/threadStoreWorker.js',
     'out/main/usageStoreWorker.js',
     'out/main/hangWatchdogWorker.js',
