@@ -148,6 +148,14 @@ const bootIdentity = readBootId();
 const currentVersion = async () => { try { const value = (await fs.readFile(pointerPath, 'utf8')).trim(); return RELEASE.test(value) ? value : null; } catch { return null; } };
 const entryOf = version => version ? path.join(versionsPath, version, 'host', 'index.js') : path.join(install, 'host', 'index.js');
 const hostEntry = async () => { const version = await currentVersion(); return version && await exists(entryOf(version)) ? entryOf(version) : entryOf(null); };
+const rustBinName = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host';
+const rustEntryOf = version => version ? path.join(versionsPath, version, 'host', rustBinName) : path.join(install, 'host', rustBinName);
+const rustHostEntry = async () => {
+  if (cfg.useRustHost !== true) return null;
+  const version = await currentVersion();
+  const candidate = version && await exists(rustEntryOf(version)) ? rustEntryOf(version) : rustEntryOf(null);
+  return (await exists(candidate)) ? candidate : null;
+};
 const readLegacyLauncher = async () => {
   try { const value = JSON.parse(await fs.readFile(legacyLauncherPath, 'utf8')); return value && value.v === 1 && Number.isInteger(value.pid) ? value : null; }
   catch { return null; }
@@ -227,10 +235,13 @@ const running = async () => {
 const startDetached = async () => {
   const found = await running();
   if (found) return found;
-  const entry = await hostEntry();
-  if (!(await exists(entry))) throw new Error('archive-missing');
+  const rustBin = await rustHostEntry();
+  const entry = rustBin || await hostEntry();
+  if (!rustBin && !(await exists(entry))) throw new Error('archive-missing');
   await say({ type: 'starting' });
-  const child = spawn(process.execPath, [entry, '--data', data, '--port', String(cfg.remotePort)], { detached: true, stdio: 'ignore', env: { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script' } });
+  const child = rustBin
+    ? spawn(rustBin, ['--data', data, '--port', String(cfg.remotePort)], { detached: true, stdio: 'ignore', env: { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script', SOTTO_HOST_ENABLE_PROVIDERS: '1' } })
+    : spawn(process.execPath, [entry, '--data', data, '--port', String(cfg.remotePort)], { detached: true, stdio: 'ignore', env: { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script' } });
   child.unref();
   let childFailed = false; child.on('error', () => { childFailed = true; });
   const deadline = Date.now() + cfg.readyTimeoutMs;
@@ -995,7 +1006,7 @@ export type LaunchOperation =
    * Find or start the host. `start: false` only finds one, for an admin connection, and starts nothing. `removeBoot`, for
    * Forget, also takes this installation's boot unit away when no host runs (ADR-0054).
    */
-  | { readonly op: 'launch'; readonly start?: false; readonly removeBoot?: true }
+  | { readonly op: 'launch'; readonly start?: false; readonly removeBoot?: true; readonly useRustHost?: true }
   | { readonly op: 'pairing-code'; readonly hostId: string }
   | { readonly op: 'desktop-answers'; readonly hostId: string; readonly clientId: string }
   | { readonly op: 'revoke-client'; readonly hostId: string; readonly clientId: string }

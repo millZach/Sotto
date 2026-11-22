@@ -1,0 +1,76 @@
+name: Rust host release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version tag (e.g. 0.1.44-owl.20261122.1)
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  license-and-test:
+    name: Rust host gate (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Check crate licenses and sources
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources
+      - name: Clippy and tests
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
+
+  package:
+    name: Build Rust host (${{ matrix.label }})
+    needs: [license-and-test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-latest
+            ext: ''
+          - label: darwin-arm64
+            os: macos-15
+            ext: ''
+          - label: win32-x64
+            os: windows-latest
+            ext: '.exe'
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: 'npm'
+      - name: Build release sotto-host
+        shell: bash
+        run: |
+          node scripts/build-rust-host.mjs
+          mkdir -p dist/rust-host/host
+          cp "out/rust-host/sotto-host${{ matrix.ext }}" "dist/rust-host/host/sotto-host${{ matrix.ext }}"
+          ARCHIVE="Sotto-rust-host-${{ inputs.version }}-${{ matrix.label }}.tar.gz"
+          tar -czf "dist/$ARCHIVE" -C dist/rust-host host
+          node -e "const fs=require('fs'),c=require('crypto');const h=c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex');fs.writeFileSync(process.argv[1]+'.sha256', h+'  '+process.argv[2]+'\n')" "dist/$ARCHIVE" "$ARCHIVE"
+      - name: Upload Rust host archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-rust-host-${{ matrix.label }}
+          path: |
+            dist/Sotto-rust-host-*.tar.gz
+            dist/Sotto-rust-host-*.tar.gz.sha256
+          if-no-files-found: error
