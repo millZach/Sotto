@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { OUTSIDE_SOTTO } from '../../../src/main/performance/activityRecorder'
-import { cleanHangFrames, HANG_FILE, MAIN_HANG_RECORDINGS_KEPT, saveHangRecording, sweepPartialHangRecordings, updateHangRecording, WINDOW_HANG_RECORDINGS_KEPT, type HangRecord } from '../../../src/main/performance/hangRecording'
-import { MainHeartbeat, WindowHangWatch, type WatchedWindow } from '../../../src/main/performance/hangWatchdog'
+import { cleanHangFrames, ENGINE_HANG_RECORDINGS_KEPT, HANG_FILE, MAIN_HANG_RECORDINGS_KEPT, saveHangRecording, sweepPartialHangRecordings, updateHangRecording, WINDOW_HANG_RECORDINGS_KEPT, type HangRecord } from '../../../src/main/performance/hangRecording'
+import { MainHeartbeat, resolveBuiltHangWatchdogWorker, WindowHangWatch, type WatchedWindow } from '../../../src/main/performance/hangWatchdog'
 import { HEARTBEAT_SLOT, QUIT_SLOT, SHARED_SLOTS } from '../../../src/main/performance/hangWatchdogShared'
 import { HANG_STACKS, MainHangWatch, type MainDebugger, type MainHangWatchOptions } from '../../../src/main/performance/mainHangWatch'
 
@@ -66,6 +66,40 @@ describe('saving hang recordings', () => {
     expect(await readdir(folder)).toContain('sotto-hang-2026-10-25-14-00-00.partial')
     await sweepPartialHangRecordings(folder)
     expect(await readdir(folder)).toEqual(['sotto-hang-2026-10-25-14-01-00'])
+  })
+
+  it('keeps engine hang recordings rotated separately from main and window recordings (#2733)', async () => {
+    folder = await mkdtemp(join(tmpdir(), 'sotto-hangs-'))
+    const windows: string[] = [], mains: string[] = [], engines: string[] = []
+    for (let minute = 0; minute < WINDOW_HANG_RECORDINGS_KEPT + 1; minute += 1) {
+      windows.push(await saveHangRecording(folder, record(new Date(2026, 9, 25, 12, minute, 0).toISOString(), 'window')))
+    }
+    for (let minute = 0; minute < MAIN_HANG_RECORDINGS_KEPT + 1; minute += 1) {
+      mains.push(await saveHangRecording(folder, record(new Date(2026, 9, 25, 13, minute, 0).toISOString(), 'main')))
+    }
+    for (let minute = 0; minute < ENGINE_HANG_RECORDINGS_KEPT + 2; minute += 1) {
+      engines.push(await saveHangRecording(folder, record(new Date(2026, 9, 25, 14, minute, 0).toISOString(), 'engine')))
+    }
+    const kept = (await readdir(folder)).sort()
+    expect(kept).toEqual([...windows.slice(1), ...mains.slice(1), ...engines.slice(2)].sort())
+  })
+})
+
+describe('hang watchdog worker path and engine role (#2733)', () => {
+  it('resolves hangWatchdogWorker.js from out/main and from Rollup shared chunks under out/main/chunks', () => {
+    const outMain = join(APP, 'out', 'main')
+    expect(resolveBuiltHangWatchdogWorker(outMain)).toBe(join(outMain, 'hangWatchdogWorker.js'))
+    expect(resolveBuiltHangWatchdogWorker(join(outMain, 'chunks'))).toBe(join(outMain, 'hangWatchdogWorker.js'))
+  })
+
+  it('tags records with kind "engine" when MainHangWatch watches the engine process', async () => {
+    const { state, watch, run, stop } = harness({ kind: 'engine' })
+    await watch.tick()
+    stop(1_200)
+    await run(1_500)
+    expect(state.saved).toHaveLength(1)
+    expect(state.saved[0]).toMatchObject({ kind: 'engine', answeredAfterMs: null })
+    expect(state.updated.at(-1)).toMatchObject({ kind: 'engine', answeredAfterMs: 1_200 })
   })
 })
 

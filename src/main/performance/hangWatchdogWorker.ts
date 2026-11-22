@@ -60,6 +60,7 @@ const watch = new MainHangWatch({
   devOrigins: data.devOrigins,
   sottoVersion: data.sottoVersion,
   platform: data.platform,
+  ...(data.kind ? { kind: data.kind } : {}),
   ...(data.hangMs ? { hangMs: data.hangMs } : {}),
   ...(data.quitForceMs ? { quitForceMs: data.quitForceMs } : {}),
 })

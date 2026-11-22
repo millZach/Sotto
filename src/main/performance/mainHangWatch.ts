@@ -84,6 +84,8 @@ export interface MainHangWatchOptions {
   readonly devOrigins?: readonly string[]
   readonly sottoVersion: string
   readonly platform: string
+  /** Which process's event loop is watched; defaults to `'main'`. */
+  readonly kind?: 'main' | 'engine'
   readonly hangMs?: number
   readonly quitForceMs?: number
   readonly debuggerWaitMs?: number
@@ -286,7 +288,7 @@ export class MainHangWatch {
   private async save(answeredAt: number, stacks: readonly HangStack[], stacksMissed: number): Promise<boolean> {
     const { now } = this.options
     const wallNow = this.options.wallNow ?? Date.now
-    const record: HangRecord = { format: 1, kind: 'main', sottoVersion: this.options.sottoVersion, platform: this.options.platform,
+    const record: HangRecord = { format: 1, kind: this.options.kind ?? 'main', sottoVersion: this.options.sottoVersion, platform: this.options.platform,
       startedAt: new Date(wallNow() - (now() - answeredAt)).toISOString(), answeredAfterMs: null,
       writtenAfterMs: now() - answeredAt, stacks: [...stacks], stacksMissed }
     try {

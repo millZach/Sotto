@@ -654,14 +654,18 @@ function recordingPlaces(userDataPath: string): { directory: string; appRoots: s
     devOrigins: devOrigin ? [devOrigin] : [] }
 }
 
+/** Hang watch settings shared by main and the out-of-process desktop engine (#1581, #2733). */
+function hangWatchdogPlaces(userDataPath: string): { directory: string; appRoots: string[]; devOrigins: string[]; hangMs?: number; quitForceMs?: number } {
+  const hangMs = e2eOverride('SOTTO_E2E_MAIN_HANG_MS', 60_000), quitForceMs = e2eOverride('SOTTO_E2E_QUIT_FORCE_MS', 120_000)
+  return { ...recordingPlaces(userDataPath), ...(hangMs ? { hangMs } : {}), ...(quitForceMs ? { quitForceMs } : {}) }
+}
+
 /**
  * The watch on main from its own thread, and Quit's backstop (#1581): part of main-freeze, as the minute it extends is.
  * Development e2e runs may shorten its waits.
  */
 function startHangWatchdog(userDataPath: string, version: string): HangWatchdog | undefined {
-  const hangMs = e2eOverride('SOTTO_E2E_MAIN_HANG_MS', 60_000), quitForceMs = e2eOverride('SOTTO_E2E_QUIT_FORCE_MS', 120_000)
-  return HangWatchdog.start({ ...recordingPlaces(userDataPath), sottoVersion: version, platform: process.platform,
-    ...(hangMs ? { hangMs } : {}), ...(quitForceMs ? { quitForceMs } : {}) }, logOperational)
+  return HangWatchdog.start({ ...hangWatchdogPlaces(userDataPath), kind: 'main', sottoVersion: version, platform: process.platform }, logOperational)
 }
 
 function parseOrigin(url: string | undefined): string | undefined {
@@ -932,6 +936,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     desktopNotificationsEnabled,
     e2eConfiguration,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
+    ...(mainActivity ? { hangWatchdog: hangWatchdogPlaces(userDataPath) } : {}),
     env: process.env,
     interfaceLanguage: { enabled: interfaceLanguageEnabled, systemLanguages, override: languageOverride },
   }

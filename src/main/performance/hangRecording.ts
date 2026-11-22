@@ -10,8 +10,13 @@ import { freeRecordingName, keepNewestRecordings, OUTSIDE_SOTTO, recordingFileSy
  */
 export const MAIN_HANG_RECORDINGS_KEPT = 10
 /**
- * How many of the window's stay. Main's and the window's are counted apart, and apart from Record a minute's, so a busy
- * afternoon of short freezes of main never pushes out a window that stopped, nor either an activity recording.
+ * How many of the out-of-process engine's hang recordings stay, counted apart from main's and the window's so stalls in
+ * one process never push out recordings from another (#2733).
+ */
+export const ENGINE_HANG_RECORDINGS_KEPT = 10
+/**
+ * How many of the window's stay. Main's, the engine's and the window's are counted apart, and apart from Record a
+ * minute's, so a busy afternoon of short freezes never pushes out another process's recording nor an activity recording.
  */
 export const WINDOW_HANG_RECORDINGS_KEPT = 5
 /** Frames kept per stack, from the innermost: enough to see what main was doing and where it was called from. */
@@ -58,8 +63,8 @@ export interface HangProcess {
  */
 export interface HangRecord {
   readonly format: 1
-  /** `main`: main's own event loop stopped. `window`: main kept going but the main window did not answer it. */
-  readonly kind: 'main' | 'window'
+  /** `main`: main's own event loop stopped. `engine`: the out-of-process engine's event loop stopped. `window`: main kept going but the main window did not answer it. */
+  readonly kind: 'main' | 'engine' | 'window'
   readonly sottoVersion: string
   readonly platform: string
   /** When the stopped side last answered. */
@@ -128,27 +133,34 @@ export async function saveHangRecording(directory: string, record: HangRecord, f
 }
 
 /**
- * Removes all but the newest of main's hang recordings and of the window's, each kind counted apart and read from its
- * folder's file. One whose file cannot be read counts as main's. Never throws.
+ * Removes all but the newest of main's, the engine's and the window's hang recordings, each kind counted apart and read
+ * from its folder's file. One whose file cannot be read counts as main's. Never throws.
  */
 async function keepNewestHangRecordings(directory: string, fs: HangFileSystem): Promise<void> {
   let entries: string[]
   try { entries = await fs.readdir(directory) } catch { return }
   const newestFirst = entries.filter(name => HANG_NAME.test(name)).sort().reverse()
-  // Too few for either kind to be over: no file is read.
-  if (newestFirst.length <= Math.min(MAIN_HANG_RECORDINGS_KEPT, WINDOW_HANG_RECORDINGS_KEPT)) return
-  const seen = { main: 0, window: 0 }
+  // Too few for any kind to be over: no file is read.
+  if (newestFirst.length <= Math.min(MAIN_HANG_RECORDINGS_KEPT, ENGINE_HANG_RECORDINGS_KEPT, WINDOW_HANG_RECORDINGS_KEPT)) return
+  const seen = { main: 0, engine: 0, window: 0 }
+  const limit: Record<HangRecord['kind'], number> = {
+    main: MAIN_HANG_RECORDINGS_KEPT,
+    engine: ENGINE_HANG_RECORDINGS_KEPT,
+    window: WINDOW_HANG_RECORDINGS_KEPT,
+  }
   for (const name of newestFirst) {
     const kind = await savedHangKind(directory, name, fs)
     seen[kind] += 1
-    if (seen[kind] > (kind === 'window' ? WINDOW_HANG_RECORDINGS_KEPT : MAIN_HANG_RECORDINGS_KEPT)) await fs.rm(join(directory, name)).catch(() => undefined)
+    if (seen[kind] > limit[kind]) await fs.rm(join(directory, name)).catch(() => undefined)
   }
 }
 
 async function savedHangKind(directory: string, name: string, fs: HangFileSystem): Promise<HangRecord['kind']> {
   try {
     const saved = JSON.parse(await fs.readFile(join(directory, name, HANG_FILE))) as { kind?: unknown }
-    return saved.kind === 'window' ? 'window' : 'main'
+    if (saved.kind === 'window') return 'window'
+    if (saved.kind === 'engine') return 'engine'
+    return 'main'
   } catch { return 'main' }
 }
 
