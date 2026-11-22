@@ -48,7 +48,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
     await prepareFake(dataDir, 'codex')
     await writeFile(join(dataDir, 'hello.txt'), 'Hello from local desktop engine', 'utf8')
 
-    const endpoint = createEngineEndpoint('sotto-rust-engine-test')
+    const endpoint = createEngineEndpoint('se')
     const token = generateEngineToken()
     const server = await listenEngineServer(endpoint, token)
 
@@ -175,7 +175,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
   it('rejects a sotto-engine client presenting the wrong authentication token', async () => {
     const binary = await findRustEngineBinary()
     const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-engine-auth-'))
-    const endpoint = createEngineEndpoint('sotto-rust-engine-auth-test')
+    const endpoint = createEngineEndpoint('sea')
     const expectedToken = generateEngineToken()
     const wrongToken = generateEngineToken()
     const server = await listenEngineServer(endpoint, expectedToken)
