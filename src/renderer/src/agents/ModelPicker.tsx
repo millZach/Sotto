@@ -259,6 +259,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
   const search = useRef<HTMLInputElement>(null)
   const effortSlider = useRef<HTMLInputElement>(null)
   const inlineCard = useRef<HTMLDivElement>(null)
+  const [collapsedModel, setCollapsedModel] = useState<string | null>(null)
   const list = useRef<HTMLDivElement>(null)
   const rail = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLButtonElement>(null)
@@ -328,7 +329,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
     const nextOnFavorites = openForEffort ? activeInFavorites : favorites.length > 0
     const nextStep = openForEffort && !activeInFavorites && current?.source ? { provider: current.provider, source: current.source } : null
     const nextLegacyOpen = current?.legacy === true
-    const willRerender = nextProvider !== provider || nextOnFavorites !== onFavorites || query !== ''
+    const willRerender = collapsedModel !== null || nextProvider !== provider || nextOnFavorites !== onFavorites || query !== ''
       || nextStep?.provider !== step?.provider || nextStep?.source !== step?.source || nextLegacyOpen !== legacyOpen
     setProvider(nextProvider)
     setOnFavorites(nextOnFavorites)
@@ -336,6 +337,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
     setStep(nextStep)
     setSourceStop(undefined)
     setLegacyOpen(nextLegacyOpen)
+    setCollapsedModel(null)
     wheelTurn.current = restingWheel()
     if (openForEffort) {
       pendingFocus.current = { to: 'effort' }
@@ -396,7 +398,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
     element.addEventListener('wheel', wheel, { passive: false })
     return () => element.removeEventListener('wheel', wheel)
   }, [tiles, selectedName, combined])
-  useAnchoredMenu(open, trigger, dialog, combined && initialFocus === 'effort' ? effortSlider : search, returnFocusTo)
+  useAnchoredMenu(open, trigger, dialog, combined && initialFocus === 'effort' ? effortSlider : search, returnFocusTo, combined)
   // The step a key or a press asked for has drawn: focus what it said. A source with no model to choose yet puts focus on
   // its back control. Whatever the step, focus stays in the menu: where what held it has gone (a source that left, a
   // model that went), it goes to search, so Escape still steps back rather than reaching the window behind.
@@ -460,6 +462,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
   /** Jump straight to the active model's provider/source and focus its Power Gauge. */
   const jumpToActive = (): void => {
     if (!current) return
+    setCollapsedModel(null)
     setQuery('')
     setOnFavorites(false)
     setProvider(current.provider)
@@ -477,16 +480,20 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
     const starName = starred ? t`Remove from favorites` : t`Add to favorites`
     const isActive = model.id === currentEntryId
     const showInline = combined && isActive && !continueOn?.providers.has(model.provider)
+    const expanded = collapsedModel !== model.id
+    const toggleLabel = showInline ? (expanded ? t`Hide model controls` : t`Show model controls`) : undefined
+    const providerDescription = favorite ? continueOn?.providers.has(model.provider) ? continueOn.heading(model.provider) : model.provider : undefined
     const button = <button type="button" role="option" key={showInline ? undefined : (favorite ? favoriteKey(model) : model.id)}
       className={showInline ? 'inline-model-card__head' : undefined}
-      aria-selected={isActive} disabled={unready && !favorite && !showInline} aria-disabled={(favorite && unready) || undefined} data-favorite={favorite || undefined}
-      aria-keyshortcuts={favoritesOn ? 'F' : undefined} aria-description={favorite ? continueOn?.providers.has(model.provider) ? continueOn.heading(model.provider) : model.provider : undefined}
+      aria-selected={isActive} disabled={unready && !favorite && !showInline} aria-disabled={(favorite && unready && !showInline) || undefined} data-favorite={favorite || undefined}
+      aria-keyshortcuts={favoritesOn ? 'F' : undefined} title={toggleLabel}
+      aria-description={[providerDescription, toggleLabel].filter(Boolean).join('. ') || undefined}
       onKeyDown={event => { if (favoritesOn && event.key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); star(model, event.currentTarget) } }}
       onClick={() => {
-        if (unready) return
-        if (isActive && combined) return
+        if (showInline) { setCollapsedModel(expanded ? model.id : null); return }
+        if (unready || (isActive && combined)) return
         const stay = combined && (effort.stayOpenOnModel ? effort.stayOpenOnModel(model.id) : true)
-        if (stay) pendingFocus.current = { to: 'effort' }
+        if (stay) { setCollapsedModel(null); pendingFocus.current = { to: 'effort' } }
         onChange(model.id)
         if (!stay) setOpen(false)
       }}>
@@ -497,7 +504,7 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
         onClick={event => { event.stopPropagation(); star(model, event.currentTarget.parentElement!) }}><Star size={13} fill={starred ? 'currentColor' : 'none'} /></span> : null}
     </button>
     if (showInline) {
-      return <InlineModelCard key={favorite ? favoriteKey(model) : model.id} modelKey={model.id} header={button} effort={effort} sliderRef={effortSlider} cardRef={inlineCard} />
+      return <InlineModelCard key={favorite ? favoriteKey(model) : model.id} modelKey={model.id} header={button} expanded={expanded} effort={effort} sliderRef={effortSlider} cardRef={inlineCard} />
     }
     return button
   }
