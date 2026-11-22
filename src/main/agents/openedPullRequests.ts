@@ -12,7 +12,7 @@ import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests
  *
  * Reads only the ended turn's records and reply, never the thread's history, at most OPENED_PULL_REQUESTS_MAX each.
  */
-export const OPENED_PULL_REQUESTS_MAX = 5
+export const OPENED_PULL_REQUESTS_MAX = 10
 /** How much earlier than the turn's start GitHub's clock may say a pull request the turn opened was opened. */
 export const OPENED_CLOCK_SLACK_MS = 2 * 60_000
 
@@ -54,8 +54,11 @@ export function endedTurn(activities: readonly AgentActivity[] | undefined): { r
 
 /** The pull request URLs the `gh pr create` commands among `records` printed. */
 export function createdPullRequestUrls(records: readonly AgentActivity[]): string[] {
-  const text = records.filter(record => record.kind === 'command' && record.command !== undefined && GH_PR_CREATE.test(record.command))
-    .map(record => `${record.output ?? ''}\n${record.error ?? ''}`).join('\n')
+  const text = records.filter(record => {
+    if (record.kind !== 'command' && record.kind !== 'tool') return false
+    const invocation = record.command ?? record.text
+    return invocation !== undefined && GH_PR_CREATE.test(invocation)
+  }).map(record => `${record.output ?? ''}\n${record.error ?? ''}`).join('\n')
   return pullRequestUrlsIn(text)
 }
 

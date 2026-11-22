@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
-import { createdPullRequestUrls, endedTurn, openedDuringTurn, pullRequestUrlsIn } from '../../../src/main/agents/openedPullRequests'
+import { createdPullRequestUrls, endedTurn, OPENED_PULL_REQUESTS_MAX, openedDuringTurn, pullRequestUrlsIn } from '../../../src/main/agents/openedPullRequests'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { GitStatus } from '../../../src/shared/gitStatus'
 import { cleanup, fixture, send } from '../../fixtures/workspaceTestFixture'
@@ -27,9 +27,11 @@ describe('the pull requests a turn opened (#2307)', () => {
       { id: 'turn', turnId: 'turn-2', sequence: 2, kind: 'turn', status: 'completed', title: 'Turn completed', startedAt: '2026-11-06T10:00:00.000Z' },
       record('push', { command: 'git push -u origin feat/x', output: `remote: Create a pull request: ${url(2)}` }),
       record('create', { command: 'cd ../lane && gh pr create --title "Fix" --body-file body.md', output: `Warning: 1 uncommitted change\n${url(3)}\n` }),
+      { id: 'acp-tool', turnId: 'turn-2', sequence: 3, kind: 'tool', status: 'completed', title: 'run_command', text: JSON.stringify({ CommandLine: 'gh pr create --fill' }), output: url(5) },
     ])
+    expect(OPENED_PULL_REQUESTS_MAX).toBe(10)
     expect(turn.startedAt).toBe(Date.parse('2026-11-06T10:00:00.000Z'))
-    expect(createdPullRequestUrls(turn.records)).toEqual([url(3)])
+    expect(createdPullRequestUrls(turn.records)).toEqual([url(3), url(5)])
     expect(pullRequestUrlsIn(`Opened ${url(4)}/files and (${url(4)}), see https://github.com/o/r/issues/5 and ${url(6)}.`)).toEqual([url(4), url(6)])
     expect(openedDuringTurn('2026-11-06T10:05:00Z', turn.startedAt)).toBe(true)
     expect(openedDuringTurn('2026-11-05T10:05:00Z', turn.startedAt)).toBe(false)
