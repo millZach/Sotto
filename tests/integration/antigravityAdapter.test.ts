@@ -458,6 +458,9 @@ describe('Antigravity ACP adapter', () => {
     expect((await child())?.model).toBeUndefined()
     await f!.action(id, { type: 'subagent-answer', text: 'KESTREL' })
     await expect.poll(child, { timeout: 15_000 }).toMatchObject({ status: 'completed', message: 'KESTREL', completedAt: '2026-11-22T03:14:03.510Z' })
+    // agy marks no final answer, so a later answer from the same child, on a later pass, takes the earlier one's place.
+    await f!.action(id, { type: 'subagent-answer', text: 'KESTREL, final', timestamp: '2026-11-22T03:15:00.000000000Z' })
+    await expect.poll(child, { timeout: 15_000 }).toMatchObject({ status: 'completed', message: 'KESTREL, final', completedAt: '2026-11-22T03:15:00.000Z' })
     // A child whose row has left the thread's newest records is put back with its answer, never lost.
     await f!.action(id, { type: 'subagent', role: 'Third', prompt: 'Later.' })
     await expect.poll(async () => (await thread(id)).activities?.filter(row => row.kind === 'subagent').length).toBe(2)
@@ -472,6 +475,15 @@ describe('Antigravity ACP adapter', () => {
     await expect.poll(second).toMatchObject({ status: 'running', title: 'Second', model: 'gemini-3.8-flash' })
     await f!.action(id, { type: 'subagent-killed' })
     await expect.poll(second, { timeout: 15_000 }).toMatchObject({ status: 'interrupted' })
+  })
+
+  it('leaves a child never heard from in all its watch as last seen working, not as live', async () => {
+    const id = await open({ fixture: { childWatchMs: 1_500 } })
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+    await f!.action(id, { type: 'subagent', role: 'Silent', prompt: 'Never answer.' })
+    const child = async () => (await thread(id)).activities?.find(row => row.kind === 'subagent')?.agents?.[0]
+    await expect.poll(child).toMatchObject({ status: 'running' })
+    await expect.poll(child, { timeout: 15_000 }).toMatchObject({ status: 'unknown', title: 'Silent' })
   })
 
   it('lists agy’s commands as skills', async () => {

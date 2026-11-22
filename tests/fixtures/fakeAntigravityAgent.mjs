@@ -244,7 +244,7 @@ function run(command) {
     else {
       mkdirSync(generated(sessionId, 'messages'), { recursive: true })
       writeFileSync(generated(sessionId, 'messages', `${randomUUID()}.json`), JSON.stringify({ id: randomUUID(), recipient: sessionId, sender: child, content: command.text,
-        timestamp: '2026-11-22T03:14:03.510280400Z', renderDetails: { messageTitle: 'Message from child' } }))
+        timestamp: command.timestamp ?? '2026-11-22T03:14:03.510280400Z', renderDetails: { messageTitle: 'Message from child' } }))
     }
   }
   if (command.type === 'edit') {

@@ -142,7 +142,9 @@ const CHILD_WATCH_MS = 4 * 60 * 60 * 1_000
  * One child at work: its thread and its row as launched, the launching tool call, the parent's session, and what the
  * reading has learned. The row is kept so a child whose row has left the thread's newest records still settles.
  */
-interface ChildWatch { readonly threadId: string; readonly row: AgentActivity; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading }
+interface ChildWatch { readonly threadId: string; readonly row: AgentActivity; readonly toolCallId: string; readonly parent: string; readonly until: number; readonly reading: AntigravityChildReading
+  /** When the newest answer read so far was sent: a child that has answered is waiting, no longer at work. */
+  answeredAt?: string }
 const COMPACTING = 'Antigravity is compacting this thread. Wait for it to finish, then send.'
 const COMPACTION_LOST = 'Antigravity stopped before it confirmed whether it compacted this thread. Nothing was lost. Its next reply shows how full the context is; compact again then if it still needs it.'
 const COMPACTION_ANSWERED = 'Antigravity answered /compact in words rather than compacting this thread. Nothing was lost. Update Antigravity, then compact again.'
@@ -223,6 +225,8 @@ export interface AntigravityAcpOptions {
   captureMedia?: MediaCapture
   /** Usage on: `agy`'s token counts from its conversation files (`antigravityUsage.ts`). Never the account's limits (ADR-0212). */
   usageEnabled?: boolean
+  /** How long a child agent is read before Sotto stops (`antigravityChildren.ts`); four hours unless a test says otherwise. */
+  childWatchMs?: number
   /** The user's own `agy` MCP file (`antigravityUserServers.ts`), whose servers a thread gets beside Sotto's. None when unset. */
   userMcpConfig?: string
 }
@@ -723,7 +727,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private working(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || this.compactions.has(id) || (turn !== undefined && !turn.ended)
-      || [...this.children.values()].some(watch => watch.threadId === id)
+      || [...this.children.values()].some(watch => watch.threadId === id && watch.answeredAt === undefined)
   }
   private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
   private open(id: string): Promise<Connection> {
@@ -945,7 +949,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
     // A launch that finished with its child still at work: watched until `agy`'s records say the child is done.
     if (row?.kind === 'subagent' && row.agents?.[0]?.status === 'running' && update.status === 'completed' && typeof update.toolCallId === 'string' && alias.antigravitySessionId) {
-      this.watchChild({ threadId: id, row, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + CHILD_WATCH_MS, reading: antigravityChildReading() })
+      this.watchChild({ threadId: id, row, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + (this.options.childWatchMs ?? CHILD_WATCH_MS), reading: antigravityChildReading() })
     }
   }
   private watchChild(watch: ChildWatch): void {
@@ -965,8 +969,16 @@ export class AntigravityAcpHost implements ProviderHost {
         if (this.children.get(rowId) !== watch) continue
         const child = await readAntigravityChild(this.folders.appData, watch.parent, watch.toolCallId, watch.reading, budget)
         if (generation !== this.generation || this.children.get(rowId) !== watch) continue
-        if (child && child.status !== 'running') { this.children.delete(rowId); this.settleChild(watch, child) }
-        else if (Date.now() > watch.until) this.children.delete(rowId)
+        // agy 1.5.14 marks no final answer: its record stays alive after the child answers, and an interim message ends
+        // its transcript as a last one does. So, as T3 reads it, an answer shows the child done or waiting for guidance,
+        // and the watch goes on to the end of its time, each newer answer taking the place of the one before.
+        if (child?.status === 'interrupted') { this.children.delete(rowId); this.settleChild(watch, child) }
+        else if (child?.status === 'completed') { watch.answeredAt = child.completedAt ?? new Date().toISOString(); this.settleChild(watch, child) }
+        if (this.children.get(rowId) === watch && Date.now() > watch.until) {
+          this.children.delete(rowId)
+          // One never heard from in all that time is last seen working, never left looking live.
+          if (watch.answeredAt === undefined) this.settleChild(watch, { conversationId: watch.reading.childConversation ?? '', status: 'unknown' })
+        }
       }
     } finally {
       this.readingChildren = false
@@ -976,7 +988,9 @@ export class AntigravityAcpHost implements ProviderHost {
   private settleChild(watch: ChildWatch, child: AntigravityChild): void {
     // A row no longer among the thread's newest records is put back from the watch, so its answer is never lost.
     const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.row.id) ?? watch.row, agent = row.agents?.[0]
-    if (!thread || !agent || agent.status !== 'running') return
+    // A running child takes what was read; one that answered takes only a newer answer, which replaces its own.
+    const newer = agent?.status === 'completed' && child.status === 'completed' && child.message !== undefined && child.message !== agent?.message
+    if (!thread || !agent || (agent.status !== 'running' && !newer)) return
     thread.activities = mergeAgentActivities(thread.activities, [{ ...row, agents: [{ ...agent, status: child.status,
       ...(child.message !== undefined ? { message: child.message } : {}), ...(child.completedAt ? { completedAt: child.completedAt } : {}) }] }])
     this.changed(watch.threadId); this.emit()

@@ -36,7 +36,7 @@ type Message = z.infer<typeof messageSchema>
 /** What Sotto knows of a child: the conversation it runs in, whether it is done, and its answer when it has one. */
 export interface AntigravityChild {
   readonly conversationId: string
-  readonly status: 'running' | 'completed' | 'interrupted'
+  readonly status: 'running' | 'completed' | 'interrupted' | 'unknown'
   readonly message?: string
   readonly completedAt?: string
 }
