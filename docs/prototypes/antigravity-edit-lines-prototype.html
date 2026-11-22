@@ -1,0 +1,90 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway: how an Antigravity thread's edit row could show where the edit sits (parity slice 5). Not production code. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype: Antigravity edits on their lines</title>
+<style>
+  :root { color-scheme: dark; --bg: #16171b; --pane: #1c1d22; --line: #2a2c33; --ink: #e7e7ea; --muted: #9a9ca6; --faint: #6f717b;
+    --add: rgba(63, 185, 120, .16); --add-ink: #7ad7a4; --remove: rgba(229, 83, 75, .16); --remove-ink: #f0928b; --accent: #8fa8ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 Figtree, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 24px 140px; }
+  .note { color: var(--muted); font-size: 13px; margin: 0 0 28px; }
+  .msg { margin: 0 0 18px; }
+  .row { border: 1px solid var(--line); border-radius: 10px; background: var(--pane); margin: 0 0 18px; overflow: hidden; }
+  .row-head { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .row-head .verb { color: var(--muted); }
+  .row-head .path { font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  .row-head .count { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .count .plus { color: var(--add-ink); } .count .minus { color: var(--remove-ink); }
+  .diff { font: 12.5px/1.6 "Cascadia Code", Consolas, monospace; padding: 6px 0; }
+  .line { display: grid; grid-template-columns: var(--gutter, 0) 18px 1fr; padding-right: 14px; white-space: pre; }
+  .line .n { color: var(--faint); text-align: right; padding-right: 10px; }
+  .line .s { color: var(--faint); text-align: center; }
+  .line.add { background: var(--add); } .line.add .s { color: var(--add-ink); }
+  .line.remove { background: var(--remove); } .line.remove .s { color: var(--remove-ink); }
+  .line.context { color: var(--muted); }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--faint); font: 12px Figtree, "Segoe UI", sans-serif; padding: 4px 14px; }
+  .divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+  .fallback { color: var(--muted); font-size: 12px; padding: 6px 14px 10px; }
+  .bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; border-radius: 12px;
+    background: #23252c; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .bar button { font: 13px Figtree, "Segoe UI", sans-serif; color: var(--ink); background: transparent; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  .bar button[aria-pressed="true"] { background: #33364a; color: #fff; }
+  .bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+</style>
+</head>
+<body>
+<main>
+  <p class="note">Prototype, throwaway. An Antigravity thread edited <code>src/greeting.ts</code>: it changed one line and added one. <code>agy</code> sends only the old and new snippets; variants B and C place them by finding them in the file after the edit.</p>
+  <p class="desc" id="desc"></p>
+  <p class="msg">I’ll make the greeting use the person’s name.</p>
+  <div class="row">
+    <div class="row-head"><span class="verb">Edited</span><span class="path">src/greeting.ts</span><span class="count"><span class="plus">+2</span> <span class="minus">−1</span></span></div>
+    <div class="diff" id="diff"></div>
+  </div>
+  <div class="row" id="fallback-row">
+    <div class="row-head"><span class="verb">Edited</span><span class="path">README.md</span><span class="count"><span class="plus">+1</span> <span class="minus">−1</span></span></div>
+    <div class="diff" id="diff2"></div>
+  </div>
+</main>
+<nav class="bar" aria-label="Variant">
+  <button data-v="A">A · As today</button>
+  <button data-v="B">B · On its lines</button>
+  <button data-v="C">C · With the lines around it</button>
+</nav>
+<script>
+  // PROTOTYPE state: the variant comes from ?variant= and the bottom bar.
+  const before = [[41, 'export function greeting(name: string): string {'], [42, '  const time = partOfDay(new Date())'], [43, "  return `Good ${time}!`"], [44, '}']]
+  const removed = ["  return `Good ${time}!`"]
+  const added = [[43, "  const who = name.trim() || 'there'"], [44, "  return `Good ${time}, ${who}!`"]]
+  const after = [[45, '}'], [46, ''], [47, 'export function partOfDay(at: Date): string {']]
+  const descs = {
+    A: 'A · As today, and as Claude Code’s edit rows look: what was replaced, then what replaced it, with no line numbers. Slice 5 would be closed as already matching Claude.',
+    B: 'B · The edit placed on its lines: the file’s line numbers as it is now, as a Codex edit row shows them. When the snippet cannot be found once in the file (second row), the row stays as A.',
+    C: 'C · As B, with three lines of the file around the edit, as a Git hunk shows them. Sotto reads them from the file after the edit. Falls back to A the same way.',
+  }
+  const line = (kind, n, text) => `<div class="line ${kind}"><span class="n">${n ?? ''}</span><span class="s">${kind === 'add' ? '+' : kind === 'remove' ? '−' : ''}</span><span>${text.replace(/</g, '&lt;')}</span></div>`
+  function draw(v) {
+    const numbered = v !== 'A'
+    document.documentElement.style.setProperty('--gutter', numbered ? '4ch' : '0')
+    let html = ''
+    if (numbered) html += `<div class="divider">Line 43${v === 'C' ? ' · greeting' : ''}</div>`
+    if (v === 'C') html += before.slice(0, 2).map(([n, t]) => line('context', n, t)).join('')
+    html += removed.map(t => line('remove', null, t)).join('')
+    html += added.map(([n, t]) => line('add', numbered ? n : null, t)).join('')
+    if (v === 'C') html += after.map(([n, t]) => line('context', n, t)).join('')
+    document.getElementById('diff').innerHTML = html
+    document.getElementById('diff2').innerHTML = line('remove', null, 'Run `npm start`.') + line('add', null, 'Run `npm run dev`.') +
+      (numbered ? '<div class="fallback">This snippet appears twice in README.md, so Sotto cannot say which line: shown as today.</div>' : '')
+    document.getElementById('desc').textContent = descs[v]
+    for (const b of document.querySelectorAll('.bar button')) b.setAttribute('aria-pressed', String(b.dataset.v === v))
+    const url = new URL(location.href); url.searchParams.set('variant', v); history.replaceState(null, '', url)
+  }
+  for (const b of document.querySelectorAll('.bar button')) b.addEventListener('click', () => draw(b.dataset.v))
+  draw(['A', 'B', 'C'].includes(new URLSearchParams(location.search).get('variant')) ? new URLSearchParams(location.search).get('variant') : 'B')
+</script>
+</body>
+</html>
