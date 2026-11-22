@@ -4184,19 +4184,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * The threads whose messages hold `query`, for Search threads: the user's messages and the agents' replies, wake-ups
    * left out, each found thread with a quote of its newest match. Only threads this host lists are named; a thread the
-   * store still holds words of after it was deleted is not. Read on the store worker, as `threadPrompts` is, and on main
-   * only with no worker. Null when the store cannot answer, and while a worker's writes are held. Read only when a search asks, and never published.
+   * store still holds words of after it was deleted is not. What a publish was still holding is posted first, so the
+   * read finds the messages it just added. A file read (`useThreadWordsAccelerator`) may answer once that has committed,
+   * including the appends a write window was holding, and only while the store can be read. Otherwise the read is on
+   * the store worker, as `threadPrompts` is, and on main only with no worker. Null when the store cannot answer, and
+   * while a worker's writes are held. With Keep local history off the file is not the record, and it is not asked.
+   * Read only when a search asks, and never published.
    */
   async threadWords(query: string): Promise<AgentThreadWords | null> {
     if (this.storeUnavailable || this.writes.writesHeld) return null
     // What waits to be written is posted first, so the read, behind it, finds the messages a publish just added.
-    // When an external accelerator reads threads.sqlite directly (ADR-0215), also flush coalesced writeSoon appends
-    // so newly published messages are committed on disk before the read runs.
-    await this.settled(undefined, this.threadWordsAccelerator !== undefined)
+    // A file read also takes the appends the write window was holding, which are not in the file until then.
+    // Keep local history off, the file is not the record: the messages are in memory, and a file read would miss them.
+    const search = this.historyEnabled() && !this.threadStore.ephemeral ? this.threadWordsAccelerator : undefined
+    await this.settled(undefined, search !== undefined)
     if (this.storeUnavailable || this.writes.writesHeld) return null
     let read: AgentThreadWords | null = null
-    if (this.threadWordsAccelerator) {
-      const accelerated = await this.threadWordsAccelerator(query).catch(() => undefined)
+    if (search) {
+      const accelerated = await search(query).catch(() => undefined)
       if (accelerated !== undefined) read = accelerated
     }
     if (read === null) {

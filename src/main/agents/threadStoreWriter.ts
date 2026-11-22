@@ -299,6 +299,7 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
     return new Promise(resolve => { worker.readPrompts(threadId, beforeMessageId, wakeUps, resolve) })
   }
 
+  /** Writes held unsent are not in the file yet, so a search that read it would miss them. */
   get writesHeld(): boolean {
     return this.store.writer !== undefined && (this.held > 0 || this.switching || this.recovering)
   }
@@ -309,7 +310,7 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
     if (!worker) return undefined
     // While writes are held behind a switch or a recovery, a read of every message would run on main and hold the window;
     // the search finds what the rows say this once instead.
-    if (this.held > 0 || this.switching || this.recovering) return Promise.resolve({ unreadable: true })
+    if (this.writesHeld) return Promise.resolve({ unreadable: true })
     return new Promise(resolve => { worker.readWords(query, resolve) })
   }
 
