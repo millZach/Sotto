@@ -35,7 +35,10 @@ const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(50);
 const REMOTE_ANSWER_GRANT_NOTE: &str =
     "The user allowed this paired device to answer permission requests on the host.";
 
-pub const DEFAULT_SOTTO_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const DEFAULT_SOTTO_VERSION: &str = match option_env!("SOTTO_HOST_VERSION") {
+    Some(v) if !v.is_empty() => v,
+    _ => env!("CARGO_PKG_VERSION"),
+};
 
 /// Protocol v1 features advertised by this host build.
 pub fn advertised_features() -> Vec<String> {

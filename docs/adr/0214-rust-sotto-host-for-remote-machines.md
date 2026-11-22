@@ -27,7 +27,7 @@ Developers and worktrees should point `CARGO_TARGET_DIR` at one shared folder ou
 
 **4. The TypeScript host stays the referee.** `sotto-host` ships opt-in per remote host behind `rust-remote-host` on Owl. No feature freeze is imposed: TypeScript host changes keep landing normally, and `sotto-host` is held to `npm run test:referee` and `socketHostContract` before replacing the Node host on any machine.
 
-**5. Cross-platform Rust CI.** `.github/workflows/ci.yml` runs `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, and the cross-language parity test (`SOTTO_TEST_RUST_HOST=1 npx vitest run tests/integration/rustHostFoundation.test.ts`) on Windows, macOS, and Linux whenever `crates/**`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, `tests/integration/rustHostFoundation.test.ts`, or `.github/workflows/ci.yml` change (plus `cargo-deny check licenses bans sources` on Linux).
+**5. Cross-platform Rust CI and opt-in release packaging.** `.github/workflows/ci.yml` runs `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, and the cross-language parity suites (`rustHostFoundation.test.ts`, `rustHostProviders.test.ts`, `rustHostAllProviders.test.ts`, `rustHostLaunchScript.test.ts`) on Windows, macOS, and Linux whenever Rust host files change (plus `cargo-deny check licenses bans sources` on Linux). `.github/workflows/rust-host-release.yml` and `scripts/build-rust-host.mjs` package stripped release binaries with SHA-256 checksums, and `src/main/hosts/launchScript.ts` launches `host/sotto-host` only when explicitly opted in via `useRustHost: true` (leaving the Node host unchanged by default).
 
 ## Consequences
 

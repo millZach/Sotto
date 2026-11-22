@@ -1,0 +1,99 @@
+name: Rust host release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version tag (e.g. 0.1.44-owl.20261122.1)
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  license-and-test:
+    name: Rust host gate (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Check crate licenses and sources
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources
+      - name: Clippy and tests
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
+
+  package:
+    name: Build Rust host (${{ matrix.label }})
+    needs: [license-and-test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-latest
+            ext: ''
+            target: x86_64-unknown-linux-musl
+          - label: darwin-arm64
+            os: macos-15
+            ext: ''
+            target: ''
+          - label: win32-x64
+            os: windows-latest
+            ext: '.exe'
+            target: ''
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Set up static Linux musl toolchain
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: 'npm'
+      - name: Build release sotto-host
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          TARGET_LABEL: ${{ matrix.label }}
+          TARGET_EXT: ${{ matrix.ext }}
+          SOTTO_RUST_TARGET: ${{ matrix.target }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9A-Za-z._-]+$ ]]; then
+            echo "Invalid release version format." >&2
+            exit 1
+          fi
+          SOTTO_HOST_VERSION="$RELEASE_VERSION" node scripts/build-rust-host.mjs
+          mkdir -p dist/rust-host/host
+          cp "out/rust-host/sotto-host${TARGET_EXT}" "dist/rust-host/host/sotto-host${TARGET_EXT}"
+          if [[ -z "$TARGET_EXT" ]]; then
+            chmod +x "dist/rust-host/host/sotto-host"
+          fi
+          ARCHIVE="Sotto-rust-host-${RELEASE_VERSION}-${TARGET_LABEL}.tar.gz"
+          tar -czf "dist/$ARCHIVE" -C dist/rust-host host
+          node -e "const fs=require('fs'),c=require('crypto');const h=c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex');fs.writeFileSync(process.argv[1]+'.sha256', h+'  '+process.argv[2]+'\n')" "dist/$ARCHIVE" "$ARCHIVE"
+      - name: Upload Rust host archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-rust-host-${{ matrix.label }}
+          path: |
+            dist/Sotto-rust-host-*.tar.gz
+            dist/Sotto-rust-host-*.tar.gz.sha256
+          if-no-files-found: error
