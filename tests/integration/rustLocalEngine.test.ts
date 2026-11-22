@@ -163,7 +163,10 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       const code = await exited
       expect(code).toBe(0)
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGTERM')
+        await exited.catch(() => undefined)
+      }
       await server.close()
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -190,7 +193,10 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       const code = await exited
       expect(code).toBe(0)
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGTERM')
+        await exited.catch(() => undefined)
+      }
       await server.close()
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }

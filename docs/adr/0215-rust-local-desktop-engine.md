@@ -14,7 +14,7 @@ Because `EngineTransport` is already language-neutral and `crates/sotto-core` al
 
 1. **Add `crates/sotto-engine` to the Cargo workspace.** `sotto-engine` is a standalone Rust binary (`publish = false`) built from `crates/sotto-core` with zero additional crate dependencies.
 2. **Speak `EngineTransport` directly.** `crates/sotto-engine` connects to the shell's per-launch OS IPC endpoint (`--endpoint` / `SOTTO_ENGINE_ENDPOINT`, Windows named pipe or Unix domain socket), authenticates with `SOTTO_ENGINE_TOKEN` in its first 4-byte big-endian length-prefixed JSON `hello` frame (never logged), serves RPC requests (`req` → `res` / `res-chunk`), and pushes coalesced `shell` and `detail` broadcasts (`push`).
-3. **Gate strictly behind `rust-local-engine` (`sentToStable: false`).** Stable and default Owl sessions continue running the TypeScript engine until `rust-local-engine` is proven across all desktop journeys and explicitly promoted by Zach.
+3. **Stage delivery behind `rust-local-engine` (`sentToStable: false`).** This first Phase 4 slice ships the standalone `crates/sotto-engine` binary speaking length-prefixed `EngineTransport` frames (`engine.*`, `agent.*`, and `ops.*` RPCs plus `shell`/`detail` pushes), holding a per-folder `engine.lock` lease, and verified by live `EngineTransport` integration tests, without wiring Electron main's `remoteEngine.ts` (`engine:init` / `engine:invokeIpc` / `engine:close` and `shell:*`) spawn path yet. Desktop shell adapter wiring and `owlFeatures['rust-local-engine']` opt-in launch follow in the next slice; stable and default Owl sessions continue running the TypeScript engine until promoted by Zach.
 
 ## Consequences
 

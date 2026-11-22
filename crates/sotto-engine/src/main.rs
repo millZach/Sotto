@@ -9,8 +9,9 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc};
 
 use sotto_core::{
-    load_host_identity, AcpAdapter, AcpAdapterConfig, AcpFlavor, ClaudeAdapter, ClaudeAdapterConfig,
-    ClientContext, CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast, CoordinatorHandle,
+    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, AcpAdapter,
+    AcpAdapterConfig, AcpFlavor, ClaudeAdapter, ClaudeAdapterConfig, ClientContext, CodexAdapter,
+    CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, HostLease,
     MockProviderAdapter, MuseAdapter, MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig,
     ProviderAdapter,
 };
@@ -226,39 +227,36 @@ fn build_providers(args: &EngineCliArgs) -> Result<BTreeMap<String, Arc<dyn Prov
     Ok(providers)
 }
 
+fn coord_err(err: CoordinatorError) -> SerializedEngineError {
+    SerializedEngineError {
+        name: "Error".into(),
+        message: err.message,
+        code: Some(err.code.as_str().into()),
+    }
+}
+
 async fn handle_rpc(
     coordinator: &CoordinatorHandle,
     data_directory: &Path,
     method: &str,
     args: &[Value],
-) -> Result<(Value, bool), SerializedEngineError> {
+) -> Result<Value, SerializedEngineError> {
     let err_invalid = |msg: &str| SerializedEngineError {
         name: "Error".into(),
         message: msg.into(),
-        code: Some("INVALID_ARGS".into()),
+        code: Some("invalid_request".into()),
     };
 
     match method {
-        "engine.ping" => Ok((
-            json!({
-                "ok": true,
-                "runtime": "rust",
-                "version": ENGINE_VERSION,
-                "pid": std::process::id(),
-            }),
-            false,
-        )),
-        "engine.shutdown" => Ok((json!({ "ok": true }), true)),
+        "engine.ping" => Ok(json!({
+            "ok": true,
+            "runtime": "rust",
+            "version": ENGINE_VERSION,
+            "pid": std::process::id(),
+        })),
         "agent.snapshot" | "agent.shell" => {
-            let shell = coordinator
-                .shell(true)
-                .await
-                .map_err(|e| SerializedEngineError {
-                    name: "Error".into(),
-                    message: e.message,
-                    code: Some("UNAVAILABLE".into()),
-                })?;
-            Ok((shell, false))
+            let shell = coordinator.shell(true).await.map_err(coord_err)?;
+            Ok(shell)
         }
         "agent.detail" => {
             let tid = args
@@ -268,16 +266,12 @@ async fn handle_rpc(
             let detail = coordinator
                 .detail(tid.to_string())
                 .await
-                .map_err(|e| SerializedEngineError {
-                    name: "Error".into(),
-                    message: e.message,
-                    code: Some("UNAVAILABLE".into()),
-                })?;
+                .map_err(coord_err)?;
             let val = match detail {
                 Some(d) => serde_json::to_value(d).unwrap_or(Value::Null),
                 None => Value::Null,
             };
-            Ok((val, false))
+            Ok(val)
         }
         "agent.observe" => {
             let ids: Vec<String> = args
@@ -289,14 +283,7 @@ async fn handle_rpc(
                         .collect()
                 })
                 .unwrap_or_default();
-            let observed = coordinator
-                .observe(ids)
-                .await
-                .map_err(|e| SerializedEngineError {
-                    name: "Error".into(),
-                    message: e.message,
-                    code: Some("UNAVAILABLE".into()),
-                })?;
+            let observed = coordinator.observe(ids).await.map_err(coord_err)?;
             let out: Vec<Value> = observed
                 .into_iter()
                 .map(|(tid, d)| {
@@ -306,27 +293,7 @@ async fn handle_rpc(
                     })
                 })
                 .collect();
-            Ok((json!({ "details": out }), false))
-        }
-        "agent.command" => {
-            let cmd = args
-                .first()
-                .and_then(Value::as_object)
-                .ok_or_else(|| err_invalid("Command object is required."))?;
-            let local_client = ClientContext {
-                client_id: "local-desktop".into(),
-                user: "Local Desktop".into(),
-                may_answer: true,
-            };
-            let shell = coordinator
-                .run_command(local_client, cmd.clone())
-                .await
-                .map_err(|e| SerializedEngineError {
-                    name: "Error".into(),
-                    message: e.message,
-                    code: Some("COMMAND_FAILED".into()),
-                })?;
-            Ok((shell, false))
+            Ok(json!({ "details": out }))
         }
         "agent.events" => {
             let tid = args.first().and_then(Value::as_str).map(ToString::to_string);
@@ -339,26 +306,19 @@ async fn handle_rpc(
             let (events, has_more, latest_seq) = coordinator
                 .events(tid, after_seq, limit)
                 .await
-                .map_err(|e| SerializedEngineError {
-                    name: "Error".into(),
-                    message: e.message,
-                    code: Some("UNAVAILABLE".into()),
-                })?;
-            Ok((
-                json!({
-                    "events": events,
-                    "hasMore": has_more,
-                    "latestSeq": latest_seq,
-                }),
-                false,
-            ))
+                .map_err(coord_err)?;
+            Ok(json!({
+                "events": events,
+                "hasMore": has_more,
+                "latestSeq": latest_seq,
+            }))
         }
         "ops.hostFacts" => {
             let running = coordinator.running_threads_count().await.unwrap_or(0);
             let val = tokio::task::spawn_blocking(move || sotto_core::ops::host_facts(running))
                 .await
                 .unwrap_or_else(|_| json!({}));
-            Ok((val, false))
+            Ok(val)
         }
         "ops.threadFiles" => {
             let tid = args
@@ -367,32 +327,35 @@ async fn handle_rpc(
                 .ok_or_else(|| err_invalid("threadId is required."))?;
             let rel = args.get(1).and_then(Value::as_str).unwrap_or("").to_string();
             let req_ws_id = args.get(2).and_then(Value::as_str);
+            if !rel.is_empty() && req_ws_id.is_none() {
+                return Ok(sotto_core::ops::tools_err(
+                    "workspace-changed",
+                    "Refresh the workspace first.",
+                ));
+            }
             let Some(ws) = coordinator
                 .thread_workspace(tid.to_string())
                 .await
                 .ok()
                 .flatten()
             else {
-                return Ok((
-                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
-                    false,
+                return Ok(sotto_core::ops::tools_err(
+                    "thread-unavailable",
+                    "This thread is unavailable.",
                 ));
             };
             if let Some(expected_ws) = req_ws_id {
                 if expected_ws != ws.workspace_id {
-                    return Ok((
-                        sotto_core::ops::tools_err(
-                            "workspace-changed",
-                            "This thread's working folder changed. Refresh and try again.",
-                        ),
-                        false,
+                    return Ok(sotto_core::ops::tools_err(
+                        "workspace-changed",
+                        "This thread's working folder changed. Refresh and try again.",
                     ));
                 }
             }
             let val = tokio::task::spawn_blocking(move || sotto_core::ops::thread_files(&ws, &rel))
                 .await
                 .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read files."));
-            Ok((val, false))
+            Ok(val)
         }
         "ops.threadFilePreview" => {
             let tid = args
@@ -414,18 +377,15 @@ async fn handle_rpc(
                 .ok()
                 .flatten()
             else {
-                return Ok((
-                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
-                    false,
+                return Ok(sotto_core::ops::tools_err(
+                    "thread-unavailable",
+                    "This thread is unavailable.",
                 ));
             };
             if expected_ws != ws.workspace_id {
-                return Ok((
-                    sotto_core::ops::tools_err(
-                        "workspace-changed",
-                        "This thread's working folder changed. Refresh and try again.",
-                    ),
-                    false,
+                return Ok(sotto_core::ops::tools_err(
+                    "workspace-changed",
+                    "This thread's working folder changed. Refresh and try again.",
                 ));
             }
             let val = tokio::task::spawn_blocking(move || {
@@ -433,7 +393,7 @@ async fn handle_rpc(
             })
             .await
             .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not preview file."));
-            Ok((val, false))
+            Ok(val)
         }
         "ops.gitRefs" => {
             let tid = args
@@ -449,7 +409,7 @@ async fn handle_rpc(
                 return Err(SerializedEngineError {
                     name: "Error".into(),
                     message: "This thread is unavailable.".into(),
-                    code: Some("UNAVAILABLE".into()),
+                    code: Some("unavailable".into()),
                 });
             };
             let opts = args.get(1).and_then(Value::as_object);
@@ -457,19 +417,21 @@ async fn handle_rpc(
                 .and_then(|o| o.get("query"))
                 .and_then(Value::as_str)
                 .map(ToString::to_string);
-            let cursor = opts
-                .and_then(|o| o.get("cursor"))
-                .and_then(|v| {
-                    v.as_u64()
-                        .map(|n| n as usize)
-                        .or_else(|| v.as_str().and_then(|s| s.parse::<usize>().ok()))
-                });
+            let cursor = opts.and_then(|o| o.get("cursor")).and_then(|v| {
+                v.as_u64()
+                    .map(|n| n as usize)
+                    .or_else(|| v.as_str().and_then(|s| s.parse::<usize>().ok()))
+            });
             let limit = opts
                 .and_then(|o| o.get("limit"))
                 .and_then(Value::as_u64)
                 .map(|n| n as usize);
             let include_matching_remote = opts
-                .and_then(|o| o.get("includeMatchingRemote").or_else(|| o.get("includeRemote")))
+                .and_then(|o| {
+                    o.get("includeMatchingRemoteRefs")
+                        .or_else(|| o.get("includeMatchingRemote"))
+                        .or_else(|| o.get("includeRemote"))
+                })
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             let folder = ws.working_directory;
@@ -487,9 +449,9 @@ async fn handle_rpc(
             .map_err(|e| SerializedEngineError {
                 name: "Error".into(),
                 message: e,
-                code: Some("UNAVAILABLE".into()),
+                code: Some("unavailable".into()),
             })?;
-            Ok((val, false))
+            Ok(val)
         }
         "ops.threadWords" => {
             let query = args
@@ -503,7 +465,7 @@ async fn handle_rpc(
             })
             .await
             .unwrap_or_else(|_| json!({ "found": [] }));
-            Ok((val, false))
+            Ok(val)
         }
         other => Err(SerializedEngineError {
             name: "Error".into(),
@@ -551,16 +513,28 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(
+        if let Err(err) = std::fs::set_permissions(
             &parsed.data_directory,
             std::fs::Permissions::from_mode(0o700),
-        );
+        ) {
+            eprintln!("Could not secure engine data folder permissions: {err}");
+            return ExitCode::from(1);
+        }
+    }
+
+    let boot = read_boot_id();
+    let lease = HostLease::current(boot.clone());
+    let lock_path = parsed.data_directory.join("engine.lock");
+    if let Err(err) = acquire_host_lock(&lock_path, &lease, boot.as_deref()) {
+        eprintln!("{err}");
+        return ExitCode::from(err.exit_code() as u8);
     }
 
     let host_id = match load_host_identity(&parsed.data_directory) {
         Ok(id) => id,
         Err(err) => {
             eprintln!("{err}");
+            let _ = release_host_lock(&lock_path, &lease);
             return ExitCode::from(1);
         }
     };
@@ -569,6 +543,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         Ok(p) => p,
         Err(err) => {
             eprintln!("{err}");
+            let _ = release_host_lock(&lock_path, &lease);
             return ExitCode::from(1);
         }
     };
@@ -582,6 +557,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         Ok(c) => c,
         Err(err) => {
             eprintln!("Could not start engine coordinator: {err}");
+            let _ = release_host_lock(&lock_path, &lease);
             return ExitCode::from(1);
         }
     };
@@ -591,6 +567,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         Err(err) => {
             eprintln!("Could not connect to EngineTransport endpoint: {err}");
             coordinator.shutdown().await;
+            let _ = release_host_lock(&lock_path, &lease);
             return ExitCode::from(1);
         }
     };
@@ -599,6 +576,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     if let Err(err) = write_engine_frame(&mut write_half, &hello_frame(&parsed.token)).await {
         eprintln!("Could not send engine hello frame: {err}");
         coordinator.shutdown().await;
+        let _ = release_host_lock(&lock_path, &lease);
         return ExitCode::from(1);
     }
 
@@ -623,6 +601,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
 
     let mut bcast_rx = coordinator.subscribe();
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+    let mut shutdown_req_id: Option<u64> = None;
     let shutdown_signal = shutdown_future();
     tokio::pin!(shutdown_signal);
 
@@ -660,15 +639,59 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                 while rpc_tasks.try_join_next().is_some() {}
                 if let IncomingEngineMessage::Req { id, method, args } = msg {
                     if method == "engine.shutdown" {
-                        let _ = out_tx.send(ok_response_frame(id, json!({ "ok": true })));
+                        shutdown_req_id = Some(id);
                         break;
+                    }
+                    if method == "agent.command" {
+                        // Enqueue coordinator commands synchronously in strict arrival order before
+                        // awaiting completion asynchronously, preventing multi-thread reordering.
+                        let Some(cmd) = args.first().and_then(Value::as_object) else {
+                            let _ = out_tx.send(err_response_frame(
+                                id,
+                                SerializedEngineError {
+                                    name: "Error".into(),
+                                    message: "Command object is required.".into(),
+                                    code: Some("invalid_request".into()),
+                                },
+                            ));
+                            continue;
+                        };
+                        let local_client = ClientContext {
+                            client_id: "local-desktop".into(),
+                            user: "Local Desktop".into(),
+                            may_answer: true,
+                        };
+                        match coordinator.enqueue_command(local_client, cmd.clone()) {
+                            Ok(reply_rx) => {
+                                let out = out_tx.clone();
+                                rpc_tasks.spawn(async move {
+                                    let frame = match reply_rx.await {
+                                        Ok(Ok(shell)) => ok_response_frame(id, shell),
+                                        Ok(Err(err)) => err_response_frame(id, coord_err(err)),
+                                        Err(_) => err_response_frame(
+                                            id,
+                                            SerializedEngineError {
+                                                name: "Error".into(),
+                                                message: "Host coordinator stopped.".into(),
+                                                code: Some("unavailable".into()),
+                                            },
+                                        ),
+                                    };
+                                    let _ = out.send(frame);
+                                });
+                            }
+                            Err(err) => {
+                                let _ = out_tx.send(err_response_frame(id, coord_err(err)));
+                            }
+                        }
+                        continue;
                     }
                     let coord = coordinator.clone();
                     let data_dir = parsed.data_directory.clone();
                     let out = out_tx.clone();
                     rpc_tasks.spawn(async move {
                         let frame = match handle_rpc(&coord, &data_dir, &method, &args).await {
-                            Ok((val, _)) => ok_response_frame(id, val),
+                            Ok(val) => ok_response_frame(id, val),
                             Err(err) => err_response_frame(id, err),
                         };
                         let _ = out.send(frame);
@@ -679,8 +702,18 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     }
 
     reader_task.abort();
+    // Drain in-flight RPCs up to a bounded deadline before aborting stragglers, then flush
+    // coordinator state before sending the `engine.shutdown` acknowledgement.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while rpc_tasks.join_next().await.is_some() {}
+    })
+    .await;
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), coordinator.shutdown()).await;
+    if let Some(id) = shutdown_req_id {
+        let _ = out_tx.send(ok_response_frame(id, json!({ "ok": true })));
+    }
     drop(out_tx);
     let mut writer_task = writer_task;
     if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer_task)
@@ -689,7 +722,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     {
         writer_task.abort();
     }
-    coordinator.shutdown().await;
+    let _ = release_host_lock(&lock_path, &lease);
     ExitCode::SUCCESS
 }
 

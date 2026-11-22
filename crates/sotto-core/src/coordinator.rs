@@ -420,11 +420,13 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
     }
 
-    pub async fn run_command(
+    /// Enqueues a command synchronously on the coordinator actor in arrival order and returns the
+    /// reply channel so callers can preserve strict submission order without blocking their loop.
+    pub fn enqueue_command(
         &self,
         client: ClientContext,
         command: Map<String, Value>,
-    ) -> Result<Value, CoordinatorError> {
+    ) -> Result<oneshot::Receiver<Result<Value, CoordinatorError>>, CoordinatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(ActorMessage::RunCommand {
@@ -433,6 +435,15 @@ impl CoordinatorHandle {
                 reply: reply_tx,
             })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        Ok(reply_rx)
+    }
+
+    pub async fn run_command(
+        &self,
+        client: ClientContext,
+        command: Map<String, Value>,
+    ) -> Result<Value, CoordinatorError> {
+        let reply_rx = self.enqueue_command(client, command)?;
         reply_rx
             .await
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
