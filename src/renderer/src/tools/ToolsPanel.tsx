@@ -277,13 +277,14 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // that leave out what needs the thread on this computer: reveal, the turn checkpoints and the watch.
   const hostFiles = useMemo(() => bridge && hostThreadFiles(bridge), [bridge])
   const hostChanges = useMemo(() => changesBridge && hostThreadChanges(changesBridge), [changesBridge])
-  // Continue as a thread on a finished agent (#1028; Owl only): the agents Codex and Claude Code threads report.
+  // Continue as a thread on a finished agent (#1028; Owl only): the agents Codex, Claude Code and Antigravity threads
+  // report. Antigravity's child starts from a handover of its task and answer, as Claude Code's does (parity slice 7).
   const startsOn = useThreadStarts()
   const continueModels = thread ? hostForThread(state.host, thread).models : undefined
   const linkedFile = useSyncExternalStore(store.subscribe, () => thread ? store.linkedFile(thread.id) : null)
   const sourceRepository = thread?.worktree?.git?.isRepository === true, sourceBranch = thread?.worktree?.git?.branch ?? null
   const continuation = useMemo<AgentContinueOptions | undefined>(() => {
-    if (!startsOn || !thread || !continueModels || !command || (thread.providerId !== 'codex' && thread.providerId !== 'claude') || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
+    if (!startsOn || !thread || !continueModels || !command || (thread.providerId !== 'codex' && thread.providerId !== 'claude' && thread.providerId !== 'antigravity') || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
     return { threadId: thread.id, threadTitle: thread.title, provider: thread.providerId, projectId: thread.projectId, remote: thread.remoteHost === true,
       where: thread.remoteHost ? thread.hostLabel ?? t({ message: 'The host', comment: 'Where a new thread runs, when the paired host has no name.' }) : t`This computer`, models: continueModels, sourceModelId: thread.modelId, command,
       ...(sourceRepository ? { sourceBranch: { currentBranch: sourceBranch } } : {}),
