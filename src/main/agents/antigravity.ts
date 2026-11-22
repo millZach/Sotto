@@ -866,10 +866,10 @@ export class AntigravityAcpHost implements ProviderHost {
     }
     const index = this.indexOf(id, alias)
     if (index.wasAnswered(requestId) || this.pending.size >= 128) { void connection.rpc.reply(frame.id, antigravityDecline(pending)).catch(() => undefined); return }
-    // Admission to Watcher's scoped server is separate from the authority it checks when the tool runs (ADR-0073).
-    const automatic = connection.watcher
-      ? antigravityWatcherAdmission(connection.watcherToolTitles, pending)
-      : antigravityAutoAnswer(alias.runtimeMode, pending)
+    // Watcher's scoped Sotto tools are admitted once on every mode (ADR-0073); its own permission mode answers
+    // native permissions the same way an ordinary thread's mode does (ADR-0212, November 21, 2026 amendment).
+    const automatic = (connection.watcher ? antigravityWatcherAdmission(connection.watcherToolTitles, pending) : undefined)
+      ?? antigravityAutoAnswer(alias.runtimeMode, pending)
     if (automatic) { void connection.rpc.reply(frame.id, { outcome: { outcome: 'selected', optionId: automatic } }).catch(() => undefined); return }
     this.pending.set(requestId, pending)
     this.thread(id).requests.push(pending.request)
@@ -1173,7 +1173,7 @@ export class AntigravityAcpHost implements ProviderHost {
       }
     }
     // A request waiting now is answered by the new mode where it would be: Full access or Allow edits takes it off the user.
-    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id && !pending.answering && !pending.connection.watcher) {
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id && !pending.answering && !pending.connection.closing && this.pending.get(requestId) === pending) {
       const automatic = antigravityAutoAnswer(alias.runtimeMode, pending)
       if (!automatic) continue
       pending.answering = true

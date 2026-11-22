@@ -6,7 +6,8 @@ import { readGitHub } from '../../../../src/main/plugins/github/read'
 import { PluginToolServer, type PluginToolHandlers } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
 import { readVercel, type VercelFetch } from '../../../../src/main/plugins/vercel/read'
-import { PLUGIN_ACCOUNTS_TOOL, PLUGIN_CHANGE_TOOLS, PLUGIN_READ_TOOL, PLUGINS_MCP_SERVER, pluginAccountAdmits, type GitHubSignIn, type PluginAccount } from '../../../../src/shared/plugins'
+import { GITHUB_REPO } from '../../../../src/main/plugins/github/changes'
+import { GITHUB_CLOSE_ISSUE_TOOL, GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, PLUGIN_ACCOUNTS_TOOL, PLUGIN_CHANGE_TOOLS, PLUGIN_READ_TOOL, PLUGINS_MCP_SERVER, pluginAccountAdmits, type GitHubSignIn, type PluginAccount } from '../../../../src/shared/plugins'
 
 const servers: PluginToolServer[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => server.close())) })
@@ -250,5 +251,15 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
     const result = await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'vercel', path: 'v6/deployments' })
     expect(said(result)).toBe('{"ok":true}')
     expect(recorded).toEqual([])
+  })
+
+  it('advertises a lookaround-free GitHub repo pattern across all four GitHub change tools so RE2 toolboxes accept them', () => {
+    const { server } = tools()
+    for (const name of [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL]) {
+      const schema = server.definitions.find(tool => tool.name === name)?.inputSchema as { properties?: { repo?: { pattern?: string } } } | undefined
+      const pattern = schema?.properties?.repo?.pattern
+      expect(pattern, name).toBe(GITHUB_REPO.source)
+      expect(pattern, name).not.toMatch(/\(\?[=!<]|\\[1-9]/u)
+    }
   })
 })

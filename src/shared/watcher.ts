@@ -477,9 +477,9 @@ export const watcherToolSchemas = {
     output: result({ target: watcherThreadTargetSchema, settled: z.literal(false) }),
   },
   list_projects: {
-    // `projectId`, `query` and `includeModels` are the desktop's alone (#1191): a paired host is never sent them.
+    // `projectId`, `query`, `provider` and `includeModels` are the desktop's alone (#1191): a paired host is never sent them.
     input: z.object({ hostId: z.uuid().optional(), projectId: entityId.optional(), query: z.string().min(1).max(200).optional(),
-      includeModels: z.boolean().optional(), ...paging }).strict(),
+      provider: providerIdSchema.optional(), includeModels: z.boolean().optional(), ...paging }).strict(),
     output: result({ projects: z.array(z.object({ target: watcherProjectTargetSchema, title: z.string().max(512), displayRoot: z.string().max(4_096),
       // Left out unless includeModels: every project on a computer offers the same models.
       workers: z.array(z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
