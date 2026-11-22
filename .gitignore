@@ -616,6 +616,10 @@ artifacts/model-menu-wheel/*
 !artifacts/model-menu-wheel/before.png
 !artifacts/model-menu-wheel/after-one-notch.png
 
+artifacts/combined-model-effort-picker/*
+!artifacts/combined-model-effort-picker/combined-dark-1280.png
+!artifacts/combined-model-effort-picker/combined-codex-dark-1280.png
+
 # Muse provider review evidence; retain only the cited captures and measurements.
 artifacts/muse-provider/*
 !artifacts/muse-provider/settings-1600-dark.png

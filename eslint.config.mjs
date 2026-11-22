@@ -61,6 +61,7 @@ export default tseslint.config(
       'artifacts/page-shortcuts/**',
       'artifacts/linux-settings-copy/**',
       'artifacts/model-menu-wheel/**',
+      'artifacts/combined-model-effort-picker/**',
       'artifacts/new-thread-defaults-every-host/**',
       'artifacts/remove-terminal-mode/**',
       'artifacts/usage-dashboard/**',
