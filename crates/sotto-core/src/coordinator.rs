@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -9,9 +9,11 @@ use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
+use crate::ops::ThreadWorkspace;
 use crate::protocol::HostErrorCode;
 use crate::provider::{
-    AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageRequest,
+    AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageAck,
+    SendMessageRequest,
 };
 use crate::remote_commands::validate_remote_command;
 use crate::stores::{
@@ -21,10 +23,12 @@ use crate::workspace::{
     now_iso, parse_public_provider_entity_id, provider_label, summarize_thread, write_atomic_json,
     AgentCapabilities, AgentConfiguration, AgentDelivery, AgentModel, AgentProject,
     AgentProviderStatus, AgentThread, AgentThreadDetail, AgentThreadWorktree, AgentTurnRecord,
-    ClientUpdateRow, DeliveredDraft, StagedAttachmentHandle, StagedAttachments, ACTIVE_PROVIDERS,
+    ClientUpdateRow, DeliveredDraft, StagedAttachmentEntry, StagedAttachmentHandle,
+    StagedAttachments, ACTIVE_PROVIDERS,
 };
 
 const PUBLISH_COALESCE_MS: u64 = 50;
+const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone)]
 pub struct ClientContext {
@@ -75,6 +79,57 @@ pub enum CoordinatorBroadcast {
     Detail(AgentThreadDetail),
 }
 
+struct PendingCommand {
+    client: ClientContext,
+    command: Map<String, Value>,
+    reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+}
+
+enum AsyncCommandOutcome {
+    Connect {
+        provider_id: String,
+        suppress_notice: bool,
+        result: Result<(), String>,
+    },
+    Disconnect {
+        provider_id: String,
+    },
+    ConfigureThread {
+        thread_id: String,
+        model_id: Option<String>,
+        reasoning_effort: Option<String>,
+        runtime_mode: Option<String>,
+        provider_mode: Option<String>,
+        result: Result<(), String>,
+    },
+    ManualSend {
+        thread_id: String,
+        command_id: String,
+        draft_id: String,
+        text: String,
+        attachments: Vec<StagedAttachmentEntry>,
+        elapsed_ms: u64,
+        allocated_worktree: Option<Box<AgentThreadWorktree>>,
+        result: Result<SendMessageAck, String>,
+    },
+    Answer {
+        thread_id: String,
+        request_id: String,
+        title: String,
+        approved: Option<bool>,
+        permission_choice: Option<String>,
+        client: ClientContext,
+        result: Result<(), String>,
+    },
+    Interrupt {
+        thread_id: String,
+        result: Result<(), String>,
+    },
+    Compact {
+        result: Result<(), String>,
+    },
+}
+
 enum ActorMessage {
     GetShell {
         may_answer: bool,
@@ -83,6 +138,17 @@ enum ActorMessage {
     GetDetail {
         thread_id: String,
         reply: oneshot::Sender<Option<AgentThreadDetail>>,
+    },
+    GetThreadWorkspace {
+        thread_id: String,
+        reply: oneshot::Sender<Option<ThreadWorkspace>>,
+    },
+    GetRunningThreadsCount {
+        reply: oneshot::Sender<usize>,
+    },
+    GetAttachmentContent {
+        digest: String,
+        reply: oneshot::Sender<Option<(String, Vec<u8>)>>,
     },
     ReadEvents {
         thread_id: Option<String>,
@@ -98,6 +164,7 @@ enum ActorMessage {
         name: String,
         mime_type: String,
         data_b64: String,
+        dimensions: Option<Value>,
         reply: oneshot::Sender<Result<StagedAttachmentHandle, CoordinatorError>>,
     },
     StageFilePart {
@@ -114,6 +181,12 @@ enum ActorMessage {
     RunCommand {
         client: ClientContext,
         command: Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    },
+    AsyncCommandDone {
+        lane: Option<String>,
+        client: ClientContext,
+        outcome: Box<AsyncCommandOutcome>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     },
     GitStatusReady {
@@ -141,6 +214,8 @@ impl CoordinatorHandle {
     ) -> Result<Self, String> {
         let threads_store = ThreadStore::open(&data_directory.join("threads.sqlite"))
             .map_err(|e| format!("Could not open threads.sqlite: {e}"))?;
+        let persisted = load_persisted_workspace(&data_directory)?;
+        let thread_bindings = load_thread_bindings(&data_directory);
         let (tx, rx) = mpsc::unbounded_channel();
         let (provider_tx, provider_rx) = mpsc::unbounded_channel();
         let (broadcast_tx, _) = broadcast::channel(512);
@@ -159,6 +234,8 @@ impl CoordinatorHandle {
             host_id,
             credentials_secure,
             threads_store,
+            persisted,
+            thread_bindings,
             full_providers,
             provider_tx,
             tx.clone(),
@@ -191,6 +268,48 @@ impl CoordinatorHandle {
         self.tx
             .send(ActorMessage::GetDetail {
                 thread_id,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn thread_workspace(
+        &self,
+        thread_id: String,
+    ) -> Result<Option<ThreadWorkspace>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetThreadWorkspace {
+                thread_id,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn running_threads_count(&self) -> Result<usize, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetRunningThreadsCount { reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn attachment_content(
+        &self,
+        digest: String,
+    ) -> Result<Option<(String, Vec<u8>)>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetAttachmentContent {
+                digest,
                 reply: reply_tx,
             })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
@@ -240,6 +359,7 @@ impl CoordinatorHandle {
         name: String,
         mime_type: String,
         data_b64: String,
+        dimensions: Option<Value>,
     ) -> Result<StagedAttachmentHandle, CoordinatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
@@ -247,6 +367,7 @@ impl CoordinatorHandle {
                 name,
                 mime_type,
                 data_b64,
+                dimensions,
                 reply: reply_tx,
             })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
@@ -312,14 +433,28 @@ impl CoordinatorHandle {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct PersistedWorkspace {
-    #[serde(default)]
+/// Preserved TypeScript `workspace.json` structure matching `workspaceSchema` in `src/main/agents/workspace.ts`.
+#[derive(Debug, Default)]
+struct LoadedWorkspace {
     projects: Vec<AgentProject>,
-    #[serde(default)]
     threads: Vec<AgentThread>,
-    #[serde(default)]
+    project_aliases: Vec<Value>,
+    creations: Vec<Value>,
+    cleared_thread_ids: Vec<String>,
+    snapshot_extra: Map<String, Value>,
+    file_extra: Map<String, Value>,
     configuration: AgentConfiguration,
+}
+
+/// TypeScript `ThreadRegistry` binding format (`threads.json` in `src/main/agents/threads.ts`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadBindingRecord {
+    thread_id: String,
+    provider: String,
+    session_id: String,
+    project_id: String,
+    created_at: String,
 }
 
 struct CoordinatorActor {
@@ -337,6 +472,12 @@ struct CoordinatorActor {
     active_thread_id: Option<String>,
     projects: Vec<AgentProject>,
     threads: Vec<AgentThread>,
+    project_aliases: Vec<Value>,
+    creations: Vec<Value>,
+    cleared_thread_ids: Vec<String>,
+    snapshot_extra: Map<String, Value>,
+    file_extra: Map<String, Value>,
+    thread_bindings: HashMap<String, ThreadBindingRecord>,
     details: HashMap<String, AgentThreadDetail>,
     deliveries: Vec<AgentDelivery>,
     delivered_drafts: Vec<DeliveredDraft>,
@@ -344,10 +485,12 @@ struct CoordinatorActor {
     models: Vec<AgentModel>,
     models_revision: u64,
     client_updates: Vec<ClientUpdateRow>,
-    notice: Option<String>,
+    notice: String,
     error: Option<String>,
     global_lane_busy: bool,
+    global_queue: VecDeque<PendingCommand>,
     busy_thread_ids: HashSet<String>,
+    thread_queues: HashMap<String, VecDeque<PendingCommand>>,
     staged: StagedAttachments,
 
     shell_dirty: bool,
@@ -361,12 +504,13 @@ impl CoordinatorActor {
         host_id: String,
         credentials_secure: bool,
         thread_store: ThreadStore,
+        persisted: LoadedWorkspace,
+        thread_bindings: HashMap<String, ThreadBindingRecord>,
         providers: BTreeMap<String, Arc<dyn ProviderAdapter>>,
         provider_events_tx: mpsc::UnboundedSender<ProviderEvent>,
         self_tx: mpsc::UnboundedSender<ActorMessage>,
         broadcast_tx: broadcast::Sender<CoordinatorBroadcast>,
     ) -> Self {
-        let persisted = load_persisted_workspace(&data_directory);
         let mut provider_statuses = BTreeMap::new();
         let mut models = Vec::new();
         let mut client_updates = Vec::new();
@@ -414,6 +558,12 @@ impl CoordinatorActor {
             active_thread_id: None,
             projects: persisted.projects,
             threads: persisted.threads,
+            project_aliases: persisted.project_aliases,
+            creations: persisted.creations,
+            cleared_thread_ids: persisted.cleared_thread_ids,
+            snapshot_extra: persisted.snapshot_extra,
+            file_extra: persisted.file_extra,
+            thread_bindings,
             details,
             deliveries: Vec::new(),
             delivered_drafts: Vec::new(),
@@ -421,10 +571,12 @@ impl CoordinatorActor {
             models,
             models_revision: 1,
             client_updates,
-            notice: None,
+            notice: String::new(),
             error: None,
             global_lane_busy: false,
+            global_queue: VecDeque::new(),
             busy_thread_ids: HashSet::new(),
+            thread_queues: HashMap::new(),
             staged,
             shell_dirty: false,
             dirty_details: HashSet::new(),
@@ -460,7 +612,7 @@ impl CoordinatorActor {
                             break;
                         }
                         other => {
-                            self.handle_actor_message(other).await;
+                            self.handle_actor_message(other);
                         }
                     }
                 }
@@ -474,7 +626,7 @@ impl CoordinatorActor {
         }
     }
 
-    async fn handle_actor_message(&mut self, msg: ActorMessage) {
+    fn handle_actor_message(&mut self, msg: ActorMessage) {
         match msg {
             ActorMessage::GetShell { may_answer, reply } => {
                 let _ = reply.send(self.build_shell(may_answer));
@@ -503,6 +655,22 @@ impl CoordinatorActor {
                 });
                 let _ = reply.send(detail);
             }
+            ActorMessage::GetThreadWorkspace { thread_id, reply } => {
+                let ws = self.resolve_thread_workspace(&thread_id);
+                let _ = reply.send(ws);
+            }
+            ActorMessage::GetRunningThreadsCount { reply } => {
+                let count = self.threads.iter().filter(|t| t.status == "running").count();
+                let _ = reply.send(count);
+            }
+            ActorMessage::GetAttachmentContent { digest, reply } => {
+                let found = self.staged.get_by_digest(&digest).and_then(|entry| {
+                    std::fs::read(&entry.path)
+                        .ok()
+                        .map(|bytes| (entry.handle.mime_type.clone(), bytes))
+                });
+                let _ = reply.send(found);
+            }
             ActorMessage::ReadEvents {
                 thread_id,
                 after_seq,
@@ -522,13 +690,15 @@ impl CoordinatorActor {
                     if let Some(thread) = self.threads.iter().find(|t| t.id == *tid) {
                         if let Some(ref wt) = thread.worktree {
                             if wt.git.is_none() {
-                                let path = wt.path.clone();
-                                let thread_id = tid.clone();
-                                let tx = self.self_tx.clone();
-                                tokio::task::spawn_blocking(move || {
-                                    let git = probe_git_worktree(&path);
-                                    let _ = tx.send(ActorMessage::GitStatusReady { thread_id, git });
-                                });
+                                if let Some(ref path) = wt.path {
+                                    let path = path.clone();
+                                    let thread_id = tid.clone();
+                                    let tx = self.self_tx.clone();
+                                    tokio::task::spawn_blocking(move || {
+                                        let git = probe_git_worktree(&path);
+                                        let _ = tx.send(ActorMessage::GitStatusReady { thread_id, git });
+                                    });
+                                }
                             }
                         }
                     }
@@ -540,11 +710,12 @@ impl CoordinatorActor {
                 name,
                 mime_type,
                 data_b64,
+                dimensions,
                 reply,
             } => {
                 let res = self
                     .staged
-                    .stage_image(&name, &mime_type, &data_b64)
+                    .stage_image(&name, &mime_type, &data_b64, dimensions)
                     .map_err(CoordinatorError::invalid);
                 let _ = reply.send(res);
             }
@@ -588,88 +759,840 @@ impl CoordinatorActor {
                 command,
                 reply,
             } => {
-                let res = self.execute_command(&client, &command).await;
+                self.enqueue_or_dispatch(PendingCommand {
+                    client,
+                    command,
+                    reply,
+                });
+            }
+            ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome,
+                reply,
+            } => {
+                let res = self.commit_async_command(&client, *outcome);
+                if let Some(ref tid) = lane {
+                    self.busy_thread_ids.remove(tid);
+                } else {
+                    self.global_lane_busy = false;
+                }
+                self.shell_dirty = true;
                 let _ = reply.send(res);
                 self.flush_dirty();
+                self.drain_lane(lane);
             }
             ActorMessage::Shutdown { .. } => unreachable!(),
         }
     }
 
-    async fn execute_command(
-        &mut self,
-        client: &ClientContext,
-        command: &Map<String, Value>,
-    ) -> Result<Value, CoordinatorError> {
-        let cmd_type = match validate_remote_command(command, client.may_answer) {
+    fn resolve_thread_workspace(&self, thread_id: &str) -> Option<ThreadWorkspace> {
+        let thread = self.threads.iter().find(|t| t.id == thread_id)?;
+        let working_dir = thread
+            .worktree
+            .as_ref()
+            .and_then(|w| w.path.as_deref())
+            .or(thread.working_directory.as_deref())
+            .or_else(|| {
+                self.projects
+                    .iter()
+                    .find(|p| p.id == thread.project_id)
+                    .map(|p| p.path.as_str())
+            })?;
+        Some(ThreadWorkspace::build(&thread.id, &thread.project_id, working_dir))
+    }
+
+    fn enqueue_or_dispatch(&mut self, pending: PendingCommand) {
+        let lane = pending
+            .command
+            .get("threadId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        if let Some(ref tid) = lane {
+            if self.busy_thread_ids.contains(tid) {
+                self.thread_queues
+                    .entry(tid.clone())
+                    .or_default()
+                    .push_back(pending);
+                return;
+            }
+        } else if self.global_lane_busy {
+            self.global_queue.push_back(pending);
+            return;
+        }
+        self.dispatch_command(lane, pending);
+    }
+
+    fn drain_lane(&mut self, lane: Option<String>) {
+        if let Some(tid) = lane {
+            if let Some(queue) = self.thread_queues.get_mut(&tid) {
+                if let Some(next) = queue.pop_front() {
+                    if queue.is_empty() {
+                        self.thread_queues.remove(&tid);
+                    }
+                    self.dispatch_command(Some(tid), next);
+                }
+            }
+        } else if let Some(next) = self.global_queue.pop_front() {
+            self.dispatch_command(None, next);
+        }
+    }
+
+    fn dispatch_command(&mut self, lane: Option<String>, pending: PendingCommand) {
+        let PendingCommand {
+            client,
+            command,
+            reply,
+        } = pending;
+
+        let cmd_type = match validate_remote_command(&command, client.may_answer) {
             Ok(t) => t,
             Err(refusal) => {
-                return Err(CoordinatorError {
+                let _ = reply.send(Err(CoordinatorError {
                     code: refusal.code,
                     message: refusal
                         .message
                         .unwrap_or_else(|| refusal.code.default_message().to_string()),
-                });
+                }));
+                self.drain_lane(lane);
+                return;
             }
         };
 
-        let thread_lane = command
-            .get("threadId")
-            .and_then(Value::as_str)
-            .map(ToString::to_string);
-        if let Some(ref tid) = thread_lane {
+        // Mark lane busy before async or sync dispatch.
+        if let Some(ref tid) = lane {
             self.busy_thread_ids.insert(tid.clone());
         } else {
             self.global_lane_busy = true;
         }
 
-        let outcome = match cmd_type {
-            "configure" => self.cmd_configure(command).await,
-            "connect" => self.cmd_connect(command).await,
-            "disconnect" => self.cmd_disconnect(command).await,
-            "refresh" => self.cmd_refresh(command).await,
-            "create-project" => self.cmd_create_project(command),
+        match cmd_type {
+            // Fast, purely local commands execute synchronously and release the lane immediately.
+            "configure" => {
+                let res = self.cmd_configure(&command);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
+            "refresh" => {
+                let res = self.cmd_refresh(&command);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
+            "create-project" => {
+                let res = self.cmd_create_project(&command);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
             "select-project" => {
                 self.active_project_id = command
                     .get("projectId")
                     .and_then(Value::as_str)
                     .map(ToString::to_string);
-                Ok(())
+                self.finish_sync_command(lane, &client, Ok(()), reply);
             }
-            "create-thread" => self.cmd_create_thread(command).await,
+            "create-thread" => {
+                let res = self.cmd_create_thread(&command);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
             "select-thread" => {
                 self.active_thread_id = command
                     .get("threadId")
                     .and_then(Value::as_str)
                     .map(ToString::to_string);
-                Ok(())
+                self.finish_sync_command(lane, &client, Ok(()), reply);
             }
-            "rename-thread" => self.cmd_rename_thread(command),
-            "settle-thread" => self.cmd_settle_thread(command, true),
-            "restore-thread" => self.cmd_settle_thread(command, false),
-            "configure-thread" => self.cmd_configure_thread(command),
-            "manual-send" => self.cmd_manual_send(command).await,
-            "answer" => self.cmd_answer(client, command).await,
-            "interrupt" => self.cmd_interrupt(command).await,
-            "compact-thread" => self.cmd_compact(command).await,
-            "observe-threads" => Ok(()),
-            _ => Err(CoordinatorError::invalid(
-                HostErrorCode::InvalidRequest.default_message(),
-            )),
-        };
+            "rename-thread" => {
+                let res = self.cmd_rename_thread(&command);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
+            "settle-thread" => {
+                let res = self.cmd_settle_thread(&command, true);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
+            "restore-thread" => {
+                let res = self.cmd_settle_thread(&command, false);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
+            "observe-threads" => {
+                self.finish_sync_command(lane, &client, Ok(()), reply);
+            }
 
-        if let Some(ref tid) = thread_lane {
+            // Slow provider / git-worktree commands run outside the owner loop while holding only their lane.
+            "connect" => self.spawn_cmd_connect(lane, client, &command, reply),
+            "disconnect" => self.spawn_cmd_disconnect(lane, client, &command, reply),
+            "configure-thread" => self.spawn_cmd_configure_thread(lane, client, &command, reply),
+            "manual-send" => self.spawn_cmd_manual_send(lane, client, &command, reply),
+            "answer" => self.spawn_cmd_answer(lane, client, &command, reply),
+            "interrupt" => self.spawn_cmd_interrupt(lane, client, &command, reply),
+            "compact-thread" => self.spawn_cmd_compact(lane, client, &command, reply),
+            _ => {
+                self.finish_sync_command(
+                    lane,
+                    &client,
+                    Err(CoordinatorError::invalid(
+                        HostErrorCode::InvalidRequest.default_message(),
+                    )),
+                    reply,
+                );
+            }
+        }
+    }
+
+    fn finish_sync_command(
+        &mut self,
+        lane: Option<String>,
+        client: &ClientContext,
+        outcome: Result<(), CoordinatorError>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        if let Some(ref tid) = lane {
             self.busy_thread_ids.remove(tid);
         } else {
             self.global_lane_busy = false;
         }
         self.shell_dirty = true;
+        let res = outcome.map(|()| self.build_shell(client.may_answer));
+        let _ = reply.send(res);
+        self.flush_dirty();
+        self.drain_lane(lane);
+    }
 
-        outcome?;
+    fn spawn_cmd_connect(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        let provider_id = command
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or(&self.configuration.provider)
+            .to_string();
+        let suppress_notice = command.get("notice") == Some(&Value::Bool(false));
+        let Some(adapter) = self.providers.get(&provider_id).cloned() else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown provider.")), reply);
+            return;
+        };
+        let events_tx = self.provider_events_tx.clone();
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let result = adapter.connect(events_tx).await;
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome: Box::new(AsyncCommandOutcome::Connect {
+                    provider_id,
+                    suppress_notice,
+                    result,
+                }),
+                reply,
+            });
+        });
+    }
+
+    fn spawn_cmd_disconnect(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        let provider_id = command
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or(&self.configuration.provider)
+            .to_string();
+        let Some(adapter) = self.providers.get(&provider_id).cloned() else {
+            self.finish_sync_command(lane, &client, Ok(()), reply);
+            return;
+        };
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let _ = adapter.disconnect().await;
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome: Box::new(AsyncCommandOutcome::Disconnect { provider_id }),
+                reply,
+            });
+        });
+    }
+
+    fn spawn_cmd_configure_thread(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("threadId is required.")), reply);
+            return;
+        };
+        let Some(thread) = self.threads.iter().find(|t| t.id == tid).cloned() else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown thread.")), reply);
+            return;
+        };
+        let model_id = command.get("modelId").and_then(Value::as_str).map(ToString::to_string);
+        let reasoning_effort = command.get("reasoningEffort").and_then(Value::as_str).map(ToString::to_string);
+        let runtime_mode = command.get("runtimeMode").and_then(Value::as_str).map(ToString::to_string);
+        let provider_mode = command.get("providerMode").and_then(Value::as_str).map(ToString::to_string);
+        let adapter = self.providers.get(&thread.provider_id).cloned();
+        let self_tx = self.self_tx.clone();
+
+        tokio::spawn(async move {
+            let result = match adapter {
+                Some(a) if !a.is_held() => {
+                    a.configure_thread(
+                        tid.clone(),
+                        model_id.clone(),
+                        runtime_mode.clone(),
+                        reasoning_effort.clone(),
+                    )
+                    .await
+                }
+                _ => Ok(()),
+            };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome: Box::new(AsyncCommandOutcome::ConfigureThread {
+                    thread_id: tid,
+                    model_id,
+                    reasoning_effort,
+                    runtime_mode,
+                    provider_mode,
+                    result,
+                }),
+                reply,
+            });
+        });
+    }
+
+    fn spawn_cmd_manual_send(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("threadId is required.")), reply);
+            return;
+        };
+        let text = command
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let draft_id = command
+            .get("draftId")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let command_id = Uuid::new_v4().to_string();
+
+        let Some(thread) = self.threads.iter().find(|t| t.id == tid).cloned() else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown thread.")), reply);
+            return;
+        };
+        let project_path = self
+            .projects
+            .iter()
+            .find(|p| p.id == thread.project_id)
+            .map(|p| p.path.clone())
+            .unwrap_or_else(|| self.data_directory.to_string_lossy().into_owned());
+
+        let mut attachments = Vec::new();
+        if let Some(arr) = command.get("attachments").and_then(Value::as_array) {
+            for item in arr {
+                if let Some(id) = item.get("id").and_then(Value::as_str) {
+                    if let Some(entry) = self.staged.get(id) {
+                        attachments.push(entry.clone());
+                    }
+                }
+            }
+        }
+
+        // Reject image attachments if the thread's model explicitly declares `supportsImages: false`.
+        let has_image = attachments.iter().any(|a| a.handle.is_image());
+        if has_image {
+            let supports_images = if thread.model_id.is_empty() {
+                true
+            } else {
+                self.models
+                    .iter()
+                    .find(|m| m.id == thread.model_id)
+                    .and_then(|m| m.supports_images)
+                    .unwrap_or(true)
+            };
+            if !supports_images {
+                let now = now_iso();
+                self.deliveries.push(AgentDelivery {
+                    command_id,
+                    draft_id,
+                    thread_id: tid,
+                    message_id: None,
+                    status: "failed".into(),
+                    error: Some("The selected model does not read images. Nothing was sent.".into()),
+                    created_at: now.clone(),
+                    updated_at: now,
+                    local_feedback_ms: Some(0),
+                    provider_latency_ms: None,
+                });
+                self.error = Some("The selected model does not read images. Nothing was sent.".into());
+                self.finish_sync_command(lane, &client, Ok(()), reply);
+                return;
+            }
+        }
+
+        let Some(adapter) = self.providers.get(&thread.provider_id).cloned() else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::unavailable("Provider is not available.")), reply);
+            return;
+        };
+
+        let needs_worktree = thread
+            .worktree
+            .as_ref()
+            .is_some_and(|w| w.mode == "independent" && (w.status == "pending" || w.path.is_none()));
+        let base_branch = thread
+            .worktree
+            .as_ref()
+            .and_then(|w| w.base_branch.clone());
+        let existing_cwd = thread
+            .worktree
+            .as_ref()
+            .and_then(|w| w.path.clone())
+            .or_else(|| thread.working_directory.clone())
+            .unwrap_or_else(|| project_path.clone());
+        let data_dir = self.data_directory.clone();
+        let self_tx = self.self_tx.clone();
+        let model_opt = (!thread.model_id.is_empty()).then_some(thread.model_id.clone());
+
+        tokio::spawn(async move {
+            let started = Instant::now();
+            let mut allocated_worktree = None;
+            let cwd = if needs_worktree {
+                let alloc = tokio::task::spawn_blocking(move || {
+                    allocate_independent_worktree(&data_dir, &project_path, base_branch.as_deref())
+                })
+                .await
+                .map_err(|_| "Could not create worktree.".to_string())
+                .and_then(|r| r);
+                match alloc {
+                    Ok(wt) => {
+                        let path = wt.path.clone().unwrap_or_default();
+                        allocated_worktree = Some(Box::new(wt));
+                        path
+                    }
+                    Err(err) => {
+                        let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                            lane,
+                            client,
+                            outcome: Box::new(AsyncCommandOutcome::ManualSend {
+                                thread_id: tid,
+                                command_id,
+                                draft_id,
+                                text,
+                                attachments,
+                                elapsed_ms: started.elapsed().as_millis() as u64,
+                                allocated_worktree: None,
+                                result: Err(err),
+                            }),
+                            reply,
+                        });
+                        return;
+                    }
+                }
+            } else {
+                existing_cwd
+            };
+
+            let result = adapter
+                .send_message(SendMessageRequest {
+                    thread_id: tid.clone(),
+                    cwd,
+                    model_id: model_opt,
+                    reasoning_effort: thread.reasoning_effort.clone(),
+                    runtime_mode: thread.runtime_mode.clone(),
+                    text: text.clone(),
+                    command_id: command_id.clone(),
+                    draft_id: draft_id.clone(),
+                    attachments: attachments.clone(),
+                })
+                .await;
+
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome: Box::new(AsyncCommandOutcome::ManualSend {
+                    thread_id: tid,
+                    command_id,
+                    draft_id,
+                    text,
+                    attachments,
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    allocated_worktree,
+                    result,
+                }),
+                reply,
+            });
+        });
+    }
+
+    fn spawn_cmd_answer(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("threadId is required.")), reply);
+            return;
+        };
+        let Some(request_id) = command.get("requestId").and_then(Value::as_str).map(ToString::to_string) else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("requestId is required.")), reply);
+            return;
+        };
+        let answer = command
+            .get("answer")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let approved = command.get("approved").and_then(Value::as_bool);
+        let permission_choice = command
+            .get("permissionChoice")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let question_answers = command.get("questionAnswers").cloned();
+        let skipped = command.get("skipped").and_then(Value::as_bool);
+
+        let (provider_id, title) = {
+            let Some(thread) = self.threads.iter().find(|t| t.id == tid) else {
+                self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown thread.")), reply);
+                return;
+            };
+            let has_req = thread
+                .requests
+                .iter()
+                .any(|r| r.get("id").and_then(Value::as_str) == Some(request_id.as_str()));
+            if !has_req {
+                self.finish_sync_command(
+                    lane,
+                    &client,
+                    Err(CoordinatorError::stale(HostErrorCode::StaleRequest.default_message())),
+                    reply,
+                );
+                return;
+            }
+            (thread.provider_id.clone(), thread.title.clone())
+        };
+
+        let Some(adapter) = self.providers.get(&provider_id).cloned() else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::unavailable("Provider is not available.")), reply);
+            return;
+        };
+
+        let self_tx = self.self_tx.clone();
+        let answer_client = client.clone();
+        tokio::spawn(async move {
+            let result = adapter
+                .answer_request(AnswerRequestInput {
+                    thread_id: tid.clone(),
+                    request_id: request_id.clone(),
+                    answer,
+                    approved,
+                    permission_choice: permission_choice.clone(),
+                    question_answers,
+                    skipped,
+                })
+                .await;
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client: answer_client.clone(),
+                outcome: Box::new(AsyncCommandOutcome::Answer {
+                    thread_id: tid,
+                    request_id,
+                    title,
+                    approved,
+                    permission_choice,
+                    client: answer_client,
+                    result,
+                }),
+                reply,
+            });
+        });
+    }
+
+    fn spawn_cmd_interrupt(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("threadId is required.")), reply);
+            return;
+        };
+        let Some(provider_id) = self
+            .threads
+            .iter()
+            .find(|t| t.id == tid)
+            .map(|t| t.provider_id.clone())
+        else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown thread.")), reply);
+            return;
+        };
+        let adapter = self.providers.get(&provider_id).cloned();
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let result = match adapter {
+                Some(a) => a.interrupt(tid.clone()).await,
+                None => Ok(()),
+            };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome: Box::new(AsyncCommandOutcome::Interrupt {
+                    thread_id: tid,
+                    result,
+                }),
+                reply,
+            });
+        });
+    }
+
+    fn spawn_cmd_compact(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("threadId is required.")), reply);
+            return;
+        };
+        let Some(provider_id) = self
+            .threads
+            .iter()
+            .find(|t| t.id == tid)
+            .map(|t| t.provider_id.clone())
+        else {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown thread.")), reply);
+            return;
+        };
+        let adapter = self.providers.get(&provider_id).cloned();
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let result = match adapter {
+                Some(a) => a.compact(tid).await,
+                None => Ok(()),
+            };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome: Box::new(AsyncCommandOutcome::Compact { result }),
+                reply,
+            });
+        });
+    }
+
+    fn commit_async_command(
+        &mut self,
+        client: &ClientContext,
+        outcome: AsyncCommandOutcome,
+    ) -> Result<Value, CoordinatorError> {
+        match outcome {
+            AsyncCommandOutcome::Connect {
+                provider_id,
+                suppress_notice,
+                result,
+            } => {
+                if let Some(adapter) = self.providers.get(&provider_id).cloned() {
+                    self.provider_statuses
+                        .insert(provider_id.clone(), adapter.status());
+                    match result {
+                        Ok(()) => {
+                            self.rebuild_catalog();
+                            if !suppress_notice {
+                                self.notice = format!("{} connected", adapter.name());
+                            }
+                            self.error = None;
+                        }
+                        Err(err) => {
+                            self.error = Some(err.clone());
+                            return Err(CoordinatorError::unavailable(err));
+                        }
+                    }
+                }
+            }
+            AsyncCommandOutcome::Disconnect { provider_id } => {
+                if let Some(adapter) = self.providers.get(&provider_id).cloned() {
+                    self.provider_statuses.insert(provider_id, adapter.status());
+                    self.rebuild_catalog();
+                }
+            }
+            AsyncCommandOutcome::ConfigureThread {
+                thread_id,
+                model_id,
+                reasoning_effort,
+                runtime_mode,
+                provider_mode,
+                result,
+            } => {
+                result.map_err(CoordinatorError::unavailable)?;
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                    if let Some(m) = model_id {
+                        thread.model_id = m;
+                    }
+                    if let Some(e) = reasoning_effort {
+                        thread.reasoning_effort = Some(e);
+                    }
+                    if let Some(r) = runtime_mode {
+                        thread.runtime_mode = Some(r);
+                    }
+                    if let Some(p) = provider_mode {
+                        thread.provider_mode = Some(p);
+                    }
+                    thread.updated_at = now_iso();
+                    self.save_workspace();
+                }
+            }
+            AsyncCommandOutcome::ManualSend {
+                thread_id,
+                command_id,
+                draft_id,
+                text,
+                attachments,
+                elapsed_ms,
+                allocated_worktree,
+                result,
+            } => {
+                if let Some(wt) = allocated_worktree {
+                    if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                        t.working_directory = wt.path.clone();
+                        t.worktree = Some(*wt);
+                    }
+                }
+                let ack = result.map_err(CoordinatorError::unavailable)?;
+                let now = now_iso();
+                let stored_attachments = if attachments.is_empty() {
+                    None
+                } else {
+                    Some(Value::Array(
+                        attachments
+                            .iter()
+                            .map(|a| serde_json::to_value(&a.handle).unwrap_or(Value::Null))
+                            .collect(),
+                    ))
+                };
+                let user_message = StoredMessage {
+                    id: ack.message_id.clone(),
+                    role: "user".into(),
+                    text,
+                    created_at: now.clone(),
+                    command_id: Some(command_id.clone()),
+                    turn_message_id: None,
+                    attachments: stored_attachments,
+                    watcher_own_change: None,
+                    watcher_observed_changes: None,
+                    provider_error: None,
+                };
+
+                let _ = self.thread_store.append_event(
+                    &thread_id,
+                    &ThreadEvent::MessageAdded {
+                        at: now.clone(),
+                        message: user_message.clone(),
+                        redacted: None,
+                    },
+                );
+                self.push_message_to_detail(&thread_id, user_message);
+
+                let is_accepted = ack.status == "accepted";
+                if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                    if is_accepted {
+                        t.status = "running".into();
+                        t.last_turn = Some(AgentTurnRecord {
+                            id: ack.turn_id.clone(),
+                            status: "running".into(),
+                            message_id: Some(ack.message_id.clone()),
+                        });
+                    }
+                    t.native_session_started = true;
+                    t.last_user_message_id = Some(ack.message_id.clone());
+                    t.updated_at = now.clone();
+                    if let Some(detail) = self.details.get(&thread_id) {
+                        t.summary =
+                            summarize_thread(&detail.messages, &detail.activities, &t.status);
+                    }
+                }
+
+                self.deliveries.push(AgentDelivery {
+                    command_id,
+                    draft_id: draft_id.clone(),
+                    thread_id: thread_id.clone(),
+                    message_id: Some(ack.message_id),
+                    status: ack.status,
+                    error: None,
+                    created_at: now.clone(),
+                    updated_at: now,
+                    local_feedback_ms: Some(elapsed_ms),
+                    provider_latency_ms: is_accepted.then_some(ack.provider_latency_ms),
+                });
+                self.delivered_drafts.push(DeliveredDraft {
+                    draft_id,
+                    thread_id,
+                });
+                self.save_workspace();
+            }
+            AsyncCommandOutcome::Answer {
+                thread_id,
+                request_id,
+                title,
+                approved,
+                permission_choice,
+                client: answer_client,
+                result,
+            } => {
+                result.map_err(CoordinatorError::unavailable)?;
+                let _ = self.thread_store.append_event(
+                    &thread_id,
+                    &ThreadEvent::AnswerGiven {
+                        at: now_iso(),
+                        request_id: request_id.clone(),
+                        answer: None,
+                        approved,
+                        permission_choice,
+                        question_option_ids: None,
+                        attribution: ThreadEventAttribution {
+                            client_id: answer_client.client_id,
+                            user: Some(answer_client.user),
+                            transport: "socket".into(),
+                        },
+                    },
+                );
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                    thread
+                        .requests
+                        .retain(|r| r.get("id").and_then(Value::as_str) != Some(request_id.as_str()));
+                    thread.updated_at = now_iso();
+                }
+                self.notice = format!("Answered {title}.");
+            }
+            AsyncCommandOutcome::Interrupt { thread_id, result } => {
+                result.map_err(CoordinatorError::unavailable)?;
+                self.finish_turn(&thread_id, "interrupted");
+            }
+            AsyncCommandOutcome::Compact { result } => {
+                result.map_err(CoordinatorError::unavailable)?;
+            }
+        }
         Ok(self.build_shell(client.may_answer))
     }
 
-    async fn cmd_configure(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+    fn cmd_configure(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
         let Some(patch) = command.get("patch").and_then(Value::as_object) else {
             return Err(CoordinatorError::invalid("Configure needs a patch object."));
         };
@@ -678,51 +1601,7 @@ impl CoordinatorActor {
         Ok(())
     }
 
-    async fn cmd_connect(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let provider_id = command
-            .get("provider")
-            .and_then(Value::as_str)
-            .unwrap_or(&self.configuration.provider)
-            .to_string();
-        let suppress_notice = command.get("notice") == Some(&Value::Bool(false));
-        let Some(adapter) = self.providers.get(&provider_id).cloned() else {
-            return Err(CoordinatorError::invalid("Unknown provider."));
-        };
-        match adapter.connect(self.provider_events_tx.clone()).await {
-            Ok(()) => {
-                self.provider_statuses
-                    .insert(provider_id.clone(), adapter.status());
-                self.rebuild_catalog();
-                if !suppress_notice {
-                    self.notice = Some(format!("{} connected", adapter.name()));
-                }
-                self.error = None;
-                Ok(())
-            }
-            Err(err) => {
-                self.provider_statuses
-                    .insert(provider_id, adapter.status());
-                self.error = Some(err.clone());
-                Err(CoordinatorError::unavailable(err))
-            }
-        }
-    }
-
-    async fn cmd_disconnect(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let provider_id = command
-            .get("provider")
-            .and_then(Value::as_str)
-            .unwrap_or(&self.configuration.provider)
-            .to_string();
-        if let Some(adapter) = self.providers.get(&provider_id).cloned() {
-            let _ = adapter.disconnect().await;
-            self.provider_statuses.insert(provider_id, adapter.status());
-            self.rebuild_catalog();
-        }
-        Ok(())
-    }
-
-    async fn cmd_refresh(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+    fn cmd_refresh(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
         let provider_id = command
             .get("provider")
             .and_then(Value::as_str)
@@ -755,6 +1634,7 @@ impl CoordinatorActor {
             host_id: Some(self.host_id.clone()),
             provider_id: Some(provider),
             workspace_settled_at: None,
+            extra: Map::new(),
         };
         self.projects.push(project);
         self.active_project_id = Some(id);
@@ -762,7 +1642,7 @@ impl CoordinatorActor {
         Ok(())
     }
 
-    async fn cmd_create_thread(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+    fn cmd_create_thread(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
         let Some(project_id) = command.get("projectId").and_then(Value::as_str) else {
             return Err(CoordinatorError::invalid("Thread projectId is required."));
         };
@@ -772,10 +1652,9 @@ impl CoordinatorActor {
         let model_id = command
             .get("modelId")
             .and_then(Value::as_str)
-            .map(ToString::to_string);
-        let provider_id = model_id
-            .as_deref()
-            .and_then(parse_public_provider_entity_id)
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        let provider_id = parse_public_provider_entity_id(&model_id)
             .map(|(prov, _, _)| prov.to_string())
             .or_else(|| project.provider_id.clone())
             .unwrap_or_else(|| self.configuration.provider.clone());
@@ -810,27 +1689,88 @@ impl CoordinatorActor {
             .and_then(Value::as_str)
             .unwrap_or("shared")
             .to_string();
+        let base_branch = command
+            .get("baseBranch")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let start_from_origin = command
+            .get("startFromOrigin")
+            .and_then(Value::as_bool);
+        let existing_worktree_path = command
+            .get("existingWorktreePath")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
 
-        if let Some(adapter) = self.providers.get(&provider_id).cloned() {
-            if !adapter.is_held() {
-                adapter
-                    .create_thread(
-                        thread_id.clone(),
-                        project.path.clone(),
-                        model_id.clone(),
-                        runtime_mode.clone(),
-                        reasoning_effort.clone(),
-                    )
-                    .await
-                    .map_err(CoordinatorError::unavailable)?;
+        let (worktree, working_directory) = if working_copy == "independent" {
+            if let Some(ref existing) = existing_worktree_path {
+                if !Path::new(existing).is_dir() {
+                    return Err(CoordinatorError::invalid(
+                        "The selected existing worktree folder does not exist.",
+                    ));
+                }
+                (
+                    AgentThreadWorktree {
+                        mode: "independent".into(),
+                        status: "ready".into(),
+                        path: Some(existing.clone()),
+                        repository_root: None,
+                        branch: None,
+                        base_branch,
+                        start_from_origin,
+                        existing_worktree_path: Some(existing.clone()),
+                        reused: Some(true),
+                        temporary_branch: Some(false),
+                        error: None,
+                        git: None,
+                    },
+                    Some(existing.clone()),
+                )
+            } else {
+                // Separate worktree is allocated on first send (AGENTS.md / ADR-0014),
+                // never silently reusing the shared checkout.
+                (
+                    AgentThreadWorktree {
+                        mode: "independent".into(),
+                        status: "pending".into(),
+                        path: None,
+                        repository_root: None,
+                        branch: None,
+                        base_branch,
+                        start_from_origin,
+                        existing_worktree_path: None,
+                        reused: None,
+                        temporary_branch: None,
+                        error: None,
+                        git: None,
+                    },
+                    None,
+                )
             }
-        }
+        } else {
+            (
+                AgentThreadWorktree {
+                    mode: "shared".into(),
+                    status: "ready".into(),
+                    path: Some(project.path.clone()),
+                    repository_root: None,
+                    branch: None,
+                    base_branch: None,
+                    start_from_origin: None,
+                    existing_worktree_path: None,
+                    reused: None,
+                    temporary_branch: None,
+                    error: None,
+                    git: None,
+                },
+                Some(project.path.clone()),
+            )
+        };
 
         let now = now_iso();
         let thread = AgentThread {
             id: thread_id.clone(),
-            project_id: project.id,
-            provider_id,
+            project_id: project.id.clone(),
+            provider_id: provider_id.clone(),
             title,
             title_source,
             kind: Some("project".into()),
@@ -841,19 +1781,27 @@ impl CoordinatorActor {
             provider_mode,
             native_session_started: false,
             created_at: now.clone(),
-            updated_at: now,
+            updated_at: now.clone(),
             settled_at: None,
+            working_directory,
             last_user_message_id: None,
             last_turn: None,
+            messages: Vec::new(),
             requests: Vec::new(),
             activities: Vec::new(),
             summary: summarize_thread(&[], &[], "idle"),
-            worktree: Some(AgentThreadWorktree {
-                mode: working_copy,
-                path: project.path,
-                git: None,
-            }),
+            worktree: Some(worktree),
+            extra: Map::new(),
         };
+        self.thread_bindings
+            .entry(thread_id.clone())
+            .or_insert_with(|| ThreadBindingRecord {
+                thread_id: thread_id.clone(),
+                provider: provider_id,
+                session_id: thread_id.clone(),
+                project_id: project.id,
+                created_at: now,
+            });
         self.threads.push(thread);
         let detail = AgentThreadDetail {
             thread_id: thread_id.clone(),
@@ -899,313 +1847,6 @@ impl CoordinatorActor {
         thread.settled_at = settle.then(now_iso);
         thread.updated_at = now_iso();
         self.save_workspace();
-        Ok(())
-    }
-
-    fn cmd_configure_thread(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let Some(tid) = command.get("threadId").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("threadId is required."));
-        };
-        let Some(thread) = self.threads.iter_mut().find(|t| t.id == tid) else {
-            return Err(CoordinatorError::invalid("Unknown thread."));
-        };
-        if let Some(m) = command.get("modelId").and_then(Value::as_str) {
-            thread.model_id = Some(m.to_string());
-        }
-        if let Some(e) = command.get("reasoningEffort").and_then(Value::as_str) {
-            thread.reasoning_effort = Some(e.to_string());
-        }
-        if let Some(r) = command.get("runtimeMode").and_then(Value::as_str) {
-            thread.runtime_mode = Some(r.to_string());
-        }
-        if let Some(p) = command.get("providerMode").and_then(Value::as_str) {
-            thread.provider_mode = Some(p.to_string());
-        }
-        thread.updated_at = now_iso();
-        self.save_workspace();
-        Ok(())
-    }
-
-    async fn cmd_manual_send(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let Some(tid) = command.get("threadId").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("threadId is required."));
-        };
-        let text = command
-            .get("text")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let draft_id = command
-            .get("draftId")
-            .and_then(Value::as_str)
-            .map(ToString::to_string)
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let command_id = Uuid::new_v4().to_string();
-
-        let Some(thread) = self.threads.iter().find(|t| t.id == tid).cloned() else {
-            return Err(CoordinatorError::invalid("Unknown thread."));
-        };
-
-        let mut attachments = Vec::new();
-        if let Some(arr) = command.get("attachments").and_then(Value::as_array) {
-            for item in arr {
-                if let Some(id) = item.get("id").and_then(Value::as_str) {
-                    if let Some(entry) = self.staged.get(id) {
-                        attachments.push(entry.clone());
-                    }
-                }
-            }
-        }
-
-        // Reject image attachments if the thread's model explicitly declares `supportsImages: false`.
-        let has_image = attachments.iter().any(|a| a.handle.kind == "image");
-        if has_image {
-            let supports_images = thread
-                .model_id
-                .as_deref()
-                .and_then(|mid| self.models.iter().find(|m| m.id == mid))
-                .and_then(|m| m.supports_images)
-                .unwrap_or(true);
-            if !supports_images {
-                let now = now_iso();
-                self.deliveries.push(AgentDelivery {
-                    command_id,
-                    draft_id,
-                    thread_id: tid.to_string(),
-                    message_id: None,
-                    status: "failed".into(),
-                    error: Some("The selected model does not read images. Nothing was sent.".into()),
-                    created_at: now.clone(),
-                    updated_at: now,
-                    local_feedback_ms: Some(0),
-                    provider_latency_ms: None,
-                });
-                self.error = Some("The selected model does not read images. Nothing was sent.".into());
-                return Ok(());
-            }
-        }
-
-        let Some(adapter) = self.providers.get(&thread.provider_id).cloned() else {
-            return Err(CoordinatorError::unavailable("Provider is not available."));
-        };
-
-        let cwd = thread
-            .worktree
-            .as_ref()
-            .map(|w| w.path.clone())
-            .unwrap_or_else(|| self.data_directory.to_string_lossy().into_owned());
-
-        let started = Instant::now();
-        let ack = adapter
-            .send_message(SendMessageRequest {
-                thread_id: tid.to_string(),
-                cwd,
-                model_id: thread.model_id.clone(),
-                reasoning_effort: thread.reasoning_effort.clone(),
-                runtime_mode: thread.runtime_mode.clone(),
-                text: text.clone(),
-                command_id: command_id.clone(),
-                draft_id: draft_id.clone(),
-                attachments: attachments.clone(),
-            })
-            .await
-            .map_err(CoordinatorError::unavailable)?;
-
-        let now = now_iso();
-        let stored_attachments = if attachments.is_empty() {
-            None
-        } else {
-            Some(Value::Array(
-                attachments
-                    .iter()
-                    .map(|a| serde_json::to_value(&a.handle).unwrap_or(Value::Null))
-                    .collect(),
-            ))
-        };
-        let user_message = StoredMessage {
-            id: ack.message_id.clone(),
-            role: "user".into(),
-            text,
-            created_at: now.clone(),
-            command_id: Some(command_id.clone()),
-            turn_message_id: None,
-            attachments: stored_attachments,
-            watcher_own_change: None,
-            watcher_observed_changes: None,
-            provider_error: None,
-        };
-
-        let _ = self.thread_store.append_event(
-            tid,
-            &ThreadEvent::MessageAdded {
-                at: now.clone(),
-                message: user_message.clone(),
-                redacted: None,
-            },
-        );
-        self.push_message_to_detail(tid, user_message);
-
-        let is_accepted = ack.status == "accepted";
-        if let Some(t) = self.threads.iter_mut().find(|t| t.id == tid) {
-            if is_accepted {
-                t.status = "running".into();
-                t.last_turn = Some(AgentTurnRecord {
-                    id: ack.turn_id.clone(),
-                    status: "running".into(),
-                    message_id: Some(ack.message_id.clone()),
-                });
-            }
-            t.native_session_started = true;
-            t.last_user_message_id = Some(ack.message_id.clone());
-            t.updated_at = now.clone();
-            if let Some(detail) = self.details.get(tid) {
-                t.summary = summarize_thread(&detail.messages, &detail.activities, &t.status);
-            }
-        }
-
-        let elapsed = started.elapsed().as_millis() as u64;
-        self.deliveries.push(AgentDelivery {
-            command_id,
-            draft_id: draft_id.clone(),
-            thread_id: tid.to_string(),
-            message_id: Some(ack.message_id),
-            status: ack.status,
-            error: None,
-            created_at: now.clone(),
-            updated_at: now,
-            local_feedback_ms: Some(elapsed),
-            provider_latency_ms: is_accepted.then_some(ack.provider_latency_ms),
-        });
-        self.delivered_drafts.push(DeliveredDraft {
-            draft_id,
-            thread_id: tid.to_string(),
-        });
-        self.save_workspace();
-        Ok(())
-    }
-
-    async fn cmd_answer(
-        &mut self,
-        client: &ClientContext,
-        command: &Map<String, Value>,
-    ) -> Result<(), CoordinatorError> {
-        let Some(tid) = command.get("threadId").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("threadId is required."));
-        };
-        let Some(request_id) = command.get("requestId").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("requestId is required."));
-        };
-        let answer = command
-            .get("answer")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let approved = command.get("approved").and_then(Value::as_bool);
-        let permission_choice = command
-            .get("permissionChoice")
-            .and_then(Value::as_str)
-            .map(ToString::to_string);
-        let question_answers = command.get("questionAnswers").cloned();
-
-        let (provider_id, title) = {
-            let Some(thread) = self.threads.iter().find(|t| t.id == tid) else {
-                return Err(CoordinatorError::invalid("Unknown thread."));
-            };
-            let has_req = thread
-                .requests
-                .iter()
-                .any(|r| r.get("id").and_then(Value::as_str) == Some(request_id));
-            if !has_req {
-                return Err(CoordinatorError::stale(
-                    HostErrorCode::StaleRequest.default_message(),
-                ));
-            }
-            (thread.provider_id.clone(), thread.title.clone())
-        };
-
-        let Some(adapter) = self.providers.get(&provider_id).cloned() else {
-            return Err(CoordinatorError::unavailable("Provider is not available."));
-        };
-
-        adapter
-            .answer_request(AnswerRequestInput {
-                thread_id: tid.to_string(),
-                request_id: request_id.to_string(),
-                answer,
-                approved,
-                permission_choice: permission_choice.clone(),
-                question_answers,
-            })
-            .await
-            .map_err(CoordinatorError::unavailable)?;
-
-        let _ = self.thread_store.append_event(
-            tid,
-            &ThreadEvent::AnswerGiven {
-                at: now_iso(),
-                request_id: request_id.to_string(),
-                answer: None,
-                approved,
-                permission_choice,
-                question_option_ids: None,
-                attribution: ThreadEventAttribution {
-                    client_id: client.client_id.clone(),
-                    user: Some(client.user.clone()),
-                    transport: "socket".into(),
-                },
-            },
-        );
-
-        if let Some(thread) = self.threads.iter_mut().find(|t| t.id == tid) {
-            thread
-                .requests
-                .retain(|r| r.get("id").and_then(Value::as_str) != Some(request_id));
-            thread.updated_at = now_iso();
-        }
-        self.notice = Some(format!("Answered {title}."));
-        Ok(())
-    }
-
-    async fn cmd_interrupt(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let Some(tid) = command.get("threadId").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("threadId is required."));
-        };
-        let Some(provider_id) = self
-            .threads
-            .iter()
-            .find(|t| t.id == tid)
-            .map(|t| t.provider_id.clone())
-        else {
-            return Err(CoordinatorError::invalid("Unknown thread."));
-        };
-        if let Some(adapter) = self.providers.get(&provider_id).cloned() {
-            adapter
-                .interrupt(tid.to_string())
-                .await
-                .map_err(CoordinatorError::unavailable)?;
-        }
-        self.finish_turn(tid, "interrupted");
-        Ok(())
-    }
-
-    async fn cmd_compact(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let Some(tid) = command.get("threadId").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("threadId is required."));
-        };
-        let Some(provider_id) = self
-            .threads
-            .iter()
-            .find(|t| t.id == tid)
-            .map(|t| t.provider_id.clone())
-        else {
-            return Err(CoordinatorError::invalid("Unknown thread."));
-        };
-        if let Some(adapter) = self.providers.get(&provider_id).cloned() {
-            adapter
-                .compact(tid.to_string())
-                .await
-                .map_err(CoordinatorError::unavailable)?;
-        }
         Ok(())
     }
 
@@ -1352,33 +1993,31 @@ impl CoordinatorActor {
         let now = now_iso();
         if let Some(detail) = self.details.get_mut(thread_id) {
             let mut changed = false;
-            for act in &mut detail.activities {
+            for (idx, act) in detail.activities.iter_mut().enumerate() {
                 if act.get("kind").and_then(Value::as_str) == Some("turn")
                     && act.get("status").and_then(Value::as_str) == Some("running")
                 {
                     if let Some(obj) = act.as_object_mut() {
                         obj.insert("status".into(), Value::String(status.to_string()));
                         obj.insert("completedAt".into(), Value::String(now.clone()));
-                        let title = if status == "interrupted" {
-                            "Turn interrupted"
-                        } else {
-                            "Turn completed"
+                        let title = match status {
+                            "interrupted" => "Turn interrupted",
+                            "failed" => "Turn failed",
+                            _ => "Turn completed",
                         };
                         obj.insert("title".into(), Value::String(title.into()));
                         changed = true;
                     }
+                    let _ = self.thread_store.upsert_activity(thread_id, idx as i64, act);
                 }
             }
             if changed {
                 detail.revision += 1;
-                let _ = self
-                    .thread_store
-                    .save_activities(thread_id, None, None, &detail.activities);
                 self.dirty_details.insert(thread_id.to_string());
             }
         }
         if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
-            thread.status = "idle".into();
+            thread.status = if status == "failed" { "error" } else { "idle" }.into();
             if let Some(ref mut turn) = thread.last_turn {
                 turn.status = status.to_string();
             }
@@ -1418,23 +2057,28 @@ impl CoordinatorActor {
                 activities: Vec::new(),
                 earlier_available: None,
             });
-        if let Some(id) = activity.get("id").and_then(Value::as_str) {
-            if let Some(existing) = detail
+        let position = if let Some(id) = activity.get("id").and_then(Value::as_str) {
+            if let Some((idx, existing)) = detail
                 .activities
                 .iter_mut()
-                .find(|a| a.get("id").and_then(Value::as_str) == Some(id))
+                .enumerate()
+                .find(|(_, a)| a.get("id").and_then(Value::as_str) == Some(id))
             {
                 *existing = activity;
+                idx
             } else {
                 detail.activities.push(activity);
+                detail.activities.len() - 1
             }
         } else {
             detail.activities.push(activity);
-        }
+            detail.activities.len() - 1
+        };
         detail.revision += 1;
+        // O(1) incremental upsert: never rewrite all past activity rows on every update.
         let _ = self
             .thread_store
-            .save_activities(thread_id, None, None, &detail.activities);
+            .upsert_activity(thread_id, position as i64, &detail.activities[position]);
         self.dirty_details.insert(thread_id.to_string());
     }
 
@@ -1492,6 +2136,10 @@ impl CoordinatorActor {
             .map(|p| p.capabilities.clone())
             .unwrap_or_else(AgentCapabilities::none);
         let host_name = provider_label(&self.configuration.provider);
+        let host_version = active_provider
+            .map(|p| p.version.as_str())
+            .filter(|v| !v.is_empty())
+            .unwrap_or(HOST_VERSION);
 
         let busy_ids: Vec<&String> = self.busy_thread_ids.iter().collect();
 
@@ -1532,7 +2180,9 @@ impl CoordinatorActor {
                 "projects": self.projects,
                 "providers": providers,
                 "threads": self.threads,
+                "version": host_version,
             },
+            "membership": { "status": "beta", "label": "", "expiresAt": null },
             "notice": self.notice,
             "pendingRequest": "",
             "queue": [],
@@ -1542,61 +2192,222 @@ impl CoordinatorActor {
     }
 
     fn save_workspace(&self) {
-        let state = PersistedWorkspace {
-            projects: self.projects.clone(),
-            threads: self.threads.clone(),
-            configuration: self.configuration.clone(),
-        };
-        let _ = write_atomic_json(&self.data_directory.join("workspace.json"), &state);
-        // Also write `threads.json` in Sotto's `ThreadRegistry` schema (`{ version, bindings }`)
-        // so TypeScript restarts and the referee harness resolve each thread's provider binding.
-        let bindings: Vec<Value> = self
+        // Persist `workspace.json` in TypeScript's exact `workspaceSchema` format:
+        // `{ snapshot, projectAliases, creations, clearedThreadIds }`, preserving extra fields.
+        let mut snapshot = self.snapshot_extra.clone();
+        snapshot.insert("hostId".into(), Value::String(self.host_id.clone()));
+        snapshot.insert("connected".into(), Value::Bool(false));
+        snapshot.insert(
+            "name".into(),
+            Value::String(provider_label(&self.configuration.provider).to_string()),
+        );
+        snapshot.insert("version".into(), Value::String(HOST_VERSION.into()));
+        snapshot.insert(
+            "capabilities".into(),
+            serde_json::to_value(AgentCapabilities::none()).unwrap_or_else(|_| json!({})),
+        );
+        snapshot.insert(
+            "models".into(),
+            serde_json::to_value(&self.models).unwrap_or_else(|_| json!([])),
+        );
+        snapshot.insert(
+            "projects".into(),
+            serde_json::to_value(&self.projects).unwrap_or_else(|_| json!([])),
+        );
+        let stored_threads: Vec<Value> = self
             .threads
             .iter()
             .map(|t| {
-                json!({
-                    "threadId": t.id,
-                    "providerId": t.provider_id,
-                    "sessionId": t.id,
-                    "projectId": t.project_id,
-                    "title": t.title,
-                })
+                let mut val = serde_json::to_value(t).unwrap_or_else(|_| json!({}));
+                if let Some(obj) = val.as_object_mut() {
+                    obj.insert("messages".into(), Value::Array(Vec::new()));
+                    obj.remove("summary");
+                }
+                val
             })
             .collect();
-        let registry = json!({
-            "version": 1,
-            "bindings": bindings,
-        });
+        snapshot.insert("threads".into(), Value::Array(stored_threads));
+
+        let mut file_obj = self.file_extra.clone();
+        file_obj.insert("snapshot".into(), Value::Object(snapshot));
+        file_obj.insert("projectAliases".into(), Value::Array(self.project_aliases.clone()));
+        file_obj.insert("creations".into(), Value::Array(self.creations.clone()));
+        file_obj.insert(
+            "clearedThreadIds".into(),
+            serde_json::to_value(&self.cleared_thread_ids).unwrap_or_else(|_| json!([])),
+        );
+        let _ = write_atomic_json(&self.data_directory.join("workspace.json"), &Value::Object(file_obj));
+
+        // Persist `threads.json` in TypeScript `ThreadRegistry` format (`{ bindings: [{ threadId, provider, sessionId, projectId, createdAt }] }`),
+        // preserving all existing bindings (including bindings for other/unloaded providers).
+        let mut merged = self.thread_bindings.clone();
+        for t in &self.threads {
+            merged.entry(t.id.clone()).or_insert_with(|| ThreadBindingRecord {
+                thread_id: t.id.clone(),
+                provider: t.provider_id.clone(),
+                session_id: t.id.clone(),
+                project_id: t.project_id.clone(),
+                created_at: if t.created_at.is_empty() {
+                    now_iso()
+                } else {
+                    t.created_at.clone()
+                },
+            });
+        }
+        let mut bindings: Vec<ThreadBindingRecord> = merged.into_values().collect();
+        bindings.sort_by(|a, b| a.created_at.cmp(&b.created_at).then_with(|| a.thread_id.cmp(&b.thread_id)));
+        let registry = json!({ "bindings": bindings });
         let _ = write_atomic_json(&self.data_directory.join("threads.json"), &registry);
     }
 }
 
-fn load_persisted_workspace(dir: &Path) -> PersistedWorkspace {
+/// Loads `workspace.json` in TypeScript's `workspaceSchema` format (`{ snapshot, projectAliases, creations, clearedThreadIds }`).
+/// Refuses corrupt or unreadable existing files instead of replacing saved state with defaults.
+fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
     let path = dir.join("workspace.json");
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(LoadedWorkspace::default());
+        }
+        Err(err) => {
+            return Err(format!("Could not read saved workspace.json: {err}"));
+        }
+    };
+    let parsed: Value = serde_json::from_str(&raw)
+        .map_err(|err| format!("Saved workspace.json is not valid JSON: {err}"))?;
+    let Some(mut root) = parsed.as_object().cloned() else {
+        return Err("Saved workspace.json must be a JSON object.".into());
+    };
+
+    let Some(snapshot_val) = root.remove("snapshot") else {
+        return Err("Saved workspace.json is missing required snapshot object.".into());
+    };
+    let Some(mut snapshot) = snapshot_val.as_object().cloned() else {
+        return Err("Saved workspace.json snapshot must be a JSON object.".into());
+    };
+
+    let projects: Vec<AgentProject> = match snapshot.remove("projects") {
+        Some(v) => serde_json::from_value(v)
+            .map_err(|err| format!("Saved workspace.json has invalid projects: {err}"))?,
+        None => Vec::new(),
+    };
+    let threads: Vec<AgentThread> = match snapshot.remove("threads") {
+        Some(v) => serde_json::from_value(v)
+            .map_err(|err| format!("Saved workspace.json has invalid threads: {err}"))?,
+        None => Vec::new(),
+    };
+    let project_aliases = root
+        .remove("projectAliases")
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+    let creations = root
+        .remove("creations")
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default();
+    let cleared_thread_ids = root
+        .remove("clearedThreadIds")
+        .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+        .unwrap_or_default();
+    let configuration = root
+        .get("configuration")
+        .and_then(|v| serde_json::from_value::<AgentConfiguration>(v.clone()).ok())
+        .unwrap_or_default();
+
+    Ok(LoadedWorkspace {
+        projects,
+        threads,
+        project_aliases,
+        creations,
+        cleared_thread_ids,
+        snapshot_extra: snapshot,
+        file_extra: root,
+        configuration,
+    })
+}
+
+fn load_thread_bindings(dir: &Path) -> HashMap<String, ThreadBindingRecord> {
+    let path = dir.join("threads.json");
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    let Ok(val) = serde_json::from_str::<Value>(&raw) else {
+        return HashMap::new();
+    };
+    let mut map = HashMap::new();
+    if let Some(arr) = val.get("bindings").and_then(Value::as_array) {
+        for item in arr {
+            if let Ok(rec) = serde_json::from_value::<ThreadBindingRecord>(item.clone()) {
+                map.entry(rec.thread_id.clone()).or_insert(rec);
+            }
+        }
+    }
+    map
+}
+
+fn allocate_independent_worktree(
+    data_dir: &Path,
+    project_path: &str,
+    base_branch: Option<&str>,
+) -> Result<AgentThreadWorktree, String> {
+    let repo_root = run_git_sync(project_path, &["rev-parse", "--show-toplevel"])
+        .map(|s| s.trim().to_string())
+        .map_err(|_| "Separate worktrees require a Git repository.".to_string())?;
+    let token = &Uuid::new_v4().simple().to_string()[..8];
+    let branch = format!("sotto/{token}");
+    let worktrees_root = data_dir.join("thread-worktrees");
+    std::fs::create_dir_all(&worktrees_root)
+        .map_err(|e| format!("Could not create thread-worktrees folder: {e}"))?;
+    let wt_path = worktrees_root.join(token);
+    let wt_str = wt_path.to_string_lossy().into_owned();
+
+    let mut args = vec!["worktree", "add", "-b", &branch, &wt_str];
+    if let Some(base) = base_branch.filter(|b| !b.trim().is_empty()) {
+        args.push(base);
+    }
+    run_git_sync(&repo_root, &args)
+        .map_err(|e| format!("Could not create separate Git worktree: {e}"))?;
+
+    Ok(AgentThreadWorktree {
+        mode: "independent".into(),
+        status: "ready".into(),
+        path: Some(wt_str),
+        repository_root: Some(repo_root),
+        branch: Some(branch),
+        base_branch: base_branch.map(ToString::to_string),
+        start_from_origin: None,
+        existing_worktree_path: None,
+        reused: Some(false),
+        temporary_branch: Some(true),
+        error: None,
+        git: None,
+    })
+}
+
+fn run_git_sync(folder: &str, args: &[&str]) -> Result<String, String> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(folder);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 fn probe_git_worktree(folder: &str) -> Value {
-    let branch = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(folder)
-        .output()
+    let branch = run_git_sync(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
         .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string());
     match branch {
         Some(b) if !b.is_empty() => {
-            let dirty = Command::new("git")
-                .args(["status", "--porcelain"])
-                .current_dir(folder)
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| !o.stdout.is_empty())
+            let dirty = run_git_sync(folder, &["status", "--porcelain"])
+                .map(|s| !s.is_empty())
                 .unwrap_or(false);
             json!({
                 "isRepository": true,
@@ -1623,7 +2434,7 @@ mod tests {
 
         let coord = CoordinatorHandle::spawn(
             dir.path().to_path_buf(),
-            "host-1".into(),
+            "00000000-0000-4000-8000-000000000001".into(),
             false,
             providers,
         )
@@ -1652,6 +2463,8 @@ mod tests {
             )
             .await
             .unwrap();
+        assert!(shell["host"]["version"].is_string());
+        assert!(shell["notice"].is_string());
         let project_id = shell["host"]["projects"][0]["id"]
             .as_str()
             .unwrap()
@@ -1695,6 +2508,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(shell["host"]["threads"][0]["status"], "running");
+        assert_eq!(shell["host"]["threads"][0]["worktree"]["status"], "ready");
 
         // Emit a question and answer it
         mock.emit_request(
@@ -1732,5 +2546,29 @@ mod tests {
         assert_eq!(events.len(), 3); // message-added, answer-given, message-added
 
         coord.shutdown().await;
+
+        // Verify TS-compatible `workspace.json` and `threads.json` on disk.
+        let ws_raw: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("workspace.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(ws_raw["snapshot"]["threads"].is_array());
+        assert!(ws_raw["projectAliases"].is_array());
+        assert!(ws_raw["creations"].is_array());
+        assert!(ws_raw["clearedThreadIds"].is_array());
+
+        let tb_raw: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("threads.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(tb_raw["bindings"][0]["provider"], "codex");
+        assert!(tb_raw["bindings"][0]["createdAt"].is_string());
+    }
+
+    #[test]
+    fn refuses_corrupt_workspace_json_instead_of_overwriting() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("workspace.json"), "{ not valid json").unwrap();
+        assert!(load_persisted_workspace(dir.path()).is_err());
     }
 }

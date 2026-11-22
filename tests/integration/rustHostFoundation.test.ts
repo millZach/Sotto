@@ -4,9 +4,9 @@
 // SOTTO1 credentials, protocol v1 HTTP + RFC 7692 permessage-deflate WS, and referee startup).
 // Runs when `SOTTO_TEST_RUST_HOST=1` (enabled in the Rust host CI job and locally after `cargo build`).
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -18,10 +18,23 @@ import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../src/host/soc
 import { loadHostIdentity } from '../../src/main/agents/hostIdentity'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { SubagentStore } from '../../src/main/agents/subagentStore'
+import { ThreadRegistry } from '../../src/main/agents/threads'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { migrateDatabase } from '../../src/main/memory/migrations.mjs'
 import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
+import { agentAttachmentHandleSchema } from '../../src/shared/agents'
+import { fileListingSchema, filePreviewSchema } from '../../src/shared/files'
+import { gitChangedFilesSchema } from '../../src/shared/gitChangedFiles'
+import { gitListingSchema, gitReviewSchema } from '../../src/shared/gitChanges'
+import { gitRefsPageSchema } from '../../src/shared/gitRefs'
+import { hostMachineReportSchema } from '../../src/shared/hostFacts'
+import { hostFoldersResultSchema } from '../../src/shared/hostFolders'
+import { protocolAgentStateSchema } from '../../src/shared/hostProtocol'
+import { subagentAssignmentsPageSchema, subagentPageSchema } from '../../src/shared/subagents'
+import { agentThreadWordsSchema } from '../../src/shared/threadWords'
+import { toolsResultSchema } from '../../src/shared/tools'
+import { usageLocalClearResultSchema, usageLocalHostReadSchema } from '../../src/shared/usageDashboard'
 import { ClientFold } from '../referee/fold'
 import { PROFILES } from '../referee/scenario'
 import { DESKTOP_DEFLATE_OFFER, openSocket, pairClient, startHost } from '../referee/wire'
@@ -448,5 +461,196 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
       await running.stop()
       await rm(foldDir, { recursive: true, force: true })
     }
+  }, 30_000)
+
+  it('validates shells, ThreadRegistry, attachment handles, v1 remote ops, detail-read-held, and security containment against TS schemas', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-v1-contract-'))
+    const projectDir = join(dataDir, 'project')
+    await mkdir(projectDir, { recursive: true })
+    await writeFile(join(projectDir, 'readme.md'), '# Contract test\nhello world\n', 'utf8')
+    await writeFile(join(projectDir, 'oversized.txt'), Buffer.alloc(512 * 1024 + 32, 0x61))
+
+    const running = await startHost(
+      [hostBinary, '--data', '{data}', '--port', '0', '--sotto-version', '0.1.44-owl.20261118.2', '--mock-provider', 'codex'],
+      dataDir,
+      'codex',
+    )
+    const threadId = '00000000-0000-4000-8000-0000000000c1'
+    try {
+      const pair = await pairClient(running.port, dataDir, 'Contract Desktop')
+      const sock = await openSocket(running.port, pair.session, PROFILES.desktop.offer)
+      let seq = 0
+      const rpc = async (payload: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        const id = `c-${++seq}`
+        sock.send({ v: 1, id, session: pair.session, ...payload })
+        return await new Promise((resolvePromise, rejectPromise) => {
+          const timer = setTimeout(() => rejectPromise(new Error(`Timeout waiting for ${id} (${String(payload.op)})`)), 5_000)
+          const check = (): void => {
+            const hit = sock.crossings.find(c => c.dir === 'in' && c.frame.id === id)
+            if (hit) { clearTimeout(timer); off(); resolvePromise(hit.frame) }
+          }
+          const off = sock.onArrival(check)
+          check()
+        })
+      }
+
+      try {
+        // 1. Hello shell must satisfy TS `protocolAgentStateSchema`.
+        const baseAccepts = (PROFILES.desktop.hello.accepts as readonly string[] | undefined) ?? []
+        const hello = await rpc({ op: 'hello', accepts: [...baseAccepts, 'detail-read-held'] })
+        expect(hello.ok).toBe(true)
+        const helloShell = (hello.result as { shell: unknown }).shell
+        const parsedHello = protocolAgentStateSchema.parse(helloShell)
+        expect(parsedHello.notice).toBe('')
+        expect(parsedHello.host.version.length).toBeGreaterThan(0)
+
+        // 2. Create project + thread and verify command shell passes `protocolAgentStateSchema`
+        // (re-attaching cached `models` when `model-catalog-revision` elides an unchanged catalog, as `SocketHostService` does).
+        const withCachedModels = (raw: unknown): unknown => {
+          const obj = raw as { host?: { models?: unknown; modelsRevision?: number } }
+          if (obj.host && obj.host.models === undefined && obj.host.modelsRevision === parsedHello.host.modelsRevision) {
+            return { ...obj, host: { ...obj.host, models: parsedHello.host.models } }
+          }
+          return raw
+        }
+        const createProj = await rpc({
+          op: 'command',
+          command: { type: 'create-project', provider: 'codex', title: 'Contract Project', path: projectDir, useExisting: true },
+        })
+        expect(createProj.ok).toBe(true)
+        const afterProj = protocolAgentStateSchema.parse(withCachedModels(createProj.result))
+        const projectId = afterProj.host.projects.find(p => p.path === projectDir)!.id
+
+        const createThread = await rpc({
+          op: 'command',
+          command: {
+            type: 'create-thread',
+            threadId,
+            projectId,
+            title: 'Contract Thread',
+            titleSource: 'user',
+            modelId: 'native:codex:model:fixture-model',
+            workingCopy: 'shared',
+            managed: false,
+          },
+        })
+        expect(createThread.ok).toBe(true)
+        const afterThread = protocolAgentStateSchema.parse(withCachedModels(createThread.result))
+        expect(afterThread.host.threads[0]?.worktree?.status).toBe('ready')
+
+        // 3. Direct `detail` read before `observe` honors `detail-read-held` (no redundant whole detail push).
+        const preRead = await rpc({ op: 'detail', threadId })
+        expect(preRead.ok).toBe(true)
+        const crossingsBeforeObs = sock.crossings.length
+        const obs = await rpc({ op: 'observe', threadIds: [threadId] })
+        expect(obs.ok).toBe(true)
+        const redundantWhole = sock.crossings
+          .slice(crossingsBeforeObs)
+          .some(c => c.dir === 'in' && c.frame.event === 'detail' && c.frame.threadId === threadId)
+        expect(redundantWhole).toBe(false)
+
+        // 4. Attachment handle schema + oversized upload rejection (must NOT crash coordinator!).
+        const pixelPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        const imgStage = await rpc({ op: 'stage-attachment', image: { name: 'dot.png', mimeType: 'image/png', data: pixelPng } })
+        expect(imgStage.ok).toBe(true)
+        const imgHandle = agentAttachmentHandleSchema.parse(imgStage.result)
+
+        const contentRes = await rpc({ op: 'attachment-content', digest: imgHandle.digest })
+        expect(contentRes.ok).toBe(true)
+        expect((contentRes.result as { mimeType: string; data: string }).data).toBe(pixelPng)
+
+        const hugeUpload = await rpc({
+          op: 'stage-file-part',
+          part: {
+            uploadId: '00000000-0000-4000-8000-0000000000f9',
+            index: 0,
+            count: 1,
+            name: 'bomb.txt',
+            mimeType: 'text/plain',
+            sizeBytes: Number.MAX_SAFE_INTEGER,
+            digest: createHash('sha256').update('x').digest('hex'),
+            data: Buffer.from('x').toString('base64'),
+          },
+        })
+        expect(hugeUpload.ok).toBe(false)
+
+        // 5. Security containment & exact v1 op contracts.
+        const listRes = await rpc({ op: 'thread-files', request: { threadId, path: '' } })
+        expect(listRes.ok).toBe(true)
+        const listing = toolsResultSchema(fileListingSchema).parse(listRes.result)
+        expect(listing.ok).toBe(true)
+        if (!listing.ok) throw new Error('expected ok listing')
+        const workspaceId = listing.value.workspace.workspaceId
+
+        // Preview valid file inside thread workspace.
+        const previewRes = await rpc({ op: 'thread-file-preview', request: { threadId, path: 'readme.md', workspaceId } })
+        expect(previewRes.ok).toBe(true)
+        const preview = toolsResultSchema(filePreviewSchema).parse(previewRes.result)
+        expect(preview.ok).toBe(true)
+        if (preview.ok && preview.value.content.kind === 'markdown') {
+          expect(preview.value.content.text).toContain('# Contract test')
+        }
+
+        // Security: attempting to read host-listener.json or supply mismatched workspaceId MUST be refused!
+        const secretAttempt = await rpc({
+          op: 'thread-file-preview',
+          request: { threadId, path: '../host-listener.json', workspaceId },
+        })
+        expect(secretAttempt.ok).toBe(true)
+        const secretParsed = toolsResultSchema(filePreviewSchema).parse(secretAttempt.result)
+        expect(secretParsed.ok).toBe(false)
+
+        const wrongWsAttempt = await rpc({
+          op: 'thread-file-preview',
+          request: { threadId, path: 'readme.md', workspaceId: '0'.repeat(64) },
+        })
+        const wrongWsParsed = toolsResultSchema(filePreviewSchema).parse(wrongWsAttempt.result)
+        expect(wrongWsParsed.ok).toBe(false)
+        if (!wrongWsParsed.ok) expect(wrongWsParsed.error.code).toBe('workspace-changed')
+
+        // Oversized text preview (> 512 KiB) must be refused with too-large.
+        const hugePreview = await rpc({ op: 'thread-file-preview', request: { threadId, path: 'oversized.txt', workspaceId } })
+        const hugePreviewParsed = toolsResultSchema(filePreviewSchema).parse(hugePreview.result)
+        expect(hugePreviewParsed.ok).toBe(false)
+        if (!hugePreviewParsed.ok) expect(hugePreviewParsed.error.code).toBe('too-large')
+
+        // All remaining v1 remote ops validate cleanly against their TS Zod schemas.
+        gitRefsPageSchema.parse((await rpc({ op: 'git-refs', request: { threadId } })).result)
+        gitChangedFilesSchema.parse((await rpc({ op: 'git-changed-files', request: { threadId } })).result)
+        toolsResultSchema(gitListingSchema).parse((await rpc({ op: 'thread-changes', request: { threadId, workspaceId } })).result)
+        toolsResultSchema(gitReviewSchema).parse((await rpc({ op: 'thread-changes-review', request: { threadId, workspaceId, scope: { kind: 'working' } } })).result)
+        hostFoldersResultSchema.parse((await rpc({ op: 'host-folders', request: { path: projectDir } })).result)
+        hostMachineReportSchema.parse((await rpc({ op: 'host-facts' })).result)
+        subagentPageSchema.parse((await rpc({ op: 'subagent-page', request: { threadId } })).result)
+        subagentAssignmentsPageSchema.parse((await rpc({ op: 'subagent-assignments', request: { threadId, agentId: 'a1' } })).result)
+
+        // Send a prompt so thread-words finds a match matching `agentThreadWordsSchema`.
+        await rpc({ op: 'command', command: { type: 'manual-send', threadId, text: 'UniqueNeedleWord42', attachments: [imgHandle] } })
+        const words = agentThreadWordsSchema.parse((await rpc({ op: 'thread-words', query: 'UniqueNeedleWord42' })).result)
+        expect(words.found).toHaveLength(1)
+        expect(words.found[0]!.threadId).toBe(threadId)
+
+        // Usage dashboard real v1 ops (`usage-read`, `usage-refresh`, `usage-clear`).
+        const uRead = usageLocalHostReadSchema.parse((await rpc({ op: 'usage-read', query: { timeZone: 'UTC' } })).result)
+        expect(uRead.status).toBe('ready')
+        usageLocalHostReadSchema.parse((await rpc({ op: 'usage-refresh' })).result)
+        const uClear = usageLocalClearResultSchema.parse((await rpc({ op: 'usage-clear', request: { expectedRevision: 0 } })).result)
+        expect(uClear.status).toBe('cleared')
+      } finally {
+        sock.close()
+      }
+    } finally {
+      await running.stop()
+    }
+
+    // 6. Verify TS `ThreadRegistry` loads Rust's `threads.json` with zero lost bindings!
+    const tsRegistry = new ThreadRegistry(dataDir)
+    await tsRegistry.load()
+    const binding = tsRegistry.byThread(threadId)
+    expect(binding).toBeDefined()
+    expect(binding?.provider).toBe('codex')
+    expect(binding?.createdAt).toBeTruthy()
+
+    await rm(dataDir, { recursive: true, force: true })
   }, 30_000)
 })

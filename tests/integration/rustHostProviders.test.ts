@@ -8,7 +8,7 @@ import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { publicProviderEntityId } from '../../src/shared/agents'
+import { agentAttachmentHandleSchema, publicProviderEntityId } from '../../src/shared/agents'
 import { ClientFold, FOLDED_PUSHES } from '../referee/fold'
 import { drive, nativeSession, prepareFake, type RefereeProvider } from '../referee/providers'
 import { CLIENTS, PROFILES, THREAD, type ClientName } from '../referee/scenario'
@@ -257,6 +257,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host native Codex and Claude Code ad
           image: { name: 'Referee.png', mimeType: 'image/png', data: PIXEL_PNG_B64 },
         })
         expect(imgHandle.ok).toBe(true)
+        const parsedImg = agentAttachmentHandleSchema.parse(imgHandle.result)
         const fileHandle = await sendReq(desktop, {
           op: 'stage-file-part',
           part: {
@@ -271,6 +272,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host native Codex and Claude Code ad
           },
         })
         expect(fileHandle.ok).toBe(true)
+        const parsedFile = agentAttachmentHandleSchema.parse(fileHandle.result)
 
         const send4 = await sendReq(desktop, {
           op: 'command',
@@ -278,11 +280,14 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host native Codex and Claude Code ad
             type: 'manual-send',
             threadId: THREAD,
             text: 'Referee prompt four',
-            attachments: [imgHandle.result, fileHandle.result],
+            attachments: [parsedImg, parsedFile],
           },
         })
         expect(send4.ok).toBe(true)
         await waitFor(clients, () => clients.every(c => threadOf(c)?.status === 'running' && messagesText(c).includes('Referee prompt four')), 'prompt four running')
+        const userMessages = (desktop.fold.held.details[THREAD]?.messages ?? []) as { text?: string; attachments?: { id: string }[] }[]
+        const promptFour = userMessages.find(m => m.text === 'Referee prompt four')
+        expect(promptFour?.attachments?.map(a => a.id)).toEqual([parsedImg.id, parsedFile.id])
 
         const stopRes = await sendReq(desktop, {
           op: 'command',

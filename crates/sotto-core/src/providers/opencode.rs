@@ -67,6 +67,10 @@ struct OpenCodeThreadRecord {
     session_id: String,
     #[serde(default)]
     cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -704,6 +708,14 @@ impl ProviderAdapter for OpenCodeAdapter {
             let started = Instant::now();
             let srv = self.get_server().await?;
 
+            let raw_model = req
+                .model_id
+                .as_deref()
+                .and_then(|m| parse_public_provider_entity_id(m).map(|(_, _, r)| r.to_string()))
+                .or(req.model_id.clone())
+                .unwrap_or_else(|| "opencode/fixture-model".to_string());
+            let (pid, mid) = raw_model.split_once('/').unwrap_or(("opencode", raw_model.as_str()));
+
             let existing = self
                 .shared
                 .records
@@ -712,14 +724,32 @@ impl ProviderAdapter for OpenCodeAdapter {
                 .get(&req.thread_id)
                 .cloned();
             let native_sid = match existing {
-                Some(rec) => rec.session_id,
+                Some(rec) => {
+                    if rec.model_id.as_deref() != Some(raw_model.as_str())
+                        || rec.reasoning_effort != req.reasoning_effort
+                    {
+                        let mut model_obj = json!({ "providerID": pid, "id": mid });
+                        if let Some(ref eff) = req.reasoning_effort {
+                            if !eff.is_empty() {
+                                model_obj["variant"] = json!(if eff == "off" { "none" } else { eff.as_str() });
+                            }
+                        }
+                        let path = format!("/api/session/{}/model", rec.session_id);
+                        let (status, _) = srv
+                            .http_json("POST", &path, Some(&json!({ "model": model_obj })), self.config.request_timeout_ms)
+                            .await?;
+                        if !(200..300).contains(&status) {
+                            return Err(format!("OpenCode refused model change (HTTP {status})."));
+                        }
+                        if let Some(entry) = self.shared.records.lock().unwrap().get_mut(&req.thread_id) {
+                            entry.model_id = Some(raw_model.clone());
+                            entry.reasoning_effort = req.reasoning_effort.clone();
+                        }
+                        self.shared.save_records();
+                    }
+                    rec.session_id
+                }
                 None => {
-                    let raw = req
-                        .model_id
-                        .as_deref()
-                        .and_then(|m| parse_public_provider_entity_id(m).map(|(_, _, r)| r))
-                        .unwrap_or("opencode/fixture-model");
-                    let (pid, mid) = raw.split_once('/').unwrap_or(("opencode", raw));
                     // OpenCode Zen refuses client-chosen session IDs; omit `id` on session.create.
                     let (_, created) = srv
                         .http_json(
@@ -744,6 +774,8 @@ impl ProviderAdapter for OpenCodeAdapter {
                         OpenCodeThreadRecord {
                             session_id: sid.clone(),
                             cwd: req.cwd.clone(),
+                            model_id: Some(raw_model.clone()),
+                            reasoning_effort: req.reasoning_effort.clone(),
                         },
                     );
                     self.shared
@@ -885,6 +917,63 @@ impl ProviderAdapter for OpenCodeAdapter {
 
     fn compact(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
         Box::pin(async { Ok(()) })
+    }
+
+    fn configure_thread(
+        &self,
+        thread_id: String,
+        model_id: Option<String>,
+        _runtime_mode: Option<String>,
+        reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async move {
+            let rec = self
+                .shared
+                .records
+                .lock()
+                .unwrap()
+                .get(&thread_id)
+                .cloned();
+            let Some(rec) = rec else {
+                return Ok(());
+            };
+            let raw_model = model_id
+                .as_deref()
+                .map(|m| {
+                    parse_public_provider_entity_id(m)
+                        .map(|(_, _, r)| r.to_string())
+                        .unwrap_or_else(|| m.to_string())
+                })
+                .or(rec.model_id.clone());
+            let Some(raw) = raw_model else {
+                return Ok(());
+            };
+            let eff = reasoning_effort.or(rec.reasoning_effort.clone());
+            if rec.model_id.as_deref() == Some(raw.as_str()) && rec.reasoning_effort == eff {
+                return Ok(());
+            }
+            let srv = self.get_server().await?;
+            let (pid, mid) = raw.split_once('/').unwrap_or(("opencode", raw.as_str()));
+            let mut model_obj = json!({ "providerID": pid, "id": mid });
+            if let Some(ref e) = eff {
+                if !e.is_empty() {
+                    model_obj["variant"] = json!(if e == "off" { "none" } else { e.as_str() });
+                }
+            }
+            let path = format!("/api/session/{}/model", rec.session_id);
+            let (status, _) = srv
+                .http_json("POST", &path, Some(&json!({ "model": model_obj })), self.config.request_timeout_ms)
+                .await?;
+            if !(200..300).contains(&status) {
+                return Err(format!("OpenCode refused model change (HTTP {status})."));
+            }
+            if let Some(entry) = self.shared.records.lock().unwrap().get_mut(&thread_id) {
+                entry.model_id = Some(raw);
+                entry.reasoning_effort = eff;
+            }
+            self.shared.save_records();
+            Ok(())
+        })
     }
 }
 

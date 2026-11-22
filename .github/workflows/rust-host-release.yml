@@ -59,11 +59,22 @@ jobs:
           cache: 'npm'
       - name: Build release sotto-host
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          TARGET_LABEL: ${{ matrix.label }}
+          TARGET_EXT: ${{ matrix.ext }}
         run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9A-Za-z._-]+$ ]]; then
+            echo "Invalid release version format." >&2
+            exit 1
+          fi
           node scripts/build-rust-host.mjs
           mkdir -p dist/rust-host/host
-          cp "out/rust-host/sotto-host${{ matrix.ext }}" "dist/rust-host/host/sotto-host${{ matrix.ext }}"
-          ARCHIVE="Sotto-rust-host-${{ inputs.version }}-${{ matrix.label }}.tar.gz"
+          cp "out/rust-host/sotto-host${TARGET_EXT}" "dist/rust-host/host/sotto-host${TARGET_EXT}"
+          if [[ -z "$TARGET_EXT" ]]; then
+            chmod +x "dist/rust-host/host/sotto-host"
+          fi
+          ARCHIVE="Sotto-rust-host-${RELEASE_VERSION}-${TARGET_LABEL}.tar.gz"
           tar -czf "dist/$ARCHIVE" -C dist/rust-host host
           node -e "const fs=require('fs'),c=require('crypto');const h=c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex');fs.writeFileSync(process.argv[1]+'.sha256', h+'  '+process.argv[2]+'\n')" "dist/$ARCHIVE" "$ARCHIVE"
       - name: Upload Rust host archive

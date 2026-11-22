@@ -1,223 +1,701 @@
+use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::stores::{SubagentStore, ThreadStore, UsageStore};
+use crate::workspace::now_iso;
 
-const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
-const MAX_IMAGE_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
-const MAX_GIT_DIFF_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
+pub const MAX_IMAGE_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_GIT_PATCH_BYTES: usize = 512 * 1024;
+pub const MAX_GIT_REVIEW_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_GIT_FILES: usize = 2_000;
+pub const MAX_FILE_ENTRIES: usize = 1_000;
+pub const MAX_HOST_FOLDERS: usize = 1_000;
+pub const GIT_REFS_MAX_LIMIT: usize = 200;
 
-/// Lists local branches, current branch, and tags for a project/worktree folder.
-pub fn git_refs(folder: &str) -> Result<Value, String> {
-    let head = run_git(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
+/// Authoritative thread workspace identity matching `fileWorkspaceSchema` in `src/shared/files.ts`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadWorkspace {
+    pub thread_id: String,
+    pub project_id: String,
+    pub working_directory: String,
+    pub workspace_id: String,
+}
+
+impl ThreadWorkspace {
+    pub fn build(thread_id: &str, project_id: &str, working_directory: &str) -> Self {
+        let canonical = fs::canonicalize(working_directory)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| working_directory.to_string());
+        let workspace_id = compute_workspace_id(thread_id, project_id, &canonical);
+        Self {
+            thread_id: thread_id.to_string(),
+            project_id: project_id.to_string(),
+            working_directory: working_directory.to_string(),
+            workspace_id,
+        }
+    }
+}
+
+pub fn compute_workspace_id(thread_id: &str, project_id: &str, working_directory: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(thread_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(project_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(working_directory.as_bytes());
+    let digest = hasher.finalize();
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write;
+        let _ = write!(&mut out, "{b:02x}");
+    }
+    out
+}
+
+pub fn tools_ok(value: Value) -> Value {
+    json!({ "ok": true, "value": value })
+}
+
+pub fn tools_err(code: &str, message: &str) -> Value {
+    json!({ "ok": false, "error": { "code": code, "message": message } })
+}
+
+/// Validates a canonical slash-separated relative path matching `fileRelativePathSchema`.
+pub fn is_valid_relative_path(path: &str) -> bool {
+    if path.is_empty() {
+        return true;
+    }
+    if path.len() > 4_096 {
+        return false;
+    }
+    if path.chars().any(|c| {
+        matches!(
+            c,
+            '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*' | '\x00'..='\x1f' | '\x7f'
+        )
+    }) {
+        return false;
+    }
+    for part in path.split('/') {
+        if part.is_empty()
+            || part == "."
+            || part == ".."
+            || part.ends_with('.')
+            || part.ends_with(' ')
+        {
+            return false;
+        }
+        let stem = part.split('.').next().unwrap_or("").to_ascii_lowercase();
+        if matches!(
+            stem.as_str(),
+            "con"
+                | "conin$"
+                | "conout$"
+                | "prn"
+                | "aux"
+                | "nul"
+                | "com1"
+                | "com2"
+                | "com3"
+                | "com4"
+                | "com5"
+                | "com6"
+                | "com7"
+                | "com8"
+                | "com9"
+                | "lpt1"
+                | "lpt2"
+                | "lpt3"
+                | "lpt4"
+                | "lpt5"
+                | "lpt6"
+                | "lpt7"
+                | "lpt8"
+                | "lpt9"
+        ) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Lists branches for a thread's working copy matching `gitRefsPageSchema` (`src/shared/gitRefs.ts`).
+pub fn git_refs(
+    folder: &str,
+    query: Option<&str>,
+    cursor: Option<usize>,
+    limit: Option<usize>,
+    include_matching_remote: bool,
+) -> Result<Value, String> {
+    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+    if !is_repo {
+        return Ok(json!({
+            "refs": [],
+            "isRepository": false,
+            "hasRemote": false,
+            "nextCursor": null,
+            "total": 0,
+        }));
+    }
+
+    let current_branch = run_git(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s != "HEAD");
-    let branches: Vec<String> = run_git(folder, &["branch", "--format=%(refname:short)"])
-        .unwrap_or_default()
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(ToString::to_string)
-        .collect();
-    let tags: Vec<String> = run_git(folder, &["tag", "--list"])
-        .unwrap_or_default()
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .take(200)
-        .map(ToString::to_string)
-        .collect();
+    let remotes_raw = run_git(folder, &["remote"]).unwrap_or_default();
+    let has_remote = remotes_raw.lines().any(|l| !l.trim().is_empty());
+    let origin_head = run_git(folder, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .and_then(|s| s.strip_prefix("origin/").map(ToString::to_string));
+
+    let local_raw = run_git(folder, &["branch", "--format=%(refname:short)"]).unwrap_or_default();
+    let mut local_names = Vec::new();
+    let mut local_set = std::collections::HashSet::new();
+    for line in local_raw.lines() {
+        let name = line.trim();
+        if !name.is_empty() {
+            local_names.push(name.to_string());
+            local_set.insert(name.to_string());
+        }
+    }
+
+    let default_branch = origin_head
+        .or_else(|| {
+            if local_set.contains("main") {
+                Some("main".into())
+            } else if local_set.contains("master") {
+                Some("master".into())
+            } else {
+                None
+            }
+        });
+
+    let mut all_refs = Vec::new();
+    for name in &local_names {
+        let is_current = current_branch.as_deref() == Some(name.as_str());
+        let is_default = default_branch.as_deref() == Some(name.as_str());
+        all_refs.push(json!({
+            "name": name,
+            "current": is_current,
+            "isDefault": is_default,
+            "worktreePath": null,
+        }));
+    }
+
+    if has_remote {
+        let remote_raw =
+            run_git(folder, &["branch", "-r", "--format=%(refname:short)"]).unwrap_or_default();
+        for line in remote_raw.lines() {
+            let name = line.trim();
+            if name.is_empty() || name.ends_with("/HEAD") {
+                continue;
+            }
+            let Some((remote, branch_name)) = name.split_once('/') else {
+                continue;
+            };
+            if !include_matching_remote && local_set.contains(branch_name) {
+                continue;
+            }
+            all_refs.push(json!({
+                "name": name,
+                "remote": remote,
+                "current": false,
+                "isDefault": false,
+                "worktreePath": null,
+            }));
+        }
+    }
+
+    if let Some(q) = query.map(str::trim).filter(|q| !q.is_empty()) {
+        let needle = q.to_ascii_lowercase();
+        all_refs.retain(|r| {
+            r.get("name")
+                .and_then(Value::as_str)
+                .map(|n| n.to_ascii_lowercase().contains(&needle))
+                .unwrap_or(false)
+        });
+    }
+
+    let total = all_refs.len();
+    let start = cursor.unwrap_or(0).min(total);
+    let page_limit = limit.unwrap_or(GIT_REFS_MAX_LIMIT).clamp(1, GIT_REFS_MAX_LIMIT);
+    let end = (start + page_limit).min(total);
+    let next_cursor = if end < total { Some(end) } else { None };
+    let page: Vec<Value> = all_refs.into_iter().skip(start).take(page_limit).collect();
+
     Ok(json!({
-        "branch": head,
-        "branches": branches,
-        "tags": tags,
+        "refs": page,
+        "isRepository": true,
+        "hasRemote": has_remote,
+        "nextCursor": next_cursor,
+        "total": total,
     }))
 }
 
-/// Lists changed files in a git working tree using `git status --porcelain=v1`.
+/// Lists changed files in a git working tree matching `gitChangedFilesSchema` (`src/shared/gitChangedFiles.ts`).
 pub fn git_changed_files(folder: &str) -> Result<Value, String> {
+    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+    if !is_repo {
+        return Ok(json!({
+            "isRepository": false,
+            "files": [],
+            "truncated": false,
+        }));
+    }
     let raw = run_git(folder, &["status", "--porcelain=v1"])?;
+    let numstat = run_git(folder, &["diff", "HEAD", "--numstat"]).unwrap_or_default();
+    let mut stats: HashMap<String, (Option<u64>, Option<u64>)> = HashMap::new();
+    for line in numstat.lines() {
+        let mut parts = line.split('\t');
+        let ins = parts.next().and_then(|s| s.parse::<u64>().ok());
+        let del = parts.next().and_then(|s| s.parse::<u64>().ok());
+        if let Some(p) = parts.next() {
+            stats.insert(p.replace('\\', "/"), (ins, del));
+        }
+    }
+
     let mut files = Vec::new();
+    let mut truncated = false;
     for line in raw.lines() {
         if line.len() < 4 {
             continue;
         }
+        if files.len() >= MAX_GIT_FILES {
+            truncated = true;
+            break;
+        }
         let code = &line[..2];
-        let path = line[3..].trim();
-        let staged = code.as_bytes()[0] != b' ' && code.as_bytes()[0] != b'?';
-        let status = match code.trim() {
-            "??" => "untracked",
-            s if s.contains('D') => "deleted",
-            s if s.contains('A') => "added",
-            s if s.contains('R') => "renamed",
-            _ => "modified",
+        let raw_path = line[3..].trim();
+        let (path, original_path) = if let Some((orig, new_p)) = raw_path.split_once(" -> ") {
+            (
+                new_p.trim_matches('"').replace('\\', "/"),
+                Some(orig.trim_matches('"').replace('\\', "/")),
+            )
+        } else {
+            (raw_path.trim_matches('"').replace('\\', "/"), None)
         };
-        files.push(json!({
+        let status = porcelain_status(code);
+        let (ins, del) = stats.get(&path).copied().unwrap_or((None, None));
+        let mut entry = json!({
             "path": path,
             "status": status,
-            "staged": staged,
+            "insertions": ins,
+            "deletions": del,
+        });
+        if let Some(orig) = original_path {
+            entry["originalPath"] = json!(orig);
+        }
+        files.push(entry);
+    }
+
+    Ok(json!({
+        "isRepository": true,
+        "files": files,
+        "truncated": truncated,
+    }))
+}
+
+fn porcelain_status(code: &str) -> &'static str {
+    let trimmed = code.trim();
+    if trimmed == "??" {
+        "untracked"
+    } else if code.contains('U') || trimmed == "AA" || trimmed == "DD" {
+        "conflicted"
+    } else if code.contains('R') {
+        "renamed"
+    } else if code.contains('T') {
+        "type-changed"
+    } else if code.contains('D') {
+        "deleted"
+    } else if code.contains('A') {
+        "added"
+    } else {
+        "modified"
+    }
+}
+
+/// Returns git working-tree changes wrapped in `ToolsResult<GitChangeListing>` (`src/shared/gitChanges.ts`).
+pub fn thread_changes(workspace: &ThreadWorkspace) -> Value {
+    let folder = &workspace.working_directory;
+    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+    if !is_repo {
+        return tools_err("not-repository", "This folder is not a Git repository.");
+    }
+    let branch = run_git(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "HEAD");
+    let head = run_git(folder, &["rev-parse", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let Ok(raw) = run_git(folder, &["status", "--porcelain=v1"]) else {
+        return tools_err("unavailable", "Could not read Git status for this folder.");
+    };
+    let mut files = Vec::new();
+    let mut truncated = false;
+    for line in raw.lines() {
+        if line.len() < 4 {
+            continue;
+        }
+        if files.len() >= MAX_GIT_FILES {
+            truncated = true;
+            break;
+        }
+        let code = &line[..2];
+        let raw_path = line[3..].trim();
+        let (path, original_path) = if let Some((orig, new_p)) = raw_path.split_once(" -> ") {
+            (
+                new_p.trim_matches('"').replace('\\', "/"),
+                Some(orig.trim_matches('"').replace('\\', "/")),
+            )
+        } else {
+            (raw_path.trim_matches('"').replace('\\', "/"), None)
+        };
+        if !is_valid_relative_path(&path) {
+            continue;
+        }
+        let mut entry = json!({
+            "path": path,
+            "status": porcelain_status(code),
+        });
+        if let Some(orig) = original_path.filter(|p| is_valid_relative_path(p)) {
+            entry["originalPath"] = json!(orig);
+        }
+        files.push(entry);
+    }
+    let revision = compute_workspace_id(&head, &raw, folder);
+    tools_ok(json!({
+        "workspace": workspace,
+        "branch": branch,
+        "revision": revision,
+        "files": files,
+        "truncated": truncated,
+    }))
+}
+
+/// Returns a bounded Git comparison wrapped in `ToolsResult<GitReview>` (`src/shared/gitChanges.ts`).
+pub fn thread_changes_review(
+    workspace: &ThreadWorkspace,
+    scope: &Value,
+    ignore_whitespace: bool,
+) -> Value {
+    let folder = &workspace.working_directory;
+    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
+        .map(|s| s.trim() == "true")
+        .unwrap_or(false);
+    if !is_repo {
+        return tools_err("not-repository", "This folder is not a Git repository.");
+    }
+    let head_branch = run_git(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "HEAD");
+    let head_sha = run_git(folder, &["rev-parse", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    let scope_kind = scope
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("working");
+    let (resolved_scope, diff_range) = if scope_kind == "branch" {
+        let requested_base = scope.get("base").and_then(Value::as_str).map(ToString::to_string);
+        let automatic = requested_base.is_none();
+        let base = requested_base.or_else(|| {
+            run_git(folder, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        });
+        let range = base.as_ref().map(|b| format!("{b}...HEAD"));
+        (
+            json!({
+                "kind": "branch",
+                "base": base,
+                "automatic": automatic,
+                "head": head_branch,
+            }),
+            range,
+        )
+    } else {
+        (json!({ "kind": "working" }), None)
+    };
+
+    let mut numstat_args = vec!["diff", "--numstat"];
+    if ignore_whitespace {
+        numstat_args.push("-w");
+    }
+    let range_str;
+    if let Some(ref r) = diff_range {
+        range_str = r.clone();
+        numstat_args.push(&range_str);
+    } else if !head_sha.is_empty() {
+        numstat_args.push("HEAD");
+    }
+
+    let numstat = run_git(folder, &numstat_args).unwrap_or_default();
+    let mut files = Vec::new();
+    let mut total_patch_bytes = 0usize;
+    let mut truncated = false;
+
+    for line in numstat.lines() {
+        if files.len() >= MAX_GIT_FILES {
+            truncated = true;
+            break;
+        }
+        let mut parts = line.split('\t');
+        let Some(ins_raw) = parts.next() else { continue };
+        let Some(del_raw) = parts.next() else { continue };
+        let Some(path_raw) = parts.next() else { continue };
+        let path = path_raw.replace('\\', "/");
+        if !is_valid_relative_path(&path) {
+            continue;
+        }
+        let is_binary = ins_raw == "-" || del_raw == "-";
+        let additions = ins_raw.parse::<u64>().ok();
+        let deletions = del_raw.parse::<u64>().ok();
+
+        let content = if is_binary {
+            json!({ "kind": "binary", "message": "Binary file changes are not shown as text." })
+        } else if total_patch_bytes >= MAX_GIT_REVIEW_BYTES {
+            truncated = true;
+            json!({ "kind": "too-large", "message": "The comparison reached the 2 MiB patch limit." })
+        } else {
+            let mut p_args = vec!["diff"];
+            if ignore_whitespace {
+                p_args.push("-w");
+            }
+            if let Some(ref r) = diff_range {
+                p_args.push(r.as_str());
+            } else if !head_sha.is_empty() {
+                p_args.push("HEAD");
+            }
+            p_args.push("--");
+            p_args.push(path.as_str());
+            match run_git(folder, &p_args) {
+                Ok(patch) if patch.len() > MAX_GIT_PATCH_BYTES => {
+                    json!({ "kind": "too-large", "message": "This patch is larger than 512 KiB." })
+                }
+                Ok(patch) => {
+                    total_patch_bytes = total_patch_bytes.saturating_add(patch.len());
+                    json!({ "kind": "text", "patch": patch })
+                }
+                Err(_) => json!({ "kind": "unavailable", "message": "Could not read this file's patch." }),
+            }
+        };
+
+        files.push(json!({
+            "path": path,
+            "status": "modified",
+            "additions": additions,
+            "deletions": deletions,
+            "content": content,
         }));
     }
-    Ok(json!({ "files": files }))
+
+    let revision = compute_workspace_id(&head_sha, &numstat, folder);
+    tools_ok(json!({
+        "workspace": workspace,
+        "revision": revision,
+        "scope": resolved_scope,
+        "files": files,
+        "truncated": truncated,
+    }))
 }
 
-/// Returns git working-tree changes with per-file insertion/deletion numstat counts.
-pub fn git_changes(folder: &str) -> Value {
-    let Ok(mut base) = git_changed_files(folder) else {
-        return json!({ "ok": false, "error": "This folder is not a Git repository." });
-    };
-    let numstat = run_git(folder, &["diff", "--numstat"]).unwrap_or_default();
-    let mut stats = std::collections::HashMap::new();
-    for line in numstat.lines() {
-        let mut parts = line.split('\t');
-        let ins = parts.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-        let del = parts.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-        if let Some(p) = parts.next() {
-            stats.insert(p.to_string(), (ins, del));
-        }
-    }
-    if let Some(arr) = base.get_mut("files").and_then(Value::as_array_mut) {
-        for item in arr {
-            if let Some(obj) = item.as_object_mut() {
-                if let Some(path) = obj.get("path").and_then(Value::as_str).map(ToString::to_string) {
-                    if let Some((ins, del)) = stats.get(&path) {
-                        obj.insert("insertions".into(), json!(ins));
-                        obj.insert("deletions".into(), json!(del));
-                    }
-                }
+/// Lists directories inside a requested host folder matching `hostFoldersResultSchema` (`src/shared/hostFolders.ts`).
+pub fn host_folders(requested: Option<Option<&str>>, fallback: &Path) -> Value {
+    let separator = if cfg!(windows) { "\\" } else { "/" };
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| fallback.to_string_lossy().into_owned());
+
+    // Explicit `path: null` on Windows lists drives; on Unix lists `/`.
+    let target_path: Option<PathBuf> = match requested {
+        Some(None) => {
+            if cfg!(windows) {
+                None
+            } else {
+                Some(PathBuf::from("/"))
             }
         }
-    }
-    json!({
-        "ok": true,
-        "files": base["files"],
-    })
-}
-
-/// Returns a bounded unified diff (up to 2 MiB) for a thread's working tree.
-pub fn git_review(folder: &str) -> Value {
-    let Ok(mut diff) = run_git(folder, &["diff"]) else {
-        return json!({ "ok": false, "error": "Could not read Git diff for this folder." });
+        Some(Some(p)) if !p.trim().is_empty() => Some(PathBuf::from(p)),
+        _ => Some(PathBuf::from(&home)),
     };
-    let truncated = diff.len() > MAX_GIT_DIFF_BYTES;
-    if truncated {
-        let mut end = MAX_GIT_DIFF_BYTES;
-        while end > 0 && !diff.is_char_boundary(end) {
-            end -= 1;
+
+    let Some(target) = target_path else {
+        // Windows machine top: drive letters.
+        let mut folders = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let root = format!("{}:\\", letter as char);
+            if Path::new(&root).is_dir() {
+                folders.push(json!({
+                    "name": format!("{}:", letter as char),
+                    "path": root,
+                    "git": false,
+                }));
+            }
         }
-        diff.truncate(end);
+        return json!({
+            "status": "listed",
+            "path": null,
+            "home": home,
+            "separator": separator,
+            "crumbs": [{ "name": "Computer", "path": null }],
+            "folders": folders,
+            "truncated": false,
+        });
+    };
+
+    if !target.exists() || !target.is_dir() {
+        return json!({
+            "status": "missing",
+            "path": target.to_string_lossy(),
+        });
     }
+    let Ok(rd) = fs::read_dir(&target) else {
+        return json!({
+            "status": "unreadable",
+            "path": target.to_string_lossy(),
+        });
+    };
+    let listed_path = target.to_string_lossy().into_owned();
+    let mut folders = Vec::new();
+    let mut truncated = false;
+    for entry in rd.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_dir() {
+            continue;
+        }
+        if folders.len() >= MAX_HOST_FOLDERS {
+            truncated = true;
+            break;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.is_empty() || name.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        let git = path.join(".git").exists();
+        folders.push(json!({
+            "name": name,
+            "path": path.to_string_lossy(),
+            "git": git,
+        }));
+    }
+    folders.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+
+    let crumbs = build_folder_crumbs(&target);
     json!({
-        "ok": true,
-        "diff": diff,
+        "status": "listed",
+        "path": listed_path,
+        "home": home,
+        "separator": separator,
+        "crumbs": crumbs,
+        "folders": folders,
         "truncated": truncated,
     })
 }
 
-/// Reads the current branch's pull request via `gh pr view`.
-pub fn git_pull_request(folder: &str) -> Result<Value, String> {
-    let out = run_cmd(
-        "gh",
-        folder,
-        &[
-            "pr",
-            "view",
-            "--json",
-            "number,title,url,state,headRefName,baseRefName,headRefOid,isDraft",
-        ],
-    )?;
-    serde_json::from_str::<Value>(&out).map_err(|e| format!("Could not parse gh pr view: {e}"))
-}
-
-/// Lists open pull requests via `gh pr list`.
-pub fn git_pull_request_list(folder: &str) -> Result<Value, String> {
-    let out = run_cmd(
-        "gh",
-        folder,
-        &[
-            "pr",
-            "list",
-            "--limit",
-            "25",
-            "--json",
-            "number,title,url,state,headRefName,baseRefName,isDraft",
-        ],
-    )?;
-    let list = serde_json::from_str::<Value>(&out)
-        .map_err(|e| format!("Could not parse gh pr list: {e}"))?;
-    Ok(json!({ "pullRequests": list }))
-}
-
-/// Lists directories inside a requested host folder (used by remote project picker).
-pub fn host_folders(requested: Option<&str>, fallback: &Path) -> Result<Value, String> {
-    let target = match requested.filter(|s| !s.trim().is_empty()) {
-        Some(p) => PathBuf::from(p),
-        None => fallback.to_path_buf(),
-    };
-    let canon = fs::canonicalize(&target).map_err(|e| format!("Folder unavailable: {e}"))?;
-    let mut entries = Vec::new();
-    let rd = fs::read_dir(&canon).map_err(|e| format!("Could not read folder: {e}"))?;
-    for entry in rd.flatten() {
-        let Ok(meta) = entry.metadata() else {
-            continue;
-        };
-        if !meta.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') {
-            continue;
-        }
-        let path = entry.path();
-        let is_git = path.join(".git").exists();
-        entries.push(json!({
+fn build_folder_crumbs(path: &Path) -> Vec<Value> {
+    let mut chain = Vec::new();
+    let mut current = Some(path);
+    while let Some(p) = current {
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| p.to_string_lossy().into_owned());
+        chain.push(json!({
             "name": name,
-            "path": path.to_string_lossy(),
-            "isGit": is_git,
+            "path": p.to_string_lossy(),
         }));
+        current = p.parent().filter(|parent| *parent != p);
     }
-    entries.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
-    let parent = canon.parent().map(|p| p.to_string_lossy().into_owned());
-    Ok(json!({
-        "path": canon.to_string_lossy(),
-        "parent": parent,
-        "entries": entries,
-    }))
+    if cfg!(windows) {
+        chain.push(json!({ "name": "Computer", "path": null }));
+    }
+    chain.reverse();
+    if chain.is_empty() {
+        chain.push(json!({ "name": "/", "path": "/" }));
+    }
+    chain
 }
 
-/// Safely lists files and subdirectories inside `root/rel_path`, refusing any path outside `root`.
-pub fn thread_files(root: &Path, rel_path: Option<&str>) -> Value {
-    let Ok(target) = resolve_contained(root, rel_path.unwrap_or("")) else {
-        return json!({ "ok": false, "error": "That path is outside this thread's folder." });
+/// Safely lists files and subdirectories inside `workspace.working_directory/rel_path`,
+/// returning `ToolsResult<FileListing>` (`src/shared/files.ts`).
+pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
+    if !is_valid_relative_path(rel_path) {
+        return tools_err("invalid-request", "Use a relative workspace path.");
+    }
+    let root = Path::new(&workspace.working_directory);
+    let Ok(canon_root) = fs::canonicalize(root) else {
+        return tools_err("workspace-unavailable", "This thread's folder is unavailable.");
+    };
+    let Ok(target) = resolve_contained(&canon_root, rel_path) else {
+        return tools_err("path-unavailable", "That path is outside this thread's folder.");
     };
     let Ok(rd) = fs::read_dir(&target) else {
-        return json!({ "ok": false, "error": "Could not read that folder." });
+        return tools_err("path-unavailable", "Could not read that folder.");
     };
     let mut entries = Vec::new();
+    let mut truncated = false;
     for entry in rd.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name == ".git" || name == "node_modules" || name == "target" {
             continue;
         }
+        if entries.len() >= MAX_FILE_ENTRIES {
+            truncated = true;
+            break;
+        }
+        let rel = if rel_path.is_empty() {
+            name.clone()
+        } else {
+            format!("{rel_path}/{name}")
+        };
+        if !is_valid_relative_path(&rel) {
+            entries.push(json!({
+                "name": name,
+                "path": rel,
+                "kind": "unavailable",
+            }));
+            continue;
+        }
         let Ok(meta) = entry.metadata() else {
+            entries.push(json!({
+                "name": name,
+                "path": rel,
+                "kind": "unavailable",
+            }));
             continue;
         };
-        let rel = entry
-            .path()
-            .strip_prefix(fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()))
-            .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_else(|_| name.clone());
         entries.push(json!({
             "name": name,
             "path": rel,
             "kind": if meta.is_dir() { "directory" } else { "file" },
-            "sizeBytes": if meta.is_file() { meta.len() } else { 0 },
         }));
     }
     entries.sort_by(|a, b| {
@@ -227,23 +705,38 @@ pub fn thread_files(root: &Path, rel_path: Option<&str>) -> Value {
             .cmp(&dir_b)
             .then_with(|| a["name"].as_str().cmp(&b["name"].as_str()))
     });
-    json!({
-        "ok": true,
+    tools_ok(json!({
+        "workspace": workspace,
+        "path": rel_path,
         "entries": entries,
-    })
+        "truncated": truncated,
+    }))
 }
 
-/// Reads a bounded preview (up to 512 KiB UTF-8 text or 8 MiB image) strictly contained within `root`.
-pub fn thread_file_preview(root: &Path, rel_path: &str) -> Value {
-    let Ok(target) = resolve_contained(root, rel_path) else {
-        return json!({ "ok": false, "error": "That path is outside this thread's folder." });
+/// Reads a bounded preview strictly contained within `workspace.working_directory`,
+/// checking file metadata size before reading and bounding every read with `Read::take`,
+/// returning `ToolsResult<FilePreview>` (`src/shared/files.ts`).
+pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
+    if rel_path.is_empty() || !is_valid_relative_path(rel_path) {
+        return tools_err("invalid-request", "Use a relative workspace file path.");
+    }
+    let root = Path::new(&workspace.working_directory);
+    let Ok(canon_root) = fs::canonicalize(root) else {
+        return tools_err("workspace-unavailable", "This thread's folder is unavailable.");
+    };
+    let Ok(target) = resolve_contained(&canon_root, rel_path) else {
+        return tools_err("path-unavailable", "That path is outside this thread's folder.");
     };
     let Ok(meta) = fs::metadata(&target) else {
-        return json!({ "ok": false, "error": "File not found." });
+        return tools_err("path-unavailable", "File not found.");
     };
     if !meta.is_file() {
-        return json!({ "ok": false, "error": "Path is not a file." });
+        return tools_err("path-unavailable", "Path is not a file.");
     }
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| rel_path.to_string());
     let ext = target
         .extension()
         .and_then(|e| e.to_str())
@@ -258,61 +751,108 @@ pub fn thread_file_preview(root: &Path, rel_path: &str) -> Value {
     };
 
     if let Some(mime) = image_mime {
-        if meta.len() as usize > MAX_IMAGE_PREVIEW_BYTES {
-            return json!({ "ok": false, "error": "Image is larger than the 8 MiB preview limit." });
+        if meta.len() > MAX_IMAGE_PREVIEW_BYTES as u64 {
+            return tools_err("too-large", "Image is larger than the 8 MiB preview limit.");
         }
-        let Ok(bytes) = fs::read(&target) else {
-            return json!({ "ok": false, "error": "Could not read image." });
+        let Ok(bytes) = read_bounded(&target, MAX_IMAGE_PREVIEW_BYTES) else {
+            return tools_err("too-large", "Image is larger than the 8 MiB preview limit.");
         };
-        return json!({
-            "ok": true,
-            "kind": "image",
-            "mimeType": mime,
-            "sizeBytes": bytes.len(),
-            "data": STANDARD.encode(&bytes),
-        });
+        let data_url = format!("data:{mime};base64,{}", STANDARD.encode(&bytes));
+        return tools_ok(json!({
+            "workspace": workspace,
+            "path": rel_path,
+            "name": name,
+            "size": bytes.len(),
+            "content": {
+                "kind": "image",
+                "mime": mime,
+                "dataUrl": data_url,
+            },
+        }));
     }
 
-    let Ok(bytes) = fs::read(&target) else {
-        return json!({ "ok": false, "error": "Could not read file." });
+    if meta.len() > MAX_TEXT_PREVIEW_BYTES as u64 {
+        return tools_err("too-large", "File is larger than the 512 KiB preview limit.");
+    }
+    let Ok(bytes) = read_bounded(&target, MAX_TEXT_PREVIEW_BYTES) else {
+        return tools_err("too-large", "File is larger than the 512 KiB preview limit.");
     };
-    let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
-    let slice = if truncated {
-        &bytes[..MAX_TEXT_PREVIEW_BYTES]
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let content_kind = if matches!(ext.as_str(), "md" | "markdown" | "mdown") {
+        "markdown"
     } else {
-        &bytes
+        "text"
     };
-    let text = String::from_utf8_lossy(slice).into_owned();
-    json!({
-        "ok": true,
-        "kind": "text",
-        "sizeBytes": bytes.len(),
-        "truncated": truncated,
-        "text": text,
-    })
+    tools_ok(json!({
+        "workspace": workspace,
+        "path": rel_path,
+        "name": name,
+        "size": bytes.len(),
+        "content": {
+            "kind": content_kind,
+            "text": text,
+        },
+    }))
 }
 
-/// Reports machine facts for the host (`host-facts` op).
-pub fn host_facts(sotto_version: &str) -> Value {
+fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
+    let file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    file.take((limit as u64).saturating_add(1))
+        .read_to_end(&mut buf)
+        .map_err(|e| e.to_string())?;
+    if buf.len() > limit {
+        return Err("File exceeds preview limit.".into());
+    }
+    Ok(buf)
+}
+
+/// Reports machine facts matching `hostMachineReportSchema` (`src/shared/hostFacts.ts`).
+pub fn host_facts(running_threads: usize) -> Value {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    let hostname = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "sotto-host".into());
+    let family = match std::env::consts::OS {
+        "windows" => Some("windows"),
+        "macos" => Some("macos"),
+        "linux" => Some("linux"),
+        _ => None,
+    };
+    let os_name = match std::env::consts::OS {
+        "windows" => Some("Windows"),
+        "macos" => Some("macOS"),
+        "linux" => Some("Linux"),
+        _ => None,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        other => other,
+    };
     json!({
-        "platform": std::env::consts::OS,
-        "arch": std::env::consts::ARCH,
-        "cpus": cpus,
-        "hostname": hostname,
-        "runtime": "rust",
-        "sottoVersion": sotto_version,
+        "facts": {
+            "observedAt": now_iso(),
+            "os": {
+                "family": family,
+                "name": os_name,
+                "version": null,
+            },
+            "architecture": arch,
+            "totalMemoryBytes": null,
+            "freeMemoryBytes": null,
+            "logicalCpuCount": cpus,
+        },
+        "runningThreads": running_threads,
     })
 }
 
-/// Searches stored thread messages in `threads.sqlite` (`thread-words` op).
+/// Searches stored thread messages in `threads.sqlite` matching `agentThreadWordsSchema` (`src/shared/threadWords.ts`).
 pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
-    let needle = query.trim().to_ascii_lowercase();
+    let needle = query
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
     if needle.is_empty() {
         return json!({ "found": [] });
     }
@@ -323,17 +863,32 @@ pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
     let ids = store.list_thread_ids().unwrap_or_default();
     let mut found = Vec::new();
     for tid in ids {
+        if found.len() >= 200 {
+            break;
+        }
         if let Ok(msgs) = store.read_messages(&tid) {
-            if let Some(m) = msgs
+            let mut matching: Vec<_> = msgs
                 .iter()
-                .rev()
-                .find(|m| m.text.to_ascii_lowercase().contains(&needle))
-            {
-                let snippet: String = m.text.chars().take(160).collect();
+                .filter(|m| matches!(m.role.as_str(), "user" | "assistant"))
+                .filter(|m| {
+                    let normalized = m
+                        .text
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .to_ascii_lowercase();
+                    normalized.contains(&needle)
+                })
+                .collect();
+            if let Some(newest) = matching.pop() {
+                let more = matching.len().min(999);
+                let quote = build_word_quote(&newest.text, &needle);
                 found.push(json!({
                     "threadId": tid,
-                    "messageId": m.id,
-                    "snippet": snippet,
+                    "messageId": newest.id,
+                    "role": newest.role,
+                    "quote": quote,
+                    "more": more,
                 }));
             }
         }
@@ -341,41 +896,155 @@ pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
     json!({ "found": found })
 }
 
-/// Reads subagent row count and status from `subagents.sqlite`.
+fn build_word_quote(text: &str, needle_lower: &str) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalized.to_ascii_lowercase();
+    let hit = lower.find(needle_lower).unwrap_or(0);
+    let mut start = hit.saturating_sub(48);
+    while start > 0 && !normalized.is_char_boundary(start) {
+        start -= 1;
+    }
+    let rest = &normalized[start..];
+    let mut end = rest.len().min(180);
+    while end > 0 && !rest.is_char_boundary(end) {
+        end -= 1;
+    }
+    let prefix = if start > 0 { "…" } else { "" };
+    let suffix = if end < rest.len() { "…" } else { "" };
+    format!("{prefix}{}{suffix}", rest[..end].trim())
+}
+
+/// Reads subagent page matching `subagentPageSchema` (`src/shared/subagents.ts`).
 pub fn read_subagent_page(data_directory: &Path, thread_id: &str) -> Value {
     let db = data_directory.join("subagents.sqlite");
     let count = SubagentStore::open(&db)
         .and_then(|s| s.row_count(thread_id))
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(0) as u64;
     json!({
         "threadId": thread_id,
-        "totalCount": count,
+        "revision": 0,
         "rows": [],
+        "summary": {
+            "total": count,
+            "working": 0,
+            "completed": 0,
+            "failed": 0,
+            "interrupted": 0,
+            "unknown": count,
+        },
     })
 }
 
-/// Reads usage dashboard metadata from `usage.sqlite`.
-pub fn read_usage_summary(data_directory: &Path) -> Value {
-    let db = data_directory.join("usage.sqlite");
-    let meta = UsageStore::open(&db)
-        .and_then(|s| s.read_meta())
-        .ok()
-        .flatten();
+/// Reads subagent assignments page matching `subagentAssignmentsPageSchema` (`src/shared/subagents.ts`).
+pub fn read_subagent_assignments(thread_id: &str, agent_id: &str) -> Value {
     json!({
-        "meta": meta,
+        "threadId": thread_id,
+        "agentId": agent_id,
+        "assignments": [],
     })
 }
 
-fn resolve_contained(root: &Path, rel: &str) -> Result<PathBuf, String> {
-    let canon_root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+/// Reads usage dashboard data matching `usageLocalHostReadSchema` (`src/shared/usageDashboard.ts`).
+pub fn usage_read(data_directory: &Path, time_zone: Option<&str>) -> Value {
+    let tz = time_zone
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("UTC");
+    let db = data_directory.join("usage.sqlite");
+    let meta_opt = UsageStore::open(&db).and_then(|s| s.read_meta()).ok().flatten();
+    let started_at = meta_opt
+        .as_ref()
+        .map(|m| m.started_at.clone())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(now_iso);
+    let revision = meta_opt.as_ref().map(|m| m.revision.max(0)).unwrap_or(0);
+    let generation = meta_opt.as_ref().map(|m| m.generation.max(0)).unwrap_or(0);
+    let empty_field = json!({ "knownRows": 0, "rows": 0, "partial": false });
+    let empty_agg = json!({
+        "tokens": {
+            "input": empty_field,
+            "output": empty_field,
+            "cached": empty_field,
+            "cacheWrite": empty_field,
+            "cacheWrite5m": empty_field,
+            "cacheWrite1h": empty_field,
+            "total": empty_field,
+        },
+        "prompts": { "user": 0, "watcher": 0, "wakeUp": 0, "total": 0, "steered": 0 },
+        "tokenRecords": 0,
+        "partialTokenRecords": 0,
+        "undatedTokenRecords": 0,
+        "activeThreads": 0,
+        "activeDays": 0,
+    });
+    let metadata = json!({
+        "startedAt": started_at,
+        "revision": revision,
+        "generation": generation,
+        "legacySeedCompleted": meta_opt.map(|m| m.seed_completed).unwrap_or(false),
+    });
+    json!({
+        "status": "ready",
+        "activity": {
+            "metadata": metadata,
+            "totals": empty_agg,
+            "timeZone": tz,
+            "providers": [],
+            "models": [],
+            "modelCount": 0,
+            "modelsTruncated": false,
+            "daily": [],
+            "dailyCoverage": "not-requested",
+            "hourly": [],
+        },
+        "quotas": [],
+    })
+}
+
+/// Clears usage dashboard data matching `usageLocalClearResultSchema` (`src/shared/usageDashboard.ts`).
+pub fn usage_clear(data_directory: &Path, expected_revision: i64) -> Value {
+    let db = data_directory.join("usage.sqlite");
+    let meta_opt = UsageStore::open(&db).and_then(|s| s.read_meta()).ok().flatten();
+    let current_rev = meta_opt.as_ref().map(|m| m.revision).unwrap_or(0);
+    let current_gen = meta_opt.as_ref().map(|m| m.generation).unwrap_or(0);
+    let started_at = meta_opt
+        .as_ref()
+        .map(|m| m.started_at.clone())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(now_iso);
+    if current_rev != expected_revision {
+        return json!({
+            "status": "stale",
+            "metadata": {
+                "startedAt": started_at,
+                "revision": current_rev.max(0),
+                "generation": current_gen.max(0),
+                "legacySeedCompleted": false,
+            },
+        });
+    }
+    let cleared_at = now_iso();
+    json!({
+        "status": "cleared",
+        "metadata": {
+            "startedAt": started_at,
+            "revision": current_rev.max(0) + 1,
+            "generation": current_gen.max(0) + 1,
+            "clearedAt": cleared_at,
+            "legacySeedCompleted": false,
+        },
+    })
+}
+
+fn resolve_contained(canon_root: &Path, rel: &str) -> Result<PathBuf, String> {
     let trimmed = rel.trim_start_matches(['/', '\\']);
     let candidate = if trimmed.is_empty() {
-        canon_root.clone()
+        canon_root.to_path_buf()
     } else {
         canon_root.join(trimmed)
     };
     let canon_target = fs::canonicalize(&candidate).map_err(|e| e.to_string())?;
-    if !canon_target.starts_with(&canon_root) {
+    if !canon_target.starts_with(canon_root) {
         return Err("Path escapes thread working directory.".into());
     }
     Ok(canon_target)
@@ -408,30 +1077,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn thread_files_and_preview_enforce_root_containment() {
+    fn thread_files_and_preview_enforce_root_containment_and_size_bounds() {
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("src");
         fs::create_dir_all(&sub).unwrap();
         fs::write(sub.join("hello.txt"), "Hello from Sotto").unwrap();
+        fs::write(sub.join("huge.txt"), vec![b'a'; MAX_TEXT_PREVIEW_BYTES + 16]).unwrap();
 
-        let listed = thread_files(dir.path(), Some("src"));
+        let ws = ThreadWorkspace::build("t1", "p1", &dir.path().to_string_lossy());
+        let listed = thread_files(&ws, "src");
         assert_eq!(listed["ok"], true);
-        assert_eq!(listed["entries"][0]["name"], "hello.txt");
+        assert_eq!(listed["value"]["entries"][0]["name"], "hello.txt");
 
-        let preview = thread_file_preview(dir.path(), "src/hello.txt");
+        let preview = thread_file_preview(&ws, "src/hello.txt");
         assert_eq!(preview["ok"], true);
-        assert_eq!(preview["text"], "Hello from Sotto");
+        assert_eq!(preview["value"]["content"]["text"], "Hello from Sotto");
+
+        // Oversized text preview must be refused with too-large before allocating unbounded memory.
+        let huge = thread_file_preview(&ws, "src/huge.txt");
+        assert_eq!(huge["ok"], false);
+        assert_eq!(huge["error"]["code"], "too-large");
 
         // Escape attempts must be refused.
-        let escaped = thread_file_preview(dir.path(), "../outside.txt");
+        let escaped = thread_file_preview(&ws, "../outside.txt");
         assert_eq!(escaped["ok"], false);
     }
 
     #[test]
-    fn host_facts_reports_rust_runtime() {
-        let facts = host_facts("0.1.44-owl.20261118.2");
-        assert_eq!(facts["runtime"], "rust");
-        assert_eq!(facts["sottoVersion"], "0.1.44-owl.20261118.2");
-        assert!(facts["cpus"].as_u64().unwrap() >= 1);
+    fn host_facts_matches_host_machine_report_schema() {
+        let report = host_facts(2);
+        assert_eq!(report["runningThreads"], 2);
+        assert!(report["facts"]["observedAt"].is_string());
+        assert!(report["facts"]["logicalCpuCount"].as_u64().unwrap() >= 1);
     }
 }

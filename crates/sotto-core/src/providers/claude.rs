@@ -92,6 +92,10 @@ type PendingControlMap = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value,
 
 struct ClaudeSessionProcess {
     session_id: String,
+    model_id: String,
+    reasoning_effort: Option<String>,
+    runtime_mode: Option<String>,
+    alive: Arc<std::sync::atomic::AtomicBool>,
     stdin_tx: mpsc::UnboundedSender<String>,
     pending_control: PendingControlMap,
     pending_echo: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
@@ -99,6 +103,21 @@ struct ClaudeSessionProcess {
 }
 
 impl ClaudeSessionProcess {
+    fn is_alive(&self) -> bool {
+        self.alive.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn matches_settings(
+        &self,
+        model_id: &str,
+        reasoning_effort: Option<&str>,
+        runtime_mode: Option<&str>,
+    ) -> bool {
+        self.model_id == model_id
+            && self.reasoning_effort.as_deref() == reasoning_effort
+            && map_claude_permission_mode(self.runtime_mode.as_deref())
+                == map_claude_permission_mode(runtime_mode)
+    }
     #[allow(clippy::too_many_arguments)]
     fn spawn(
         config: &ClaudeAdapterConfig,
@@ -196,8 +215,10 @@ impl ClaudeSessionProcess {
         let pending_control: PendingControlMap = Arc::new(Mutex::new(HashMap::new()));
         let pending_echo: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let alive = Arc::new(std::sync::atomic::AtomicBool::new(true));
 
         let reader_control = Arc::clone(&pending_control);
+        let reader_alive = Arc::clone(&alive);
         let reader_echo = Arc::clone(&pending_echo);
         let reader_stdin = stdin_tx.clone();
         let reader_shared = Arc::clone(&shared);
@@ -268,15 +289,23 @@ impl ClaudeSessionProcess {
                 }
             }
 
+            reader_alive.store(false, std::sync::atomic::Ordering::SeqCst);
             let drained: Vec<_> = reader_control.lock().unwrap().drain().collect();
             for (_, tx) in drained {
                 let _ = tx.send(Err("Claude Code exited before answering.".into()));
             }
             reader_echo.lock().unwrap().clear();
+            if let Some(ref tid) = reader_thread {
+                reader_shared.handle_thread_process_exit(tid);
+            }
         });
 
         Ok(Arc::new(Self {
             session_id,
+            model_id: model.to_string(),
+            reasoning_effort: effort.map(ToString::to_string),
+            runtime_mode: runtime_mode.map(ToString::to_string),
+            alive,
             stdin_tx,
             pending_control,
             pending_echo,
@@ -712,6 +741,46 @@ impl ClaudeSharedState {
             _ => {}
         }
     }
+
+    fn handle_thread_process_exit(&self, sotto_tid: &str) {
+        let cleared_ids: Vec<String> = {
+            let mut map = self.pending_requests.lock().unwrap();
+            let ids: Vec<String> = map
+                .iter()
+                .filter(|(_, r)| r.sotto_thread_id == sotto_tid)
+                .map(|(k, _)| k.clone())
+                .collect();
+            for id in &ids {
+                map.remove(id);
+            }
+            ids
+        };
+        for req_id in cleared_ids {
+            self.emit(ProviderEvent::RequestCleared {
+                thread_id: sotto_tid.to_string(),
+                request_id: req_id,
+            });
+        }
+        let active_turn = self.active_turns.lock().unwrap().remove(sotto_tid);
+        if let Some(turn_id) = active_turn {
+            if let Some(mut act) = self.turn_activities.lock().unwrap().remove(sotto_tid) {
+                if let Some(obj) = act.as_object_mut() {
+                    obj.insert("status".into(), Value::String("failed".into()));
+                    obj.insert("title".into(), Value::String("Claude Code exited unexpectedly".into()));
+                    obj.insert("completedAt".into(), Value::String(now_iso()));
+                }
+                self.emit(ProviderEvent::ActivityUpserted {
+                    thread_id: sotto_tid.to_string(),
+                    activity: act,
+                });
+            }
+            self.emit(ProviderEvent::TurnCompleted {
+                thread_id: sotto_tid.to_string(),
+                turn_id,
+                status: "failed".into(),
+            });
+        }
+    }
 }
 
 pub struct ClaudeAdapter {
@@ -734,16 +803,27 @@ impl ClaudeAdapter {
         &self,
         req: &SendMessageRequest,
     ) -> Result<(Arc<ClaudeSessionProcess>, String), String> {
-        let mut map = self.sessions.lock().await;
-        if let Some(existing) = map.get(&req.thread_id) {
-            return Ok((Arc::clone(existing), existing.session_id.clone()));
-        }
-
         let raw_model = req
             .model_id
             .as_deref()
             .map(raw_claude_model)
             .unwrap_or_else(|| "fixture-model".to_string());
+        let mut map = self.sessions.lock().await;
+        if let Some(existing) = map.get(&req.thread_id) {
+            if existing.is_alive()
+                && existing.matches_settings(
+                    &raw_model,
+                    req.reasoning_effort.as_deref(),
+                    req.runtime_mode.as_deref(),
+                )
+            {
+                return Ok((Arc::clone(existing), existing.session_id.clone()));
+            }
+            if let Some(old) = map.remove(&req.thread_id) {
+                old.shutdown().await;
+            }
+        }
+
         let existing_record = self
             .shared
             .records
@@ -1059,6 +1139,50 @@ impl ProviderAdapter for ClaudeAdapter {
             Ok(())
         })
     }
+
+    fn configure_thread(
+        &self,
+        thread_id: String,
+        model_id: Option<String>,
+        runtime_mode: Option<String>,
+        reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async move {
+            let raw_model = model_id.as_deref().map(raw_claude_model);
+            let mut map = self.sessions.lock().await;
+            if let Some(existing) = map.get(&thread_id) {
+                let effective_model = raw_model
+                    .as_deref()
+                    .unwrap_or(&existing.model_id);
+                let effective_effort = reasoning_effort
+                    .as_deref()
+                    .or(existing.reasoning_effort.as_deref());
+                let effective_mode = runtime_mode
+                    .as_deref()
+                    .or(existing.runtime_mode.as_deref());
+                if !existing.is_alive()
+                    || !existing.matches_settings(effective_model, effective_effort, effective_mode)
+                {
+                    if let Some(old) = map.remove(&thread_id) {
+                        old.shutdown().await;
+                    }
+                }
+            }
+            if let Some(rec) = self.shared.records.lock().unwrap().get_mut(&thread_id) {
+                if let Some(m) = raw_model {
+                    rec.model_id = Some(m);
+                }
+                if let Some(mode) = runtime_mode {
+                    rec.runtime_mode = Some(mode);
+                }
+                if let Some(eff) = reasoning_effort {
+                    rec.reasoning_effort = Some(eff);
+                }
+            }
+            self.shared.save_records();
+            Ok(())
+        })
+    }
 }
 
 fn claude_capabilities() -> AgentCapabilities {
@@ -1118,7 +1242,7 @@ fn build_claude_user_content(req: &SendMessageRequest) -> Value {
         blocks.push(json!({ "type": "text", "text": req.text }));
     }
     for att in &req.attachments {
-        if att.handle.kind == "image" {
+        if att.handle.is_image() {
             if let Ok(bytes) = fs::read(&att.path) {
                 blocks.push(json!({
                     "type": "image",
@@ -1266,33 +1390,53 @@ fn build_claude_control_response(pending: &InboundClaudeRequest, req: &AnswerReq
     }
 
     if pending.tool_name == "AskUserQuestion" {
-        let mut answers = Map::new();
-        if let Some(obj) = req.question_answers.as_ref().and_then(Value::as_object) {
-            for (k, v) in obj {
-                let text = match v {
-                    Value::String(s) => s.clone(),
-                    Value::Array(arr) => arr
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    _ => req.answer.clone(),
-                };
-                answers.insert(k.clone(), Value::String(text));
-            }
+        if req.skipped == Some(true) {
+            return json!({
+                "behavior": "deny",
+                "message": "The user skipped this question.",
+            });
         }
-        // Always ensure every question text key is populated.
-        if let Some(questions) = pending
+        let mut answers = Map::new();
+        let questions = pending
             .native_input
             .get("questions")
             .and_then(Value::as_array)
-        {
-            for q in questions {
-                if let Some(qtext) = q.get("question").and_then(Value::as_str) {
-                    answers
-                        .entry(qtext.to_string())
-                        .or_insert_with(|| Value::String(req.answer.clone()));
-                }
+            .cloned()
+            .unwrap_or_default();
+
+        if let Some(obj) = req.question_answers.as_ref().and_then(Value::as_object) {
+            for (k, v) in obj {
+                let (vals, is_skipped) =
+                    crate::providers::codex::decode_question_answer_values(v, &req.answer);
+                let text = if is_skipped {
+                    "The user skipped this question.".to_string()
+                } else {
+                    vals.join(", ")
+                };
+                // Translate index-based or id-based keys ("0", "1", or q.id) to native question text.
+                let target_key = if let Ok(idx) = k.parse::<usize>() {
+                    questions
+                        .get(idx)
+                        .and_then(|q| q.get("question").and_then(Value::as_str))
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| k.clone())
+                } else {
+                    questions
+                        .iter()
+                        .find(|q| q.get("id").and_then(Value::as_str) == Some(k.as_str()))
+                        .and_then(|q| q.get("question").and_then(Value::as_str))
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| k.clone())
+                };
+                answers.insert(target_key, Value::String(text));
+            }
+        }
+        // Ensure every native question text key is populated.
+        for q in &questions {
+            if let Some(qtext) = q.get("question").and_then(Value::as_str) {
+                answers
+                    .entry(qtext.to_string())
+                    .or_insert_with(|| Value::String(req.answer.clone()));
             }
         }
         let mut updated = pending.native_input.clone();
@@ -1350,10 +1494,13 @@ mod tests {
             &AnswerRequestInput {
                 thread_id: "t1".into(),
                 request_id: "r1".into(),
-                answer: "Blue".into(),
+                answer: String::new(),
                 approved: None,
                 permission_choice: None,
-                question_answers: None,
+                question_answers: Some(json!({
+                    "0": { "optionIds": ["Blue"] }
+                })),
+                skipped: None,
             },
         );
         assert_eq!(q_resp["behavior"], "allow");
@@ -1378,6 +1525,7 @@ mod tests {
                 approved: Some(true),
                 permission_choice: None,
                 question_answers: None,
+                skipped: None,
             },
         );
         assert_eq!(p_resp["behavior"], "allow");

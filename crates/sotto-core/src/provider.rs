@@ -43,6 +43,7 @@ pub struct AnswerRequestInput {
     pub approved: Option<bool>,
     pub permission_choice: Option<String>,
     pub question_answers: Option<Value>,
+    pub skipped: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +125,16 @@ pub trait ProviderAdapter: Send + Sync {
     fn interrupt(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>>;
 
     fn compact(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>>;
+
+    fn configure_thread(
+        &self,
+        _thread_id: String,
+        _model_id: Option<String>,
+        _runtime_mode: Option<String>,
+        _reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Stand-in adapter for providers held by an Owl feature gate or inactive during a referee run.
