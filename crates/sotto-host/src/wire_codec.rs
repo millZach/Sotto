@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde_json::{json, Map, Value};
 
 use sotto_core::{
     diff_thread_detail, summarize_activity_for_wire, AgentThreadDetail, HOST_PROTOCOL_VERSION,
 };
+
+const READ_AHEAD_LIMIT: usize = 64;
 
 const GATED_PROVIDERS: &[(&str, &str)] = &[
     ("opencode", "provider-opencode"),
@@ -14,10 +16,16 @@ const GATED_PROVIDERS: &[(&str, &str)] = &[
     ("antigravity", "provider-antigravity"),
 ];
 
+#[derive(Clone)]
+struct ReadAheadEntry {
+    revision: u64,
+    digest: String,
+}
+
 /// Per-WebSocket-connection protocol v1 wire encoder implementing `tests/referee/fold.ts` and
 /// `docs/host-protocol.md` (capability filtering, `model-catalog-revision`, `changed-thread-records`,
-/// `reply-thread-records`, `command-changed-thread-records`, `kept-parts`, `detail-delta`, and
-/// `activity-summaries`).
+/// `reply-thread-records`, `command-changed-thread-records`, `kept-parts`, `detail-delta`,
+/// `detail-read-held`, and `activity-summaries`).
 #[derive(Default)]
 pub struct ClientWireState {
     pub hello_done: bool,
@@ -29,6 +37,8 @@ pub struct ClientWireState {
     last_top: Option<Map<String, Value>>,
     last_host: Option<Map<String, Value>>,
     held_details: HashMap<String, AgentThreadDetail>,
+    read_ahead: HashMap<String, ReadAheadEntry>,
+    read_ahead_order: VecDeque<String>,
 }
 
 impl ClientWireState {
@@ -41,6 +51,8 @@ impl ClientWireState {
         self.last_host = None;
         // After a fresh hello, previously held details must be resent whole on next observe.
         self.held_details.clear();
+        self.read_ahead.clear();
+        self.read_ahead_order.clear();
     }
 
     pub fn has(&self, feature: &str) -> bool {
@@ -241,6 +253,34 @@ impl ClientWireState {
         })
     }
 
+    /// Formats a thread detail for a direct `detail` read (applying `activity-summaries` if active)
+    /// and updates this connection's held revision or `detail-read-held` cache so later deltas stay
+    /// aligned with what the client cached.
+    pub fn record_detail_read(&mut self, detail: &AgentThreadDetail) -> AgentThreadDetail {
+        let formatted = self.format_detail(detail);
+        if self.observed.contains(&formatted.thread_id) {
+            self.held_details
+                .insert(formatted.thread_id.clone(), formatted.clone());
+        } else if self.has("detail-delta") && self.has("detail-read-held") {
+            let digest = detail_content_digest(&formatted);
+            self.read_ahead.insert(
+                formatted.thread_id.clone(),
+                ReadAheadEntry {
+                    revision: formatted.revision,
+                    digest,
+                },
+            );
+            self.read_ahead_order.retain(|id| id != &formatted.thread_id);
+            self.read_ahead_order.push_back(formatted.thread_id.clone());
+            while self.read_ahead_order.len() > READ_AHEAD_LIMIT {
+                if let Some(oldest) = self.read_ahead_order.pop_front() {
+                    self.read_ahead.remove(&oldest);
+                }
+            }
+        }
+        formatted
+    }
+
     /// Formats a thread detail for a direct `detail` read (applying `activity-summaries` if active).
     pub fn format_detail(&self, detail: &AgentThreadDetail) -> AgentThreadDetail {
         if !self.has("activity-summaries") {
@@ -256,31 +296,56 @@ impl ClientWireState {
         }
     }
 
-    /// Produces a whole `event: "detail"` push for `observe` (always sent when newly observed),
-    /// recording the held revision so subsequent updates send deltas or skip duplicates.
+    /// Produces a push frame for a newly observed thread, honoring `detail-read-held` (#1990)
+    /// when the client already read the exact same content just before observing.
     pub fn encode_observe_detail_push(
         &mut self,
         thread_id: &str,
         detail: Option<&AgentThreadDetail>,
-    ) -> Value {
+    ) -> Option<Value> {
         let Some(detail) = detail else {
             self.held_details.remove(thread_id);
-            return json!({
+            self.read_ahead.remove(thread_id);
+            return Some(json!({
                 "v": HOST_PROTOCOL_VERSION,
                 "event": "detail",
                 "threadId": thread_id,
                 "detail": Value::Null,
-            });
+            }));
         };
         let formatted = self.format_detail(detail);
+        if let Some(read) = self.read_ahead.get(thread_id).cloned() {
+            if formatted.revision >= read.revision {
+                self.read_ahead.remove(thread_id);
+                if detail_content_digest(&formatted) == read.digest {
+                    self.held_details
+                        .insert(thread_id.to_string(), formatted.clone());
+                    if formatted.revision == read.revision {
+                        return None;
+                    }
+                    return Some(json!({
+                        "v": HOST_PROTOCOL_VERSION,
+                        "event": "detail-delta",
+                        "threadId": thread_id,
+                        "delta": {
+                            "threadId": thread_id,
+                            "baseRevision": read.revision,
+                            "revision": formatted.revision,
+                            "messageDeltas": [],
+                            "activityDeltas": [],
+                        },
+                    }));
+                }
+            }
+        }
         self.held_details
             .insert(thread_id.to_string(), formatted.clone());
-        json!({
+        Some(json!({
             "v": HOST_PROTOCOL_VERSION,
             "event": "detail",
             "threadId": thread_id,
             "detail": formatted,
-        })
+        }))
     }
 
     /// Encodes a live thread detail update for an observed thread, returning `None` if this client
@@ -316,6 +381,13 @@ impl ClientWireState {
             "detail": formatted,
         }))
     }
+}
+
+fn detail_content_digest(detail: &AgentThreadDetail) -> String {
+    let mut copy = detail.clone();
+    copy.revision = 0;
+    let raw = serde_json::to_vec(&copy).unwrap_or_default();
+    sotto_core::workspace::sha256_hex(&raw)
 }
 
 fn build_thread_records_diff(

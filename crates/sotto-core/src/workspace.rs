@@ -145,18 +145,20 @@ pub struct AgentModel {
     pub supports_images: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentProject {
     pub id: String,
     pub title: String,
     pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_settled_at: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,9 +196,32 @@ pub struct AgentTurnRecord {
 #[serde(rename_all = "camelCase")]
 pub struct AgentThreadWorktree {
     pub mode: String,
-    pub path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default = "default_worktree_status")]
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_from_origin: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub existing_worktree_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reused: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temporary_branch: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<Value>,
+}
+
+fn default_worktree_status() -> String {
+    "ready".into()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -204,35 +229,48 @@ pub struct AgentThreadWorktree {
 pub struct AgentThread {
     pub id: String,
     pub project_id: String,
+    #[serde(default)]
     pub provider_id: String,
     pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub model_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_mode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_mode: Option<String>,
+    #[serde(default)]
     pub native_session_started: bool,
+    #[serde(default)]
     pub created_at: String,
+    #[serde(default)]
     pub updated_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settled_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_user_message_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_turn: Option<AgentTurnRecord>,
+    #[serde(default)]
+    pub messages: Vec<Value>,
+    #[serde(default)]
     pub requests: Vec<Value>,
+    #[serde(default)]
     pub activities: Vec<Value>,
+    #[serde(default)]
     pub summary: AgentThreadSummary,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<AgentThreadWorktree>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -583,15 +621,30 @@ pub fn diff_thread_detail(base: &AgentThreadDetail, next: &AgentThreadDetail) ->
     }))
 }
 
+pub const MAX_IMAGE_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+pub const MAX_FILE_ATTACHMENT_BYTES: usize = 25 * 1024 * 1024;
+pub const MAX_VIDEO_ATTACHMENT_BYTES: usize = 500 * 1024 * 1024;
+pub const MAX_FILE_PART_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_FILE_PARTS: usize = 4;
+pub const MAX_VIDEO_PARTS: usize = 63;
+const MAX_PENDING_UPLOADS: usize = 64;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagedAttachmentHandle {
     pub id: String,
-    pub kind: String,
     pub name: String,
     pub mime_type: String,
     pub size_bytes: usize,
     pub digest: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<Value>,
+}
+
+impl StagedAttachmentHandle {
+    pub fn is_image(&self) -> bool {
+        self.mime_type.to_ascii_lowercase().starts_with("image/")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -607,6 +660,7 @@ struct PendingFileUpload {
     size_bytes: usize,
     digest: String,
     count: usize,
+    received_bytes: usize,
     parts: BTreeMap<usize, Vec<u8>>,
 }
 
@@ -632,6 +686,7 @@ impl StagedAttachments {
         name: &str,
         mime_type: &str,
         data_b64: &str,
+        dimensions: Option<Value>,
     ) -> Result<StagedAttachmentHandle, String> {
         let allowed_mime = matches!(
             mime_type,
@@ -640,10 +695,14 @@ impl StagedAttachments {
         if !allowed_mime {
             return Err("Only PNG, JPEG, WebP, and GIF images can be attached.".into());
         }
+        let max_b64 = MAX_IMAGE_ATTACHMENT_BYTES.div_ceil(3) * 4;
+        if data_b64.len() > max_b64 {
+            return Err("Attachment image size is out of bounds.".into());
+        }
         let bytes = STANDARD
             .decode(data_b64)
             .map_err(|_| "Attachment image data is not valid base64.".to_string())?;
-        if bytes.is_empty() || bytes.len() > 12 * 1024 * 1024 {
+        if bytes.is_empty() || bytes.len() > MAX_IMAGE_ATTACHMENT_BYTES {
             return Err("Attachment image size is out of bounds.".into());
         }
         let digest = sha256_hex(&bytes);
@@ -653,11 +712,11 @@ impl StagedAttachments {
         fs::write(&file_path, &bytes).map_err(|e| e.to_string())?;
         let handle = StagedAttachmentHandle {
             id: id.clone(),
-            kind: "image".into(),
             name: name.to_string(),
             mime_type: mime_type.to_string(),
             size_bytes: bytes.len(),
             digest,
+            dimensions,
         };
         self.entries.insert(
             id,
@@ -681,12 +740,36 @@ impl StagedAttachments {
         digest: &str,
         data_b64: &str,
     ) -> Result<Option<StagedAttachmentHandle>, String> {
-        if count == 0 || index >= count {
+        let is_video = mime_type.to_ascii_lowercase().starts_with("video/");
+        let max_size = if is_video {
+            MAX_VIDEO_ATTACHMENT_BYTES
+        } else {
+            MAX_FILE_ATTACHMENT_BYTES
+        };
+        let max_parts = if is_video {
+            MAX_VIDEO_PARTS
+        } else {
+            MAX_FILE_PARTS
+        };
+        if size_bytes == 0 || size_bytes > max_size {
+            return Err("Uploaded file exceeds the allowed size limit.".into());
+        }
+        if count == 0 || count > max_parts || index >= count {
             return Err("Invalid file upload part index.".into());
+        }
+        let max_part_b64 = MAX_FILE_PART_BYTES.div_ceil(3) * 4;
+        if data_b64.is_empty() || data_b64.len() > max_part_b64 {
+            return Err("File upload part exceeds the maximum part size.".into());
         }
         let bytes = STANDARD
             .decode(data_b64)
             .map_err(|_| "File part data is not valid base64.".to_string())?;
+        if bytes.is_empty() || bytes.len() > MAX_FILE_PART_BYTES {
+            return Err("File upload part exceeds the maximum part size.".into());
+        }
+        if !self.uploads.contains_key(upload_id) && self.uploads.len() >= MAX_PENDING_UPLOADS {
+            return Err("Too many file uploads are in progress.".into());
+        }
         let pending = self
             .uploads
             .entry(upload_id.to_string())
@@ -696,21 +779,43 @@ impl StagedAttachments {
                 size_bytes,
                 digest: digest.to_string(),
                 count,
+                received_bytes: 0,
                 parts: BTreeMap::new(),
             });
+        if pending.count != count
+            || pending.size_bytes != size_bytes
+            || pending.name != name
+            || pending.mime_type != mime_type
+            || !pending.digest.eq_ignore_ascii_case(digest)
+        {
+            self.uploads.remove(upload_id);
+            return Err("File upload metadata changed between parts.".into());
+        }
+        let prev_len = pending.parts.get(&index).map(|v| v.len()).unwrap_or(0);
+        let next_total = pending
+            .received_bytes
+            .saturating_sub(prev_len)
+            .checked_add(bytes.len())
+            .ok_or_else(|| "Uploaded file exceeds the declared size.".to_string())?;
+        if next_total > pending.size_bytes || next_total > max_size {
+            self.uploads.remove(upload_id);
+            return Err("Uploaded file exceeds the declared size.".into());
+        }
+        pending.received_bytes = next_total;
         pending.parts.insert(index, bytes);
         if pending.parts.len() < pending.count {
             return Ok(None);
         }
         let completed = self.uploads.remove(upload_id).unwrap();
-        let mut combined = Vec::with_capacity(completed.size_bytes);
+        let actual_total: usize = completed.parts.values().map(Vec::len).sum();
+        if actual_total != completed.size_bytes || actual_total > max_size {
+            return Err("Uploaded file size does not match declared size.".into());
+        }
+        let mut combined = Vec::with_capacity(actual_total);
         for idx in 0..completed.count {
             if let Some(chunk) = completed.parts.get(&idx) {
                 combined.extend_from_slice(chunk);
             }
-        }
-        if combined.len() != completed.size_bytes {
-            return Err("Uploaded file size does not match declared size.".into());
         }
         let actual_digest = sha256_hex(&combined);
         if !actual_digest.eq_ignore_ascii_case(&completed.digest) {
@@ -722,11 +827,11 @@ impl StagedAttachments {
         fs::write(&file_path, &combined).map_err(|e| e.to_string())?;
         let handle = StagedAttachmentHandle {
             id: id.clone(),
-            kind: "file".into(),
             name: completed.name,
             mime_type: completed.mime_type,
             size_bytes: combined.len(),
             digest: actual_digest,
+            dimensions: None,
         };
         self.entries.insert(
             id,
@@ -741,9 +846,15 @@ impl StagedAttachments {
     pub fn get(&self, id: &str) -> Option<&StagedAttachmentEntry> {
         self.entries.get(id)
     }
+
+    pub fn get_by_digest(&self, digest: &str) -> Option<&StagedAttachmentEntry> {
+        self.entries
+            .values()
+            .find(|e| e.handle.digest.eq_ignore_ascii_case(digest))
+    }
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     let digest = hasher.finalize();
@@ -834,9 +945,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let mut staged = StagedAttachments::new(dir.path());
         let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-        let img = staged.stage_image("Referee.png", "image/png", png).unwrap();
-        assert_eq!(img.kind, "image");
+        let img = staged
+            .stage_image("Referee.png", "image/png", png, None)
+            .unwrap();
+        assert_eq!(img.mime_type, "image/png");
         assert!(staged.get(&img.id).is_some());
+        let serialized = serde_json::to_value(&img).unwrap();
+        assert!(serialized.get("kind").is_none());
 
         let content = b"Referee notes\nsecond line\n";
         let digest = sha256_hex(content);
@@ -853,7 +968,19 @@ mod tests {
             )
             .unwrap()
             .unwrap();
-        assert_eq!(handle.kind, "file");
         assert_eq!(handle.size_bytes, content.len());
+
+        // Oversized sizeBytes declaration must be rejected cleanly before allocation (no panic).
+        let huge = staged.stage_file_part(
+            "u-huge",
+            0,
+            1,
+            "huge.txt",
+            "text/plain",
+            usize::MAX,
+            &digest,
+            &STANDARD.encode(b"x"),
+        );
+        assert!(huge.is_err());
     }
 }

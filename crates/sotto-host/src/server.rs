@@ -60,8 +60,6 @@ pub fn advertised_features() -> Vec<String> {
         "provider-antigravity".into(),
         "git-refs".into(),
         "git-changed-files".into(),
-        "git-pull-request".into(),
-        "git-pull-request-list".into(),
         "host-folders".into(),
         "thread-files".into(),
         "thread-changes".into(),
@@ -952,16 +950,18 @@ async fn handle_ws_request(
                 Ok(list) => list,
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };
-            // Protocol v1 promise: push every newly observed thread's detail BEFORE answering `observe`.
+            // Protocol v1 promise: push every newly observed thread's detail BEFORE answering `observe`
+            // (unless `detail-read-held` confirmed the client already holds this exact revision).
             for (tid, detail) in details {
                 if !previously_observed.contains(&tid) {
-                    let push_frame = wire.encode_observe_detail_push(&tid, detail.as_ref());
-                    if let Ok(encoded) = serde_json::to_string(&push_frame) {
-                        let _ = out_tx.send(OutboundFrame::Text(encoded));
+                    if let Some(push_frame) = wire.encode_observe_detail_push(&tid, detail.as_ref()) {
+                        if let Ok(encoded) = serde_json::to_string(&push_frame) {
+                            let _ = out_tx.send(OutboundFrame::Text(encoded));
+                        }
                     }
                 }
             }
-            HostResponseEnvelope::ok(req.id, json!({ "observed": thread_ids }))
+            HostResponseEnvelope::ok(req.id, Value::Null)
         }
         "detail" => {
             let Some(thread_id) = req.fields.get("threadId").and_then(Value::as_str) else {
@@ -973,7 +973,7 @@ async fn handle_ws_request(
             };
             match state.coordinator.detail(thread_id.to_string()).await {
                 Ok(Some(detail)) => {
-                    let formatted = wire.format_detail(&detail);
+                    let formatted = wire.record_detail_read(&detail);
                     HostResponseEnvelope::ok(
                         req.id,
                         serde_json::to_value(formatted).unwrap_or(Value::Null),
@@ -1031,12 +1031,40 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            let dimensions = img.get("dimensions").cloned();
             match state
                 .coordinator
-                .stage_image(name.into(), mime.into(), data.into())
+                .stage_image(name.into(), mime.into(), data.into(), dimensions)
                 .await
             {
-                Ok(handle) => HostResponseEnvelope::ok(req.id, json!({ "attachment": handle })),
+                Ok(handle) => HostResponseEnvelope::ok(
+                    req.id,
+                    serde_json::to_value(handle).unwrap_or(Value::Null),
+                ),
+                Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+            }
+        }
+        "attachment-content" => {
+            let Some(digest) = req.fields.get("digest").and_then(Value::as_str) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            match state
+                .coordinator
+                .attachment_content(digest.to_string())
+                .await
+            {
+                Ok(Some((mime, bytes))) => HostResponseEnvelope::ok(
+                    req.id,
+                    json!({
+                        "mimeType": mime,
+                        "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+                    }),
+                ),
+                Ok(None) => HostResponseEnvelope::ok(req.id, Value::Null),
                 Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
             }
         }
@@ -1054,7 +1082,7 @@ async fn handle_ws_request(
                 Some(count),
                 Some(name),
                 Some(mime),
-                Some(size_bytes),
+                Some(size_bytes_u64),
                 Some(digest),
                 Some(data),
             ) = (
@@ -1074,24 +1102,46 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            let Ok(size_bytes) = usize::try_from(size_bytes_u64) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    "Uploaded file exceeds the allowed size limit.",
+                );
+            };
+            let Ok(index_usize) = usize::try_from(index) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    "Invalid file upload part index.",
+                );
+            };
+            let Ok(count_usize) = usize::try_from(count) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    "Invalid file upload part count.",
+                );
+            };
             match state
                 .coordinator
                 .stage_file_part(
                     upload_id.into(),
-                    index as usize,
-                    count as usize,
+                    index_usize,
+                    count_usize,
                     name.into(),
                     mime.into(),
-                    size_bytes as usize,
+                    size_bytes,
                     digest.into(),
                     data.into(),
                 )
                 .await
             {
-                Ok(Some(handle)) => {
-                    HostResponseEnvelope::ok(req.id, json!({ "done": true, "attachment": handle }))
-                }
-                Ok(None) => HostResponseEnvelope::ok(req.id, json!({ "done": false })),
+                Ok(Some(handle)) => HostResponseEnvelope::ok(
+                    req.id,
+                    serde_json::to_value(handle).unwrap_or(Value::Null),
+                ),
+                Ok(None) => HostResponseEnvelope::ok(req.id, Value::Null),
                 Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
             }
         }
@@ -1116,23 +1166,76 @@ async fn handle_ws_request(
             }
         }
         "host-facts" => {
-            let ver = state.sotto_version.clone();
-            let facts = tokio::task::spawn_blocking(move || sotto_core::ops::host_facts(&ver))
+            let running = state
+                .coordinator
+                .running_threads_count()
+                .await
+                .unwrap_or(0);
+            let facts = tokio::task::spawn_blocking(move || sotto_core::ops::host_facts(running))
                 .await
                 .unwrap_or_else(|_| json!({}));
             HostResponseEnvelope::ok(req.id, facts)
         }
         "host-folders" => {
-            let requested = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("path"))
-                .or_else(|| req.fields.get("path"))
-                .and_then(Value::as_str)
-                .map(ToString::to_string);
+            let req_obj = req.fields.get("request").and_then(Value::as_object);
+            let requested: Option<Option<String>> = match req_obj.and_then(|r| r.get("path")) {
+                Some(Value::Null) => Some(None),
+                Some(Value::String(s)) => Some(Some(s.clone())),
+                _ => None,
+            };
             let fallback = state.data_directory.clone();
             match tokio::task::spawn_blocking(move || {
-                sotto_core::ops::host_folders(requested.as_deref(), &fallback)
+                let borrowed = requested.as_ref().map(|opt| opt.as_deref());
+                sotto_core::ops::host_folders(borrowed, &fallback)
+            })
+            .await
+            {
+                Ok(val) => HostResponseEnvelope::ok(req.id, val),
+                Err(_) => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
+        }
+        "git-refs" => {
+            let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let Some(tid) = r.get("threadId").and_then(Value::as_str) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let Ok(Some(ws)) = state.coordinator.thread_workspace(tid.to_string()).await else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    "This thread is unavailable.",
+                );
+            };
+            let query = r.get("query").and_then(Value::as_str).map(ToString::to_string);
+            let cursor = r.get("cursor").and_then(Value::as_u64).map(|v| v as usize);
+            let limit = r.get("limit").and_then(Value::as_u64).map(|v| v as usize);
+            let include_matching_remote = r
+                .get("includeMatchingRemoteRefs")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let folder = ws.working_directory;
+            match tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_refs(
+                    &folder,
+                    query.as_deref(),
+                    cursor,
+                    limit,
+                    include_matching_remote,
+                )
             })
             .await
             {
@@ -1144,47 +1247,27 @@ async fn handle_ws_request(
                 ),
             }
         }
-        "git-refs" => {
-            let folder = req
+        "git-changed-files" => {
+            let Some(tid) = req
                 .fields
                 .get("request")
-                .and_then(|r| r.get("path"))
-                .or_else(|| req.fields.get("path"))
+                .and_then(|r| r.get("threadId"))
                 .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            if folder.is_empty() {
+            else {
                 return HostResponseEnvelope::err(
                     req.id,
                     HostErrorCode::InvalidRequest,
                     HostErrorCode::InvalidRequest.default_message(),
                 );
-            }
-            match tokio::task::spawn_blocking(move || sotto_core::ops::git_refs(&folder)).await {
-                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
-                _ => HostResponseEnvelope::err(
+            };
+            let Ok(Some(ws)) = state.coordinator.thread_workspace(tid.to_string()).await else {
+                return HostResponseEnvelope::err(
                     req.id,
                     HostErrorCode::Unavailable,
-                    HostErrorCode::Unavailable.default_message(),
-                ),
-            }
-        }
-        "git-changed-files" => {
-            let folder = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("path"))
-                .or_else(|| req.fields.get("path"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            if folder.is_empty() {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
+                    "This thread is unavailable.",
                 );
-            }
+            };
+            let folder = ws.working_directory;
             match tokio::task::spawn_blocking(move || sotto_core::ops::git_changed_files(&folder))
                 .await
             {
@@ -1196,144 +1279,194 @@ async fn handle_ws_request(
                 ),
             }
         }
-        "git-pull-request" => {
-            let folder = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("path"))
-                .or_else(|| req.fields.get("path"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            if folder.is_empty() {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
-            }
-            match tokio::task::spawn_blocking(move || sotto_core::ops::git_pull_request(&folder))
-                .await
-            {
-                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
-                _ => HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::Unavailable,
-                    HostErrorCode::Unavailable.default_message(),
-                ),
-            }
-        }
-        "git-pull-request-list" => {
-            let folder = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("path"))
-                .or_else(|| req.fields.get("path"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            if folder.is_empty() {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
-            }
-            match tokio::task::spawn_blocking(move || {
-                sotto_core::ops::git_pull_request_list(&folder)
-            })
-            .await
-            {
-                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
-                _ => HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::Unavailable,
-                    HostErrorCode::Unavailable.default_message(),
-                ),
-            }
-        }
         "thread-files" => {
-            let root = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("workingDirectory"))
-                .or_else(|| req.fields.get("workingDirectory"))
-                .and_then(Value::as_str)
-                .map(PathBuf::from)
-                .unwrap_or_else(|| state.data_directory.clone());
-            let rel = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("path"))
-                .or_else(|| req.fields.get("path"))
-                .and_then(Value::as_str)
-                .map(ToString::to_string);
-            let res = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::thread_files(&root, rel.as_deref())
-            })
-            .await
-            .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not read files." }));
+            let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let Some(tid) = r.get("threadId").and_then(Value::as_str) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let rel = r.get("path").and_then(Value::as_str).unwrap_or("").to_string();
+            let req_ws_id = r.get("workspaceId").and_then(Value::as_str);
+            if !rel.is_empty() && req_ws_id.is_none() {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    sotto_core::ops::tools_err("invalid-request", "Refresh the workspace first."),
+                );
+            }
+            let Ok(Some(ws)) = state.coordinator.thread_workspace(tid.to_string()).await else {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
+                );
+            };
+            if let Some(expected_ws) = req_ws_id {
+                if expected_ws != ws.workspace_id {
+                    return HostResponseEnvelope::ok(
+                        req.id,
+                        sotto_core::ops::tools_err(
+                            "workspace-changed",
+                            "This thread's working folder changed. Refresh and try again.",
+                        ),
+                    );
+                }
+            }
+            let res = tokio::task::spawn_blocking(move || sotto_core::ops::thread_files(&ws, &rel))
+                .await
+                .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read files."));
             HostResponseEnvelope::ok(req.id, res)
         }
         "thread-file-preview" => {
-            let root = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("workingDirectory"))
-                .or_else(|| req.fields.get("workingDirectory"))
-                .and_then(Value::as_str)
-                .map(PathBuf::from)
-                .unwrap_or_else(|| state.data_directory.clone());
-            let rel = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("path"))
-                .or_else(|| req.fields.get("path"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
+            let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let (Some(tid), Some(rel), Some(expected_ws)) = (
+                r.get("threadId").and_then(Value::as_str),
+                r.get("path").and_then(Value::as_str),
+                r.get("workspaceId").and_then(Value::as_str),
+            ) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let Ok(Some(ws)) = state.coordinator.thread_workspace(tid.to_string()).await else {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
+                );
+            };
+            if expected_ws != ws.workspace_id {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    sotto_core::ops::tools_err(
+                        "workspace-changed",
+                        "This thread's working folder changed. Refresh and try again.",
+                    ),
+                );
+            }
+            let rel_owned = rel.to_string();
             let res = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::thread_file_preview(&root, &rel)
+                sotto_core::ops::thread_file_preview(&ws, &rel_owned)
             })
             .await
-            .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not preview file." }));
+            .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not preview file."));
             HostResponseEnvelope::ok(req.id, res)
         }
         "thread-changes" => {
-            let folder = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("workingDirectory"))
-                .or_else(|| req.fields.get("workingDirectory"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let res = tokio::task::spawn_blocking(move || sotto_core::ops::git_changes(&folder))
+            let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let Some(tid) = r.get("threadId").and_then(Value::as_str) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let req_ws_id = r.get("workspaceId").and_then(Value::as_str);
+            let Ok(Some(ws)) = state.coordinator.thread_workspace(tid.to_string()).await else {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
+                );
+            };
+            if let Some(expected_ws) = req_ws_id {
+                if expected_ws != ws.workspace_id {
+                    return HostResponseEnvelope::ok(
+                        req.id,
+                        sotto_core::ops::tools_err(
+                            "workspace-changed",
+                            "This thread's working folder changed. Refresh and try again.",
+                        ),
+                    );
+                }
+            }
+            let res = tokio::task::spawn_blocking(move || sotto_core::ops::thread_changes(&ws))
                 .await
-                .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not read changes." }));
+                .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read changes."));
             HostResponseEnvelope::ok(req.id, res)
         }
         "thread-changes-review" => {
-            let folder = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("workingDirectory"))
-                .or_else(|| req.fields.get("workingDirectory"))
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let res = tokio::task::spawn_blocking(move || sotto_core::ops::git_review(&folder))
-                .await
-                .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not read review." }));
+            let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let (Some(tid), Some(expected_ws)) = (
+                r.get("threadId").and_then(Value::as_str),
+                r.get("workspaceId").and_then(Value::as_str),
+            ) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let scope = r
+                .get("scope")
+                .cloned()
+                .unwrap_or_else(|| json!({ "kind": "working" }));
+            let ignore_whitespace = r
+                .get("ignoreWhitespace")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let Ok(Some(ws)) = state.coordinator.thread_workspace(tid.to_string()).await else {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    sotto_core::ops::tools_err("thread-unavailable", "This thread is unavailable."),
+                );
+            };
+            if expected_ws != ws.workspace_id {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    sotto_core::ops::tools_err(
+                        "workspace-changed",
+                        "This thread's working folder changed. Refresh and try again.",
+                    ),
+                );
+            }
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::thread_changes_review(&ws, &scope, ignore_whitespace)
+            })
+            .await
+            .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read review."));
             HostResponseEnvelope::ok(req.id, res)
         }
         "thread-words" => {
-            let query = req
+            let Some(query) = req
                 .fields
                 .get("query")
                 .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
+                .map(str::trim)
+                .filter(|q| !q.is_empty())
+                .map(ToString::to_string)
+            else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
             let dir = state.data_directory.clone();
             let res = tokio::task::spawn_blocking(move || {
                 sotto_core::ops::search_thread_words(&dir, &query)
@@ -1343,29 +1476,113 @@ async fn handle_ws_request(
             HostResponseEnvelope::ok(req.id, res)
         }
         "subagent-page" => {
-            let tid = req
+            let Some(tid) = req
                 .fields
                 .get("request")
                 .and_then(|r| r.get("threadId"))
-                .or_else(|| req.fields.get("threadId"))
                 .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
+                .map(ToString::to_string)
+            else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
             let dir = state.data_directory.clone();
             let res = tokio::task::spawn_blocking(move || {
                 sotto_core::ops::read_subagent_page(&dir, &tid)
             })
             .await
-            .unwrap_or_else(|_| json!({ "totalCount": 0, "rows": [] }));
+            .unwrap_or_else(|_| {
+                json!({
+                    "threadId": "",
+                    "revision": 0,
+                    "rows": [],
+                    "summary": { "total": 0, "working": 0, "completed": 0, "failed": 0, "interrupted": 0, "unknown": 0 }
+                })
+            });
             HostResponseEnvelope::ok(req.id, res)
         }
-        "usage-dashboard" => {
+        "subagent-assignments" => {
+            let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let (Some(tid), Some(aid)) = (
+                r.get("threadId").and_then(Value::as_str),
+                r.get("agentId").and_then(Value::as_str),
+            ) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let res = sotto_core::ops::read_subagent_assignments(tid, aid);
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "usage-read" => {
+            let tz = req
+                .fields
+                .get("query")
+                .and_then(|q| q.get("timeZone"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
             let dir = state.data_directory.clone();
             let res = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::read_usage_summary(&dir)
+                sotto_core::ops::usage_read(&dir, tz.as_deref())
             })
             .await
-            .unwrap_or_else(|_| json!({ "meta": null }));
+            .unwrap_or_else(|_| json!({ "status": "error", "quotas": [] }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "usage-refresh" => {
+            let dir = state.data_directory.clone();
+            let res = tokio::task::spawn_blocking(move || sotto_core::ops::usage_read(&dir, None))
+                .await
+                .unwrap_or_else(|_| json!({ "status": "error", "quotas": [] }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "usage-clear" => {
+            if !may_answer {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            let Some(expected_rev) = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("expectedRevision"))
+                .and_then(Value::as_i64)
+            else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let dir = state.data_directory.clone();
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::usage_clear(&dir, expected_rev)
+            })
+            .await
+            .unwrap_or_else(|_| {
+                json!({
+                    "status": "stale",
+                    "metadata": {
+                        "startedAt": sotto_core::workspace::now_iso(),
+                        "revision": 0,
+                        "generation": 0,
+                        "legacySeedCompleted": false,
+                    }
+                })
+            });
             HostResponseEnvelope::ok(req.id, res)
         }
         _ => HostResponseEnvelope::err(

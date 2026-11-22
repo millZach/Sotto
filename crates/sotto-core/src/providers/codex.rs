@@ -90,13 +90,19 @@ struct RpcProcess {
     stdin_tx: mpsc::UnboundedSender<String>,
     pending_outbound: PendingRpcMap,
     next_id: AtomicI64,
+    alive: Arc<std::sync::atomic::AtomicBool>,
     child: Mutex<Option<Child>>,
 }
 
 impl RpcProcess {
+    fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::SeqCst)
+    }
+
     fn spawn(
         config: &CodexAdapterConfig,
         shared: Arc<CodexSharedState>,
+        owner_thread_id: Option<String>,
     ) -> Result<Arc<Self>, String> {
         let mut cmd = Command::new(&config.executable);
         cmd.args(&config.args)
@@ -141,11 +147,14 @@ impl RpcProcess {
 
         let server_id = Uuid::new_v4().to_string();
         let pending_outbound: PendingRpcMap = Arc::new(Mutex::new(HashMap::new()));
+        let alive = Arc::new(std::sync::atomic::AtomicBool::new(true));
 
         let reader_pending = Arc::clone(&pending_outbound);
         let reader_server_id = server_id.clone();
         let reader_stdin_tx = stdin_tx.clone();
         let reader_shared = Arc::clone(&shared);
+        let reader_alive = Arc::clone(&alive);
+        let reader_owner_tid = owner_thread_id;
 
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
@@ -197,10 +206,14 @@ impl RpcProcess {
                 }
             }
 
-            // Fail any remaining pending RPC callers on unexpected exit.
+            // Mark process dead, fail pending RPC callers, clear pending requests, and fail any active turn.
+            reader_alive.store(false, Ordering::SeqCst);
             let drained: Vec<_> = reader_pending.lock().unwrap().drain().collect();
             for (_, tx) in drained {
                 let _ = tx.send(Err("Codex exited before answering.".into()));
+            }
+            if let Some(ref tid) = reader_owner_tid {
+                reader_shared.handle_thread_process_exit(tid);
             }
         });
 
@@ -208,6 +221,7 @@ impl RpcProcess {
             stdin_tx,
             pending_outbound,
             next_id: AtomicI64::new(1),
+            alive,
             child: Mutex::new(Some(child)),
         }))
     }
@@ -697,6 +711,46 @@ impl CodexSharedState {
             request: request_card,
         });
     }
+
+    fn handle_thread_process_exit(&self, sotto_tid: &str) {
+        let cleared_ids: Vec<String> = {
+            let mut map = self.pending_requests.lock().unwrap();
+            let ids: Vec<String> = map
+                .iter()
+                .filter(|(_, r)| r.sotto_thread_id == sotto_tid)
+                .map(|(k, _)| k.clone())
+                .collect();
+            for id in &ids {
+                map.remove(id);
+            }
+            ids
+        };
+        for req_id in cleared_ids {
+            self.emit(ProviderEvent::RequestCleared {
+                thread_id: sotto_tid.to_string(),
+                request_id: req_id,
+            });
+        }
+        let active_turn = self.active_turns.lock().unwrap().remove(sotto_tid);
+        if let Some(turn_id) = active_turn {
+            if let Some(mut act) = self.turn_activities.lock().unwrap().remove(sotto_tid) {
+                if let Some(obj) = act.as_object_mut() {
+                    obj.insert("status".into(), Value::String("failed".into()));
+                    obj.insert("title".into(), Value::String("Codex exited unexpectedly".into()));
+                    obj.insert("completedAt".into(), Value::String(now_iso()));
+                }
+                self.emit(ProviderEvent::ActivityUpserted {
+                    thread_id: sotto_tid.to_string(),
+                    activity: act,
+                });
+            }
+            self.emit(ProviderEvent::TurnCompleted {
+                thread_id: sotto_tid.to_string(),
+                turn_id,
+                status: "failed".into(),
+            });
+        }
+    }
 }
 
 pub struct CodexAdapter {
@@ -723,9 +777,16 @@ impl CodexAdapter {
     ) -> Result<Arc<RpcProcess>, String> {
         let mut procs = self.thread_procs.lock().await;
         if let Some(existing) = procs.get(sotto_thread_id) {
-            return Ok(Arc::clone(existing));
+            if existing.is_alive() {
+                return Ok(Arc::clone(existing));
+            }
+            procs.remove(sotto_thread_id);
         }
-        let proc = RpcProcess::spawn(&self.config, Arc::clone(&self.shared))?;
+        let proc = RpcProcess::spawn(
+            &self.config,
+            Arc::clone(&self.shared),
+            Some(sotto_thread_id.to_string()),
+        )?;
         proc.initialize(self.config.request_timeout_ms).await?;
         procs.insert(sotto_thread_id.to_string(), Arc::clone(&proc));
         Ok(proc)
@@ -758,7 +819,7 @@ impl ProviderAdapter for CodexAdapter {
             *self.shared.events_tx.lock().unwrap() = Some(events);
             let mut guard = self.control_proc.lock().await;
             if guard.is_none() {
-                let proc = RpcProcess::spawn(&self.config, Arc::clone(&self.shared))?;
+                let proc = RpcProcess::spawn(&self.config, Arc::clone(&self.shared), None)?;
                 let init = proc.initialize(self.config.request_timeout_ms).await?;
                 let version = init
                     .get("userAgent")
@@ -1000,7 +1061,7 @@ impl ProviderAdapter for CodexAdapter {
 
             let mut input = vec![json!({ "type": "text", "text": req.text })];
             for att in &req.attachments {
-                if att.handle.kind == "image" {
+                if att.handle.is_image() {
                     input.push(json!({
                         "type": "localImage",
                         "path": att.path.to_string_lossy(),
@@ -1344,19 +1405,60 @@ fn build_codex_request_card(req_id: &str, method: &str, params: &Value) -> Value
     }
 }
 
+/// Decodes a single entry from Sotto's `agentQuestionAnswersSchema`:
+/// `{ optionIds: string[], text?: string, skipped?: true }` (plus string/array compatibility).
+pub(crate) fn decode_question_answer_values(val: &Value, fallback: &str) -> (Vec<String>, bool) {
+    match val {
+        Value::Object(obj) => {
+            if obj.get("skipped").and_then(Value::as_bool) == Some(true) {
+                return (Vec::new(), true);
+            }
+            let mut list: Vec<String> = obj
+                .get("optionIds")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(ToString::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if let Some(t) = obj
+                .get("text")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                if !list.iter().any(|item| item == t) {
+                    list.push(t.to_string());
+                }
+            }
+            (list, false)
+        }
+        Value::String(s) => (vec![s.clone()], false),
+        Value::Array(arr) => (
+            arr.iter()
+                .filter_map(|x| x.as_str().map(ToString::to_string))
+                .collect(),
+            false,
+        ),
+        _ => (vec![fallback.to_string()], false),
+    }
+}
+
 fn build_codex_response_payload(method: &str, params: &Value, req: &AnswerRequestInput) -> Value {
     match method {
         "item/tool/requestUserInput" => {
+            if req.skipped == Some(true) {
+                return json!({ "answers": {} });
+            }
             let mut answers = Map::new();
             if let Some(obj) = req.question_answers.as_ref().and_then(Value::as_object) {
                 for (k, v) in obj {
-                    let list = match v {
-                        Value::String(s) => vec![Value::String(s.clone())],
-                        Value::Array(arr) => arr
-                            .iter()
-                            .filter_map(|x| x.as_str().map(|s| Value::String(s.into())))
-                            .collect(),
-                        _ => vec![Value::String(req.answer.clone())],
+                    let (vals, is_skipped) = decode_question_answer_values(v, &req.answer);
+                    let list: Vec<Value> = if is_skipped {
+                        Vec::new()
+                    } else {
+                        vals.into_iter().map(Value::String).collect()
                     };
                     answers.insert(k.clone(), json!({ "answers": list }));
                 }
@@ -1382,6 +1484,24 @@ fn build_codex_response_payload(method: &str, params: &Value, req: &AnswerReques
             json!({ "permissions": perms, "scope": "turn" })
         }
         "mcpServer/elicitation/request" => {
+            if req.skipped == Some(true) || req.approved == Some(false) {
+                return json!({ "action": "decline" });
+            }
+            if let Some(obj) = req.question_answers.as_ref().and_then(Value::as_object) {
+                let mut content = Map::new();
+                for (k, v) in obj {
+                    let (vals, is_skipped) = decode_question_answer_values(v, &req.answer);
+                    if is_skipped {
+                        continue;
+                    }
+                    if vals.len() > 1 {
+                        content.insert(k.clone(), json!(vals));
+                    } else if let Some(first) = vals.into_iter().next() {
+                        content.insert(k.clone(), Value::String(first));
+                    }
+                }
+                return json!({ "action": "accept", "content": Value::Object(content) });
+            }
             let action = if req.approved.unwrap_or(!req.answer.is_empty()) {
                 "accept"
             } else {
@@ -1431,13 +1551,17 @@ mod tests {
             &AnswerRequestInput {
                 thread_id: "t1".into(),
                 request_id: "rpc:s:1".into(),
-                answer: "Blue".into(),
+                answer: String::new(),
                 approved: None,
                 permission_choice: None,
-                question_answers: None,
+                question_answers: Some(json!({
+                    "choice": { "optionIds": ["Blue"], "text": "Sky" }
+                })),
+                skipped: None,
             },
         );
         assert_eq!(q_res["answers"]["choice"]["answers"][0], "Blue");
+        assert_eq!(q_res["answers"]["choice"]["answers"][1], "Sky");
 
         let p_res = build_codex_response_payload(
             "item/commandExecution/requestApproval",
@@ -1449,6 +1573,7 @@ mod tests {
                 approved: Some(true),
                 permission_choice: None,
                 question_answers: None,
+                skipped: None,
             },
         );
         assert_eq!(p_res["decision"], "accept");

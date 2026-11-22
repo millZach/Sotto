@@ -63,6 +63,18 @@ struct MuseThreadRecord {
     muse_session_id: String,
     #[serde(default)]
     cwd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    runtime_mode: Option<String>,
+}
+
+fn muse_approval_mode(runtime_mode: Option<&str>) -> &'static str {
+    match runtime_mode.unwrap_or("approval-required") {
+        "full-access" => "allowAll",
+        "auto" => "allowEdits",
+        _ => "promptUnmatched",
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -825,7 +837,7 @@ impl ProviderAdapter for MuseAdapter {
                                 "commandId": Uuid::new_v4().to_string(),
                                 "workspaceRoot": req.cwd,
                                 "modelId": raw_model,
-                                "approvalMode": "promptUnmatched",
+                                "approvalMode": muse_approval_mode(req.runtime_mode.as_deref()),
                             }),
                             self.config.request_timeout_ms,
                         )
@@ -841,6 +853,8 @@ impl ProviderAdapter for MuseAdapter {
                         MuseThreadRecord {
                             muse_session_id: sid.clone(),
                             cwd: req.cwd.clone(),
+                            model_id: Some(raw_model.clone()),
+                            runtime_mode: req.runtime_mode.clone(),
                         },
                     );
                     self.shared
@@ -862,6 +876,38 @@ impl ProviderAdapter for MuseAdapter {
                             self.config.request_timeout_ms,
                         )
                         .await;
+                    if rec.model_id.as_deref() != Some(raw_model.as_str()) {
+                        proc.call(
+                            "session/setModel",
+                            json!({
+                                "commandId": Uuid::new_v4().to_string(),
+                                "sessionId": rec.muse_session_id,
+                                "model": { "modelId": raw_model },
+                            }),
+                            self.config.request_timeout_ms,
+                        )
+                        .await?;
+                        if let Some(entry) = self.shared.records.lock().unwrap().get_mut(&req.thread_id) {
+                            entry.model_id = Some(raw_model.clone());
+                        }
+                        self.shared.save_records();
+                    }
+                    if req.runtime_mode.is_some() && rec.runtime_mode != req.runtime_mode {
+                        proc.call(
+                            "session/setApprovalMode",
+                            json!({
+                                "commandId": Uuid::new_v4().to_string(),
+                                "sessionId": rec.muse_session_id,
+                                "mode": muse_approval_mode(req.runtime_mode.as_deref()),
+                            }),
+                            self.config.request_timeout_ms,
+                        )
+                        .await?;
+                        if let Some(entry) = self.shared.records.lock().unwrap().get_mut(&req.thread_id) {
+                            entry.runtime_mode = req.runtime_mode.clone();
+                        }
+                        self.shared.save_records();
+                    }
                     rec.muse_session_id
                 }
             };
@@ -875,7 +921,7 @@ impl ProviderAdapter for MuseAdapter {
 
             let mut input = vec![json!({ "type": "text", "text": req.text })];
             for att in &req.attachments {
-                if att.handle.kind == "image" {
+                if att.handle.is_image() {
                     input.push(json!({
                         "type": "image",
                         "path": att.path.to_string_lossy(),
@@ -1073,6 +1119,70 @@ impl ProviderAdapter for MuseAdapter {
                 self.config.request_timeout_ms,
             )
             .await?;
+            Ok(())
+        })
+    }
+
+    fn configure_thread(
+        &self,
+        thread_id: String,
+        model_id: Option<String>,
+        runtime_mode: Option<String>,
+        _reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async move {
+            let rec = self
+                .shared
+                .records
+                .lock()
+                .unwrap()
+                .get(&thread_id)
+                .cloned();
+            let proc = {
+                let map = self.thread_procs.lock().await;
+                map.get(&thread_id).cloned()
+            };
+            if let (Some(proc), Some(rec)) = (proc, rec) {
+                if let Some(m) = model_id {
+                    let raw = parse_public_provider_entity_id(&m)
+                        .map(|(_, _, r)| r.to_string())
+                        .unwrap_or(m);
+                    if rec.model_id.as_deref() != Some(raw.as_str()) {
+                        proc.call(
+                            "session/setModel",
+                            json!({
+                                "commandId": Uuid::new_v4().to_string(),
+                                "sessionId": rec.muse_session_id,
+                                "model": { "modelId": raw },
+                            }),
+                            self.config.request_timeout_ms,
+                        )
+                        .await?;
+                        if let Some(entry) = self.shared.records.lock().unwrap().get_mut(&thread_id) {
+                            entry.model_id = Some(raw);
+                        }
+                        self.shared.save_records();
+                    }
+                }
+                if let Some(mode) = runtime_mode {
+                    if rec.runtime_mode.as_deref() != Some(mode.as_str()) {
+                        proc.call(
+                            "session/setApprovalMode",
+                            json!({
+                                "commandId": Uuid::new_v4().to_string(),
+                                "sessionId": rec.muse_session_id,
+                                "mode": muse_approval_mode(Some(&mode)),
+                            }),
+                            self.config.request_timeout_ms,
+                        )
+                        .await?;
+                        if let Some(entry) = self.shared.records.lock().unwrap().get_mut(&thread_id) {
+                            entry.runtime_mode = Some(mode);
+                        }
+                        self.shared.save_records();
+                    }
+                }
+            }
             Ok(())
         })
     }
