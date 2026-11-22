@@ -496,6 +496,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'usage-history' || (usageReads))
     && (feature !== 'usage-muse-opencode' || (usageReads))
     && (feature !== 'usage-antigravity' || (usageReads))
+    && (feature !== 'usage-antigravity-no-limits' || (usageReads))
     && (feature !== 'usage-background-refresh' || (service.supportsUsage === true && service.usageRefresh !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
     // A confirmation receipt is bound to the pull request as the host read it for the client, so only a host that reads them gives one (#1691).

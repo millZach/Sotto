@@ -193,7 +193,7 @@ public enum NewThreads {
     }
     public static func availableModels(_ host: HostSnapshot) -> [ThreadModel] {
         (host.models ?? []).filter { model in
-            guard model.ready else { return false }
+            guard model.ready, AntigravityCatalog.allows(model) else { return false }
             if let providers = host.providers {
                 guard let provider = providers.first(where: { $0.id == model.providerId }) else { return false }
                 return provider.connection == "connected" && provider.capabilities.threads == true

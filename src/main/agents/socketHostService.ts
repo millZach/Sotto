@@ -65,7 +65,7 @@ import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatche
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
-import { USAGE_LIMIT_PROVIDERS, usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+import { reportsUsageLimits, USAGE_LIMIT_PROVIDERS, usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 /** Answers read on every call, checked against schemas built once rather than on every call. */
 const keepCatalogModel = (model: AgentModel): boolean => model.providerId !== 'antigravity' || antigravityCatalogGeminiModel(model.id)
@@ -464,7 +464,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'usage-antigravity-no-limits', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -2092,6 +2092,12 @@ export class SocketHostService implements HostService {
     if (!this.features.includes('usage-muse-opencode') && older.providerIds !== undefined) older.providerIds = usageProvidersBeforeMuse(older.providerIds)
     // One from before Antigravity was counted refuses a query naming it the same way.
     if (!this.features.includes('usage-antigravity') && older.providerIds !== undefined) older.providerIds = usageProvidersBeforeAntigravity(older.providerIds)
+    // A November 21 Owl host that lists `usage-antigravity` without `usage-antigravity-no-limits` still runs its
+    // Antigravity limits reader on an ordinary usage-read; scope it away from Antigravity (#2770).
+    if (this.features.includes('usage-antigravity') && !this.features.includes('usage-antigravity-no-limits')) {
+      const scoped = usageProvidersBeforeAntigravity(older.providerIds)
+      older.providerIds = this.features.includes('usage-muse-opencode') ? scoped : usageProvidersBeforeMuse(scoped)
+    }
     const sent = this.features.includes('usage-history') ? { ...older, ...(sources ? { sources } : {}), ...(since ? { since } : {}) } : older
     return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: sent }, undefined, undefined, 15000))
   }
@@ -2099,7 +2105,7 @@ export class SocketHostService implements HostService {
     this.offers('usage-dashboard')
     // Named even when the caller names none: a host from before November 21, 2026 would otherwise read Antigravity's limits with
     // agy's own token, which Google's terms forbid (ADR-0212). Every limit provider but Antigravity is named.
-    const named = usageProviderIdsSchema.parse(providerIds ?? [...USAGE_LIMIT_PROVIDERS])
+    const named = usageProviderIdsSchema.parse(providerIds ?? [...USAGE_LIMIT_PROVIDERS]).filter(reportsUsageLimits)
     const known = this.features.includes('usage-antigravity') ? named : usageProvidersBeforeAntigravity(named)
     const parsed = this.features.includes('usage-muse-opencode') ? known : usageProvidersBeforeMuse(known)
     // A host from before `usage-background-refresh` refuses the field, and reads every refresh afresh.

@@ -192,4 +192,19 @@ class NewThreadsTests {
         val fields = Json.parseToJsonElement(SottoJson.encodeToString(PendingOperation.serializer(), marker)).jsonObject
         assertEquals(setOf("id", "hostID", "clientID", "threadID", "kind"), fields.keys)
     }
+
+    @Test fun anAntigravityCatalogOnAnOlderHostKeepsOnlyPermittedGeminiModels() {
+        val json = """{"hostId":"h","host":{"name":"Laptop","modelsRevision":7,"threads":[],"projects":[],"models":[{"id":"native:antigravity:model:gemini-4-neon","name":"Gemini 4 Neon","provider":"Antigravity","providerId":"antigravity","ready":true},{"id":"gemini-3.8-flash","name":"Gemini 3.8 Flash","provider":"Antigravity","providerId":"antigravity","ready":true},{"id":"native:antigravity:model:claude-opus-5-5","name":"Claude Opus 5.5","provider":"Antigravity","providerId":"antigravity","ready":true},{"id":"gpt-oss-120b-medium","name":"GPT-OSS 120B","provider":"Antigravity","providerId":"antigravity","ready":true},{"id":"native:codex:model:gemini-4-neon","name":"Wrong provider","provider":"Antigravity","providerId":"antigravity","ready":true},{"id":"native:antigravity:project:gemini-4-neon","name":"Wrong kind","provider":"Antigravity","providerId":"antigravity","ready":true},{"id":"native:antigravity:model:%ZZ","name":"Malformed","provider":"Antigravity","providerId":"antigravity","ready":true},{"id":"native:codex:model:gpt-6.2-sol","name":"GPT-6.2 Sol","provider":"Codex","providerId":"codex","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}}"""
+        val decoded = decode<Shell>(json)
+        val cache = ModelCatalogCache().holding(decoded)
+        val expected = listOf(
+            "native:antigravity:model:gemini-4-neon",
+            "gemini-3.8-flash",
+            "native:codex:model:gpt-6.2-sol",
+        )
+        assertEquals(expected, cache.whole(decoded)!!.host.models!!.map { it.id })
+        assertEquals(expected, NewThreads.availableModels(decoded.host).map { it.id })
+        val revisionOnly = decode<Shell>("""{"hostId":"h","host":{"name":"Laptop","modelsRevision":7,"threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}}""")
+        assertEquals(expected, cache.whole(revisionOnly)!!.host.models!!.map { it.id })
+    }
 }
