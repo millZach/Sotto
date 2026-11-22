@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/sotto-core",
   "crates/sotto-host",
+  "crates/sotto-engine",
 ]
 
 [workspace.package]
