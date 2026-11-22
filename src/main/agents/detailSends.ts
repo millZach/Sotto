@@ -2,6 +2,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentHostSnapshot, AgentMessage, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../shared/agents'
 import { applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, withAppendsWhole } from '../../shared/agentThreadDetail'
 import { immutableActivities, isImmutableActivities } from './activitySnapshots'
+import { clonePlainData } from './cloneHostSnapshot'
 
 /** What detail sends need from the coordinator, which owns the threads and how their messages are presented. */
 export interface DetailSendsContext {
@@ -111,13 +112,17 @@ export class DetailSends {
   private wholeDetail(thread: AgentThread, revision: number, pane = this.context.paneActivities(thread)): AgentThreadDetail {
     const threadId = thread.id
     const presented = this.context.presentedMessages(thread)
-    const messages = structuredClone([...presented])
-    // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
-    // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
-    const activities = pane === undefined ? undefined : structuredClone(pane) as AgentActivity[]
+    // Copy containers once without re-serializing strings for the undecorated diff snapshot, then shallow-copy each
+    // message and its attachment records for decoration (AttachmentPreviews only rewrites attachments and previews).
+    const snapshotMessages = clonePlainData([...presented])
+    const messages = snapshotMessages.map(message => message.attachments
+      ? { ...message, attachments: message.attachments.map(attachment => ({ ...attachment })) }
+      : { ...message })
+    // Callers receive writable activity containers isolated from the certified baseline without re-serializing output strings.
+    const activities = pane === undefined ? undefined : clonePlainData(pane) as AgentActivity[]
     // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
     // about the thread, and diffing decorated against live would report every image message as changed.
-    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone([...presented]),
+    this.detailSnapshots.set(threadId, { threadId, revision, messages: snapshotMessages,
       ...(activities === undefined ? {} : { activities: this.context.dependencies.streamingPublishCost === true
         ? immutableActivities(pane!) : activities }) })
     this.publishedDetail.set(threadId, revision)
