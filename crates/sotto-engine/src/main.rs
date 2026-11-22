@@ -596,6 +596,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     });
 
     let mut bcast_rx = coordinator.subscribe();
+    let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
     let shutdown_signal = shutdown_future();
     tokio::pin!(shutdown_signal);
 
@@ -630,6 +631,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                 let Some(msg) = maybe_msg else {
                     break;
                 };
+                while rpc_tasks.try_join_next().is_some() {}
                 if let IncomingEngineMessage::Req { id, method, args } = msg {
                     if method == "engine.shutdown" {
                         let _ = out_tx.send(ok_response_frame(id, json!({ "ok": true })));
@@ -638,7 +640,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                     let coord = coordinator.clone();
                     let data_dir = parsed.data_directory.clone();
                     let out = out_tx.clone();
-                    tokio::spawn(async move {
+                    rpc_tasks.spawn(async move {
                         let frame = match handle_rpc(&coord, &data_dir, &method, &args).await {
                             Ok((val, _)) => ok_response_frame(id, val),
                             Err(err) => err_response_frame(id, err),
@@ -651,6 +653,8 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     }
 
     reader_task.abort();
+    rpc_tasks.abort_all();
+    while rpc_tasks.join_next().await.is_some() {}
     drop(out_tx);
     let _ = writer_task.await;
     coordinator.shutdown().await;
