@@ -3431,7 +3431,7 @@ private struct ReplyDock: View, Equatable {
             } words: {
                 words(placeholder, small: small)
             } plus: {
-                if listening { ListeningLine() } else { AttachPhotosButton(box: .thread(ref)) }
+                if listening { ListeningLine() } else { AttachPhotosButton(box: .thread(ref), small: small) }
             } pill: {
                 if let settings, !listening { ThreadSettingsPill(ref: ref, panel: settings) }
             } trailing: {
