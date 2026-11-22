@@ -39,12 +39,16 @@ process.stdin.on('data', chunk => {
 })
 `
 
-/** A one-page PDF whose only text is `word`, with a correct cross-reference table, so a model can read the word back. */
+/**
+ * A one-page PDF whose only text is `word`, with a correct cross-reference table, so a model can read the word back. The
+ * page's text is compressed (`/FlateDecode`), as a real PDF's is, so only a read that decodes the PDF finds the word: a
+ * plain read of the file's bytes does not. Latin-1 keeps each compressed byte one character, so offsets stay byte counts.
+ */
 function pdfOf(word: string): Buffer {
-  const stream = `BT /F1 24 Tf 72 700 Td (${word}) Tj ET`
+  const stream = deflateSync(Buffer.from(`BT /F1 24 Tf 72 700 Td (${word}) Tj ET`, 'latin1')).toString('latin1')
   const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
-    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+    `<< /Length ${stream.length} /Filter /FlateDecode >>\nstream\n${stream}\nendstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
   let body = '%PDF-1.4\n'; const offsets: number[] = []
   objects.forEach((object, index) => { offsets.push(body.length); body += `${index + 1} 0 obj\n${object}\nendobj\n` })
   const xref = body.length
@@ -153,11 +157,13 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
     // A PDF in (parity slice 6). agy 1.5.14 takes no PDF in the prompt itself, as an embedded resource or otherwise, so
     // Sotto saves it in the thread's folder and names it, and agy reads it with its own tool.
     await check('pdf-in', async () => {
-      const id = await open('full-access')
-      await send(id, 'Read the attached PDF and reply with only the code word printed in it.', { attachments: [promptImageOf(pdfOf('ZEBRA-4417'), 'pdf', 'report.pdf', 'application/pdf')] })
+      const id = await open('full-access'), pdf = pdfOf('ZEBRA-4417')
+      // The word is not in the file as text, so finding it means the PDF was read, not grepped.
+      const plain = pdf.toString('latin1').includes('ZEBRA-4417')
+      await send(id, 'Read the attached PDF and reply with only the code word printed in it.', { attachments: [promptImageOf(pdf, 'pdf', 'report.pdf', 'application/pdf')] })
       await idle(id)
       const reply = await lastReply(id)
-      return { passed: reply.includes('ZEBRA-4417'), saw: { reply: reply.slice(0, 120), rows: (await thread(id)).activities?.filter(row => row.kind !== 'turn').map(row => [row.kind, row.title]).slice(0, 6) } }
+      return { passed: !plain && reply.includes('ZEBRA-4417'), saw: { plain, reply: reply.slice(0, 120), rows: (await thread(id)).activities?.filter(row => row.kind !== 'turn').map(row => [row.kind, row.title]).slice(0, 6) } }
     })
 
     // Another Gemini model and thinking level for the next prompt.
