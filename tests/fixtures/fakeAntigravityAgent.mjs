@@ -34,6 +34,9 @@ const models = () => [...MODELS, ...(read('script.json', {}).newModels ?? [])]
 const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n')
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
 const appData = args[args.indexOf('--app-data-dir') + 1]
+const gemini = args[args.indexOf('--gemini-dir') + 1]
+/** The newest child each session launched, for `subagent-answer`. */
+const children = new Map()
 record({ method: 'fixture/process', params: { pid: process.pid, version, args, cwd: process.cwd(), environment: {
   GEMINI_HOME: process.env.GEMINI_HOME, AGY_ACP_FORCE_FILE_STORAGE: process.env.AGY_ACP_FORCE_FILE_STORAGE, AGY_CLI_DISABLE_AUTO_UPDATE: process.env.AGY_CLI_DISABLE_AUTO_UPDATE,
   SSH_CONNECTION: process.env.SSH_CONNECTION, BROWSER: process.env.BROWSER, hasGeminiKey: process.env.GEMINI_API_KEY !== undefined, hasGoogleKey: process.env.GOOGLE_API_KEY !== undefined,
@@ -221,6 +224,28 @@ function run(command) {
     update(sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'Running run_command', kind: 'execute', status: 'pending', rawInput: { CommandLine: command.command, Cwd: command.cwd ?? '.' } })
     const picture = command.image ? [{ type: 'content', content: { type: 'image', data: command.image, mimeType: command.mimeType ?? 'image/png' } }] : []
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { combinedOutput: command.output ?? '', exitCode: 0 }, content: picture })
+  }
+  if (command.type === 'subagent') {
+    // As agy 1.5.14 launches a child: the call ends at once, the parent's record names the child, and the child's inbox
+    // opens with the launch, carrying the parent's tool call ID. The child answers later (`subagent-answer`).
+    const toolCallId = `call_${randomUUID().slice(0, 8)}`, child = randomUUID(), generated = (conversation, ...rest) => join(gemini, appData, 'brain', conversation, '.system_generated', ...rest)
+    const rawInput = { Model: command.model ?? 'inherit', Prompt: command.prompt, Role: command.role, TypeName: 'self' }
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, name: 'invoke_subagent', kind: 'other', title: 'Run invoke_subagent', status: 'in_progress', rawInput })
+    mkdirSync(generated(sessionId, 'subagents'), { recursive: true }); mkdirSync(generated(child, 'messages'), { recursive: true })
+    writeFileSync(generated(sessionId, 'subagents', `${child}.json`), JSON.stringify({ conversationId: child, subagentDescriptor: { typeName: 'self', role: command.role }, state: 'SUBAGENT_STATE_ALIVE', spawnStepIndex: 2 }))
+    writeFileSync(generated(child, 'messages', `${randomUUID()}.json`), JSON.stringify({ id: randomUUID(), recipient: child, sender: sessionId, content: command.prompt,
+      timestamp: new Date().toISOString(), sourceMetadata: { tool: { conversationId: sessionId, stepIndex: 2, toolCall: { id: toolCallId, name: 'invoke_subagent' } } } }))
+    children.set(sessionId, child)
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, name: 'invoke_subagent', kind: 'other', title: 'Run invoke_subagent', status: 'completed', rawInput })
+  }
+  if (command.type === 'subagent-answer' || command.type === 'subagent-killed') {
+    const child = children.get(sessionId), generated = (conversation, ...rest) => join(gemini, appData, 'brain', conversation, '.system_generated', ...rest)
+    if (command.type === 'subagent-killed') writeFileSync(generated(sessionId, 'subagents', `${child}.json`), JSON.stringify({ conversationId: child, state: 'SUBAGENT_STATE_KILLED' }))
+    else {
+      mkdirSync(generated(sessionId, 'messages'), { recursive: true })
+      writeFileSync(generated(sessionId, 'messages', `${randomUUID()}.json`), JSON.stringify({ id: randomUUID(), recipient: sessionId, sender: child, content: command.text,
+        timestamp: '2026-11-22T03:14:03.510280400Z', renderDetails: { messageTitle: 'Message from child' } }))
+    }
   }
   if (command.type === 'edit') {
     // As agy 1.5.14 edits: no content while it runs, then the whole file before and after once it is done, under a path

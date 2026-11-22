@@ -446,6 +446,24 @@ describe('Antigravity ACP adapter', () => {
     expect((await f.host.snapshot()).models.map(model => model.id)).toEqual([...before, 'gemini-4-pro'])
   })
 
+  it('shows a child agy launched as working, with its role and prompt, until its answer reaches the parent', async () => {
+    const id = await open()
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+    const child = async () => (await thread(id)).activities?.find(row => row.kind === 'subagent')?.agents?.[0]
+    await f!.action(id, { type: 'subagent', role: 'Kestrel Responder', prompt: 'Reply with the word KESTREL.' })
+    // The launch ends at once, as agy 1.5 runs the child detached; the child is still at work.
+    await expect.poll(child).toMatchObject({ status: 'running', title: 'Kestrel Responder', prompt: 'Reply with the word KESTREL.' })
+    expect((await child())?.model).toBeUndefined()
+    await f!.action(id, { type: 'subagent-answer', text: 'KESTREL' })
+    await expect.poll(child, { timeout: 15_000 }).toMatchObject({ status: 'completed', message: 'KESTREL', completedAt: '2026-11-22T03:14:03.510Z' })
+    // A second child whose record says it was killed is shown stopped.
+    await f!.action(id, { type: 'subagent', role: 'Second', prompt: 'Wait.', model: 'gemini-3.8-flash' })
+    const second = async () => (await thread(id)).activities?.filter(row => row.kind === 'subagent').at(-1)?.agents?.[0]
+    await expect.poll(second).toMatchObject({ status: 'running', title: 'Second', model: 'gemini-3.8-flash' })
+    await f!.action(id, { type: 'subagent-killed' })
+    await expect.poll(second, { timeout: 15_000 }).toMatchObject({ status: 'interrupted' })
+  })
+
   it('lists agy’s commands as skills', async () => {
     const id = await open()
     await expect.poll(async () => (await f!.host.listThreadSkills!(id)).skills.map(skill => skill.invocation)).toEqual(['/plan', '/compact'])

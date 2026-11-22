@@ -12,6 +12,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import { antigravityActivities, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
+import { readAntigravityChild, type AntigravityChild } from './antigravityChildren'
 import { antigravityFolders, type AntigravityFolders } from './antigravityFolders'
 import { leaseAntigravityRuntime } from './antigravityInstall'
 import { antigravityUsageHooks, type AntigravityUsageHooks } from './antigravityUsage'
@@ -134,6 +135,11 @@ const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), desc
 
 /** Google's terms allow other makers' models only in its own apps (ADR-0212), so a thread on one is not sent. */
 const ANTIGRAVITY_GEMINI_ONLY = 'Antigravity threads in Sotto run Gemini models only, under Google’s terms. Nothing was sent, and your thread and draft are kept. Choose a Gemini model, then send.'
+/** How often a child still at work is read, and how long it is watched before Sotto stops reading it. */
+const CHILD_READ_MS = 1_000
+const CHILD_WATCH_MS = 4 * 60 * 60 * 1_000
+/** One child at work: its thread and row, the launching tool call, the parent's session and, once found, its own. */
+interface ChildWatch { readonly threadId: string; readonly rowId: string; readonly toolCallId: string; readonly parent: string; readonly until: number; known?: string }
 const COMPACTING = 'Antigravity is compacting this thread. Wait for it to finish, then send.'
 const COMPACTION_LOST = 'Antigravity stopped before it confirmed whether it compacted this thread. Nothing was lost. Its next reply shows how full the context is; compact again then if it still needs it.'
 const COMPACTION_ANSWERED = 'Antigravity answered /compact in words rather than compacting this thread. Nothing was lost. Update Antigravity, then compact again.'
@@ -237,6 +243,10 @@ export class AntigravityAcpHost implements ProviderHost {
   private readonly compactedSince = new Map<string, CompactionMark>()
   /** Threads whose `/compact` drew a reply: `agy` compacts without one, so a reply means it took the words as a prompt. */
   private readonly compactionAnswered = new Set<string>()
+  /** Children `agy` launched that are still at work, by their row: read from its records until they are done (`antigravityChildren.ts`). */
+  private readonly children = new Map<string, ChildWatch>()
+  private childTimer: NodeJS.Timeout | undefined
+  private readingChildren = false
   private readonly observed = new Set<string>()
   private readonly outdated = new Set<string>()
   private readonly processes = new Set<AntigravityRpc>()
@@ -346,6 +356,7 @@ export class AntigravityAcpHost implements ProviderHost {
     this.endTurn(id, 'interrupted')
     this.turns.delete(id)
     this.compactions.delete(id); this.compactedSince.delete(id); this.compactionAnswered.delete(id)
+    for (const [rowId, watch] of [...this.children]) if (watch.threadId === id) this.children.delete(rowId)
     for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
     this.knownLaunchProfiles.delete(id)
     this.indexes.delete(id)
@@ -928,6 +939,39 @@ export class AntigravityAcpHost implements ProviderHost {
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
     const edits = antigravityEdits(update), row = key ? rows.find(item => item.id === antigravityToolId(key)) : undefined
     if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
+    // A launch that finished with its child still at work: watched until `agy`'s records say the child is done.
+    if (row?.kind === 'subagent' && row.agents?.[0]?.status === 'running' && update.status === 'completed' && typeof update.toolCallId === 'string' && alias.antigravitySessionId) {
+      this.watchChild({ threadId: id, rowId: row.id, toolCallId: update.toolCallId, parent: alias.antigravitySessionId, until: Date.now() + CHILD_WATCH_MS })
+    }
+  }
+  private watchChild(watch: ChildWatch): void {
+    this.children.set(watch.rowId, watch)
+    if (!this.childTimer) { this.childTimer = setInterval(() => { void this.readChildren() }, CHILD_READ_MS); this.childTimer.unref?.() }
+  }
+  /** Each watched child read once: one that is done settles its row, and one past its watch is left as it is. */
+  private async readChildren(): Promise<void> {
+    if (this.readingChildren) return
+    this.readingChildren = true
+    try {
+      for (const [rowId, watch] of [...this.children]) {
+        const generation = this.generation
+        const child = await readAntigravityChild(this.folders.appData, watch.parent, watch.toolCallId, watch.known)
+        if (generation !== this.generation || this.children.get(rowId) !== watch) continue
+        if (child) watch.known = child.conversationId
+        if (child && child.status !== 'running') { this.children.delete(rowId); this.settleChild(watch, child) }
+        else if (Date.now() > watch.until) this.children.delete(rowId)
+      }
+    } finally {
+      this.readingChildren = false
+      if (!this.children.size && this.childTimer) { clearInterval(this.childTimer); this.childTimer = undefined }
+    }
+  }
+  private settleChild(watch: ChildWatch, child: AntigravityChild): void {
+    const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.rowId), agent = row?.agents?.[0]
+    if (!thread || !row || !agent || agent.status !== 'running') return
+    thread.activities = mergeAgentActivities(thread.activities, [{ ...row, agents: [{ ...agent, status: child.status,
+      ...(child.message !== undefined ? { message: child.message } : {}), ...(child.completedAt ? { completedAt: child.completedAt } : {}) }] }])
+    this.changed(watch.threadId); this.emit()
   }
   /** A finished edit's changes placed on their lines once the file is read (`antigravityEditLines.ts`); each one that cannot be stays as reported. */
   private async placeEdits(id: string, rowId: string, edits: readonly AntigravityEdit[], reported: readonly (string | undefined)[], cwd: string): Promise<void> {
@@ -1413,6 +1457,7 @@ export class AntigravityAcpHost implements ProviderHost {
     // Published once, with the rest of the disconnect.
     for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST, false)
     this.compactedSince.clear(); this.compactionAnswered.clear()
+    this.children.clear(); if (this.childTimer) { clearInterval(this.childTimer); this.childTimer = undefined }
     this.turns.clear()
     for (const thread of this.threads.values()) thread.requests = []
     this.threadChanges.markAll()

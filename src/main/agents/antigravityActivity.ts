@@ -68,10 +68,28 @@ function antigravityWork(update: Record<string, unknown>, place: AntigravityPlac
     ...(texts.length ? { output: bounded(texts.join('\n')) } : printed ? { output: bounded(printed) } : said ? { output: bounded(said) } : {}),
     ...(Number.isSafeInteger(exitCode) ? { exitCode: exitCode as number } : {}),
     ...(shownChanges.length ? { changes: shownChanges.slice(0, 200) } : {}),
-    ...(subagent ? { agents: [{ id: `antigravity-child-${place.key}`, status, title: title ?? 'Subagent' }] } : {}),
+    ...(subagent ? { agents: [childAgent(place.key, status, title, input, old)] } : {}),
     ...acpToolMedia(capture, update.content, old),
     ...(truncated() || shownChanges.length > 200 ? { truncated: true } : {}),
   }]
+}
+
+type ChildAgent = NonNullable<AgentActivity['agents']>[number]
+const SETTLED = new Set(['completed', 'failed', 'interrupted'])
+/**
+ * A subagent row's child, as the Agents pane shows it: its role, the prompt and model it was launched with, from the
+ * `invoke_subagent` call's own input (`Role`, `Prompt`, `Model`). `agy` 1.5 runs a child detached, so the call ends at
+ * once while the child works on: a finished launch leaves the child running until its answer is read from `agy`'s
+ * records (`antigravityChildren.ts`), and a child already settled keeps what was read.
+ */
+function childAgent(key: string, status: string, title: string | undefined, input: Record<string, unknown> | undefined, old: AgentActivity | undefined): ChildAgent {
+  const held = old?.agents?.[0]
+  if (held && SETTLED.has(held.status)) return held
+  const words = (field: string): string | undefined => typeof input?.[field] === 'string' && (input[field] as string).trim() ? (input[field] as string).trim().slice(0, MAX_ACTIVITY_TEXT) : undefined
+  const role = words('Role') ?? held?.title, prompt = words('Prompt') ?? held?.prompt, model = words('Model') ?? held?.model
+  const detached = status === 'completed' && (prompt !== undefined || title?.includes('invoke_subagent') === true)
+  return { id: `antigravity-child-${key}`, status: detached ? 'running' : status, title: role ?? title ?? 'Subagent',
+    ...(prompt ? { prompt } : {}), ...(model && model !== 'inherit' ? { model } : {}) }
 }
 
 /** The turn's one plan row: `agy` replaces its whole list on every plan update. */
