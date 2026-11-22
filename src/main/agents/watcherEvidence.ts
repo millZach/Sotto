@@ -230,7 +230,6 @@ export class WatcherEvidenceStore {
     else if (!kept || kept.head !== item.headId || previous?.checksState !== 'passed') passing.set(slot, { head: item.headId, since: item.observedAt })
     while (passing.size > EVIDENCE_CACHE_MAX) passing.delete(passing.keys().next().value!)
     if (passing.size) { this.passing.set(key, passing); this.written.add(key) } else this.passing.delete(key)
-    if (item.checksState === 'passed') this.joinTrain(key, slot.replace(/^(?:pr:|host:github:)/u, '').replace(/:checks$/u, ''), item.observedAt)
   }
   private joinTrain(key: string, pr: string, at: string): Map<string, { since: string; ready?: { head: string; at: string } }> {
     const train = this.trains.get(key) ?? new Map<string, { since: string; ready?: { head: string; at: string } }>()

@@ -33,21 +33,22 @@ export function mergeTrainChecksOf(pr: Pick<WatcherOpenPullRequest, 'summary' | 
 
 /**
  * The merge queue, which is Watcher's merge train (#2229): every open pull request of a watched thread that is not a draft
- * and that has joined the train, by its checks passing (#1274) or its thread's READY TO MERGE, in the order it joined,
- * oldest first, by number when two joined at once. It stays in the train while its checks run again after a push, so the
- * train says whose checks are running, which a merge now would land in the middle of. One not known to be a
- * draft or not is left out, and so is one whose summary is stale (#2102) until Sotto reads it again.
+ * and whose thread sent READY TO MERGE (`ready_to_merge`), in the order it joined, oldest first, by number when two joined
+ * at once. Green-CI pull requests without READY TO MERGE stay out of the train in `watching[].pullRequests`. It stays in
+ * the train while its checks run again after a push, so the train says whose checks are running, which a merge now would
+ * land in the middle of. One not known to be a draft or not is left out, and so is one whose summary is stale (#2102)
+ * until Sotto reads it again.
  */
 export function watcherMergeQueue(threads: readonly { readonly target: WatcherThreadTarget; readonly title: string; readonly open: readonly WatcherOpenPullRequest[] }[]): WatcherMergeQueueItem[] {
   return threads.flatMap(thread => thread.open.flatMap(pr => {
-    const since = pr.train?.since ?? (pr.summary.checks === 'passed' ? pr.checksPassedAt : undefined)
-    if (pr.summary.state !== 'open' || pr.summary.stale === true || pr.draft !== false || since === undefined) return []
     const ready = pr.train?.ready
+    const since = ready ? (pr.train?.since ?? ready.at) : undefined
+    if (pr.summary.state !== 'open' || pr.summary.stale === true || pr.draft !== false || ready === undefined || since === undefined) return []
     const url = pr.url ?? pr.summary.url
     return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, inTrainSince: since, requiredChecks: mergeTrainChecksOf(pr),
       ...pr.checksPassedAt && pr.summary.checks === 'passed' ? { checksPassedAt: pr.checksPassedAt } : {},
       ...pr.head ? { head: pr.head } : {}, ...pr.pending ? { checksRunning: pr.pending } : {},
-      ...ready ? { readyToMerge: { head: ready.head, at: ready.at, ...pr.head ? { onHead: pr.head === ready.head } : {} } } : {} }]
+      readyToMerge: { head: ready.head, at: ready.at, ...pr.head ? { onHead: pr.head === ready.head } : {} } }]
   })).sort((a, b) => Date.parse(a.inTrainSince) - Date.parse(b.inTrainSince) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
 }
 
@@ -94,7 +95,7 @@ export interface WatcherKnownPullRequest { readonly url: string; readonly number
 const TITLE_MIN = 8
 const STAND_IN_TITLES: ReadonlySet<string> = new Set(['new thread'])
 const ID_MIN = 8
-const TITLE_SHOWN_MAX = 80
+const TITLE_SHOWN_MAX = 48
 const fold = (text: string) => text.toLowerCase().replace(/\s+/gu, ' ').trim()
 const WORD = /[\p{L}\p{N}]/u
 /** Whether `phrase` stands in `text` as words of its own, not inside a longer word. */
@@ -133,11 +134,12 @@ export function watcherStaleNotes(kept: Pick<WatcherKeptState, 'decisions' | 'ru
   for (const list of WATCHER_KEPT_LISTS) for (const line of kept[list]) {
     if (line.closedAt !== undefined) continue
     const note = line.text, text = fold(note), reasons: string[] = []
+    const addReason = (reason: string) => { if (!reasons.includes(reason)) reasons.push(reason) }
     for (const thread of over) {
       const title = fold(thread.title)
       const byTitle = (title.length >= TITLE_MIN || title.includes(' ')) && !STAND_IN_TITLES.has(title) && !live.has(title) && names(text, title)
       const byId = thread.target.threadId.length >= ID_MIN && text.includes(thread.target.threadId.toLowerCase())
-      if (byTitle || byId) reasons.push(`Names the thread “${shown(thread.title)}”, which ${thread.settled ? 'is settled' : 'Watcher does not watch'}.`)
+      if (byTitle || byId) addReason(`${thread.settled ? 'settled-thread' : 'unwatched-thread'}: ${shown(thread.title)}`)
     }
     // A link or an `owner/repo#N` names one pull request in its own repository; a number one of them already named, or said
     // once, is not read again. The issues list numbers issues the same way, so there a bare number counts only as "PR 12".
@@ -149,18 +151,18 @@ export function watcherStaleNotes(kept: Pick<WatcherKeptState, 'decisions' | 'ru
       if (number !== undefined) numbers.add(number)
       if (!pr || linked.has(prKey)) continue
       linked.add(prKey)
-      if (pr.state !== 'open') reasons.push(`Names pull request #${pr.number}, which is ${pr.state}.`)
+      if (pr.state !== 'open') addReason(`pr-${pr.state}: #${pr.number}`)
     }
     for (const match of note.replace(URLS, ' ').replace(QUALIFIED, ' ').matchAll(list === 'issues' ? WORDED_NUMBERS : NUMBERS)) {
       const number = Number(match[1]), known = byNumber.get(number) ?? []
       if (numbers.has(number) || !known.length || known.some(pr => pr.state === 'open')) continue
       numbers.add(number)
-      reasons.push(`Names pull request #${number}, which is ${known.every(pr => pr.state === 'merged') ? 'merged' : known.every(pr => pr.state === 'closed') ? 'closed' : 'merged or closed'}.`)
+      addReason(`pr-${known.every(pr => pr.state === 'merged') ? 'merged' : known.every(pr => pr.state === 'closed') ? 'closed' : 'ended'}: #${number}`)
     }
     const untouched = now - Date.parse(line.touchedAt)
     if (untouched >= WATCHER_KEPT_UNTOUCHED_MS) {
       reasons.splice(5)
-      reasons.push(`Not added or edited for ${Math.floor(untouched / DAY_MS)} days. If it is done, close it; if it still stands, edit it, with the same words if they still fit; if it is wrong, drop it.`)
+      addReason(`untouched: ${Math.floor(untouched / DAY_MS)}d`)
     }
     if (reasons.length) notes.push({ list, id: line.id, reasons: reasons.slice(0, 6) })
   }

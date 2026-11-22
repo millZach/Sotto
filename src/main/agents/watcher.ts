@@ -59,7 +59,8 @@ import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessa
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherPermissionCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
-import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherProjectTargetSchema, type WatcherProjectTarget } from '../../shared/watcher'
+import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherParkThreadInputSchema, watcherProjectTargetSchema, type WatcherParkThreadOutput, type WatcherProjectTarget } from '../../shared/watcher'
+import { readProjectRepoSlugs } from './projectOrigins'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
 import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
@@ -627,6 +628,7 @@ export class WatcherService implements WatcherControlHooks {
   private heldLast = false
   private remote: WatcherRemoteHosts | undefined
   private remoteOff: (() => void) | undefined
+  private readonly projectSlugCache = new Map<string, { readonly slug: string | null; readonly at: number }>()
   private readonly remoteProgress = new Map<string, { hostId: string; fingerprint: string }>()
   private readonly pendingWatchAssignments = new Map<string, WatcherStandingWatch>()
   private readonly remoteGuards = new Map<string, () => void>()
@@ -1224,7 +1226,9 @@ export class WatcherService implements WatcherControlHooks {
    * thread, and on every delegated one (#1217).
    */
   private lookForSettled(): void {
-    if (this.closed || this.options.workerHost || this.settledTimer !== undefined || !this.view().watches?.length) return
+    const view = this.view()
+    if (this.closed || this.options.workerHost || this.settledTimer !== undefined
+      || !view.watches?.length && !view.requests.some(request => request.state === 'active' && request.participants.some(item => item.state === 'participating' && !item.automationStopped))) return
     this.settledTimer = setTimeout(() => { this.settledTimer = undefined; void this.endSettledWatches() }, this.options.settledLookAfterMs ?? 1_000)
     this.settledTimer.unref?.()
   }
@@ -1233,16 +1237,28 @@ export class WatcherService implements WatcherControlHooks {
    * Watcher stops watching it, as its own unwatch_thread does, so no news of it follows. Only a settle
    * after the watch began ends it, so a thread the user watches while it is settled keeps its watch until it is
    * restored and settled again. Restoring a thread does not watch it again. A delegated thread's watch, which only an
-   * older build gave, ends the same way and says nothing (#1217).
+   * older build gave, ends the same way and says nothing (#1217). A local watched thread that is permanently gone from
+   * the connected local host (and is neither dormant nor in-flight) is also pruned so it does not stay an Unavailable
+   * thread ghost; disconnected paired hosts are never pruned here.
    */
   private async endSettledWatches(): Promise<void> {
     if (this.endingSettled || this.closed) return
     this.endingSettled = true
     try {
-      const record = this.view(), delegated: WatcherStandingWatch[] = []
+      const record = this.view(), delegated: WatcherStandingWatch[] = [], missingWatchCandidates: WatcherStandingWatch[] = []
+      const localId = this.options.control.hostId()
+      const localSnapshot = localId ? this.options.control.watcherSnapshot() : undefined
+      const localThreads = localSnapshot ? this.options.control.hostThreadsOf(localSnapshot) : undefined
+      const localReady = Boolean(localId && localSnapshot?.connected && localThreads
+        && !localSnapshot.providers?.some(provider => provider.connection === 'connecting'))
       const settled = (record.watches ?? []).filter(watch => {
         const thread = this.owningThread(watch.target.hostId, watch.target.threadId)
-        if (!thread) return false
+        if (!thread) {
+          if (localReady && watch.target.hostId === localId && localThreads!.thread(watch.target.threadId) === undefined) {
+            missingWatchCandidates.push(watch)
+          }
+          return false
+        }
         // A delegated thread is not watched (#1217): a watch an older build gave it is let go quietly, at Watcher's first
         // look once it starts and its thread is listed, here or on a paired host, as Watcher's own unwatch_thread does.
         if (thread.delegatedBy !== undefined) { delegated.push(watch); return false }
@@ -1250,6 +1266,37 @@ export class WatcherService implements WatcherControlHooks {
         const at = Date.parse(thread.workspaceSettledAt ?? project?.workspaceSettledAt ?? '')
         return at > Date.parse(watch.createdAt)
       })
+      const missingParticipantCandidates: WatcherThreadTarget[] = []
+      if (localReady) {
+        for (const request of record.requests) {
+          if (request.state !== 'active' || request.remoteOrigin) continue
+          for (const participant of request.participants) {
+            if (participant.state !== 'participating' || participant.automationStopped) continue
+            if (participant.target.hostId === localId && localThreads!.thread(participant.target.threadId) === undefined) {
+              missingParticipantCandidates.push(participant.target)
+            }
+          }
+        }
+      }
+      let missingLocalWatches: WatcherStandingWatch[] = [], missingLocalParticipantIds: Set<string> | undefined
+      if (localReady && (missingWatchCandidates.length || missingParticipantCandidates.length)) {
+        const pendingOpIds = new Set(record.operations.flatMap(operation =>
+          operation.target.hostId === localId && (operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain')
+            ? [operation.target.threadId] : []))
+        const reservedIds = new Set(record.reservations.flatMap(item => item.target.hostId === localId ? [item.target.threadId] : []))
+        const pendingAssignIds = new Set<string>()
+        for (const pending of this.pendingWatchAssignments.values()) if (pending.target.hostId === localId) pendingAssignIds.add(pending.target.threadId)
+        const dormantThreads = new Set(this.options.host.dormantThreadIds?.() ?? [])
+        const dormantOwlets = new Set(this.options.host.dormantOwletIds?.() ?? [])
+        const isPrunable = (threadId: string): boolean => !pendingOpIds.has(threadId) && !reservedIds.has(threadId)
+          && !pendingAssignIds.has(threadId) && !dormantThreads.has(threadId) && !dormantOwlets.has(threadId)
+        missingLocalWatches = missingWatchCandidates.filter(watch => isPrunable(watch.target.threadId))
+        if (missingParticipantCandidates.length) {
+          const watchedLocalIds = new Set((record.watches ?? []).filter(watch => watch.target.hostId === localId).map(watch => watch.target.threadId))
+          const ids = missingParticipantCandidates.filter(target => !watchedLocalIds.has(target.threadId) && isPrunable(target.threadId)).map(target => target.threadId)
+          if (ids.length) missingLocalParticipantIds = new Set(ids)
+        }
+      }
       // Watcher's own settle still under way finishes first: ended now, the watch would fail that settle after it was
       // written, and settle_thread would answer refused for a thread it settled. The next look ends the watch. Asked only
       // when a watched thread is settled, so a look with none reads none of Watcher's operations.
@@ -1257,6 +1304,22 @@ export class WatcherService implements WatcherControlHooks {
         && (operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain') ? [key(operation.target)] : [])) : undefined
       for (const watch of settled) if (!this.closed && !settling?.has(key(watch.target))) await this.unwatchThread({ target: watch.target }, undefined, 'watcher')
       for (const watch of delegated) if (!this.closed) await this.unwatchThread({ target: watch.target }, undefined, 'watcher')
+      for (const watch of missingLocalWatches) if (!this.closed) await this.unwatchThread({ target: watch.target }, undefined, 'watcher')
+      if (missingLocalParticipantIds?.size && !this.closed) {
+        let changed = false
+        await this.options.control.watcherRecords.update(next => {
+          for (const request of next.requests) {
+            if (request.state !== 'active' || request.remoteOrigin) continue
+            for (const participant of request.participants) {
+              if (participant.state === 'participating' && !participant.automationStopped
+                && participant.target.hostId === localId && missingLocalParticipantIds.has(participant.target.threadId)) {
+                participant.generation++; participant.automationStopped = true; changed = true
+              }
+            }
+          }
+        })
+        if (changed) this.publish()
+      }
     } finally { this.endingSettled = false }
   }
   private publish(observe = true): void {
@@ -1479,6 +1542,30 @@ export class WatcherService implements WatcherControlHooks {
     const question = await this.questions.ask(threadId, parsed.data, parsed.data.settle ? undefined : this.askingRequest(threadId)?.id)
     this.publish()
     return { status: 'ok', questionId: question.id, note: WATCHER_ASK_NOTE }
+  }
+  /** Parks or unparks a standing watch to suppress 20-minute idle pings while keeping PR news, cards and user turns live. */
+  async parkThread(watcherThreadId: string, args: unknown): Promise<WatcherParkThreadOutput> {
+    if (this.options.workerHost || !this.isCurrent(watcherThreadId)) {
+      return watcherRefusal('NOT_CURRENT_WATCHER', 'Only the current Watcher can park a watched thread. Nothing was changed.')
+    }
+    if (this.changing) return watcherRefusal('THREAD_BUSY', 'Wait for Watcher’s provider change before parking a thread.', true)
+    const parsed = watcherParkThreadInputSchema.safeParse(args)
+    if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Give a valid watched target to park or unpark.')
+    const { target, parked } = parsed.data
+    const current = this.view().watches?.find(watch => key(watch.target) === key(target))
+    if (!current) return watcherRefusal('REQUEST_NOT_ACTIVE', 'This thread is not watched. Watch it before parking or unparking it.')
+    let missing = false
+    if (Boolean(current.parked) !== parked) {
+      await this.options.control.watcherRecords.update(record => {
+        const live = record.watches?.find(watch => key(watch.target) === key(target))
+        if (!live) { missing = true; return }
+        if (parked) live.parked = true
+        else delete live.parked
+      })
+      if (missing) return watcherRefusal('REQUEST_NOT_ACTIVE', 'This thread is not watched. Watch it before parking or unparking it.')
+      this.publish()
+    }
+    return { status: 'ok', target, parked }
   }
   /** Whether an answer names a card of the current Watcher's own question, which the coordinator hands here. */
   ownQuestion(threadId: string, requestId: string): boolean {
@@ -2527,6 +2614,7 @@ export class WatcherService implements WatcherControlHooks {
           const input = roomInputs.get(target.hostId)?.get(target.threadId)
           const observation = this.wakes.observations.get(targetKey)
           return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId),
+            ...(watch?.parked ? { parked: true } : {}),
             title: input?.title ?? 'Unavailable thread', status: input?.status ?? 'unavailable',
             connected: input?.connected ?? false, settled: input?.settled ?? false, backgroundWorkCount: input?.backgroundWorkCount ?? 0,
             evidence: this.wakes.evidence.read(target, input?.connected ?? false, undefined, targetKey),
@@ -2540,7 +2628,7 @@ export class WatcherService implements WatcherControlHooks {
           ? keys.hostless.get(thread.id) ?? keys.hostless.set(thread.id, JSON.stringify([null, thread.id])).get(thread.id)! : JSON.stringify([thread.hostId, thread.id])
         const observation = observationKey === undefined ? undefined : this.wakes.observations.get(observationKey)
         // One definition of watched for every surface: a standing watch, or taking part in an active request.
-        return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId), title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
+        return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId), ...(watch?.parked ? { parked: true } : {}), title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
           settled: Boolean(thread && isWorkspaceThreadSettled(thread, owning.snapshot?.projects.find(item => item.id === thread.projectId))),
           backgroundWorkCount: thread === undefined ? 0 : watcherBackgroundWorkCount(thread),
           evidence: this.wakes.evidence.read(target, Boolean(thread && this.connected(thread)), undefined, targetKey),
@@ -2768,7 +2856,8 @@ export class WatcherService implements WatcherControlHooks {
       const here = target.hostId === hostId ? owned : undefined
       const work = here ? watcherBackgroundWorkCount(here) : thread.backgroundWorkCount
       // Its sentence reads this computer's threads alone, as it always has; a paired host's cards come from its room input.
-      watching.push({ target, title, waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, delegatedWaitsOn: here ? delegated.flatMap(child => child.requests) : [] }) })
+      watching.push({ target, title, ...(thread.parked ? { parked: true as const } : {}),
+        waitsOn: watcherWaitsOn({ ...thread, backgroundWorkCount: work, parked: thread.parked, resumingAfterAnswer: this.wakes.resumingAfterAnswer(target), delegatedWaitsOn: here ? delegated.flatMap(child => child.requests) : [] }) })
       const card = (request: { id: string; kind: 'question' | 'permission' }, delegatedThreadId?: string): WatcherWaitingOnUser =>
         ({ target, title, waitsFor: request.kind, requestCardId: request.id, ...delegatedThreadId === undefined ? {} : { delegatedThreadId } })
       waiting.push(...(owned?.requests ?? thread.waitsOn).map(request => card(request)),
@@ -3036,6 +3125,7 @@ export class WatcherService implements WatcherControlHooks {
     // No watch on a delegated thread, from any path (#1217): the thread that delegated it is the one to watch.
     guard?.(); const thread = this.thread(target); this.protect(thread); this.checkNotDelegated(thread, 'watch')
     const previous = this.view().watches?.find(item => key(item.target) === key(target)), created = previous ? { ...previous } : this.newWatch(target, thread)
+    if (by === 'user' && created.parked) delete created.parked
     const assignmentMaster = target.hostId !== this.hostId() ? this.view().current : null
     if (target.hostId !== this.hostId()) {
       const master = assignmentMaster
@@ -3244,6 +3334,7 @@ export class WatcherService implements WatcherControlHooks {
     return [...new Map([...(this.view().watches ?? []).filter(watch => watch.target.hostId === hostId),
       ...[...this.pendingWatchAssignments.values()].filter(watch => watch.target.hostId === hostId)].map(watch => [key(watch.target), watch])).values()]
       .filter(watch => this.owningSnapshot(hostId)?.threads.some(thread => thread.id === watch.target.threadId))
+      .map(({ parked: _parked, ...watch }) => { void _parked; return watch })
   }
   /**
    * While the user's own turn runs, Watcher may steer it and nothing else: a send or a queued prompt waits for it to end.
@@ -4010,7 +4101,11 @@ export class WatcherService implements WatcherControlHooks {
     // A standing watch lasts until the user stops it (ADR-0073): the user's own instruction fences what Watcher had
     // already prepared and holds Watcher to steering while the turn runs, but the thread stays Watcher's to keep going.
     const watch = record.watches?.find(item => key(item.target) === key(target))
-    if (watch) { alignGeneration(record, watch); watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn' }
+    if (watch) {
+      alignGeneration(record, watch)
+      if (reason === 'user-send' || reason === 'native-user-send') delete watch.parked
+      watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn'
+    }
     for (const request of record.requests) for (const participant of request.participants) if (key(participant.target) === key(target) && participant.state === 'participating') {
       if (!watch) participant.generation++
       // Only a thread watched for a request alone, as on an older paired host, becomes the user's again, and so does a
@@ -4317,9 +4412,11 @@ export class WatcherService implements WatcherControlHooks {
         // A send the user set aside with Continue with a new message no longer holds the watch (#1222).
         else if (!this.options.control.hasPendingThreadWork(thread.id, { setAsideIgnored: true })
           || machineHead() && !this.userWorkPending(thread.id, observed) && (paused === 'unobserved-user-turn' || paused === head)) paused = null
-        if (live.lastUserMessageId !== head || live.pausedByUserMessageId !== paused) changes.push(next => {
+        const unpark = Boolean(live.parked && (paused && !live.pausedByUserMessageId || head && live.lastUserMessageId !== undefined && head !== live.lastUserMessageId))
+        if (live.lastUserMessageId !== head || live.pausedByUserMessageId !== paused || unpark) changes.push(next => {
           const changed = next.watches!.find(item => item.id === watch.id)!
           changed.lastUserMessageId = head; changed.pausedByUserMessageId = paused
+          if (unpark) delete changed.parked
         })
       }
       if (participationsBehind(thread, head)) changes.push(next => {
@@ -5248,6 +5345,10 @@ export class WatcherService implements WatcherControlHooks {
         let participant = owned.participants.find(item => key(item.target) === key(target))
         if (!participant) { participant = { requestId: request.id, target, startedBy: start || this.startedEarlier(next, target) ? 'watcher' : 'user', generation: operation.generation, state: 'participating', promptCount: 0, lastUserMessageId: thread ? nativeHead(thread) : null }; owned.participants.push(participant) }
         if (assignment && !next.watches?.some(watch => key(watch.target) === key(target)) && !imported) (next.watches ??= []).push(assignment)
+        if (send) {
+          const activeWatch = next.watches?.find(watch => key(watch.target) === key(target))
+          if (activeWatch?.parked) delete activeWatch.parked
+        }
         if (start || send) participant.promptCount = this.promptCount(next, target, turn?.id, request.id) + 1
         next.operations.push(operation)
         if (start && !next.reservations.some(item => key(item.target) === key(target))) next.reservations.push({ target, requestId: request.id, operationId: operation.id, generation: participant.generation, reason: 'creation' })
@@ -6068,6 +6169,10 @@ ${operation.draftId}`)
           for (const watch of projection.standingWatches ?? []) {
             const own = record.watches?.find(item => item.id === watch.id && key(item.target) === key(watch.target))
             if (!own || watch.target.hostId !== host.hostId || watch.generation < own.generation) continue
+            if (own.parked && (Boolean(watch.pausedByUserMessageId && watch.pausedByUserMessageId !== own.pausedByUserMessageId)
+              || watch.lastUserMessageId !== undefined && watch.lastUserMessageId !== own.lastUserMessageId && watch.generation > own.generation)) {
+              delete own.parked
+            }
             setIfChanged(own, 'generation', watch.generation); setIfChanged(own, 'pausedByUserMessageId', watch.pausedByUserMessageId ?? null)
             setIfChanged(own, 'lastUserMessageId', watch.lastUserMessageId)
           }
@@ -6567,7 +6672,7 @@ ${operation.draftId}`)
       return read
     }
     if (call.name === 'list_threads') return this.listThreads(call.input)
-    if (call.name === 'list_projects') return this.listProjects(call.input)
+    if (call.name === 'list_projects') return await this.listProjects(call.input)
     if (call.name === 'list_working_copies') return await this.listWorkingCopies(call.input)
     return await this.readThread(call.input)
   }
@@ -6664,16 +6769,64 @@ ${operation.draftId}`)
     return { status: 'ok', rows: page.rows, snapshotRevision: page.revision, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [],
       counts: Object.fromEntries(['Needs you', 'Ready for review', 'Working', 'Landing', 'Quiet', 'Idle'].map(group => [group, rows.filter(row => row.group === group).length])) }
   }
-  private listProjects(input: WatcherToolInput<'list_projects'>) {
+  private async projectSlugsFor(snapshots: readonly AgentHostSnapshot[], localHostId: string, resolveMissing: boolean): Promise<Map<string, Map<string, string | null>>> {
+    const result = new Map<string, Map<string, string | null>>(), nowMs = Date.now()
+    const fresh = (entry: { readonly slug: string | null; readonly at: number } | undefined) => entry && nowMs - entry.at < 60_000 ? entry : undefined
+    for (const snapshot of snapshots) {
+      const hostId = snapshot.hostId ?? localHostId, slugs = new Map<string, string | null>(), missing: AgentProject[] = []
+      for (const project of snapshot.projects) {
+        if (this.reservedProject(project.path)) continue
+        const cacheKey = `${hostId}\u0000${project.id}\u0000${project.path}`, cached = fresh(this.projectSlugCache.get(cacheKey))
+        if (cached) slugs.set(project.id, cached.slug)
+        else if (resolveMissing) missing.push(project)
+      }
+      if (missing.length) {
+        const read = new Map<string, string | null>()
+        if (hostId === localHostId) {
+          if (this.options.projectOrigins) {
+            const origins = await this.options.projectOrigins().catch(() => undefined)
+            for (const entry of origins?.projects ?? []) {
+              if (entry.repository) read.set(entry.projectId, `${entry.repository.owner}/${entry.repository.name}`)
+            }
+          }
+          const unresolved = missing.filter(project => !read.has(project.id))
+          if (unresolved.length) for (const [projectId, slug] of await readProjectRepoSlugs(unresolved)) read.set(projectId, slug)
+        } else if (this.remote?.hosts().find(host => host.hostId === hostId)?.origins && this.remote.projectOrigins) {
+          const origins = await this.remote.projectOrigins(hostId).catch(() => undefined)
+          for (const entry of origins?.projects ?? []) {
+            read.set(entry.projectId, entry.repository ? `${entry.repository.owner}/${entry.repository.name}` : null)
+          }
+        }
+        for (const project of missing) {
+          const slug = read.get(project.id) ?? null, cacheKey = `${hostId}\u0000${project.id}\u0000${project.path}`
+          slugs.set(project.id, slug)
+          this.projectSlugCache.delete(cacheKey)
+          this.projectSlugCache.set(cacheKey, { slug, at: nowMs })
+          while (this.projectSlugCache.size > 2_000) this.projectSlugCache.delete(this.projectSlugCache.keys().next().value!)
+        }
+      }
+      result.set(hostId, slugs)
+    }
+    return result
+  }
+  private async listProjects(input: WatcherToolInput<'list_projects'>) {
     if (input.hostId && input.hostId !== this.hostId()) this.requireRemote(input.hostId, false)
-    const state = this.options.control.shell()
+    const state = this.options.control.shell(), localHostId = this.hostId()
     const snapshots = [state.host, ...this.remote?.hosts().flatMap(host => this.owningSnapshot(host.hostId) ?? []) ?? []]
+    const requested = snapshots.filter(snapshot => !input.hostId || (snapshot.hostId ?? localHostId) === input.hostId)
+    const slugsByHost = await this.projectSlugsFor(requested, localHostId, Boolean(input.query))
     // Read once per host: a paired host's limit reads its whole cached shell.
-    const limits = new Map(snapshots.map(snapshot => [snapshot, this.permissionLimits(undefined, snapshot.hostId ?? this.hostId())]))
+    const limits = new Map(requested.map(snapshot => [snapshot, this.permissionLimits(undefined, snapshot.hostId ?? localHostId)]))
     const query = input.query?.toLowerCase()
-    const rows = snapshots.filter(snapshot => !input.hostId || (snapshot.hostId ?? this.hostId()) === input.hostId).flatMap(snapshot => {
-      const hostProjects = snapshot.projects.filter(item => !this.reservedProject(item.path)
-        && (!input.projectId || item.id === input.projectId) && (!query || item.title.toLowerCase().includes(query) || item.path.toLowerCase().includes(query)))
+    const rows = requested.flatMap(snapshot => {
+      const hostId = snapshot.hostId ?? localHostId, slugs = slugsByHost.get(hostId)
+      const hostProjects = snapshot.projects.filter(item => {
+        if (this.reservedProject(item.path)) return false
+        if (input.projectId && item.id !== input.projectId) return false
+        if (!query) return true
+        const slug = slugs?.get(item.id)
+        return item.title.toLowerCase().includes(query) || item.path.toLowerCase().includes(query) || Boolean(slug && slug.toLowerCase().includes(query))
+      })
       if (!hostProjects.length) return []
       const limit = limits.get(snapshot)
       // Built once per requested host so projects on the same host share the bounded ready catalog.
@@ -6683,13 +6836,14 @@ ${operation.draftId}`)
         return { provider: model.providerId, modelId: model.id, reasoningEfforts: workerEfforts(model),
           speeds: model.speeds ?? (model.fastMode ? [{ id: 'fast', name: 'Fast', ...model.fastMode }] : []), defaultPermission, permissionComparable: defaultPermission !== null }
       })
-      const hostId = snapshot.hostId ?? this.hostId()
       const controlAvailable = snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.control)
       const readsAvailable = snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.reads)
       const freshness = snapshot.connected ? 'fresh' as const : 'stale' as const
-      return hostProjects.map(project => ({
-        target: { hostId, projectId: project.id }, title: project.title, displayRoot: project.path,
-        workers, controlAvailable, readsAvailable, readOnlyProfileAvailable: true, freshness }))
+      return hostProjects.map(project => {
+        const repository = slugs?.get(project.id) ?? undefined
+        return { target: { hostId, projectId: project.id }, title: project.title, displayRoot: project.path,
+          ...repository ? { repository } : {}, workers, controlAvailable, readsAvailable, readOnlyProfileAvailable: true, freshness }
+      })
     })
     const page = this.page(`projects:${digest([input.hostId ?? '', input.projectId, input.query, input.provider ?? ''])}`, rows, input.cursor, input.limit)
     return { status: 'ok', projects: page.rows, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }

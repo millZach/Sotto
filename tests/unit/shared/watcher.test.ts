@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { watcherDisplayPromptSchema, watcherResultForHostV1, watcherResultFromHostV1, watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
+import { watcherDisplayPromptSchema, watcherParkThreadInputSchema, watcherParkThreadOutputSchema, watcherResultForHostV1, watcherResultFromHostV1, watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
   WATCHER_PROMPT_BYTES_MAX, WATCHER_READ_BYTES_MAX } from '../../../src/shared/watcher'
 import { agentThreadKindSchema } from '../../../src/shared/agents'
 import { watcherPhoneSendSchema } from '../../../src/shared/watcherPhone'
@@ -170,5 +170,12 @@ describe('host protocol version 1 and the removed Threads in flight limit (#1183
     // A refusal has no limits, and passes as it is.
     const refused = { status: 'refused', code: 'THREAD_BUSY', message: 'Busy.', retryable: true }
     expect(watcherResultForHostV1(refused)).toEqual(refused)
+  })
+  it('validates park_thread strictly and defaults parked to true', () => {
+    expect(watcherParkThreadInputSchema.parse({ target: centerTarget })).toEqual({ target: centerTarget, parked: true })
+    expect(watcherParkThreadOutputSchema.parse({ status: 'ok', target: centerTarget, parked: false })).toEqual({ status: 'ok', target: centerTarget, parked: false })
+    for (const mutated of withUnknownFields({ target: centerTarget, parked: true })) {
+      expect(watcherParkThreadInputSchema.safeParse(mutated).success).toBe(false)
+    }
   })
 })

@@ -170,12 +170,28 @@ export function watcherSlimRead(name: WatcherToolName, input: unknown, result: u
   }
   if (name === 'list_projects') {
     const asked = input as WatcherToolInput<'list_projects'>, query = asked.query?.toLowerCase()
-    type Project = Extract<WatcherToolOutput<'list_projects'>, { status: 'ok' }>['projects'][number]
+    type Ok = Extract<WatcherToolOutput<'list_projects'>, { status: 'ok' }>
+    type Project = Ok['projects'][number]
+    type HostWorkers = NonNullable<Ok['workersByHost']>[number]
     const projects = (result.projects as Project[]).filter(project => (!asked.projectId || project.target.projectId === asked.projectId)
-      && (!query || project.title.toLowerCase().includes(query) || project.displayRoot.toLowerCase().includes(query)))
-    return { ...result, projects: asked.includeModels
-      ? (asked.provider ? projects.map(project => project.workers ? { ...project, workers: project.workers.filter(worker => worker.provider === asked.provider) } : project) : projects)
-      : projects.map(({ workers: _workers, ...project }) => { void _workers; return project }) }
+      && (!query || project.title.toLowerCase().includes(query) || project.displayRoot.toLowerCase().includes(query) || project.repository?.toLowerCase().includes(query) === true))
+    const incoming = Array.isArray((result as Ok).workersByHost) ? new Map((result as Ok).workersByHost!.map(entry => [entry.hostId, entry.workers])) : undefined
+    const slimProjects = projects.map(({ workers: _workers, ...project }) => { void _workers; return project })
+    if (!asked.includeModels) {
+      const { workersByHost: _byHost, ...rest } = result as Ok
+      void _byHost
+      return { ...rest, projects: slimProjects }
+    }
+    const byHost = new Map<string, HostWorkers['workers']>()
+    for (const project of projects) {
+      const hostId = project.target.hostId
+      if (byHost.has(hostId)) continue
+      const models = project.workers ?? incoming?.get(hostId)
+      if (!models) continue
+      byHost.set(hostId, asked.provider ? models.filter(worker => worker.provider === asked.provider) : models)
+    }
+    const workersByHost: HostWorkers[] = [...byHost].map(([hostId, workers]) => ({ hostId, workers }))
+    return { ...result, projects: slimProjects, workersByHost }
   }
   return result
 }

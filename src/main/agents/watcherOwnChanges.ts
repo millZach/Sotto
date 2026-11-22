@@ -3,8 +3,12 @@ import { isVisualMessage, type AgentHostSnapshot, type AgentMessage, type AgentT
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { WatcherOwnChange } from '../../shared/watcherChanges'
 import { OVERSEER_REASON_PREFIX } from '../../shared/dynamicThreads'
+import { isWatcherSilentReply } from '../../shared/watcherRoom'
 
 const REASON_PREFIX = 'Watcher change reason:'
+/** Whether a Watcher message is a text-only silent no-op reply (`NO_REPLY`) that should be hidden from display. */
+const isSilentWatcherReply = (message: AgentMessage): boolean =>
+  message.role === 'assistant' && !isVisualMessage(message) && !message.attachments?.length && !message.watcherOwnChange && isWatcherSilentReply(message.text)
 /** The line a reply gives its reason on: Watcher's, or a Dynamic thread's overseer's (ADR-0191). */
 const reasonPrefixOf = (thread: Pick<AgentThread, 'dynamic'>): string => thread.dynamic === true ? OVERSEER_REASON_PREFIX : REASON_PREFIX
 const REASON_MAX = 2_000
@@ -42,6 +46,7 @@ function changeReason(text: string, prefix: string): string | null {
  * and fenced example stays. A reply with no own-change reason, or nothing else in it, is shown as it was written.
  */
 export function watcherReplyAsShown(message: AgentMessage, prefix: string = REASON_PREFIX): string {
+  if (isSilentWatcherReply(message)) return ''
   const mark = message.role === 'assistant' && message.watcherOwnChange?.replyMessageId === message.id ? message.watcherOwnChange : undefined
   if (!mark || !message.text.includes(prefix)) return message.text
   // Even entries are lines, odd entries the break after each, so the reply's own line endings survive.
@@ -64,6 +69,15 @@ const shownReplies = new WeakMap<AgentMessage, { readonly text: string; readonly
 const isWatcherConversation = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
 /** Whether a thread's held messages carry a reason line, kept by the array so an update that leaves them alone reads none of them. */
 const carriedByWindow = new WeakMap<readonly AgentMessage[], { readonly prefix: string; readonly carrying: boolean }>()
+/** Whether a Watcher conversation's held messages carry a silent `NO_REPLY` token, cached by array identity. */
+const silentByWindow = new WeakMap<readonly AgentMessage[], boolean>()
+function windowHasSilent(messages: readonly AgentMessage[]): boolean {
+  const kept = silentByWindow.get(messages)
+  if (kept !== undefined) return kept
+  const silent = messages.some(isSilentWatcherReply)
+  silentByWindow.set(messages, silent)
+  return silent
+}
 function windowCarries(messages: readonly AgentMessage[], prefix: string): boolean {
   const kept = carriedByWindow.get(messages)
   if (kept?.prefix === prefix) return kept.carrying
@@ -85,17 +99,18 @@ function shownReply(message: AgentMessage, prefix: string): AgentMessage {
 
 /**
  * Every user-facing copy of a Watcher conversation (its pane, Copy, the thread detail, the phone) comes from the
- * coordinator's snapshot, so the reason line its own-change line shows comes off there, from Watcher's own replies only.
- * Taking it off again is a no-op, and the mark keeps the reason, so the own-change line is unchanged.
+ * coordinator's snapshot, so the reason line its own-change line shows and silent `NO_REPLY` acks come off there,
+ * from Watcher's own replies only. Taking it off again is a no-op, and the mark keeps the reason, so the own-change line is unchanged.
  */
 export function watcherRepliesAsShown(snapshot: AgentHostSnapshot, dynamicThreads = false): AgentHostSnapshot {
-  // A Dynamic thread's too where that feature is on, since only there does its mark show the reason (ADR-0191).
-  const carrying = (thread: AgentThread): boolean => (isWatcherConversation(thread) || dynamicThreads && thread.dynamic === true) && windowCarries(thread.messages, reasonPrefixOf(thread))
+  // A Dynamic thread's reason line too where that feature is on (ADR-0191); silent `NO_REPLY` suppression is Watcher-only.
+  const carrying = (thread: AgentThread): boolean => (isWatcherConversation(thread) || dynamicThreads && thread.dynamic === true)
+    && (windowCarries(thread.messages, reasonPrefixOf(thread)) || isWatcherConversation(thread) && windowHasSilent(thread.messages))
   if (!snapshot.threads.some(carrying)) return snapshot
   return { ...snapshot, threads: snapshot.threads.map(thread => {
     if (!carrying(thread)) return thread
-    const prefix = reasonPrefixOf(thread)
-    return { ...thread, messages: thread.messages.map(message => carriesReason(message, prefix) ? shownReply(message, prefix) : message) }
+    const prefix = reasonPrefixOf(thread), silent = isWatcherConversation(thread)
+    return { ...thread, messages: thread.messages.map(message => carriesReason(message, prefix) || silent && isSilentWatcherReply(message) ? shownReply(message, prefix) : message) }
   }) }
 }
 

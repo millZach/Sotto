@@ -374,6 +374,17 @@ describe('Watcher own changes', () => {
     expect(t.messages[1]!.text).toBe('I fixed it.\nWatcher change reason: Needed.')
   })
 
+  it('hides NO_REPLY silent no-op acks on Watcher conversations alone', () => {
+    const w = { ...thread(), messages: [message('user', 'user', 'news'), message('reply', 'assistant', 'NO_REPLY')] }
+    const ordinary: AgentThread = { ...w, id: 'worker', kind: 'project' }
+    const dynamic: AgentThread = { ...w, id: 'dynamic', kind: 'project', dynamic: true }
+    expect(watcherReplyAsShown(w.messages[1]!)).toBe('')
+    const shown = watcherRepliesAsShown({ threads: [w, ordinary, dynamic] } as unknown as AgentHostSnapshot, true)
+    expect(shown.threads[0]!.messages[1]!.text).toBe('')
+    expect(shown.threads[1]!.messages[1]!.text).toBe('NO_REPLY')
+    expect(shown.threads[2]!.messages[1]!.text).toBe('NO_REPLY')
+  })
+
   it('describes the reason line exactly as Sotto reads it', () => {
     // The prompt's own example, filled in as it says, is the line the room and the phone show as Watcher's reason.
     const example = /^.*: (Watcher change reason: <reason>)$/mu.exec(WATCHER_SYSTEM_PROMPT)?.[1]

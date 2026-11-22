@@ -1,8 +1,10 @@
 // @vitest-environment node
+import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createAgentRuntime } from '../../src/main/agents/runtime'
 import { selectWatcherWorkerModels, WatcherService } from '../../src/main/agents/watcher'
@@ -21,7 +23,7 @@ import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import type { BaseBranchChecks } from '../../src/main/agents/watcherComputedState'
-import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, WATCHER_NOT_GIT_REASON, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
+import { WATCHER_KEPT_ITEMS_MAX, WATCHER_KEPT_RULES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_PARK_TOOL, watcherParkThreadOutputSchema, watcherRecordSchema, watcherToolSchemas, type WatcherThreadTarget } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -39,7 +41,7 @@ const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(history = true, { clock, ...options }: { clock?: ManualScheduler; compactAt?: () => number; baseBranchChecks?: (url: string) => Promise<BaseBranchChecks> } = {}) {
+async function fixture(history = true, { clock, ...options }: { clock?: ManualScheduler; compactAt?: () => number; settledLookAfterMs?: number; baseBranchChecks?: (url: string) => Promise<BaseBranchChecks> } = {}) {
   const workspace = await workspaceFixture(undefined, { history })
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
@@ -123,8 +125,8 @@ it('creates one current master, attaches exact tools only there, starts and read
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(await f.tools.mcpServer(result.target.threadId)).toBeUndefined()
   expect(await f.tools.mcpServer(f.id)).toMatchObject({ name: 'sotto_threads' })
-  // Sotto's own question card (#2228) joins the shared tools; it asks a paired host nothing, so it is not among them.
-  expect(f.tools.definitions.map(item => item.name).sort()).toEqual([...Object.keys(watcherToolSchemas), 'ask_user'].sort())
+  // Sotto's own question card (#2228) and park_thread join the shared tools; neither asks a paired host anything, so neither is in watcherToolSchemas.
+  expect(f.tools.definitions.map(item => item.name).sort()).toEqual([...Object.keys(watcherToolSchemas), 'ask_user', 'park_thread'].sort())
   expect((await f.tools.call(f.id, 'answer', { approved: true })).structuredContent).toMatchObject({ status: 'refused' })
 })
 
@@ -2544,20 +2546,32 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   link(aside, [pr(4, 'merged')])
   const passed = (number: number, observedAt: string) => f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`,
     head: `synthetic-head-${number}`, observedAt, availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  const ready = (threadId: string, number: number, observedAt: string) =>
+    (f.service as unknown as { wakes: { evidence: { noteReady(t: WatcherThreadTarget, url: string, head: string, at: string): void } } })
+      .wakes.evidence.noteReady({ hostId: f.control.hostId()!, threadId }, `https://github.com/synthetic/project/pull/${number}`, `synthetic-head-${number}`, observedAt)
   const observed = Date.now()
   passed(7, new Date(observed - 2_000).toISOString()); passed(5, new Date(observed - 1_000).toISOString()); passed(6, new Date(observed - 3_000).toISOString())
   passed(8, new Date(observed - 5 * 60_000 - 1_000).toISOString())
+  const beforeReady = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (beforeReady.status !== 'ok') throw new Error('read refused')
+  expect(beforeReady.mergeQueue).toEqual([])
+  expect(beforeReady.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual(
+    expect.arrayContaining([expect.objectContaining({ number: 5, checks: 'passed' })]))
+  ready(second.target.threadId, 7, new Date(observed - 2_000).toISOString())
+  ready(first.target.threadId, 5, new Date(observed - 1_000).toISOString())
+  ready(first.target.threadId, 6, new Date(observed - 3_000).toISOString())
+  ready(first.target.threadId, 8, new Date(observed - 5 * 60_000 - 1_000).toISOString())
   await f.call('keep_state', { decisions: ['Merge #4 once CI is green?', 'Merge #5 after #7?'], rules: ['Leave Synthetic release notes to the user.'] })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
-  // The stale pass and draft are not queued; the fresh passes go in the order their checks passed.
+  // The stale pass and draft are not queued; the ready passes go in the order they joined.
   expect(read.mergeQueue.map(item => [item.target.threadId, item.pullRequest.number])).toEqual([[second.target.threadId, 7], [first.target.threadId, 5]])
   expect(read.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual([
     expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' }),
     expect.objectContaining({ number: 8, state: 'open', checks: 'passed', stale: true })])
   expect(read.staleNotes).toEqual([
-    { list: 'decisions', id: 'd1', reasons: ['Names pull request #4, which is merged.'] },
-    { list: 'rules', id: 'r3', reasons: ['Names the thread “Synthetic release notes”, which Watcher does not watch.'] },
+    { list: 'decisions', id: 'd1', reasons: ['pr-merged: #4'] },
+    { list: 'rules', id: 'r3', reasons: ['unwatched-thread: Synthetic release notes'] },
   ])
   // This fixture leaves Settle without asking at its default, on, and read_state says so.
   expect(read).toMatchObject({ settleWithoutAsking: true })
@@ -2585,9 +2599,14 @@ it('refuses a GO MERGE while another train pull request runs its checks or main 
   await f.finish(first.target.threadId); await f.finish(second.target.threadId)
   link(first.target.threadId, 5); link(second.target.threadId, 7)
   const observed = Date.now(), at = (ago: number) => new Date(observed - ago).toISOString()
+  const ready = (target: WatcherThreadTarget, number: number, head: string, observedAt: string) =>
+    (f.service as unknown as { wakes: { evidence: { noteReady(t: WatcherThreadTarget, url: string, head: string, at: string): void } } })
+      .wakes.evidence.noteReady(target, url(number), head, observedAt)
   f.service.pullRequestObserved({ url: url(5), head: '5'.repeat(40), observedAt: at(3_000), availability: 'available', checks: 'passed', checkCount: 3, state: 'open', requiredPassed: true, pendingChecks: { required: 0, optional: 0 } })
-  // #7 passed, joined the train, then took a push: its required checks run again on the new head.
+  ready(first.target, 5, '5'.repeat(40), at(3_000))
+  // #7 passed and joined the train, then took a push: its required checks run again on the new head.
   f.service.pullRequestObserved({ url: url(7), head: '6'.repeat(40), observedAt: at(2_000), availability: 'available', checks: 'passed', checkCount: 3, state: 'open', requiredPassed: true, pendingChecks: { required: 0, optional: 0 } })
+  ready(second.target, 7, '6'.repeat(40), at(2_000))
   f.service.pullRequestObserved({ url: url(7), head: '7'.repeat(40), observedAt: at(1_000), availability: 'available', checks: 'pending', checkCount: 3, state: 'open', requiredPassed: false, pendingChecks: { required: 2, optional: 1 } })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
@@ -2840,8 +2859,13 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
     host.touch(threadId)
     showLinks(f, threadId, links)
   })
-  for (let number = 1; number <= 120; number++) f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`, head: `synthetic-head-${number}`,
-    observedAt: new Date(Date.now() + number * 1_000).toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  const hostId = f.control.hostId()!
+  for (let number = 1; number <= 120; number++) {
+    const prUrl = `https://github.com/synthetic/project/pull/${number}`, prAt = new Date(Date.now() + number * 1_000).toISOString()
+    f.service.pullRequestObserved({ url: prUrl, head: `synthetic-head-${number}`, observedAt: prAt, availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+    ;(f.service as unknown as { wakes: { evidence: { noteReady(t: WatcherThreadTarget, url: string, head: string, at: string): void } } })
+      .wakes.evidence.noteReady({ hostId, threadId: targets[Math.floor((number - 1) / 20)]! }, prUrl, `synthetic-head-${number}`, prAt)
+  }
   const first = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (first.status !== 'ok' || first.nextCursor === null) throw new Error('expected a second page')
   const second = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: first.nextCursor }))
@@ -3087,7 +3111,8 @@ it('keeps trailing Antigravity Neon discoverable in list_projects past 100 earli
 
   const all = watcherToolSchemas.list_projects.output.parse((await runtime.watcherTools!.call(watcherId, 'list_projects', { includeModels: true })).structuredContent)
   if (all.status !== 'ok') throw new Error('list_projects refused')
-  const workers = all.projects[0]!.workers!
+  expect('workers' in all.projects[0]!).toBe(false)
+  const workers = all.workersByHost![0]!.workers
   expect(workers).toHaveLength(100)
   expect(workers.some(item => item.provider === 'antigravity' && item.modelId === 'native:antigravity:model:gemini-4-neon')).toBe(true)
   // Original relative order (Codex before Antigravity) is preserved.
@@ -3098,7 +3123,100 @@ it('keeps trailing Antigravity Neon discoverable in list_projects past 100 earli
 
   const filtered = watcherToolSchemas.list_projects.output.parse((await runtime.watcherTools!.call(watcherId, 'list_projects', { includeModels: true, provider: 'antigravity' })).structuredContent)
   if (filtered.status !== 'ok') throw new Error('filtered list_projects refused')
-  expect(filtered.projects[0]!.workers!.every(item => item.provider === 'antigravity')).toBe(true)
-  expect(filtered.projects[0]!.workers!.map(item => item.modelId)).toContain('native:antigravity:model:gemini-4-neon')
+  expect(filtered.workersByHost![0]!.workers.every(item => item.provider === 'antigravity')).toBe(true)
+  expect(filtered.workersByHost![0]!.workers.map(item => item.modelId)).toContain('native:antigravity:model:gemini-4-neon')
 }, 90_000)
+
+it('parks and unparks watched threads without unparking on PR events, and auto-unparks on a new turn', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  await f.finish(started.target.threadId)
+  const parked = watcherParkThreadOutputSchema.parse((await f.tools.call(f.id, WATCHER_PARK_TOOL, { target: started.target })).structuredContent)
+  expect(parked).toEqual({ status: 'ok', target: started.target, parked: true })
+  const readParked = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (readParked.status !== 'ok') throw new Error('read refused')
+  expect(readParked.watching.find(row => row.target.threadId === started.target.threadId))
+    .toMatchObject({ parked: true, waitsOn: 'Nothing. It is parked.' })
+  // Pull request observation alone never unparks a parked watch.
+  const prUrl = 'https://github.com/synthetic/project/pull/901'
+  const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } }; touch(id: string): void }
+  host.state.snapshot.threads.find(thread => thread.id === started.target.threadId)!.pullRequests = [
+    { url: prUrl, number: 901, title: 'Synthetic PR', state: 'open', draft: false, source: 'linked', linkedAt: new Date().toISOString() }]
+  host.touch(started.target.threadId)
+  f.service.pullRequestObserved({ url: prUrl, head: 'a'.repeat(40), observedAt: new Date().toISOString(), availability: 'available', checks: 'failed', checkCount: 1, state: 'open' })
+  const afterPr = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (afterPr.status !== 'ok') throw new Error('read refused')
+  expect(afterPr.watching.find(row => row.target.threadId === started.target.threadId)?.parked).toBe(true)
+  // Watcher sending a follow-up automatically unparks the watch.
+  await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: started.target, text: 'Continue with review.' })
+  const afterSend = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (afterSend.status !== 'ok') throw new Error('read refused')
+  expect(afterSend.watching.find(row => row.target.threadId === started.target.threadId)?.parked).toBeUndefined()
+  // Re-parking and sending directly as the user also auto-unparks.
+  await f.finish(started.target.threadId)
+  expect(watcherParkThreadOutputSchema.parse((await f.tools.call(f.id, WATCHER_PARK_TOOL, { target: started.target, parked: true })).structuredContent)).toMatchObject({ parked: true })
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: started.target.threadId, draftId: randomUUID(), text: 'User follow-up' })).error).toBeNull()
+  const afterUser = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (afterUser.status !== 'ok') throw new Error('read refused')
+  expect(afterUser.watching.find(row => row.target.threadId === started.target.threadId)?.parked).toBeUndefined()
+})
+
+it('matches origin repo slugs in list_projects query and deduplicates workersByHost across projects', async () => {
+  const f = await fixture()
+  const dir = await mkdtemp(join(tmpdir(), 'talk-to-text-'))
+  cleanups.push(() => rm(dir, { recursive: true, force: true }))
+  const git = promisify(execFile)
+  await git('git', ['init', '-q', dir])
+  await git('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/millZach/SottoApp.git'])
+  const added = await f.call('add_project', { requestId: f.requestId, retryKey: randomUUID(), path: dir, title: 'Talk to Text Application' })
+  if (added.status !== 'ok' || !('project' in added)) throw new Error('add_project refused')
+  const matched = await f.call('list_projects', { query: 'SottoApp', includeModels: true })
+  if (matched.status !== 'ok' || !('projects' in matched)) throw new Error('list_projects refused')
+  expect(matched.projects.map(project => ({ title: project.title, repository: project.repository }))).toEqual([
+    { title: 'Talk to Text Application', repository: 'millZach/SottoApp' }])
+  expect(matched.projects.every(project => !('workers' in project))).toBe(true)
+  expect(matched.workersByHost).toHaveLength(1)
+  const all = await f.call('list_projects', { includeModels: true })
+  if (all.status !== 'ok' || !('projects' in all)) throw new Error('list_projects all refused')
+  expect(all.projects.length).toBeGreaterThanOrEqual(2)
+  expect(all.workersByHost).toHaveLength(1)
+  expect(all.projects.every(project => !('workers' in project))).toBe(true)
+})
+
+it('auto-prunes permanently missing local watched threads from watching while keeping dormant or remote ones', async () => {
+  const f = await fixture(true, { settledLookAfterMs: 0 })
+  const localHostId = f.control.hostId()!
+  const missingWatchTarget = { hostId: localHostId, threadId: randomUUID() }
+  const missingParticipantTarget = { hostId: localHostId, threadId: randomUUID() }
+  const dormantTarget = { hostId: localHostId, threadId: randomUUID() }
+  const remoteWatchTarget = { hostId: '99999999-9999-4999-8999-999999999999', threadId: 'remote-missing' }
+  // Mark one thread dormant (hidden behind an Owl feature gate) and seed missing local + remote watches/participants.
+  ;(f.workspace.host as { dormantThreadIds?: () => readonly string[] }).dormantThreadIds = () => [dormantTarget.threadId]
+  await f.control.watcherRecords.update(record => {
+    const at = new Date().toISOString()
+    ;(record.watches ??= []).push(
+      { id: randomUUID(), target: missingWatchTarget, createdAt: at, generation: 0 },
+      { id: randomUUID(), target: dormantTarget, createdAt: at, generation: 0 },
+      { id: randomUUID(), target: remoteWatchTarget, createdAt: at, generation: 0 },
+    )
+    record.requests.find(item => item.id === f.requestId)!.participants.push({
+      target: missingParticipantTarget, requestId: f.requestId, startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1,
+    })
+  })
+  // Trigger a host publish so WatcherService.lookForSettled() runs with settledLookAfterMs: 0.
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await expect.poll(async () => {
+    const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+    return read.status === 'ok'
+      && !read.watching.some(row => row.target.threadId === missingWatchTarget.threadId || row.target.threadId === missingParticipantTarget.threadId)
+  }, { timeout: 5_000 }).toBe(true)
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.watching.some(row => row.target.threadId === dormantTarget.threadId)).toBe(true)
+  expect(read.watching.some(row => row.target.hostId === remoteWatchTarget.hostId && row.target.threadId === remoteWatchTarget.threadId)).toBe(true)
+  expect(f.control.watcherRecords.copy().requests.find(item => item.id === f.requestId)?.participants
+    .find(item => item.target.threadId === missingParticipantTarget.threadId)?.automationStopped).toBe(true)
+})
 

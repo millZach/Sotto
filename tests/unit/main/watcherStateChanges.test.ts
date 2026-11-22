@@ -28,7 +28,7 @@ const lists = (over: Partial<WatcherStateLists> = {}): WatcherStateLists => ({
   mergeQueue: [{ target: target('b'), title: 'B', pullRequest: { number: 6, url: 'https://github.com/synthetic/project/pull/6', state: 'open', checks: 'passed' }, inTrainSince: AT, checksPassedAt: AT, requiredChecks: 'passed' }],
   waitingOnUser: [{ target: target('a'), title: 'A', waitsFor: 'question', requestCardId: 'card-1' }],
   kept: state({ rules: [{ id: 'r1', text: 'Suites run in CI.', touchedAt: AT }, { id: 'r2', text: 'Do not merge #9.', touchedAt: AT }] }),
-  staleNotes: [{ list: 'rules', id: 'r2', reasons: ['Names pull request #9, which is merged.'] }],
+  staleNotes: [{ list: 'rules', id: 'r2', reasons: ['pr-merged: #9'] }],
   ...over,
 })
 

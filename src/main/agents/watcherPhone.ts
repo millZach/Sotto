@@ -11,7 +11,7 @@ import type { WatcherCommandOrigin } from './watcherCommands'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
-import { isWatchedRow, takesPartInActiveRequest, watcherTakeovers, type WatcherRoomState, type WatcherSetPermissionRequest, type WatcherTakeover, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
+import { isWatchedRow, isWatcherSilentReply, takesPartInActiveRequest, watcherTakeovers, type WatcherRoomState, type WatcherSetPermissionRequest, type WatcherTakeover, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 import type { WatcherOperation, WatcherRequest } from '../../shared/watcher'
 import { watcherQuestionRequest } from '../../shared/watcherQuestions'
 
@@ -119,8 +119,9 @@ export class WatcherPhoneService {
     const detail = current ? this.control.threadDetail(current.id) : null
     // The coordinator's detail already shows Watcher's messages as typed: an older one's routing footer is off it.
     // A message's photos go as the detail marks them, with no bytes: the phone asks for each through `preview` below.
-    const messages = (detail?.messages ?? []).slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt,
-      ...(message.attachments?.length ? { attachments: message.attachments } : {}) }))
+    const messages = (detail?.messages ?? []).filter(message => !(message.role === 'assistant' && !message.attachments?.length && (message.text === '' || isWatcherSilentReply(message.text))))
+      .slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}) }))
     const receiptGroups: WatcherPhoneState['receiptGroups'] = []
     const shown = this.phoneReceipts(room)
     for (const operation of shown.receipts) {

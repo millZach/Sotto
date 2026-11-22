@@ -1003,7 +1003,7 @@ async function fullAccessHostThread(f: Awaited<ReturnType<typeof master>>) {
     // Models come only when asked for (#1191).
     const projects = await f.call('list_projects', { ...input, includeModels: true })
     if (projects.status !== 'ok') throw new Error('list-refused')
-    return projects.projects.find(item => item.target.hostId === f.pairing.hostId)?.workers?.find(item => item.modelId === f.model.id)?.defaultPermission
+    return projects.workersByHost?.find(item => item.hostId === f.pairing.hostId)?.workers.find(item => item.modelId === f.model.id)?.defaultPermission
   }
   const send = (text: string) => f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, text, delivery: 'now' })
   const startFullAccess = () => f.call('start_thread', { ...f.start(), permission: { kind: 'runtime', mode: 'full-access' } })
@@ -1073,7 +1073,7 @@ it('refuses a model without an asking mode on a host where this computer may not
   }
   const projects = await f.call('list_projects', { hostId: f.pairing.hostId, includeModels: true })
   if (projects.status !== 'ok') throw new Error('list-refused')
-  expect(projects.projects[0]?.workers?.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
+  expect(projects.workersByHost?.[0]?.workers.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') })
   expect(writes).not.toHaveBeenCalled()
@@ -2935,13 +2935,13 @@ it('discovers qualified Antigravity Neon on a paired host past 100 earlier ready
 
   const all = await f.call('list_projects', { hostId: f.pairing.hostId, includeModels: true })
   if (all.status !== 'ok') throw new Error('list_projects refused')
-  const discovered = all.projects.find(item => item.target.projectId === remoteProject.id)!
+  const discovered = all.workersByHost!.find(item => item.hostId === f.pairing.hostId)!
   expect(discovered.workers).toHaveLength(100)
-  expect(discovered.workers!.some(item => item.provider === 'antigravity' && item.modelId === neonId)).toBe(true)
+  expect(discovered.workers.some(item => item.provider === 'antigravity' && item.modelId === neonId)).toBe(true)
 
   const narrowed = await f.call('list_projects', { hostId: f.pairing.hostId, includeModels: true, provider: 'antigravity' })
   if (narrowed.status !== 'ok') throw new Error('narrowed list_projects refused')
-  expect(narrowed.projects.find(item => item.target.projectId === remoteProject.id)!.workers!.every(item => item.provider === 'antigravity')).toBe(true)
+  expect(narrowed.workersByHost!.find(item => item.hostId === f.pairing.hostId)!.workers.every(item => item.provider === 'antigravity')).toBe(true)
 
   const retryKey = randomUUID()
   const firstPrompt = 'Synthetic paired host Neon prompt.'
@@ -2961,3 +2961,16 @@ it('discovers qualified Antigravity Neon on a paired host past 100 earlier ready
   expect(retry).toEqual(started)
   expect((await antigravity.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
 }, 90_000)
+
+it('strips local-only parked flags when syncing standing watches to a paired host', async () => {
+  const f = await master()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const parked = await f.tools.call(f.id, 'park_thread', { target: started.target, parked: true })
+  expect(parked.structuredContent).toEqual({ status: 'ok', target: started.target, parked: true })
+  const reads = vi.spyOn(f.socket, 'watcherRead')
+  // A watch on a paired host syncs standingWatches over socket without sending `parked` (rejected by strict v1 schema).
+  await f.watcher.watchThread({ target: started.target })
+  const sentWatches = reads.mock.calls.flatMap(call => (call[0] as { standingWatches?: Record<string, unknown>[] }).standingWatches ?? [])
+  expect(sentWatches.every(watch => !('parked' in watch))).toBe(true)
+})

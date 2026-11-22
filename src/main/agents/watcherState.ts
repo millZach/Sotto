@@ -191,8 +191,9 @@ export class WatcherStateStore {
 
 type WatchedThread = WatcherRoomState['watchedThreads'][number]
 /** What a watched thread waits on, in Sotto's words, from its own facts: never anything it said. */
-export function watcherWaitsOn(thread: Pick<WatchedThread, 'status' | 'connected' | 'settled' | 'backgroundWorkCount' | 'paused'>
-  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[] }): string {
+export function watcherWaitsOn(thread: Pick<WatchedThread, 'status' | 'connected' | 'settled' | 'backgroundWorkCount' | 'paused' | 'parked'>
+  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[]
+    readonly resumingAfterAnswer?: boolean }): string {
   if (thread.waitsOn.some(card => card.kind === 'permission')) return 'The user’s answer to its permission request.'
   if (thread.waitsOn.length) return 'The user’s answer to its question.'
   // A thread it delegated to is its to see through (#1190), so that thread's card is what it waits on too.
@@ -200,9 +201,10 @@ export function watcherWaitsOn(thread: Pick<WatchedThread, 'status' | 'connected
   if (thread.delegatedWaitsOn?.length) return 'The user’s answer to a question in a thread it delegated to.'
   if (thread.status === 'unavailable' || !thread.connected) return 'Its computer or provider to connect again.'
   if (thread.paused) return 'The user’s own turn in it to end. Watcher sends it nothing until then.'
-  if (thread.status === 'running') return 'Its turn to finish.'
+  if (thread.status === 'running' || thread.resumingAfterAnswer) return 'Its turn to finish.'
   if (thread.backgroundWorkCount > 0) return 'The background work or sub-agents its last turn left running to end.'
   if (thread.status === 'error') return 'A look at its failed turn.'
   if (thread.settled) return 'Nothing. It is settled.'
+  if (thread.parked) return 'Nothing. It is parked.'
   return 'Nothing. It is at rest.'
 }

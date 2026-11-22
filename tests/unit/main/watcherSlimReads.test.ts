@@ -74,21 +74,38 @@ it('reads a thread with its pull requests summed up unless every fact is asked f
   expect(watcherSlimRead('read_thread', { evidence: 'full' }, read, () => false)).toBe(read)
 })
 
-it('lists projects without their models unless asked, narrowed by project, provider or a query', () => {
+it('lists projects without their models unless asked, deduplicated once per host, narrowed by project, provider or a query on title, folder or repository', () => {
   const workers = [
     { provider: 'codex' as const, modelId: 'model', reasoningEfforts: ['high'], defaultPermission: null, permissionComparable: false },
     { provider: 'antigravity' as const, modelId: 'native:antigravity:model:gemini-4-neon', reasoningEfforts: ['high'], defaultPermission: null, permissionComparable: false },
   ]
-  const project = (projectId: string, title: string) => ({ target: { hostId, projectId }, title, displayRoot: `C:\\work\\${title}`, workers,
-    controlAvailable: true, readsAvailable: true, readOnlyProfileAvailable: true, freshness: 'fresh' as const })
-  const result = { status: 'ok', projects: [project('a', 'Sotto'), project('b', 'Forge')], nextCursor: null, observedAt: at, staleHosts: [] }
+  const project = (projectId: string, title: string, repository?: string) => ({ target: { hostId, projectId }, title, displayRoot: `C:\\work\\${title}`,
+    ...repository ? { repository } : {}, workers, controlAvailable: true, readsAvailable: true, readOnlyProfileAvailable: true, freshness: 'fresh' as const })
+  const result = { status: 'ok', projects: [project('a', 'Talk to Text Application', 'millZach/Sotto'), project('b', 'Forge', 'millZach/Forge')], nextCursor: null, observedAt: at, staleHosts: [] }
   const slim = watcherSlimRead('list_projects', {}, result, () => false) as typeof result
   expect(slim.projects.map(item => 'workers' in item)).toEqual([false, false])
+  expect(slim).not.toHaveProperty('workersByHost')
   expect(watcherToolSchemas.list_projects.output.parse(slim)).toBeTruthy()
   expect((watcherSlimRead('list_projects', { query: 'forge' }, result, () => false) as typeof result).projects.map(item => item.title)).toEqual(['Forge'])
-  expect((watcherSlimRead('list_projects', { projectId: 'a', includeModels: true }, result, () => false) as typeof result).projects).toEqual([project('a', 'Sotto')])
-  expect((watcherSlimRead('list_projects', { projectId: 'a', provider: 'antigravity', includeModels: true }, result, () => false) as typeof result).projects[0]!.workers)
-    .toEqual([workers[1]])
+  expect((watcherSlimRead('list_projects', { query: 'sotto' }, result, () => false) as typeof result).projects.map(item => item.title)).toEqual(['Talk to Text Application'])
+  const withModels = watcherSlimRead('list_projects', { includeModels: true }, result, () => false) as Extract<WatcherToolOutput<'list_projects'>, { status: 'ok' }>
+  expect(withModels.projects.every(item => !('workers' in item))).toBe(true)
+  expect(withModels.workersByHost).toEqual([{ hostId, workers }])
+  const filtered = watcherSlimRead('list_projects', { projectId: 'a', provider: 'antigravity', includeModels: true }, result, () => false) as Extract<WatcherToolOutput<'list_projects'>, { status: 'ok' }>
+  expect(filtered.workersByHost).toEqual([{ hostId, workers: [workers[1]!] }])
+  // Thirty projects on the same host carry the model list once in workersByHost instead of 30 times.
+  const manyWorkers = Array.from({ length: 40 }, (_, i) => ({
+    provider: 'codex' as const, modelId: `native:codex:model:synthetic-${i}`,
+    reasoningEfforts: ['low', 'medium', 'high'], defaultPermission: null, permissionComparable: false,
+  }))
+  const many = { ...result, projects: Array.from({ length: 30 }, (_, i) => ({
+    ...project(`p-${i}`, `Project ${i}`), workers: manyWorkers,
+  })) }
+  const slimMany = watcherSlimRead('list_projects', { includeModels: true }, many, () => false) as Extract<WatcherToolOutput<'list_projects'>, { status: 'ok' }>
+  expect(slimMany.projects).toHaveLength(30)
+  expect(slimMany.projects.every(item => !('workers' in item))).toBe(true)
+  expect(slimMany.workersByHost).toEqual([{ hostId, workers: manyWorkers }])
+  expect(bytes(slimMany) * 5).toBeLessThan(bytes(many))
 })
 
 it('measures what the slim reads save on a roster the size of the October 19 session', () => {

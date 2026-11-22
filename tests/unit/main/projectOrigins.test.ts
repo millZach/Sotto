@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { readGitHubOrigin, readProjectOrigins } from '../../../src/main/agents/projectOrigins'
+import { parseRepoSlug, readGitHubOrigin, readProjectOrigins, readProjectRepoSlugs } from '../../../src/main/agents/projectOrigins'
 import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 
 const origins: Record<string, string> = {
@@ -45,5 +45,15 @@ describe('project origins', () => {
       await git('git', ['-C', folder, 'remote', 'add', 'origin', 'https://github.com/millZach/Sotto.git'])
       expect(await readGitHubOrigin(folder)).toEqual({ host: 'github.com', owner: 'millZach', name: 'Sotto' })
     } finally { await rm(folder, { recursive: true, force: true }) }
+  })
+  it('parses and reads normalized owner/repo slugs across SSH and HTTPS remotes', async () => {
+    expect(parseRepoSlug('git@github.com:millZach/Sotto.git')).toBe('millZach/Sotto')
+    expect(parseRepoSlug('https://gitlab.com/someone/thing.git/')).toBe('someone/thing')
+    expect(parseRepoSlug('')).toBeNull()
+    const slugs = await readProjectRepoSlugs([
+      { id: 'a', path: '/work/sotto' }, { id: 'b', path: '/work/gitlab' }, { id: 'c', path: '/work/no-origin' }], run)
+    expect(slugs.get('a')).toBe('millZach/Sotto')
+    expect(slugs.get('b')).toBe('someone/thing')
+    expect(slugs.get('c')).toBeNull()
   })
 })
