@@ -614,13 +614,43 @@ impl CoordinatorActor {
         mut rx: mpsc::UnboundedReceiver<ActorMessage>,
         mut provider_rx: mpsc::UnboundedReceiver<ProviderEvent>,
     ) {
-        // Connect every non-held provider at startup (ADR-0036).
+        // Connect every non-held provider concurrently at startup (ADR-0036), while still
+        // honouring Shutdown immediately so slow provider startup can never block exit.
+        let mut startup_connects: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
         for adapter in self.providers.values() {
             if !adapter.is_held() {
-                let _ = adapter.connect(self.provider_events_tx.clone()).await;
+                let adapter = Arc::clone(adapter);
+                let tx = self.provider_events_tx.clone();
+                startup_connects.spawn(async move {
+                    let _ = adapter.connect(tx).await;
+                });
+            }
+        }
+        let mut deferred_messages: VecDeque<ActorMessage> = VecDeque::new();
+        while !startup_connects.is_empty() {
+            tokio::select! {
+                _ = startup_connects.join_next() => {}
+                Some(msg) = rx.recv() => {
+                    match msg {
+                        ActorMessage::Shutdown { reply } => {
+                            startup_connects.abort_all();
+                            while startup_connects.join_next().await.is_some() {}
+                            for adapter in self.providers.values() {
+                                let _ = adapter.disconnect().await;
+                            }
+                            self.save_workspace();
+                            let _ = reply.send(());
+                            return;
+                        }
+                        other => deferred_messages.push_back(other),
+                    }
+                }
             }
         }
         self.rebuild_catalog();
+        for msg in deferred_messages {
+            self.handle_actor_message(msg);
+        }
 
         let mut flush_tick = tokio::time::interval(Duration::from_millis(PUBLISH_COALESCE_MS));
         flush_tick.tick().await;

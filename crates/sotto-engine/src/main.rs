@@ -501,7 +501,11 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    runtime.block_on(run_engine(parsed))
+    let exit_code = runtime.block_on(run_engine(parsed));
+    // Drop remaining async tasks within a bounded window so `kill_on_drop(true)` child handles
+    // terminate owned provider processes before main returns.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(2));
+    exit_code
 }
 
 async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
@@ -547,6 +551,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    let provider_handles: Vec<Arc<dyn ProviderAdapter>> = providers.values().cloned().collect();
 
     let coordinator = match CoordinatorHandle::spawn(
         parsed.data_directory.clone(),
@@ -744,9 +749,21 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         let _ = release_host_lock(&lock_path, &lease);
         ExitCode::SUCCESS
     } else {
-        // Force immediate process termination so no timed-out coordinator task can write after
-        // shutdown fails; the next start reclaims the dead-PID lock safely.
-        std::process::exit(1);
+        // Attempt direct provider teardown before returning non-zero; `runtime.shutdown_timeout`
+        // in `main` then drops any remaining tasks so `kill_on_drop(true)` terminates children,
+        // and the next start safely reclaims the dead-PID lock.
+        let mut disconnects: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+        for provider in provider_handles {
+            disconnects.spawn(async move {
+                let _ = provider.disconnect().await;
+            });
+        }
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while disconnects.join_next().await.is_some() {}
+        })
+        .await;
+        disconnects.abort_all();
+        ExitCode::from(1)
     }
 }
 
