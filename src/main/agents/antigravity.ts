@@ -174,22 +174,25 @@ function serializeChildWatch(watch: ChildWatch): SavedChildWatch | undefined {
   if (!agent) return undefined
   const childConversation = watch.reading.childConversation && CONVERSATION_ID.test(watch.reading.childConversation)
     ? watch.reading.childConversation : undefined
-  return {
+  const candidate = {
     rowId: watch.row.id,
     turnId: watch.row.turnId,
     ...(watch.row.afterMessageId ? { afterMessageId: watch.row.afterMessageId } : {}),
     sequence: watch.row.sequence,
-    title: watch.row.title,
+    title: watch.row.title.slice(0, 512),
     agentId: agent.id,
-    agentTitle: agent.title ?? watch.row.title,
-    ...(agent.model ? { model: agent.model } : {}),
-    ...(agent.startedAt ? { startedAt: agent.startedAt } : {}),
+    agentTitle: (agent.title ?? watch.row.title).slice(0, 512),
+    ...(agent.model ? { model: agent.model.slice(0, 256) } : {}),
+    ...(agent.startedAt ? { startedAt: agent.startedAt.slice(0, 64) } : {}),
     toolCallId: watch.toolCallId,
     until: watch.until,
     ...(childConversation ? { childConversation } : {}),
-    ...(watch.answeredAt ? { answeredAt: watch.answeredAt } : {}),
-    ...(watch.answerDigest ? { answerDigest: watch.answerDigest } : {}),
+    ...(watch.answeredAt ? { answeredAt: watch.answeredAt.slice(0, 64) } : {}),
+    ...(watch.answerDigest ? { answerDigest: watch.answerDigest.slice(0, 64) } : {}),
   }
+  // Never persist anything aliasesSchema would refuse to reload on the next startup.
+  const parsed = childWatchSchema.safeParse(candidate)
+  return parsed.success ? parsed.data : undefined
 }
 function restoreChildRow(saved: SavedChildWatch, cwd: string): AgentActivity {
   return {
@@ -1042,7 +1045,13 @@ export class AntigravityAcpHost implements ProviderHost {
       alias.childWatches.push(entry)
       while (alias.childWatches.length > CHILD_WATCHES_KEPT) {
         const dropped = alias.childWatches.shift()
-        if (dropped) this.children.delete(dropped.rowId)
+        if (dropped) {
+          const evicted = this.children.get(dropped.rowId)
+          this.children.delete(dropped.rowId)
+          if (evicted && evicted.answeredAt === undefined) {
+            this.settleChild(evicted, { conversationId: evicted.reading.childConversation ?? '', status: 'unknown' })
+          }
+        }
       }
     }
     return true

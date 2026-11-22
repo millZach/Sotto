@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentRuntimeMode } from '../../src/shared/agents'
 import { describeAdapterContract } from './adapterContract'
 import { antigravityFixture, antigravityFixtureSkips } from '../fixtures/fakeAntigravityFixture'
@@ -650,5 +651,54 @@ describe('Antigravity ACP adapter', () => {
     await expect.poll(async () => (await thread(id)).activities?.find(row => row.agents?.[0]?.title === 'Silent Expired')?.agents?.[0], { timeout: 15_000 })
       .toMatchObject({ status: 'unknown' })
     await expect.poll(async () => (await readWatches()).length).toBe(0)
+  })
+
+  it('bounds long child titles and models in saved watches and settles a running watch evicted past 64', async () => {
+    const id = await open()
+    const parent = await f!.realId(id)
+    const appData = join(f!.root, 'antigravity', 'gemini', 'antigravity-acp')
+    const aliasesFile = join(f!.root, 'antigravity-threads.json')
+    const longRole = 'Role-' + 'R'.repeat(800)
+    const longModel = 'gemini-model-' + 'M'.repeat(400)
+
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Long watch' })
+    await f!.action(id, { type: 'subagent', role: longRole, model: longModel, prompt: 'Keep going.' })
+    await expect.poll(async () => {
+      const watches = (JSON.parse(await readFile(aliasesFile, 'utf8')) as Record<string, { childWatches?: { agentTitle: string; model?: string }[] }>)[id]?.childWatches ?? []
+      return watches.length
+    }).toBe(1)
+    const saved = (JSON.parse(await readFile(aliasesFile, 'utf8')) as Record<string, { childWatches: { agentTitle: string; model?: string }[] }>)[id]!.childWatches[0]!
+    expect(saved.agentTitle.length).toBe(512)
+    expect(saved.model?.length).toBe(256)
+
+    // Restart loads the bounded watch cleanly without rejecting antigravity-threads.json, then delivers its answer.
+    const childFiles = await readdir(join(appData, 'brain', parent, '.system_generated', 'subagents'))
+    const childId = childFiles[0]!.replace(/\.json$/u, '')
+    f = await f!.driver.restart()
+    await f!.host.connect()
+    await mkdir(join(appData, 'brain', parent, '.system_generated', 'messages'), { recursive: true })
+    await writeFile(join(appData, 'brain', parent, '.system_generated', 'messages', 'long-answer.json'), JSON.stringify({
+      id: 'long-answer', recipient: parent, sender: childId, content: 'LONG_OK', timestamp: '2026-11-22T03:30:00.000Z',
+    }))
+    await expect.poll(async () => (await thread(id)).activities?.find(row => row.kind === 'subagent')?.agents?.[0], { timeout: 15_000 })
+      .toMatchObject({ status: 'completed', message: 'LONG_OK' })
+
+    // Adding watches past 64 evicts the oldest running watch and settles it as unknown rather than leaving it running.
+    type InternalHost = { watchChild(watch: { threadId: string; row: AgentActivity; toolCallId: string; parent: string; until: number; reading: { ruledOut: Set<string>; readAnswers: Set<string> } }): void }
+    const internal = f!.host as unknown as InternalHost
+    for (let index = 0; index < 65; index++) {
+      const rowId = `antigravity-tool-m2-${index}`
+      const row: AgentActivity = {
+        id: rowId, turnId: 'm2', sequence: index, kind: 'subagent', status: 'completed', title: 'Run invoke_subagent', cwd: f!.root,
+        agents: [{ id: `antigravity-child-${index}`, status: 'running', title: `Worker ${index}` }],
+      }
+      internal.watchChild({ threadId: id, row, toolCallId: `call_cap_${index}`, parent, until: Date.now() + 60_000, reading: { ruledOut: new Set(), readAnswers: new Set() } })
+    }
+    await expect.poll(async () => (JSON.parse(await readFile(aliasesFile, 'utf8')) as Record<string, { childWatches: { rowId: string }[] }>)[id]!.childWatches.at(-1)?.rowId).toBe('antigravity-tool-m2-64')
+    const allWatches = (JSON.parse(await readFile(aliasesFile, 'utf8')) as Record<string, { childWatches: { rowId: string }[] }>)[id]!.childWatches
+    expect(allWatches).toHaveLength(64)
+    expect(allWatches.some(item => item.rowId === 'antigravity-tool-m1-0')).toBe(false)
+    expect(allWatches.some(item => item.rowId === 'antigravity-tool-m2-0')).toBe(false)
+    expect((await thread(id)).activities?.find(row => row.id === 'antigravity-tool-m2-0')?.agents?.[0]?.status).toBe('unknown')
   })
 })
