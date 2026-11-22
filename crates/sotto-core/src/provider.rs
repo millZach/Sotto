@@ -1,0 +1,445 @@
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+
+use serde_json::{json, Value};
+use tokio::sync::mpsc;
+use uuid::Uuid;
+
+use crate::stores::StoredMessage;
+use crate::workspace::{
+    now_iso, provider_label, public_provider_entity_id, AgentCapabilities, AgentModel,
+    AgentProviderStatus, ClientUpdateRow, StagedAttachmentEntry,
+};
+
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+#[derive(Debug, Clone)]
+pub struct SendMessageRequest {
+    pub thread_id: String,
+    pub message_id: String,
+    pub cwd: String,
+    pub model_id: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub runtime_mode: Option<String>,
+    pub text: String,
+    pub command_id: String,
+    pub draft_id: String,
+    pub attachments: Vec<StagedAttachmentEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SendMessageAck {
+    pub message_id: String,
+    pub turn_id: String,
+    pub status: String,
+    pub provider_latency_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct AnswerRequestInput {
+    pub thread_id: String,
+    pub request_id: String,
+    pub answer: String,
+    pub approved: Option<bool>,
+    pub permission_choice: Option<String>,
+    pub question_answers: Option<Value>,
+    pub skipped: Option<bool>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProviderEvent {
+    StatusChanged {
+        provider_id: String,
+        status: AgentProviderStatus,
+        models: Vec<AgentModel>,
+        client_update: Option<ClientUpdateRow>,
+    },
+    TurnStarted {
+        thread_id: String,
+        turn_id: String,
+        after_message_id: Option<String>,
+        activity: Value,
+    },
+    MessageAdded {
+        thread_id: String,
+        message: StoredMessage,
+    },
+    MessageTextAppended {
+        thread_id: String,
+        message_id: String,
+        append_text: String,
+    },
+    MessageReplaced {
+        thread_id: String,
+        message: StoredMessage,
+    },
+    ActivityUpserted {
+        thread_id: String,
+        activity: Value,
+    },
+    RequestOpened {
+        thread_id: String,
+        request: Value,
+    },
+    RequestCleared {
+        thread_id: String,
+        request_id: String,
+    },
+    TurnCompleted {
+        thread_id: String,
+        turn_id: String,
+        status: String,
+    },
+}
+
+/// Language-neutral provider adapter interface implemented by Codex, Claude Code, and held/mock
+/// providers in `sotto-core`.
+pub trait ProviderAdapter: Send + Sync {
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn is_held(&self) -> bool {
+        false
+    }
+    fn status(&self) -> AgentProviderStatus;
+    fn models(&self) -> Vec<AgentModel>;
+    fn client_update(&self) -> Option<ClientUpdateRow> {
+        None
+    }
+
+    fn connect(&self, events: mpsc::UnboundedSender<ProviderEvent>) -> BoxFuture<'_, Result<(), String>>;
+    fn disconnect(&self) -> BoxFuture<'_, Result<(), String>>;
+
+    fn create_thread(
+        &self,
+        thread_id: String,
+        cwd: String,
+        model_id: Option<String>,
+        runtime_mode: Option<String>,
+        reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>>;
+
+    fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>>;
+
+    fn answer_request(&self, req: AnswerRequestInput) -> BoxFuture<'_, Result<(), String>>;
+
+    fn interrupt(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>>;
+
+    fn compact(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>>;
+
+    fn configure_thread(
+        &self,
+        _thread_id: String,
+        _model_id: Option<String>,
+        _runtime_mode: Option<String>,
+        _reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// Stand-in adapter for providers held by an Owl feature gate or inactive during a referee run.
+pub struct HeldProviderAdapter {
+    id: String,
+    name: String,
+}
+
+impl HeldProviderAdapter {
+    pub fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            name: provider_label(id).to_string(),
+        }
+    }
+}
+
+impl ProviderAdapter for HeldProviderAdapter {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn is_held(&self) -> bool {
+        true
+    }
+
+    fn status(&self) -> AgentProviderStatus {
+        AgentProviderStatus::held(&self.id)
+    }
+
+    fn models(&self) -> Vec<AgentModel> {
+        Vec::new()
+    }
+
+    fn connect(&self, _events: mpsc::UnboundedSender<ProviderEvent>) -> BoxFuture<'_, Result<(), String>> {
+        let msg = format!("{} is available in Sotto Owl; it is not in this build.", self.name);
+        Box::pin(async move { Err(msg) })
+    }
+
+    fn disconnect(&self) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn create_thread(
+        &self,
+        _thread_id: String,
+        _cwd: String,
+        _model_id: Option<String>,
+        _runtime_mode: Option<String>,
+        _reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        let msg = format!("{} is available in Sotto Owl; it is not in this build.", self.name);
+        Box::pin(async move { Err(msg) })
+    }
+
+    fn send_message(&self, _req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
+        let msg = format!("{} is available in Sotto Owl; it is not in this build.", self.name);
+        Box::pin(async move { Err(msg) })
+    }
+
+    fn answer_request(&self, _req: AnswerRequestInput) -> BoxFuture<'_, Result<(), String>> {
+        let msg = format!("{} is available in Sotto Owl; it is not in this build.", self.name);
+        Box::pin(async move { Err(msg) })
+    }
+
+    fn interrupt(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+        let msg = format!("{} is available in Sotto Owl; it is not in this build.", self.name);
+        Box::pin(async move { Err(msg) })
+    }
+
+    fn compact(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+        let msg = format!("{} is available in Sotto Owl; it is not in this build.", self.name);
+        Box::pin(async move { Err(msg) })
+    }
+}
+
+/// Deterministic in-memory provider used by Rust unit and protocol v1 socket tests.
+pub struct MockProviderAdapter {
+    id: String,
+    name: String,
+    version: String,
+    connected: Arc<Mutex<bool>>,
+    events_tx: Arc<Mutex<Option<mpsc::UnboundedSender<ProviderEvent>>>>,
+    active_turns: Arc<Mutex<std::collections::HashMap<String, String>>>,
+}
+
+impl MockProviderAdapter {
+    pub fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            name: provider_label(id).to_string(),
+            version: format!("{id}/0.154.0"),
+            connected: Arc::new(Mutex::new(false)),
+            events_tx: Arc::new(Mutex::new(None)),
+            active_turns: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+
+    pub fn complete_turn(&self, thread_id: &str, reply_text: &str) {
+        let turn_id = self
+            .active_turns
+            .lock()
+            .unwrap()
+            .remove(thread_id)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        if let Some(tx) = self.events_tx.lock().unwrap().as_ref() {
+            let msg_id = Uuid::new_v4().to_string();
+            let now = now_iso();
+            let _ = tx.send(ProviderEvent::MessageAdded {
+                thread_id: thread_id.to_string(),
+                message: StoredMessage {
+                    id: msg_id,
+                    role: "assistant".into(),
+                    text: reply_text.to_string(),
+                    created_at: now.clone(),
+                    command_id: None,
+                    turn_message_id: None,
+                    attachments: None,
+                    watcher_own_change: None,
+                    watcher_observed_changes: None,
+                    provider_error: None,
+                },
+            });
+            let _ = tx.send(ProviderEvent::TurnCompleted {
+                thread_id: thread_id.to_string(),
+                turn_id,
+                status: "completed".into(),
+            });
+        }
+    }
+
+    pub fn emit_request(&self, thread_id: &str, request: Value) {
+        if let Some(tx) = self.events_tx.lock().unwrap().as_ref() {
+            let _ = tx.send(ProviderEvent::RequestOpened {
+                thread_id: thread_id.to_string(),
+                request,
+            });
+        }
+    }
+}
+
+impl ProviderAdapter for MockProviderAdapter {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn status(&self) -> AgentProviderStatus {
+        let connected = *self.connected.lock().unwrap();
+        AgentProviderStatus {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            connection: if connected { "connected" } else { "disconnected" }.into(),
+            version: self.version.clone(),
+            capabilities: AgentCapabilities::full(),
+            error: None,
+        }
+    }
+
+    fn models(&self) -> Vec<AgentModel> {
+        vec![AgentModel {
+            id: public_provider_entity_id(&self.id, "model", "fixture-model"),
+            name: format!("Fixture {}", self.name),
+            provider: self.name.clone(),
+            provider_id: self.id.clone(),
+            ready: true,
+            default_reasoning_effort: Some("low".into()),
+            reasoning_efforts: Some(vec!["low".into(), "high".into()]),
+            runtime_modes: Some(vec![
+                "approval-required".into(),
+                "auto-accept-edits".into(),
+                "auto".into(),
+                "full-access".into(),
+            ]),
+            provider_modes: None,
+            supports_images: Some(true),
+        }]
+    }
+
+    fn client_update(&self) -> Option<ClientUpdateRow> {
+        Some(ClientUpdateRow {
+            id: self.id.clone(),
+            installed: "0.154.0".into(),
+            behind: false,
+            can_install: false,
+            channel: "unknown".into(),
+            state: "idle".into(),
+            checked_at: Some(now_iso()),
+        })
+    }
+
+    fn connect(&self, events: mpsc::UnboundedSender<ProviderEvent>) -> BoxFuture<'_, Result<(), String>> {
+        *self.connected.lock().unwrap() = true;
+        *self.events_tx.lock().unwrap() = Some(events.clone());
+        let status = self.status();
+        let models = self.models();
+        let update = self.client_update();
+        let provider_id = self.id.clone();
+        Box::pin(async move {
+            let _ = events.send(ProviderEvent::StatusChanged {
+                provider_id,
+                status,
+                models,
+                client_update: update,
+            });
+            Ok(())
+        })
+    }
+
+    fn disconnect(&self) -> BoxFuture<'_, Result<(), String>> {
+        *self.connected.lock().unwrap() = false;
+        Box::pin(async { Ok(()) })
+    }
+
+    fn create_thread(
+        &self,
+        _thread_id: String,
+        _cwd: String,
+        _model_id: Option<String>,
+        _runtime_mode: Option<String>,
+        _reasoning_effort: Option<String>,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
+        let message_id = req.message_id;
+        let turn_id = Uuid::new_v4().to_string();
+        self.active_turns
+            .lock()
+            .unwrap()
+            .insert(req.thread_id.clone(), turn_id.clone());
+        let tx = self.events_tx.lock().unwrap().clone();
+        let id_prefix = self.id.clone();
+        Box::pin(async move {
+            if let Some(tx) = tx {
+                let activity = json!({
+                    "id": format!("{id_prefix}-activity-{}", Uuid::new_v4()),
+                    "kind": "turn",
+                    "sequence": 0,
+                    "startedAt": now_iso(),
+                    "status": "running",
+                    "timingSource": "provider",
+                    "title": "Working",
+                    "turnId": turn_id,
+                    "afterMessageId": message_id,
+                });
+                let _ = tx.send(ProviderEvent::TurnStarted {
+                    thread_id: req.thread_id,
+                    turn_id: turn_id.clone(),
+                    after_message_id: Some(message_id.clone()),
+                    activity,
+                });
+            }
+            Ok(SendMessageAck {
+                message_id,
+                turn_id,
+                status: "accepted".into(),
+                provider_latency_ms: 1,
+            })
+        })
+    }
+
+    fn answer_request(&self, req: AnswerRequestInput) -> BoxFuture<'_, Result<(), String>> {
+        let tx = self.events_tx.lock().unwrap().clone();
+        Box::pin(async move {
+            if let Some(tx) = tx {
+                let _ = tx.send(ProviderEvent::RequestCleared {
+                    thread_id: req.thread_id,
+                    request_id: req.request_id,
+                });
+            }
+            Ok(())
+        })
+    }
+
+    fn interrupt(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+        let turn_id = self
+            .active_turns
+            .lock()
+            .unwrap()
+            .remove(&thread_id)
+            .unwrap_or_default();
+        let tx = self.events_tx.lock().unwrap().clone();
+        Box::pin(async move {
+            if let Some(tx) = tx {
+                let _ = tx.send(ProviderEvent::TurnCompleted {
+                    thread_id,
+                    turn_id,
+                    status: "interrupted".into(),
+                });
+            }
+            Ok(())
+        })
+    }
+
+    fn compact(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+}

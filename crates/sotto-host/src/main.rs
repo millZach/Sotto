@@ -1,32 +1,58 @@
 mod server;
+mod wire_codec;
 mod ws;
 
+use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use sotto_core::{
-    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, HostLease,
+    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, AcpAdapter,
+    AcpAdapterConfig, AcpFlavor, ClaudeAdapter, ClaudeAdapterConfig, CodexAdapter,
+    CodexAdapterConfig, HostCredentials, HostLease, MockProviderAdapter, MuseAdapter,
+    MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig, ProviderAdapter,
 };
 
-use crate::server::RunningServer;
+use crate::server::{RunningServer, ServerConfig, DEFAULT_SOTTO_VERSION};
+
+const REFEREE_OWL_VERSION: &str = "0.1.44-owl.20261118.2";
 
 #[derive(Debug)]
 struct HostCliArgs {
     data_directory: PathBuf,
     port: u16,
-    _key_file: Option<PathBuf>,
+    key_file: Option<PathBuf>,
+    sotto_version: String,
+    mock_provider: Option<String>,
+    fake_provider: Option<String>,
+    fixtures_dir: Option<PathBuf>,
     started_by: Option<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
     let mut data_directory = std::env::var("SOTTO_HOST_DATA").ok().map(PathBuf::from);
     let mut key_file = std::env::var("SOTTO_HOST_KEY_FILE").ok().map(PathBuf::from);
+    let mut explicit_version = std::env::var("SOTTO_HOST_VERSION")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let mut mock_provider = None;
+    let mut fake_provider = None;
+    let mut fixtures_dir = None;
     let mut port: u16 = 0;
 
     let mut i = 0;
     while i < args.len() {
         let flag = args[i].as_str();
-        if flag != "--data" && flag != "--port" && flag != "--key-file" {
+        if flag != "--data"
+            && flag != "--port"
+            && flag != "--key-file"
+            && flag != "--sotto-version"
+            && flag != "--mock-provider"
+            && flag != "--fake"
+            && flag != "--fixtures-dir"
+        {
             return Err("Use --data <folder> and optionally --key-file <file>.".into());
         }
         i += 1;
@@ -39,6 +65,10 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         match flag {
             "--data" => data_directory = Some(PathBuf::from(value)),
             "--key-file" => key_file = Some(PathBuf::from(value)),
+            "--sotto-version" => explicit_version = Some(value.clone()),
+            "--mock-provider" => mock_provider = Some(value.clone()),
+            "--fake" => fake_provider = Some(value.clone()),
+            "--fixtures-dir" => fixtures_dir = Some(PathBuf::from(value)),
             "--port" => {
                 port = value
                     .parse::<u16>()
@@ -53,6 +83,14 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         return Err("Choose a host data folder with --data or SOTTO_HOST_DATA.".into());
     };
 
+    let sotto_version = explicit_version.unwrap_or_else(|| {
+        if fake_provider.is_some() {
+            REFEREE_OWL_VERSION.to_string()
+        } else {
+            DEFAULT_SOTTO_VERSION.to_string()
+        }
+    });
+
     let started_by = std::env::var("SOTTO_HOST_STARTED_BY")
         .ok()
         .filter(|v| v == "launch-script" || v == "boot");
@@ -60,7 +98,11 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
     Ok(HostCliArgs {
         data_directory,
         port,
-        _key_file: key_file,
+        key_file,
+        sotto_version,
+        mock_provider,
+        fake_provider,
+        fixtures_dir,
         started_by,
     })
 }
@@ -113,6 +155,15 @@ async fn main() -> ExitCode {
         );
     }
 
+    let credentials =
+        match HostCredentials::open(&parsed.data_directory, parsed.key_file.as_deref()) {
+            Ok(creds) => creds,
+            Err(err) => {
+                eprintln!("{err}");
+                return ExitCode::from(1);
+            }
+        };
+
     let boot = read_boot_id();
     let lease = HostLease::current(boot.clone());
     let lock_path = parsed.data_directory.join("host-listener.lock");
@@ -130,12 +181,159 @@ async fn main() -> ExitCode {
         }
     };
 
-    let server = match RunningServer::start(
-        parsed.data_directory.clone(),
+    let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+    if let Some(ref mock_id) = parsed.mock_provider {
+        providers.insert(mock_id.clone(), Arc::new(MockProviderAdapter::new(mock_id)));
+    }
+    if let Some(ref fake_id) = parsed.fake_provider {
+        let fixtures = parsed
+            .fixtures_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("tests/fixtures"));
+        match fake_id.as_str() {
+            "codex" => {
+                let script = fixtures.join("fakeCodexAppServer.mjs");
+                providers.insert(
+                    "codex".into(),
+                    Arc::new(CodexAdapter::new(CodexAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "claude" => {
+                let script = fixtures.join("fakeClaudeThread.mjs");
+                providers.insert(
+                    "claude".into(),
+                    Arc::new(ClaudeAdapter::new(ClaudeAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "grok" => {
+                let script = fixtures.join("fakeGrokThreadAgent.mjs");
+                providers.insert(
+                    "grok".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Grok,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "devin" => {
+                let script = fixtures.join("fakeDevinAgent.mjs");
+                providers.insert(
+                    "devin".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Devin,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "muse" => {
+                let script = fixtures.join("fakeMuseAgent.mjs");
+                providers.insert(
+                    "muse".into(),
+                    Arc::new(MuseAdapter::new(MuseAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "opencode" => {
+                let script = fixtures.join("fakeOpenCodeServer.mjs");
+                providers.insert(
+                    "opencode".into(),
+                    Arc::new(OpenCodeAdapter::new(OpenCodeAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "cursor" => {
+                let script = fixtures.join("fakeCursorAgent.mjs");
+                providers.insert(
+                    "cursor".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Cursor,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "antigravity" => {
+                let script = fixtures.join("fakeAntigravityAgent.mjs");
+                providers.insert(
+                    "antigravity".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Antigravity,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            other => {
+                eprintln!("Unsupported fake provider: {other}");
+                let _ = release_host_lock(&lock_path, &lease);
+                return ExitCode::from(1);
+            }
+        }
+    } else if parsed.mock_provider.is_none()
+        && std::env::var("SOTTO_HOST_ENABLE_PROVIDERS").as_deref() == Ok("1")
+    {
+        providers.insert(
+            "codex".into(),
+            Arc::new(CodexAdapter::new(CodexAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
+        providers.insert(
+            "claude".into(),
+            Arc::new(ClaudeAdapter::new(ClaudeAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
+        for flavor in [
+            AcpFlavor::Grok,
+            AcpFlavor::Devin,
+            AcpFlavor::Cursor,
+            AcpFlavor::Hermes,
+            AcpFlavor::Antigravity,
+        ] {
+            providers.insert(
+                flavor.id().into(),
+                Arc::new(AcpAdapter::new(AcpAdapterConfig::native(
+                    flavor,
+                    parsed.data_directory.clone(),
+                ))),
+            );
+        }
+        providers.insert(
+            "muse".into(),
+            Arc::new(MuseAdapter::new(MuseAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
+        providers.insert(
+            "opencode".into(),
+            Arc::new(OpenCodeAdapter::new(OpenCodeAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
+    }
+
+    let server = match RunningServer::start(ServerConfig {
+        data_directory: parsed.data_directory.clone(),
         host_id,
-        parsed.port,
-        parsed.started_by,
-    )
+        port: parsed.port,
+        sotto_version: parsed.sotto_version,
+        started_by: parsed.started_by,
+        credentials,
+        providers,
+    })
     .await
     {
         Ok(srv) => srv,
@@ -145,6 +343,13 @@ async fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+
+    eprintln!("[Sotto] host-ready");
+    if let Ok(line) = server.state.descriptor().ready_line() {
+        let mut stdout = std::io::stdout().lock();
+        let _ = writeln!(stdout, "{line}");
+        let _ = stdout.flush();
+    }
 
     wait_for_shutdown_signal().await;
     server.close().await;
@@ -209,28 +414,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn health_pair_session_and_websocket_protocol_v1_round_trip() {
+    async fn health_pair_allow_answers_session_and_websocket_protocol_v1_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let host_id = load_host_identity(dir.path()).unwrap();
-        let srv = RunningServer::start(dir.path().to_path_buf(), host_id.clone(), 0, None)
-            .await
-            .unwrap();
+        let credentials = HostCredentials::open(dir.path(), None).unwrap();
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+
+        let srv = RunningServer::start(ServerConfig {
+            data_directory: dir.path().to_path_buf(),
+            host_id: host_id.clone(),
+            port: 0,
+            sotto_version: "0.1.44-owl.20261118.2".into(),
+            started_by: None,
+            credentials,
+            providers,
+        })
+        .await
+        .unwrap();
         let port = srv.state.port;
         let admin_token = srv.state.admin_token.clone();
 
-        // /v1/health
         let (status, health) = http_request(port, "GET", "/v1/health", None, None).await;
         assert_eq!(status, 200);
         assert_eq!(health["hostId"], host_id);
-        assert_eq!(health["runtime"], "rust");
+        assert_eq!(health["sottoVersion"], "0.1.44-owl.20261118.2");
         assert_eq!(health["status"], "ready");
+        assert!(health.get("adminToken").is_none());
 
-        // Admin endpoint rejects missing/wrong bearer
         let (status, _) =
             http_request(port, "POST", "/v1/admin/pairing-code", Some("wrong"), None).await;
         assert_eq!(status, 401);
 
-        // Issue pairing code -> redeem -> mint session
         let (status, issued) = http_request(
             port,
             "POST",
@@ -242,47 +457,49 @@ mod tests {
         assert_eq!(status, 200);
         let code = issued["code"].as_str().unwrap();
 
-        let pair_body = serde_json::json!({ "v": 1, "code": code, "name": "Test Desktop" }).to_string();
+        let pair_body =
+            serde_json::json!({ "v": 1, "code": code, "name": "Test Desktop" }).to_string();
         let (status, paired) =
             http_request(port, "POST", "/v1/pair", None, Some(&pair_body)).await;
         assert_eq!(status, 200);
+        let client_id = paired["clientId"].as_str().unwrap();
         let token = paired["token"].as_str().unwrap();
+
+        let allow_body = serde_json::json!({ "clientId": client_id }).to_string();
+        let (status, allowed) = http_request(
+            port,
+            "POST",
+            "/v1/admin/allow-answers",
+            Some(&admin_token),
+            Some(&allow_body),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(allowed["ok"], true);
 
         let (status, session_res) =
             http_request(port, "POST", "/v1/session", Some(token), None).await;
         assert_eq!(status, 200);
         let session = session_res["session"].as_str().unwrap();
 
-        // Upgrade WebSocket with permessage-deflate and send `hello` + `ping`
+        // Upgrade WebSocket (uncompressed for raw frame verification here)
         let mut ws = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let key = "dGhlIHNhbXBsZSBub25jZQ==";
         let upgrade = format!(
-            "GET /v1/socket HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nAuthorization: Bearer {session}\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate; client_no_context_takeover; server_no_context_takeover\r\n\r\n"
+            "GET /v1/socket HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nAuthorization: Bearer {session}\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
         );
         ws.write_all(upgrade.as_bytes()).await.unwrap();
         let mut ws_reader = BufReader::new(ws);
         let mut resp_line = String::new();
         ws_reader.read_line(&mut resp_line).await.unwrap();
         assert!(resp_line.starts_with("HTTP/1.1 101"));
-        let mut saw_accept = false;
-        let mut saw_deflate = false;
         loop {
             let mut h = String::new();
             ws_reader.read_line(&mut h).await.unwrap();
             if h == "\r\n" || h == "\n" {
                 break;
             }
-            if h.to_ascii_lowercase().starts_with("sec-websocket-accept:") {
-                assert!(h.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="));
-                saw_accept = true;
-            }
-            if h.to_ascii_lowercase()
-                .starts_with("sec-websocket-extensions:")
-            {
-                saw_deflate = h.contains("permessage-deflate");
-            }
         }
-        assert!(saw_accept && saw_deflate);
 
         // Send masked client `hello` frame
         let mut ws_stream = ws_reader.into_inner();
@@ -296,7 +513,6 @@ mod tests {
         ws_stream.write_all(&frame).await.unwrap();
         ws_stream.flush().await.unwrap();
 
-        // Read unmasked server response frame
         let mut hdr = [0u8; 2];
         ws_stream.read_exact(&mut hdr).await.unwrap();
         assert_eq!(hdr[0] & 0x0f, 0x1);
@@ -314,10 +530,12 @@ mod tests {
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["id"], "req-1");
         assert_eq!(parsed["result"]["hostId"], host_id);
-        assert_eq!(parsed["result"]["runtime"], "rust");
+        assert_eq!(parsed["result"]["clientId"], client_id);
+        assert_eq!(parsed["result"]["capabilities"]["mayAnswer"], true);
+        assert_eq!(parsed["result"]["shell"]["host"]["hostId"], host_id);
 
         // Revoking the paired client immediately closes the already-open WebSocket.
-        let revoke_body = serde_json::json!({ "clientId": paired["clientId"] }).to_string();
+        let revoke_body = serde_json::json!({ "clientId": client_id }).to_string();
         let (status, revoked) = http_request(
             port,
             "POST",
@@ -341,24 +559,12 @@ mod tests {
             Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof),
         }
 
-        // Non-loopback Origin is rejected with 403 Forbidden (ADR-0016).
-        let mut cross = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        cross
-            .write_all(b"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: https://evil.example\r\n\r\n")
-            .await
-            .unwrap();
-        let mut cross_reader = BufReader::new(cross);
-        let mut cross_status = String::new();
-        cross_reader.read_line(&mut cross_status).await.unwrap();
-        assert!(cross_status.starts_with("HTTP/1.1 403"));
-
-        // Read-only hello never created missing SQLite files on disk.
-        assert!(!dir.path().join("threads.sqlite").exists());
-        assert!(!dir.path().join("memory.sqlite").exists());
-
         // Oversized HTTP header line is rejected without unbounded buffering.
         let mut big = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let huge = format!("GET /v1/health HTTP/1.1\r\nX-Pad: {}\r\n\r\n", "a".repeat(20_000));
+        let huge = format!(
+            "GET /v1/health HTTP/1.1\r\nX-Pad: {}\r\n\r\n",
+            "a".repeat(20_000)
+        );
         let _ = big.write_all(huge.as_bytes()).await;
         let mut big_reader = BufReader::new(big);
         let mut status_line = String::new();

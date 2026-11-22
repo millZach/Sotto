@@ -228,8 +228,6 @@ impl PairedClients {
         })
     }
 
-    /// Verifies a stateless signed session `<clientId>.<expiryMs>.<hmac>` matching `verifySession` in `pairing.ts`,
-    /// returning `(clientId, expiryMs)` when valid.
     pub fn verify_session_with_expiry(&mut self, session: &str) -> Option<(String, i64)> {
         if session.is_empty() {
             return None;

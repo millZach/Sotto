@@ -613,7 +613,7 @@ jobs:
       - name: Cross-language parity test
         env:
           SOTTO_TEST_RUST_HOST: '1'
-        run: npx vitest run tests/integration/rustHostFoundation.test.ts
+        run: npx vitest run tests/integration/rustHostFoundation.test.ts tests/integration/rustHostProviders.test.ts tests/integration/rustHostAllProviders.test.ts
       - name: Check crate licenses and sources
         if: matrix.label == 'Linux'
         uses: EmbarkStudios/cargo-deny-action@v2
