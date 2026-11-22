@@ -111,15 +111,20 @@ export class DetailSends {
   private wholeDetail(thread: AgentThread, revision: number, pane = this.context.paneActivities(thread)): AgentThreadDetail {
     const threadId = thread.id
     const presented = this.context.presentedMessages(thread)
-    const messages = structuredClone([...presented])
+    // Clone the undecorated history once for the diff snapshot, then shallow-copy each message and its attachment
+    // records for decoration (AttachmentPreviews only rewrites `message.attachments` and `attachment.preview`).
+    const snapshotMessages = structuredClone([...presented])
+    const messages = snapshotMessages.map(message => message.attachments
+      ? { ...message, attachments: message.attachments.map(attachment => ({ ...attachment })) }
+      : { ...message })
     // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
-    // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
-    const activities = pane === undefined ? undefined : structuredClone(pane) as AgentActivity[]
+    // detail share one copy (or the certified frozen array directly under streamingPublishCost).
+    const activities = pane === undefined ? undefined
+      : (this.context.dependencies.streamingPublishCost === true ? immutableActivities(pane) : structuredClone(pane)) as AgentActivity[]
     // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
     // about the thread, and diffing decorated against live would report every image message as changed.
-    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone([...presented]),
-      ...(activities === undefined ? {} : { activities: this.context.dependencies.streamingPublishCost === true
-        ? immutableActivities(pane!) : activities }) })
+    this.detailSnapshots.set(threadId, { threadId, revision, messages: snapshotMessages,
+      ...(activities === undefined ? {} : { activities }) })
     this.publishedDetail.set(threadId, revision)
     this.redecorated.delete(threadId)
     this.context.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })

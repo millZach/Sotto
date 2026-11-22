@@ -3,6 +3,51 @@ import { chmod, unlink } from 'node:fs/promises'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AGENT_ACTIVITY_BODY, AGENT_COMMAND, AGENT_GET, AGENT_THREAD_DETAIL_GET } from '../../shared/agents'
+import { AGENT_THREAD_PROMPTS } from '../../shared/threadPrompts'
+import { AGENT_THREAD_WORDS } from '../../shared/threadWords'
+
+/** UTF-8 marker for boxed Uint8Array objects (`{ "__sottoBin": 1, "b64": "..." }`). */
+const BINARY_BOX_MARKER = Buffer.from('"__sottoBin"', 'utf8')
+
+/**
+ * Hot `engine:invokeIpc` channels whose request args and responses are strictly JSON (no Uint8Array/Buffer values).
+ * Skipping the recursive `encodeRpcValue` pre-walk avoids walking every object in multi-megabyte snapshots before
+ * `JSON.stringify` walks them again.
+ */
+const JSON_ONLY_IPC_CHANNELS: ReadonlySet<string> = new Set([
+  AGENT_GET,
+  AGENT_COMMAND,
+  AGENT_THREAD_DETAIL_GET,
+  AGENT_ACTIVITY_BODY,
+  AGENT_THREAD_PROMPTS,
+  AGENT_THREAD_WORDS,
+])
+
+/** Engine RPC methods whose request args and responses are strictly JSON (no raw Uint8Array/Buffer values). */
+const JSON_ONLY_RPC_METHODS: ReadonlySet<string> = new Set([
+  'engine:perfReading',
+  'engine:perfStop',
+  'engine:watcherCall',
+  'engine:popupCommand',
+  'engine:readVisual',
+  'engine:threadMediaPart',
+  'engine:onSettingsChanged',
+  'engine:onInterfaceLanguageChanged',
+  'engine:openNotificationThread',
+  'engine:questionPageOpening',
+  'engine:phoneAccessPagePort',
+  'engine:acquireTerminalStart',
+  'engine:resolveOwnCleanupServer',
+  'engine:close',
+])
+
+function isJsonOnlyRpc(method: string, args: readonly unknown[]): boolean {
+  if (method === 'engine:invokeIpc') {
+    return typeof args[0] === 'string' && JSON_ONLY_IPC_CHANNELS.has(args[0])
+  }
+  return JSON_ONLY_RPC_METHODS.has(method)
+}
 
 /** Maximum single transport frame size (64 MiB — accommodates video parts and large attachments). */
 export const MAX_ENGINE_FRAME_BYTES = 64 * 1024 * 1024
@@ -69,7 +114,9 @@ export function encodeRpcValue(value: unknown): unknown {
   }
   if (isPlainObject(value)) {
     let copy: Record<string, unknown> | undefined
-    for (const [key, entry] of Object.entries(value)) {
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue
+      const entry = value[key]
       const encoded = encodeRpcValue(entry)
       if (encoded !== entry) {
         copy ??= { ...value }
@@ -98,7 +145,9 @@ export function decodeRpcValue(value: unknown): unknown {
   }
   if (isPlainObject(value)) {
     let copy: Record<string, unknown> | undefined
-    for (const [key, entry] of Object.entries(value)) {
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) continue
+      const entry = value[key]
       const decoded = decodeRpcValue(entry)
       if (decoded !== entry) {
         copy ??= { ...value }
@@ -176,7 +225,7 @@ export class EngineFrameDecoder {
     this.maxFrameBytes = limit
   }
 
-  push(chunk: Buffer, onMessage: (message: EngineWireMessage) => void): void {
+  push(chunk: Buffer, onMessage: (message: EngineWireMessage, hasBinaryBox: boolean) => void): void {
     if (chunk.byteLength === 0) return
     this.chunks.push(chunk)
     this.buffered += chunk.byteLength
@@ -190,8 +239,9 @@ export class EngineFrameDecoder {
       }
       if (this.buffered < 4 + length) return
       const payload = this.consume(4 + length).subarray(4)
+      const hasBinaryBox = payload.includes(BINARY_BOX_MARKER)
       const parsed = JSON.parse(payload.toString('utf8')) as EngineWireMessage
-      onMessage(parsed)
+      onMessage(parsed, hasBinaryBox)
     }
   }
 
@@ -265,7 +315,7 @@ export class EngineRpcConnection {
     socket.setNoDelay(true)
     socket.on('data', chunk => {
       try {
-        this.decoder.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk), message => { this.dispatch(message) })
+        this.decoder.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk), (message, hasBinaryBox) => { this.dispatch(message, hasBinaryBox) })
       } catch (error) {
         this.failAndClose(error instanceof Error ? error : new Error(String(error)))
       }
@@ -309,7 +359,8 @@ export class EngineRpcConnection {
       return Promise.reject(new Error('Sotto\'s background engine is unavailable. Restart Sotto to continue.'))
     }
     const id = this.nextId++
-    const encodedArgs = args.length === 0 ? args : args.map(encodeRpcValue)
+    const jsonOnly = isJsonOnlyRpc(method, args)
+    const encodedArgs = args.length === 0 || jsonOnly ? args : args.map(encodeRpcValue)
     return new Promise<T>((resolve, reject) => {
       const timer = timeoutMs !== undefined ? setTimeout(() => {
         if (!this.pending.delete(id)) return
@@ -332,7 +383,7 @@ export class EngineRpcConnection {
     this.failAndClose()
   }
 
-  private dispatch(message: EngineWireMessage): void {
+  private dispatch(message: EngineWireMessage, hasBinaryBox = true): void {
     if (message.kind === 'push') {
       // Isolate push handler exceptions so a bad push never tears down the transport link.
       try { this.pushHandler(message.event, message.payload) } catch { /* drop throwing push */ }
@@ -381,12 +432,13 @@ export class EngineRpcConnection {
       this.pending.delete(message.id)
       this.incomingChunks.delete(message.id)
       if (entry.timer) clearTimeout(entry.timer)
-      if (message.ok) entry.resolve(decodeRpcValue(message.value))
+      if (message.ok) entry.resolve(hasBinaryBox ? decodeRpcValue(message.value) : message.value)
       else entry.reject(deserializeEngineError(message.error))
       return
     }
     if (message.kind === 'req') {
-      const decodedArgs = message.args.length === 0 ? message.args : message.args.map(decodeRpcValue)
+      const jsonOnly = isJsonOnlyRpc(message.method, message.args)
+      const decodedArgs = !hasBinaryBox || message.args.length === 0 ? message.args : message.args.map(decodeRpcValue)
       Promise.resolve()
         .then(() => this.requestHandler(message.method, decodedArgs))
         .then(value => {
@@ -402,7 +454,8 @@ export class EngineRpcConnection {
             }
             return
           }
-          this.socket.write(encodeEngineFrame({ kind: 'res', id: message.id, ok: true, value: encodeRpcValue(value) }))
+          const encodedValue = jsonOnly ? value : encodeRpcValue(value)
+          this.socket.write(encodeEngineFrame({ kind: 'res', id: message.id, ok: true, value: encodedValue }))
         })
         .catch(error => {
           if (this.closed || this.socket.destroyed) return

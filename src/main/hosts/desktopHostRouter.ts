@@ -420,6 +420,24 @@ export class DesktopHostRouter {
   private publishedNotice: RouterNotice | undefined
   /** The state last handed to subscribers, for a question asked on every change rather than at a command. */
   private published: AgentState | undefined
+  /** Counts completed `emit()` calls so selection commands know when a host push already published the switch. */
+  private emits = 0
+  /** Inputs `published` was built from, so `select-thread` and `observe-threads` can reuse it when nothing moved. */
+  private publishedMeta: {
+    readonly selectedHostId: string | undefined
+    readonly selectedThreadId: string | null | undefined
+    readonly selectedProjectId: string | null
+    readonly selections: number
+    readonly hosts: readonly {
+      readonly hostId: string
+      readonly connection: DesktopHostConnection
+      readonly name: string
+      readonly run: number
+      readonly available: boolean
+      readonly reconnecting: boolean
+      readonly raw: AgentState
+    }[]
+  } | undefined
   /** What that publication made of each host's state. Nothing in it is written into, so a later build may hand it on. */
   private readonly built = new Map<string, BuiltHost>()
   /**
@@ -965,6 +983,40 @@ export class DesktopHostRouter {
    * the answer is built afresh rather than taken from `lastPublished()`, which could miss the command's effect (#306).
    */
   private reply(): AgentState { return this.numbered(this.commandShell()) }
+  /** Reuses `published` when every host's current view, selection and notice match what was published; otherwise builds afresh. */
+  private publishedOrReply(answers?: ReadonlyMap<string, AgentState>): AgentState {
+    return this.canReusePublished(answers) ? this.numbered({ ...this.published! }) : this.reply()
+  }
+  /** True when `this.published` already reflects every host's live view, the current selection and the current notice. */
+  private canReusePublished(answers?: ReadonlyMap<string, AgentState>): boolean {
+    const meta = this.publishedMeta
+    if (!this.published || !meta || this.publishedNotice !== this.notice || this.notice?.answer !== undefined) return false
+    if (meta.selectedHostId !== this.selectedHostId || meta.selectedThreadId !== this.selectedThreadId
+      || meta.selectedProjectId !== this.selectedProjectId || meta.selections !== this.selections) return false
+    if (meta.hosts.length !== this.hosts.size) return false
+    let index = 0
+    for (const [hostId, entry] of this.hosts) {
+      const prev = meta.hosts[index++]!
+      if (prev.hostId !== hostId || prev.connection !== entry.connection || prev.name !== entry.connection.name
+        || prev.run !== entry.run || prev.available !== (entry.connection.available?.() !== false)
+        || prev.reconnecting !== this.reconnecting.has(hostId)) return false
+      const current = answers?.get(hostId) ?? commandView(entry.connection.service)
+      if (!sameHostState(current, prev.raw)) return false
+    }
+    return true
+  }
+  /** One thread's projected project ID on its own host, read without building every host's shell. */
+  private selectedProjectOf(connection: DesktopHostConnection, selectedThreadId: string | null): string | null {
+    if (selectedThreadId === null) return null
+    const state = commandView(connection.service)
+    const own = state.hostId ?? state.host.hostId
+    const thread = state.host.threads.find(item => clientThreadId(own, item.id, item.hostId) === selectedThreadId)
+    if (!thread || !watcherThreadVisible(thread, this.options.watcherEnabled === true)
+      || (this.options.owletsEnabled !== true && connection.service.supportsOwlets === true && thread.owlet !== undefined)
+      || (this.held.size > 0 && this.rememberDormantProviderThreads(state, connection.hostId).has(thread.id))) return null
+    const scope = thread.hostId ?? own
+    return scope ? hostEntityKey(scope, thread.projectId) : thread.projectId
+  }
   /** The state a command's answer is made from, not yet numbered: an answer that remakes its `host` numbers what it sends. */
   private commandShell(): AgentState { return this.build(connection => commandView(connection.service)) }
   /**
@@ -1049,13 +1101,14 @@ export class DesktopHostRouter {
     const across = this.options.crossMachineWork === true
     let desktopHostId: string | undefined
     if (across) for (const { connection } of this.hosts.values()) if (connection.kind === 'local') desktopHostId = connection.hostId
-    const entries = [...this.hosts.values()].map(({ connection }) => {
-      const original = this.visibleState(read(connection), connection.hostId)
+    const entries = [...this.hosts.values()].map(({ connection, run }) => {
+      const raw = read(connection)
+      const original = this.visibleState(raw, connection.hostId)
       const last = this.built.get(connection.hostId)
       const projection = projectClientAgentState(original, last?.projection, across ? { desktopHostId, clientId: connection.clientId } : undefined)
       const threads = this.windowThreads(connection, original, projection.output, multiple, last)
       if (publish) this.built.set(connection.hostId, { projection, threads })
-      return { connection, original, state: projection.output, threads: threads.made, remade: threads.remade, before: last?.threads.made }
+      return { connection, run, raw, original, state: projection.output, threads: threads.made, remade: threads.remade, before: last?.threads.made }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
     const local = entries.find(item => item.connection.kind === 'local')
@@ -1104,7 +1157,24 @@ export class DesktopHostRouter {
       activeProjectId: this.selectedProjectId ?? base.activeProjectId,
       ...(this.notice ? { error: this.notice.message } : {}),
     }
-    if (publish) this.noteWindowThreads(state.host, entries)
+    if (publish) {
+      this.noteWindowThreads(state.host, entries)
+      this.publishedMeta = {
+        selectedHostId: this.selectedHostId,
+        selectedThreadId: this.selectedThreadId,
+        selectedProjectId: this.selectedProjectId,
+        selections: this.selections,
+        hosts: entries.map(({ connection, run, raw }) => ({
+          hostId: connection.hostId,
+          connection,
+          name: connection.name,
+          run,
+          available: connection.available?.() !== false,
+          reconnecting: this.reconnecting.has(connection.hostId),
+          raw,
+        })),
+      }
+    }
     return state
   }
   /**
@@ -1663,6 +1733,7 @@ export class DesktopHostRouter {
       const raw = type === 'observe-threads' ? (input as { threadIds: string[] }).threadIds.map(threadId => ({ threadId, failure: '' }))
         : (input as { failures: { threadId: string; failure: string }[] }).failures
       const left: { name: string; older: boolean }[] = []
+      const observeAnswers = type === 'observe-threads' ? new Map<string, AgentState>() : undefined
       await Promise.all([...this.hosts.values()].map(async ({ connection }) => {
         const mine = raw.filter(item => (parseHostEntityKey(item.threadId)?.hostId ?? this.selectedHostId) === connection.hostId)
           .map(item => ({ ...item, threadId: parseHostEntityKey(item.threadId)?.id ?? item.threadId }))
@@ -1689,7 +1760,10 @@ export class DesktopHostRouter {
           // A remote host hears every client's threads as one list; this computer's own host keeps each client's apart.
           const ids = connection.observe ? this.observedIds(connection.hostId) : visibleIds
           if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(ids, false) : connection.observe(ids))
-          else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
+          else {
+            const answer = await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
+            observeAnswers?.set(connection.hostId, answer)
+          }
         } catch (error) {
           // A connection that drops while the open panes are read is no one's action to report: the host reads the
           // same panes again when it reconnects, and its threads read Reconnecting until then.
@@ -1697,7 +1771,8 @@ export class DesktopHostRouter {
         }
       }))
       if (left.length) this.notice = { message: dismissLeft(left) }
-      return own ? { ...this.reply(), error: null } : this.reply()
+      const answer = type === 'observe-threads' && left.length === 0 ? this.publishedOrReply(observeAnswers) : this.reply()
+      return own ? { ...answer, error: null } : answer
     }
     // Clear now acts on this computer's own threads, whichever host is selected (ADR-0140 decision 7).
     if (type === 'preview-clear-threads' || type === 'clear-threads') return this.clearLocalThreads(input, client)
@@ -1724,14 +1799,22 @@ export class DesktopHostRouter {
       this.selectedHostId = connection.hostId; this.selections++
       if (command.type === 'select-thread') {
         this.selectedThreadId = command.threadId ? hostEntityKey(connection.hostId, command.threadId) : null
-        this.selectedProjectId = this.reply().host.threads.find(thread => thread.id === this.selectedThreadId)?.projectId ?? null
+        this.selectedProjectId = this.selectedProjectOf(connection, this.selectedThreadId)
       } else {
         this.selectedProjectId = command.projectId ? hostEntityKey(connection.hostId, command.projectId) : null; this.selectedThreadId = null
       }
       // Forward selection so the remote peer can target its own picked thread.
+      const emitsBefore = this.emits
+      const noticeBefore = this.notice
+      let answer: AgentState | undefined
       if (connection.available?.() !== false) {
         const result = await connection.service.command(command, client)
+        answer = result
         if (result.error) this.notice = { message: this.refusal(connection, result.error) }
+      }
+      if (this.emits > emitsBefore && this.notice === noticeBefore
+        && this.canReusePublished(answer ? new Map([[connection.hostId, answer]]) : undefined)) {
+        return this.numbered({ ...this.published! })
       }
       return this.emitted()
     }
@@ -2170,6 +2253,7 @@ export class DesktopHostRouter {
    * state without broadcasting, so every other host, and every publication a broadcast did not set off, is read afresh.
    */
   private emit(broadcast?: { hostId: string; state: AgentState }): void {
+    this.emits++
     if (this.listeners.size) {
       // Built from each host's state as it is, without a copy: what is published is read, never written into.
       const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : readView(connection.service), true)
@@ -2178,6 +2262,7 @@ export class DesktopHostRouter {
     } else {
       // Nothing was built for this change, so what was last published no longer answers for it.
       this.published = undefined
+      this.publishedMeta = undefined
       this.settleAnswerNotice()
     }
     this.publishedNotice = this.notice
@@ -2185,9 +2270,60 @@ export class DesktopHostRouter {
   }
   dispose(): void {
     for (const hostId of [...this.hosts.keys()]) this.remove(hostId)
+    this.published = undefined; this.publishedMeta = undefined
     this.listeners.clear(); this.changeListeners.clear(); this.detailListeners.clear()
     this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
   }
+}
+
+function sameRefOrEmpty<T>(next: readonly T[] | undefined, prev: readonly T[] | undefined): boolean {
+  return next === prev || ((next?.length ?? 0) === 0 && (prev?.length ?? 0) === 0)
+}
+function sameStringList(next: readonly string[] | undefined, prev: readonly string[] | undefined): boolean {
+  if (sameRefOrEmpty(next, prev)) return true
+  if (!next || !prev || next.length !== prev.length) return false
+  for (let i = 0; i < next.length; i++) if (next[i] !== prev[i]) return false
+  return true
+}
+function sameThreadList(next: AgentState['host'], prev: AgentState['host']): boolean {
+  if (next.threads === prev.threads) return true
+  const replaced = threadsReplacedSince(next, prev)
+  return replaced !== undefined && replaced.size === 0
+}
+/** O(1) identity check that a host's live view still carries the exact inputs a prior publication was built from. */
+function sameHostState(next: AgentState, prev: AgentState): boolean {
+  if (next === prev) return true
+  return next.hostId === prev.hostId
+    && next.activeThreadId === prev.activeThreadId
+    && next.activeProjectId === prev.activeProjectId
+    && next.error === prev.error
+    && next.stale === prev.stale
+    && next.legacyManagement === prev.legacyManagement
+    && next.historyEnabled === prev.historyEnabled
+    && next.configuration === prev.configuration
+    && next.host.connected === prev.host.connected
+    && next.host.hostId === prev.host.hostId
+    && next.host.name === prev.host.name
+    && next.host.capabilities === prev.host.capabilities
+    && next.host.projects === prev.host.projects
+    && next.host.models === prev.host.models
+    && next.host.providers === prev.host.providers
+    && sameThreadList(next.host, prev.host)
+    && sameRefOrEmpty(next.threadDrafts, prev.threadDrafts)
+    && sameRefOrEmpty(next.threadDraftPersistence, prev.threadDraftPersistence)
+    && sameRefOrEmpty(next.obsoleteDrafts, prev.obsoleteDrafts)
+    && sameRefOrEmpty(next.deliveredDrafts, prev.deliveredDrafts)
+    && sameRefOrEmpty(next.deliveries, prev.deliveries)
+    && sameRefOrEmpty(next.followups, prev.followups)
+    && sameStringList(next.busyThreadIds, prev.busyThreadIds)
+    && sameRefOrEmpty(next.unconfirmedSettings, prev.unconfirmedSettings)
+    && next.nextTurnSettings === prev.nextTurnSettings
+    && next.routerPicks === prev.routerPicks
+    && next.installedProviders === prev.installedProviders
+    && next.clientUpdates === prev.clientUpdates
+    && next.clientUpdateRun === prev.clientUpdateRun
+    && next.reasoningAccounts === prev.reasoningAccounts
+    && (next as HostClientShell).clientCapabilities === (prev as HostClientShell).clientCapabilities
 }
 
 /** A host's state for a reader that only reads it: its view where it has one, a copy of its shell where it does not. */

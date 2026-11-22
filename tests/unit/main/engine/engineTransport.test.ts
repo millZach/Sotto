@@ -20,6 +20,7 @@ import {
   verifyEngineToken,
   type EngineWireMessage,
 } from '../../../../src/main/engine/transport'
+import { AGENT_COMMAND, AGENT_GET, AGENT_THREAD_DETAIL_GET } from '../../../../src/shared/agents'
 import { MainActivityService } from '../../../../src/main/performance/mainActivityService'
 import type { ProfilerTarget, RawCpuProfile } from '../../../../src/main/performance/activityRecorder'
 
@@ -69,6 +70,49 @@ describe('encodeRpcValue and decodeRpcValue (ADR-0210)', () => {
     const state = { threads: [{ id: 'a', title: 'x', when: new Date(0) }], count: 1, none: null }
     expect(encodeRpcValue(state)).toBe(state)
     expect(decodeRpcValue(state)).toBe(state)
+  })
+
+  it('flags binary boxes at the frame decoder and round-trips JSON-only IPC channels cleanly', async () => {
+    const decoder = new EngineFrameDecoder()
+    const flags: boolean[] = []
+    const plainFrame = encodeEngineFrame({ kind: 'res', id: 1, ok: true, value: { threads: [{ id: 't1', text: 'hello' }] } })
+    const boxedFrame = encodeEngineFrame({ kind: 'res', id: 2, ok: true, value: { bytes: { __sottoBin: 1, b64: Buffer.from([1, 2]).toString('base64') } } })
+    decoder.push(Buffer.concat([plainFrame, boxedFrame]), (_msg, hasBinaryBox) => { flags.push(hasBinaryBox) })
+    expect(flags).toEqual([false, true])
+
+    const endpoint = createEngineEndpoint('sotto-eng-json-fast')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+    try {
+      const [serverConn, clientConn] = await Promise.all([
+        server.waitForClient(5_000),
+        connectEngineClient(endpoint, token),
+      ])
+      clientConn.onRequest((method, args) => {
+        if (method === 'engine:invokeIpc') {
+          const [channel, , ipcArgs] = args as [string, string, unknown[]]
+          if (channel === AGENT_GET) return { host: { threads: [{ id: 't1', text: 'literal "__sottoBin" in chat text' }] } }
+          if (channel === AGENT_COMMAND) return { ok: true, input: ipcArgs[0] }
+          if (channel === AGENT_THREAD_DETAIL_GET) return { threadId: ipcArgs[0], messages: [{ id: 'm1', text: 'ok' }], activities: [] }
+        }
+        throw new Error(`unexpected ${method}`)
+      })
+
+      const got = await serverConn.request<{ host: { threads: Array<{ id: string; text: string }> } }>('engine:invokeIpc', [AGENT_GET, 'main', []])
+      expect(got.host.threads[0]!.text).toBe('literal "__sottoBin" in chat text')
+
+      const cmd = await serverConn.request<{ ok: boolean; input: { type: string } }>('engine:invokeIpc', [AGENT_COMMAND, 'main', [{ type: 'select-thread' }]])
+      expect(cmd).toEqual({ ok: true, input: { type: 'select-thread' } })
+
+      const detail = await serverConn.request<{ threadId: string; messages: unknown[] }>('engine:invokeIpc', [AGENT_THREAD_DETAIL_GET, 'main', ['t1']])
+      expect(detail.threadId).toBe('t1')
+      expect(detail.messages).toHaveLength(1)
+
+      clientConn.close()
+      serverConn.close()
+    } finally {
+      await server.close()
+    }
   })
 })
 
