@@ -370,6 +370,7 @@ impl MemoryStore {
              WHERE revokedAt IS NULL
              ORDER BY grantedAt ASC",
         )?;
+        let now_ms = chrono::Utc::now().timestamp_millis();
         let rows = stmt.query_map([], |r| {
             Ok(PolicyRecord {
                 id: r.get(0)?,
@@ -386,7 +387,15 @@ impl MemoryStore {
         })?;
         let mut out = Vec::new();
         for row in rows {
-            out.push(row?);
+            let record = row?;
+            let expired = record
+                .expires_at
+                .as_deref()
+                .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
+                .is_some_and(|dt| dt.timestamp_millis() <= now_ms);
+            if !expired {
+                out.push(record);
+            }
         }
         Ok(out)
     }
@@ -435,13 +444,16 @@ mod tests {
                  INSERT INTO schema_migrations VALUES (4, '2026-11-20T00:00:00.000Z');
                  CREATE VIRTUAL TABLE memories_fts USING fts5(content, tags);
                  CREATE TABLE policies (id TEXT PRIMARY KEY NOT NULL, action TEXT NOT NULL, resource TEXT NOT NULL, scope TEXT NOT NULL, effect TEXT NOT NULL, source TEXT NOT NULL, note TEXT NOT NULL, grantedAt TEXT NOT NULL, expiresAt TEXT, revokedAt TEXT);
-                 INSERT INTO policies VALUES ('p1', 'remote-answer', 'client-1', 'host', 'allow', 'user', 'desktop', '2026-11-20T00:00:00.000Z', NULL, NULL);",
+                 INSERT INTO policies VALUES ('p1', 'remote-answer', 'client-1', 'host', 'allow', 'user', 'desktop', '2026-11-20T00:00:00.000Z', NULL, NULL);
+                 INSERT INTO policies VALUES ('p2', 'remote-answer', 'client-2', 'host', 'allow', 'user', 'expired', '2020-01-01T00:00:00.000Z', '2020-01-02T00:00:00.000Z', NULL);",
             )
             .unwrap();
         }
         let mem_store = MemoryStore::open(&memory_path).unwrap();
         assert_eq!(mem_store.quick_check().unwrap(), "ok");
         assert_eq!(mem_store.schema_version().unwrap(), 4);
-        assert_eq!(mem_store.active_policies().unwrap().len(), 1);
+        let active = mem_store.active_policies().unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, "p1");
     }
 }

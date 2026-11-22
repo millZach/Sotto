@@ -239,16 +239,26 @@ impl PairedClients {
     }
 
     pub fn revoke(&mut self, client_id: &str) -> Result<bool, PairingError> {
-        let before = self.clients.len();
-        self.clients.retain(|c| c.client_id != client_id);
-        let removed = self.clients.len() != before;
+        let next: Vec<PairedClient> = self
+            .clients
+            .iter()
+            .filter(|c| c.client_id != client_id)
+            .cloned()
+            .collect();
+        let removed = next.len() != self.clients.len();
         if removed {
-            self.save()?;
+            // Persist before mutating in-memory state so a failed write can be retried cleanly.
+            self.save_clients(&next)?;
+            self.clients = next;
         }
         Ok(removed)
     }
 
     fn save(&self) -> Result<(), PairingError> {
+        self.save_clients(&self.clients)
+    }
+
+    fn save_clients(&self, clients: &[PairedClient]) -> Result<(), PairingError> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -257,7 +267,7 @@ impl PairedClients {
             .with_extension(format!("json.tmp-{}", Uuid::new_v4()));
         let file_data = PairedClientsFile {
             secret: self.secret_b64.clone(),
-            clients: self.clients.clone(),
+            clients: clients.to_vec(),
         };
         let encoded = serde_json::to_string_pretty(&file_data)
             .map_err(|err| PairingError::Corrupt(err.to_string()))?;

@@ -91,15 +91,21 @@ pub fn deflate_offered(header: Option<&str>) -> bool {
     })
 }
 
-/// Reads the next complete client-masked WebSocket message from `stream`.
+/// Preserves fragmented message state across `read_ws_message` calls so interleaved RFC 6455
+/// control frames (Ping/Pong) never discard in-progress fragments.
+#[derive(Default)]
+pub struct WsReaderState {
+    fragmented_opcode: Option<u8>,
+    fragmented_compressed: bool,
+    accumulated: Vec<u8>,
+}
+
+/// Reads the next complete client-masked WebSocket message or control frame from `stream`.
 pub async fn read_ws_message<S: AsyncRead + Unpin>(
     stream: &mut S,
     deflate: bool,
+    state: &mut WsReaderState,
 ) -> Result<WsMessage, WsError> {
-    let mut fragmented_opcode: Option<u8> = None;
-    let mut fragmented_compressed = false;
-    let mut accumulated: Vec<u8> = Vec::new();
-
     loop {
         let mut header = [0u8; 2];
         if let Err(err) = stream.read_exact(&mut header).await {
@@ -123,6 +129,11 @@ pub async fn read_ws_message<S: AsyncRead + Unpin>(
             return Err(WsError::Protocol("client frame must be masked"));
         }
 
+        let is_control = (opcode & 0x08) != 0;
+        if is_control && (!fin || len_byte > 125 || rsv1) {
+            return Err(WsError::Protocol("invalid control frame"));
+        }
+
         let payload_len: usize = match len_byte {
             0..=125 => len_byte as usize,
             126 => {
@@ -139,7 +150,9 @@ pub async fn read_ws_message<S: AsyncRead + Unpin>(
             _ => unreachable!(),
         };
 
-        if payload_len > HOST_MAX_FRAME_BYTES || accumulated.len() + payload_len > HOST_MAX_FRAME_BYTES {
+        if payload_len > HOST_MAX_FRAME_BYTES
+            || (!is_control && state.accumulated.len() + payload_len > HOST_MAX_FRAME_BYTES)
+        {
             return Err(WsError::TooLarge);
         }
 
@@ -156,7 +169,7 @@ pub async fn read_ws_message<S: AsyncRead + Unpin>(
             0x9 => return Ok(WsMessage::Ping(payload)),
             0xa => return Ok(WsMessage::Pong(payload)),
             0x1 | 0x2 => {
-                if fragmented_opcode.is_some() {
+                if state.fragmented_opcode.is_some() {
                     return Err(WsError::Protocol("nested data frame during fragmentation"));
                 }
                 if fin {
@@ -170,23 +183,27 @@ pub async fn read_ws_message<S: AsyncRead + Unpin>(
                     }
                     return Err(WsError::Protocol("binary frames are not supported in v1"));
                 }
-                fragmented_opcode = Some(opcode);
-                fragmented_compressed = rsv1;
-                accumulated = payload;
+                state.fragmented_opcode = Some(opcode);
+                state.fragmented_compressed = rsv1;
+                state.accumulated = payload;
             }
             0x0 => {
-                let Some(op) = fragmented_opcode else {
+                let Some(op) = state.fragmented_opcode else {
                     return Err(WsError::Protocol("unexpected continuation frame"));
                 };
                 if rsv1 {
                     return Err(WsError::Protocol("rsv1 set on continuation frame"));
                 }
-                accumulated.extend_from_slice(&payload);
+                state.accumulated.extend_from_slice(&payload);
                 if fin {
-                    let bytes = if fragmented_compressed {
-                        inflate_message(&accumulated)?
+                    let compressed = state.fragmented_compressed;
+                    let assembled = std::mem::take(&mut state.accumulated);
+                    state.fragmented_opcode = None;
+                    state.fragmented_compressed = false;
+                    let bytes = if compressed {
+                        inflate_message(&assembled)?
                     } else {
-                        accumulated
+                        assembled
                     };
                     if op == 0x1 {
                         return Ok(WsMessage::Text(String::from_utf8(bytes)?));
@@ -351,5 +368,34 @@ mod tests {
         assert!(compressed.len() < input.len());
         let restored = inflate_message(&compressed).unwrap();
         assert_eq!(restored, input.as_bytes());
+    }
+
+    fn masked_frame(fin: bool, opcode: u8, payload: &[u8]) -> Vec<u8> {
+        let mask = [0x11u8, 0x22, 0x33, 0x44];
+        let mut frame = vec![if fin { 0x80 } else { 0x00 } | (opcode & 0x0f), 0x80 | (payload.len() as u8)];
+        frame.extend_from_slice(&mask);
+        for (idx, b) in payload.iter().enumerate() {
+            frame.push(b ^ mask[idx & 3]);
+        }
+        frame
+    }
+
+    #[tokio::test]
+    async fn preserves_fragmented_text_across_interleaved_ping() {
+        let mut wire = Vec::new();
+        wire.extend_from_slice(&masked_frame(false, 0x1, b"hello "));
+        wire.extend_from_slice(&masked_frame(true, 0x9, b"hb"));
+        wire.extend_from_slice(&masked_frame(true, 0x0, b"world"));
+
+        let mut cursor = std::io::Cursor::new(wire);
+        let mut state = WsReaderState::default();
+        assert_eq!(
+            read_ws_message(&mut cursor, false, &mut state).await.unwrap(),
+            WsMessage::Ping(b"hb".to_vec())
+        );
+        assert_eq!(
+            read_ws_message(&mut cursor, false, &mut state).await.unwrap(),
+            WsMessage::Text("hello world".into())
+        );
     }
 }

@@ -3,6 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -11,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::{
@@ -22,10 +23,12 @@ use sotto_core::{
 
 use crate::ws::{
     deflate_offered, is_valid_websocket_key, read_ws_message, websocket_accept, write_ws_close,
-    write_ws_pong, write_ws_text, WsMessage, DEFLATE_RESPONSE,
+    write_ws_pong, write_ws_text, WsMessage, WsReaderState, DEFLATE_RESPONSE,
 };
 
 const MAX_HTTP_BODY_BYTES: usize = 256 * 1024;
+const MAX_HTTP_HEADER_BYTES: usize = 16 * 1024;
+const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(15);
 const SOTTO_HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct HostState {
@@ -35,6 +38,7 @@ pub struct HostState {
     pub admin_token: String,
     pub started_by: Option<String>,
     pub pairing: Mutex<PairedClients>,
+    pub revoked_tx: broadcast::Sender<String>,
 }
 
 impl HostState {
@@ -122,6 +126,7 @@ impl RunningServer {
         let bound_port = listener.local_addr()?.port();
         let admin_token = generate_admin_token();
 
+        let (revoked_tx, _) = broadcast::channel(64);
         let state = Arc::new(HostState {
             data_directory: data_directory.clone(),
             host_id,
@@ -129,6 +134,7 @@ impl RunningServer {
             admin_token,
             started_by,
             pairing: Mutex::new(pairing),
+            revoked_tx,
         });
 
         write_descriptor(&data_directory, &state.descriptor())?;
@@ -185,6 +191,45 @@ struct ClientIdBody {
     client_id: String,
 }
 
+enum HeaderReadError {
+    TooLarge,
+    Io(std::io::Error),
+}
+
+async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    remaining: &mut usize,
+) -> Result<Option<String>, HeaderReadError> {
+    let mut line = Vec::new();
+    loop {
+        let buf = reader.fill_buf().await.map_err(HeaderReadError::Io)?;
+        if buf.is_empty() {
+            return if line.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(String::from_utf8_lossy(&line).into_owned()))
+            };
+        }
+        if let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let take = pos + 1;
+            if take > *remaining {
+                return Err(HeaderReadError::TooLarge);
+            }
+            line.extend_from_slice(&buf[..take]);
+            reader.consume(take);
+            *remaining -= take;
+            return Ok(Some(String::from_utf8_lossy(&line).into_owned()));
+        }
+        let len = buf.len();
+        if len > *remaining {
+            return Err(HeaderReadError::TooLarge);
+        }
+        line.extend_from_slice(buf);
+        reader.consume(len);
+        *remaining -= len;
+    }
+}
+
 async fn handle_connection(
     stream: TcpStream,
     state: Arc<HostState>,
@@ -192,32 +237,45 @@ async fn handle_connection(
 ) -> std::io::Result<()> {
     let _ = stream.set_nodelay(true);
     let mut reader = BufReader::new(stream);
+    let mut remaining_header_bytes = MAX_HTTP_HEADER_BYTES;
 
-    let mut request_line = String::new();
-    let n = reader.read_line(&mut request_line).await?;
-    if n == 0 {
-        return Ok(());
-    }
-    let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap_or("").to_string();
-    let path = parts.next().unwrap_or("").to_string();
+    let read_head = tokio::time::timeout(HTTP_READ_TIMEOUT, async {
+        let Some(request_line) = read_bounded_line(&mut reader, &mut remaining_header_bytes).await? else {
+            return Ok::<_, HeaderReadError>(None);
+        };
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or("").to_string();
+        let path = parts.next().unwrap_or("").to_string();
 
-    let mut headers: HashMap<String, String> = HashMap::new();
-    loop {
-        let mut line = String::new();
-        let read = reader.read_line(&mut line).await?;
-        if read == 0 || line == "\r\n" || line == "\n" {
-            break;
+        let mut headers: HashMap<String, String> = HashMap::new();
+        loop {
+            let Some(line) = read_bounded_line(&mut reader, &mut remaining_header_bytes).await? else {
+                break;
+            };
+            if line == "\r\n" || line == "\n" {
+                break;
+            }
+            if let Some((name, value)) = line.split_once(':') {
+                headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
+            }
+            if headers.len() > 64 {
+                return Err(HeaderReadError::TooLarge);
+            }
         }
-        if let Some((name, value)) = line.split_once(':') {
-            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
-        }
-        if headers.len() > 64 {
+        Ok(Some((method, path, headers)))
+    })
+    .await;
+
+    let (method, path, headers) = match read_head {
+        Ok(Ok(Some(head))) => head,
+        Ok(Ok(None)) | Err(_) => return Ok(()),
+        Ok(Err(HeaderReadError::TooLarge)) => {
             let mut stream = reader.into_inner();
-            send_http_error(&mut stream, HostErrorCode::InvalidRequest, None).await?;
+            let _ = send_http_error(&mut stream, HostErrorCode::TooLarge, None).await;
             return Ok(());
         }
-    }
+        Ok(Err(HeaderReadError::Io(err))) => return Err(err),
+    };
 
     if method == "GET"
         && path == "/v1/socket"
@@ -240,7 +298,11 @@ async fn handle_connection(
     }
     let mut body = vec![0u8; content_length];
     if content_length > 0 {
-        reader.read_exact(&mut body).await?;
+        match tokio::time::timeout(HTTP_READ_TIMEOUT, reader.read_exact(&mut body)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => return Err(err),
+            Err(_) => return Ok(()),
+        }
     }
 
     let mut stream = reader.into_inner();
@@ -293,18 +355,23 @@ async fn handle_connection(
                     return Ok(());
                 }
             };
-            let revoked = state
-                .pairing
-                .lock()
-                .unwrap()
-                .revoke(&parsed.client_id)
-                .unwrap_or(false);
-            send_http_json(
-                &mut stream,
-                200,
-                &json!({ "v": HOST_PROTOCOL_VERSION, "hostId": state.host_id, "revoked": revoked }),
-            )
-            .await?;
+            let revoke_result = state.pairing.lock().unwrap().revoke(&parsed.client_id);
+            match revoke_result {
+                Ok(revoked) => {
+                    if revoked {
+                        let _ = state.revoked_tx.send(parsed.client_id);
+                    }
+                    send_http_json(
+                        &mut stream,
+                        200,
+                        &json!({ "v": HOST_PROTOCOL_VERSION, "hostId": state.host_id, "revoked": revoked }),
+                    )
+                    .await?;
+                }
+                Err(_) => {
+                    send_http_error(&mut stream, HostErrorCode::Unavailable, None).await?;
+                }
+            }
             return Ok(());
         }
         send_http_error(&mut stream, HostErrorCode::InvalidRequest, None).await?;
@@ -385,18 +452,23 @@ async fn handle_connection(
             send_http_error(&mut stream, HostErrorCode::Unauthenticated, None).await?;
             return Ok(());
         };
-        let revoked = state
-            .pairing
-            .lock()
-            .unwrap()
-            .revoke(&client_id)
-            .unwrap_or(false);
-        send_http_json(
-            &mut stream,
-            200,
-            &json!({ "v": HOST_PROTOCOL_VERSION, "hostId": state.host_id, "revoked": revoked }),
-        )
-        .await?;
+        let revoke_result = state.pairing.lock().unwrap().revoke(&client_id);
+        match revoke_result {
+            Ok(revoked) => {
+                if revoked {
+                    let _ = state.revoked_tx.send(client_id);
+                }
+                send_http_json(
+                    &mut stream,
+                    200,
+                    &json!({ "v": HOST_PROTOCOL_VERSION, "hostId": state.host_id, "revoked": revoked }),
+                )
+                .await?;
+            }
+            Err(_) => {
+                send_http_error(&mut stream, HostErrorCode::Unavailable, None).await?;
+            }
+        }
         return Ok(());
     }
 
@@ -410,12 +482,12 @@ async fn handle_websocket_upgrade(
     state: Arc<HostState>,
     mut shutdown: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
-    let bearer = extract_bearer(headers);
-    let client_id = state.pairing.lock().unwrap().verify_session(bearer);
+    let session = extract_bearer(headers).to_string();
+    let client_id = state.pairing.lock().unwrap().verify_session(&session);
     let key = headers.get("sec-websocket-key").map(String::as_str);
     let version = headers.get("sec-websocket-version").map(String::as_str);
 
-    let (Some(_client_id), Some(key)) = (client_id, key) else {
+    let (Some(client_id), Some(key)) = (client_id, key) else {
         stream
             .write_all(b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
             .await?;
@@ -440,16 +512,45 @@ async fn handle_websocket_upgrade(
     stream.write_all(response.as_bytes()).await?;
     stream.flush().await?;
 
+    let mut reader_state = WsReaderState::default();
+    let mut revoked_rx = state.revoked_tx.subscribe();
+    let mut expiry_tick = tokio::time::interval(Duration::from_secs(1));
+    expiry_tick.tick().await;
+
     loop {
         let next = tokio::select! {
             _ = shutdown.changed() => {
                 let _ = write_ws_close(&mut stream).await;
                 break;
             }
-            msg = read_ws_message(&mut stream, deflate) => msg,
+            revoked_id = revoked_rx.recv() => {
+                if matches!(revoked_id, Ok(ref id) if id == &client_id)
+                    || state.pairing.lock().unwrap().verify_session(&session).as_deref() != Some(client_id.as_str())
+                {
+                    let _ = write_ws_close(&mut stream).await;
+                    break;
+                }
+                continue;
+            }
+            _ = expiry_tick.tick() => {
+                if state.pairing.lock().unwrap().verify_session(&session).as_deref() != Some(client_id.as_str()) {
+                    let _ = write_ws_close(&mut stream).await;
+                    break;
+                }
+                continue;
+            }
+            msg = read_ws_message(&mut stream, deflate, &mut reader_state) => msg,
         };
         match next {
             Ok(WsMessage::Text(text)) => {
+                // Re-verify the session before serving every request so a revoked or expired
+                // device can never read another frame on an already-open socket.
+                if state.pairing.lock().unwrap().verify_session(&session).as_deref()
+                    != Some(client_id.as_str())
+                {
+                    let _ = write_ws_close(&mut stream).await;
+                    break;
+                }
                 let reply = handle_ws_request(&state, &text);
                 let encoded = serde_json::to_string(&reply).map_err(std::io::Error::other)?;
                 if write_ws_text(&mut stream, &encoded, deflate).await.is_err() {

@@ -308,6 +308,40 @@ mod tests {
         assert_eq!(parsed["result"]["hostId"], host_id);
         assert_eq!(parsed["result"]["runtime"], "rust");
 
+        // Revoking the paired client immediately closes the already-open WebSocket.
+        let revoke_body = serde_json::json!({ "clientId": paired["clientId"] }).to_string();
+        let (status, revoked) = http_request(
+            port,
+            "POST",
+            "/v1/admin/revoke-client",
+            Some(&admin_token),
+            Some(&revoke_body),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(revoked["revoked"], true);
+
+        let mut close_hdr = [0u8; 2];
+        let read_res = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            ws_stream.read_exact(&mut close_hdr),
+        )
+        .await
+        .unwrap();
+        match read_res {
+            Ok(_) => assert_eq!(close_hdr[0] & 0x0f, 0x8),
+            Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof),
+        }
+
+        // Oversized HTTP header line is rejected without unbounded buffering.
+        let mut big = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let huge = format!("GET /v1/health HTTP/1.1\r\nX-Pad: {}\r\n\r\n", "a".repeat(20_000));
+        let _ = big.write_all(huge.as_bytes()).await;
+        let mut big_reader = BufReader::new(big);
+        let mut status_line = String::new();
+        big_reader.read_line(&mut status_line).await.unwrap();
+        assert!(status_line.starts_with("HTTP/1.1 413"));
+
         srv.close().await;
         assert!(!dir.path().join("host-listener.json").exists());
     }

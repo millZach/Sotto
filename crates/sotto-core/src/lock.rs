@@ -1,8 +1,10 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "macos", windows))]
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -176,7 +178,97 @@ fn place_exclusive(path: &Path, content: &str) -> std::io::Result<()> {
     result
 }
 
-/// Acquires `host-listener.lock`, reclaiming a stale lock if the recorded holder is gone.
+const TURN_WAIT_MS: u64 = 50;
+const TURN_LOOKS: usize = 60;
+
+enum Removal {
+    Removed,
+    Gone,
+    Changed,
+    Lost,
+}
+
+fn reclaim_turn_path(path: &Path) -> PathBuf {
+    let mut os = path.as_os_str().to_os_string();
+    os.push(".reclaim");
+    PathBuf::from(os)
+}
+
+/// Removes `path` only if it still holds `seen` (matching `removeIfStill` in `src/host/lock.ts`).
+/// Moves the file aside first and verifies what was moved; if another live lease appeared in the
+/// same instant, links it back into place without deleting it.
+fn remove_if_still(path: &Path, seen: &str) -> Result<Removal, HostLockError> {
+    let now = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Removal::Gone),
+        Err(err) => return Err(HostLockError::Io(err)),
+    };
+    if now != seen {
+        return Ok(Removal::Changed);
+    }
+    let aside = path.with_extension(format!("lock.{}.stale", Uuid::new_v4()));
+    match fs::rename(path, &aside) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Removal::Gone),
+        Err(err) => return Err(HostLockError::Io(err)),
+    }
+    let moved = fs::read_to_string(&aside).ok();
+    if moved.as_deref() == Some(seen) {
+        let _ = fs::remove_file(&aside);
+        return Ok(Removal::Removed);
+    }
+    let restored = match fs::hard_link(&aside, path) {
+        Ok(()) => true,
+        Err(err) if err.kind() != std::io::ErrorKind::AlreadyExists => moved
+            .as_deref()
+            .is_some_and(|body| place_exclusive(path, body).is_ok()),
+        Err(_) => false,
+    };
+    if restored {
+        let _ = fs::remove_file(&aside);
+        Ok(Removal::Changed)
+    } else {
+        Ok(Removal::Lost)
+    }
+}
+
+/// Acquires `host-listener.lock.reclaim` so only one host clears a stale lock at a time
+/// (matching `takeReclaimTurn` in `src/host/lock.ts`).
+fn take_reclaim_turn(
+    turn: &Path,
+    content: &str,
+    boot: Option<&str>,
+) -> Result<(), HostLockError> {
+    for _ in 0..TURN_LOOKS {
+        match place_exclusive(turn, content) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(HostLockError::Io(err)),
+        }
+        let seen = match fs::read_to_string(turn) {
+            Ok(text) => text,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                thread::sleep(Duration::from_millis(TURN_WAIT_MS));
+                continue;
+            }
+        };
+        let Ok(holder) = parse_lease(&seen) else {
+            thread::sleep(Duration::from_millis(TURN_WAIT_MS));
+            continue;
+        };
+        if lease_holder_alive(&holder, boot) {
+            thread::sleep(Duration::from_millis(TURN_WAIT_MS));
+            continue;
+        }
+        let _ = remove_if_still(turn, &seen);
+    }
+    Err(HostLockError::Contended(
+        "another host kept its turn to clear this data folder's lock".into(),
+    ))
+}
+
+/// Acquires `host-listener.lock`, reclaiming a stale lock atomically if the recorded holder is gone.
 pub fn acquire_host_lock(
     path: &Path,
     lease: &HostLease,
@@ -186,48 +278,56 @@ pub fn acquire_host_lock(
         "{}\n",
         serde_json::to_string(lease).map_err(|err| HostLockError::Contended(err.to_string()))?
     );
+    let turn = reclaim_turn_path(path);
 
-    match place_exclusive(path, &content) {
-        Ok(()) => return Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(err) => return Err(HostLockError::Io(err)),
-    }
-
-    let existing_text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return place_exclusive(path, &content).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    HostLockError::Contended("lock contention during startup".into())
-                } else {
-                    HostLockError::Io(e)
-                }
-            });
+    for _ in 0..4 {
+        match place_exclusive(path, &content) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(HostLockError::Io(err)),
         }
-        Err(err) => return Err(HostLockError::Io(err)),
-    };
 
-    let existing = parse_lease(&existing_text)?;
-    if lease_holder_alive(&existing, boot) {
-        return Err(HostLockError::Held { pid: existing.pid });
-    }
+        let existing_text = match fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(HostLockError::Io(err)),
+        };
 
-    // Move the stale lock aside atomically before claiming it so two reclaimers cannot both win.
-    let stale_target = path.with_extension(format!("lock.{}.stale", Uuid::new_v4()));
-    if fs::rename(path, &stale_target).is_err() {
-        return Err(HostLockError::Contended(
-            "another process reclaimed the stale lock first".into(),
-        ));
-    }
-    let _ = fs::remove_file(&stale_target);
-
-    place_exclusive(path, &content).map_err(|err| {
-        if err.kind() == std::io::ErrorKind::AlreadyExists {
-            HostLockError::Contended("another host acquired the lock".into())
-        } else {
-            HostLockError::Io(err)
+        let existing = parse_lease(&existing_text)?;
+        if lease_holder_alive(&existing, boot) {
+            return Err(HostLockError::Held { pid: existing.pid });
         }
-    })
+
+        // Serialize stale-lock removal through the reclaim turn file, then verify the exact dead
+        // lease is still at `path` before removing it so a concurrent winner's live lease is never removed.
+        take_reclaim_turn(&turn, &content, boot)?;
+        let removal = (|| -> Result<Removal, HostLockError> {
+            let latest_text = match fs::read_to_string(path) {
+                Ok(text) => text,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Removal::Gone),
+                Err(err) => return Err(HostLockError::Io(err)),
+            };
+            let latest = parse_lease(&latest_text)?;
+            if lease_holder_alive(&latest, boot) {
+                return Err(HostLockError::Held { pid: latest.pid });
+            }
+            remove_if_still(path, &latest_text)
+        })();
+        let _ = release_host_lock(&turn, lease);
+
+        match removal? {
+            Removal::Removed | Removal::Gone | Removal::Changed => continue,
+            Removal::Lost => {
+                return Err(HostLockError::Contended(
+                    "another host acquired the lock while clearing a stale lease".into(),
+                ));
+            }
+        }
+    }
+
+    Err(HostLockError::Contended(
+        "lock contention during startup".into(),
+    ))
 }
 
 /// Releases `host-listener.lock` only if it still carries this lease's nonce.
