@@ -8,6 +8,85 @@ public struct CarriedCatalog: Sendable {
     public init(revision: Int, models: [ThreadModel]) { self.revision = revision; self.models = models }
 }
 
+/// Antigravity runs Google's Gemini models only (ADR-0212, #2770): drops any non-Gemini or malformed Antigravity
+/// model advertised by an older paired host, matching `antigravityCatalogGeminiModel` on the desktop.
+public enum AntigravityCatalog {
+    public static func allows(providerID: String?, modelID: String) -> Bool {
+        guard providerID == "antigravity" else { return true }
+        let nativeID: String
+        if modelID.hasPrefix("native:") {
+            let parts = modelID.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 4, parts[0] == "native", parts[1] == "antigravity", parts[2] == "model", !parts[3].isEmpty,
+                  let decoded = strictPercentDecode(String(parts[3])) else { return false }
+            nativeID = decoded
+        } else if modelID.hasPrefix("antigravity:") {
+            nativeID = String(modelID.dropFirst("antigravity:".count))
+        } else if modelID.contains(":") {
+            return false
+        } else {
+            nativeID = modelID
+        }
+        return nativeID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("gemini-")
+    }
+
+    public static func allows(_ model: ThreadModel) -> Bool {
+        allows(providerID: model.providerId, modelID: model.id)
+    }
+
+    public static func filtered(_ models: [ThreadModel]) -> [ThreadModel] {
+        models.filter { allows($0) }
+    }
+
+    static func providerID(from modelID: String?) -> String? {
+        guard let modelID, modelID.hasPrefix("native:") else { return nil }
+        let parts = modelID.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 4, parts[0] == "native", parts[2] == "model", !parts[1].isEmpty, !parts[3].isEmpty else { return nil }
+        return String(parts[1])
+    }
+
+    static func displayName(forRemovedModelID modelID: String) -> String {
+        if modelID.hasPrefix("native:") {
+            let parts = modelID.split(separator: ":", omittingEmptySubsequences: false)
+            if parts.count == 4, parts[0] == "native", parts[1] == "antigravity", parts[2] == "model",
+               let decoded = strictPercentDecode(String(parts[3])), !decoded.isEmpty { return decoded }
+        }
+        return modelID
+    }
+
+    private static func strictPercentDecode(_ raw: String) -> String? {
+        let scalars = Array(raw.unicodeScalars)
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(scalars.count)
+        var index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            if scalar == "%" {
+                guard index + 2 < scalars.count,
+                      let high = hexDigit(scalars[index + 1]),
+                      let low = hexDigit(scalars[index + 2]) else { return nil }
+                bytes.append((high << 4) | low)
+                index += 3
+            } else if scalar.isASCII {
+                bytes.append(UInt8(scalar.value))
+                index += 1
+            } else {
+                bytes.append(contentsOf: String(scalar).utf8)
+                index += 1
+            }
+        }
+        return String(bytes: bytes, encoding: .utf8)
+    }
+
+    private static func hexDigit(_ scalar: UnicodeScalar) -> UInt8? {
+        switch scalar.value {
+        case 48...57: return UInt8(scalar.value - 48)
+        case 65...70: return UInt8(scalar.value - 55)
+        case 97...102: return UInt8(scalar.value - 87)
+        default: return nil
+        }
+    }
+}
+
 /// The last model catalog one connection was sent whole. A host that names its catalog by revision leaves it
 /// out of every shell after the first one that carried it, so the connection puts it back before anything
 /// reads the shell, and every reader still sees a whole catalog. It is kept in socket order, and a reconnect
@@ -72,6 +151,15 @@ public enum CatalogEntry {
 }
 
 extension ThreadModel {
+    init(id: String, name: String, provider: String, providerId: String?, ready: Bool, recommended: Bool? = nil,
+         reasoningEfforts: [String]? = nil, defaultReasoningEffort: String? = nil, runtimeModes: [String]? = nil,
+         providerModes: [ProviderMode]? = nil, supportsImages: Bool? = nil, source: String? = nil) {
+        self.id = id; self.name = name; self.provider = provider; self.providerId = providerId
+        self.ready = ready; self.recommended = recommended; self.reasoningEfforts = reasoningEfforts
+        self.defaultReasoningEffort = defaultReasoningEffort; self.runtimeModes = runtimeModes
+        self.providerModes = providerModes; self.supportsImages = supportsImages; self.source = source
+    }
+
     /// `models` with each one's provider modes put back from the list it names by place in `lists`; nil when one names a
     /// place `lists` does not have.
     static func withProviderModes(_ models: [ThreadModel], lists: [[ProviderMode]]) -> [ThreadModel]? {
@@ -94,7 +182,7 @@ extension HostSnapshot {
         restored.providerModeLists = nil
         if let models {
             guard let whole = ThreadModel.withProviderModes(models, lists: providerModeLists ?? []) else { return nil }
-            restored.models = whole
+            restored.models = AntigravityCatalog.filtered(whole)
         }
         return restored
     }
@@ -122,6 +210,6 @@ struct ReplyCatalog: Decodable {
         // did not send is not held at all.
         let lists = try host.decodeIfPresent([[ThreadModel.ProviderMode]].self, forKey: .providerModeLists) ?? []
         guard let whole = ThreadModel.withProviderModes(models, lists: lists) else { carried = nil; return }
-        carried = CarriedCatalog(revision: revision, models: whole)
+        carried = CarriedCatalog(revision: revision, models: AntigravityCatalog.filtered(whole))
     }
 }

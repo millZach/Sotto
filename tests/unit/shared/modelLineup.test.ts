@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel } from '../../../src/shared/agents'
-import { markLegacyModels, modelInForce, modelLine, retiredModelSuccessor } from '../../../src/shared/modelLineup'
+import { isRemovedAntigravityModel, markLegacyModels, modelInForce, modelLine, retiredModelSuccessor } from '../../../src/shared/modelLineup'
+
+const antigravity = (value: string, name: string, extra: Partial<AgentModel> = {}): AgentModel =>
+  ({ id: publicProviderEntityId('antigravity', 'model', value), provider: 'Antigravity', providerId: 'antigravity', name, ready: true, ...extra })
 
 const claude = (value: string, name: string, extra: Partial<AgentModel> = {}): AgentModel =>
   ({ id: publicProviderEntityId('claude', 'model', value), provider: 'Claude Code', providerId: 'claude', name, ready: true, ...extra })
@@ -97,5 +100,28 @@ describe('retired models', () => {
     expect(named(after.filter(model => model.ready && model.legacy))).toEqual(['Fable 5.1', 'Fable 5'])
     expect(modelInForce(after, publicProviderEntityId('claude', 'model', 'claude-fable-5-2'))).toBe(publicProviderEntityId('claude', 'model', 'fable'))
     expect(modelInForce(after, publicProviderEntityId('claude', 'model', 'claude-fable-5-1'))).toBe(publicProviderEntityId('claude', 'model', 'claude-fable-5-1'))
+  })
+
+  it('recovers removed Antigravity non-Gemini defaults onto ready Gemini while keeping Gemini and disconnected choices intact (#2770)', () => {
+    const removedClaude = publicProviderEntityId('antigravity', 'model', 'claude-opus-5-5')
+    const removedGpt = publicProviderEntityId('antigravity', 'model', 'gpt-oss-120b-medium')
+    const flash = antigravity('gemini-3.8-flash', 'Gemini 3.8 Flash')
+    const neon = antigravity('gemini-4-neon', 'Gemini 4 Neon', { recommended: true })
+
+    expect(isRemovedAntigravityModel(removedClaude)).toBe(true)
+    expect(isRemovedAntigravityModel(removedGpt)).toBe(true)
+    expect(isRemovedAntigravityModel('gpt-oss-120b-medium', 'antigravity')).toBe(true)
+    expect(isRemovedAntigravityModel(flash.id)).toBe(false)
+    expect(isRemovedAntigravityModel('gemini-3.8-flash', 'antigravity')).toBe(false)
+    expect(isRemovedAntigravityModel(publicProviderEntityId('claude', 'model', 'opus'))).toBe(false)
+
+    // First ready Antigravity Gemini when none is marked recommended, and recommended Gemini when present.
+    expect(modelInForce([flash], removedClaude)).toBe(flash.id)
+    expect(modelInForce([flash, neon], removedGpt)).toBe(neon.id)
+    // When Antigravity has no ready Gemini models (disconnected), preserve the saved choice unchanged.
+    expect(modelInForce([{ ...flash, ready: false }], removedClaude)).toBe(removedClaude)
+    expect(modelInForce([], removedClaude)).toBe(removedClaude)
+    // Already-Gemini models keep their identity.
+    expect(modelInForce([flash, neon], flash.id)).toBe(flash.id)
   })
 })

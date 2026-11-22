@@ -117,9 +117,10 @@ public enum ThreadSettings {
     /// The models a started thread may change to: its own provider's ready ones, and the one it is on even when its provider
     /// no longer reports it ready. Moving to another provider is a new thread, which the desktop begins (ADR-0089).
     public static func models(for thread: ThreadSummary, in catalog: [ThreadModel]) -> [ThreadModel] {
-        let current = CatalogEntry.model(catalog, id: thread.modelId)
-        let provider = thread.providerId ?? current?.providerId
-        return catalog.filter { model in
+        let permitted = AntigravityCatalog.filtered(catalog)
+        let current = CatalogEntry.model(permitted, id: thread.modelId)
+        let provider = thread.providerId ?? current?.providerId ?? AntigravityCatalog.providerID(from: thread.modelId)
+        return permitted.filter { model in
             model.id == current?.id || (model.ready && (provider == nil || model.providerId == provider))
         }
     }
@@ -490,17 +491,38 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
     }
 
     /// The panel for one thread, or nil where its chips stay off the box: a computer that can't change a thread's settings
-    /// in place, or a thread whose model its catalog doesn't know.
+    /// in place, or a thread whose model its catalog doesn't know (except a removed Antigravity non-Gemini model when a
+    /// ready Gemini replacement is available so the user can switch in place, #2770).
     public static func make(thread: ThreadSummary, catalog: [ThreadModel], capabilities: ProviderCapabilities?, providerConnected: Bool,
                             online: Bool, mayAnswer: Bool, unconfirmed: Set<ThreadSettingKind>, promptOnItsWay: Bool = false,
                             pending: PendingThreadSettings) -> ThreadSettingsPanel? {
-        guard capabilities?.configureThread == true, let confirmed = CatalogEntry.model(catalog, id: thread.modelId) else { return nil }
+        guard capabilities?.configureThread == true else { return nil }
+        let permitted = AntigravityCatalog.filtered(catalog)
+        let replacements = ThreadSettings.models(for: thread, in: permitted)
+        let recoveredConfirmed: ThreadModel? = {
+            guard CatalogEntry.model(permitted, id: thread.modelId) == nil,
+                  capabilities?.configureThreadModel != false,
+                  let rawModelID = thread.modelId, !rawModelID.isEmpty,
+                  (thread.providerId ?? AntigravityCatalog.providerID(from: rawModelID)) == "antigravity",
+                  !AntigravityCatalog.allows(providerID: "antigravity", modelID: rawModelID),
+                  !replacements.isEmpty else { return nil }
+            return ThreadModel(
+                id: rawModelID,
+                name: AntigravityCatalog.displayName(forRemovedModelID: rawModelID),
+                provider: AgentNames.name("antigravity"),
+                providerId: "antigravity",
+                ready: false,
+                runtimeModes: replacements.first?.runtimeModes,
+                providerModes: replacements.first?.providerModes
+            )
+        }()
+        guard let confirmed = CatalogEntry.model(permitted, id: thread.modelId) ?? recoveredConfirmed else { return nil }
         let providerID = thread.providerId ?? confirmed.providerId
         let provider = providerID.map { AgentNames.name($0) }
             ?? String(localized: "The provider", bundle: .module, comment: "Stands in for the agent's name at the start of a sentence")
         let drawn = ThreadSettings.values(thread, model: confirmed)
         let modelID = pending.value(.model) ?? drawn.model
-        let model = CatalogEntry.model(catalog, id: modelID) ?? confirmed
+        let model = CatalogEntry.model(permitted, id: modelID) ?? confirmed
         // A model change starts on the new model's own default effort, so that is what the effort chip shows meanwhile.
         var unpressed = drawn
         if modelID != drawn.model {
@@ -520,7 +542,7 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
         let fixed = ThreadSettings.fixed(thread, providerConnected: providerConnected, online: online, unconfirmed: unconfirmed, promptOnItsWay: promptOnItsWay)
         func named(_ kind: ThreadSettingKind, _ value: String, on owner: ThreadModel) -> String {
             switch kind {
-            case .model: return CatalogEntry.model(catalog, id: value)?.name ?? value
+            case .model: return CatalogEntry.model(permitted, id: value)?.name ?? value
             case .effort: return value.isEmpty ? String(localized: "the model’s default effort", bundle: .module) : ThreadSettingWords.effortValue(value)
             case .permissions: return owner.permissions.first { $0.id == value }?.name ?? value
             case .speed: return ThreadSettings.speedName(value, offered: ThreadSettings.offeredSpeeds(owner, providerID: providerID))
@@ -541,7 +563,7 @@ public struct ThreadSettingsPanel: Equatable, Sendable {
             }
         }
         return ThreadSettingsPanel(
-            provider: provider, providerID: providerID, models: ThreadSettings.models(for: thread, in: catalog), model: model, modelID: modelID,
+            provider: provider, providerID: providerID, models: replacements, model: model, modelID: modelID,
             efforts: model.reasoningEfforts ?? [], effort: pending.value(.effort) ?? unpressed.effort,
             speeds: speeds, speed: speeds.contains { $0.id == chosenSpeed } ? chosenSpeed : ThreadSettings.standard,
             permissions: model.permissions, permission: pending.value(.permissions) ?? unpressed.permissions,

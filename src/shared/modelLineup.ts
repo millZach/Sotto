@@ -104,9 +104,20 @@ export function namesOwnModel(modelId: string): boolean {
   return parsed?.kind === 'model' && OWN_MODEL_IDS[parsed.provider]?.test(parsed.value) === true
 }
 
+/** Whether a model ID names a non-Gemini Antigravity model (such as Claude or GPT) that Sotto no longer offers under Google's terms (ADR-0212, #2770). */
+export function isRemovedAntigravityModel(modelId: string, providerId?: ProviderId): boolean {
+  const parsed = parsePublicProviderEntityId(modelId)
+  if (parsed) return parsed.provider === 'antigravity' && parsed.kind === 'model' && !/^gemini-/iu.test(parsed.value.trim())
+  return providerId === 'antigravity' && !/^gemini-/iu.test(modelId.trim())
+}
+
 export function modelInForce(models: readonly AgentModel[], modelId: string): string {
   if (!modelId) return modelId
   const entry = resolveModel(models, modelId)
   if (entry?.ready) return modelId
+  if (isRemovedAntigravityModel(modelId, entry?.providerId)) {
+    const readyGemini = models.filter(model => model.ready && model.providerId === 'antigravity' && !isRemovedAntigravityModel(model.id, model.providerId))
+    return (readyGemini.find(model => model.recommended) ?? readyGemini[0])?.id ?? modelId
+  }
   return retiredModelSuccessor(models, modelId, entry?.name, entry !== undefined || namesOwnModel(modelId))?.id ?? modelId
 }
