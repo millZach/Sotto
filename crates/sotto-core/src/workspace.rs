@@ -26,6 +26,38 @@ pub const ACTIVE_PROVIDERS: &[&str] = &[
     "antigravity",
 ];
 
+/// Full provider ID list matching Node's `providerIdSchema` (`src/shared/providerIds.ts`),
+/// including `pi` so Disconnect-all and legacy migration never leave unadapted Node providers on.
+pub const ALL_PROVIDER_IDS: &[&str] = &[
+    "codex",
+    "claude",
+    "grok",
+    "devin",
+    "muse",
+    "opencode",
+    "cursor",
+    "deepseek",
+    "hermes",
+    "antigravity",
+    "pi",
+];
+
+const REASONING_VALUES: &[&str] = &["none", "codex", "claude", "grok", "openrouter", "openai"];
+const ULTRACODE_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+const ANTIGRAVITY_SIGN_IN_METHODS: &[&str] = &[
+    "oauth-personal",
+    "oauth-business",
+    "gemini-api-key",
+    "agent-platform",
+];
+const AGENT_SPEEDS: &[&str] = &["fast", "ultrafast"];
+const AGENT_RUNTIME_MODES: &[&str] = &[
+    "approval-required",
+    "auto-accept-edits",
+    "auto",
+    "full-access",
+];
+
 pub fn provider_label(provider: &str) -> &'static str {
     match provider {
         "codex" => "Codex",
@@ -347,8 +379,6 @@ pub struct AgentConfiguration {
     pub speech_voice: String,
     pub wake_model_directory: String,
     pub wake_runtime_directory: String,
-    #[serde(flatten)]
-    pub extra: serde_json::Map<String, Value>,
 }
 
 impl Default for AgentConfiguration {
@@ -392,27 +422,69 @@ impl Default for AgentConfiguration {
             speech_voice: "F1".into(),
             wake_model_directory: String::new(),
             wake_runtime_directory: String::new(),
-            extra: serde_json::Map::new(),
         }
     }
 }
 
+fn validate_provider_id_list(arr: &[Value], field: &str) -> Result<Vec<String>, String> {
+    if arr.len() > ALL_PROVIDER_IDS.len() {
+        return Err(format!("{field} has too many providers."));
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let Some(id) = item.as_str() else {
+            return Err(format!("{field} entries must be provider names."));
+        };
+        if !ALL_PROVIDER_IDS.contains(&id) {
+            return Err(format!("Unknown provider in {field}: {id}"));
+        }
+        if !seen.insert(id) {
+            return Err(format!("Choose each provider once in {field}."));
+        }
+        out.push(id.to_string());
+    }
+    Ok(out)
+}
+
+fn validate_str_max<'a>(val: &'a Value, field: &str, max_u16: usize) -> Result<&'a str, String> {
+    let Some(s) = val.as_str() else {
+        return Err(format!("{field} must be text."));
+    };
+    if s.encode_utf16().count() > max_u16 {
+        return Err(format!("{field} is too long."));
+    }
+    Ok(s)
+}
+
 impl AgentConfiguration {
-    /// Replaces `disconnected_providers` in `ACTIVE_PROVIDERS` order (`None` when empty,
-    /// matching `withTurnedOff` in `src/main/agents/control.ts`) and updates `enabled_providers`
-    /// to the subset of `available` not turned off.
+    /// Replaces `disconnected_providers` in `ALL_PROVIDER_IDS` order (preserving any unknown future
+    /// provider IDs in sorted order, and storing `None` when empty to match `withTurnedOff` in
+    /// `src/main/agents/control.ts`). Updates `enabled_providers` to the subset of `available` not
+    /// turned off when `available` is non-empty; leaves `enabled_providers` untouched when no
+    /// providers are loaded so an unconfigured host never writes `enabledProviders: []` and triggers
+    /// legacy all-off migration on its next start.
     pub fn set_disconnected_providers(&mut self, off: &HashSet<&str>, available: &[String]) {
-        let ordered: Vec<String> = ACTIVE_PROVIDERS
+        let mut ordered: Vec<String> = ALL_PROVIDER_IDS
             .iter()
             .filter(|provider| off.contains(*provider))
             .map(|provider| (*provider).to_string())
             .collect();
-        self.disconnected_providers = if ordered.is_empty() { None } else { Some(ordered) };
-        self.enabled_providers = available
+        let mut unknown: Vec<String> = off
             .iter()
-            .filter(|provider| !off.contains(provider.as_str()))
-            .cloned()
+            .filter(|provider| !ALL_PROVIDER_IDS.contains(*provider))
+            .map(|provider| (*provider).to_string())
             .collect();
+        unknown.sort();
+        ordered.extend(unknown);
+        self.disconnected_providers = if ordered.is_empty() { None } else { Some(ordered) };
+        if !available.is_empty() {
+            self.enabled_providers = available
+                .iter()
+                .filter(|provider| !off.contains(provider.as_str()))
+                .cloned()
+                .collect();
+        }
     }
 
     /// Mirrors `turnedOff` + `withTurnedOff` in `src/main/agents/control.ts` (ADR-0036).
@@ -431,8 +503,8 @@ impl AgentConfiguration {
     /// Serializes configuration strictly matching Node's `agentConfigurationSchema` (`src/shared/agents.ts`)
     /// for writing into `agents.json`, omitting legacy Rust-only fields (`followupLimit`, `orbColor`,
     /// retired voice fields) that Node's `.strict()` schema rejects on fallback.
-    pub fn to_node_agents_json(&self) -> Value {
-        let mut obj = self.extra.clone();
+    pub fn to_node_agents_json(&self, extra: &Map<String, Value>) -> Value {
+        let mut obj = extra.clone();
         obj.insert("provider".into(), json!(self.provider));
         obj.insert("enabledProviders".into(), json!(self.enabled_providers));
         match &self.disconnected_providers {
@@ -492,58 +564,130 @@ impl AgentConfiguration {
         Value::Object(obj)
     }
 
-    pub fn apply_patch(&mut self, patch: &Map<String, Value>) {
-        if let Some(v) = patch.get("provider").and_then(Value::as_str) {
-            self.provider = v.to_string();
+    /// Validates every field in `patch` against Node's strict `agentConfigurationSchema`
+    /// (`src/shared/agents.ts`) before mutating `self`, refusing invalid values so `agents.json`
+    /// can never be corrupted with values Node rejects on rollback.
+    pub fn apply_patch(&mut self, patch: &Map<String, Value>) -> Result<(), String> {
+        let mut next = self.clone();
+        for (key, value) in patch {
+            match key.as_str() {
+                "provider" => {
+                    let v = validate_str_max(value, "provider", 64)?;
+                    if !ALL_PROVIDER_IDS.contains(&v) {
+                        return Err(format!("Unknown provider: {v}"));
+                    }
+                    next.provider = v.to_string();
+                }
+                "enabledProviders" => {
+                    let Some(arr) = value.as_array() else {
+                        return Err("enabledProviders must be a list.".into());
+                    };
+                    next.enabled_providers = validate_provider_id_list(arr, "enabledProviders")?;
+                }
+                "disconnectedProviders" => {
+                    let Some(arr) = value.as_array() else {
+                        return Err("disconnectedProviders must be a list.".into());
+                    };
+                    let validated = validate_provider_id_list(arr, "disconnectedProviders")?;
+                    let ordered: Vec<String> = ALL_PROVIDER_IDS
+                        .iter()
+                        .filter(|p| validated.iter().any(|v| v == *p))
+                        .map(|p| (*p).to_string())
+                        .collect();
+                    next.disconnected_providers = if ordered.is_empty() { None } else { Some(ordered) };
+                }
+                "enabled" => {
+                    next.enabled = value
+                        .as_bool()
+                        .ok_or_else(|| "enabled must be true or false.".to_string())?;
+                }
+                "checkClientUpdates" => {
+                    next.check_client_updates = value
+                        .as_bool()
+                        .ok_or_else(|| "checkClientUpdates must be true or false.".to_string())?;
+                }
+                "museDisableSandbox" => {
+                    next.muse_disable_sandbox = value
+                        .as_bool()
+                        .ok_or_else(|| "museDisableSandbox must be true or false.".to_string())?;
+                }
+                "projectsDirectory" => {
+                    next.projects_directory = validate_str_max(value, "projectsDirectory", 4_096)?.to_string();
+                }
+                "defaultModelId" => {
+                    next.default_model_id = validate_str_max(value, "defaultModelId", 6_144)?.to_string();
+                }
+                "reasoning" => {
+                    let v = validate_str_max(value, "reasoning", 64)?;
+                    if !REASONING_VALUES.contains(&v) {
+                        return Err(format!("Invalid reasoning provider: {v}"));
+                    }
+                    next.reasoning = v.to_string();
+                }
+                "reasoningModel" => {
+                    next.reasoning_model = validate_str_max(value, "reasoningModel", 512)?.to_string();
+                }
+                "reasoningEffort" => {
+                    next.reasoning_effort = validate_str_max(value, "reasoningEffort", 64)?.to_string();
+                }
+                "claudeUltracodeEffort" => {
+                    let v = validate_str_max(value, "claudeUltracodeEffort", 64)?;
+                    if !ULTRACODE_EFFORTS.contains(&v) {
+                        return Err(format!("Invalid claudeUltracodeEffort: {v}"));
+                    }
+                    next.claude_ultracode_effort = v.to_string();
+                }
+                "antigravitySignInMethod" => {
+                    let v = validate_str_max(value, "antigravitySignInMethod", 64)?;
+                    if !ANTIGRAVITY_SIGN_IN_METHODS.contains(&v) {
+                        return Err(format!("Invalid antigravitySignInMethod: {v}"));
+                    }
+                    next.antigravity_sign_in_method = v.to_string();
+                }
+                "antigravityProject" => {
+                    next.antigravity_project = validate_str_max(value, "antigravityProject", 256)?.to_string();
+                }
+                "antigravityLocation" => {
+                    next.antigravity_location = validate_str_max(value, "antigravityLocation", 64)?.to_string();
+                }
+                "antigravityBinaryPath" => {
+                    next.antigravity_binary_path = validate_str_max(value, "antigravityBinaryPath", 4_096)?.to_string();
+                }
+                "newThreadModelId" => {
+                    next.new_thread_model_id = validate_str_max(value, "newThreadModelId", 6_144)?.to_string();
+                }
+                "newThreadReasoningEffort" => {
+                    next.new_thread_reasoning_effort = validate_str_max(value, "newThreadReasoningEffort", 64)?.to_string();
+                }
+                "newThreadRuntimeMode" => {
+                    if value.is_null() {
+                        next.new_thread_runtime_mode = None;
+                    } else {
+                        let v = validate_str_max(value, "newThreadRuntimeMode", 64)?;
+                        if !AGENT_RUNTIME_MODES.contains(&v) {
+                            return Err(format!("Invalid newThreadRuntimeMode: {v}"));
+                        }
+                        next.new_thread_runtime_mode = Some(v.to_string());
+                    }
+                }
+                "newThreadSpeed" => {
+                    if value.is_null() {
+                        next.new_thread_speed = None;
+                    } else {
+                        let v = validate_str_max(value, "newThreadSpeed", 64)?;
+                        if !AGENT_SPEEDS.contains(&v) {
+                            return Err(format!("Invalid newThreadSpeed: {v}"));
+                        }
+                        next.new_thread_speed = Some(v.to_string());
+                    }
+                }
+                other => {
+                    return Err(format!("Unknown configuration setting: {other}"));
+                }
+            }
         }
-        if let Some(arr) = patch.get("enabledProviders").and_then(Value::as_array) {
-            self.enabled_providers = arr
-                .iter()
-                .filter_map(Value::as_str)
-                .map(ToString::to_string)
-                .collect();
-        }
-        if let Some(arr) = patch.get("disconnectedProviders").and_then(Value::as_array) {
-            let ordered: Vec<String> = ACTIVE_PROVIDERS
-                .iter()
-                .filter(|provider| arr.iter().any(|v| v.as_str() == Some(**provider)))
-                .map(|provider| (*provider).to_string())
-                .collect();
-            self.disconnected_providers = if ordered.is_empty() { None } else { Some(ordered) };
-        }
-        if let Some(v) = patch.get("enabled").and_then(Value::as_bool) {
-            self.enabled = v;
-        }
-        if let Some(v) = patch.get("defaultModelId").and_then(Value::as_str) {
-            self.default_model_id = v.to_string();
-        }
-        if let Some(v) = patch.get("reasoning").and_then(Value::as_str) {
-            self.reasoning = v.to_string();
-        }
-        if let Some(v) = patch.get("reasoningModel").and_then(Value::as_str) {
-            self.reasoning_model = v.to_string();
-        }
-        if let Some(v) = patch.get("reasoningEffort").and_then(Value::as_str) {
-            self.reasoning_effort = v.to_string();
-        }
-        if let Some(v) = patch.get("projectsDirectory").and_then(Value::as_str) {
-            self.projects_directory = v.to_string();
-        }
-        if let Some(v) = patch.get("newThreadModelId").and_then(Value::as_str) {
-            self.new_thread_model_id = v.to_string();
-        }
-        if let Some(v) = patch.get("newThreadReasoningEffort").and_then(Value::as_str) {
-            self.new_thread_reasoning_effort = v.to_string();
-        }
-        if let Some(v) = patch.get("newThreadRuntimeMode").and_then(Value::as_str) {
-            self.new_thread_runtime_mode = Some(v.to_string());
-        }
-        if let Some(v) = patch.get("newThreadSpeed").and_then(Value::as_str) {
-            self.new_thread_speed = Some(v.to_string());
-        }
-        if let Some(v) = patch.get("museDisableSandbox").and_then(Value::as_bool) {
-            self.muse_disable_sandbox = v;
-        }
+        *self = next;
+        Ok(())
     }
 }
 

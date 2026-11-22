@@ -24,7 +24,7 @@ use crate::workspace::{
     AgentCapabilities, AgentConfiguration, AgentDelivery, AgentModel, AgentProject,
     AgentProviderStatus, AgentThread, AgentThreadDetail, AgentThreadWorktree, AgentTurnRecord,
     ClientUpdateRow, DeliveredDraft, StagedAttachmentEntry, StagedAttachmentHandle,
-    StagedAttachments, ACTIVE_PROVIDERS,
+    StagedAttachments, ACTIVE_PROVIDERS, ALL_PROVIDER_IDS,
 };
 
 const PUBLISH_COALESCE_MS: u64 = 50;
@@ -100,9 +100,9 @@ struct InFlightSend {
 
 enum AsyncCommandOutcome {
     Connect {
-        provider_id: String,
+        explicit: bool,
+        outcomes: Vec<(String, Result<(), String>)>,
         suppress_notice: bool,
-        result: Result<(), String>,
     },
     Disconnect {
         provider_ids: Vec<String>,
@@ -469,6 +469,7 @@ struct LoadedWorkspace {
     snapshot_extra: Map<String, Value>,
     file_extra: Map<String, Value>,
     agents_json_extra: Map<String, Value>,
+    agents_config_extra: Map<String, Value>,
     had_saved_configuration: bool,
     configuration: AgentConfiguration,
 }
@@ -505,6 +506,7 @@ struct CoordinatorActor {
     snapshot_extra: Map<String, Value>,
     file_extra: Map<String, Value>,
     agents_json_extra: Map<String, Value>,
+    agents_config_extra: Map<String, Value>,
     thread_bindings: HashMap<String, ThreadBindingRecord>,
     details: HashMap<String, AgentThreadDetail>,
     deliveries: Vec<AgentDelivery>,
@@ -581,11 +583,13 @@ impl CoordinatorActor {
         // Mirror Node headless host startup (ADR-0036, `src/main/agents/control.ts`):
         // a legacy store saved before `disconnectedProviders` existed wrote an empty
         // `enabledProviders` array only when the user turned every provider off.
+        // Record Node's full `ALL_PROVIDER_IDS` set so unadapted Node providers (`deepseek`,
+        // `hermes`, `pi`) also stay turned off when switching back to Node.
         if persisted.had_saved_configuration
             && configuration.disconnected_providers.is_none()
             && configuration.enabled_providers.is_empty()
         {
-            let all_off: HashSet<&str> = available_providers.iter().map(String::as_str).collect();
+            let all_off: HashSet<&str> = ALL_PROVIDER_IDS.iter().copied().collect();
             configuration.set_disconnected_providers(&all_off, &available_providers);
         } else {
             let off_owned: Vec<String> = configuration.disconnected_providers.clone().unwrap_or_default();
@@ -614,6 +618,7 @@ impl CoordinatorActor {
             snapshot_extra: persisted.snapshot_extra,
             file_extra: persisted.file_extra,
             agents_json_extra: persisted.agents_json_extra,
+            agents_config_extra: persisted.agents_config_extra,
             thread_bindings,
             details,
             deliveries: Vec::new(),
@@ -1065,31 +1070,54 @@ impl CoordinatorActor {
         command: &Map<String, Value>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
-        let provider_id = command
-            .get("provider")
-            .and_then(Value::as_str)
-            .unwrap_or(&self.configuration.provider)
-            .to_string();
+        let explicit_provider = command.get("provider").and_then(Value::as_str).map(ToString::to_string);
         let suppress_notice = command.get("notice") == Some(&Value::Bool(false));
-        let Some(adapter) = self.providers.get(&provider_id).cloned() else {
-            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown provider.")), reply);
-            return;
-        };
         let available = self.available_providers();
-        self.configuration
-            .mark_providers_turned_off(&[], &[provider_id.as_str()], &available);
-        self.save_workspace();
+        let (explicit, targets) = match explicit_provider {
+            Some(provider_id) => {
+                let Some(adapter) = self.providers.get(&provider_id).cloned() else {
+                    self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown provider.")), reply);
+                    return;
+                };
+                self.configuration
+                    .mark_providers_turned_off(&[], &[provider_id.as_str()], &available);
+                self.save_workspace();
+                (true, vec![(provider_id, adapter)])
+            }
+            None => {
+                // Plain `{ type: 'connect' }` without a provider never mutates `disconnectedProviders`
+                // (ADR-0036, `src/main/agents/control.ts`): connect only available providers not turned off.
+                let off: HashSet<&str> = self
+                    .configuration
+                    .disconnected_providers
+                    .as_deref()
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(String::as_str)
+                    .collect();
+                let list = available
+                    .iter()
+                    .filter(|id| !off.contains(id.as_str()))
+                    .filter_map(|id| self.providers.get(id).cloned().map(|a| (id.clone(), a)))
+                    .collect();
+                (false, list)
+            }
+        };
         let events_tx = self.provider_events_tx.clone();
         let self_tx = self.self_tx.clone();
         tokio::spawn(async move {
-            let result = adapter.connect(events_tx).await;
+            let mut outcomes = Vec::with_capacity(targets.len());
+            for (provider_id, adapter) in targets {
+                let result = adapter.connect(events_tx.clone()).await;
+                outcomes.push((provider_id, result));
+            }
             let _ = self_tx.send(ActorMessage::AsyncCommandDone {
                 lane,
                 client,
                 outcome: Box::new(AsyncCommandOutcome::Connect {
-                    provider_id,
+                    explicit,
+                    outcomes,
                     suppress_notice,
-                    result,
                 }),
                 reply,
             });
@@ -1118,9 +1146,20 @@ impl CoordinatorActor {
                 }
             },
             None => {
-                let all_refs: Vec<&str> = available.iter().map(String::as_str).collect();
+                // Disconnect-all records every Node provider ID (`ALL_PROVIDER_IDS`, including
+                // `deepseek`, `hermes`, `pi`) so switching back to Node never reconnects them.
+                let existing: Vec<String> = self
+                    .configuration
+                    .disconnected_providers
+                    .clone()
+                    .unwrap_or_default();
+                let mut all_off: HashSet<&str> = ALL_PROVIDER_IDS.iter().copied().collect();
+                for id in &existing {
+                    all_off.insert(id.as_str());
+                }
                 self.configuration
-                    .mark_providers_turned_off(&all_refs, &[], &available);
+                    .set_disconnected_providers(&all_off, &available);
+                self.configuration.enabled_providers.clear();
                 available
                     .iter()
                     .filter_map(|id| self.providers.get(id).cloned().map(|a| (id.clone(), a)))
@@ -1548,26 +1587,42 @@ impl CoordinatorActor {
     ) -> Result<Value, CoordinatorError> {
         match outcome {
             AsyncCommandOutcome::Connect {
-                provider_id,
+                explicit,
+                outcomes,
                 suppress_notice,
-                result,
             } => {
-                if let Some(adapter) = self.providers.get(&provider_id).cloned() {
-                    self.provider_statuses
-                        .insert(provider_id.clone(), adapter.status());
-                    match result {
-                        Ok(()) => {
-                            self.rebuild_catalog();
-                            if !suppress_notice {
-                                self.notice = format!("{} connected", adapter.name());
+                let mut first_error: Option<String> = None;
+                let mut connected_name: Option<String> = None;
+                for (provider_id, result) in outcomes {
+                    if let Some(adapter) = self.providers.get(&provider_id).cloned() {
+                        self.provider_statuses
+                            .insert(provider_id.clone(), adapter.status());
+                        match result {
+                            Ok(()) => {
+                                connected_name = Some(adapter.name().to_string());
                             }
-                            self.error = None;
-                        }
-                        Err(err) => {
-                            self.error = Some(err.clone());
-                            return Err(CoordinatorError::unavailable(err));
+                            Err(err) => {
+                                if first_error.is_none() {
+                                    first_error = Some(err);
+                                }
+                            }
                         }
                     }
+                }
+                self.rebuild_catalog();
+                if explicit {
+                    if let Some(err) = first_error {
+                        self.error = Some(err.clone());
+                        return Err(CoordinatorError::unavailable(err));
+                    }
+                    if !suppress_notice {
+                        if let Some(name) = connected_name {
+                            self.notice = format!("{name} connected");
+                        }
+                    }
+                    self.error = None;
+                } else {
+                    self.error = None;
                 }
             }
             AsyncCommandOutcome::Disconnect { provider_ids } => {
@@ -1753,7 +1808,9 @@ impl CoordinatorActor {
             return Err(CoordinatorError::invalid("Configure needs a patch object."));
         };
         let before_enabled = self.configuration.enabled_providers.clone();
-        self.configuration.apply_patch(patch);
+        self.configuration
+            .apply_patch(patch)
+            .map_err(CoordinatorError::invalid)?;
         let available = self.available_providers();
         let mut to_disconnect: Vec<String> = Vec::new();
         if patch.contains_key("disconnectedProviders") {
@@ -2515,7 +2572,8 @@ impl CoordinatorActor {
         let mut agents_obj = self.agents_json_extra.clone();
         agents_obj.insert(
             "configuration".into(),
-            self.configuration.to_node_agents_json(),
+            self.configuration
+                .to_node_agents_json(&self.agents_config_extra),
         );
         agents_obj
             .entry("activeThreadId".to_string())
@@ -2541,12 +2599,37 @@ impl CoordinatorActor {
 
 struct LoadedAgentsJson {
     extra: Map<String, Value>,
+    config_extra: Map<String, Value>,
     configuration: Option<AgentConfiguration>,
 }
 
+const KNOWN_NODE_CONFIG_KEYS: &[&str] = &[
+    "provider",
+    "enabledProviders",
+    "disconnectedProviders",
+    "enabled",
+    "projectsDirectory",
+    "defaultModelId",
+    "reasoning",
+    "reasoningModel",
+    "reasoningEffort",
+    "checkClientUpdates",
+    "museDisableSandbox",
+    "claudeUltracodeEffort",
+    "antigravitySignInMethod",
+    "antigravityProject",
+    "antigravityLocation",
+    "antigravityBinaryPath",
+    "newThreadModelId",
+    "newThreadReasoningEffort",
+    "newThreadSpeed",
+    "newThreadRuntimeMode",
+];
+
 /// Loads `agents.json` (Node's `savedSchema`) when present, returning its preserved non-configuration
-/// fields alongside its `AgentConfiguration`. Fails closed on unreadable or malformed existing files
-/// so a broken file never silently reconnects providers the user disconnected.
+/// fields alongside its `AgentConfiguration` (and any unknown configuration fields preserved only
+/// for `agents.json`, never leaked into shell snapshots). Fails closed on unreadable or malformed
+/// existing files so a broken file never silently reconnects providers the user disconnected.
 fn load_agents_json(dir: &Path) -> Result<Option<LoadedAgentsJson>, String> {
     let path = dir.join("agents.json");
     let raw = match std::fs::read_to_string(&path) {
@@ -2559,15 +2642,26 @@ fn load_agents_json(dir: &Path) -> Result<Option<LoadedAgentsJson>, String> {
     let Some(mut root) = parsed.as_object().cloned() else {
         return Err("Saved agents.json must be a JSON object.".into());
     };
+    let mut config_extra = Map::new();
     let configuration = match root.remove("configuration") {
-        Some(v) => Some(
-            serde_json::from_value::<AgentConfiguration>(v)
-                .map_err(|err| format!("Saved agents.json has invalid configuration: {err}"))?,
-        ),
+        Some(v) => {
+            if let Some(obj) = v.as_object() {
+                for (k, val) in obj {
+                    if !KNOWN_NODE_CONFIG_KEYS.contains(&k.as_str()) {
+                        config_extra.insert(k.clone(), val.clone());
+                    }
+                }
+            }
+            Some(
+                serde_json::from_value::<AgentConfiguration>(v)
+                    .map_err(|err| format!("Saved agents.json has invalid configuration: {err}"))?,
+            )
+        }
         None => None,
     };
     Ok(Some(LoadedAgentsJson {
         extra: root,
+        config_extra,
         configuration,
     }))
 }
@@ -2576,10 +2670,11 @@ fn load_agents_json(dir: &Path) -> Result<Option<LoadedAgentsJson>, String> {
 /// together with provider configuration from `agents.json`.
 /// Refuses corrupt or unreadable existing files instead of replacing saved state with defaults.
 fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
-    let (agents_json_extra, agents_configuration) = match load_agents_json(dir)? {
-        Some(loaded) => (loaded.extra, loaded.configuration),
-        None => (Map::new(), None),
-    };
+    let (agents_json_extra, agents_config_extra, agents_configuration) =
+        match load_agents_json(dir)? {
+            Some(loaded) => (loaded.extra, loaded.config_extra, loaded.configuration),
+            None => (Map::new(), Map::new(), None),
+        };
 
     let path = dir.join("workspace.json");
     let raw = match std::fs::read_to_string(&path) {
@@ -2588,6 +2683,7 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
             let had_saved_configuration = agents_configuration.is_some();
             return Ok(LoadedWorkspace {
                 agents_json_extra,
+                agents_config_extra,
                 had_saved_configuration,
                 configuration: agents_configuration.unwrap_or_default(),
                 ..LoadedWorkspace::default()
@@ -2649,6 +2745,7 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
         snapshot_extra: snapshot,
         file_extra: root,
         agents_json_extra,
+        agents_config_extra,
         had_saved_configuration,
         configuration,
     })
@@ -3394,8 +3491,153 @@ mod tests {
         );
         assert_eq!(
             shell["configuration"]["disconnectedProviders"],
-            json!(["codex", "claude"])
+            json!(ALL_PROVIDER_IDS)
         );
         coord.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn plain_connect_does_not_reenable_turned_off_default_and_disconnect_all_covers_all_node_providers() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("agents.json"),
+            serde_json::to_string_pretty(&json!({
+                "configuration": {
+                    "provider": "codex",
+                    "disconnectedProviders": ["codex", "future-provider"],
+                    "enabledProviders": ["claude"],
+                    "unknownConfigKey": "keep-in-file-only"
+                },
+                "activeThreadId": null,
+                "activeProjectId": null,
+                "draft": "",
+                "draftThreadId": null,
+                "composing": false,
+                "outbox": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+        providers.insert("claude".into(), Arc::new(MockProviderAdapter::new("claude")));
+
+        let coord = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000006".into(),
+            false,
+            providers,
+        )
+        .unwrap();
+
+        let client = ClientContext {
+            client_id: "c1".into(),
+            user: "Test".into(),
+            may_answer: true,
+        };
+        // N1: unknown configuration keys stay in agents.json and never leak into shell snapshots.
+        let initial_shell = coord.shell(true).await.unwrap();
+        assert!(initial_shell["configuration"].get("unknownConfigKey").is_none());
+
+        // L3: plain `{ type: "connect" }` without a provider must NOT re-enable turned-off `codex`.
+        let after_plain_connect = coord
+            .run_command(
+                client.clone(),
+                json!({ "type": "connect" }).as_object().unwrap().clone(),
+            )
+            .await
+            .unwrap();
+        let providers_arr = after_plain_connect["host"]["providers"].as_array().unwrap();
+        assert_eq!(
+            providers_arr.iter().find(|p| p["id"] == "codex").unwrap()["connection"],
+            "disconnected"
+        );
+        assert_eq!(
+            providers_arr.iter().find(|p| p["id"] == "claude").unwrap()["connection"],
+            "connected"
+        );
+        assert_eq!(
+            after_plain_connect["configuration"]["disconnectedProviders"],
+            json!(["codex", "future-provider"])
+        );
+
+        // L2: disconnect-all turns off ALL_PROVIDER_IDS (including deepseek, hermes, pi) and preserves unknown off IDs.
+        let after_disconnect_all = coord
+            .run_command(
+                client.clone(),
+                json!({ "type": "disconnect" }).as_object().unwrap().clone(),
+            )
+            .await
+            .unwrap();
+        let mut expected_all: Vec<&str> = ALL_PROVIDER_IDS.to_vec();
+        expected_all.push("future-provider");
+        assert_eq!(
+            after_disconnect_all["configuration"]["disconnectedProviders"],
+            json!(expected_all)
+        );
+
+        // L4: invalid configure values are refused and never written to agents.json.
+        for bad_patch in [
+            json!({ "provider": "bogus" }),
+            json!({ "newThreadSpeed": "slow" }),
+            json!({ "reasoning": "x" }),
+            json!({ "newThreadRuntimeMode": "yolo" }),
+            json!({ "reasoningModel": "a".repeat(513) }),
+        ] {
+            let err = coord
+                .run_command(
+                    client.clone(),
+                    json!({ "type": "configure", "patch": bad_patch })
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                )
+                .await;
+            assert!(err.is_err(), "expected configure to reject {bad_patch}");
+        }
+        let saved_agents: Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("agents.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved_agents["configuration"]["provider"], "codex");
+        assert_eq!(
+            saved_agents["configuration"]["unknownConfigKey"],
+            "keep-in-file-only"
+        );
+        coord.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn zero_provider_run_does_not_trigger_legacy_all_off_on_next_start() {
+        let dir = tempdir().unwrap();
+        // L5: first run with no providers loaded (e.g., smoke run without SOTTO_HOST_ENABLE_PROVIDERS=1).
+        let coord1 = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000007".into(),
+            false,
+            BTreeMap::new(),
+        )
+        .unwrap();
+        coord1.shutdown().await;
+
+        // Second run with providers enabled must connect normally, not treat the saved state as legacy all-off.
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+        let coord2 = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000007".into(),
+            false,
+            providers,
+        )
+        .unwrap();
+        let shell = coord2.shell(true).await.unwrap();
+        let providers_arr = shell["host"]["providers"].as_array().unwrap();
+        assert_eq!(
+            providers_arr.iter().find(|p| p["id"] == "codex").unwrap()["connection"],
+            "connected"
+        );
+        assert!(shell["configuration"].get("disconnectedProviders").is_none());
+        coord2.shutdown().await;
     }
 }

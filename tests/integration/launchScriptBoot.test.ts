@@ -607,6 +607,33 @@ await import('./fake.mjs')
       expect(await changes(beforeSecondLaunch)).toEqual([])
       expect((await descriptor(configuration)).instance).toBe(beforeDescriptor.instance)
     })
+
+    it('keeps a Rust-pinned unit running when another desktop launches without useRustHost', async () => {
+      const configuration = await fixture({ linger: true })
+      const rustBinName = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+      // Stand-in binary marker so resolveRustBootMode() pins use_rust_host='1' on boot-install.
+      // The fake systemd unit runs fakeSshHost.mjs regardless of the shell script's exec line.
+      await writeFile(join(configuration.installPath, 'host', rustBinName), 'stub', 'utf8')
+      const firstLaunch = await run(configuration, { op: 'launch' })
+      expect(firstLaunch.result, failureReason(firstLaunch.result)).toMatchObject({ type: 'ready', owned: true })
+
+      const install = await run(configuration, { op: 'boot-install', hostId: HOST_ID, useRustHost: true })
+      expect(install.result, failureReason(install.result)).toMatchObject({ type: 'boot-installed', installed: true, stopped: true })
+      expect(await readFile(join(configuration.installPath, 'boot-start.sh'), 'utf8')).toContain("use_rust_host='1'")
+
+      // A second desktop (such as stable) connecting with `op: 'launch'` and no `useRustHost` field
+      // must keep the pinned runtime instead of ping-pong stopping/restarting the unit.
+      const beforeOtherDesktop = (await systemd!.calls()).length
+      const beforeDescriptor = await descriptor(configuration)
+      const otherLaunch = await run(configuration, { op: 'launch' })
+      expect(otherLaunch.result, failureReason(otherLaunch.result)).toMatchObject({
+        type: 'ready',
+        pid: beforeDescriptor.pid,
+        owned: true,
+      })
+      expect(await changes(beforeOtherDesktop)).toEqual([])
+      expect((await descriptor(configuration)).instance).toBe(beforeDescriptor.instance)
+    })
   })
 })
 

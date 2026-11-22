@@ -33,8 +33,14 @@ struct HostCliArgs {
 }
 
 fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
-    let mut data_directory = std::env::var("SOTTO_HOST_DATA").ok().map(PathBuf::from);
-    let mut key_file = std::env::var("SOTTO_HOST_KEY_FILE").ok().map(PathBuf::from);
+    let mut data_directory = std::env::var("SOTTO_HOST_DATA")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from);
+    let mut key_file = std::env::var("SOTTO_HOST_KEY_FILE")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from);
     let mut explicit_version = std::env::var("SOTTO_HOST_VERSION")
         .ok()
         .filter(|v| !v.trim().is_empty());

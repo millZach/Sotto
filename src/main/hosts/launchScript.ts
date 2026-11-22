@@ -153,11 +153,10 @@ const rustMarkerPath = path.join(install, 'use-rust-host');
 const rustEntryOf = version => version ? path.join(versionsPath, version, 'host', rustBinName) : path.join(install, 'host', rustBinName);
 const wantsRustHost = async () => {
   if (typeof cfg.useRustHost === 'boolean') return cfg.useRustHost;
-  if (cfg.op === 'launch') return false;
   return (await exists(rustMarkerPath)) || pinned(await readBootScript(), 'use_rust_host') === '1';
 };
 const syncRustHostMarker = async useRust => {
-  if (cfg.op === 'launch' || typeof cfg.useRustHost === 'boolean') {
+  if (typeof cfg.useRustHost === 'boolean') {
     if (useRust && (await exists(install))) await writeAtomically(rustMarkerPath, '1\n');
     else if (!useRust) await fs.rm(rustMarkerPath, { force: true }).catch(() => undefined);
   }

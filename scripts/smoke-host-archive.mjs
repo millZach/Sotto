@@ -82,9 +82,14 @@ export async function smokeHostArchive(directory, { expectedVersion, expectedSou
 
 async function smokeRustHostBinary(binaryPath, expectedVersion) {
   const data = await mkdtemp(join(tmpdir(), 'sotto-rust-host-smoke-'))
+  const env = { ...process.env }
+  delete env.SOTTO_HOST_DATA
+  delete env.SOTTO_HOST_KEY_FILE
+  delete env.SOTTO_HOST_ENABLE_PROVIDERS
+  delete env.SOTTO_HOST_STARTED_BY
   const child = spawn(binaryPath, ['--data', data, '--port', '0'], {
     cwd: data,
-    env: { ...process.env, SOTTO_HOST_DATA: '', SOTTO_HOST_KEY_FILE: '', SOTTO_HOST_ENABLE_PROVIDERS: '', SOTTO_HOST_STARTED_BY: '' },
+    env,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
