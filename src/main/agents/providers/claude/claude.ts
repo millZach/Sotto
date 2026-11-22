@@ -53,6 +53,7 @@ import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, cla
 import { carriesAttachedFiles, deliverAttachments } from '../../attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from '../../nativeRequests'
+import { markThreadRunningAfterAnswer } from '../../postAnswerRunning'
 import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from '../../threadOptions'
 import { ClaudeActivity } from './claudeActivity'
 import { looserModeStopped, nativePermissionModes, permissionModeDrift, stricterModeNote } from './claudePermissionMode'
@@ -1302,7 +1303,9 @@ export class ClaudeStreamJsonHost implements ProviderHost {
         runtime.answerWrites.delete(pending.id)
         runtime.answered.add(pending.id)
         if (this.runtimes.get(id) === runtime && runtime.requests.get(pending.id) === pending) {
-          runtime.requests.delete(pending.id); thread.requests = thread.requests.filter(request => request.id !== pending.id); this.changed(id); this.emit()
+          runtime.requests.delete(pending.id); thread.requests = thread.requests.filter(request => request.id !== pending.id)
+          if (!pending.resumeDialog) markThreadRunningAfterAnswer(thread)
+          this.changed(id); this.emit()
         }
         if (pending.resumeDialog && answer.result === 'never') {
           alias.resumeCompactionDismissed = true

@@ -64,6 +64,7 @@ import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTo
 import { AGENT_FORK_ARCHIVED, AGENT_FORK_GONE, FORK_SOURCE_MISSING, FORKED_THREAD_SOURCE_MISSING } from '../../../../shared/threadStarts'
 import type { ThreadForkRequest } from '../../host'
 import { CodexJudge, CODEX_JUDGE_INSTRUCTIONS } from '../../../council/codexJudge'
+import { markThreadRunningAfterAnswer } from '../../postAnswerRunning'
 
 /** What a thread shows when its own app-server stopped under a running turn. */
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -2169,6 +2170,7 @@ export class CodexAppServerHost implements ProviderHost {
           if (this.watcherProfiles.has(id)) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
           const result = answerRequest(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice, command.skipped)
           await this.respond(pending, result)
+          if (markThreadRunningAfterAnswer(this.ensureThread(id), this.runningTurns.get(id))) { this.changed(id); this.emit() }
         } else if (command.type === 'interrupt') {
           if (!watcherGuard) await this.decline(id)
           watcherGuard?.()

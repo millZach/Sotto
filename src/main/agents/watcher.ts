@@ -1391,7 +1391,7 @@ export class WatcherService implements WatcherControlHooks {
         const said = watcherReplyBefore(thread, event.observedAt)
         return `Its thread has begun another turn since, so no work-settled news for this turn will follow.${said ? ` ${said}` : ''}`
       }
-      return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread), event.operationId !== undefined, watcherNewestTurnSaidMore(thread))
+      return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread), event.operationId !== undefined, watcherNewestTurnSaidMore(thread), thread.requests.length > 0)
     }
   }
   /**

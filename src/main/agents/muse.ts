@@ -39,6 +39,7 @@ import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type Thr
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { markTurnActivity } from './turnActivity'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
@@ -2229,6 +2230,7 @@ export class MuseMspHost implements ProviderHost {
               })
             }
             this.removeRequest(pending)
+            if (markThreadRunningAfterAnswer(this.threads.get(command.threadId), this.activeTurns.get(command.threadId)?.messageId)) this.changed(command.threadId)
           } catch (error) {
             if (error instanceof MuseRejected && (error.kind === 'approvalAlreadyResolved' || error.kind === 'userInputAlreadySettled')) { this.removeRequest(pending); return { accepted: true } }
             if (error instanceof MuseRejected && error.kind === 'approvalRequirementStale') {

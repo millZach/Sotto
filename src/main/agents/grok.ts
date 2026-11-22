@@ -42,6 +42,7 @@ import { GrokBackgroundWork } from './grokBackgroundWork'
 import { markTurnActivity } from './turnActivity'
 import { grokToolAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { object } from './providers/claude/claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compareClientVersions } from './clientVersions'
@@ -1511,6 +1512,7 @@ export class GrokAcpHost implements ProviderHost {
           if (pending.rpc !== this.processes.get(command.threadId)?.rpc || !this.state.connected || !this.pending.has(pending.request.id)) return { accepted: false, uncertain: true }
           try { await pending.rpc.reply(pending.wireId, result); this.removeRequest(pending) }
           catch { pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit(); return { accepted: false, uncertain: true } }
+          if (markThreadRunningAfterAnswer(this.threads.get(command.threadId))) this.changed(command.threadId)
         } else if (command.type === 'interrupt') {
           if (!watcherGuard) this.activePrompts.delete(command.threadId)
           if (!watcherGuard) await this.decline(command.threadId)

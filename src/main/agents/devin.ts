@@ -18,6 +18,7 @@ import type { ActivityChangesListener, ActivityChangesSubscription } from './thr
 import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
@@ -1276,6 +1277,7 @@ export class DevinAcpHost implements ProviderHost {
           checkScope()
           try { await connection.rpc.reply(decision.wireId, answer); this.removeRequest(command.requestId) }
           catch { decision.request.delivery = 'uncertain'; this.changed(id); this.emit(); return { accepted: false, uncertain: true } }
+          if (markThreadRunningAfterAnswer(this.threads.get(id))) this.changed(id)
         } else if (command.type === 'interrupt') {
           for (const [requestId, saved] of this.pending) if (!watcherGuard && saved.decision.threadId === id && !saved.decision.answering) {
             await connection.rpc.reply(saved.decision.wireId, devinDecline(saved.decision)); this.removeRequest(requestId)

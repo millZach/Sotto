@@ -42,6 +42,7 @@ import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import type { ScopedThreadTools } from './threadToolServer'
 import { ThreadMessageLog } from './threadMessageLog'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -1903,6 +1904,7 @@ export class OpenCodeHost implements ProviderHost {
               await entry.client.request('DELETE', `/api/session/${this.sid(alias)}/form/${pending.form.id}`, { query: { message: command.skipped ? QUESTION_SKIPPED : 'The user chose not to answer.' } })
             } else await entry.client.request('POST', `/api/session/${this.sid(alias)}/form/${pending.form.id}/reply`, { body: { answer } })
             this.removeRequest(pending)
+            if (markThreadRunningAfterAnswer(this.threads.get(command.threadId), this.activeTurns.get(command.threadId)?.messageId)) this.changed(command.threadId)
           } catch (error) {
             if (error instanceof OpenCodeRejected && (error.status === 404 || error.status === 409)) { this.removeRequest(pending); return { accepted: true } }
             if (error instanceof OpenCodeRejected) { pending.answering = false; throw new Error('OpenCode refused that answer. Nothing was sent. Review the request and answer again.', { cause: error }) }
