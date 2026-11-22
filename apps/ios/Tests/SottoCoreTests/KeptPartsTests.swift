@@ -88,4 +88,75 @@ final class KeptPartsTests: XCTestCase {
         var cache = KeptPartsCache()
         XCTAssertEqual(cache.whole(answer), answer)
     }
+
+    private func watcherJSON(messages: String, working: Bool = true, observedAt: String = "2026-11-22T12:00:00.000Z", revision: Int = 1) -> String {
+        #""watcher":{"hostId":"h","current":null,"conversation":{"messages":[\#(messages)],"earlierAvailable":true,"revision":\#(revision)},"receiptGroups":[],"watchedThreads":[],"needsYou":[],"inFlight":0,"inFlightLimit":8,"working":\#(working),"recoveryNotice":null,"observedAt":"\#(observedAt)"}"#
+    }
+
+    func testThePhoneAcceptsWatcherPhoneParts() {
+        guard case .array(let accepts)? = WatcherWire.managementHello["accepts"] else { return XCTFail("Missing accepts") }
+        XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.partsFeature) }.count, 1)
+    }
+
+    func testWatcherSubPartsAndConversationDeltaReassembleAcrossTopLevelKeepAndWindowSlide() async throws {
+        var cache = KeptPartsCache()
+        let m1 = #"{"id":"m1","role":"user","text":"First","createdAt":"2026-11-22T12:00:00.000Z"}"#
+        let m2 = #"{"id":"m2","role":"assistant","text":"Hello","createdAt":"2026-11-22T12:00:01.000Z"}"#
+        let first = try await shell(push(top: wholeTop + "," + watcherJSON(messages: m1 + "," + m2), host: wholeHost, revision: 1, base: nil))
+        let appliedFirst = try XCTUnwrap(cache.whole(first))
+        XCTAssertEqual(appliedFirst.watcher?.conversation.messages.map(\.text), ["First", "Hello"])
+
+        // Push 2 keeps top-level `watcher` unchanged: `watcherParts` must carry forward for push 3.
+        let topKept = try await shell(push(top: #""kept":["deliveries","error","followupReceipts","watcher"]"#, host: keptHost, revision: 2, base: 1))
+        let appliedTopKept = try XCTUnwrap(cache.whole(topKept))
+        XCTAssertEqual(appliedTopKept.watcher, appliedFirst.watcher)
+
+        // Push 3 streams text into the last message via `conversationDelta` and keeps every other Watcher sub-part.
+        let streamWatcher = #""watcher":{"observedAt":"2026-11-22T12:00:02.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":2,"appendLastText":" world","tail":[],"earlierAvailable":true,"revision":2}}"#
+        let streamed = try await shell(push(top: keptTop + "," + streamWatcher, host: keptHost, revision: 3, base: 2))
+        let appliedStream = try XCTUnwrap(cache.whole(streamed))
+        XCTAssertEqual(appliedStream.watcher?.conversation.messages.map(\.text), ["First", "Hello world"])
+        XCTAssertEqual(appliedStream.watcher?.conversation.revision, 2)
+        XCTAssertEqual(appliedStream.watcher?.working, true)
+        XCTAssertEqual(appliedStream.watcher?.observedAt, "2026-11-22T12:00:02.000Z")
+        XCTAssertNil(appliedStream.watcher?.conversationDelta)
+
+        // Push 4 slides the window (`dropHead: 1`), appends a new message, and toggles `working`.
+        let m3 = #"{"id":"m3","role":"user","text":"Next","createdAt":"2026-11-22T12:00:03.000Z"}"#
+        let slideWatcher = #""watcher":{"working":false,"observedAt":"2026-11-22T12:00:03.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","recoveryNotice"],"conversationDelta":{"dropHead":1,"keep":1,"tail":[\#(m3)],"earlierAvailable":true,"revision":3}}"#
+        let slid = try await shell(push(top: keptTop + "," + slideWatcher, host: keptHost, revision: 4, base: 3))
+        let appliedSlide = try XCTUnwrap(cache.whole(slid))
+        XCTAssertEqual(appliedSlide.watcher?.conversation.messages.map(\.id), ["m2", "m3"])
+        XCTAssertEqual(appliedSlide.watcher?.conversation.messages.map(\.text), ["Hello world", "Next"])
+        XCTAssertEqual(appliedSlide.watcher?.working, false)
+
+        // Push 5 changes only `observedAt` and keeps `conversation` whole in `watcher.kept`.
+        let metaWatcher = #""watcher":{"observedAt":"2026-11-22T12:00:04.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"]}"#
+        let meta = try await shell(push(top: keptTop + "," + metaWatcher, host: keptHost, revision: 5, base: 4))
+        let appliedMeta = try XCTUnwrap(cache.whole(meta))
+        XCTAssertEqual(appliedMeta.watcher?.conversation, appliedSlide.watcher?.conversation)
+        XCTAssertEqual(appliedMeta.watcher?.observedAt, "2026-11-22T12:00:04.000Z")
+    }
+
+    func testInvalidWatcherDeltaOrUnheldSubPartIsRejectedWithoutMovingHeldState() async throws {
+        var cache = KeptPartsCache()
+        let m1 = #"{"id":"m1","role":"user","text":"First","createdAt":"2026-11-22T12:00:00.000Z"}"#
+        let first = try await shell(push(top: wholeTop + "," + watcherJSON(messages: m1), host: wholeHost, revision: 1, base: nil))
+        _ = try XCTUnwrap(cache.whole(first))
+
+        let outOfBounds = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":5,"tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
+        let appendZero = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":0,"appendLastText":"x","tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
+        let unheldPart = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice","machines"]}"#, host: keptHost, revision: 2, base: 1))
+        let conflict = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":1,"tail":[],"earlierAvailable":true,"revision":2}}"#, host: keptHost, revision: 2, base: 1))
+
+        XCTAssertNil(cache.whole(outOfBounds))
+        XCTAssertNil(cache.whole(appendZero))
+        XCTAssertNil(cache.whole(unheldPart))
+        XCTAssertNil(cache.whole(conflict))
+
+        // Held revision 1 is still intact after all rejections.
+        let valid = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:02.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"]}"#, host: keptHost, revision: 2, base: 1))
+        let restored = try XCTUnwrap(cache.whole(valid))
+        XCTAssertEqual(restored.watcher?.conversation.messages.map(\.text), ["First"])
+    }
 }

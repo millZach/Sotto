@@ -43,3 +43,65 @@ export function withKeptPartsPutBack<Whole>(wire: { readonly kept?: unknown; rea
   for (const key of hostKept) if (!Object.hasOwn(host, key)) host[key] = held.host[key]
   return { ...top, host } as Whole
 }
+
+/** A Watcher conversation message on the phone wire (`WatcherPhoneState['conversation']['messages'][number]`). */
+export interface WatcherConversationMessage {
+  readonly id: string
+  readonly role: string
+  readonly text: string
+  readonly createdAt: string
+  readonly attachments?: readonly unknown[] | undefined
+}
+/**
+ * What changed in Watcher's conversation since the last shell push (`watcher-phone-parts`, ADR-0025): drop `dropHead`
+ * oldest messages (e.g. when the 200-message window slides), keep the next `keep` messages, optionally append
+ * `appendLastText` onto the last kept message, and append `tail`.
+ */
+export interface WatcherConversationDelta {
+  readonly dropHead: number
+  readonly keep: number
+  readonly appendLastText?: string | undefined
+  readonly tail: readonly WatcherConversationMessage[]
+  readonly earlierAvailable: boolean
+  readonly revision: number
+}
+/** A Watcher phone page with unchanged sub-parts left out (`kept`) and/or `conversation` replaced by `conversationDelta`. */
+export type WatcherPhoneWireParts<Page extends { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } } = { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } }> =
+  Partial<Page> & { readonly kept?: string[] | undefined; readonly conversationDelta?: WatcherConversationDelta | undefined }
+
+/**
+ * Reconstructs a complete Watcher phone page from a compact `watcher-phone-parts` wire object and the previous pushed
+ * page `held`. Returns `undefined` if any kept field is missing from `held` or if `conversationDelta` is out of bounds or
+ * conflicts with `conversation` / `kept`.
+ */
+export function withWatcherPhonePartsPutBack<
+  Page extends { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } },
+>(wire: WatcherPhoneWireParts<Page>, held: Page | null): Page | undefined {
+  const kept = Array.isArray(wire.kept) ? wire.kept : []
+  const delta = wire.conversationDelta
+  if (!kept.length && delta === undefined) return wire as Page
+  if (held === null) return undefined
+  const heldRecord = held as unknown as Readonly<Record<string, unknown>>
+  const wireRecord = wire as unknown as Readonly<Record<string, unknown>>
+  if (!kept.every(key => typeof key === 'string' && key !== 'kept' && key !== 'conversationDelta' && Object.hasOwn(heldRecord, key))) return undefined
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(wireRecord)) {
+    if (key === 'kept' || key === 'conversationDelta') continue
+    out[key] = value
+  }
+  for (const key of kept) if (!Object.hasOwn(out, key)) out[key] = heldRecord[key]
+  if (delta !== undefined) {
+    if (Object.hasOwn(wireRecord, 'conversation') || kept.includes('conversation')) return undefined
+    const prev = held.conversation.messages
+    if (!Number.isInteger(delta.dropHead) || !Number.isInteger(delta.keep) || delta.dropHead < 0 || delta.keep < 0 || delta.dropHead + delta.keep > prev.length) return undefined
+    if (delta.appendLastText !== undefined && delta.keep === 0) return undefined
+    const messages = prev.slice(delta.dropHead, delta.dropHead + delta.keep)
+    if (delta.appendLastText !== undefined) {
+      const last = messages[messages.length - 1]!
+      messages[messages.length - 1] = { ...last, text: last.text + delta.appendLastText }
+    }
+    messages.push(...delta.tail)
+    out.conversation = { messages, earlierAvailable: delta.earlierAvailable, revision: delta.revision }
+  }
+  return out as unknown as Page
+}

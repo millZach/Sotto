@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import type { KeptPartsBase, KeptPartsShell } from '../../shared/keptParts'
+import type { KeptPartsBase, KeptPartsShell, WatcherConversationDelta, WatcherConversationMessage, WatcherPhoneWireParts } from '../../shared/keptParts'
 import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentThread, AgentThreadsBroadcast, KeptHostPart, KeptPart } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
@@ -143,6 +143,70 @@ export function withKeptParts(whole: { readonly host: object }, parts: KeptParts
   if (hostKept.length) host.kept = hostKept
   // The parts left out are absent: the page puts them back from the broadcast it holds before anything reads the state.
   return { ...top, ...kept.length ? { kept } : {}, host }
+}
+
+function sameMessageExceptText(before: WatcherConversationMessage, after: WatcherConversationMessage): boolean {
+  const left = before as unknown as Readonly<Record<string, unknown>>
+  const right = after as unknown as Readonly<Record<string, unknown>>
+  let keys = 0
+  for (const key in right) {
+    if (key === 'text') continue
+    keys++
+    const a = left[key], b = right[key]
+    if (a === b ? a === undefined && !Object.hasOwn(left, key) : !samePlainData(a, b)) return false
+  }
+  for (const key in left) if (key !== 'text') keys--
+  return keys === 0
+}
+
+function diffWatcherConversation(
+  prev: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number },
+  next: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number },
+): WatcherConversationDelta | undefined {
+  const prevMsgs = prev.messages, nextMsgs = next.messages
+  if (!prevMsgs.length || !nextMsgs.length) return undefined
+  const firstId = nextMsgs[0]!.id
+  const dropHead = prevMsgs[0]!.id === firstId ? 0 : prevMsgs.findIndex(message => message.id === firstId)
+  if (dropHead < 0) return undefined
+  let keep = 0
+  while (dropHead + keep < prevMsgs.length && keep < nextMsgs.length && samePlainData(prevMsgs[dropHead + keep], nextMsgs[keep])) keep++
+  let appendLastText: string | undefined
+  if (dropHead + keep < prevMsgs.length && keep < nextMsgs.length) {
+    const before = prevMsgs[dropHead + keep]!, after = nextMsgs[keep]!
+    if (sameMessageExceptText(before, after) && after.text.length > before.text.length && after.text.startsWith(before.text)) {
+      appendLastText = after.text.slice(before.text.length)
+      keep++
+    }
+  }
+  if (keep === 0) return undefined
+  return { dropHead, keep, ...(appendLastText !== undefined ? { appendLastText } : {}), tail: nextMsgs.slice(keep),
+    earlierAvailable: next.earlierAvailable, revision: next.revision }
+}
+
+/**
+ * Encodes a changed Watcher phone page against the last pushed page `prev` (`watcher-phone-parts`): unchanged sub-parts
+ * are named in `kept` and omitted, and a changed `conversation` that shares messages with `prev` goes as
+ * `conversationDelta` instead of resending all 200 messages.
+ */
+export function withWatcherPhoneParts<
+  Page extends { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } },
+>(next: Page, prev: Page): WatcherPhoneWireParts<Page> {
+  const prevRecord = prev as unknown as Readonly<Record<string, unknown>>
+  const out: Record<string, unknown> = {}
+  const kept: string[] = []
+  for (const [key, value] of Object.entries(next as unknown as Readonly<Record<string, unknown>>)) {
+    if (key === 'conversation') continue
+    if (value !== undefined && Object.hasOwn(prevRecord, key) && samePlainData(prevRecord[key], value)) kept.push(key)
+    else out[key] = value
+  }
+  if (samePlainData(prev.conversation, next.conversation)) kept.push('conversation')
+  else {
+    const delta = diffWatcherConversation(prev.conversation, next.conversation)
+    if (delta !== undefined) out.conversationDelta = delta
+    else out.conversation = next.conversation
+  }
+  if (kept.length) out.kept = kept
+  return out as WatcherPhoneWireParts<Page>
 }
 
 interface ThreadBase {
