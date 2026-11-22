@@ -4631,7 +4631,8 @@ export class AgentControl {
       this.selectThread(threadId, this.selectionRevision)
       this.state.error = null
       this.publish()
-      await this.persist()
+      // Active selection saves in the background so switching threads never waits behind in-flight disk writes (#2733); `closed()` drains it.
+      this.persistAfterSnapshots()
     } catch (error) {
       failure = error instanceof Error ? error.message : 'Could not select this thread.'
       this.setCommandError(error, failure)
@@ -6377,6 +6378,7 @@ export class AgentControl {
     this.afterSnapshotsPersistQueued = true
     queueMicrotask(() => {
       this.afterSnapshotsPersistQueued = false
+      if (this.disposed) return
       void this.persist().catch(() => {
         if (this.disposed) return
         this.state.error = 'Agent state could not be saved. Your drafts are kept in this session. Restore access to local storage and retry.'; this.publish()
