@@ -79,9 +79,10 @@ export interface TurnPatch { readonly patch: string; readonly additions: number;
  * One file's change in a turn as a unified patch with three lines of context, the way `git diff` prints it, so
  * Changes reads a turn the way it reads Git. `null` before is a file the turn added; `null` after, one it deleted.
  * With `ignoreWhitespace`, lines that differ only in whitespace count as the same, as `git diff -w` does; a file
- * whose only change was whitespace then has no hunks.
+ * whose only change was whitespace then has no hunks. `context` is how many unchanged lines each hunk keeps around its
+ * change: Git's three by default, none for an edit row that shows only what changed.
  */
-export function turnPatch(path: string, before: string | null, after: string | null, ignoreWhitespace = false): TurnPatch {
+export function turnPatch(path: string, before: string | null, after: string | null, ignoreWhitespace = false, context = CONTEXT): TurnPatch {
   const a = lines(before ?? ''), b = lines(after ?? '')
   // A last line without a newline differs from the same text with one, as Git counts it.
   const key = (line: Line): string => (ignoreWhitespace ? line.text.replace(/\s+/gu, '') : line.text) + (line.newline ? '' : '\0')
@@ -96,11 +97,11 @@ export function turnPatch(path: string, before: string | null, after: string | n
   while (cursor < changed.length) {
     const first = changed[cursor]!
     let last = first
-    while (cursor + 1 < changed.length && changed[cursor + 1]! - last <= CONTEXT * 2 + 1) last = changed[++cursor]!
+    while (cursor + 1 < changed.length && changed[cursor + 1]! - last <= context * 2 + 1) last = changed[++cursor]!
     cursor++
-    const from = Math.max(0, first - CONTEXT), to = Math.min(edits.length - 1, last + CONTEXT)
+    const from = Math.max(0, first - context), to = Math.min(edits.length - 1, last + context)
     const hunk = edits.slice(from, to + 1)
-    const oldStart = firstIndex(edits, from, 'old'), newStart = firstIndex(edits, from, 'new')
+    const oldStart = firstIndex(edits, from, to, 'old'), newStart = firstIndex(edits, from, to, 'new')
     const oldCount = hunk.filter(edit => edit.kind !== 'add').length, newCount = hunk.filter(edit => edit.kind !== 'remove').length
     out.push(`@@ -${range(oldStart, oldCount)} +${range(newStart, newCount)} @@`)
     for (const edit of hunk) {
@@ -114,9 +115,12 @@ export function turnPatch(path: string, before: string | null, after: string | n
   return { patch: `${out.join('\n')}\n`, additions, deletions }
 }
 
-/** The 1-based line a hunk starts at on one side: the first line of that side at or after `from`. */
-function firstIndex(edits: readonly Edit[], from: number, side: 'old' | 'new'): number {
-  for (let index = from; index < edits.length; index++) {
+/**
+ * The 1-based line a hunk starts at on one side: the first line of that side in the hunk, `from` to `to`. A side with
+ * no lines in the hunk, as an insertion's old side with no context, is numbered by the line before it, as Git numbers it.
+ */
+function firstIndex(edits: readonly Edit[], from: number, to: number, side: 'old' | 'new'): number {
+  for (let index = from; index <= to; index++) {
     const edit = edits[index]!
     if (side === 'old' && edit.kind !== 'add') return edit.old + 1
     if (side === 'new' && edit.kind !== 'remove') return edit.new + 1

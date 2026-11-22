@@ -183,6 +183,17 @@ it.skipIf(!live)('does what a Claude thread does, on Google’s own agy', { time
       return { passed: written === 'parity' && waiting.length === 0, saw: { written, waiting, rows } }
     })
 
+    // An edit placed on its lines (parity slice 5): only the changed lines, numbered as the file is now.
+    await check('edit-lines', async () => {
+      await writeFile(join(project, 'lines.txt'), 'alpha\nbravo\ncharlie\ndelta\necho\n')
+      const id = await open('auto-accept-edits')
+      await send(id, 'In lines.txt, replace the line charlie with CHARLIE. Use your file editing tool, not the shell. Then reply done.')
+      await idle(id)
+      const diffs = (await thread(id)).activities?.filter(row => row.kind === 'file-change').flatMap(row => row.changes?.map(change => change.diff ?? '') ?? []) ?? []
+      // The report keeps each diff's first line only, a hunk's place, never the file's text.
+      return { passed: diffs.some(diff => diff.startsWith('@@ -3 +3 @@') && diff.includes('-charlie') && diff.includes('+CHARLIE')), saw: { heads: diffs.map(diff => diff.startsWith('@@') ? diff.split('\n')[0] : 'as reported') } }
+    })
+
     // A question agy asks the user, as a card.
     await check('question-card', async () => {
       const id = await open('approval-required')

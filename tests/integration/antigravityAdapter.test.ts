@@ -410,6 +410,23 @@ describe('Antigravity ACP adapter', () => {
     await expect.poll(() => handed('session/resume')).toEqual([[expected[0], { name: 'files', command: 'files-mcp', args: [], env: [] }]])
   })
 
+  it('places a finished edit on its lines, numbered as the file is now, and leaves one it cannot place as agy reported it', async () => {
+    const id = await open()
+    await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Go' })
+    const before = 'alpha\nbravo\ncharlie\ndelta\n', after = 'alpha\nbravo\nCHARLIE\nextra\ndelta\n'
+    const path = join(f!.root, 'notes.txt')
+    await writeFile(path, after)
+    // agy 1.5.14 names a Windows file with a leading slash: /C:/Users/….
+    const named = process.platform === 'win32' ? `/${path.replace(/\\/gu, '/')}` : path
+    await f!.action(id, { type: 'edit', path: named, oldText: before, newText: after })
+    const edits = async () => (await thread(id)).activities?.filter(row => row.kind === 'file-change').map(row => row.changes?.map(change => change.diff))
+    await expect.poll(edits).toEqual([['@@ -3 +3,2 @@\n-charlie\n+CHARLIE\n+extra']])
+    // A file that no longer holds the new text cannot say where the edit is.
+    await f!.action(id, { type: 'edit', path: join(f!.root, 'gone.txt'), oldText: 'a\n', newText: 'b\n' })
+    await expect.poll(async () => (await edits())?.length).toBe(2)
+    expect((await edits())?.[1]).toEqual(['--- before\na\n\n+++ after\nb\n'])
+  })
+
   it('reads the account’s models again when agy updates, and keeps the list it had when that read fails', async () => {
     f = await antigravityFixture()
     await f.host.connect()

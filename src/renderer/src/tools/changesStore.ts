@@ -7,7 +7,7 @@ import type { ToolsError, ToolsResult } from '../../../shared/tools'
 import { inEnglish } from '../state/interfaceLanguage'
 import type { LaterWords } from '../features/settings/laterWords'
 import { errorWords, ownError, type ToolsNotice } from './toolsWords'
-import { turnPatch } from './turnDiff'
+import { turnPatch } from '../../../shared/turnDiff'
 
 export type ChangesListState =
   | { readonly status: 'loading' }

@@ -75,6 +75,16 @@ describe('diffing the detail of one thread', () => {
     expect(applyAgentThreadDetailDelta(held, delta)?.activities).toEqual([next])
   })
 
+  it('carries a change whose diff changed form at the same length, as an edit placed on its lines (parity slice 5)', () => {
+    const reported = '--- before\nab\n+++ after\ncd\n', placed = '@@ -3,2 +3,2 @@\n-ab\n+cd\n---'
+    expect(placed.length).toBe(reported.length)
+    const old = record('edit', { kind: 'file-change', status: 'completed', title: 'File a.ts', changes: [{ path: 'a.ts', kind: 'edit', diff: reported }] })
+    const held = base([], [old])
+    const next = { ...old, changes: [{ path: 'a.ts', kind: 'edit', diff: placed }] }
+    const delta = diffAgentThreadDetail(held, { messages: [], activities: [next] }, 5)!
+    expect(delta.activityDeltas).toEqual([{ record: next }])
+  })
+
   it('carries a turn on the user’s own server that is tried again or let down while its status stays the same (ADR-0124)', () => {
     const server = { name: 'Sparks', model: 'DeepSeek V4.1 Flash', host: 'spark-head:8888' }
     const old = record('turn', { kind: 'turn', title: 'Working', ownServer: server })

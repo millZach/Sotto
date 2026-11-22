@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { turnPatch } from '../../../../src/renderer/src/tools/turnDiff'
+import { turnPatch } from '../../../src/shared/turnDiff'
 describe('a turn’s file as a unified patch', () => {
 
   it('writes added and deleted files with their counts and headers', () => {
@@ -23,5 +23,11 @@ describe('a turn’s file as a unified patch', () => {
     const before = Array.from({ length: 1500 }, (_v, i) => `old ${i}`).join('\n') + '\n'
     const after = Array.from({ length: 1500 }, (_v, i) => `new ${i}`).join('\n') + '\n'
     expect(turnPatch('big.txt', before, after)).toMatchObject({ additions: 1500, deletions: 1500 })
+  })
+
+  it('numbers an empty side of a hunk with no context by the line before it, as Git does', () => {
+    const hunk = (before: string, after: string) => turnPatch('f.txt', before, after, false, 0).patch.split('\n').find(line => line.startsWith('@@'))
+    expect(hunk('a\nb\n', 'a\nx\nb\n')).toBe('@@ -1,0 +2 @@')
+    expect(hunk('a\nx\nb\n', 'a\nb\n')).toBe('@@ -2 +1,0 @@')
   })
 })
