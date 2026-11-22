@@ -58,6 +58,9 @@ pub fn process_alive(pid: u32) -> bool {
     }
     #[cfg(unix)]
     {
+        if pid > i32::MAX as u32 {
+            return false;
+        }
         // `kill(pid, 0)`: 0 means alive; EPERM means alive under another account; ESRCH means gone.
         extern "C" {
             fn kill(pid: i32, sig: i32) -> i32;

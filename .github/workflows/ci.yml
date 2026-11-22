@@ -603,11 +603,11 @@ jobs:
           rustc --version
           cargo --version
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test workspace
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build sotto-host binary
-        run: cargo build -p sotto-host --bin sotto-host
+        run: cargo build -p sotto-host --bin sotto-host --locked
       - name: Install Node test dependencies
         run: npm ci --ignore-scripts
       - name: Cross-language parity test

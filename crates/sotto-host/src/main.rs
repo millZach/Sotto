@@ -55,7 +55,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
 
     let started_by = std::env::var("SOTTO_HOST_STARTED_BY")
         .ok()
-        .filter(|v| v == "ssh" || v == "boot");
+        .filter(|v| v == "launch-script" || v == "boot");
 
     Ok(HostCliArgs {
         data_directory,
@@ -103,6 +103,14 @@ async fn main() -> ExitCode {
     if let Err(err) = std::fs::create_dir_all(&parsed.data_directory) {
         eprintln!("Could not create host data folder: {err}");
         return ExitCode::from(1);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(
+            &parsed.data_directory,
+            std::fs::Permissions::from_mode(0o700),
+        );
     }
 
     let boot = read_boot_id();
@@ -332,6 +340,21 @@ mod tests {
             Ok(_) => assert_eq!(close_hdr[0] & 0x0f, 0x8),
             Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof),
         }
+
+        // Non-loopback Origin is rejected with 403 Forbidden (ADR-0016).
+        let mut cross = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        cross
+            .write_all(b"GET /v1/health HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: https://evil.example\r\n\r\n")
+            .await
+            .unwrap();
+        let mut cross_reader = BufReader::new(cross);
+        let mut cross_status = String::new();
+        cross_reader.read_line(&mut cross_status).await.unwrap();
+        assert!(cross_status.starts_with("HTTP/1.1 403"));
+
+        // Read-only hello never created missing SQLite files on disk.
+        assert!(!dir.path().join("threads.sqlite").exists());
+        assert!(!dir.path().join("memory.sqlite").exists());
 
         // Oversized HTTP header line is rejected without unbounded buffering.
         let mut big = TcpStream::connect(("127.0.0.1", port)).await.unwrap();

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -30,6 +30,16 @@ pub fn open_sqlite(path: &Path) -> Result<Connection, StoreError> {
          PRAGMA synchronous = NORMAL;
          PRAGMA recursive_triggers = ON;",
     )?;
+    Ok(conn)
+}
+
+/// Opens an existing SQLite database strictly read-only without creating missing files.
+pub fn open_sqlite_readonly(path: &Path) -> Result<Connection, StoreError> {
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.busy_timeout(Duration::from_secs(5))?;
     Ok(conn)
 }
 
@@ -72,6 +82,11 @@ pub struct ThreadStore {
 impl ThreadStore {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let conn = open_sqlite(path)?;
+        Ok(Self { conn })
+    }
+
+    pub fn open_readonly(path: &Path) -> Result<Self, StoreError> {
+        let conn = open_sqlite_readonly(path)?;
         Ok(Self { conn })
     }
 
@@ -234,6 +249,11 @@ impl SubagentStore {
         Ok(Self { conn })
     }
 
+    pub fn open_readonly(path: &Path) -> Result<Self, StoreError> {
+        let conn = open_sqlite_readonly(path)?;
+        Ok(Self { conn })
+    }
+
     pub fn quick_check(&self) -> Result<String, StoreError> {
         let status: String = self.conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
         Ok(status)
@@ -273,6 +293,11 @@ pub struct UsageStore {
 impl UsageStore {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let conn = open_sqlite(path)?;
+        Ok(Self { conn })
+    }
+
+    pub fn open_readonly(path: &Path) -> Result<Self, StoreError> {
+        let conn = open_sqlite_readonly(path)?;
         Ok(Self { conn })
     }
 
@@ -332,6 +357,11 @@ impl MemoryStore {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let conn = open_sqlite(path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        Ok(Self { conn })
+    }
+
+    pub fn open_readonly(path: &Path) -> Result<Self, StoreError> {
+        let conn = open_sqlite_readonly(path)?;
         Ok(Self { conn })
     }
 

@@ -3,8 +3,8 @@ use serde_json::Value;
 
 /// Frozen wire protocol version 1 (ADR-0025).
 pub const HOST_PROTOCOL_VERSION: u8 = 1;
-/// Maximum WebSocket frame size accepted by the host (32 MiB, matching `HOST_MAX_FRAME_BYTES`).
-pub const HOST_MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
+/// Maximum WebSocket frame size accepted by the host (16 MiB, matching `HOST_MAX_FRAME_BYTES`).
+pub const HOST_MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

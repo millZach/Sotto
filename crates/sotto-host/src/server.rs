@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, watch, Semaphore};
 
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::{
@@ -29,6 +29,8 @@ use crate::ws::{
 const MAX_HTTP_BODY_BYTES: usize = 256 * 1024;
 const MAX_HTTP_HEADER_BYTES: usize = 16 * 1024;
 const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_CONCURRENT_CONNECTIONS: usize = 64;
+const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(50);
 const SOTTO_HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct HostState {
@@ -141,6 +143,7 @@ impl RunningServer {
 
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
         let server_state = Arc::clone(&state);
+        let conn_limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
         let task = tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -150,12 +153,22 @@ impl RunningServer {
                         }
                     }
                     accepted = listener.accept() => {
-                        if let Ok((stream, _addr)) = accepted {
-                            let peer_state = Arc::clone(&server_state);
-                            let peer_shutdown = shutdown_rx.clone();
-                            tokio::spawn(async move {
-                                let _ = handle_connection(stream, peer_state, peer_shutdown).await;
-                            });
+                        match accepted {
+                            Ok((stream, _addr)) => {
+                                let Ok(permit) = Arc::clone(&conn_limit).try_acquire_owned() else {
+                                    drop(stream);
+                                    continue;
+                                };
+                                let peer_state = Arc::clone(&server_state);
+                                let peer_shutdown = shutdown_rx.clone();
+                                tokio::spawn(async move {
+                                    let _permit = permit;
+                                    let _ = handle_connection(stream, peer_state, peer_shutdown).await;
+                                });
+                            }
+                            Err(_) => {
+                                tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await;
+                            }
                         }
                     }
                 }
@@ -277,6 +290,12 @@ async fn handle_connection(
         Ok(Err(HeaderReadError::Io(err))) => return Err(err),
     };
 
+    if !is_allowed_origin(headers.get("origin").map(String::as_str)) {
+        let mut stream = reader.into_inner();
+        send_http_error(&mut stream, HostErrorCode::Forbidden, None).await?;
+        return Ok(());
+    }
+
     if method == "GET"
         && path == "/v1/socket"
         && headers
@@ -316,6 +335,7 @@ async fn handle_connection(
             "port": state.port,
             "pid": std::process::id(),
             "status": "ready",
+            "sottoVersion": about.version,
             "version": about.version,
             "platform": about.platform,
             "arch": about.arch,
@@ -438,6 +458,7 @@ async fn handle_connection(
             &json!({
                 "v": HOST_PROTOCOL_VERSION,
                 "hostId": state.host_id,
+                "clientId": client_id,
                 "session": session.session,
                 "expiresAt": session.expires_at,
             }),
@@ -483,11 +504,11 @@ async fn handle_websocket_upgrade(
     mut shutdown: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let session = extract_bearer(headers).to_string();
-    let client_id = state.pairing.lock().unwrap().verify_session(&session);
+    let verified = state.pairing.lock().unwrap().verify_session_with_expiry(&session);
     let key = headers.get("sec-websocket-key").map(String::as_str);
     let version = headers.get("sec-websocket-version").map(String::as_str);
 
-    let (Some(client_id), Some(key)) = (client_id, key) else {
+    let (Some((client_id, expiry_ms)), Some(key)) = (verified, key) else {
         stream
             .write_all(b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
             .await?;
@@ -514,8 +535,13 @@ async fn handle_websocket_upgrade(
 
     let mut reader_state = WsReaderState::default();
     let mut revoked_rx = state.revoked_tx.subscribe();
-    let mut expiry_tick = tokio::time::interval(Duration::from_secs(1));
-    expiry_tick.tick().await;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let remaining_ms = (expiry_ms - now_ms).max(0) as u64;
+    let expiry_sleep = tokio::time::sleep(Duration::from_millis(remaining_ms));
+    tokio::pin!(expiry_sleep);
 
     loop {
         let next = tokio::select! {
@@ -532,12 +558,9 @@ async fn handle_websocket_upgrade(
                 }
                 continue;
             }
-            _ = expiry_tick.tick() => {
-                if state.pairing.lock().unwrap().verify_session(&session).as_deref() != Some(client_id.as_str()) {
-                    let _ = write_ws_close(&mut stream).await;
-                    break;
-                }
-                continue;
+            _ = &mut expiry_sleep => {
+                let _ = write_ws_close(&mut stream).await;
+                break;
             }
             msg = read_ws_message(&mut stream, deflate, &mut reader_state) => msg,
         };
@@ -551,7 +574,16 @@ async fn handle_websocket_upgrade(
                     let _ = write_ws_close(&mut stream).await;
                     break;
                 }
-                let reply = handle_ws_request(&state, &text);
+                let req_state = Arc::clone(&state);
+                let reply = tokio::task::spawn_blocking(move || handle_ws_request(&req_state, &text))
+                    .await
+                    .unwrap_or_else(|_| {
+                        HostResponseEnvelope::err(
+                            String::new(),
+                            HostErrorCode::Unavailable,
+                            HostErrorCode::Unavailable.default_message(),
+                        )
+                    });
                 let encoded = serde_json::to_string(&reply).map_err(std::io::Error::other)?;
                 if write_ws_text(&mut stream, &encoded, deflate).await.is_err() {
                     break;
@@ -594,20 +626,22 @@ fn handle_ws_request(state: &HostState, raw: &str) -> HostResponseEnvelope {
     match req.op.as_str() {
         "hello" => {
             let about = state.about();
-            let thread_ids = ThreadStore::open(&state.data_directory.join("threads.sqlite"))
+            let thread_ids = ThreadStore::open_readonly(&state.data_directory.join("threads.sqlite"))
                 .and_then(|s| s.list_thread_ids())
                 .unwrap_or_default();
-            let memory_version = MemoryStore::open(&state.data_directory.join("memory.sqlite"))
-                .and_then(|s| s.schema_version())
-                .unwrap_or(0);
-            let usage_meta = UsageStore::open(&state.data_directory.join("usage.sqlite"))
+            let memory_version =
+                MemoryStore::open_readonly(&state.data_directory.join("memory.sqlite"))
+                    .and_then(|s| s.schema_version())
+                    .unwrap_or(0);
+            let usage_meta = UsageStore::open_readonly(&state.data_directory.join("usage.sqlite"))
                 .and_then(|s| s.read_meta())
                 .ok()
                 .flatten();
-            let subagents_ok = SubagentStore::open(&state.data_directory.join("subagents.sqlite"))
-                .and_then(|s| s.quick_check())
-                .map(|s| s == "ok")
-                .unwrap_or(false);
+            let subagents_ok =
+                SubagentStore::open_readonly(&state.data_directory.join("subagents.sqlite"))
+                    .and_then(|s| s.quick_check())
+                    .map(|s| s == "ok")
+                    .unwrap_or(false);
             HostResponseEnvelope::ok(
                 req.id,
                 json!({
@@ -628,7 +662,7 @@ fn handle_ws_request(state: &HostState, raw: &str) -> HostResponseEnvelope {
         }
         "ping" => HostResponseEnvelope::ok(req.id, json!({ "pong": true })),
         "shell" | "state" => {
-            let thread_ids = ThreadStore::open(&state.data_directory.join("threads.sqlite"))
+            let thread_ids = ThreadStore::open_readonly(&state.data_directory.join("threads.sqlite"))
                 .and_then(|s| s.list_thread_ids())
                 .unwrap_or_default();
             HostResponseEnvelope::ok(
@@ -647,7 +681,18 @@ fn handle_ws_request(state: &HostState, raw: &str) -> HostResponseEnvelope {
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
-            match ThreadStore::open(&state.data_directory.join("threads.sqlite")) {
+            let db_path = state.data_directory.join("threads.sqlite");
+            if !db_path.exists() {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    json!({
+                        "threadId": thread_id,
+                        "messages": [],
+                        "activities": [],
+                    }),
+                );
+            }
+            match ThreadStore::open_readonly(&db_path) {
                 Ok(store) => {
                     let messages = store.read_messages(thread_id).unwrap_or_default();
                     let activities = store.read_activities(thread_id).unwrap_or_default();
@@ -686,7 +731,17 @@ fn handle_ws_request(state: &HostState, raw: &str) -> HostResponseEnvelope {
                 .and_then(Value::as_u64)
                 .unwrap_or(200)
                 .min(500) as usize;
-            match ThreadStore::open(&state.data_directory.join("threads.sqlite")) {
+            let db_path = state.data_directory.join("threads.sqlite");
+            if !db_path.exists() {
+                return HostResponseEnvelope::ok(
+                    req.id,
+                    json!({
+                        "threadId": thread_id,
+                        "events": [],
+                    }),
+                );
+            }
+            match ThreadStore::open_readonly(&db_path) {
                 Ok(store) => {
                     let events = store
                         .read_events(thread_id, after_seq, limit)
@@ -712,6 +767,40 @@ fn handle_ws_request(state: &HostState, raw: &str) -> HostResponseEnvelope {
             HostErrorCode::InvalidRequest.default_message(),
         ),
     }
+}
+
+/// Only absent `Origin` headers or strictly loopback origins (`127.0.0.1`, `localhost`, `[::1]`)
+/// are accepted (ADR-0016), preventing cross-origin browser requests from talking to the host.
+fn is_allowed_origin(origin: Option<&str>) -> bool {
+    let Some(raw) = origin else {
+        return true;
+    };
+    let rest = raw
+        .strip_prefix("http://")
+        .or_else(|| raw.strip_prefix("https://"));
+    let Some(host_port) = rest else {
+        return false;
+    };
+    if host_port.contains('/') || host_port.contains('@') || host_port.contains('?') {
+        return false;
+    }
+    let host = if let Some(after_bracket) = host_port.strip_prefix('[') {
+        let Some((ipv6, tail)) = after_bracket.split_once(']') else {
+            return false;
+        };
+        if !tail.is_empty() && !tail.strip_prefix(':').is_some_and(|p| p.parse::<u16>().is_ok()) {
+            return false;
+        }
+        ipv6
+    } else if let Some((h, p)) = host_port.split_once(':') {
+        if p.parse::<u16>().is_err() {
+            return false;
+        }
+        h
+    } else {
+        host_port
+    };
+    host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 fn extract_bearer(headers: &HashMap<String, String>) -> &str {

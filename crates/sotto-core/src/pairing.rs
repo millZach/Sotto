@@ -23,11 +23,16 @@ pub const PAIRING_CODE_REJECTED: &str =
 
 const CODE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_LENGTH: usize = 8;
+const MIN_SECRET_BYTES: usize = 32;
+const MAX_PENDING_CODES: usize = 100;
+const MAX_PAIRED_CLIENTS: usize = 1000;
 
 #[derive(Debug, Error)]
 pub enum PairingError {
     #[error("{PAIRING_CODE_REJECTED}")]
     CodeRejected,
+    #[error("This host has reached its paired device limit. Revoke an unused device first.")]
+    CapacityReached,
     #[error("Pairing store is unreadable or corrupt: {0}")]
     Corrupt(String),
     #[error("I/O error on pairing store: {0}")]
@@ -106,6 +111,11 @@ impl PairedClients {
         let secret_bytes = URL_SAFE_NO_PAD
             .decode(&secret_b64)
             .map_err(|err| PairingError::Corrupt(err.to_string()))?;
+        if secret_bytes.len() < MIN_SECRET_BYTES {
+            return Err(PairingError::Corrupt(
+                "Pairing signing secret is too short.".into(),
+            ));
+        }
 
         Ok(Self {
             path,
@@ -127,6 +137,9 @@ impl PairedClients {
     pub fn issue_pairing_code(&mut self) -> PairingCode {
         let now = Instant::now();
         self.pending_codes.retain(|entry| entry.expires > now);
+        while self.pending_codes.len() >= MAX_PENDING_CODES {
+            self.pending_codes.remove(0);
+        }
         let code = random_code();
         let lifetime = Duration::from_secs(PAIRING_CODE_LIFETIME_SECS);
         let expires_at: DateTime<Utc> =
@@ -161,6 +174,9 @@ impl PairedClients {
         let Some(index) = matched else {
             return Err(PairingError::CodeRejected);
         };
+        if self.clients.len() >= MAX_PAIRED_CLIENTS {
+            return Err(PairingError::CapacityReached);
+        }
         self.pending_codes.remove(index);
 
         let client_id = Uuid::new_v4().to_string();
@@ -212,8 +228,9 @@ impl PairedClients {
         })
     }
 
-    /// Verifies a stateless signed session `<clientId>.<expiryMs>.<hmac>` matching `verifySession` in `pairing.ts`.
-    pub fn verify_session(&mut self, session: &str) -> Option<String> {
+    /// Verifies a stateless signed session `<clientId>.<expiryMs>.<hmac>` matching `verifySession` in `pairing.ts`,
+    /// returning `(clientId, expiryMs)` when valid.
+    pub fn verify_session_with_expiry(&mut self, session: &str) -> Option<(String, i64)> {
         if session.is_empty() {
             return None;
         }
@@ -235,7 +252,13 @@ impl PairedClients {
         if expiry_ms <= Utc::now().timestamp_millis() {
             return None;
         }
-        self.is_paired(client_id).then(|| client_id.to_string())
+        self.is_paired(client_id)
+            .then(|| (client_id.to_string(), expiry_ms))
+    }
+
+    /// Verifies a stateless signed session `<clientId>.<expiryMs>.<hmac>` matching `verifySession` in `pairing.ts`.
+    pub fn verify_session(&mut self, session: &str) -> Option<String> {
+        self.verify_session_with_expiry(session).map(|(id, _)| id)
     }
 
     pub fn revoke(&mut self, client_id: &str) -> Result<bool, PairingError> {
