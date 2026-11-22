@@ -10,7 +10,8 @@ import { UsageService } from '../../src/main/agents/usageService'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
-import { watcherPhoneResultSchema, watcherPhoneSendResultSchema, watcherPhoneStateSchema } from '../../src/shared/watcherPhone'
+import { watcherPhoneResultSchema, watcherPhoneSendResultSchema, watcherPhoneStateSchema, type WatcherPhoneState } from '../../src/shared/watcherPhone'
+import { withWatcherPhonePartsPutBack, type WatcherPhoneWireParts } from '../../src/shared/keptParts'
 import { hostReceiptSchema } from '../../src/shared/hostProtocol'
 import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../src/shared/watcherRoom'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -1240,18 +1241,30 @@ describe('Watcher’s box on a phone (October 31, 2026)', () => {
  * The page now keeps the time it last changed, so an unchanged page is kept and a changed one goes, newer, at once.
  */
 describe('a phone\'s Watcher page between pushes (#2755)', () => {
-  type Pushed = { event: string; state: { watcher?: { working: boolean; observedAt: string; conversation: { messages: unknown[] } }; kept?: string[] } }
-  /** A Watcher holding 200 messages of the owner's average length, on a phone that sends the iPhone's own hello. */
-  async function busyWatcher() {
+  type Pushed = { event: string; state: { watcher?: WatcherPhoneWireParts<WatcherPhoneState>; kept?: string[] } }
+  /** A Watcher holding 200 messages of the owner's average length, on a phone that sends the given hello `accepts`. */
+  async function busyWatcher(accepts: string[] = iphoneAccepts()) {
     const f = await fixture()
-    const phone = await f.pair(iphoneAccepts())
+    const phone = await f.pair(accepts)
     await phone.call('send', f.send(phone.paired.clientId))
     const native = f.native(f.target.threadId)
     for (let index = 0; index < 200; index++) native.messages.push({ id: 'synthetic-' + index, role: index % 2 ? 'assistant' as const : 'user' as const, text: 'Synthetic words. '.repeat(18), createdAt: new Date(Date.UTC(2026, 10, 20, 12, 0, index)).toISOString() })
     f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
     const shells = () => (phone.messages as unknown as Pushed[]).filter(message => message.event === 'shell')
-    // The phone holds the page with all 200 once a push has carried it whole.
-    await expect.poll(() => shells().some(push => push.state.watcher?.conversation.messages.length === 200)).toBe(true)
+    /** Reconstructs the full Watcher page carried by every shell push in order, just as `KeptPartsCache` does on iOS. */
+    const appliedPages = (): (WatcherPhoneState | undefined)[] => {
+      let held: WatcherPhoneState | null = null
+      return shells().map(push => {
+        if (push.state.kept?.includes('watcher')) return held ?? undefined
+        if (!push.state.watcher) { held = null; return undefined }
+        const restored = withWatcherPhonePartsPutBack(push.state.watcher, held)
+        expect(restored).toBeDefined()
+        held = restored!
+        return held
+      })
+    }
+    // The phone holds the page with all 200 once a push has carried it whole or reassembled it.
+    await expect.poll(() => appliedPages().some(page => page?.conversation.messages.length === 200)).toBe(true)
     // An answer to a request comes behind every shell written before it, on the same socket.
     let asked = 0
     const received = () => phone.call('settled-' + ++asked, { op: 'events', afterSeq: 0, threadId: f.target.threadId })
@@ -1264,7 +1277,7 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
       await f.control.commandShell({ type: 'refresh', provider: 'codex' })
       await expect.poll(() => shells().length).toBeGreaterThan(before)
     }
-    return { f, phone, native, shells, received, changeOther }
+    return { f, phone, native, shells, appliedPages, received, changeOther }
   }
 
   it('is not sent Watcher\'s page again when only another thread changed', async () => {
@@ -1281,16 +1294,23 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
   })
 
   it('is sent the page at once when it changes, newer than the one it holds', async () => {
-    const { f, native, shells } = await busyWatcher()
-    const held = [...shells()].reverse().find(push => push.state.watcher !== undefined)!.state.watcher!
+    const { f, native, shells, appliedPages } = await busyWatcher()
+    const held = appliedPages().at(-1)!
     native.status = held.working ? 'idle' : 'running'; f.workspace.adapters.codex.emit()
-    await expect.poll(() => shells().at(-1)?.state.watcher?.working).toBe(!held.working)
+    await expect.poll(() => appliedPages().at(-1)?.working).toBe(!held.working)
+    const latest = appliedPages().at(-1)!
     // The iPhone leaves a page older than the one it shows unshown; a changed page is never older.
-    expect(Date.parse(shells().at(-1)!.state.watcher!.observedAt)).toBeGreaterThanOrEqual(Date.parse(held.observedAt))
+    expect(Date.parse(latest.observedAt)).toBeGreaterThanOrEqual(Date.parse(held.observedAt))
+    // Only `working`, `current`, and `observedAt` changed; the 200-message conversation was kept rather than resent.
+    const wireWatcher = shells().at(-1)!.state.watcher!
+    expect(wireWatcher.kept).toContain('conversation')
+    expect(wireWatcher.conversation).toBeUndefined()
+    expect(wireWatcher.conversationDelta).toBeUndefined()
+    expect(Buffer.byteLength(JSON.stringify(shells().at(-1)!))).toBeLessThan(WATCHER_DELTA_PUSH_BYTES)
   })
 
   it('never goes back to a time older than a page the phone was answered with, after the computer\'s clock went back', async () => {
-    const { f, phone, native, shells, received, changeOther } = await busyWatcher()
+    const { f, phone, native, shells, appliedPages, received, changeOther } = await busyWatcher()
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 60_000 })
     try {
       const answered = await phone.call('read', { op: 'watcher-phone-read' })
@@ -1301,7 +1321,8 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
       const before = shells().length
       native.status = native.status === 'running' ? 'idle' : 'running'; f.workspace.adapters.codex.emit()
       await expect.poll(() => shells().slice(before).some(push => push.state.watcher !== undefined)).toBe(true)
-      const changed = shells().slice(before).find(push => push.state.watcher !== undefined)!.state.watcher!
+      const changedIndex = before + shells().slice(before).findIndex(push => push.state.watcher !== undefined)
+      const changed = appliedPages()[changedIndex]!
       expect(Date.parse(changed.observedAt)).toBeGreaterThanOrEqual(Date.parse(answeredAt))
       await received()
       // The clock comes back. The page is unchanged and the phone shows it under that time, so the next push keeps it.
@@ -1311,7 +1332,101 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
       expect(shells().at(-1)!.state.kept).toContain('watcher')
     } finally { vi.useRealTimers() }
   })
+
+  it('sends only appended words and changed Watcher sub-parts while Watcher streams, while older phones still get the whole page', async () => {
+    // Compare a current iPhone (with `watcher-phone-parts`) against an older iPhone (without it) on the exact same
+    // 200-message Watcher conversation: streaming into the last message, sliding the 200-message cap, and streaming after
+    // a top-level `kept: ["watcher"]` push.
+    const older = await busyWatcher(iphoneAccepts().filter(feature => feature !== 'watcher-phone-parts'))
+    const olderLast = older.native.messages.at(-1)!
+    const olderBefore = older.shells().length
+    olderLast.text += ' Streamed chunk on older phone.'
+    older.f.workspace.adapters.codex.emit()
+    await expect.poll(() => older.shells().length).toBeGreaterThan(olderBefore)
+    const olderPush = older.shells().at(-1)!
+    const olderBytes = Buffer.byteLength(JSON.stringify(olderPush))
+    expect(olderPush.state.watcher?.conversation?.messages).toHaveLength(200)
+    expect(olderPush.state.watcher?.conversationDelta).toBeUndefined()
+
+    const newer = await busyWatcher(iphoneAccepts())
+    // First exercise top-level `kept: ["watcher"]` to confirm the kept base survives into the next Watcher delta.
+    await newer.changeOther('running')
+    expect(newer.shells().at(-1)!.state.kept).toContain('watcher')
+
+    // 1. Stream text into message #200: only `appendLastText` goes on the wire.
+    const newerLast = newer.native.messages.at(-1)!
+    const streamBefore = newer.shells().length
+    newerLast.text += ' Streamed chunk on updated phone.'
+    newer.f.workspace.adapters.codex.emit()
+    await expect.poll(() => newer.shells().length).toBeGreaterThan(streamBefore)
+    const streamPush = newer.shells().at(-1)!
+    const streamBytes = Buffer.byteLength(JSON.stringify(streamPush))
+    expect(streamPush.state.watcher?.conversation).toBeUndefined()
+    expect(streamPush.state.watcher?.conversationDelta).toMatchObject({ dropHead: 0, keep: 200, appendLastText: ' Streamed chunk on updated phone.', tail: [] })
+    expect(streamPush.state.watcher?.kept).toContain('receiptGroups')
+    expect(newer.appliedPages().at(-1)?.conversation.messages.at(-1)?.text).toBe(newerLast.text)
+    expect(streamBytes).toBeLessThan(WATCHER_DELTA_PUSH_BYTES)
+    expect(streamBytes).toBeLessThan(olderBytes / 20)
+
+    // 2. Append message #201 so the 200-message window slides by 1 (`dropHead: 1`, `keep: 199`, 1 tail message).
+    const slideBefore = newer.shells().length
+    newer.native.messages.push({ id: 'synthetic-200', role: 'user', text: 'One more message past the 200 cap.', createdAt: new Date(Date.UTC(2026, 10, 20, 12, 10, 0)).toISOString() })
+    newer.f.workspace.adapters.codex.emit()
+    await expect.poll(() => newer.shells().length).toBeGreaterThan(slideBefore)
+    const slidePush = newer.shells().at(-1)!
+    const slideBytes = Buffer.byteLength(JSON.stringify(slidePush))
+    expect(slidePush.state.watcher?.conversation).toBeUndefined()
+    expect(slidePush.state.watcher?.conversationDelta).toMatchObject({ dropHead: 1, keep: 199 })
+    expect(slidePush.state.watcher?.conversationDelta?.tail).toHaveLength(1)
+    expect(newer.appliedPages().at(-1)?.conversation.messages).toHaveLength(200)
+    expect(newer.appliedPages().at(-1)?.conversation.messages.at(-1)?.id).toBe('synthetic-200')
+    expect(slideBytes).toBeLessThan(WATCHER_DELTA_PUSH_BYTES)
+
+    if (process.env.SOTTO_PUSH_SIZES === '1') {
+      console.log('WATCHER-PARTS-PUSHES ' + JSON.stringify({ olderBytes, streamBytes, slideBytes }))
+    }
+  })
+
+  it('keeps independent baselines across two connected phones and resets cleanly on a second hello', async () => {
+    const { f, phone: updated, native, shells: updatedShells, appliedPages } = await busyWatcher(iphoneAccepts())
+    // Pair an older phone (without `watcher-phone-parts`) to the exact same live server while the updated phone stays connected.
+    const older = await f.pair(iphoneAccepts().filter(feature => feature !== 'watcher-phone-parts'))
+    const olderShells = () => (older.messages as unknown as Pushed[]).filter(message => message.event === 'shell')
+
+    const updatedBefore = updatedShells().length, olderBefore = olderShells().length
+    native.messages.at(-1)!.text += ' Shared publish.'
+    f.workspace.adapters.codex.emit()
+    await expect.poll(() => updatedShells().length).toBeGreaterThan(updatedBefore)
+    await expect.poll(() => olderShells().length).toBeGreaterThan(olderBefore)
+
+    // Updated phone gets a compact delta; older phone gets the full 200-message page from the same publish.
+    expect(updatedShells().at(-1)!.state.watcher?.conversationDelta?.appendLastText).toBe(' Shared publish.')
+    expect(updatedShells().at(-1)!.state.watcher?.conversation).toBeUndefined()
+    expect(appliedPages().at(-1)?.conversation.messages.at(-1)?.text).toBe(native.messages.at(-1)!.text)
+    expect(olderShells().at(-1)!.state.watcher?.conversation?.messages).toHaveLength(200)
+    expect(olderShells().at(-1)!.state.watcher?.conversationDelta).toBeUndefined()
+
+    // A second hello on the updated phone resets its kept base so the next push goes whole before deltas resume.
+    await updated.call('hello-again', { op: 'hello', accepts: iphoneAccepts() })
+    const afterHello = updatedShells().length
+    native.messages.at(-1)!.text += ' After second hello.'
+    f.workspace.adapters.codex.emit()
+    await expect.poll(() => updatedShells().length).toBeGreaterThan(afterHello)
+    const firstAfterHello = updatedShells().at(-1)!
+    expect(firstAfterHello.state.watcher?.conversation?.messages).toHaveLength(200)
+    expect(firstAfterHello.state.watcher?.conversationDelta).toBeUndefined()
+    expect(firstAfterHello.state.watcher?.kept).toBeUndefined()
+
+    const afterReset = updatedShells().length
+    native.messages.at(-1)!.text += ' Delta resumes.'
+    f.workspace.adapters.codex.emit()
+    await expect.poll(() => updatedShells().length).toBeGreaterThan(afterReset)
+    expect(updatedShells().at(-1)!.state.watcher?.conversationDelta?.appendLastText).toBe(' Delta resumes.')
+    expect(updatedShells().at(-1)!.state.watcher?.conversation).toBeUndefined()
+  })
 })
 
 /** Bytes of one push to the phone above while its Watcher page is kept: the changed thread record and the parts' names. */
 const PAGE_KEPT_PUSH_BYTES = 6_000
+/** Bytes of one active-Watcher push with `watcher-phone-parts` (streamed chunk, metadata change, or sliding window). */
+const WATCHER_DELTA_PUSH_BYTES = 3_000

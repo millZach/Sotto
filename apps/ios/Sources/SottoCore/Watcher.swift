@@ -8,36 +8,122 @@ public struct WatcherTarget: Codable, Equatable, Sendable {
     public init(hostId: String, threadId: String) { self.hostId = hostId; self.threadId = threadId }
 }
 public struct WatcherPhoneState: Decodable, Equatable, Sendable {
-    public let hostId: String
-    public let current: Current?
-    public let conversation: Conversation
-    public let receiptGroups: [ReceiptGroup]
-    public let watchedThreads: [WatchedThread]
-    public let needsYou: [RequestCard]
-    public let inFlight: Int
-    public let inFlightLimit: Int
-    public let working: Bool
-    public let recoveryNotice: String?
-    public let observedAt: String
-    public let draftDeliveries: [DraftDelivery]?
-    public let runtimeMode: String?
-    public let standingWatches: [StandingWatch]?
-    public let ownChanges: [OwnChange]?
+    public private(set) var hostId: String
+    public private(set) var current: Current?
+    public private(set) var conversation: Conversation
+    public private(set) var receiptGroups: [ReceiptGroup]
+    public private(set) var watchedThreads: [WatchedThread]
+    public private(set) var needsYou: [RequestCard]
+    public private(set) var inFlight: Int
+    public private(set) var inFlightLimit: Int
+    public private(set) var working: Bool
+    public private(set) var recoveryNotice: String?
+    public private(set) var observedAt: String
+    public private(set) var draftDeliveries: [DraftDelivery]?
+    public private(set) var runtimeMode: String?
+    public private(set) var standingWatches: [StandingWatch]?
+    public private(set) var ownChanges: [OwnChange]?
     /// The user's own follow-ups waiting in Watcher's queue, first in line first: what goes next, after Watcher's turn.
     /// Nil from a computer that doesn't take a steer from this iPhone (#1229).
-    public let followups: [Followup]?
+    public private(set) var followups: [Followup]?
     /// Each machine and what works on it, for the machines line (#1032). Nil from a computer without Work across machines,
     /// or for an iPhone that did not accept `watcher-phone-machines`.
-    public let machines: WatcherMachines?
+    public private(set) var machines: WatcherMachines?
     /// For Watcher's box, nil from an older computer (`watcher-phone-composer`): what New Watcher would answer now
     /// (`available`, `busy` or `empty`), whether a handover of the last Watcher is offered to this one, and whether this
     /// Watcher replaced an earlier conversation.
-    public let newWatcher: String?
-    public let handoverOffered: Bool?
-    public let replaced: Bool?
+    public private(set) var newWatcher: String?
+    public private(set) var handoverOffered: Bool?
+    public private(set) var replaced: Bool?
     /// Watcher's model, effort or speed chosen while it worked, which its next turn starts on (`watcher-phone-settings-later`).
     /// Nil when nothing waits, and from an older computer.
-    public let nextTurnOptions: NextTurnOptions?
+    public private(set) var nextTurnOptions: NextTurnOptions?
+    /// What changed in `conversation` since the push before (`watcher-phone-parts`). Always nil once a shell leaves
+    /// `HostConnection`, which puts the conversation back (`KeptPartsCache`).
+    var conversationDelta: ConversationDelta? = nil
+    public struct ConversationDelta: Decodable, Equatable, Sendable {
+        public let dropHead: Int; public let keep: Int; public let appendLastText: String?
+        public let tail: [Message]; public let earlierAvailable: Bool; public let revision: Int
+    }
+    private enum Keys: String, CodingKey {
+        case hostId, current, conversation, receiptGroups, watchedThreads, needsYou, inFlight, inFlightLimit, working, recoveryNotice, observedAt
+        case draftDeliveries, runtimeMode, standingWatches, ownChanges, followups, machines, newWatcher, handoverOffered, replaced, nextTurnOptions
+        case kept, conversationDelta
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        // A push to a phone that accepted `watcher-phone-parts` leaves out unchanged sub-parts named in `kept`, and may
+        // replace `conversation` with `conversationDelta`. Kept required fields read empty until `KeptPartsCache` puts them back.
+        let kept = Set(try c.decodeIfPresent([String].self, forKey: .kept) ?? [])
+        conversationDelta = try c.decodeIfPresent(ConversationDelta.self, forKey: .conversationDelta)
+        hostId = kept.contains("hostId") ? (try c.decodeIfPresent(String.self, forKey: .hostId) ?? "") : try c.decode(String.self, forKey: .hostId)
+        current = try c.decodeIfPresent(Current.self, forKey: .current)
+        if kept.contains("conversation") || conversationDelta != nil {
+            conversation = try c.decodeIfPresent(Conversation.self, forKey: .conversation) ?? Conversation(messages: [], earlierAvailable: false, revision: 0)
+        } else { conversation = try c.decode(Conversation.self, forKey: .conversation) }
+        receiptGroups = kept.contains("receiptGroups") ? (try c.decodeIfPresent([ReceiptGroup].self, forKey: .receiptGroups) ?? []) : try c.decode([ReceiptGroup].self, forKey: .receiptGroups)
+        watchedThreads = kept.contains("watchedThreads") ? (try c.decodeIfPresent([WatchedThread].self, forKey: .watchedThreads) ?? []) : try c.decode([WatchedThread].self, forKey: .watchedThreads)
+        needsYou = kept.contains("needsYou") ? (try c.decodeIfPresent([RequestCard].self, forKey: .needsYou) ?? []) : try c.decode([RequestCard].self, forKey: .needsYou)
+        inFlight = kept.contains("inFlight") ? (try c.decodeIfPresent(Int.self, forKey: .inFlight) ?? 0) : try c.decode(Int.self, forKey: .inFlight)
+        inFlightLimit = kept.contains("inFlightLimit") ? (try c.decodeIfPresent(Int.self, forKey: .inFlightLimit) ?? 1) : try c.decode(Int.self, forKey: .inFlightLimit)
+        working = kept.contains("working") ? (try c.decodeIfPresent(Bool.self, forKey: .working) ?? false) : try c.decode(Bool.self, forKey: .working)
+        recoveryNotice = try c.decodeIfPresent(String.self, forKey: .recoveryNotice)
+        observedAt = kept.contains("observedAt") ? (try c.decodeIfPresent(String.self, forKey: .observedAt) ?? "") : try c.decode(String.self, forKey: .observedAt)
+        draftDeliveries = try c.decodeIfPresent([DraftDelivery].self, forKey: .draftDeliveries)
+        runtimeMode = try c.decodeIfPresent(String.self, forKey: .runtimeMode)
+        standingWatches = try c.decodeIfPresent([StandingWatch].self, forKey: .standingWatches)
+        ownChanges = try c.decodeIfPresent([OwnChange].self, forKey: .ownChanges)
+        followups = try c.decodeIfPresent([Followup].self, forKey: .followups)
+        machines = try c.decodeIfPresent(WatcherMachines.self, forKey: .machines)
+        newWatcher = try c.decodeIfPresent(String.self, forKey: .newWatcher)
+        handoverOffered = try c.decodeIfPresent(Bool.self, forKey: .handoverOffered)
+        replaced = try c.decodeIfPresent(Bool.self, forKey: .replaced)
+        nextTurnOptions = try c.decodeIfPresent(NextTurnOptions.self, forKey: .nextTurnOptions)
+    }
+    /// Restores each sub-part named in `kept` and applies `conversationDelta` from `held` (`KeptPartsCache`).
+    /// Returns false if a delta is out of bounds or conflicts with `conversation` or `kept`.
+    mutating func putBack(_ kept: Set<String>, carried: Set<String>, from held: WatcherPhoneState) -> Bool {
+        func keeps(_ name: String) -> Bool { kept.contains(name) && !carried.contains(name) }
+        if let delta = conversationDelta {
+            guard !carried.contains("conversation"), !kept.contains("conversation") else { return false }
+            let previous = held.conversation.messages
+            guard delta.dropHead >= 0, delta.keep >= 0, delta.dropHead <= previous.count,
+                  delta.keep <= previous.count - delta.dropHead else { return false }
+            if delta.appendLastText != nil, delta.keep == 0 { return false }
+            var messages = Array(previous[delta.dropHead..<(delta.dropHead + delta.keep)])
+            if let suffix = delta.appendLastText {
+                let old = messages[messages.count - 1]
+                messages[messages.count - 1] = Message(id: old.id, role: old.role, text: old.text + suffix, commandId: old.commandId,
+                                                       attachments: old.attachments, createdAt: old.createdAt, model3d: old.model3d)
+            }
+            messages.append(contentsOf: delta.tail)
+            conversation = Conversation(messages: messages, earlierAvailable: delta.earlierAvailable, revision: delta.revision)
+            conversationDelta = nil
+        } else if keeps("conversation") {
+            conversation = held.conversation
+        }
+        if keeps("hostId") { hostId = held.hostId }
+        if keeps("current") { current = held.current }
+        if keeps("receiptGroups") { receiptGroups = held.receiptGroups }
+        if keeps("watchedThreads") { watchedThreads = held.watchedThreads }
+        if keeps("needsYou") { needsYou = held.needsYou }
+        if keeps("inFlight") { inFlight = held.inFlight }
+        if keeps("inFlightLimit") { inFlightLimit = held.inFlightLimit }
+        if keeps("working") { working = held.working }
+        if keeps("recoveryNotice") { recoveryNotice = held.recoveryNotice }
+        if keeps("observedAt") { observedAt = held.observedAt }
+        if keeps("draftDeliveries") { draftDeliveries = held.draftDeliveries }
+        if keeps("runtimeMode") { runtimeMode = held.runtimeMode }
+        if keeps("standingWatches") { standingWatches = held.standingWatches }
+        if keeps("ownChanges") { ownChanges = held.ownChanges }
+        if keeps("followups") { followups = held.followups }
+        if keeps("machines") { machines = held.machines }
+        if keeps("newWatcher") { newWatcher = held.newWatcher }
+        if keeps("handoverOffered") { handoverOffered = held.handoverOffered }
+        if keeps("replaced") { replaced = held.replaced }
+        if keeps("nextTurnOptions") { nextTurnOptions = held.nextTurnOptions }
+        return true
+    }
     public struct DraftDelivery: Decodable, Equatable, Sendable { public let draftId: String; public let status: String }
     /// A choice kept for Watcher's next turn: the model, its effort (nil for the model's default) and its speed, which
     /// stays Watcher's own unless the choice names one (`speedChosen`); a named nil speed is Standard.
@@ -222,11 +308,14 @@ public enum WatcherWire {
     /// The computer keeps a change to Watcher's model, effort or speed made while Watcher works for its next turn, and its
     /// page says what waits (`nextTurnOptions`), rather than refusing it until Watcher rests (November 1, 2026).
     public static let settingsLaterFeature = "watcher-phone-settings-later"
+    /// A shell push whose Watcher page changed omits unchanged sub-parts (`watcher.kept`) and sends a changed conversation
+    /// as `watcher.conversationDelta` when it shares messages with the push before (`KeptPartsCache`).
+    public static let partsFeature = "watcher-phone-parts"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
     /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {
         var result = hello
-        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature), .string(composerFeature)]) }
+        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature), .string(composerFeature), .string(partsFeature)]) }
         return result
     }
     public static func setPermission(runtimeMode: String) throws -> [String: JSONValue] {
