@@ -2515,7 +2515,7 @@ impl CoordinatorActor {
         let mut agents_obj = self.agents_json_extra.clone();
         agents_obj.insert(
             "configuration".into(),
-            serde_json::to_value(&self.configuration).unwrap_or_else(|_| json!({})),
+            self.configuration.to_node_agents_json(),
         );
         agents_obj
             .entry("activeThreadId".to_string())
@@ -3313,6 +3313,23 @@ mod tests {
             saved_agents["configuration"]["disconnectedProviders"],
             json!(["codex", "claude"])
         );
+        let cfg_obj = saved_agents["configuration"].as_object().unwrap();
+        for forbidden in [
+            "followupLimit",
+            "grokSpeechVoice",
+            "membershipEndpoint",
+            "orbColor",
+            "speak",
+            "speechProvider",
+            "speechVoice",
+            "wakeModelDirectory",
+            "wakeRuntimeDirectory",
+        ] {
+            assert!(
+                !cfg_obj.contains_key(forbidden),
+                "agents.json configuration must not include legacy key {forbidden}"
+            );
+        }
 
         // Reconnecting claude removes only claude from `disconnectedProviders`.
         let after_connect = coord

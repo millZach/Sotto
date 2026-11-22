@@ -428,6 +428,70 @@ impl AgentConfiguration {
         self.set_disconnected_providers(&next, available);
     }
 
+    /// Serializes configuration strictly matching Node's `agentConfigurationSchema` (`src/shared/agents.ts`)
+    /// for writing into `agents.json`, omitting legacy Rust-only fields (`followupLimit`, `orbColor`,
+    /// retired voice fields) that Node's `.strict()` schema rejects on fallback.
+    pub fn to_node_agents_json(&self) -> Value {
+        let mut obj = self.extra.clone();
+        obj.insert("provider".into(), json!(self.provider));
+        obj.insert("enabledProviders".into(), json!(self.enabled_providers));
+        match &self.disconnected_providers {
+            Some(off) if !off.is_empty() => {
+                obj.insert("disconnectedProviders".into(), json!(off));
+            }
+            _ => {
+                obj.remove("disconnectedProviders");
+            }
+        }
+        obj.insert("enabled".into(), json!(self.enabled));
+        obj.insert("projectsDirectory".into(), json!(self.projects_directory));
+        obj.insert("defaultModelId".into(), json!(self.default_model_id));
+        obj.insert("reasoning".into(), json!(self.reasoning));
+        obj.insert("reasoningModel".into(), json!(self.reasoning_model));
+        obj.insert("reasoningEffort".into(), json!(self.reasoning_effort));
+        obj.insert("checkClientUpdates".into(), json!(self.check_client_updates));
+        obj.insert("museDisableSandbox".into(), json!(self.muse_disable_sandbox));
+        obj.insert(
+            "claudeUltracodeEffort".into(),
+            json!(self.claude_ultracode_effort),
+        );
+        obj.insert(
+            "antigravitySignInMethod".into(),
+            json!(self.antigravity_sign_in_method),
+        );
+        obj.insert("antigravityProject".into(), json!(self.antigravity_project));
+        obj.insert(
+            "antigravityLocation".into(),
+            json!(self.antigravity_location),
+        );
+        obj.insert(
+            "antigravityBinaryPath".into(),
+            json!(self.antigravity_binary_path),
+        );
+        obj.insert("newThreadModelId".into(), json!(self.new_thread_model_id));
+        obj.insert(
+            "newThreadReasoningEffort".into(),
+            json!(self.new_thread_reasoning_effort),
+        );
+        match &self.new_thread_speed {
+            Some(v) => {
+                obj.insert("newThreadSpeed".into(), json!(v));
+            }
+            None => {
+                obj.remove("newThreadSpeed");
+            }
+        }
+        match &self.new_thread_runtime_mode {
+            Some(v) => {
+                obj.insert("newThreadRuntimeMode".into(), json!(v));
+            }
+            None => {
+                obj.remove("newThreadRuntimeMode");
+            }
+        }
+        Value::Object(obj)
+    }
+
     pub fn apply_patch(&mut self, patch: &Map<String, Value>) {
         if let Some(v) = patch.get("provider").and_then(Value::as_str) {
             self.provider = v.to_string();
