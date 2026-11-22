@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { posix, win32 } from 'node:path'
 import { MAX_ACTIVITY_TEXT } from '../../shared/agentActivity'
 import { turnPatch } from '../../shared/turnDiff'
@@ -71,8 +71,11 @@ export function placeAntigravityEdit(edit: Pick<AntigravityEdit, 'oldText' | 'ne
 export async function placeAntigravityEdits(edits: readonly AntigravityEdit[], cwd: string, kept: string): Promise<(string | undefined)[]> {
   return Promise.all(edits.map(async edit => {
     try {
-      const path = antigravityFilePath(edit.path, cwd)
-      if (!path || antigravityFilePath(path, kept) || (await stat(path)).size > MOST_BYTES) return undefined
+      const named = antigravityFilePath(edit.path, cwd)
+      if (!named) return undefined
+      // Checked again as the real paths, so a link or junction in the thread's folder that leads outside it is never followed.
+      const [path, folder, own] = await Promise.all([realpath(named), realpath(cwd), realpath(kept).catch(() => kept)])
+      if (!antigravityFilePath(path, folder) || antigravityFilePath(path, own) || (await stat(path)).size > MOST_BYTES) return undefined
       return placeAntigravityEdit(edit, await readFile(path, 'utf8'))
     } catch { return undefined }
   }))

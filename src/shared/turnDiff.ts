@@ -101,7 +101,7 @@ export function turnPatch(path: string, before: string | null, after: string | n
     cursor++
     const from = Math.max(0, first - context), to = Math.min(edits.length - 1, last + context)
     const hunk = edits.slice(from, to + 1)
-    const oldStart = firstIndex(edits, from, 'old'), newStart = firstIndex(edits, from, 'new')
+    const oldStart = firstIndex(edits, from, to, 'old'), newStart = firstIndex(edits, from, to, 'new')
     const oldCount = hunk.filter(edit => edit.kind !== 'add').length, newCount = hunk.filter(edit => edit.kind !== 'remove').length
     out.push(`@@ -${range(oldStart, oldCount)} +${range(newStart, newCount)} @@`)
     for (const edit of hunk) {
@@ -115,9 +115,12 @@ export function turnPatch(path: string, before: string | null, after: string | n
   return { patch: `${out.join('\n')}\n`, additions, deletions }
 }
 
-/** The 1-based line a hunk starts at on one side: the first line of that side at or after `from`. */
-function firstIndex(edits: readonly Edit[], from: number, side: 'old' | 'new'): number {
-  for (let index = from; index < edits.length; index++) {
+/**
+ * The 1-based line a hunk starts at on one side: the first line of that side in the hunk, `from` to `to`. A side with
+ * no lines in the hunk, as an insertion's old side with no context, is numbered by the line before it, as Git numbers it.
+ */
+function firstIndex(edits: readonly Edit[], from: number, to: number, side: 'old' | 'new'): number {
+  for (let index = from; index <= to; index++) {
     const edit = edits[index]!
     if (side === 'old' && edit.kind !== 'add') return edit.old + 1
     if (side === 'new' && edit.kind !== 'remove') return edit.new + 1

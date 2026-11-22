@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -69,5 +69,21 @@ describe('Antigravity edits on their lines', () => {
     const kept = join(folder, 'antigravity')
     await mkdir(kept, { recursive: true }); await writeFile(join(kept, 'token.json'), 'NEW\n')
     expect(await placeAntigravityEdits([{ path: join(kept, 'token.json'), oldText: 'OLD\n', newText: 'NEW\n' }], folder, kept)).toEqual([undefined])
+  })
+
+  it('never follows a link or junction in the thread’s folder to a file outside it', async () => {
+    folder = await mkdtemp(join(tmpdir(), 'sotto-agy-edit-'))
+    const outside = await mkdtemp(join(tmpdir(), 'sotto-agy-outside-'))
+    try {
+      await writeFile(join(outside, 'secret.txt'), 'NEW\n')
+      await writeFile(join(folder, 'inside.txt'), 'NEW\n')
+      // A junction needs no rights on Windows; elsewhere a directory link.
+      await symlink(outside, join(folder, 'link'), process.platform === 'win32' ? 'junction' : 'dir')
+      expect(await placeAntigravityEdits([{ path: 'link/secret.txt', oldText: 'OLD\n', newText: 'NEW\n' }, { path: 'inside.txt', oldText: 'OLD\n', newText: 'NEW\n' }],
+        folder, join(tmpdir(), 'sotto-kept'))).toEqual([undefined, '@@ -1 +1 @@\n-OLD\n+NEW'])
+    } finally {
+      await unlink(join(folder, 'link')).catch(() => undefined)
+      await rm(outside, { recursive: true, force: true })
+    }
   })
 })
