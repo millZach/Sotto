@@ -155,4 +155,18 @@ describe('model favorites', () => {
     expect(screen.getByRole('tab', { name: 'Codex' })).toHaveAttribute('aria-selected', 'true')
     expect(document.querySelector('.model-picker__star')).toBeNull()
   })
+
+  it('hides removed Antigravity non-Gemini favorites from the Favorites tab without mutating saved entries (#2770)', async () => {
+    const user = userEvent.setup()
+    const neon: AgentModel = { id: 'native:antigravity:model:gemini-4-neon', name: 'Gemini 4 Neon', provider: 'Antigravity', providerId: 'antigravity', ready: true }
+    const removedClaude: AgentModel = { id: 'native:antigravity:model:claude-opus-5-5', name: 'Claude Opus 5.5', provider: 'Antigravity', providerId: 'antigravity', ready: true }
+    act(() => { toggleModelFavorite(removedClaude); toggleModelFavorite(neon) })
+    const before = stored()
+    render(<ModelPicker models={[...models, neon]} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    expect(screen.getByRole('tab', { name: 'Favorites' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('option', { name: /Claude Opus 5\.5/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Gemini 4 Neon' })).toBeInTheDocument()
+    expect(stored()).toEqual(before)
+  })
 })

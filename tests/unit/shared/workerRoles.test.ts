@@ -243,3 +243,20 @@ describe('messageNamesModel (#1202)', () => {
     ['Review the change', sol], ['Use GPT-6 Astra', sol], ['ask GPT', sol], ['the solution is close', sol], ['consolidate these', sol], ['fix this', opus], ['a magnum opus-free day', sol], ['full access', wonder], ['', sol],
   ])('finds no model in %j', (text, model) => { expect(messageNamesModel(text, model)).toBe(false) })
 })
+
+describe('removed Antigravity non-Gemini worker role choices (#2770)', () => {
+  it('runs a saved Antigravity Claude/GPT role choice on ready Gemini while connected and falls back to the role default when disconnected', () => {
+    const removedChoice: WorkerRoleChoices = {
+      research: { modelId: publicProviderEntityId('antigravity', 'model', 'claude-opus-5-5'), reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' },
+    }
+    const flash = model('antigravity', 'gemini-3.8-flash', 'Gemini 3.8 Flash', ['low', 'high'])
+    const connected = roleInForce('research', removedChoice, [...CLAUDE, ...CODEX, flash])
+    expect(connected.choiceReady).toBe(true)
+    expect(connected.start).toMatchObject({ modelId: flash.id, reasoningEffort: 'high', from: 'choice' })
+
+    const disconnected = roleInForce('research', removedChoice, [...CLAUDE, ...CODEX])
+    expect(disconnected.choiceReady).toBe(false)
+    expect(disconnected.choice?.modelId).toBe(removedChoice.research!.modelId)
+    expect(disconnected.start?.from).toBe('default')
+  })
+})

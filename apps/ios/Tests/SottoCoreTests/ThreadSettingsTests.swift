@@ -282,4 +282,31 @@ final class ThreadSettingsTests: XCTestCase {
         XCTAssertEqual(ThreadSettingWords.inForce(provider: "Grok Build", runtimeMode: "auto", providerModeName: nil, providerID: "grok"),
                        "Grok Build still decides what to ask you about until it confirms.")
     }
+
+    func testARemovedAntigravityNonGeminiThreadOffersGeminiReplacementsInPlace() throws {
+        let neon = #"{"id":"native:antigravity:model:gemini-4-neon","name":"Gemini 4 Neon","provider":"Antigravity","providerId":"antigravity","ready":true,"reasoningEfforts":["low","high"],"defaultReasoningEffort":"high","runtimeModes":["approval-required","auto-accept-edits","full-access"]}"#
+        let removedClaude = #"{"id":"native:antigravity:model:claude-opus-5-5","name":"Claude Opus 5.5","provider":"Antigravity","providerId":"antigravity","ready":true,"runtimeModes":["approval-required","full-access"]}"#
+        let removedJSON = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Antigravity thread","providerId":"antigravity","status":"idle","requests":[],"modelId":"native:antigravity:model:claude-opus-5-5","runtimeMode":"approval-required"}],"projects":[],"models":[\#(removedClaude),\#(neon)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true,"configureThread":true}}}"#
+        let decoded = try JSONDecoder().decode(Shell.self, from: Data(removedJSON.utf8))
+        let recovered = try XCTUnwrap(panel(decoded))
+        XCTAssertEqual(recovered.modelID, "native:antigravity:model:claude-opus-5-5")
+        XCTAssertEqual(recovered.model?.name, "claude-opus-5-5")
+        XCTAssertEqual(recovered.models.map(\.id), ["native:antigravity:model:gemini-4-neon"])
+        XCTAssertNil(recovered.fixed)
+
+        // Switching to the offered Gemini replacement previews the replacement model and emits a configure-thread modelId patch.
+        var pending = PendingThreadSettings()
+        let patch = ThreadSettings.patch(.model, value: "native:antigravity:model:gemini-4-neon", model: recovered.model)
+        XCTAssertEqual(patch, ["modelId": .string("native:antigravity:model:gemini-4-neon")])
+        _ = pending.press(.model, value: "native:antigravity:model:gemini-4-neon", patch: patch, showing: recovered.modelID, drawn: recovered.drawn)
+        let switched = try XCTUnwrap(panel(decoded, pending: pending))
+        XCTAssertEqual(switched.modelID, "native:antigravity:model:gemini-4-neon")
+        XCTAssertEqual(switched.effort, "high")
+
+        // When no Gemini model is ready or configureThreadModel is false, no recovery panel is offered.
+        let noReadyGeminiJSON = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Antigravity thread","providerId":"antigravity","status":"idle","requests":[],"modelId":"native:antigravity:model:claude-opus-5-5","runtimeMode":"approval-required"}],"projects":[],"models":[\#(removedClaude)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true,"configureThread":true}}}"#
+        XCTAssertNil(panel(try JSONDecoder().decode(Shell.self, from: Data(noReadyGeminiJSON.utf8))))
+        let fixedModelJSON = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Antigravity thread","providerId":"antigravity","status":"idle","requests":[],"modelId":"native:antigravity:model:claude-opus-5-5","runtimeMode":"approval-required"}],"projects":[],"models":[\#(neon)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true,"configureThread":true,"configureThreadModel":false}}}"#
+        XCTAssertNil(panel(try JSONDecoder().decode(Shell.self, from: Data(fixedModelJSON.utf8))))
+    }
 }

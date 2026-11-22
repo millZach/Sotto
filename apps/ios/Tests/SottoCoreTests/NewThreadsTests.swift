@@ -228,4 +228,40 @@ final class NewThreadsTests: XCTestCase {
         let fields = try JSONDecoder().decode([String: JSONValue].self, from: JSONEncoder().encode(marker))
         XCTAssertEqual(Set(fields.keys), ["id", "hostID", "clientID", "threadID", "kind"])
     }
+    func testAnAntigravityCatalogOnAnOlderHostKeepsOnlyPermittedGeminiModels() throws {
+        let json = """
+        {"hostId":"h","host":{"name":"Laptop","modelsRevision":7,"threads":[],"projects":[],"models":[
+          {"id":"native:antigravity:model:gemini-4-neon","name":"Gemini 4 Neon","provider":"Antigravity","providerId":"antigravity","ready":true},
+          {"id":"gemini-3.8-flash","name":"Gemini 3.8 Flash","provider":"Antigravity","providerId":"antigravity","ready":true},
+          {"id":"native:antigravity:model:claude-opus-5-5","name":"Claude Opus 5.5","provider":"Antigravity","providerId":"antigravity","ready":true},
+          {"id":"gpt-oss-120b-medium","name":"GPT-OSS 120B","provider":"Antigravity","providerId":"antigravity","ready":true},
+          {"id":"native:codex:model:gemini-4-neon","name":"Wrong provider","provider":"Antigravity","providerId":"antigravity","ready":true},
+          {"id":"native:antigravity:project:gemini-4-neon","name":"Wrong kind","provider":"Antigravity","providerId":"antigravity","ready":true},
+          {"id":"native:antigravity:model:%ZZ","name":"Malformed","provider":"Antigravity","providerId":"antigravity","ready":true},
+          {"id":"native:codex:model:gpt-6.2-sol","name":"GPT-6.2 Sol","provider":"Codex","providerId":"codex","ready":true}
+        ],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}}
+        """
+        let decoded = try JSONDecoder().decode(Shell.self, from: Data(json.utf8))
+        var cache = ModelCatalogCache()
+        cache.hold(decoded)
+        let whole = try XCTUnwrap(cache.whole(decoded))
+        XCTAssertEqual(whole.host.models?.map(\.id), [
+            "native:antigravity:model:gemini-4-neon",
+            "gemini-3.8-flash",
+            "native:codex:model:gpt-6.2-sol",
+        ])
+        XCTAssertEqual(NewThreads.availableModels(decoded.host).map(\.id), [
+            "native:antigravity:model:gemini-4-neon",
+            "gemini-3.8-flash",
+            "native:codex:model:gpt-6.2-sol",
+        ])
+        // Revision-omitted shell push reuses the already filtered cached catalog.
+        let revisionOnly = try JSONDecoder().decode(Shell.self, from: Data(#"{"hostId":"h","host":{"name":"Laptop","modelsRevision":7,"threads":[],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}}"#.utf8))
+        let restored = try XCTUnwrap(cache.whole(revisionOnly))
+        XCTAssertEqual(restored.host.models?.map(\.id), [
+            "native:antigravity:model:gemini-4-neon",
+            "gemini-3.8-flash",
+            "native:codex:model:gpt-6.2-sol",
+        ])
+    }
 }

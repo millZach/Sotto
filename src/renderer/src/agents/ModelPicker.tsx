@@ -5,7 +5,7 @@ import { useLingui } from '@lingui/react/macro'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
 import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
-import { compareVersions, inLineup, LINEUP_PROVIDERS, modelVersion } from '../../../shared/modelLineup'
+import { compareVersions, inLineup, isRemovedAntigravityModel, LINEUP_PROVIDERS, modelVersion } from '../../../shared/modelLineup'
 import { isTopEffort } from '../../../shared/topEffort'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAnchoredMenu } from './anchoredMenu'
@@ -236,9 +236,13 @@ export function ModelPicker({ foot, suffix, shownName, models, modelId, current 
   const liveModels = useMemo(() => new Map(models.filter(model => !model.hiddenFromMenu).map(model => [favoriteKey(model), model])), [models])
   const favorites = useMemo(() => {
     if (!favoritesOn) return noFavorites
-    if (availableFavoritesOnly) return stored.filter(favorite => liveModels.get(favoriteKey(favorite))?.ready)
+    const permitted = stored.filter(favorite => {
+      const providerId = favorite.providerId ?? (favorite.provider === 'Antigravity' ? 'antigravity' : undefined)
+      return !isRemovedAntigravityModel(favorite.id, providerId) || Boolean(liveModels.get(favoriteKey(favorite))?.ready)
+    })
+    if (availableFavoritesOnly) return permitted.filter(favorite => liveModels.get(favoriteKey(favorite))?.ready)
     const offered = new Set([...models.map(model => model.provider), ...unavailable.map(item => item.name)])
-    return stored.filter(favorite => offered.has(favorite.provider))
+    return permitted.filter(favorite => offered.has(favorite.provider))
   }, [favoritesOn, availableFavoritesOnly, stored, liveModels, models, unavailable])
   const [provider, setProvider] = useState('')
   /** Whether Favorites is the rail's chosen tile, which it is only while the menu has a rail. */

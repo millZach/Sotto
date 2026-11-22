@@ -1,5 +1,8 @@
 package com.millzach.sotto.core
 
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -139,7 +142,7 @@ object NewThreads {
     }
 
     fun availableModels(host: HostSnapshot): List<ThreadModel> = (host.models ?: emptyList()).filter { model ->
-        if (!model.ready) return@filter false
+        if (!model.ready || !AntigravityCatalog.allows(model)) return@filter false
         val providers = host.providers
         if (providers != null) {
             val provider = providers.firstOrNull { it.id == model.providerId } ?: return@filter false
@@ -168,5 +171,55 @@ object NewThreads {
         }
         val request = if (path == null) JsonObject(emptyMap()) else JsonObject(mapOf("path" to path))
         return JsonObject(mapOf("op" to JsonPrimitive("host-folders"), "request" to request))
+    }
+}
+
+// Antigravity runs Google's Gemini models only (ADR-0212, #2770): drops non-Gemini or malformed Antigravity
+// entries advertised by an older paired host, matching desktop and iOS.
+object AntigravityCatalog {
+    fun allows(providerID: String?, modelID: String): Boolean {
+        if (providerID != "antigravity") return true
+        val nativeID = when {
+            modelID.startsWith("native:") -> {
+                val parts = modelID.split(':')
+                if (parts.size != 4 || parts[0] != "native" || parts[1] != "antigravity" || parts[2] != "model" || parts[3].isEmpty()) return false
+                strictPercentDecode(parts[3]) ?: return false
+            }
+            modelID.startsWith("antigravity:") -> modelID.removePrefix("antigravity:")
+            ':' in modelID -> return false
+            else -> modelID
+        }
+        return nativeID.trim().lowercase().startsWith("gemini-")
+    }
+
+    fun allows(model: ThreadModel): Boolean = allows(model.providerId, model.id)
+
+    fun filtered(models: List<ThreadModel>): List<ThreadModel> = models.filter { allows(it) }
+
+    private fun strictPercentDecode(raw: String): String? {
+        val bytes = ArrayList<Byte>(raw.length)
+        var index = 0
+        while (index < raw.length) {
+            val ch = raw[index]
+            if (ch == '%') {
+                if (index + 2 >= raw.length) return null
+                val high = raw[index + 1].digitToIntOrNull(16) ?: return null
+                val low = raw[index + 2].digitToIntOrNull(16) ?: return null
+                bytes.add(((high shl 4) or low).toByte())
+                index += 3
+            } else {
+                for (b in ch.toString().toByteArray(Charsets.UTF_8)) bytes.add(b)
+                index += 1
+            }
+        }
+        return try {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes.toByteArray()))
+                .toString()
+        } catch (_: CharacterCodingException) {
+            null
+        }
     }
 }

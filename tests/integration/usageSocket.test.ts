@@ -113,10 +113,15 @@ describe('optional Owl usage over frozen host v1', () => {
     try {
       const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Desktop')
       client = new SocketHostService({ url: `http://127.0.0.1:${server.descriptor.port}`, token: paired.token, catchUpEvents: false })
-      expect((await client.connect()).features).toContain('usage-muse-opencode')
+      const hello = await client.connect()
+      expect(hello.features).toContain('usage-muse-opencode')
+      expect(hello.features).toContain('usage-antigravity')
+      expect(hello.features).toContain('usage-antigravity-no-limits')
       // A desktop that counts them is read for every provider it names and sent their rows.
       expect(await client.usageRead({ providerIds: ['muse', 'opencode'] })).toEqual(result)
       expect(usage.read).toHaveBeenLastCalledWith({ providerIds: ['muse', 'opencode'] })
+      expect(await client.usageRead({})).toEqual(result)
+      expect(usage.read).toHaveBeenLastCalledWith({})
       // One from before them accepts history but not this feature, and refuses a whole read naming a provider it does not know.
       raw = await rawPeer(server.descriptor.port, pairing.signSession(paired.clientId))
       expect(await raw.call('hello', { op: 'hello', accepts: ['client-liveness', 'usage-history'] })).toMatchObject({ ok: true })

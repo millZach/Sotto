@@ -228,7 +228,7 @@ describe('host version and features', () => {
    */
   const CROSS_MACHINE: readonly OwlFeatureId[] = ['cross-machine-work']
   const OWL_GATED: Partial<Record<HostFeature, readonly OwlFeatureId[]>> = { 'usage-dashboard': ['usage'], 'usage-history': ['usage'], 'thread-starts': ['continue-agent-thread'],
-    'usage-muse-opencode': ['usage'], 'usage-antigravity': ['usage'], 'usage-background-refresh': ['usage'], 'pull-request-view': ['iphone-pull-request-view'], 'agents-view': ['iphone-agents-view'], 'thread-delete': ['clear-threads'],
+    'usage-muse-opencode': ['usage'], 'usage-antigravity': ['usage'], 'usage-antigravity-no-limits': ['usage'], 'usage-background-refresh': ['usage'], 'pull-request-view': ['iphone-pull-request-view'], 'agents-view': ['iphone-agents-view'], 'thread-delete': ['clear-threads'],
     'thread-file-links': ['markdown-side-panel'], 'thread-linked-files': ['reveal-linked-files'], 'file-staging': ['attach-any-file'], 'attachment-files': ['attach-any-file'], 'video-staging': ['attach-any-file'],
     'project-origins': CROSS_MACHINE, 'host-delegation': CROSS_MACHINE, 'delegation-views': CROSS_MACHINE, 'branch-moves': CROSS_MACHINE, 'bring-changes-back': CROSS_MACHINE, 'delegation-relay': CROSS_MACHINE,
     'watcher-check-queue': CROSS_MACHINE, 'watcher-check-stop': CROSS_MACHINE, 'check-queue-views': CROSS_MACHINE, 'project-setup': CROSS_MACHINE, 'delegation-relay-send': CROSS_MACHINE, 'delegation-remote': CROSS_MACHINE,

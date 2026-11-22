@@ -229,4 +229,28 @@ describe('Usage transport boundary', () => {
     expect(bridge.read).toHaveBeenCalledOnce(); expect(bridge.refresh).toHaveBeenCalledOnce(); expect(bridge.clear).toHaveBeenCalledOnce()
     close(); expect(handlers.size).toBe(0)
   })
+  it('excludes Antigravity from ordinary usage reads on older November 21 Owl hosts without usage-antigravity-no-limits, while preserving current hosts and stripping limits from refresh', async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired' }), call = vi.fn(async () => result)
+    // Older November 21 Owl host: advertises usage-antigravity, lacks usage-antigravity-no-limits.
+    Object.assign(client, { features: ['usage-dashboard', 'usage-history', 'usage-muse-opencode', 'usage-antigravity'], call })
+    await client.usageRead({ timeZone: 'UTC' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { timeZone: 'UTC', providerIds: ['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'] } }, undefined, undefined, 15000)
+    await client.usageRead({ providerIds: ['antigravity', 'codex'] })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { providerIds: ['codex'] } }, undefined, undefined, 15000)
+    await client.usageRead({ providerIds: ['antigravity'] })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { providerIds: [] } }, undefined, undefined, 15000)
+    await client.usageRefresh(['antigravity', 'codex'])
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['codex'] }, undefined, undefined, 15000)
+    await client.usageRefresh(['antigravity'])
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: [] }, undefined, undefined, 15000)
+
+    // Current host: attests usage-antigravity-no-limits so ordinary usage reads include Antigravity token counts unfiltered.
+    Object.assign(client, { features: ['usage-dashboard', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'usage-antigravity-no-limits'], call })
+    await client.usageRead({ timeZone: 'UTC' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { timeZone: 'UTC' } }, undefined, undefined, 15000)
+    await client.usageRead({ providerIds: ['antigravity'] })
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-read', query: { providerIds: ['antigravity'] } }, undefined, undefined, 15000)
+    await client.usageRefresh(['antigravity', 'codex'])
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['codex'] }, undefined, undefined, 15000)
+  })
 })
