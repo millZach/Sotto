@@ -61,8 +61,18 @@ export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }:
   const [loadFailed, setLoadFailed] = useState(false)
   const requestError = loadFailed ? t`Sotto couldn’t load skills.` : null
   const requested = useRef<string | null>(null)
+  const ownerRef = useRef(ownerId)
+  ownerRef.current = ownerId
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  useEffect(() => {
+    setSelection(null)
+    setActive(null)
+    setDismissed(null)
+    setLoading(false)
+    setLoadFailed(false)
+    requested.current = null
+  }, [ownerId])
 
   const trigger = enabled && selection !== null ? detectSkillTrigger(text, selection.start, selection.end) : null
   const openKey = trigger === null ? null : `${ownerId}\n${trigger.kind}\n${trigger.start}`
@@ -73,13 +83,14 @@ export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }:
   const activeIndex = options.length === 0 ? null : chosen !== null ? Math.min(chosen, options.length - 1) : trigger?.kind === 'dollar' ? 0 : null
 
   const refresh = useCallback((forceReload: boolean): void => {
+    const startedOwner = ownerRef.current
     setLoading(true)
     setLoadFailed(false)
     void load(forceReload).then(ok => {
-      if (!mounted.current) return
+      if (!mounted.current || ownerRef.current !== startedOwner) return
       setLoading(false)
       if (!ok) setLoadFailed(true)
-    }, () => { if (mounted.current) { setLoading(false); setLoadFailed(true) } })
+    }, () => { if (mounted.current && ownerRef.current === startedOwner) { setLoading(false); setLoadFailed(true) } })
   }, [load])
 
   useEffect(() => {

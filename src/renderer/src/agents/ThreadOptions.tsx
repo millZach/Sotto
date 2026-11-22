@@ -281,14 +281,22 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       : [...new Map([...continuing.models.map(model => [model.provider, model.providerId] as const), ...continuing.unavailable.map(item => [item.name, item.providerId] as const)])]
         .map(([name, providerId]) => ({ name, providerId, reason: continuing.refusal! }))
   const models = others.length > 0 ? [...own, ...others] : continuations.length > 0 ? [...own, ...continuations] : own
+  const threadIdRef = useRef(thread.id)
+  threadIdRef.current = thread.id
   const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: LaterWords | null } | null>(null)
+  useEffect(() => {
+    setCombinedPicker({ open: false, focus: 'search' })
+    setReplacing(null)
+    refocus.current = null
+  }, [thread.id])
   const replace = async (provider: WatcherProvider, modelId: string, speed: AgentSpeed | null): Promise<void> => {
     if (open === null || settle === undefined) return
+    const startedThreadId = thread.id
     setReplacing({ provider, refusal: null })
     try {
       const refusal = settle(await open({ provider, modelId, ...(speed ? { speed } : {}) }))
-      setReplacing(refusal === null ? null : { provider, refusal })
-    } catch { setReplacing({ provider, refusal: msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.` }) }
+      if (threadIdRef.current === startedThreadId) setReplacing(refusal === null ? null : { provider, refusal })
+    } catch { if (threadIdRef.current === startedThreadId) setReplacing({ provider, refusal: msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.` }) }
   }
   /**
    * Watcher's model, effort or speed chosen while it works, which main keeps for its next turn: the chips show it as

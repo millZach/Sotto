@@ -322,6 +322,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const slimOn = useOwlFeature('composer-shrink') && (watcherOn || !ownPane)
   const [readingBack, setReadingBack] = useState(false)
   const [composeHeld, setComposeHeld] = useState(false)
+  useEffect(() => {
+    setRenaming(false)
+    restoreRenameFocus.current = false
+    setReadingBack(false)
+    setComposeHeld(false)
+    setToolbarExplained(null)
+    setGitExplained(null)
+  }, [thread.id])
   // Every scroll the reader makes away from the end slims an empty composer, even one that came back full with the caret
   // resting in its prompt, as it is after a send, on opening a thread or after a click on the slim card. Only an open
   // picker or menu keeps it full. Focus left on one of its other controls, such as a picker's trigger once the picker
@@ -550,7 +558,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {mailGrantMenu.problem ? <p className="agent-error thread-workspace__error" role="alert">{mailGrantMenu.problem}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
-    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused} onPairedHost={remote}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
+    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused} onPairedHost={remote}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript key={thread.id} row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
       onReadingBack={slimOn ? readBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests place="transcript" row={row} below={below} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
@@ -577,7 +585,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* A prototype waiting for review, with its pages to open (ADR-0108); a waiting question's card carries them instead. */}
       {ownPane ? null : <PrototypeReady thread={thread} />}
       <ThreadRequests place="composer" row={row} below={below} state={state} command={command} onAnswer={focusAnswerComposer} />
-      <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => { liftComposer(); setFollowSignal(signal => signal + 1) }}
+      <ThreadComposer ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => { liftComposer(); setFollowSignal(signal => signal + 1) }}
         watcher={ownPane} toolbarSlot={branchSlot}>
         {quiet => <div className="thread-pane__meta">
           {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}

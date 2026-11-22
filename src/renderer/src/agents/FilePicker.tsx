@@ -63,6 +63,11 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
   const [catalog, setCatalog] = useState<Catalog>(() => empty(threadId))
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  useEffect(() => {
+    setSelection(null)
+    setActive(null)
+    setDismissed(null)
+  }, [threadId])
 
   const current = catalog.threadId === threadId ? catalog : empty(threadId)
   // Without the Files bridge this window cannot browse anything, so an @ stays ordinary text.

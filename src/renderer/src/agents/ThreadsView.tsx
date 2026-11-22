@@ -232,7 +232,17 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
     return () => { if (current.sent !== '[]') current.notify?.([]) }
   }, [])
 
-  const openThread = useCallback((threadId: string): void => { setPending(null); void command({ type: 'select-thread', threadId }) }, [command])
+  const openThread = useCallback((threadId: string): void => {
+    // Switch the pane optimistically (matching `focusPane`), settling back to published state if main rejects or changes it (#2733).
+    if (threadId === stateRef.current?.activeThreadId) {
+      setPending(null)
+      void command({ type: 'select-thread', threadId })
+      return
+    }
+    setPending({ threadId })
+    const settle = (): void => setPending(current => current?.threadId === threadId && current.settled === undefined ? { threadId, settled: stateRef.current } : current)
+    void command({ type: 'select-thread', threadId }).then(settle, settle)
+  }, [command])
   // A leftover draft taken into a new thread's composer. The coordinator lets its copy go only once main has saved
   // the composer with it, and only if that copy is still the one carried, images included; until then both are kept.
   const placeCarriedDraft = useCallback((threadId: string, carried: CarriedDraft): void => {

@@ -67,9 +67,61 @@ describe('timing a thread switch in the window', () => {
     expect(reports).toHaveLength(1)
     const [timing] = reports
     expect(timing).toMatchObject({ held: false, remote: false, messages: 2, activities: 0, threads: 2 })
-    expect(timing!.replyMs).toBeLessThanOrEqual(timing!.historyMs)
+    expect(timing!.replyMs).not.toBeNull()
+    expect(timing!.replyMs!).toBeLessThanOrEqual(timing!.historyMs)
     expect(timing!.historyMs).toBeLessThanOrEqual(timing!.frameMs)
     expect(timing!.frameMs).toBeLessThanOrEqual(timing!.paintedMs)
     expect(timing!.commits).toBeGreaterThan(0)
+  })
+
+  it('counts only genuinely changed thread records after structural sharing and reports replyMs null when painted via broadcast first', async () => {
+    const reports: ThreadSwitchTiming[] = []
+    sotto.sotto = { mainActivity: { reportThreadSwitch: (timing: ThreadSwitchTiming) => reports.push(timing) } }
+    const threads = [
+      thread('first', [message('a')]),
+      thread('second', [message('b')]),
+      thread('third', [message('c')]),
+      thread('fourth', [message('d')]),
+    ]
+    let state = stateOf(threads, 'first')
+    let broadcast: ((next: AgentState) => void) | null = null
+    const pendingReply = deferred<AgentState>()
+    const bridge: AgentBridge = {
+      get: async () => agentShell(state),
+      command: vi.fn(async (command: AgentCommand) => {
+        if (command.type === 'select-thread' && command.threadId === 'second') return pendingReply.promise
+        if (command.type === 'select-thread') state = { ...state, activeThreadId: command.threadId }
+        return agentShell(state)
+      }),
+      onState: listener => { broadcast = listener as (next: AgentState) => void; return () => { broadcast = null } },
+      threadDetail: vi.fn(async (threadId: string) => ({ threadId, revision: 1, messages: threads.find(item => item.id === threadId)!.messages })),
+      onThreadDetail: () => () => undefined,
+    }
+    document.body.innerHTML = '<div class="threads-view"><section class="thread-pane" data-thread-id="second"></section></div>'
+    const paint = frames()
+    const { result } = renderHook(() => useAgentConnection(bridge))
+    await waitFor(() => { expect(result.current.state?.activeThreadId).toBe('first') })
+    // Pre-hold `second`'s detail so the switch is `held: true`.
+    await act(async () => { await result.current.command({ type: 'observe-threads', threadIds: ['first', 'second'] }) })
+
+    // Switch to `second`: broadcast lands and paints BEFORE `command('select-thread')` resolves.
+    let selection!: Promise<AgentState | null>
+    act(() => { selection = result.current.command({ type: 'select-thread', threadId: 'second' }) })
+    state = { ...state, activeThreadId: 'second' }
+    await act(async () => { broadcast?.(agentShell(state)) })
+    // First animation frame commits the pending shell broadcast; second paints the committed frame for the clock.
+    await paint()
+    await paint()
+
+    expect(reports).toHaveLength(1)
+    expect(reports[0]).toMatchObject({
+      held: true,
+      replyMs: null,
+      threads: 4,
+      newThreadRecords: 0,
+    })
+
+    // Resolve the delayed reply cleanly.
+    await act(async () => { pendingReply.resolve(agentShell(state)); await selection })
   })
 })

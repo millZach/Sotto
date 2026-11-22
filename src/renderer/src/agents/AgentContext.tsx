@@ -188,7 +188,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       // While a switch is timed, what the sharing cost and what it had to walk count towards it (#2733).
       const timed = switches?.timing() === true, started = timed ? performance.now() : 0
       const state = session.share(current.state, assembled)
-      if (timed) switches?.shared(performance.now() - started, current.state, assembled)
+      if (timed) switches?.shared(performance.now() - started, current.state, state)
       return state === current.state ? current : { session, state, received }
     })
     if (options.urgent === true) commit(); else startTransition(commit)

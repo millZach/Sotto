@@ -180,6 +180,8 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   current.current = attachments
   const latestChange = useRef(onChange)
   latestChange.current = onChange
+  const latestTarget = useRef(target)
+  latestTarget.current = target
   const latestReads = useRef(reads)
   latestReads.current = reads
   const reading = useRef(false)
@@ -189,11 +191,18 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   const pending = reads?.pending ?? false
   const busy = readingHere || pending
   const [error, setError] = useState<string | null>(null)
-  // A box that stays mounted across targets, as the popup's does, or across showings, does not keep what the last one was told.
-  useEffect(() => setError(null), [target, errorScope])
   const [viewer, setViewer] = useState<{ images: ViewerImage[]; startId: string; anchor: HTMLButtonElement } | null>(null)
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)
+  // A box that stays mounted across targets, as the popup's or composer's does, resets per-target transient UI on target change.
+  useEffect(() => {
+    setError(null)
+    setViewer(null)
+    dragDepth.current = 0
+    setDragging(false)
+    reading.current = false
+    setReadingHere(false)
+  }, [target, errorScope])
   const root = useRef<HTMLDivElement>(null)
   /**
    * Stages one file after another and adds those that were staged. One at a time, so at most one decoded image is held
@@ -201,16 +210,19 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
    */
   const stageAll = async <T,>(items: readonly T[], stage: (item: T) => Promise<AgentAttachmentHandle>, failed: (item: T, remaining: number, first: boolean, cause: unknown) => string,
     tooLarge: (staged: readonly AgentAttachmentHandle[]) => string): Promise<string | null> => {
+    const startedTarget = target
+    const startedReads = reads
     reading.current = true; setReadingHere(true)
-    const handedOn = reads?.begin()
+    const handedOn = startedReads?.begin()
     const images: AgentAttachmentHandle[] = []
     let failure: string | null = null
     for (const [index, item] of items.entries()) {
       try { images.push(await stage(item)) }
       catch (cause) { failure = failed(item, items.length - index, index === 0, cause); break }
     }
+    const sameTarget = (): boolean => mounted.current && latestTarget.current === startedTarget
     try {
-      if (!mounted.current) { latestReads.current?.addLate?.(images, failure); return failure }
+      if (!sameTarget()) { (startedReads ?? latestReads.current)?.addLate?.(images, failure); return failure }
       if (failure) setError(failure)
       if (images.length === 0) return failure
       // The schema stays the authority: it checks what was actually staged, not what the files claimed.
@@ -220,7 +232,7 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
       return failure
     } finally {
       handedOn?.()
-      if (mounted.current) { reading.current = false; setReadingHere(false) }
+      if (sameTarget()) { reading.current = false; setReadingHere(false) }
     }
   }
   /** Says why nothing was added, and resolves to it; null once the files are in the draft. */
@@ -284,11 +296,12 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   const plain = images.filter(attachment => !attachment.browserFeedback)
   const pointed = images.filter(attachment => attachment.browserFeedback)
   const openImage = async (attachment: AgentAttachmentHandle, anchor: HTMLButtonElement): Promise<void> => {
+    const startedTarget = target
     const previews = await Promise.all([...plain, ...pointed].map(async item => {
-      const dataUrl = await fullImageSource(target, item)
+      const dataUrl = await fullImageSource(startedTarget, item)
       return dataUrl === null ? null : { id: item.id, name: item.name, details: attachmentDetails(item, anyFile), preview: { dataUrl } }
     }))
-    if (!mounted.current || !anchor.isConnected) return
+    if (!mounted.current || latestTarget.current !== startedTarget || !anchor.isConnected) return
     if (!previews.some(image => image?.id === attachment.id)) {
       const name = attachment.name
       setError(t`Could not open ${name}. It is still attached. Try opening it again.`)

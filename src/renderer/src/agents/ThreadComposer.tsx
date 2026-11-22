@@ -227,6 +227,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   useLayoutEffect(() => {
     const last = lastRow.current
     if (last.threadId === threadId && last.role !== rowRole) rowMoved(actionsRow.current, last.role, rowRole, aside.current)
+    else if (last.threadId !== threadId) { aside.current = { width: 0 }; caretAfterInsert.current = null }
     lastRow.current = { threadId, role: rowRole }
   }, [threadId, rowRole])
   // Stop names the delegated threads below this one that a press also stops (ADR-0081 decision 6).
@@ -423,8 +424,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const interrupt = (): void => { void command({ type: 'interrupt', threadId }) }
   // Queue's glyph follows what Enter does, as the disc's name does, so a provider that sends during a turn shows Send.
   const discFace = working && content && canSteer && steerHeld ? 'steer' : queueing ? 'queue' : 'send'
-  // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
+  // Kept with the thread it was opened on, and cleared on switch so returning to a thread finds it closed and at row 0.
   const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number } | null>(null)
+  useEffect(() => { setNextListState(null) }, [threadId])
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
   const setNextList = (value: { readonly index: number } | null): void => { setNextListState(value === null ? null : { ...value, threadId }) }
   const nextOpen = nextList !== null
@@ -492,7 +494,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
-      <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
+      <ThreadComposerEditor row={row} state={state} command={command} store={store} composerId={composerId}
         editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering} attachable={!answering} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
@@ -535,7 +537,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}{hostLabel}</span> : null}
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} quiet={quiet ? { effortScore, broadWork, shieldSlot } : undefined} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
-            ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
+            ? <ThreadOptions thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
               quiet={quiet ? { effortScore, broadWork, shieldSlot } : undefined}
               {...(editable && !answering ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
@@ -738,7 +740,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     {children}
     {ghost !== null && next !== null ? <span className="tt-visually-hidden" id={ghostId}>{t({ message: `Suggested next prompt: ${ghostText}. Press Tab to take it, or Up for more.`, comment: '{ghostText} is the suggested prompt.' })}</span> : null}
     {/* Screenshots still being staged when the user moves to another thread join this thread's draft as it is then. */}
-    <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={anyFile ? attachable : supported}
+    <ScreenshotInput target={threadId} attachments={draft.attachments} disabled={!editable} supported={anyFile ? attachable : supported}
       imagesSupported={row.model?.supportsImages === true} answering={answering}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
       <PromptEditor owner={threadId} fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}

@@ -117,9 +117,13 @@ export class ThreadSwitchClock {
         this.current = null
         if (this.shownThreadId !== current.threadId || !this.options.shown(current.threadId)) return
         const paintedAt = this.options.now()
-        const since = (at: number | undefined): number => Math.max(0, Math.round((at ?? paintedAt) - current.pressedAt))
+        const since = (at: number): number => Math.max(0, Math.round(at - current.pressedAt))
         this.options.report({
-          inputMs: since(current.handledAt), replyMs: since(current.replyAt), historyMs: since(current.historyAt), frameMs: since(frameAt), paintedMs: since(paintedAt),
+          inputMs: since(current.handledAt),
+          replyMs: current.replyAt === undefined ? null : since(current.replyAt),
+          historyMs: since(current.historyAt ?? paintedAt),
+          frameMs: since(frameAt),
+          paintedMs: since(paintedAt),
           held: current.held, remote, messages, activities, threads: current.threads,
           commits: current.commits, shareMs: Math.round(current.shareMs), newThreadRecords: current.newThreadRecords, newFields: [...current.newFields].sort(), wholeReads: { ...current.wholeReads },
         })
