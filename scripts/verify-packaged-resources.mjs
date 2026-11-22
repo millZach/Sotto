@@ -189,6 +189,23 @@ export function verifyCoreMlHelper(resources) {
   }
 }
 
+// Owl desktop builds ship the native Rust local engine sidecar (ADR-0215); verify it is present, runnable,
+// and stamped with the exact packaged Owl version.
+export function verifyRustEngineBinary(resources, expectedVersion) {
+  const exe = process.platform === 'win32' ? 'sotto-engine.exe' : 'sotto-engine'
+  const binary = join(resources, 'rust-engine', exe)
+  if (!existsSync(binary)) fail(`missing rust-engine/${exe}`)
+  if (process.platform !== 'win32') {
+    try { accessSync(binary, fsConstants.X_OK) } catch { fail(`rust-engine/${exe} is not executable`) }
+  }
+  const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 30_000 })
+  let parsed
+  try { parsed = JSON.parse(result.stdout.trim()) } catch { parsed = null }
+  if (result.status !== 0 || parsed?.runtime !== 'rust' || parsed?.version !== expectedVersion) {
+    fail(`rust-engine/${exe} --version did not report runtime=rust version=${expectedVersion} (exit ${result.status ?? result.signal ?? result.error?.message})`)
+  }
+}
+
 async function verifyNormalPackagedLaunch(target) {
   const executable = profile.executablePath(target)
   const smokeRoot = await mkdtemp(join(tmpdir(), 'sotto-packaged-smoke-'))
@@ -365,6 +382,9 @@ export async function verifyPackagedResources(input, options = {}) {
   const packagedJson = JSON.parse(readAsarText(asarPath, 'package.json'))
   if (JSON.stringify(Object.keys(packagedJson.dependencies ?? {}).sort()) !== JSON.stringify(['node-pty', 'sherpa-onnx-node', 'zod'])) {
     fail('packaged dependency manifest is not minimal')
+  }
+  if (typeof packagedJson.version === 'string' && /-owl\./u.test(packagedJson.version)) {
+    verifyRustEngineBinary(resources, packagedJson.version)
   }
   const externalInventories = {
     main: JSON.parse(readAsarText(asarPath, 'out/main/external-dependencies.json')),

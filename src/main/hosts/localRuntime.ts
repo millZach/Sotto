@@ -22,7 +22,7 @@ export type DesktopLocalRuntime = Omit<Partial<RunningRuntime>, 'agentControl' |
     'admitsTellWatcher' | 'threadMessage' | 'threadMessages' | 'visual' | 'acquireTerminalStart' | 'setWorktreeInUse' |
     'workingCopyOptions' | 'writeShortTextOn' | 'subagentPage' | 'subagentAssignments' | 'admitsBabysitting' |
     'threadPullRequests' | 'linkThreadPullRequest' | 'preservesDormantThread' | 'rollbackCapability' |
-    'setDelegatedBy' | 'recordSottoMessage' | 'isCheckoutMutating' | 'acquireCheckoutRead' | 'acquireCheckoutMutation' | 'rollbackThread' | 'refreshThread'>
+    'setDelegatedBy' | 'recordSottoMessage' | 'isCheckoutMutating' | 'acquireCheckoutRead' | 'acquireCheckoutMutation' | 'rollbackThread' | 'refreshThread'> & Partial<Pick<RunningRuntime['agentHost'], 'useThreadWordsAccelerator'>>
   threadRegistry: RunningRuntime['threadRegistry']
   hostService: HostService & Pick<RunningRuntime['hostService'], 'setWindowFocused' | 'hostFolders'>
   turns: Pick<RunningRuntime['turns'], 'path' | 'recent'>

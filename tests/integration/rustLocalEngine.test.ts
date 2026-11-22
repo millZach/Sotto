@@ -3,11 +3,13 @@
 // to Sotto's real TypeScript `listenEngineServer` (`src/main/engine/transport.ts`) over a real
 // Windows named pipe / Unix domain socket, verifying token authentication, RPC round-trips,
 // live Codex turn execution & push broadcasts, ops, and clean shutdown (ADR-0210, ADR-0215).
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { ThreadStore } from '../../src/main/agents/threadStore'
+import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
 import {
   createEngineEndpoint,
   generateEngineToken,
@@ -16,6 +18,7 @@ import {
 import { publicProviderEntityId } from '../../src/shared/agents'
 import { fileListingSchema, filePreviewSchema } from '../../src/shared/files'
 import { hostMachineReportSchema } from '../../src/shared/hostFacts'
+import { agentThreadWordsSchema } from '../../src/shared/threadWords'
 import { toolsResultSchema } from '../../src/shared/tools'
 import { drive, prepareFake } from '../referee/providers'
 import { THREAD } from '../referee/scenario'
@@ -201,4 +204,97 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 15_000)
+
+  it('prints runtime and version JSON with --version', async () => {
+    const binary = await findRustEngineBinary()
+    const stdout = execFileSync(binary, ['--version'], { encoding: 'utf8', timeout: 10_000 }).trim()
+    const parsed = JSON.parse(stdout) as { runtime?: unknown; version?: unknown }
+    expect(parsed.runtime).toBe('rust')
+    expect(typeof parsed.version).toBe('string')
+    expect((parsed.version as string).length).toBeGreaterThan(0)
+  })
+
+  it('runs --accelerator mode via startRustLocalEngine over EngineTransport without creating workspace.json or engine.lock', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-accel-'))
+
+    const store = new ThreadStore(join(dataDir, 'threads.sqlite'), undefined, null)
+    store.open({ onMain: true })
+    store.append('thread-1', {
+      kind: 'message-added',
+      at: '2026-11-22T10:00:00.000Z',
+      message: {
+        id: 'msg-1',
+        role: 'user',
+        text: 'Looking for rust accelerator parity across stores',
+        createdAt: '2026-11-22T10:00:00.000Z',
+      },
+    })
+    store.append('thread-1', {
+      kind: 'message-added',
+      at: '2026-11-22T10:01:00.000Z',
+      message: {
+        id: 'msg-2',
+        role: 'assistant',
+        text: 'Confirmed rust accelerator parity works read-only',
+        createdAt: '2026-11-22T10:01:00.000Z',
+      },
+    })
+    store.append('thread-wakeup-only', {
+      kind: 'message-added',
+      at: '2026-11-22T10:02:00.000Z',
+      message: {
+        id: 'msg-wake',
+        role: 'user',
+        text: 'Internal wake-up mentioning rust accelerator parity',
+        createdAt: '2026-11-22T10:02:00.000Z',
+      },
+    })
+    store.addWakeUp('thread-wakeup-only', 'msg-wake')
+    store.close()
+
+    const logs: string[] = []
+    const client = await startRustLocalEngine({
+      userDataPath: dataDir,
+      isPackaged: false,
+      binaryPath: binary,
+      log: code => { logs.push(code) },
+    })
+
+    try {
+      expect(client).toBeDefined()
+      expect(logs).toContain('rust-engine-started')
+
+      const facts = await client!.hostFacts(3)
+      expect(facts).toBeDefined()
+      expect(facts!.facts.logicalCpuCount).toBeGreaterThanOrEqual(1)
+      expect(facts!.runningThreads).toBe(3)
+
+      const words = await client!.searchThreadWords('rust accelerator parity')
+      expect(words).toBeDefined()
+      const parsed = agentThreadWordsSchema.parse(words)
+      expect(parsed.found).toHaveLength(1)
+      expect(parsed.found[0]).toMatchObject({
+        threadId: 'thread-1',
+        messageId: 'msg-2',
+        role: 'assistant',
+        more: 1,
+      })
+
+      const refs = await client!.gitRefs(dataDir)
+      expect(refs).toBeDefined()
+      expect(refs!.isRepository).toBe(false)
+
+      // Accelerator mode is strictly read-only and must never create workspace.json or engine.lock.
+      await expect(access(join(dataDir, 'workspace.json'))).rejects.toThrow()
+      await expect(access(join(dataDir, 'engine.lock'))).rejects.toThrow()
+
+      await client!.close()
+      // Closed client transparently returns undefined so callers fall back to TypeScript.
+      expect(await client!.searchThreadWords('rust')).toBeUndefined()
+    } finally {
+      await client?.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 30_000)
 })

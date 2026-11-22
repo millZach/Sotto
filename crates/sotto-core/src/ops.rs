@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::stores::{SubagentStore, ThreadStore, UsageStore};
+use crate::stores::{SubagentStore, UsageStore};
 use crate::workspace::now_iso;
 
 pub const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
@@ -893,72 +893,174 @@ pub fn host_facts(running_threads: usize) -> Value {
     })
 }
 
-/// Searches stored thread messages in `threads.sqlite` matching `agentThreadWordsSchema` (`src/shared/threadWords.ts`).
+/// Searches thread messages for a query string matching `agentThreadWordsSchema`
+/// (`src/shared/threadWords.ts`) and `ThreadStore.threadWords` (`src/main/agents/threadStore.ts`).
+/// Opens `threads.sqlite` strictly read-only so it never creates a database or contends for write
+/// locks when running beside Node's `AgentControl`.
 pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
-    let needle = query
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase();
+    let trimmed = query.split_whitespace().collect::<Vec<_>>().join(" ");
+    if trimmed.is_empty() {
+        return json!({ "found": [] });
+    }
+    // Truncate query to 200 UTF-16 code units matching `threadWordsQuery`.
+    let mut needle = String::new();
+    let mut u16_len = 0usize;
+    for ch in trimmed.chars() {
+        let w = ch.len_utf16();
+        if u16_len + w > 200 {
+            break;
+        }
+        needle.push(ch);
+        u16_len += w;
+    }
+    let needle = needle.trim().to_string();
     if needle.is_empty() {
         return json!({ "found": [] });
     }
+
     let db = data_directory.join("threads.sqlite");
-    let Ok(store) = ThreadStore::open(&db) else {
+    if !db.is_file() {
+        return json!({ "found": [] });
+    }
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
         return json!({ "found": [] });
     };
-    let ids = store.list_thread_ids().unwrap_or_default();
-    let mut found = Vec::new();
-    for tid in ids {
-        if found.len() >= 200 {
-            break;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+
+    let has_wake_ups: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wake_ups' LIMIT 1",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+
+    let mut escaped = String::with_capacity(needle.len() + 2);
+    escaped.push('%');
+    for ch in needle.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            escaped.push('\\');
         }
-        if let Ok(msgs) = store.read_messages(&tid) {
-            let mut matching: Vec<_> = msgs
-                .iter()
-                .filter(|m| matches!(m.role.as_str(), "user" | "assistant"))
-                .filter(|m| {
-                    let normalized = m
-                        .text
-                        .split_whitespace()
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                        .to_ascii_lowercase();
-                    normalized.contains(&needle)
-                })
-                .collect();
-            if let Some(newest) = matching.pop() {
-                let more = matching.len().min(999);
-                let quote = build_word_quote(&newest.text, &needle);
-                found.push(json!({
-                    "threadId": tid,
-                    "messageId": newest.id,
-                    "role": newest.role,
-                    "quote": quote,
-                    "more": more,
-                }));
-            }
-        }
+        escaped.push(ch);
+    }
+    escaped.push('%');
+
+    let wake_up_clause = if has_wake_ups {
+        "WHERE NOT EXISTS (SELECT 1 FROM wake_ups w WHERE w.thread_id = h.thread_id AND w.message_id = h.message_id)"
+    } else {
+        ""
+    };
+    let threads_sql = format!(
+        "WITH hits AS MATERIALIZED (
+             SELECT m.thread_id, m.message_id, m.position, m.created_at
+             FROM messages m
+             WHERE m.role IN ('user', 'assistant') AND m.text LIKE ?1 ESCAPE '\\'
+         )
+         SELECT g.thread_id, g.hits, g.last
+         FROM (
+             SELECT h.thread_id, COUNT(*) AS hits, MAX(h.position) AS last
+             FROM hits h
+             {wake_up_clause}
+             GROUP BY h.thread_id
+         ) g
+         JOIN messages n ON n.thread_id = g.thread_id AND n.position = g.last
+         ORDER BY n.created_at DESC
+         LIMIT 200"
+    );
+
+    let Ok(mut threads_stmt) = conn.prepare(&threads_sql) else {
+        return json!({ "found": [] });
+    };
+    let Ok(thread_rows) = threads_stmt.query_map([escaped.as_str()], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    }) else {
+        return json!({ "found": [] });
+    };
+
+    let Ok(mut newest_stmt) = conn.prepare(
+        "SELECT role, message_id, text
+         FROM messages
+         WHERE thread_id = ?1 AND position = ?2
+         LIMIT 1",
+    ) else {
+        return json!({ "found": [] });
+    };
+
+    let needle_lower = needle.to_lowercase();
+    let mut found: Vec<Value> = Vec::new();
+    for item in thread_rows.flatten() {
+        let (tid, hits, last_pos) = item;
+        let Ok((role, message_id, text)) = newest_stmt.query_row(
+            rusqlite::params![tid.as_str(), last_pos],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        ) else {
+            continue;
+        };
+        let role_norm = if role == "user" { "user" } else { "assistant" };
+        let quote = build_word_quote(&text, &needle_lower);
+        let more = (hits - 1).clamp(0, 999);
+        found.push(json!({
+            "threadId": tid,
+            "messageId": message_id,
+            "role": role_norm,
+            "quote": quote,
+            "more": more,
+        }));
     }
     json!({ "found": found })
 }
 
 fn build_word_quote(text: &str, needle_lower: &str) -> String {
     let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let lower = normalized.to_ascii_lowercase();
-    let hit = lower.find(needle_lower).unwrap_or(0);
-    let mut start = hit.saturating_sub(48);
-    while start > 0 && !normalized.is_char_boundary(start) {
-        start -= 1;
+    let chars: Vec<char> = normalized.chars().collect();
+    // Build the lowercased string while recording each lowercased byte's originating index
+    // in `chars` so characters whose lowercase form expands (such as Turkish `İ` -> `i\u{307}`)
+    // never produce an out-of-bounds index into `chars`.
+    let mut lower = String::with_capacity(normalized.len());
+    let mut orig_char_by_lower_byte: Vec<usize> = Vec::with_capacity(normalized.len());
+    for (orig_idx, &ch) in chars.iter().enumerate() {
+        for lower_ch in ch.to_lowercase() {
+            let mut buf = [0u8; 4];
+            let encoded = lower_ch.encode_utf8(&mut buf);
+            lower.push_str(encoded);
+            for _ in 0..encoded.len() {
+                orig_char_by_lower_byte.push(orig_idx);
+            }
+        }
     }
-    let rest = &normalized[start..];
-    let mut end = rest.len().min(180);
-    while end > 0 && !rest.is_char_boundary(end) {
-        end -= 1;
+    let hit_char_idx = lower
+        .find(needle_lower)
+        .and_then(|byte_idx| orig_char_by_lower_byte.get(byte_idx).copied())
+        .unwrap_or(0);
+    let start_char = hit_char_idx.saturating_sub(48).min(chars.len());
+    let mut slice = String::new();
+    let mut u16_len = 0usize;
+    let mut end_char = start_char;
+    for &ch in &chars[start_char..] {
+        let w = ch.len_utf16();
+        if u16_len + w > 180 {
+            break;
+        }
+        slice.push(ch);
+        u16_len += w;
+        end_char += 1;
     }
-    let prefix = if start > 0 { "…" } else { "" };
-    let suffix = if end < rest.len() { "…" } else { "" };
-    format!("{prefix}{}{suffix}", rest[..end].trim())
+    let prefix = if start_char > 0 { "…" } else { "" };
+    let suffix = if end_char < chars.len() { "…" } else { "" };
+    format!("{prefix}{}{suffix}", slice.trim())
 }
 
 /// Reads subagent page matching `subagentPageSchema` (`src/shared/subagents.ts`).
@@ -1178,5 +1280,14 @@ mod tests {
             res["error"]["code"].as_str(),
             Some("invalid-request" | "not-repository")
         ));
+    }
+
+    #[test]
+    fn build_word_quote_handles_expanding_unicode_lowercase_without_panicking() {
+        // Turkish capital dotted I (`İ`) expands to two Unicode scalar values (`i\u{307}`) when lowercased.
+        let text = format!("{} target word here", "İ".repeat(100));
+        let quote = build_word_quote(&text, "target");
+        assert!(quote.contains("target word here"));
+        assert!(quote.encode_utf16().count() <= 182);
     }
 }
