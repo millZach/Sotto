@@ -539,6 +539,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
     ...(options.openThreadFolder ? { openThreadFolder: options.openThreadFolder } : {}),
+    reclaimAfterSettle: threadId => agentHost.reclaimThreadWorktree(threadId, {
+      automatic: true, stillEligible: thread => worktreeCleanup.canReclaimOnSettle(thread),
+    }),
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),

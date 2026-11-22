@@ -62,6 +62,11 @@ function mount(patch: (state: AgentState) => void = () => undefined, refuse: Par
       const worktree = current.host.threads.find(thread => thread.id === request.threadId)?.worktree
       return { ...current, worktreeReclaimPreview: { path: worktree?.path ?? '', ...worktree?.branch ? { branch: worktree.branch } : {}, dirty: false, ignored: [], items: [], repositories: [], untracked: [] } }
     }
+    if (request.type === 'reclaim-thread-worktree' && request.afterSettle) {
+      current = { ...current, host: { ...current.host, threads: current.host.threads.map(thread =>
+        thread.id === request.threadId && thread.worktree ? { ...thread, worktree: { ...thread.worktree, reclaimedAt: settledAt } } : thread) } }
+      publish(current)
+    }
     if (request.type === 'settle-thread' || request.type === 'restore-thread') {
       const settling = request.type === 'settle-thread'
       current = { ...current, host: { ...current.host, threads: current.host.threads.map((thread): AgentThread => thread.id === request.threadId ? { ...thread, workspaceSettledAt: settling ? settledAt : null } : thread) } }
@@ -251,7 +256,7 @@ describe('the settle toast', () => {
     expect(await screen.findByRole('button', { name: 'Undo: restore Grok voice previews' })).toBeVisible()
     cleanup()
     await ask('Remove worktree')()
-    expect(await screen.findByText('Settled Grok voice previews and removed its worktree. The branch is kept.')).toBeVisible()
+    expect(await screen.findByText('Settled Grok voice previews and removed its worktree. Its commits are kept.')).toBeVisible()
     expect(screen.queryByRole('button', { name: /^Undo/ })).not.toBeInTheDocument()
   })
 
@@ -301,13 +306,14 @@ describe('the settle toast', () => {
   })
 
   it('says while the on-settle rule removes the folder, then offers Undo only if the folder stayed', async () => {
-    const worktree = { mode: 'independent' as const, status: 'ready' as const, path: 'C:/owned/grok', branch: 'sotto/grok', dirty: false }
+    const worktree = { mode: 'independent' as const, status: 'ready' as const, path: 'C:/owned/grok', dirty: false }
     const owned = (state: AgentState): void => { state.host.threads = state.host.threads.map(thread => thread.id === 'grok-previews' ? { ...thread, nativeSessionStarted: true, worktree } : thread) }
     vi.mocked(useOptionalApp).mockReturnValue({ platform: 'win32', settings: { ...DEFAULT_SETTINGS, worktreeCleanup: { ...DEFAULT_SETTINGS.worktreeCleanup, onSettle: true } } } as unknown as ReturnType<typeof useOptionalApp>)
-    mount(owned)
+    const { commands } = mount(owned)
     fireEvent.click(screen.getByRole('button', { name: 'Settle Grok voice previews' }))
-    expect(await screen.findByText('Settled Grok voice previews and removed its worktree. The branch is kept.')).toBeVisible()
+    expect(await screen.findByText('Settled Grok voice previews and removed its worktree. Its commits are kept.')).toBeVisible()
     expect(screen.queryByRole('button', { name: /^Undo/ })).not.toBeInTheDocument()
+    expect(commands.filter(request => request.type === 'reclaim-thread-worktree')).toEqual([{ type: 'reclaim-thread-worktree', threadId: 'grok-previews', afterSettle: true }])
     cleanup()
     mount(owned, { 'reclaim-thread-worktree': 'This folder has files Git ignores. Nothing was removed.' })
     fireEvent.click(screen.getByRole('button', { name: 'Settle Grok voice previews' }))

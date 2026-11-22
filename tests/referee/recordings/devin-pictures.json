@@ -29,7 +29,7 @@
        "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
        "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
        "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
-       "detail-read-held", "detached-runs-elsewhere", "owlets"
+       "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -76,7 +76,7 @@
        "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
        "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
        "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
-       "detail-read-held", "detached-runs-elsewhere", "owlets"
+       "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -123,7 +123,7 @@
        "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
        "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
        "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
-       "detail-read-held", "detached-runs-elsewhere", "owlets"
+       "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -185,7 +185,7 @@
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
          "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-hermes",
          "provider-antigravity", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "usage-antigravity",
-         "detail-read-held", "owlets"
+         "detail-read-held", "owlets", "settle-worktree-cleanup"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -844,7 +844,7 @@
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
          "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-hermes",
          "provider-antigravity", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "usage-antigravity",
-         "detail-read-held", "owlets"
+         "detail-read-held", "owlets", "settle-worktree-cleanup"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -1459,7 +1459,7 @@
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
          "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-hermes",
          "provider-antigravity", "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words", "usage-antigravity",
-         "detail-read-held", "owlets"
+         "detail-read-held", "owlets", "settle-worktree-cleanup"
         ],
         "hasMore": false,
         "hostId": "<id:1>",

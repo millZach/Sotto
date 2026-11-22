@@ -1724,7 +1724,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   /** Remove the thread's own worktree folder and keep its branch (ADR-0041). `withUncommittedChanges`
    * is the user's answer to the confirmation; without it a folder with uncommitted work is left alone. */
   z.object({ type: z.literal('preview-reclaim-thread-worktree'), threadId: id }).strict(),
-  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, withUncommittedChanges: z.boolean().optional(), ...worktreeConfirmations }).strict(),
+  z.object({ type: z.literal('reclaim-thread-worktree'), threadId: id, afterSettle: z.literal(true).optional(), withUncommittedChanges: z.boolean().optional(), ...worktreeConfirmations }).strict(),
   agentWorkingCopySelectionSchema.extend({ type: z.literal('configure-thread-working-copy'), threadId: id }).strict(),
   /** T3's stacked Git action on the thread's folder: commit, push, create the pull request, or a prefix of the three (ADR-0027).
    * `filePaths` limits the commit to those files; `featureBranch` commits on a new `feature/` branch first; `allowDefaultBranch`

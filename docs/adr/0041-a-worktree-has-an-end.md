@@ -135,7 +135,9 @@ A folder on a detached HEAD is now reclaimed, by a rule, by Clear now or by Clea
 
 The reclaimed record keeps the commit (`detachedCommit`), and the next send puts the folder back on it with `git worktree add --detach`, detached as it was; the Working copy panel names the commit. A removal cut off partway is finished on the commit Git still records for the folder, whatever branch an older record names, and only while a branch or remote branch still has that commit; until one does, Git's registration, which Sotto's lock keeps, holds the commit and nothing more is removed. If the repository no longer has the commit when a send comes, the send says so and changes nothing. The idle, settle and unchanged rules look at such a folder; the merged rule needs a branch to ask GitHub about.
 
-**Remove worktree**, the question Settle asks and **Delete thread…** still ask for a branch: their questions have no words for a detached folder yet. The host refuses a detached folder to any removal not made by a rule or a clear, so a client's command cannot take one either.
+**Remove worktree**, the question Settle asks and **Delete thread…** still ask for a branch: their questions have no words for a detached folder yet. The host refuses a detached folder to any removal not made by a rule or a clear, so a client's manual removal cannot take one either.
+
+When **Remove a worktree when its thread is settled** is on, pressing **Settle** requests that rule for the thread immediately. The computer with the folder checks its own setting and the folder before removal, just as it does in the background. A detached checkout of a merged commit can go on that press. The toast reports removal from the worktree record.
 
 Ignored files besides dependencies still keep a folder from a rule. 15 of the 40 held build output, `out/`, `release/`, `native/coreml-asr/.build/` and `native/key-listener/build/`, about 3 GB each. Whether a rule may take build output too is Zach's decision; until he makes it, those folders stay. Each way of letting it moves the asking from the user to a declaration, and each puts something at risk:
 
