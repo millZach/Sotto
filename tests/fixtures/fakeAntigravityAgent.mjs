@@ -200,6 +200,7 @@ function check() {
   if (!existsSync(path('control.json'))) return
   const command = read('control.json', {})
   if (!command.id || command.id === last || !resident.has(command.sessionId)) return
+  if (command.type === 'complete' && !prompts.some(item => item.sessionId === command.sessionId)) return
   last = command.id
   try { mkdirSync(path('control-claims'), { recursive: true }); writeFileSync(path(`control-claims/${command.id}`), String(process.pid), { flag: 'wx' }) } catch { return }
   run(command)
@@ -255,15 +256,16 @@ function run(command) {
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, name: 'edit_file', kind: 'edit', title: `File ${command.path}`, status: 'completed', locations: [{ path: command.path }],
       rawOutput: {}, content: [{ type: 'diff', path: command.path, newText: command.newText, oldText: command.oldText }] })
   }
-  if (command.type === 'permission' || command.type === 'edit-permission') {
+  if (command.type === 'permission' || command.type === 'edit-permission' || command.type === 'permission-always-only') {
     const edit = command.type === 'edit-permission'
+    const alwaysOnly = command.type === 'permission-always-only'
     const toolCallId = `toolu_${randomUUID()}`
     const toolCall = edit
       ? { toolCallId, title: 'Edit notes.md', kind: 'edit', status: 'pending', locations: [{ path: 'notes.md' }], content: [{ type: 'diff', path: 'notes.md', oldText: 'a', newText: 'b' }] }
       : { toolCallId, title: `\`${command.text}\``, kind: 'execute', status: 'pending', rawInput: { CommandLine: command.text } }
     update(sessionId, { sessionUpdate: 'tool_call', ...toolCall })
     ask(sessionId, toolCall, [{ optionId: 'remember-this', name: 'Allow always', kind: 'allow_always', _meta: { 'agy.security.warning': { message: 'Runs this command from now on.' } } },
-      { optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }, { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' }])
+      ...(alwaysOnly ? [] : [{ optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }]), { optionId: 'reject-once', name: 'Deny', kind: 'reject_once' }])
   }
   if (command.type === 'ask-question') {
     // `questions`: [{ question, options, several }]; `form` replaces the form's fields, to send one of another shape.

@@ -6,8 +6,8 @@ const TIMEOUT_MS = 30_000
 const ACCEPT = 'Accept: application/vnd.github+json'
 /** An account or organisation's name: letters, digits and hyphens, as GitHub allows. */
 export const GITHUB_OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/u
-/** A repository's name: letters, digits, dots, hyphens and underscores, and never a path of its own. */
-export const GITHUB_REPO = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/u
+/** A repository's name: letters, digits, dots, hyphens and underscores, never `.` or `..`, written without lookaround so RE2 clients accept its JSON Schema. */
+export const GITHUB_REPO = /^(?:[A-Za-z0-9_-][A-Za-z0-9._-]?|\.[A-Za-z0-9_-]|[A-Za-z0-9._-]{3,100})$/u
 /** GitHub's own limit on a comment's length, and on an issue's body. */
 export const GITHUB_COMMENT_MAX = 65_536
 /** GitHub's own limit on an issue's title. */

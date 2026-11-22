@@ -1,9 +1,15 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { WatcherService } from '../../src/main/agents/watcher'
+import { createAgentRuntime } from '../../src/main/agents/runtime'
+import { selectWatcherWorkerModels, WatcherService } from '../../src/main/agents/watcher'
+import { antigravityFixture } from '../fixtures/fakeAntigravityFixture'
+import { FakeProviderHost } from '../fixtures/fakeProviderHost'
+import { testCredentials } from '../fixtures/testCredentials'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { WATCHER_STOP_PAUSE } from '../../src/main/agents/followups'
 import { queueHold } from '../../src/main/agents/watcherSendHolds'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
@@ -496,15 +502,27 @@ it('reports the original reserved creation receipt after process loss before the
   expect(f.service.startsInFlight()).toBe(1)
 })
 
-it('serves structured MCP results through a thread-bound loopback token and revokes it', async () => {
+it('serves structured MCP results and object-typed outputSchemas through a thread-bound loopback token and revokes it', async () => {
   const f = await fixture(), server = await f.tools.mcpServer(f.id)
   const headers = { 'Content-Type': 'application/json', Authorization: server!.headers[0]!.value }
+  const listedResponse = await fetch(server!.url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'tools/list' }) })
+  const listed = await listedResponse.json() as { result: { tools: { name: string; inputSchema: { type?: string }; outputSchema?: { type?: string } }[] } }
+  expect(listed.result.tools.length).toBeGreaterThan(0)
+  for (const tool of listed.result.tools) {
+    expect(tool.inputSchema.type, `${tool.name}.inputSchema`).toBe('object')
+    expect(tool.outputSchema?.type, `${tool.name}.outputSchema`).toBe('object')
+  }
   const response = await fetch(server!.url, { method: 'POST', headers,
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_projects', arguments: {} } }) })
   const frame = await response.json() as { result: { structuredContent: unknown } }
   expect(watcherToolSchemas.list_projects.output.parse(frame.result.structuredContent).status).toBe('ok')
+  const refusedResponse = await fetch(server!.url, { method: 'POST', headers,
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'read_thread', arguments: { target: { hostId: f.control.hostId()!, threadId: randomUUID() } } } }) })
+  const refusedFrame = await refusedResponse.json() as { result: { isError?: boolean; structuredContent: unknown } }
+  expect(refusedFrame.result.isError).toBe(true)
+  expect(watcherToolSchemas.read_thread.output.parse(refusedFrame.result.structuredContent).status).toBe('refused')
   f.tools.revoke(f.id)
-  expect((await fetch(server!.url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) })).status).toBe(401)
+  expect((await fetch(server!.url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' }) })).status).toBe(401)
 })
 
 
@@ -3034,4 +3052,53 @@ it('asks Watcher to read its state after any Compact context for its conversatio
   await f.call('read_state', {})
   expect(f.service.stateNote()).toBeUndefined()
 })
+
+it('keeps trailing Antigravity Neon discoverable in list_projects past 100 earlier ready models and supports provider narrowing', async () => {
+  const smallCatalog = [
+    ...Array.from({ length: 40 }, (_, index) => ({ id: `codex-${index}`, name: `Codex ${index}`, provider: 'Codex', providerId: 'codex' as const, ready: true })),
+    { id: 'antigravity-neon', name: 'Gemini 4 Neon', provider: 'Antigravity', providerId: 'antigravity' as const, ready: true },
+  ]
+  expect(selectWatcherWorkerModels(smallCatalog, 100).map(item => item.id)).toEqual(smallCatalog.map(item => item.id))
+
+  const antigravity = await antigravityFixture(undefined, 10_000)
+  cleanups.push(antigravity.cleanup)
+  await antigravity.script({ newModels: [{ value: 'gemini-4-neon', name: 'Gemini 4 Neon', thinking: ['low', 'high'] }] })
+  const codex = new FakeProviderHost()
+  codex.state.models = Array.from({ length: 105 }, (_, index) => ({
+    id: `codex-model-${index}`, name: `Codex Model ${index}`, provider: 'Codex', providerId: 'codex', ready: true,
+    reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low', runtimeModes: ['approval-required', 'full-access'],
+  }))
+  const directory = join(antigravity.root, 'sotto'), projectPath = join(antigravity.root, 'project')
+  await mkdir(projectPath, { recursive: true })
+  codex.state.projects = [{ id: 'project', title: 'Project', path: projectPath }]
+  const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
+  const settings = { ...DEFAULT_SETTINGS, threadTitles: false }
+  const runtime = await createAgentRuntime({
+    directory, credentials, watcherEnabled: true, settings: () => settings, writingSettings: async () => settings,
+    historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
+    providers: { antigravity: antigravity.adapter, codex, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() },
+  })
+  cleanups.push(runtime.close)
+  await runtime.agentControl.commandShell({ type: 'connect', provider: 'codex' })
+  await runtime.agentControl.commandShell({ type: 'connect', provider: 'antigravity' })
+  const model = runtime.agentControl.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
+  expect(await runtime.watcher!.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
+  const watcherId = runtime.watcher!.state().current!.target.threadId
+
+  const all = watcherToolSchemas.list_projects.output.parse((await runtime.watcherTools!.call(watcherId, 'list_projects', { includeModels: true })).structuredContent)
+  if (all.status !== 'ok') throw new Error('list_projects refused')
+  const workers = all.projects[0]!.workers!
+  expect(workers).toHaveLength(100)
+  expect(workers.some(item => item.provider === 'antigravity' && item.modelId === 'native:antigravity:model:gemini-4-neon')).toBe(true)
+  // Original relative order (Codex before Antigravity) is preserved.
+  const firstAntigravity = workers.findIndex(item => item.provider === 'antigravity')
+  expect(firstAntigravity).toBeGreaterThan(0)
+  expect(workers.slice(0, firstAntigravity).every(item => item.provider === 'codex')).toBe(true)
+  expect(workers.slice(firstAntigravity).every(item => item.provider === 'antigravity')).toBe(true)
+
+  const filtered = watcherToolSchemas.list_projects.output.parse((await runtime.watcherTools!.call(watcherId, 'list_projects', { includeModels: true, provider: 'antigravity' })).structuredContent)
+  if (filtered.status !== 'ok') throw new Error('filtered list_projects refused')
+  expect(filtered.projects[0]!.workers!.every(item => item.provider === 'antigravity')).toBe(true)
+  expect(filtered.projects[0]!.workers!.map(item => item.modelId)).toContain('native:antigravity:model:gemini-4-neon')
+}, 90_000)
 

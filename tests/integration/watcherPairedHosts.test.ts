@@ -38,7 +38,7 @@ import { initializeGitRepository } from '../fixtures/gitRepository'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import { MACHINE_START_SETTLES_MS } from '../../src/shared/hostFacts'
-import { lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
+import { EMPTY_AGENT_HOST, lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
 import { isResumeNoteText } from '../../src/shared/restartResume'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -48,6 +48,8 @@ import type { WorkerMachineSetting } from '../../src/shared/workerMachine'
 import { BranchBundles } from '../../src/main/agents/branchBundles'
 import { DesktopBranchMoves, foldersOfSnapshot } from '../../src/main/agents/branchMoves'
 import { branchMoveWords } from '../../src/shared/branchMoves'
+import { antigravityFixture } from '../fixtures/fakeAntigravityFixture'
+import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -2900,3 +2902,62 @@ it('makes a project with Git on a paired machine that start_thread uses, and say
   expect(await f.call('add_project', { requestId: f.requestId, retryKey: randomUUID(), hostId: f.pairing.hostId, path: join(remote.root, 'Lost'), newFolder: true }))
     .toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', retryable: true, message: expect.stringContaining('list_projects') })
 })
+
+it('discovers qualified Antigravity Neon on a paired host past 100 earlier ready models, starts it with exact first prompt delivery, and preserves retry receipts', async () => {
+  const antigravity = await antigravityFixture(undefined, 10_000)
+  cleanups.push(antigravity.cleanup)
+  await antigravity.script({ newModels: [{ value: 'gemini-4-neon', name: 'Gemini 4 Neon', thinking: ['low', 'high'] }] })
+  // Populate >100 ready models ahead of Antigravity on the paired host to exercise both socket qualification and 100-row starvation together.
+  const manyClaude = new FakeProviderHost({
+    ...EMPTY_AGENT_HOST, name: 'Claude Code', version: '1', connected: true,
+    capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true },
+    models: Array.from({ length: 105 }, (_, index) => ({ id: `claude-model-${index}`, name: `Claude Model ${index}`, provider: 'Claude Code', ready: true,
+      runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] })),
+  })
+  await remote.host.close()
+  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: remote.native, claude: manyClaude, antigravity: antigravity.adapter } })
+  remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port
+
+  const f = await master()
+  await allowAnswers(f, true)
+  await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
+  await f.socket.command({ type: 'connect', provider: 'claude' })
+  await f.socket.command({ type: 'connect', provider: 'antigravity' })
+  const neonId = 'native:antigravity:model:gemini-4-neon'
+  await expect.poll(() => f.socket.shell().host.models.some(item => item.id === neonId && item.ready)).toBe(true)
+  expect(f.socket.shell().host.models.some(item => item.providerId === 'antigravity' && item.id.includes('claude'))).toBe(false)
+
+  const antigravityPath = join(remote.root, 'antigravity-worker-project')
+  await mkdir(antigravityPath, { recursive: true })
+  await f.socket.command({ type: 'create-project', provider: 'antigravity', title: 'Antigravity remote project', path: antigravityPath, useExisting: true })
+  await expect.poll(() => f.socket.shell().host.projects.some(item => item.path === antigravityPath)).toBe(true)
+  const remoteProject = f.socket.shell().host.projects.find(item => item.path === antigravityPath)!
+
+  const all = await f.call('list_projects', { hostId: f.pairing.hostId, includeModels: true })
+  if (all.status !== 'ok') throw new Error('list_projects refused')
+  const discovered = all.projects.find(item => item.target.projectId === remoteProject.id)!
+  expect(discovered.workers).toHaveLength(100)
+  expect(discovered.workers!.some(item => item.provider === 'antigravity' && item.modelId === neonId)).toBe(true)
+
+  const narrowed = await f.call('list_projects', { hostId: f.pairing.hostId, includeModels: true, provider: 'antigravity' })
+  if (narrowed.status !== 'ok') throw new Error('narrowed list_projects refused')
+  expect(narrowed.projects.find(item => item.target.projectId === remoteProject.id)!.workers!.every(item => item.provider === 'antigravity')).toBe(true)
+
+  const retryKey = randomUUID()
+  const firstPrompt = 'Synthetic paired host Neon prompt.'
+  const startInput = {
+    requestId: f.requestId, retryKey, project: { hostId: f.pairing.hostId, projectId: remoteProject.id },
+    modelId: neonId, title: 'Paired Neon worker', workingCopy: { kind: 'shared' as const },
+    sharedReason: 'Synthetic paired host test folder.', firstPrompt,
+  }
+  const started = await f.call('start_thread', startInput)
+  if (started.status !== 'ok' || !('target' in started)) throw new Error(`paired Neon refused: ${started.status === 'refused' ? started.message : ''}`)
+  expect(started.effectiveChoices.modelId).toBe(neonId)
+  await expect.poll(async () => (await antigravity.requests()).filter(record => record.method === 'session/prompt').length).toBe(1)
+  const sent = (await antigravity.requests()).find(record => record.method === 'session/prompt')!
+  expect(JSON.stringify(sent.params?.prompt)).toContain(firstPrompt)
+
+  const retry = await f.call('start_thread', startInput)
+  expect(retry).toEqual(started)
+  expect((await antigravity.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
+}, 90_000)

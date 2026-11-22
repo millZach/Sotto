@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { antigravityCatalog, antigravityGeminiModel, antigravityModelChoices } from '../../../src/main/agents/antigravityModels'
+import { antigravityCatalog, antigravityCatalogGeminiModel, antigravityGeminiModel, antigravityModelChoices } from '../../../src/main/agents/antigravityModels'
 
 /** The model option agy 1.5.13 sent for an AI Ultra account on November 21, 2026, IDs and names as it listed them. */
 const ACCOUNT = { configOptions: [{ id: 'model', currentValue: 'gemini-3.8-flash', options: [
@@ -19,5 +19,23 @@ describe('Antigravity’s models under Google’s terms (ADR-0212)', () => {
     const catalog = antigravityCatalog([{ id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash' }, { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' }],
       { images: true, offersAuto: true, current: 'gemini-3.8-flash' })
     expect(catalog.map(entry => [entry.model.id, entry.model.source, entry.model.recommended])).toEqual([['gemini-3.8-flash', undefined, true]])
+  })
+
+  it('accepts qualified Antigravity Gemini IDs and legacy bare Gemini IDs on the wire while rejecting mismatched or non-Gemini entries', () => {
+    expect([
+      'gemini-3.8-flash',
+      'native:antigravity:model:gemini-4-neon',
+      'native:antigravity:model:gemini-3.8-flash',
+      'native:antigravity:model:gemini%2D4%2Dneon',
+    ].every(antigravityCatalogGeminiModel)).toBe(true)
+    expect([
+      'claude-opus-5-5',
+      'gpt-oss-120b-medium',
+      'native:antigravity:model:claude-opus-5-5',
+      'native:antigravity:model:gpt-oss-120b-medium',
+      'native:codex:model:gemini-4-neon',
+      'native:antigravity:project:gemini-4-neon',
+      'native:antigravity:model:%ZZ',
+    ].some(antigravityCatalogGeminiModel)).toBe(false)
   })
 })

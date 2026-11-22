@@ -5,7 +5,7 @@ import { mkdir, realpath } from 'node:fs/promises'
 import { isAbsolute, join, posix, relative, resolve, win32 } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
-  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage, PROVIDER_RESULT_UNCONFIRMED } from '../../shared/agents'
+  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, type ProviderId, isVisualMessage, PROVIDER_RESULT_UNCONFIRMED } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
@@ -6671,18 +6671,27 @@ ${operation.draftId}`)
     // Read once per host: a paired host's limit reads its whole cached shell.
     const limits = new Map(snapshots.map(snapshot => [snapshot, this.permissionLimits(undefined, snapshot.hostId ?? this.hostId())]))
     const query = input.query?.toLowerCase()
-    const rows = snapshots.filter(snapshot => !input.hostId || (snapshot.hostId ?? this.hostId()) === input.hostId).flatMap(snapshot => snapshot.projects.filter(item => !this.reservedProject(item.path)
-      && (!input.projectId || item.id === input.projectId) && (!query || item.title.toLowerCase().includes(query) || item.path.toLowerCase().includes(query))).map(project => ({
-      target: { hostId: snapshot.hostId ?? this.hostId(), projectId: project.id }, title: project.title, displayRoot: project.path,
-      workers: snapshot.models.filter(model => model.ready).slice(0, 100).map(model => {
+    const rows = snapshots.filter(snapshot => !input.hostId || (snapshot.hostId ?? this.hostId()) === input.hostId).flatMap(snapshot => {
+      const hostProjects = snapshot.projects.filter(item => !this.reservedProject(item.path)
+        && (!input.projectId || item.id === input.projectId) && (!query || item.title.toLowerCase().includes(query) || item.path.toLowerCase().includes(query)))
+      if (!hostProjects.length) return []
+      const limit = limits.get(snapshot)
+      // Built once per requested host so projects on the same host share the bounded ready catalog.
+      const workers = selectWatcherWorkerModels(snapshot.models, 100, input.provider).map(model => {
         let defaultPermission: ReturnType<WatcherService['permission']> | null = null
-        try { defaultPermission = this.permission(model, undefined, limits.get(snapshot)) } catch { /* Explicitly incomparable. */ }
+        try { defaultPermission = this.permission(model, undefined, limit) } catch { /* Explicitly incomparable. */ }
         return { provider: model.providerId, modelId: model.id, reasoningEfforts: workerEfforts(model),
           speeds: model.speeds ?? (model.fastMode ? [{ id: 'fast', name: 'Fast', ...model.fastMode }] : []), defaultPermission, permissionComparable: defaultPermission !== null }
-      }), controlAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.control),
-      readsAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.reads),
-      readOnlyProfileAvailable: true, freshness: snapshot.connected ? 'fresh' : 'stale' })))
-    const page = this.page(`projects:${digest([input.hostId ?? '', input.projectId, input.query])}`, rows, input.cursor, input.limit)
+      })
+      const hostId = snapshot.hostId ?? this.hostId()
+      const controlAvailable = snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.control)
+      const readsAvailable = snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.reads)
+      const freshness = snapshot.connected ? 'fresh' as const : 'stale' as const
+      return hostProjects.map(project => ({
+        target: { hostId, projectId: project.id }, title: project.title, displayRoot: project.path,
+        workers, controlAvailable, readsAvailable, readOnlyProfileAvailable: true, freshness }))
+    })
+    const page = this.page(`projects:${digest([input.hostId ?? '', input.projectId, input.query, input.provider ?? ''])}`, rows, input.cursor, input.limit)
     return { status: 'ok', projects: page.rows, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }
   }
   /**
@@ -7034,4 +7043,28 @@ ${operation.draftId}`)
   drained(): Promise<void> { return Promise.all([this.lettingGoChecks, ...this.snapshotting]).then(() => undefined) }
   /** Whether this machine runs Watcher's starts marked as checks one at a time (#1312), which a host lists as `watcher-check-queue`. */
   get takesChecks(): boolean { return this.options.checks !== undefined }
+}
+
+/**
+ * Selects up to `limit` ready worker models for `list_projects` in their original relative order, optionally narrowed to
+ * one provider. When a catalog exceeds `limit`, each ready provider receives an equal leading slice before unused slots
+ * fill from the original order so smaller providers trailing a large catalog remain discoverable.
+ */
+export function selectWatcherWorkerModels(models: readonly AgentModel[], limit = 100, provider?: ProviderId): AgentModel[] {
+  if (limit <= 0) return []
+  const ready = models.filter(model => model.ready && (!provider || model.providerId === provider))
+  if (ready.length <= limit) return ready
+  const byProvider = new Map<ProviderId | undefined, number[]>()
+  ready.forEach((model, index) => {
+    const indices = byProvider.get(model.providerId)
+    if (indices) indices.push(index)
+    else byProvider.set(model.providerId, [index])
+  })
+  const quota = Math.max(1, Math.floor(limit / byProvider.size))
+  const selected = new Set<number>()
+  for (const indices of byProvider.values()) {
+    for (let i = 0; i < indices.length && i < quota && selected.size < limit; i++) selected.add(indices[i]!)
+  }
+  for (let index = 0; index < ready.length && selected.size < limit; index++) selected.add(index)
+  return ready.filter((_, index) => selected.has(index))
 }

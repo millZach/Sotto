@@ -9,7 +9,7 @@ import { WATCHER_READ_BYTES_MAX, type WatcherEvidence, WatcherPullRequestSummary
 
 /** The keys only the desktop reads. A paired host on any version is sent the call without them, and answers in full. */
 const DESKTOP_KEYS: Partial<Record<WatcherToolName, readonly string[]>> = {
-  list_threads: ['watchedOnly', 'detail'], read_thread: ['evidence'], list_projects: ['projectId', 'query', 'includeModels'],
+  list_threads: ['watchedOnly', 'detail'], read_thread: ['evidence'], list_projects: ['projectId', 'query', 'provider', 'includeModels'],
 }
 export function watcherHostInput<T extends object>(name: WatcherToolName, input: T): T {
   const keys = DESKTOP_KEYS[name]
@@ -173,7 +173,9 @@ export function watcherSlimRead(name: WatcherToolName, input: unknown, result: u
     type Project = Extract<WatcherToolOutput<'list_projects'>, { status: 'ok' }>['projects'][number]
     const projects = (result.projects as Project[]).filter(project => (!asked.projectId || project.target.projectId === asked.projectId)
       && (!query || project.title.toLowerCase().includes(query) || project.displayRoot.toLowerCase().includes(query)))
-    return { ...result, projects: asked.includeModels ? projects : projects.map(({ workers: _workers, ...project }) => { void _workers; return project }) }
+    return { ...result, projects: asked.includeModels
+      ? (asked.provider ? projects.map(project => project.workers ? { ...project, workers: project.workers.filter(worker => worker.provider === asked.provider) } : project) : projects)
+      : projects.map(({ workers: _workers, ...project }) => { void _workers; return project }) }
   }
   return result
 }
