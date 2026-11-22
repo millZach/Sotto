@@ -59,16 +59,22 @@ public struct KeptPartsCache: Sendable {
         guard let names = shell.keptParts else { return shell }
         var restored = shell
         restored.keptParts = nil
-        let hasWatcherDelta = restored.watcher?.conversationDelta != nil
+        let hasWatcherDelta = restored.watcher?.conversationDelta != nil || names.watcherCarried.contains("conversationDelta")
         let previousHeld = self.held
         if names.keepsAny || hasWatcherDelta {
             guard let held = previousHeld, let base = shell.threadRecords?.base, base == held.revision,
                   names.kept.isSubset(of: held.parts), names.hostKept.isSubset(of: held.hostParts) else { return nil }
             if !names.watcherKept.isEmpty || hasWatcherDelta {
-                guard !names.kept.contains("watcher"), var watcher = restored.watcher, let heldWatcher = held.shell.watcher,
-                      names.watcherKept.isSubset(of: held.watcherParts),
-                      watcher.putBack(names.watcherKept, carried: names.watcherCarried, from: heldWatcher) else { return nil }
-                restored.watcher = watcher
+                guard !names.kept.contains("watcher"), held.parts.contains("watcher") else { return nil }
+                if var watcher = restored.watcher, let heldWatcher = held.shell.watcher {
+                    guard names.watcherKept.isSubset(of: held.watcherParts),
+                          watcher.putBack(names.watcherKept, carried: names.watcherCarried, from: heldWatcher) else { return nil }
+                    restored.watcher = watcher
+                } else {
+                    // Forward-compat tolerant degradation (`Wire.swift` `c.tolerant`): either this push's Watcher page
+                    // or the held one could not be decoded by this build, so omit `watcher` rather than reconnecting in a loop.
+                    restored.watcher = nil
+                }
             }
             restored.putBack(names, from: held.shell)
         }

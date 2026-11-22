@@ -163,4 +163,43 @@ final class KeptPartsTests: XCTestCase {
         let restored = try XCTUnwrap(cache.whole(valid))
         XCTAssertEqual(restored.watcher?.conversation.messages.map(\.text), ["First"])
     }
+
+    func testUndecodableWatcherPageDegradesTolerantlyAcrossSubsequentKeptAndDeltaPushes() async throws {
+        var cache = KeptPartsCache()
+        // Push 1: future host sends a Watcher page this build's tolerant decoder drops to nil (e.g. wrong type for a field).
+        let undecodableWatcher = #""watcher":{"hostId":"h","current":null,"conversation":{"messages":[],"earlierAvailable":false,"revision":"future"},"receiptGroups":[],"watchedThreads":[],"needsYou":[],"inFlight":0,"inFlightLimit":8,"working":true,"recoveryNotice":null,"observedAt":"2026-11-22T12:00:00.000Z"}"#
+        let first = try await shell(push(top: wholeTop + "," + undecodableWatcher, host: wholeHost, revision: 1, base: nil))
+        let appliedFirst = try XCTUnwrap(cache.whole(first))
+        XCTAssertNil(appliedFirst.watcher)
+        XCTAssertEqual(appliedFirst.host.name, "Forge")
+
+        // Push 2: host sends a `watcher.kept` update measured from revision 1; phone must keep the shell with watcher == nil instead of disconnecting.
+        let keptPush = try await shell(push(top: keptTop + #","watcher":{"working":false,"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","recoveryNotice"]}"#, host: keptHost, revision: 2, base: 1))
+        let appliedKept = try XCTUnwrap(cache.whole(keptPush))
+        XCTAssertNil(appliedKept.watcher)
+        XCTAssertEqual(appliedKept.host.name, "Forge")
+
+        // Push 3: host sends a `conversationDelta` update; phone still degrades to watcher == nil without disconnecting.
+        let deltaPush = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:02.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":1,"appendLastText":" more","tail":[],"earlierAvailable":false,"revision":2}}"#, host: keptHost, revision: 3, base: 2))
+        let appliedDelta = try XCTUnwrap(cache.whole(deltaPush))
+        XCTAssertNil(appliedDelta.watcher)
+        XCTAssertEqual(appliedDelta.host.name, "Forge")
+
+        // Push 4: a valid complete Watcher page later restores Watcher cleanly, and a subsequent undecodable delta push degrades without disconnecting.
+        let m1 = #"{"id":"m1","role":"user","text":"Recovered","createdAt":"2026-11-22T12:00:03.000Z"}"#
+        let recovered = try await shell(push(top: keptTop + "," + watcherJSON(messages: m1, observedAt: "2026-11-22T12:00:03.000Z"), host: keptHost, revision: 4, base: 3))
+        let appliedRecovered = try XCTUnwrap(cache.whole(recovered))
+        XCTAssertEqual(appliedRecovered.watcher?.conversation.messages.map(\.text), ["Recovered"])
+
+        let undecodableDelta = try await shell(push(top: keptTop + #","watcher":{"observedAt":"2026-11-22T12:00:04.000Z","kept":["hostId","current","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"conversationDelta":{"dropHead":0,"keep":1,"tail":[{"id":123}],"earlierAvailable":false,"revision":2}}"#, host: keptHost, revision: 5, base: 4))
+        let appliedUndecodableDelta = try XCTUnwrap(cache.whole(undecodableDelta))
+        XCTAssertNil(appliedUndecodableDelta.watcher)
+        XCTAssertEqual(appliedUndecodableDelta.host.name, "Forge")
+
+        // A genuine protocol mismatch (no `watcher` on the prior push at all) is still rejected.
+        var noWatcherCache = KeptPartsCache()
+        let plainFirst = try await shell(push(top: wholeTop, host: wholeHost, revision: 1, base: nil))
+        _ = try XCTUnwrap(noWatcherCache.whole(plainFirst))
+        XCTAssertNil(noWatcherCache.whole(keptPush))
+    }
 }

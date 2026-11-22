@@ -1386,6 +1386,44 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
       console.log('WATCHER-PARTS-PUSHES ' + JSON.stringify({ olderBytes, streamBytes, slideBytes }))
     }
   })
+
+  it('keeps independent baselines across two connected phones and resets cleanly on a second hello', async () => {
+    const { f, phone: updated, native, shells: updatedShells, appliedPages } = await busyWatcher(iphoneAccepts())
+    // Pair an older phone (without `watcher-phone-parts`) to the exact same live server while the updated phone stays connected.
+    const older = await f.pair(iphoneAccepts().filter(feature => feature !== 'watcher-phone-parts'))
+    const olderShells = () => (older.messages as unknown as Pushed[]).filter(message => message.event === 'shell')
+
+    const updatedBefore = updatedShells().length, olderBefore = olderShells().length
+    native.messages.at(-1)!.text += ' Shared publish.'
+    f.workspace.adapters.codex.emit()
+    await expect.poll(() => updatedShells().length).toBeGreaterThan(updatedBefore)
+    await expect.poll(() => olderShells().length).toBeGreaterThan(olderBefore)
+
+    // Updated phone gets a compact delta; older phone gets the full 200-message page from the same publish.
+    expect(updatedShells().at(-1)!.state.watcher?.conversationDelta?.appendLastText).toBe(' Shared publish.')
+    expect(updatedShells().at(-1)!.state.watcher?.conversation).toBeUndefined()
+    expect(appliedPages().at(-1)?.conversation.messages.at(-1)?.text).toBe(native.messages.at(-1)!.text)
+    expect(olderShells().at(-1)!.state.watcher?.conversation?.messages).toHaveLength(200)
+    expect(olderShells().at(-1)!.state.watcher?.conversationDelta).toBeUndefined()
+
+    // A second hello on the updated phone resets its kept base so the next push goes whole before deltas resume.
+    await updated.call('hello-again', { op: 'hello', accepts: iphoneAccepts() })
+    const afterHello = updatedShells().length
+    native.messages.at(-1)!.text += ' After second hello.'
+    f.workspace.adapters.codex.emit()
+    await expect.poll(() => updatedShells().length).toBeGreaterThan(afterHello)
+    const firstAfterHello = updatedShells().at(-1)!
+    expect(firstAfterHello.state.watcher?.conversation?.messages).toHaveLength(200)
+    expect(firstAfterHello.state.watcher?.conversationDelta).toBeUndefined()
+    expect(firstAfterHello.state.watcher?.kept).toBeUndefined()
+
+    const afterReset = updatedShells().length
+    native.messages.at(-1)!.text += ' Delta resumes.'
+    f.workspace.adapters.codex.emit()
+    await expect.poll(() => updatedShells().length).toBeGreaterThan(afterReset)
+    expect(updatedShells().at(-1)!.state.watcher?.conversationDelta?.appendLastText).toBe(' Delta resumes.')
+    expect(updatedShells().at(-1)!.state.watcher?.conversation).toBeUndefined()
+  })
 })
 
 /** Bytes of one push to the phone above while its Watcher page is kept: the changed thread record and the parts' names. */
