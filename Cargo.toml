@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/sotto-core",
+  "crates/sotto-host",
+]
+
+[workspace.package]
+version = "0.1.43"
+edition = "2021"
+license = "MIT"
+rust-version = "1.89"
+
+[workspace.dependencies]
+base64 = "0.22.1"
+chrono = { version = "0.4.40", default-features = false, features = ["clock", "std"] }
+flate2 = { version = "1.1.0", default-features = false, features = ["rust_backend"] }
+hmac = "0.12.1"
+rand = "0.8.5"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+sha1 = "0.10.6"
+sha2 = "0.10.8"
+subtle = "2.6.1"
+tempfile = "3.19.1"
+thiserror = "2.0.12"
+tokio = { version = "1.44.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1.16.0", features = ["v4", "serde"] }

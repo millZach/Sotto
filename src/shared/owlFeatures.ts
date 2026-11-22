@@ -79,6 +79,7 @@ export const OWL_FEATURES = [
   { id: 'plugins', name: 'Plugins', owlSince: '2026-11-11', owner: 'docs/adr/0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md', sentToStable: true },
   { id: 'owlets', name: 'Owlets', owlSince: '2026-11-20', owner: 'docs/adr/0213-owlets-are-named-helpers-each-one-thread-in-a-folder-of-its-own.md', sentToStable: false },
   { id: 'out-of-process-engine', name: 'Out-of-process engine', owlSince: '2026-11-20', owner: 'docs/adr/0210-the-desktop-engine-runs-in-its-own-process.md', sentToStable: false },
+  { id: 'rust-remote-host', name: 'Rust host for remote machines', owlSince: '2026-11-20', owner: 'docs/adr/0214-rust-sotto-host-for-remote-machines.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

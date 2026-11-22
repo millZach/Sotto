@@ -11,6 +11,8 @@ export default tseslint.config(
       'artifacts/macos-dock-icon-padding/**',
       'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',
+      'crates/**',
+      'target/**',
       'artifacts/watcher-room-state/**',
       'artifacts/worker-swarms/**',
       'artifacts/next-prompt-quiet-composer/**',

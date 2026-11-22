@@ -38,6 +38,7 @@ jobs:
       actions: read
     outputs:
       host: ${{ steps.areas.outputs.host }}
+      rust: ${{ steps.areas.outputs.rust }}
       ios: ${{ steps.areas.outputs.ios }}
       coreml: ${{ steps.areas.outputs.coreml }}
       package: ${{ steps.areas.outputs.package }}
@@ -58,6 +59,8 @@ jobs:
         run: |
           # The iOS job reads only the native client, the host protocol its wire types mirror and this file.
           ios_paths='^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)'
+          # The Rust host job reads the Cargo workspace, its dependency policy, its parity test and this file.
+          rust_paths='^(crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|tests/integration/rustHostFoundation\.test\.ts$|\.github/workflows/ci\.yml$)'
           # The Core ML speech helper job reads only the Swift helper, its build script and this file.
           coreml_paths='^(native/coreml-asr/|scripts/build-coreml-asr\.mjs$|\.github/workflows/ci\.yml$)'
           if [ "$EVENT" = "push" ]; then
@@ -76,29 +79,30 @@ jobs:
               unproven=$(git diff --no-renames --name-only "$previous" HEAD)
               if ! grep -qE "$ios_paths" <<< "$unproven"; then ios=false; fi
             fi
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "rust=true" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"
             echo "Push to main: every job runs. iOS job: $ios (changes since ${previous:-no earlier run})."
             exit 0
           fi
           if [ "$EVENT" != "pull_request" ]; then
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "rust=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
           fi
           # A pull request checks out its merge commit; its first parent is the base branch.
           # --no-renames lists a moved file at both paths, so moving one into a skipped area still counts its old area.
           files=$(git diff --no-renames --name-only HEAD^1 HEAD)
           if [ -z "$files" ]; then
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "rust=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          host=false; ios=false; coreml=false; package=false
+          host=false; rust=false; ios=false; coreml=false; package=false
           # Each test reads the list from a here-string, not a pipe: the step runs under pipefail, and grep -q stops
           # at its first match, so on a long list printf dies writing to the closed pipe and the test reads as false.
-          if grep -qvE '^(src/renderer/|src/preload/|apps/ios/|docs/|artifacts/|design/|handoff/|tests/e2e/|tests/unit/renderer/|tests/perf/|[^/]+\.md$)' <<< "$files" \
+          if grep -qvE '^(src/renderer/|src/preload/|apps/ios/|crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|docs/|artifacts/|design/|handoff/|tests/e2e/|tests/unit/renderer/|tests/perf/|[^/]+\.md$)' <<< "$files" \
             || grep -qxE 'THIRD_PARTY_NOTICES\.md' <<< "$files"; then host=true; fi
+          if grep -qE "$rust_paths" <<< "$files"; then rust=true; fi
           if grep -qE "$ios_paths" <<< "$files"; then ios=true; fi
           if grep -qE "$coreml_paths" <<< "$files"; then coreml=true; fi
           # Packaging reads everything but the documents, the tests and the native phone clients, except the root
           # README, licence and notices that the package ships.
-          if grep -qvE '^(docs/|artifacts/|design/|handoff/|tests/|apps/ios/|apps/android/|[^/]+\.md$)' <<< "$files" \
+          if grep -qvE '^(docs/|artifacts/|design/|handoff/|tests/|apps/ios/|apps/android/|crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|[^/]+\.md$)' <<< "$files" \
             || grep -qE '^(README\.md|LICENSE\.md|THIRD_PARTY_NOTICES\.md)' <<< "$files"; then package=true; fi
           # The desktop check follows packaging's app filter and also checks changes to its Electron journeys and fixtures.
           desktop=$package
@@ -108,8 +112,8 @@ jobs:
           # evidence notes, notices, file encoding). Anything else, including a new top-level file, runs it all.
           tests=docs
           if grep -qvE '^(docs/|artifacts/|design/|handoff/|[^/]+\.md$|\.gitignore$)' <<< "$files"; then tests=full; fi
-          echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=$coreml" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"; echo "tests=$tests" >> "$GITHUB_OUTPUT"
-          echo "Host job: $host. iOS job: $ios. Core ML helper job: $coreml. Package job: $package. Desktop job: $desktop. Tests: $tests."
+          echo "host=$host" >> "$GITHUB_OUTPUT"; echo "rust=$rust" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=$coreml" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"; echo "tests=$tests" >> "$GITHUB_OUTPUT"
+          echo "Host job: $host. Rust job: $rust. iOS job: $ios. Core ML helper job: $coreml. Package job: $package. Desktop job: $desktop. Tests: $tests."
 
   # The suite took 24 to 27 minutes as one step (#895). Six runners each take a sixth of the test files,
   # with the same two-worker cap, so a run finishes in minutes and every file still runs on Windows.
@@ -568,3 +572,50 @@ jobs:
           version=$("$helper" --version)
           echo "$version"
           test "$version" = '{"protocol":2}'
+
+  # Rust headless host workspace (ADR-0214): compiles, lints and tests on Windows, macOS and Linux, runs the TS parity test, and checks deny.toml.
+  rust-host:
+    name: Rust host (${{ matrix.label }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows
+            os: windows-latest
+          - label: macOS
+            os: macos-15
+          - label: Linux
+            os: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: 'npm'
+      - name: Record Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test workspace
+        run: cargo test --workspace --locked
+      - name: Build sotto-host binary
+        run: cargo build -p sotto-host --bin sotto-host --locked
+      - name: Install Node test dependencies
+        run: npm ci --ignore-scripts
+      - name: Cross-language parity test
+        env:
+          SOTTO_TEST_RUST_HOST: '1'
+        run: npx vitest run tests/integration/rustHostFoundation.test.ts
+      - name: Check crate licenses and sources
+        if: matrix.label == 'Linux'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources
