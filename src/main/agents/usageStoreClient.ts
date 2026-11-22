@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { MessageChannel, receiveMessageOnPort, Worker, type MessagePort } from 'node:worker_threads'
+import { resolveBuiltWorkerPath } from '../builtWorkerPath'
 import {
   answerUsageRequest, takesHistory, usageRequestState,
   type UsageRequestStore, type UsageStoreAnswers, type UsageStoreRequest,
@@ -28,7 +28,7 @@ export interface UsageStoreClient {
 }
 
 /** The built worker beside main's bundle, or the headless host's. */
-export const BUILT_USAGE_STORE_WORKER = join(__dirname, 'usageStoreWorker.js')
+export const BUILT_USAGE_STORE_WORKER = resolveBuiltWorkerPath('usageStoreWorker.js', __dirname)
 /**
  * How long closing waits for the writes already asked for. Usage never holds quitting open for long: what is not
  * written by then costs usage figures alone.

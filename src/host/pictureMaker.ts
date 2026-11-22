@@ -1,11 +1,11 @@
 import { fork, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { carriesCameraDetails } from '../main/agents/mediaThumbnail'
+import { resolveBuiltWorkerPath } from '../main/builtWorkerPath'
 import type { PictureAnswer, PictureRequest } from './pictureCopy'
 
-/** The worker file the build puts beside the host's index.js (`scripts/build-host.mjs`). */
-export const BUILT_PICTURE_WORKER = join(__dirname, 'pictureWorker.js')
+/** The worker file the build puts beside the host's index.js (`scripts/build-host.mjs`, `electron.vite.config.ts`). */
+export const BUILT_PICTURE_WORKER = resolveBuiltWorkerPath('pictureWorker.js', __dirname)
 /** How long the worker stays after its last copy before it ends, and the memory its decoding held goes back to the system. */
 export const PICTURE_WORKER_IDLE_MS = 30_000
 /**

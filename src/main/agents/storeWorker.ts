@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { MessageChannel, receiveMessageOnPort, Worker, type MessagePort } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
+import { resolveBuiltWorkerPath } from '../builtWorkerPath'
 import { SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
 import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
 import type { ActivityListEntry, ActivityReadBack, PromptsReadBack, ThreadStoreWrite, ThreadStoreWriteOutcome, WindowReadBack, WordsReadBack } from './threadStoreWriter'
@@ -19,7 +19,7 @@ export type { StoreWorkerData, WireActivityEntry, WireWrite, WorkerAnswer, Worke
  * that failed to start), the store writes on main as it did before. A worker that goes without being stopped hands back
  * every write it had not answered, in order, saying whether it had begun it, so the store can finish them on main.
  */
-export const BUILT_STORE_WORKER = join(__dirname, 'threadStoreWorker.js')
+export const BUILT_STORE_WORKER = resolveBuiltWorkerPath('threadStoreWorker.js', __dirname)
 /** How long after its last checkpoint the worker runs a PASSIVE one, which takes no lock a read waits for. */
 export const CHECKPOINT_INTERVAL_MS = 500
 /**
