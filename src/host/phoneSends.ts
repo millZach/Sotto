@@ -4,11 +4,12 @@ import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
 /**
- * What a host sends each phone, ten seconds at a time (#2755): by message kind, by thread, by the shell parts it sent whole,
- * and by the thread-record fields that changed in its list pushes. A byte counter on the tunnel says how much went and
- * nothing of what, so this file is what names the push that fills a phone's link. It holds kinds, Sotto thread IDs, part
- * and field names, counts and bytes, and never a title, a word or a value. It is off unless its switch is on
- * (`phoneSendsFor`), since sizing each part of a push serializes that part again.
+ * What a host sends each phone, ten seconds at a time (#2755): by message kind, by answered request `op`, by thread, by
+ * the shell parts it sent whole, and by the thread-record fields that changed in its list pushes. A byte counter on the
+ * tunnel says how much went and nothing of what, so this file is what names the push or answer that fills a phone's link.
+ * It holds kinds, stable op names, Sotto thread IDs, part and field names, counts and bytes, and never a title, a word,
+ * a path or a value. It is off unless its switch is on (`phoneSendsFor`), since sizing each part of a push serializes
+ * that part again.
  */
 export const PHONE_SENDS_FILE = 'phone-send-diagnostics.jsonl'
 export const PHONE_SENDS_SWITCH = 'SOTTO_PHONE_SEND_DIAGNOSTICS'
@@ -23,6 +24,7 @@ interface Tally { frames: number; bytes: number }
 interface Window {
   readonly from: number
   readonly kinds: Map<string, Tally>
+  readonly answers: Map<string, Tally>
   readonly threads: Map<string, Tally>
   readonly parts: Map<string, Tally>
   readonly fields: Map<string, number>
@@ -33,14 +35,15 @@ export interface PhoneSendsLine {
   readonly phone: number
   readonly seconds: number
   readonly kinds: Record<string, Tally>
+  readonly answers: Record<string, Tally>
   readonly threads: Record<string, Tally>
   readonly parts: Record<string, Tally>
   readonly fields: Record<string, number>
 }
 
 export interface PhoneSends {
-  /** A message written to a phone: its kind (the push's `event`, or `answer`), its bytes, and the thread it is about. */
-  sent(phone: object, kind: string, bytes: number, threadId?: string): void
+  /** A message written to a phone: its kind (the push's `event`, or `answer`), its bytes, the thread it is about, and for an answer the stable request `op` it answered. */
+  sent(phone: object, kind: string, bytes: number, threadId?: string, answerOp?: string): void
   /**
    * A shell written to a phone: each part it carried whole, at its top and in its `host`, with its bytes, and the thread
    * records that changed, each measured against the record of the same thread this phone was last sent.
@@ -63,17 +66,17 @@ export function phoneSends(write: (line: PhoneSendsLine) => void, now: () => num
   const phones = new WeakMap<object, { readonly number: number; window: Window; readonly records: Map<string, Readonly<Record<string, unknown>>> }>()
   const open = new Set<object>()
   let numbered = 0, written = 0
-  const fresh = (from: number): Window => ({ from, kinds: new Map(), threads: new Map(), parts: new Map(), fields: new Map() })
+  const fresh = (from: number): Window => ({ from, kinds: new Map(), answers: new Map(), threads: new Map(), parts: new Map(), fields: new Map() })
   const close = (phone: object, at: number): void => {
     const held = phones.get(phone)
     if (!held) return
     const window = held.window
     held.window = fresh(at)
-    const empty = !window.kinds.size && !window.threads.size && !window.parts.size && !window.fields.size
+    const empty = !window.kinds.size && !window.answers.size && !window.threads.size && !window.parts.size && !window.fields.size
     if (empty || written >= PHONE_SENDS_PER_RUN) return
     written += 1
     write({ at: new Date(at).toISOString(), phone: held.number, seconds: Math.round((at - window.from) / 100) / 10,
-      kinds: Object.fromEntries(window.kinds), threads: Object.fromEntries(window.threads), parts: Object.fromEntries(window.parts), fields: Object.fromEntries(window.fields) })
+      kinds: Object.fromEntries(window.kinds), answers: Object.fromEntries(window.answers), threads: Object.fromEntries(window.threads), parts: Object.fromEntries(window.parts), fields: Object.fromEntries(window.fields) })
   }
   const windowOf = (phone: object): { window: Window; records: Map<string, Readonly<Record<string, unknown>>> } => {
     const at = now()
@@ -83,9 +86,10 @@ export function phoneSends(write: (line: PhoneSendsLine) => void, now: () => num
     return held
   }
   return {
-    sent(phone, kind, bytes, threadId) {
+    sent(phone, kind, bytes, threadId, answerOp) {
       const { window } = windowOf(phone)
       tally(window.kinds, kind, bytes)
+      if (kind === 'answer' && answerOp !== undefined) tally(window.answers, answerOp, bytes)
       if (threadId !== undefined) tally(window.threads, threadId, bytes)
     },
     shell(phone, sentState, changed) {

@@ -1047,11 +1047,14 @@ export async function startSocketServer(options: SocketServerOptions) {
    * says whether the message itself went. Closing the socket instead would only have the client reconnect
    * and be sent the same message again.
    */
-  const deliver = (peer: Peer, value: HostPush | HostResponse, carried: Oversize): boolean => {
+  const deliver = (peer: Peer, value: HostPush | HostResponse, carried: Oversize, answerOp?: HostRequest['op']): boolean => {
     const text = JSON.stringify(value)
     if (fits(text)) {
       peer.frames.sendText(text)
-      if (options.phoneSends && isPhonePeer(peer)) options.phoneSends.sent(peer, 'event' in value ? value.event : 'answer', Buffer.byteLength(text), 'threadId' in value && typeof value.threadId === 'string' ? value.threadId : undefined)
+      if (options.phoneSends && isPhonePeer(peer)) {
+        const isPush = 'event' in value
+        options.phoneSends.sent(peer, isPush ? value.event : 'answer', Buffer.byteLength(text), 'threadId' in value && typeof value.threadId === 'string' ? value.threadId : undefined, isPush ? undefined : answerOp)
+      }
       return true
     }
     const error = { code: 'too_large' as const, message: TOO_LARGE[carried] }
@@ -2683,7 +2686,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (answeredPage !== undefined) peer.pageNewest = laterTime(peer.pageNewest, answeredPage)
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'plugin-meshy-model-bytes' || request.op === 'plugin-elevenlabs-sound-bytes' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
+      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'plugin-meshy-model-bytes' || request.op === 'plugin-elevenlabs-sound-bytes' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list', request.op)) {
         if (carried) recordCatalog(peer, carried)
         seeded?.commit()
         if (!response.ok) return

@@ -31,6 +31,7 @@ it('notes each kind, thread, whole part and changed field a phone is sent, and n
   await expect.poll(() => shown() !== undefined).toBe(true)
   const workshop = shown()!
   await peer.call('observe', { op: 'observe', threadIds: [workshop.id] })
+  await peer.call('detail', { op: 'detail', threadId: workshop.id })
   fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic words nobody logs, and more', status: 'running' })
   await expect.poll(() => peer.messages.some(message => message.event === 'detail-delta' || message.event === 'detail')).toBe(true)
   fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic words nobody logs, done', status: 'idle' })
@@ -38,9 +39,22 @@ it('notes each kind, thread, whole part and changed field a phone is sent, and n
   await new Promise(resolve => setTimeout(resolve, 200))
   sends.flush()
 
-  const kinds = Object.assign({}, ...lines.map(line => line.kinds)) as PhoneSendsLine['kinds']
+  const sum = (key: 'kinds' | 'answers') => lines.reduce<Record<string, { frames: number; bytes: number }>>((acc, line) => {
+    for (const [name, tally] of Object.entries(line[key])) {
+      const held = acc[name]
+      if (held) { held.frames += tally.frames; held.bytes += tally.bytes } else acc[name] = { ...tally }
+    }
+    return acc
+  }, {})
+  const kinds = sum('kinds'), answers = sum('answers')
   expect(kinds.shell?.frames).toBeGreaterThan(0)
   expect(kinds.answer?.frames).toBeGreaterThan(0)
+  expect(answers.hello?.frames).toBe(1)
+  expect(answers.observe?.frames).toBe(1)
+  expect(answers.detail?.frames).toBe(1)
+  expect(answers.detail!.bytes).toBeGreaterThan(0)
+  expect(Object.values(answers).reduce((total, tally) => total + tally.frames, 0)).toBe(kinds.answer!.frames)
+  expect(Object.values(answers).reduce((total, tally) => total + tally.bytes, 0)).toBe(kinds.answer!.bytes)
   expect(Object.keys(kinds).some(kind => kind === 'detail' || kind === 'detail-delta')).toBe(true)
   expect(lines.some(line => line.threads[workshop.id] !== undefined)).toBe(true)
   expect(lines.some(line => (line.fields.status ?? 0) > 0)).toBe(true)
