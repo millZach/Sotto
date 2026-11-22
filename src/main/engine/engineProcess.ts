@@ -1,3 +1,4 @@
+import { join, resolve } from 'node:path'
 import type { AgentCommand } from '../../shared/agents'
 import type { HostBrowserThreadRequest } from '../../shared/hostBrowser'
 import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
@@ -8,6 +9,7 @@ import type { CredentialSnapshot } from '../agents/credentials'
 import type { ClientIdentity } from '../agents/hostService'
 import type { ThreadToolCallContext } from '../agents/threadToolServer'
 import { MainInterfaceLanguage } from '../interfaceLanguage'
+import { HangWatchdog } from '../performance/hangWatchdog'
 import { MainLoopMonitor } from '../performance/mainLoopMonitor'
 import { mainProcessProfiler } from '../performance/profilers'
 import type { ProfilerTarget, RawCpuProfile } from '../performance/activityRecorder'
@@ -74,6 +76,31 @@ class RemoteCredentialsCache {
 }
 
 /**
+ * Starts the hang watch on the out-of-process engine's event loop when `main-freeze` is on (#2733, ADR-0098).
+ * Saves `kind: 'engine'` hang recordings alongside main's so stalls in the engine process leave stacks to diagnose.
+ */
+function startEngineHangWatchdog(options: DesktopEngineOptions | undefined, connection: EngineRpcConnection): HangWatchdog | undefined {
+  if (!options?.owlFeatures?.['main-freeze']) return undefined
+  const config = options.hangWatchdog
+  const directory = config?.directory ?? (options.userDataPath ? join(options.userDataPath, 'performance-recordings') : undefined)
+  if (!directory) return undefined
+  const appRoots = config?.appRoots ?? [resolve(__dirname, '../..'), ...(options.isPackaged ? [] : [process.cwd()])]
+  const devOrigins = config?.devOrigins ?? []
+  return HangWatchdog.start({
+    directory,
+    appRoots,
+    devOrigins,
+    kind: 'engine',
+    sottoVersion: options.appRunningVersion,
+    platform: options.platform,
+    ...(config?.hangMs ? { hangMs: config.hangMs } : {}),
+    ...(config?.quitForceMs ? { quitForceMs: config.quitForceMs } : {}),
+  }, event => {
+    if (!connection.isClosed) connection.sendPush('shell:log', `engine-${event}`)
+  }, config?.workerPath)
+}
+
+/**
  * Runs the Electron-free desktop engine over `connection` (ADR-0210).
  * Exported so integration tests can drive the exact same protocol against a real child process or in-process socket.
  */
@@ -85,6 +112,7 @@ export function attachEngineProcessServer(
   let engine: DesktopEngine | undefined
   let credentialsCache: RemoteCredentialsCache | undefined
   let engineLanguage: MainInterfaceLanguage | undefined
+  let hangWatchdog: HangWatchdog | undefined
   let activeProfiler: ProfilerTarget | null = null
   let shuttingDown = false
   let shutdownPromise: Promise<void> | undefined
@@ -106,6 +134,7 @@ export function attachEngineProcessServer(
     onShutdownStart?.(deadlineMs)
     shutdownPromise = (async () => {
       loopMonitor.stop()
+      hangWatchdog?.quitReceived()
       if (activeProfiler) {
         const profiler = activeProfiler
         activeProfiler = null
@@ -114,6 +143,11 @@ export function attachEngineProcessServer(
       let closeError: unknown
       if (engine) {
         try { await engine.close() } catch (error) { closeError = error }
+      }
+      if (hangWatchdog) {
+        const watch = hangWatchdog
+        hangWatchdog = undefined
+        await watch.stop()
       }
       if (!propagateError) onExit?.(deadlineMs)
       if (propagateError && closeError !== undefined) throw closeError
@@ -147,7 +181,10 @@ export function attachEngineProcessServer(
       case 'engine:checkClientsAfresh': engine.checkClientsAfresh(); break
       case 'engine:featureUsed': engine.featureUsed(payload as ProductEventFeature); break
       case 'engine:questionPageOpened': void engine.questionPageOpened(payload as QuestionPageOpen); break
-      case 'engine:prepareForShutdown': engine.prepareForShutdown(); break
+      case 'engine:prepareForShutdown':
+        hangWatchdog?.quitReceived()
+        engine.prepareForShutdown()
+        break
       case 'engine:disposeIpc': engine.disposeIpc(); break
       case 'engine:e2eAgentEvent': void engine.e2eAgentEvent(payload); break
       case 'engine:mainWindowDeliveryMissed': engine.resetWindowBroadcast?.(); break
@@ -209,11 +246,21 @@ export function attachEngineProcessServer(
           },
         } : {}),
       }
-      if (payload.options.interfaceLanguage) {
-        engineLanguage = new MainInterfaceLanguage(payload.options.interfaceLanguage)
-        await engineLanguage.apply(payload.options.startupSettings).catch(() => undefined)
+      hangWatchdog = startEngineHangWatchdog(payload.options, connection)
+      try {
+        if (payload.options.interfaceLanguage) {
+          engineLanguage = new MainInterfaceLanguage(payload.options.interfaceLanguage)
+          await engineLanguage.apply(payload.options.startupSettings).catch(() => undefined)
+        }
+        engine = await createDesktopEngine(payload.options, shellBridge)
+      } catch (error) {
+        if (hangWatchdog) {
+          const watch = hangWatchdog
+          hangWatchdog = undefined
+          await watch.stop()
+        }
+        throw error
       }
-      engine = await createDesktopEngine(payload.options, shellBridge)
       const result: EngineInitResult = {
         metadata: engine.metadata,
         channels: engine.channels(),

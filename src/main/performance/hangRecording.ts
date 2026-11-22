@@ -1,8 +1,9 @@
-import { readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { MainLoopReading } from '../../shared/mainActivity'
-import { freeRecordingName, keepNewestRecordings, OUTSIDE_SOTTO, recordingFileSystem, sottoScriptUrl, type RecordingFileSystem } from './activityRecorder'
+import { keepNewestRecordings, OUTSIDE_SOTTO, recordingFileSystem, sottoScriptUrl, type RecordingFileSystem } from './activityRecorder'
 
 /**
  * How many of main's hang recordings stay. At most three a minute are saved (`MAIN_RECORDING_GAP_MS`), so a bad stretch
@@ -10,8 +11,13 @@ import { freeRecordingName, keepNewestRecordings, OUTSIDE_SOTTO, recordingFileSy
  */
 export const MAIN_HANG_RECORDINGS_KEPT = 10
 /**
- * How many of the window's stay. Main's and the window's are counted apart, and apart from Record a minute's, so a busy
- * afternoon of short freezes of main never pushes out a window that stopped, nor either an activity recording.
+ * How many of the out-of-process engine's hang recordings stay, counted apart from main's and the window's so stalls in
+ * one process never push out recordings from another (#2733).
+ */
+export const ENGINE_HANG_RECORDINGS_KEPT = 10
+/**
+ * How many of the window's stay. Main's, the engine's and the window's are counted apart, and apart from Record a
+ * minute's, so a busy afternoon of short freezes never pushes out another process's recording nor an activity recording.
  */
 export const WINDOW_HANG_RECORDINGS_KEPT = 5
 /** Frames kept per stack, from the innermost: enough to see what main was doing and where it was called from. */
@@ -26,9 +32,15 @@ export const HANG_FILE = 'hang.json'
 /** The file operations a hang save makes: a recording's own, and reading a saved one's kind to count each kind apart. */
 export interface HangFileSystem extends RecordingFileSystem {
   readFile(path: string): Promise<string>
+  /** Non-recursive directory creation so concurrent saves never share a `.partial` staging folder. */
+  mkdirExclusive?(path: string): Promise<unknown>
 }
 
-export const hangFileSystem: HangFileSystem = { ...recordingFileSystem, readFile: path => readFile(path, 'utf8') }
+export const hangFileSystem: HangFileSystem = {
+  ...recordingFileSystem,
+  readFile: path => readFile(path, 'utf8'),
+  mkdirExclusive: path => mkdir(path, { recursive: false }),
+}
 
 /** One frame of a stack, kept to what ADR-0098 keeps of a profile's frame: a place in Sotto's code. */
 export interface HangFrame {
@@ -58,8 +70,8 @@ export interface HangProcess {
  */
 export interface HangRecord {
   readonly format: 1
-  /** `main`: main's own event loop stopped. `window`: main kept going but the main window did not answer it. */
-  readonly kind: 'main' | 'window'
+  /** `main`: main's own event loop stopped. `engine`: the out-of-process engine's event loop stopped. `window`: main kept going but the main window did not answer it. */
+  readonly kind: 'main' | 'engine' | 'window'
   readonly sottoVersion: string
   readonly platform: string
   /** When the stopped side last answered. */
@@ -105,50 +117,84 @@ export function hangRecordingName(startedAt: Date): string {
   return `sotto-hang-${startedAt.getFullYear()}-${pad(startedAt.getMonth() + 1)}-${pad(startedAt.getDate())}-${pad(startedAt.getHours())}-${pad(startedAt.getMinutes())}-${pad(startedAt.getSeconds())}`
 }
 
+const RENAME_COLLISION_CODES = new Set(['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'])
+const MAX_COLLISION_ATTEMPTS = 100
+
+async function pathExists(fs: RecordingFileSystem, path: string): Promise<boolean> {
+  try { await fs.stat(path); return true } catch { return false }
+}
+
 /**
- * Writes a new hang recording under `directory` (Sotto's data folder's `performance-recordings`): into a `.partial`
- * folder, renamed once written, then keeps the newest few of each kind. Resolves the folder's name; throws when it could
- * not be written, having removed what it wrote where it could. A half-written folder is removed when Sotto next starts.
+ * Writes a new hang recording under `directory` (Sotto's data folder's `performance-recordings`): into a unique
+ * `.partial` staging folder first, then atomically renamed to the first free timestamped name so concurrent saves from
+ * `main`, `engine`, and `window` in the same second never collide (#2733). Keeps the newest few of each kind. Resolves
+ * the folder's name; throws when it could not be written, having removed what it wrote where it could. A half-written
+ * folder is removed when Sotto next starts.
  */
 export async function saveHangRecording(directory: string, record: HangRecord, fs: HangFileSystem = hangFileSystem): Promise<string> {
   await fs.mkdir(directory)
-  const name = await freeRecordingName(directory, hangRecordingName(new Date(record.startedAt)), fs)
-  const partial = join(directory, `${name}.partial`)
+  const base = hangRecordingName(new Date(record.startedAt))
+  const partial = join(directory, `${base}.${record.kind}-${process.pid}-${randomUUID().slice(0, 8)}.partial`)
+  let name = base
   try {
-    await fs.mkdir(partial)
+    await (fs.mkdirExclusive ? fs.mkdirExclusive(partial) : fs.mkdir(partial))
     await fs.writeFile(join(partial, HANG_FILE), `${JSON.stringify(record, null, 2)}\n`)
-    await fs.rename(partial, join(directory, name))
+    let published = false
+    for (let attempt = 1; attempt <= MAX_COLLISION_ATTEMPTS; attempt += 1) {
+      const candidate = attempt === 1 ? base : `${base}-${attempt}`
+      const target = join(directory, candidate)
+      if (await pathExists(fs, target)) continue
+      try {
+        await fs.rename(partial, target)
+        name = candidate
+        published = true
+        break
+      } catch (error) {
+        const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : ''
+        // Another process or watch claimed `target` between stat and rename: retry the next suffix.
+        if (RENAME_COLLISION_CODES.has(code) && await pathExists(fs, target)) continue
+        throw error
+      }
+    }
+    if (!published) throw new Error(`Could not reserve a free hang recording folder for ${base}.`)
   } catch (error) {
     await fs.rm(partial).catch(() => undefined)
     throw error
   }
-  // Another save may be writing its own half-written folder now (main's watch and the window's), so none is swept here.
+  // Another save may be writing its own half-written folder now (main's watch, the engine's and the window's), so none is swept here.
   await keepNewestHangRecordings(directory, fs)
   return name
 }
 
 /**
- * Removes all but the newest of main's hang recordings and of the window's, each kind counted apart and read from its
- * folder's file. One whose file cannot be read counts as main's. Never throws.
+ * Removes all but the newest of main's, the engine's and the window's hang recordings, each kind counted apart and read
+ * from its folder's file. One whose file cannot be read counts as main's. Never throws.
  */
 async function keepNewestHangRecordings(directory: string, fs: HangFileSystem): Promise<void> {
   let entries: string[]
   try { entries = await fs.readdir(directory) } catch { return }
   const newestFirst = entries.filter(name => HANG_NAME.test(name)).sort().reverse()
-  // Too few for either kind to be over: no file is read.
-  if (newestFirst.length <= Math.min(MAIN_HANG_RECORDINGS_KEPT, WINDOW_HANG_RECORDINGS_KEPT)) return
-  const seen = { main: 0, window: 0 }
+  // Too few for any kind to be over: no file is read.
+  if (newestFirst.length <= Math.min(MAIN_HANG_RECORDINGS_KEPT, ENGINE_HANG_RECORDINGS_KEPT, WINDOW_HANG_RECORDINGS_KEPT)) return
+  const seen = { main: 0, engine: 0, window: 0 }
+  const limit: Record<HangRecord['kind'], number> = {
+    main: MAIN_HANG_RECORDINGS_KEPT,
+    engine: ENGINE_HANG_RECORDINGS_KEPT,
+    window: WINDOW_HANG_RECORDINGS_KEPT,
+  }
   for (const name of newestFirst) {
     const kind = await savedHangKind(directory, name, fs)
     seen[kind] += 1
-    if (seen[kind] > (kind === 'window' ? WINDOW_HANG_RECORDINGS_KEPT : MAIN_HANG_RECORDINGS_KEPT)) await fs.rm(join(directory, name)).catch(() => undefined)
+    if (seen[kind] > limit[kind]) await fs.rm(join(directory, name)).catch(() => undefined)
   }
 }
 
 async function savedHangKind(directory: string, name: string, fs: HangFileSystem): Promise<HangRecord['kind']> {
   try {
     const saved = JSON.parse(await fs.readFile(join(directory, name, HANG_FILE))) as { kind?: unknown }
-    return saved.kind === 'window' ? 'window' : 'main'
+    if (saved.kind === 'window') return 'window'
+    if (saved.kind === 'engine') return 'engine'
+    return 'main'
   } catch { return 'main' }
 }
 

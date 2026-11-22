@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 
 import type { MainLoopReading } from '../../shared/mainActivity'
@@ -7,8 +7,16 @@ import { sweepPartialHangRecordings, type HangProcess, type HangRecord } from '.
 import { ASLEEP_GAP_MS, HANG_RECORDING_GAP_MS, QUIT_FORCE_MS } from './mainHangWatch'
 import { HEARTBEAT_MS, HEARTBEAT_SLOT, monotonicMs, QUIT_SLOT, SHARED_SLOTS, type HangWatchdogWorkerData } from './hangWatchdogShared'
 
+/**
+ * Resolves `hangWatchdogWorker.js` beside `out/main/index.js`, even when Rollup extracts this module into a shared
+ * chunk under `out/main/chunks/` (shared by `index.ts` and `engineProcess.ts`).
+ */
+export function resolveBuiltHangWatchdogWorker(fromDir: string = __dirname): string {
+  return basename(fromDir) === 'chunks' ? join(fromDir, '..', 'hangWatchdogWorker.js') : join(fromDir, 'hangWatchdogWorker.js')
+}
+
 /** The worker's file, built beside main's index.js. Under the test runner there is none, and no watch starts. */
-export const BUILT_HANG_WATCHDOG_WORKER = join(__dirname, 'hangWatchdogWorker.js')
+export const BUILT_HANG_WATCHDOG_WORKER = resolveBuiltHangWatchdogWorker()
 
 export type HangWatchdogLogEvent = 'hang-recording-saved' | 'hang-recording-failed' | 'quit-forced'
 const LOG_EVENTS: ReadonlySet<string> = new Set<HangWatchdogLogEvent>(['hang-recording-saved', 'hang-recording-failed', 'quit-forced'])
@@ -56,6 +64,7 @@ export class MainHeartbeat {
 export class HangWatchdog {
   private readonly beat: ReturnType<typeof setInterval>
   private readonly heartbeat: MainHeartbeat
+  private stopped = false
 
   private constructor(private readonly worker: Worker, shared: BigInt64Array, quitForceMs: number) {
     this.heartbeat = new MainHeartbeat(shared, monotonicMs, quitForceMs)
@@ -68,8 +77,8 @@ export class HangWatchdog {
   static start(data: Omit<HangWatchdogWorkerData, 'shared'>, log: (event: HangWatchdogLogEvent) => void,
     workerPath: string = BUILT_HANG_WATCHDOG_WORKER): HangWatchdog | undefined {
     if (!existsSync(workerPath)) return undefined
-    // Folders a save left half-written when Sotto last ended; no save is running yet to be caught by this.
-    void sweepPartialHangRecordings(data.directory)
+    // Main sweeps leftover half-written folders once at start; the engine process starts later and must not race with an active save.
+    if ((data.kind ?? 'main') === 'main') void sweepPartialHangRecordings(data.directory)
     const shared = new BigInt64Array(new SharedArrayBuffer(SHARED_SLOTS * BigInt64Array.BYTES_PER_ELEMENT))
     let worker: Worker
     try { worker = new Worker(workerPath, { workerData: { ...data, shared: shared.buffer as SharedArrayBuffer }, stdout: false, stderr: false }) } catch { return undefined }
@@ -96,6 +105,37 @@ export class HangWatchdog {
    */
   dispose(): void {
     this.quitReceived()
+  }
+
+  /**
+   * Records a final heartbeat so any active hang recording sees the process resumed, lets the watch worker finish
+   * rewriting stacks and `answeredAfterMs` within `drainTimeoutMs`, then clears the interval and terminates cleanly.
+   */
+  async stop(drainTimeoutMs = 1_500): Promise<void> {
+    if (this.stopped) return
+    this.stopped = true
+    this.heartbeat.beat()
+    clearInterval(this.beat)
+    await new Promise<void>(resolve => {
+      let settled = false
+      const done = (): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        this.worker.off('message', onMessage)
+        this.worker.off('exit', done)
+        this.worker.off('error', done)
+        resolve()
+      }
+      const onMessage = (event: unknown): void => { if (event === 'stopped') done() }
+      const timer = setTimeout(done, drainTimeoutMs)
+      timer.unref()
+      this.worker.on('message', onMessage)
+      this.worker.once('exit', done)
+      this.worker.once('error', done)
+      try { this.worker.postMessage('stop') } catch { done() }
+    })
+    await this.worker.terminate().catch(() => undefined)
   }
 }
 

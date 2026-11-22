@@ -8,6 +8,8 @@ export const WATCH_TICK_MS = 250
 
 export interface HangWatchdogWorkerData {
   readonly shared: SharedArrayBuffer
+  /** Which process's event loop this worker watches; defaults to `'main'`. */
+  readonly kind?: 'main' | 'engine'
   /** Sotto's data folder's `performance-recordings`. */
   readonly directory: string
   readonly appRoots: readonly string[]

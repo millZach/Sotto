@@ -74,6 +74,15 @@ export interface EngineShellBridge {
   onPopupObserved?(threadIds: readonly string[]): void
 }
 
+export interface EngineHangWatchdogOptions {
+  readonly directory: string
+  readonly appRoots: readonly string[]
+  readonly devOrigins: readonly string[]
+  readonly hangMs?: number
+  readonly quitForceMs?: number
+  readonly workerPath?: string
+}
+
 export interface DesktopEngineOptions {
   readonly userDataPath: string
   readonly appRunningVersion: string
@@ -87,6 +96,7 @@ export interface DesktopEngineOptions {
   readonly e2eConfiguration: E2EConfiguration | null
   readonly claudeHistoryModulePath?: string | undefined
   readonly pictureWorkerPath?: string | undefined
+  readonly hangWatchdog?: EngineHangWatchdogOptions | undefined
   readonly env: Readonly<Record<string, string | undefined>>
   readonly interfaceLanguage?: {
     readonly enabled: boolean
