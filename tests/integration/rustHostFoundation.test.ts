@@ -22,6 +22,8 @@ import { ThreadStore } from '../../src/main/agents/threadStore'
 import { migrateDatabase } from '../../src/main/memory/migrations.mjs'
 import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
+import { ClientFold } from '../referee/fold'
+import { PROFILES } from '../referee/scenario'
 import { DESKTOP_DEFLATE_OFFER, openSocket, pairClient, startHost } from '../referee/wire'
 
 const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
@@ -199,14 +201,14 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
       const helloResult = hello.result as {
         hostId: string
         clientId: string
-        threadIds: string[]
         capabilities: { mayAnswer: boolean }
+        shell: { host: { hostId: string } }
         stores: { memorySchemaVersion: number; subagentsOk: boolean; credentialsSecure: boolean }
       }
       expect(helloResult.hostId).toBe(tsHostId)
       expect(helloResult.clientId).toBe(clientId)
       expect(helloResult.capabilities.mayAnswer).toBe(false)
-      expect(helloResult.threadIds).toContain('thread-alpha')
+      expect(helloResult.shell.host.hostId).toBe(tsHostId)
       expect(helloResult.stores.memorySchemaVersion).toBe(4)
       expect(helloResult.stores.subagentsOk).toBe(true)
       expect(helloResult.stores.credentialsSecure).toBe(true)
@@ -286,6 +288,165 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
       expect(tsThreads.latestSeq()).toBe(0)
     } finally {
       tsThreads.close()
+    }
+  }, 30_000)
+
+  it('drives desktop, iphone, and plain clients through ClientFold with zero protocol violations', async () => {
+    const foldDir = await mkdtemp(join(tmpdir(), 'sotto-rust-fold-'))
+    const running = await startHost(
+      [hostBinary, '--data', '{data}', '--port', '0', '--sotto-version', '0.1.44-owl.20261118.2', '--mock-provider', 'codex'],
+      foldDir,
+      'codex',
+    )
+    try {
+      const desktopPair = await pairClient(running.port, foldDir, 'Referee desktop')
+      const iphonePair = await pairClient(running.port, foldDir, 'Referee iphone')
+      const plainPair = await pairClient(running.port, foldDir, 'Referee plain')
+
+      const desktopSock = await openSocket(running.port, desktopPair.session, PROFILES.desktop.offer)
+      const iphoneSock = await openSocket(running.port, iphonePair.session, PROFILES.iphone.offer)
+      const plainSock = await openSocket(running.port, plainPair.session, PROFILES.plain.offer)
+
+      const folds = {
+        desktop: new ClientFold(),
+        iphone: new ClientFold(),
+        plain: new ClientFold(),
+      }
+      const processed = { desktop: 0, iphone: 0, plain: 0 }
+      const drain = (name: 'desktop' | 'iphone' | 'plain', sock: typeof desktopSock): void => {
+        while (processed[name] < sock.crossings.length) {
+          const item = sock.crossings[processed[name]++]!
+          if (item.dir === 'in' && typeof item.frame.event === 'string') {
+            folds[name].push(item.frame)
+          }
+        }
+      }
+      desktopSock.onArrival(() => drain('desktop', desktopSock))
+      iphoneSock.onArrival(() => drain('iphone', iphoneSock))
+      plainSock.onArrival(() => drain('plain', plainSock))
+
+      const rpc = async (
+        name: 'desktop' | 'iphone' | 'plain',
+        sock: typeof desktopSock,
+        session: string,
+        id: string,
+        body: Record<string, unknown>,
+      ): Promise<Record<string, unknown>> => {
+        sock.send({ v: 1, id, session, ...body })
+        return await new Promise((resolvePromise, rejectPromise) => {
+          const timer = setTimeout(() => rejectPromise(new Error(`Timed out waiting for ${id}`)), 5_000)
+          const check = (): void => {
+            drain(name, sock)
+            const hit = sock.crossings.find(c => c.dir === 'in' && c.frame.id === id)
+            if (hit) { clearTimeout(timer); off(); resolvePromise(hit.frame) }
+          }
+          const off = sock.onArrival(check)
+          check()
+        })
+      }
+
+      try {
+        // 1. All three clients say hello with their real referee profiles.
+        const hDesktop = await rpc('desktop', desktopSock, desktopPair.session, 'd1', { op: 'hello', ...PROFILES.desktop.hello })
+        expect(hDesktop.ok).toBe(true)
+        folds.desktop.hello(hDesktop.result)
+
+        const hIphone = await rpc('iphone', iphoneSock, iphonePair.session, 'i1', { op: 'hello', ...PROFILES.iphone.hello })
+        expect(hIphone.ok).toBe(true)
+        folds.iphone.hello(hIphone.result)
+
+        const hPlain = await rpc('plain', plainSock, plainPair.session, 'p1', { op: 'hello', ...PROFILES.plain.hello })
+        expect(hPlain.ok).toBe(true)
+        folds.plain.hello(hPlain.result)
+
+        // 2. Desktop creates a project and a thread.
+        const projReply = await rpc('desktop', desktopSock, desktopPair.session, 'd2', {
+          op: 'command',
+          command: { type: 'create-project', provider: 'codex', title: 'Referee project', path: foldDir, useExisting: true },
+        })
+        expect(projReply.ok).toBe(true)
+        const projShell = folds.desktop.commandAnswer(projReply.result) as { host: { projects: Array<{ id: string }> } }
+        const projectId = projShell.host.projects[0]!.id
+
+        const threadId = '00000000-0000-4000-8000-00000000000a'
+        const threadReply = await rpc('desktop', desktopSock, desktopPair.session, 'd3', {
+          op: 'command',
+          command: {
+            type: 'create-thread',
+            threadId,
+            projectId,
+            title: 'Referee thread',
+            titleSource: 'user',
+            modelId: 'native:codex:model:fixture-model',
+            workingCopy: 'shared',
+            managed: false,
+          },
+        })
+        expect(threadReply.ok).toBe(true)
+        folds.desktop.commandAnswer(threadReply.result)
+
+        // 3. All three clients observe the thread; detail MUST be pushed before observe answers!
+        for (const [name, sock, sess, id] of [
+          ['desktop', desktopSock, desktopPair.session, 'd4'],
+          ['iphone', iphoneSock, iphonePair.session, 'i2'],
+          ['plain', plainSock, plainPair.session, 'p2'],
+        ] as const) {
+          folds[name].observing([threadId])
+          const obsReply = await rpc(name, sock, sess, id, { op: 'observe', threadIds: [threadId] })
+          expect(obsReply.ok).toBe(true)
+          const detailIdx = sock.crossings.findIndex(c => c.dir === 'in' && c.frame.event === 'detail' && c.frame.threadId === threadId)
+          const answerIdx = sock.crossings.findIndex(c => c.dir === 'in' && c.frame.id === id)
+          expect(detailIdx).toBeGreaterThanOrEqual(0)
+          expect(detailIdx).toBeLessThan(answerIdx)
+        }
+
+        // 4. Desktop sends a prompt and interrupts the turn; wait for coalesced pushes to reach all 3 clients.
+        const sendReply = await rpc('desktop', desktopSock, desktopPair.session, 'd5', {
+          op: 'command',
+          command: { type: 'manual-send', threadId, text: 'Referee prompt one' },
+        })
+        expect(sendReply.ok).toBe(true)
+        folds.desktop.commandAnswer(sendReply.result)
+
+        const stopReply = await rpc('desktop', desktopSock, desktopPair.session, 'd6', {
+          op: 'command',
+          command: { type: 'interrupt', threadId },
+        })
+        expect(stopReply.ok).toBe(true)
+        folds.desktop.commandAnswer(stopReply.result)
+
+        await new Promise(r => setTimeout(r, 150))
+        drain('desktop', desktopSock)
+        drain('iphone', iphoneSock)
+        drain('plain', plainSock)
+
+        // 5. Unknown op and disallowed extra command field return invalid_request.
+        const badOp = await rpc('desktop', desktopSock, desktopPair.session, 'd7', { op: 'referee-no-such-operation' })
+        expect(badOp.ok).toBe(false)
+        expect((badOp.error as { code: string }).code).toBe('invalid_request')
+
+        const badField = await rpc('iphone', iphoneSock, iphonePair.session, 'i3', {
+          op: 'command',
+          command: { type: 'interrupt', threadId, refereeField: true },
+        })
+        expect(badField.ok).toBe(false)
+        expect((badField.error as { code: string }).code).toBe('invalid_request')
+
+        // 6. Verify zero protocol violations across all 3 ClientFold instances and exact converged state!
+        expect(folds.desktop.problems).toEqual([])
+        expect(folds.iphone.problems).toEqual([])
+        expect(folds.plain.problems).toEqual([])
+        expect((folds.desktop.held.details[threadId]?.messages as Array<{ text: string }>)?.[0]?.text).toBe('Referee prompt one')
+        expect((folds.iphone.held.details[threadId]?.messages as Array<{ text: string }>)?.[0]?.text).toBe('Referee prompt one')
+        expect((folds.plain.held.details[threadId]?.messages as Array<{ text: string }>)?.[0]?.text).toBe('Referee prompt one')
+      } finally {
+        desktopSock.close()
+        iphoneSock.close()
+        plainSock.close()
+      }
+    } finally {
+      await running.stop()
+      await rm(foldDir, { recursive: true, force: true })
     }
   }, 30_000)
 })

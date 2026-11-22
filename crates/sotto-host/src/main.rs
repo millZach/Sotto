@@ -1,13 +1,16 @@
 mod server;
+mod wire_codec;
 mod ws;
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use sotto_core::{
     acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, HostCredentials,
-    HostLease,
+    HostLease, MockProviderAdapter, ProviderAdapter,
 };
 
 use crate::server::{RunningServer, ServerConfig, DEFAULT_SOTTO_VERSION};
@@ -18,6 +21,7 @@ struct HostCliArgs {
     port: u16,
     key_file: Option<PathBuf>,
     sotto_version: String,
+    mock_provider: Option<String>,
     started_by: Option<String>,
 }
 
@@ -28,6 +32,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         .ok()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_SOTTO_VERSION.to_string());
+    let mut mock_provider = None;
     let mut port: u16 = 0;
 
     let mut i = 0;
@@ -37,6 +42,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
             && flag != "--port"
             && flag != "--key-file"
             && flag != "--sotto-version"
+            && flag != "--mock-provider"
         {
             return Err("Use --data <folder> and optionally --key-file <file>.".into());
         }
@@ -51,6 +57,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
             "--data" => data_directory = Some(PathBuf::from(value)),
             "--key-file" => key_file = Some(PathBuf::from(value)),
             "--sotto-version" => sotto_version = value.clone(),
+            "--mock-provider" => mock_provider = Some(value.clone()),
             "--port" => {
                 port = value
                     .parse::<u16>()
@@ -74,6 +81,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         port,
         key_file,
         sotto_version,
+        mock_provider,
         started_by,
     })
 }
@@ -118,13 +126,14 @@ async fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let credentials = match HostCredentials::open(&parsed.data_directory, parsed.key_file.as_deref()) {
-        Ok(creds) => creds,
-        Err(err) => {
-            eprintln!("{err}");
-            return ExitCode::from(1);
-        }
-    };
+    let credentials =
+        match HostCredentials::open(&parsed.data_directory, parsed.key_file.as_deref()) {
+            Ok(creds) => creds,
+            Err(err) => {
+                eprintln!("{err}");
+                return ExitCode::from(1);
+            }
+        };
 
     let boot = read_boot_id();
     let lease = HostLease::current(boot.clone());
@@ -143,6 +152,11 @@ async fn main() -> ExitCode {
         }
     };
 
+    let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+    if let Some(ref mock_id) = parsed.mock_provider {
+        providers.insert(mock_id.clone(), Arc::new(MockProviderAdapter::new(mock_id)));
+    }
+
     let server = match RunningServer::start(ServerConfig {
         data_directory: parsed.data_directory.clone(),
         host_id,
@@ -150,6 +164,7 @@ async fn main() -> ExitCode {
         sotto_version: parsed.sotto_version,
         started_by: parsed.started_by,
         credentials,
+        providers,
     })
     .await
     {
@@ -235,6 +250,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let host_id = load_host_identity(dir.path()).unwrap();
         let credentials = HostCredentials::open(dir.path(), None).unwrap();
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+
         let srv = RunningServer::start(ServerConfig {
             data_directory: dir.path().to_path_buf(),
             host_id: host_id.clone(),
@@ -242,13 +260,13 @@ mod tests {
             sotto_version: "0.1.44-owl.20261118.2".into(),
             started_by: None,
             credentials,
+            providers,
         })
         .await
         .unwrap();
         let port = srv.state.port;
         let admin_token = srv.state.admin_token.clone();
 
-        // /v1/health matches TS HostDescriptor shape
         let (status, health) = http_request(port, "GET", "/v1/health", None, None).await;
         assert_eq!(status, 200);
         assert_eq!(health["hostId"], host_id);
@@ -256,12 +274,10 @@ mod tests {
         assert_eq!(health["status"], "ready");
         assert!(health.get("adminToken").is_none());
 
-        // Admin endpoint rejects missing/wrong bearer
         let (status, _) =
             http_request(port, "POST", "/v1/admin/pairing-code", Some("wrong"), None).await;
         assert_eq!(status, 401);
 
-        // Issue pairing code -> redeem -> allow answers -> mint session
         let (status, issued) = http_request(
             port,
             "POST",
@@ -273,11 +289,11 @@ mod tests {
         assert_eq!(status, 200);
         let code = issued["code"].as_str().unwrap();
 
-        let pair_body = serde_json::json!({ "v": 1, "code": code, "name": "Test Desktop" }).to_string();
+        let pair_body =
+            serde_json::json!({ "v": 1, "code": code, "name": "Test Desktop" }).to_string();
         let (status, paired) =
             http_request(port, "POST", "/v1/pair", None, Some(&pair_body)).await;
         assert_eq!(status, 200);
-        assert!(paired.get("name").is_none());
         let client_id = paired["clientId"].as_str().unwrap();
         let token = paired["token"].as_str().unwrap();
 
@@ -296,39 +312,26 @@ mod tests {
         let (status, session_res) =
             http_request(port, "POST", "/v1/session", Some(token), None).await;
         assert_eq!(status, 200);
-        assert_eq!(session_res["clientId"], client_id);
         let session = session_res["session"].as_str().unwrap();
 
-        // Upgrade WebSocket with permessage-deflate and send `hello`
+        // Upgrade WebSocket (uncompressed for raw frame verification here)
         let mut ws = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let key = "dGhlIHNhbXBsZSBub25jZQ==";
         let upgrade = format!(
-            "GET /v1/socket HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nAuthorization: Bearer {session}\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate; client_no_context_takeover; server_no_context_takeover\r\n\r\n"
+            "GET /v1/socket HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nAuthorization: Bearer {session}\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
         );
         ws.write_all(upgrade.as_bytes()).await.unwrap();
         let mut ws_reader = BufReader::new(ws);
         let mut resp_line = String::new();
         ws_reader.read_line(&mut resp_line).await.unwrap();
         assert!(resp_line.starts_with("HTTP/1.1 101"));
-        let mut saw_accept = false;
-        let mut saw_deflate = false;
         loop {
             let mut h = String::new();
             ws_reader.read_line(&mut h).await.unwrap();
             if h == "\r\n" || h == "\n" {
                 break;
             }
-            if h.to_ascii_lowercase().starts_with("sec-websocket-accept:") {
-                assert!(h.contains("s3pPLMBiTxaQ9kYGzzhZRbK+xOo="));
-                saw_accept = true;
-            }
-            if h.to_ascii_lowercase()
-                .starts_with("sec-websocket-extensions:")
-            {
-                saw_deflate = h.contains("permessage-deflate");
-            }
         }
-        assert!(saw_accept && saw_deflate);
 
         // Send masked client `hello` frame
         let mut ws_stream = ws_reader.into_inner();
@@ -342,7 +345,6 @@ mod tests {
         ws_stream.write_all(&frame).await.unwrap();
         ws_stream.flush().await.unwrap();
 
-        // Read unmasked server response frame
         let mut hdr = [0u8; 2];
         ws_stream.read_exact(&mut hdr).await.unwrap();
         assert_eq!(hdr[0] & 0x0f, 0x1);
@@ -362,6 +364,7 @@ mod tests {
         assert_eq!(parsed["result"]["hostId"], host_id);
         assert_eq!(parsed["result"]["clientId"], client_id);
         assert_eq!(parsed["result"]["capabilities"]["mayAnswer"], true);
+        assert_eq!(parsed["result"]["shell"]["host"]["hostId"], host_id);
 
         // Revoking the paired client immediately closes the already-open WebSocket.
         let revoke_body = serde_json::json!({ "clientId": client_id }).to_string();

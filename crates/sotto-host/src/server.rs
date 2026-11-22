@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,11 +16,12 @@ use tokio::sync::{broadcast, mpsc, watch};
 
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::{
-    DesktopClients, HostCredentials, HostDescriptor, HostErrorCode, HostRequestEnvelope,
-    HostResponseEnvelope, MemoryStore, PairedClients, PairingError, SubagentStore, ThreadStore,
-    UsageStore, HOST_PROTOCOL_VERSION,
+    ClientContext, CoordinatorBroadcast, CoordinatorHandle, DesktopClients, HostCredentials,
+    HostDescriptor, HostErrorCode, HostRequestEnvelope, HostResponseEnvelope, MemoryStore,
+    PairedClients, PairingError, ProviderAdapter, SubagentStore, HOST_PROTOCOL_VERSION,
 };
 
+use crate::wire_codec::ClientWireState;
 use crate::ws::{
     deflate_offered, is_valid_websocket_key, read_ws_message, websocket_accept, write_ws_close,
     write_ws_pong, write_ws_text, WsMessage, WsReaderState, DEFLATE_RESPONSE,
@@ -34,11 +35,27 @@ const REMOTE_ANSWER_GRANT_NOTE: &str =
 
 pub const DEFAULT_SOTTO_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Base protocol v1 features advertised by this host build.
-pub fn foundation_features() -> Vec<String> {
+/// Protocol v1 features advertised by this host build.
+pub fn advertised_features() -> Vec<String> {
     vec![
         "client-liveness".into(),
+        "message-aliases".into(),
+        "detail-delta".into(),
+        "attachment-staging".into(),
+        "file-staging".into(),
+        "activity-summaries".into(),
+        "model-catalog-revision".into(),
         "answer-receipts".into(),
+        "changed-thread-records".into(),
+        "reply-thread-records".into(),
+        "command-changed-thread-records".into(),
+        "kept-parts".into(),
+        "detail-read-held".into(),
+        "provider-opencode".into(),
+        "provider-cursor".into(),
+        "provider-deepseek".into(),
+        "provider-hermes".into(),
+        "provider-antigravity".into(),
     ]
 }
 
@@ -53,9 +70,9 @@ pub struct HostState {
     pub pairing: Mutex<PairedClients>,
     pub desktops: Mutex<DesktopClients>,
     pub memory: Mutex<MemoryStore>,
-    pub threads: Mutex<ThreadStore>,
     pub subagents: Mutex<SubagentStore>,
     pub credentials: Mutex<HostCredentials>,
+    pub coordinator: CoordinatorHandle,
     pub revoked_tx: broadcast::Sender<String>,
 }
 
@@ -125,6 +142,7 @@ pub struct ServerConfig {
     pub sotto_version: String,
     pub started_by: Option<String>,
     pub credentials: HostCredentials,
+    pub providers: BTreeMap<String, Arc<dyn ProviderAdapter>>,
 }
 
 pub struct RunningServer {
@@ -141,10 +159,16 @@ impl RunningServer {
         desktops.refresh();
         let memory = MemoryStore::open(&config.data_directory.join("memory.sqlite"))
             .map_err(|err| std::io::Error::other(err.to_string()))?;
-        let threads = ThreadStore::open(&config.data_directory.join("threads.sqlite"))
-            .map_err(|err| std::io::Error::other(err.to_string()))?;
         let subagents = SubagentStore::open(&config.data_directory.join("subagents.sqlite"))
             .map_err(|err| std::io::Error::other(err.to_string()))?;
+        let credentials_secure = config.credentials.is_secure();
+        let coordinator = CoordinatorHandle::spawn(
+            config.data_directory.clone(),
+            config.host_id.clone(),
+            credentials_secure,
+            config.providers,
+        )
+        .map_err(std::io::Error::other)?;
 
         let listener = TcpListener::bind(("127.0.0.1", config.port)).await?;
         let bound_port = listener.local_addr()?.port();
@@ -156,15 +180,15 @@ impl RunningServer {
             host_id: config.host_id,
             port: bound_port,
             sotto_version: config.sotto_version,
-            features: foundation_features(),
+            features: advertised_features(),
             admin_token,
             started_by: config.started_by,
             pairing: Mutex::new(pairing),
             desktops: Mutex::new(desktops),
             memory: Mutex::new(memory),
-            threads: Mutex::new(threads),
             subagents: Mutex::new(subagents),
             credentials: Mutex::new(config.credentials),
+            coordinator,
             revoked_tx,
         });
 
@@ -203,6 +227,7 @@ impl RunningServer {
     pub async fn close(self) {
         let _ = self.shutdown_tx.send(true);
         let _ = self.task.await;
+        self.state.coordinator.shutdown().await;
         cleanup_descriptor(&self.state.data_directory, &self.state.admin_token);
     }
 }
@@ -450,7 +475,6 @@ async fn handle_connection(
             .redeem_pairing_code(&parsed.code, &parsed.name);
         match result {
             Ok(paired) => {
-                // Exact protocol v1 `/v1/pair` response shape (matching `socketServer.ts`).
                 send_http_json(
                     &mut stream,
                     200,
@@ -548,11 +572,30 @@ async fn handle_websocket_upgrade(
     mut shutdown: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let session = extract_bearer(headers).to_string();
-    let client_id = state.pairing.lock().unwrap().verify_session(&session);
+    let auth = {
+        let mut pairing = state.pairing.lock().unwrap();
+        pairing.verify_session(&session).map(|cid| {
+            let name = pairing
+                .list()
+                .iter()
+                .find(|c| c.client_id == cid)
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "Paired client".into());
+            (cid, name)
+        })
+    };
+    let Some((client_id, client_name)) = auth else {
+        stream
+            .write_all(
+                b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+            )
+            .await?;
+        return Ok(());
+    };
     let key = headers.get("sec-websocket-key").map(String::as_str);
     let version = headers.get("sec-websocket-version").map(String::as_str);
 
-    let (Some(client_id), Some(key)) = (client_id, key) else {
+    let Some(key) = key else {
         stream
             .write_all(b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
             .await?;
@@ -577,7 +620,6 @@ async fn handle_websocket_upgrade(
     stream.write_all(response.as_bytes()).await?;
     stream.flush().await?;
 
-    // Full-duplex split so server-initiated pushes can be sent concurrently with reads.
     let (mut read_half, mut write_half) = tokio::io::split(stream);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<OutboundFrame>();
 
@@ -597,13 +639,15 @@ async fn handle_websocket_upgrade(
         }
     });
 
+    let mut wire = ClientWireState::default();
     let mut reader_state = WsReaderState::default();
     let mut revoked_rx = state.revoked_tx.subscribe();
+    let mut coord_rx = state.coordinator.subscribe();
     let mut expiry_tick = tokio::time::interval(Duration::from_secs(1));
     expiry_tick.tick().await;
 
     loop {
-        let next = tokio::select! {
+        tokio::select! {
             _ = shutdown.changed() => {
                 let _ = out_tx.send(OutboundFrame::Close);
                 break;
@@ -615,42 +659,100 @@ async fn handle_websocket_upgrade(
                     let _ = out_tx.send(OutboundFrame::Close);
                     break;
                 }
-                continue;
             }
             _ = expiry_tick.tick() => {
                 if state.pairing.lock().unwrap().verify_session(&session).as_deref() != Some(client_id.as_str()) {
                     let _ = out_tx.send(OutboundFrame::Close);
                     break;
                 }
-                continue;
             }
-            msg = read_ws_message(&mut read_half, deflate, &mut reader_state) => msg,
-        };
-        match next {
-            Ok(WsMessage::Text(text)) => {
-                // Re-verify the session before serving every request so a revoked or expired
-                // device can never read another frame on an already-open socket.
-                if state.pairing.lock().unwrap().verify_session(&session).as_deref()
-                    != Some(client_id.as_str())
-                {
-                    let _ = out_tx.send(OutboundFrame::Close);
-                    break;
+            bcast = coord_rx.recv() => {
+                if !wire.hello_done {
+                    continue;
                 }
-                let reply = handle_ws_request(&state, &client_id, &session, &text);
-                let encoded = serde_json::to_string(&reply).map_err(std::io::Error::other)?;
-                if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
-                    break;
+                match bcast {
+                    Ok(CoordinatorBroadcast::Shell(mut shell)) => {
+                        let may_answer = state
+                            .memory
+                            .lock()
+                            .unwrap()
+                            .may_grant_remote(&client_id)
+                            .unwrap_or(false);
+                        if let Some(obj) = shell.as_object_mut() {
+                            obj.insert(
+                                "clientCapabilities".into(),
+                                json!({ "mayAnswer": may_answer }),
+                            );
+                        }
+                        let frame = wire.encode_shell_push(shell);
+                        if let Ok(encoded) = serde_json::to_string(&frame) {
+                            if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Ok(CoordinatorBroadcast::Detail(detail)) => {
+                        if let Some(frame) = wire.encode_detail_update_push(&detail) {
+                            if let Ok(encoded) = serde_json::to_string(&frame) {
+                                if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        // On lag, resend whole shell cleanly so the client stays in sync.
+                        let may_answer = state
+                            .memory
+                            .lock()
+                            .unwrap()
+                            .may_grant_remote(&client_id)
+                            .unwrap_or(false);
+                        if let Ok(shell) = state.coordinator.shell(may_answer).await {
+                            let frame = wire.encode_shell_push(shell);
+                            if let Ok(encoded) = serde_json::to_string(&frame) {
+                                let _ = out_tx.send(OutboundFrame::Text(encoded));
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
-            Ok(WsMessage::Ping(payload)) => {
-                if out_tx.send(OutboundFrame::Pong(payload)).is_err() {
-                    break;
+            msg = read_ws_message(&mut read_half, deflate, &mut reader_state) => {
+                match msg {
+                    Ok(WsMessage::Text(text)) => {
+                        if state.pairing.lock().unwrap().verify_session(&session).as_deref()
+                            != Some(client_id.as_str())
+                        {
+                            let _ = out_tx.send(OutboundFrame::Close);
+                            break;
+                        }
+                        let reply = handle_ws_request(
+                            &state,
+                            &client_id,
+                            &client_name,
+                            &session,
+                            &mut wire,
+                            &out_tx,
+                            &text,
+                        )
+                        .await;
+                        let encoded = serde_json::to_string(&reply).map_err(std::io::Error::other)?;
+                        if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(WsMessage::Ping(payload)) => {
+                        if out_tx.send(OutboundFrame::Pong(payload)).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(WsMessage::Pong(_)) => {}
+                    Ok(WsMessage::Close) | Err(_) => {
+                        let _ = out_tx.send(OutboundFrame::Close);
+                        break;
+                    }
                 }
-            }
-            Ok(WsMessage::Pong(_)) => {}
-            Ok(WsMessage::Close) | Err(_) => {
-                let _ = out_tx.send(OutboundFrame::Close);
-                break;
             }
         }
     }
@@ -660,10 +762,13 @@ async fn handle_websocket_upgrade(
     Ok(())
 }
 
-fn handle_ws_request(
+async fn handle_ws_request(
     state: &HostState,
     client_id: &str,
+    client_name: &str,
     upgrade_session: &str,
+    wire: &mut ClientWireState,
+    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
     raw: &str,
 ) -> HostResponseEnvelope {
     let req: HostRequestEnvelope = match serde_json::from_str(raw) {
@@ -685,7 +790,12 @@ fn handle_ws_request(
     }
     if let Some(ref msg_session) = req.session {
         if !constant_time_eq(msg_session.as_bytes(), upgrade_session.as_bytes())
-            && state.pairing.lock().unwrap().verify_session(msg_session).as_deref()
+            && state
+                .pairing
+                .lock()
+                .unwrap()
+                .verify_session(msg_session)
+                .as_deref()
                 != Some(client_id)
         {
             return HostResponseEnvelope::err(
@@ -696,32 +806,44 @@ fn handle_ws_request(
         }
     }
 
+    let may_answer = state
+        .memory
+        .lock()
+        .unwrap()
+        .may_grant_remote(client_id)
+        .unwrap_or(false);
+
     match req.op.as_str() {
         "hello" => {
+            let accepts: Vec<String> = req
+                .fields
+                .get("accepts")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .map(ToString::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            wire.apply_hello(accepts);
+
             let after_seq = req
                 .fields
                 .get("afterSeq")
                 .and_then(Value::as_i64)
                 .unwrap_or(0);
-            let may_answer = state
-                .memory
-                .lock()
-                .unwrap()
-                .may_grant_remote(client_id)
-                .unwrap_or(false);
-            let (thread_ids, latest_seq, events, has_more) = {
-                let store = state.threads.lock().unwrap();
-                let ids = store.list_thread_ids().unwrap_or_default();
-                let latest = store.latest_seq().unwrap_or(0);
-                let (ev, more) = store.read_events(None, after_seq, 200).unwrap_or_default();
-                (ids, latest, ev, more)
+            let raw_shell = match state.coordinator.shell(may_answer).await {
+                Ok(s) => s,
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };
-            let memory_version = state
-                .memory
-                .lock()
-                .unwrap()
-                .schema_version()
-                .unwrap_or(0);
+            let shell = wire.encode_reply_shell(raw_shell);
+            let (events, has_more, latest_seq) = state
+                .coordinator
+                .events(None, after_seq, 200)
+                .await
+                .unwrap_or_default();
+            let memory_version = state.memory.lock().unwrap().schema_version().unwrap_or(0);
             let subagents_ok = state
                 .subagents
                 .lock()
@@ -729,10 +851,6 @@ fn handle_ws_request(
                 .quick_check()
                 .map(|s| s == "ok")
                 .unwrap_or(false);
-            let usage_meta = UsageStore::open(&state.data_directory.join("usage.sqlite"))
-                .and_then(|s| s.read_meta())
-                .ok()
-                .flatten();
             let credentials_secure = state.credentials.lock().unwrap().is_secure();
 
             HostResponseEnvelope::ok(
@@ -747,10 +865,9 @@ fn handle_ws_request(
                     "hasMore": has_more,
                     "latestSeq": latest_seq.max(after_seq),
                     "phoneAccess": { "phones": 0, "status": "off" },
-                    "threadIds": thread_ids,
+                    "shell": shell,
                     "stores": {
                         "memorySchemaVersion": memory_version,
-                        "usageMeta": usage_meta,
                         "subagentsOk": subagents_ok,
                         "credentialsSecure": credentials_secure,
                     },
@@ -758,20 +875,40 @@ fn handle_ws_request(
             )
         }
         "ping" => HostResponseEnvelope::ok(req.id, json!({ "pong": true })),
-        "shell" | "state" => {
-            let thread_ids = state
-                .threads
-                .lock()
-                .unwrap()
-                .list_thread_ids()
-                .unwrap_or_default();
-            HostResponseEnvelope::ok(
-                req.id,
-                json!({
-                    "hostId": state.host_id,
-                    "threadIds": thread_ids,
-                }),
-            )
+        "shell" | "state" => match state.coordinator.shell(may_answer).await {
+            Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_reply_shell(raw_shell)),
+            Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+        },
+        "observe" => {
+            let Some(arr) = req.fields.get("threadIds").and_then(Value::as_array) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let thread_ids: Vec<String> = arr
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToString::to_string)
+                .collect();
+            let previously_observed = wire.observed.clone();
+            wire.set_observed(&thread_ids);
+
+            let details = match state.coordinator.observe(thread_ids.clone()).await {
+                Ok(list) => list,
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+            };
+            // Protocol v1 promise: push every newly observed thread's detail BEFORE answering `observe`.
+            for (tid, detail) in details {
+                if !previously_observed.contains(&tid) {
+                    let push_frame = wire.encode_observe_detail_push(&tid, detail.as_ref());
+                    if let Ok(encoded) = serde_json::to_string(&push_frame) {
+                        let _ = out_tx.send(OutboundFrame::Text(encoded));
+                    }
+                }
+            }
+            HostResponseEnvelope::ok(req.id, json!({ "observed": thread_ids }))
         }
         "detail" => {
             let Some(thread_id) = req.fields.get("threadId").and_then(Value::as_str) else {
@@ -781,20 +918,24 @@ fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
-            let store = state.threads.lock().unwrap();
-            let messages = store.read_messages(thread_id).unwrap_or_default();
-            let activities = store.read_activities(thread_id).unwrap_or_default();
-            HostResponseEnvelope::ok(
-                req.id,
-                json!({
-                    "threadId": thread_id,
-                    "messages": messages,
-                    "activities": activities,
-                }),
-            )
+            match state.coordinator.detail(thread_id.to_string()).await {
+                Ok(Some(detail)) => {
+                    let formatted = wire.format_detail(&detail);
+                    HostResponseEnvelope::ok(
+                        req.id,
+                        serde_json::to_value(formatted).unwrap_or(Value::Null),
+                    )
+                }
+                Ok(None) => HostResponseEnvelope::ok(req.id, Value::Null),
+                Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+            }
         }
         "events" => {
-            let thread_id = req.fields.get("threadId").and_then(Value::as_str);
+            let thread_id = req
+                .fields
+                .get("threadId")
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
             let after_seq = req
                 .fields
                 .get("afterSeq")
@@ -806,19 +947,120 @@ fn handle_ws_request(
                 .and_then(Value::as_u64)
                 .unwrap_or(200)
                 .min(500) as usize;
-            let store = state.threads.lock().unwrap();
-            let latest_seq = store.latest_seq().unwrap_or(0);
-            let (events, has_more) = store
-                .read_events(thread_id, after_seq, limit)
-                .unwrap_or_default();
-            HostResponseEnvelope::ok(
-                req.id,
-                json!({
-                    "events": events,
-                    "hasMore": has_more,
-                    "latestSeq": latest_seq,
-                }),
+            match state.coordinator.events(thread_id, after_seq, limit).await {
+                Ok((events, has_more, latest_seq)) => HostResponseEnvelope::ok(
+                    req.id,
+                    json!({
+                        "events": events,
+                        "hasMore": has_more,
+                        "latestSeq": latest_seq,
+                    }),
+                ),
+                Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+            }
+        }
+        "stage-attachment" => {
+            let Some(img) = req.fields.get("image").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let (Some(name), Some(mime), Some(data)) = (
+                img.get("name").and_then(Value::as_str),
+                img.get("mimeType").and_then(Value::as_str),
+                img.get("data").and_then(Value::as_str),
+            ) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            match state
+                .coordinator
+                .stage_image(name.into(), mime.into(), data.into())
+                .await
+            {
+                Ok(handle) => HostResponseEnvelope::ok(req.id, json!({ "attachment": handle })),
+                Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+            }
+        }
+        "stage-file-part" => {
+            let Some(part) = req.fields.get("part").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let (
+                Some(upload_id),
+                Some(index),
+                Some(count),
+                Some(name),
+                Some(mime),
+                Some(size_bytes),
+                Some(digest),
+                Some(data),
+            ) = (
+                part.get("uploadId").and_then(Value::as_str),
+                part.get("index").and_then(Value::as_u64),
+                part.get("count").and_then(Value::as_u64),
+                part.get("name").and_then(Value::as_str),
+                part.get("mimeType").and_then(Value::as_str),
+                part.get("sizeBytes").and_then(Value::as_u64),
+                part.get("digest").and_then(Value::as_str),
+                part.get("data").and_then(Value::as_str),
             )
+            else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            match state
+                .coordinator
+                .stage_file_part(
+                    upload_id.into(),
+                    index as usize,
+                    count as usize,
+                    name.into(),
+                    mime.into(),
+                    size_bytes as usize,
+                    digest.into(),
+                    data.into(),
+                )
+                .await
+            {
+                Ok(Some(handle)) => {
+                    HostResponseEnvelope::ok(req.id, json!({ "done": true, "attachment": handle }))
+                }
+                Ok(None) => HostResponseEnvelope::ok(req.id, json!({ "done": false })),
+                Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+            }
+        }
+        "command" => {
+            let Some(cmd) = req.fields.get("command").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let client = ClientContext {
+                client_id: client_id.to_string(),
+                user: client_name.to_string(),
+                may_answer,
+            };
+            match state.coordinator.run_command(client, cmd.clone()).await {
+                Ok(raw_shell) => {
+                    HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell))
+                }
+                Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+            }
         }
         _ => HostResponseEnvelope::err(
             req.id,
