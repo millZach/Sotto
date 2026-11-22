@@ -12,14 +12,30 @@ export function hostClientBridge<T extends object>(bridge: T): T {
     if (key.hostId !== hostId) throw new Error('This action belongs to another host. Select that host before trying again.')
     return key.id
   }
-  const receive = (value: unknown): unknown => {
-    if (value && typeof value === 'object' && 'host' in value && 'configuration' in value) {
-      const state = value as AgentState
-      if (state.clientScoped) { routed = true; hostId = state.connections?.find(item => item.kind === 'local')?.hostId; return state }
-      const nextHost = state.hostId ?? state.host.hostId
-      if (hostId !== undefined && nextHost !== undefined && hostId !== nextHost) throw new Error('The host identity changed. Reconnect before continuing.')
-      hostId = nextHost ?? hostId
-      return clientAgentState(state)
+  const isRoutedAgentState = (value: Record<string, unknown>): boolean =>
+    routed || value.clientScoped === true || (Array.isArray(value.kept) && value.kept.includes('clientScoped'))
+  const updateRoutedHostId = (value: Record<string, unknown>): void => {
+    routed = true
+    // Incremental kept-parts broadcasts omit `connections` when unchanged; preserve the current local hostId then.
+    if (Array.isArray(value.kept) && value.kept.includes('connections')) return
+    const connections = value.connections as AgentState['connections'] | undefined
+    hostId = connections?.find(item => item.kind === 'local')?.hostId
+  }
+  const receive = (value: unknown, agentPayload = false): unknown => {
+    if (value && typeof value === 'object' && 'host' in value) {
+      const record = value as Record<string, unknown>
+      if (agentPayload && isRoutedAgentState(record)) {
+        updateRoutedHostId(record)
+        return value
+      }
+      if ('configuration' in record) {
+        const state = value as AgentState
+        if (state.clientScoped) { updateRoutedHostId(record); return state }
+        const nextHost = state.hostId ?? state.host.hostId
+        if (hostId !== undefined && nextHost !== undefined && hostId !== nextHost) throw new Error('The host identity changed. Reconnect before continuing.')
+        hostId = nextHost ?? hostId
+        return clientAgentState(state)
+      }
     }
     return hostId === undefined ? value : mapHostReferences(value, id => parseHostEntityKey(id) ? id : hostEntityKey(hostId, id))
   }
@@ -52,14 +68,14 @@ export function hostClientBridge<T extends object>(bridge: T): T {
     if (typeof member !== 'function') return [name, member]
     const call = (...args: unknown[]): unknown => {
       const outgoing = args.map(arg => {
-        if (typeof arg === 'function') return (value: unknown) => (arg as (value: unknown) => void)(routed && domain === 'agents' && name !== 'onState' ? value : receive(value))
+        if (typeof arg === 'function') return (value: unknown) => (arg as (value: unknown) => void)(routed && domain === 'agents' && name !== 'onState' ? value : receive(value, domain === 'agents'))
         if (routed && domain === 'agents') return arg
         if (typeof arg === 'string' && domain === 'agents' && (name === 'threadDetail' || name === 'workingCopyOptions' || name === 'startHandover')) return decode(arg)
         const request = mapHostReferences(arg, id => routed && (domain === 'requestDrafts' && parseHostEntityKey(id)?.hostId !== hostId || hostReads[domain]?.has(name) && elsewhere(id)) ? id : decode(id))
         return request
       })
       const result: unknown = Reflect.apply(member, object, outgoing)
-      return result instanceof Promise ? result.then(value => routed && domain === 'agents' && name !== 'get' && name !== 'command' ? value : receive(value)) : result
+      return result instanceof Promise ? result.then(value => routed && domain === 'agents' && name !== 'get' && name !== 'command' ? value : receive(value, domain === 'agents')) : result
     }
     return [name, subscriptions.has(`${domain}.${name}`) ? call : async (...args: unknown[]) => call(...args)]
   })))
