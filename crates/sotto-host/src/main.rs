@@ -9,9 +9,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use sotto_core::{
-    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, ClaudeAdapter,
-    ClaudeAdapterConfig, CodexAdapter, CodexAdapterConfig, HostCredentials, HostLease,
-    MockProviderAdapter, ProviderAdapter,
+    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, AcpAdapter,
+    AcpAdapterConfig, AcpFlavor, ClaudeAdapter, ClaudeAdapterConfig, CodexAdapter,
+    CodexAdapterConfig, HostCredentials, HostLease, MockProviderAdapter, MuseAdapter,
+    MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig, ProviderAdapter,
 };
 
 use crate::server::{RunningServer, ServerConfig, DEFAULT_SOTTO_VERSION};
@@ -210,6 +211,70 @@ async fn main() -> ExitCode {
                     ))),
                 );
             }
+            "grok" => {
+                let script = fixtures.join("fakeGrokThreadAgent.mjs");
+                providers.insert(
+                    "grok".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Grok,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "devin" => {
+                let script = fixtures.join("fakeDevinAgent.mjs");
+                providers.insert(
+                    "devin".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Devin,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "muse" => {
+                let script = fixtures.join("fakeMuseAgent.mjs");
+                providers.insert(
+                    "muse".into(),
+                    Arc::new(MuseAdapter::new(MuseAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "opencode" => {
+                let script = fixtures.join("fakeOpenCodeServer.mjs");
+                providers.insert(
+                    "opencode".into(),
+                    Arc::new(OpenCodeAdapter::new(OpenCodeAdapterConfig::fake(
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "cursor" => {
+                let script = fixtures.join("fakeCursorAgent.mjs");
+                providers.insert(
+                    "cursor".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Cursor,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
+            "antigravity" => {
+                let script = fixtures.join("fakeAntigravityAgent.mjs");
+                providers.insert(
+                    "antigravity".into(),
+                    Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(
+                        AcpFlavor::Antigravity,
+                        parsed.data_directory.clone(),
+                        script,
+                    ))),
+                );
+            }
             other => {
                 eprintln!("Unsupported fake provider: {other}");
                 let _ = release_host_lock(&lock_path, &lease);
@@ -228,6 +293,33 @@ async fn main() -> ExitCode {
         providers.insert(
             "claude".into(),
             Arc::new(ClaudeAdapter::new(ClaudeAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
+        for flavor in [
+            AcpFlavor::Grok,
+            AcpFlavor::Devin,
+            AcpFlavor::Cursor,
+            AcpFlavor::Hermes,
+            AcpFlavor::Antigravity,
+        ] {
+            providers.insert(
+                flavor.id().into(),
+                Arc::new(AcpAdapter::new(AcpAdapterConfig::native(
+                    flavor,
+                    parsed.data_directory.clone(),
+                ))),
+            );
+        }
+        providers.insert(
+            "muse".into(),
+            Arc::new(MuseAdapter::new(MuseAdapterConfig::native(
+                parsed.data_directory.clone(),
+            ))),
+        );
+        providers.insert(
+            "opencode".into(),
+            Arc::new(OpenCodeAdapter::new(OpenCodeAdapterConfig::native(
                 parsed.data_directory.clone(),
             ))),
         );

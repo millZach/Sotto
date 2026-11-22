@@ -3,6 +3,7 @@ pub mod credentials;
 pub mod desktop_clients;
 pub mod identity;
 pub mod lock;
+pub mod ops;
 pub mod pairing;
 pub mod protocol;
 pub mod provider;
@@ -32,8 +33,10 @@ pub use provider::{
     ProviderEvent, SendMessageAck, SendMessageRequest,
 };
 pub use providers::{
-    claude_project_dir, fork_claude_session, read_claude_session_transcript, ClaudeAdapter,
-    ClaudeAdapterConfig, ClaudeTranscriptMessage, CodexAdapter, CodexAdapterConfig,
+    claude_project_dir, fork_claude_session, read_claude_session_transcript, AcpAdapter,
+    AcpAdapterConfig, AcpFlavor, ClaudeAdapter, ClaudeAdapterConfig, ClaudeTranscriptMessage,
+    CodexAdapter, CodexAdapterConfig, MuseAdapter, MuseAdapterConfig, OpenCodeAdapter,
+    OpenCodeAdapterConfig,
 };
 pub use remote_commands::{
     allowed_command_fields, validate_remote_command, CommandRefusal, REMOTE_CONFIGURATION_FIELDS,

@@ -58,6 +58,17 @@ pub fn advertised_features() -> Vec<String> {
         "provider-deepseek".into(),
         "provider-hermes".into(),
         "provider-antigravity".into(),
+        "git-refs".into(),
+        "git-changed-files".into(),
+        "git-pull-request".into(),
+        "git-pull-request-list".into(),
+        "host-folders".into(),
+        "thread-files".into(),
+        "thread-changes".into(),
+        "host-facts".into(),
+        "thread-words".into(),
+        "subagents".into(),
+        "usage-dashboard".into(),
     ]
 }
 
@@ -1103,6 +1114,259 @@ async fn handle_ws_request(
                 }
                 Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
             }
+        }
+        "host-facts" => {
+            let ver = state.sotto_version.clone();
+            let facts = tokio::task::spawn_blocking(move || sotto_core::ops::host_facts(&ver))
+                .await
+                .unwrap_or_else(|_| json!({}));
+            HostResponseEnvelope::ok(req.id, facts)
+        }
+        "host-folders" => {
+            let requested = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("path"))
+                .or_else(|| req.fields.get("path"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let fallback = state.data_directory.clone();
+            match tokio::task::spawn_blocking(move || {
+                sotto_core::ops::host_folders(requested.as_deref(), &fallback)
+            })
+            .await
+            {
+                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
+                _ => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
+        }
+        "git-refs" => {
+            let folder = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("path"))
+                .or_else(|| req.fields.get("path"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if folder.is_empty() {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            match tokio::task::spawn_blocking(move || sotto_core::ops::git_refs(&folder)).await {
+                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
+                _ => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
+        }
+        "git-changed-files" => {
+            let folder = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("path"))
+                .or_else(|| req.fields.get("path"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if folder.is_empty() {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            match tokio::task::spawn_blocking(move || sotto_core::ops::git_changed_files(&folder))
+                .await
+            {
+                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
+                _ => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
+        }
+        "git-pull-request" => {
+            let folder = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("path"))
+                .or_else(|| req.fields.get("path"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if folder.is_empty() {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            match tokio::task::spawn_blocking(move || sotto_core::ops::git_pull_request(&folder))
+                .await
+            {
+                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
+                _ => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
+        }
+        "git-pull-request-list" => {
+            let folder = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("path"))
+                .or_else(|| req.fields.get("path"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if folder.is_empty() {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            match tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_pull_request_list(&folder)
+            })
+            .await
+            {
+                Ok(Ok(val)) => HostResponseEnvelope::ok(req.id, val),
+                _ => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
+        }
+        "thread-files" => {
+            let root = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("workingDirectory"))
+                .or_else(|| req.fields.get("workingDirectory"))
+                .and_then(Value::as_str)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| state.data_directory.clone());
+            let rel = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("path"))
+                .or_else(|| req.fields.get("path"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::thread_files(&root, rel.as_deref())
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not read files." }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "thread-file-preview" => {
+            let root = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("workingDirectory"))
+                .or_else(|| req.fields.get("workingDirectory"))
+                .and_then(Value::as_str)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| state.data_directory.clone());
+            let rel = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("path"))
+                .or_else(|| req.fields.get("path"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::thread_file_preview(&root, &rel)
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not preview file." }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "thread-changes" => {
+            let folder = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("workingDirectory"))
+                .or_else(|| req.fields.get("workingDirectory"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let res = tokio::task::spawn_blocking(move || sotto_core::ops::git_changes(&folder))
+                .await
+                .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not read changes." }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "thread-changes-review" => {
+            let folder = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("workingDirectory"))
+                .or_else(|| req.fields.get("workingDirectory"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let res = tokio::task::spawn_blocking(move || sotto_core::ops::git_review(&folder))
+                .await
+                .unwrap_or_else(|_| json!({ "ok": false, "error": "Could not read review." }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "thread-words" => {
+            let query = req
+                .fields
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let dir = state.data_directory.clone();
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::search_thread_words(&dir, &query)
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "found": [] }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "subagent-page" => {
+            let tid = req
+                .fields
+                .get("request")
+                .and_then(|r| r.get("threadId"))
+                .or_else(|| req.fields.get("threadId"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let dir = state.data_directory.clone();
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::read_subagent_page(&dir, &tid)
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "totalCount": 0, "rows": [] }));
+            HostResponseEnvelope::ok(req.id, res)
+        }
+        "usage-dashboard" => {
+            let dir = state.data_directory.clone();
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::read_usage_summary(&dir)
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "meta": null }));
+            HostResponseEnvelope::ok(req.id, res)
         }
         _ => HostResponseEnvelope::err(
             req.id,
