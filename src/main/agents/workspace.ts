@@ -4654,6 +4654,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     else if (this.saveError) snapshot.error = this.saveError
     return snapshot
   }
+  /**
+   * Read-only view of visible projects and threads without copying thread histories or activities.
+   * Returns shallow array copies so sweeps iterating across awaits are unaffected by snapshot swaps.
+   */
+  workspaceView(): Pick<AgentHostSnapshot, 'projects' | 'threads'> {
+    const visible = this.visibleSnapshot(this.state.snapshot)
+    return {
+      projects: [...visible.projects],
+      threads: visible === this.state.snapshot ? [...visible.threads] : visible.threads,
+    }
+  }
   private historyNotices(snapshot: AgentHostSnapshot): void {
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
       if (this.invalidEventThreads.has(thread.id)) thread.historySaveNotice = HISTORY_SAVE_NOTICE
