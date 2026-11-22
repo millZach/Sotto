@@ -174,6 +174,7 @@ import { MeshyModels } from '../tools/meshy/service'
 import { modelBytes, modelView, modelViewOf } from '../tools/meshy/view'
 import { FilesBindingsTracker } from './filesBindingsMirror'
 import { EngineIpcRegistry } from './ipcRegistry'
+import { startRustLocalEngine } from './rustLocalEngineClient'
 import type { DesktopEngine, DesktopEngineOptions, EngineShellBridge, EngineWindowFocus, GitChangesMethod, HostedGitChangesMethod } from './types'
 
 /**
@@ -518,8 +519,34 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   // This computer's histories reach the window with their long bodies cut, as a paired host's do, and a record is read
   // whole when its row opens (#2737).
   const localHistories = windowHistories(agentControl)
+  // On Owl builds, start the native Rust `sotto-engine` sidecar in read-only `--accelerator` mode over the
+  // ADR-0210 OS IPC transport (ADR-0215) to offload read-only SQLite thread-word search off the Node event loop,
+  // transparently falling back to TypeScript if the binary is absent or exits.
+  const rustLocalEngine = owlFeatures['rust-local-engine'] && startupSettings.localHostEnabled && e2eConfiguration === null && env['SOTTO_DESIGN_CAPTURE'] !== '1'
+    ? await startRustLocalEngine({ userDataPath, isPackaged, log })
+    : undefined
+  const localHostService = rustLocalEngine
+    ? new Proxy(hostService, {
+        get(target, prop) {
+          if (prop === 'threadWords') {
+            return async (query: string) => {
+              if (agentHistoryEnabled) {
+                const accelerated = await rustLocalEngine.searchThreadWords(query)
+                if (accelerated !== undefined) {
+                  const visibleIds = new Set(agentControl.watcherSnapshot().threads.map(thread => thread.id))
+                  return { found: accelerated.found.filter(match => visibleIds.has(match.threadId)) }
+                }
+              }
+              return target.threadWords ? target.threadWords(query) : null
+            }
+          }
+          const value: unknown = Reflect.get(target, prop, target)
+          return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value
+        },
+      })
+    : hostService
   if (startupSettings.localHostEnabled) hostRouter.add({
-    hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
+    hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: localHostService,
     detail: localHistories.detail,
     activityBody: localHistories.activityBody,
     preview: request => agentControl.attachmentPreview(request),
@@ -1455,6 +1482,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       tellTools?.close(),
       councilTools?.close(),
       pictureMaker?.close(),
+      rustLocalEngine?.close(),
     ])
     hostRouter.dispose()
     disposeIpc()

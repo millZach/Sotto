@@ -48,15 +48,24 @@ async function readProvenance() {
   return provenance
 }
 
+async function owlExtraResources() {
+  const builderConfig = parse(await readFile(resolve(root, 'electron-builder.yml'), 'utf8'))
+  const existing = Array.isArray(builderConfig?.extraResources) ? builderConfig.extraResources : []
+  const exe = process.platform === 'win32' ? 'sotto-engine.exe' : 'sotto-engine'
+  return [...existing, { from: 'dist/rust-engine', to: 'rust-engine', filter: [exe] }]
+}
+
 async function packageWindows() {
   const installer = resolve(root, 'release', `Sotto Owl Setup ${version}.exe`)
   const safeInstaller = resolve(root, 'release', `Sotto-Owl-Setup-${version}.exe`)
+  const extraResources = await owlExtraResources()
   await build({
     projectDir: root,
     targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64),
     publish: 'never',
     config: {
       extraMetadata: { version },
+      extraResources,
       nsis: { artifactName: 'Sotto Owl Setup ${version}.${ext}' },
       // The API merges an object override into the first publisher from YAML.
       publish: owlPublishConfig(),
@@ -84,7 +93,8 @@ async function packageMac() {
   for (const path of [plan.receipt, plan.dmg, plan.dmgBlockmap, plan.zip, plan.zipBlockmap, plan.updateManifest]) await rm(path, { force: true })
   // The Mac app ships the Core ML speech helper; build it before electron-builder copies it in.
   run(resolve(root, 'scripts/build-coreml-asr.mjs'))
-  await build({ projectDir: root, targets: Platform.MAC.createTarget(['dmg', 'zip'], Arch.arm64), publish: 'never', config: plan.config })
+  const extraResources = await owlExtraResources()
+  await build({ projectDir: root, targets: Platform.MAC.createTarget(['dmg', 'zip'], Arch.arm64), publish: 'never', config: { ...plan.config, extraResources } })
   // electron-builder signs, notarizes and staples the app before it makes the disk image and zip from it, so the
   // zip comparison below also proves the update archive carries this signature and ticket.
   const signature = await verifyOwlMacSignature(plan.app)
@@ -105,7 +115,8 @@ async function packageLinux() {
   const plan = owlLinuxPackagePlan(root, version)
   // The receipt vouches only for files this run made, so a leftover from an earlier one goes first.
   for (const path of [plan.receipt, plan.tarball]) await rm(path, { force: true })
-  await build({ projectDir: root, targets: Platform.LINUX.createTarget(['tar.gz'], Arch.x64), publish: 'never', config: plan.config })
+  const extraResources = await owlExtraResources()
+  await build({ projectDir: root, targets: Platform.LINUX.createTarget(['tar.gz'], Arch.x64), publish: 'never', config: { ...plan.config, extraResources } })
   // Extracts the tarball and compares every file with the verified unpacked app, then launches it on a throwaway
   // profile. The workflow provides the display; stable Linux's nested Hyprland is a forge check, not Owl's.
   run(resolve(root, 'scripts/verify-packaged-resources.mjs'), [plan.unpacked, '--installer', plan.tarball])
@@ -122,6 +133,8 @@ run(process.env.npm_execpath, ['run', 'assets:verify'])
 run(process.env.npm_execpath, ['run', 'build'])
 // The Mac app ships the key listener helper, which electron-builder copies from its build folder (ADR-0097).
 if (mac) run(resolve(root, 'scripts/build-key-listener.mjs'))
+// Owl builds bundle the native Rust local engine sidecar (ADR-0215) in dist/rust-engine, copied via extraResources.
+run(resolve(root, 'scripts/build-rust-engine.mjs'), ['--version', version])
 run(resolve(root, 'scripts/write-build-provenance.mjs'))
 await readProvenance()
 checkPin()
