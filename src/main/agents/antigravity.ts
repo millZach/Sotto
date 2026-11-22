@@ -660,7 +660,12 @@ export class AntigravityAcpHost implements ProviderHost {
     this.state.error = error instanceof Error && error.message ? error.message : 'An Antigravity thread could not be opened. Your thread is kept. Reconnect Antigravity to try again.'
     this.emit()
   }
-  /** `agy` on disk was updated while Sotto stayed connected (ADR-0042): each thread moves onto it as it goes idle. */
+  /**
+   * `agy` on disk was updated while Sotto stayed connected (ADR-0042): each thread moves onto it as it goes idle, and the
+   * account's models are read again from the new client (parity slice 8), as a connect reads them, so the menus offer what
+   * it offers. A read that fails keeps the list from before, as it was: the update itself still holds, and the next
+   * connect reads the list again.
+   */
   async clientUpdated(): Promise<void> {
     if (!this.state.connected) return
     const generation = this.generation
@@ -671,6 +676,8 @@ export class AntigravityAcpHost implements ProviderHost {
     if (generation !== this.generation || !this.state.connected) return
     if (!version) throw new Error('Antigravity was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect Antigravity again to try the new version.')
     if (!meetsAntigravityFloor(version)) throw new Error(`Antigravity was updated, but Sotto cannot run ${version}: ${ANTIGRAVITY_CLI_FLOOR} or newer is needed. Threads that are working carry on and nothing was lost.`)
+    await this.readCatalog(executable, await this.signInNow(), generation).catch(() => undefined)
+    if (generation !== this.generation || !this.state.connected) return
     this.executable = executable; this.clientRevision++
     this.state.version = `${version} / ACP ${ANTIGRAVITY_ACP_VERSION}`
     for (const [id, connection] of this.connections) if (connection.clientRevision < this.clientRevision) this.outdated.add(id)
