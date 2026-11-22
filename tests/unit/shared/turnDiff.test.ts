@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { turnPatch } from '../../../../src/renderer/src/tools/turnDiff'
+import { turnPatch } from '../../../src/shared/turnDiff'
 describe('a turn’s file as a unified patch', () => {
 
   it('writes added and deleted files with their counts and headers', () => {

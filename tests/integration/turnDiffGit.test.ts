@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { turnPatch } from '../../src/renderer/src/tools/turnDiff'
+import { turnPatch } from '../../src/shared/turnDiff'
 
 
 /** Git's own hunks for the same two texts, headers dropped, for comparison. */

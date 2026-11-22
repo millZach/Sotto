@@ -220,6 +220,14 @@ function run(command) {
     const picture = command.image ? [{ type: 'content', content: { type: 'image', data: command.image, mimeType: command.mimeType ?? 'image/png' } }] : []
     update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { combinedOutput: command.output ?? '', exitCode: 0 }, content: picture })
   }
+  if (command.type === 'edit') {
+    // As agy 1.5.14 edits: no content while it runs, then the whole file before and after once it is done, under a path
+    // that starts with a slash on Windows too.
+    const toolCallId = `call_${randomUUID().slice(0, 8)}`
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, name: 'edit_file', kind: 'edit', title: `File ${command.path}`, status: 'in_progress', locations: [{ path: command.path }] })
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, name: 'edit_file', kind: 'edit', title: `File ${command.path}`, status: 'completed', locations: [{ path: command.path }],
+      rawOutput: {}, content: [{ type: 'diff', path: command.path, newText: command.newText, oldText: command.oldText }] })
+  }
   if (command.type === 'permission' || command.type === 'edit-permission') {
     const edit = command.type === 'edit-permission'
     const toolCallId = `toolu_${randomUUID()}`

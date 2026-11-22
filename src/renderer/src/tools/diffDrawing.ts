@@ -1,7 +1,7 @@
 import type { ElementContent, Root } from 'hast'
 import type { Highlighter } from '../agents/codeHighlighter'
 import { parseUnifiedDiff, type DiffLine } from './changesStore'
-import { shortestEdits } from './turnDiff'
+import { shortestEdits } from '../../../shared/turnDiff'
 
 /**
  * What Changes and the transcript both draw on top of a diff's lines: which removed line became which added line, the

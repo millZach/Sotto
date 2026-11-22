@@ -1234,7 +1234,7 @@
   "tests/unit/renderer/tools/terminalTheme.test.tsx": 900,
   "tests/unit/renderer/tools/terminalViewProblem.test.tsx": 400,
   "tests/unit/renderer/tools/toolsPanel.test.tsx": 4400,
-  "tests/unit/renderer/tools/turnDiff.test.ts": 0,
+  "tests/unit/shared/turnDiff.test.ts": 0,
   "tests/unit/renderer/tools/waitingCheckRoster.test.tsx": 400,
   "tests/unit/renderer/unusedNewThread.test.tsx": 0,
   "tests/unit/renderer/updateAll.test.ts": 0,
