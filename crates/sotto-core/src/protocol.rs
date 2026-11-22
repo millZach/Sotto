@@ -64,6 +64,8 @@ pub struct HostErrorPayload {
     pub message: String,
 }
 
+/// Written to `host-listener.json`, emitted on stdout with `event: "ready"`, and returned by
+/// `GET /v1/health` (without `adminToken`), matching `HostDescriptor` in `src/shared/hostProtocol.ts`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostDescriptor {
     pub v: u8,
@@ -71,19 +73,45 @@ pub struct HostDescriptor {
     pub host_id: String,
     pub port: u16,
     pub pid: u32,
+    #[serde(rename = "sottoVersion")]
+    pub sotto_version: String,
+    pub features: Vec<String>,
     #[serde(rename = "adminToken", skip_serializing_if = "Option::is_none")]
     pub admin_token: Option<String>,
     #[serde(rename = "startedBy", skip_serializing_if = "Option::is_none")]
     pub started_by: Option<String>,
+    #[serde(rename = "tailnetAddress", skip_serializing_if = "Option::is_none")]
+    pub tailnet_address: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostAbout {
-    pub version: String,
-    pub platform: String,
-    pub arch: String,
-    pub runtime: String,
-    pub features: Vec<String>,
+impl HostDescriptor {
+    /// Strips `adminToken` for public HTTP `/v1/health` responses.
+    pub fn public_health(&self) -> Value {
+        let mut map = serde_json::Map::new();
+        map.insert("v".into(), Value::from(self.v));
+        map.insert("hostId".into(), Value::from(self.host_id.clone()));
+        map.insert("pid".into(), Value::from(self.pid));
+        map.insert("port".into(), Value::from(self.port));
+        map.insert("sottoVersion".into(), Value::from(self.sotto_version.clone()));
+        map.insert("features".into(), Value::from(self.features.clone()));
+        map.insert("status".into(), Value::from("ready"));
+        if let Some(ref started_by) = self.started_by {
+            map.insert("startedBy".into(), Value::from(started_by.clone()));
+        }
+        if let Some(ref tailnet_address) = self.tailnet_address {
+            map.insert("tailnetAddress".into(), Value::from(tailnet_address.clone()));
+        }
+        Value::Object(map)
+    }
+
+    /// Formats the stdout startup ready line consumed by `launchScript.ts` and `tests/referee/wire.ts`.
+    pub fn ready_line(&self) -> Result<String, serde_json::Error> {
+        let mut value = serde_json::to_value(self)?;
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert("event".into(), Value::from("ready"));
+        }
+        serde_json::to_string(&value)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -91,6 +119,8 @@ pub struct HostRequestEnvelope {
     pub v: u8,
     pub id: String,
     pub op: String,
+    #[serde(default)]
+    pub session: Option<String>,
     #[serde(flatten)]
     pub fields: serde_json::Map<String, Value>,
 }
@@ -137,4 +167,14 @@ pub struct HostPushEnvelope {
     pub push: String,
     #[serde(flatten)]
     pub fields: serde_json::Map<String, Value>,
+}
+
+impl HostPushEnvelope {
+    pub fn new(push: impl Into<String>, fields: serde_json::Map<String, Value>) -> Self {
+        Self {
+            v: HOST_PROTOCOL_VERSION,
+            push: push.into(),
+            fields,
+        }
+    }
 }

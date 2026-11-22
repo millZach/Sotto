@@ -1,32 +1,43 @@
 mod server;
 mod ws;
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use sotto_core::{
-    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, HostLease,
+    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, HostCredentials,
+    HostLease,
 };
 
-use crate::server::RunningServer;
+use crate::server::{RunningServer, ServerConfig, DEFAULT_SOTTO_VERSION};
 
 #[derive(Debug)]
 struct HostCliArgs {
     data_directory: PathBuf,
     port: u16,
-    _key_file: Option<PathBuf>,
+    key_file: Option<PathBuf>,
+    sotto_version: String,
     started_by: Option<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
     let mut data_directory = std::env::var("SOTTO_HOST_DATA").ok().map(PathBuf::from);
     let mut key_file = std::env::var("SOTTO_HOST_KEY_FILE").ok().map(PathBuf::from);
+    let mut sotto_version = std::env::var("SOTTO_HOST_VERSION")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_SOTTO_VERSION.to_string());
     let mut port: u16 = 0;
 
     let mut i = 0;
     while i < args.len() {
         let flag = args[i].as_str();
-        if flag != "--data" && flag != "--port" && flag != "--key-file" {
+        if flag != "--data"
+            && flag != "--port"
+            && flag != "--key-file"
+            && flag != "--sotto-version"
+        {
             return Err("Use --data <folder> and optionally --key-file <file>.".into());
         }
         i += 1;
@@ -39,6 +50,7 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
         match flag {
             "--data" => data_directory = Some(PathBuf::from(value)),
             "--key-file" => key_file = Some(PathBuf::from(value)),
+            "--sotto-version" => sotto_version = value.clone(),
             "--port" => {
                 port = value
                     .parse::<u16>()
@@ -60,7 +72,8 @@ fn parse_args(args: &[String]) -> Result<HostCliArgs, String> {
     Ok(HostCliArgs {
         data_directory,
         port,
-        _key_file: key_file,
+        key_file,
+        sotto_version,
         started_by,
     })
 }
@@ -105,6 +118,14 @@ async fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    let credentials = match HostCredentials::open(&parsed.data_directory, parsed.key_file.as_deref()) {
+        Ok(creds) => creds,
+        Err(err) => {
+            eprintln!("{err}");
+            return ExitCode::from(1);
+        }
+    };
+
     let boot = read_boot_id();
     let lease = HostLease::current(boot.clone());
     let lock_path = parsed.data_directory.join("host-listener.lock");
@@ -122,12 +143,14 @@ async fn main() -> ExitCode {
         }
     };
 
-    let server = match RunningServer::start(
-        parsed.data_directory.clone(),
+    let server = match RunningServer::start(ServerConfig {
+        data_directory: parsed.data_directory.clone(),
         host_id,
-        parsed.port,
-        parsed.started_by,
-    )
+        port: parsed.port,
+        sotto_version: parsed.sotto_version,
+        started_by: parsed.started_by,
+        credentials,
+    })
     .await
     {
         Ok(srv) => srv,
@@ -137,6 +160,13 @@ async fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+
+    eprintln!("[Sotto] host-ready");
+    if let Ok(line) = server.state.descriptor().ready_line() {
+        let mut stdout = std::io::stdout().lock();
+        let _ = writeln!(stdout, "{line}");
+        let _ = stdout.flush();
+    }
 
     wait_for_shutdown_signal().await;
     server.close().await;
@@ -201,28 +231,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn health_pair_session_and_websocket_protocol_v1_round_trip() {
+    async fn health_pair_allow_answers_session_and_websocket_protocol_v1_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let host_id = load_host_identity(dir.path()).unwrap();
-        let srv = RunningServer::start(dir.path().to_path_buf(), host_id.clone(), 0, None)
-            .await
-            .unwrap();
+        let credentials = HostCredentials::open(dir.path(), None).unwrap();
+        let srv = RunningServer::start(ServerConfig {
+            data_directory: dir.path().to_path_buf(),
+            host_id: host_id.clone(),
+            port: 0,
+            sotto_version: "0.1.44-owl.20261118.2".into(),
+            started_by: None,
+            credentials,
+        })
+        .await
+        .unwrap();
         let port = srv.state.port;
         let admin_token = srv.state.admin_token.clone();
 
-        // /v1/health
+        // /v1/health matches TS HostDescriptor shape
         let (status, health) = http_request(port, "GET", "/v1/health", None, None).await;
         assert_eq!(status, 200);
         assert_eq!(health["hostId"], host_id);
-        assert_eq!(health["runtime"], "rust");
+        assert_eq!(health["sottoVersion"], "0.1.44-owl.20261118.2");
         assert_eq!(health["status"], "ready");
+        assert!(health.get("adminToken").is_none());
 
         // Admin endpoint rejects missing/wrong bearer
         let (status, _) =
             http_request(port, "POST", "/v1/admin/pairing-code", Some("wrong"), None).await;
         assert_eq!(status, 401);
 
-        // Issue pairing code -> redeem -> mint session
+        // Issue pairing code -> redeem -> allow answers -> mint session
         let (status, issued) = http_request(
             port,
             "POST",
@@ -238,14 +277,29 @@ mod tests {
         let (status, paired) =
             http_request(port, "POST", "/v1/pair", None, Some(&pair_body)).await;
         assert_eq!(status, 200);
+        assert!(paired.get("name").is_none());
+        let client_id = paired["clientId"].as_str().unwrap();
         let token = paired["token"].as_str().unwrap();
+
+        let allow_body = serde_json::json!({ "clientId": client_id }).to_string();
+        let (status, allowed) = http_request(
+            port,
+            "POST",
+            "/v1/admin/allow-answers",
+            Some(&admin_token),
+            Some(&allow_body),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(allowed["ok"], true);
 
         let (status, session_res) =
             http_request(port, "POST", "/v1/session", Some(token), None).await;
         assert_eq!(status, 200);
+        assert_eq!(session_res["clientId"], client_id);
         let session = session_res["session"].as_str().unwrap();
 
-        // Upgrade WebSocket with permessage-deflate and send `hello` + `ping`
+        // Upgrade WebSocket with permessage-deflate and send `hello`
         let mut ws = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let key = "dGhlIHNhbXBsZSBub25jZQ==";
         let upgrade = format!(
@@ -306,10 +360,11 @@ mod tests {
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["id"], "req-1");
         assert_eq!(parsed["result"]["hostId"], host_id);
-        assert_eq!(parsed["result"]["runtime"], "rust");
+        assert_eq!(parsed["result"]["clientId"], client_id);
+        assert_eq!(parsed["result"]["capabilities"]["mayAnswer"], true);
 
         // Revoking the paired client immediately closes the already-open WebSocket.
-        let revoke_body = serde_json::json!({ "clientId": paired["clientId"] }).to_string();
+        let revoke_body = serde_json::json!({ "clientId": client_id }).to_string();
         let (status, revoked) = http_request(
             port,
             "POST",
@@ -335,7 +390,10 @@ mod tests {
 
         // Oversized HTTP header line is rejected without unbounded buffering.
         let mut big = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let huge = format!("GET /v1/health HTTP/1.1\r\nX-Pad: {}\r\n\r\n", "a".repeat(20_000));
+        let huge = format!(
+            "GET /v1/health HTTP/1.1\r\nX-Pad: {}\r\n\r\n",
+            "a".repeat(20_000)
+        );
         let _ = big.write_all(huge.as_bytes()).await;
         let mut big_reader = BufReader::new(big);
         let mut status_line = String::new();
