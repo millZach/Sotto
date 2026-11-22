@@ -65,7 +65,7 @@ The live run found that **an Antigravity thread got none of Sotto's tools on rea
 | 25 | The Council | Works | Works since the tools fix | Tool calls pass | `createDesktopEngine.ts:856-882` |
 | 26 | The merge train: `ready_to_merge`, `tell_watcher` | Works | Works since the tools fix | Tool calls pass | `tellWatcherTools.ts:66` |
 | 27 | Media and visuals tools | Works | Works since the tools fix | Tool calls pass | `workspace.ts:1714-1717` |
-| 28 | Idle stop, resume and client update | Works | Partial: idle stop and update work; after an update the model list is not read again | Not run | `antigravity.ts:638-675` |
+| 28 | Idle stop, resume and client update | Works | Works since slice 8: after an update the account's models are read again from the new client, Gemini only; a failed read keeps the list from before | Not run on a real update | `antigravity.ts` `clientUpdated` |
 
 ## Google's terms (November 21, 2026)
 
@@ -82,7 +82,7 @@ Missing and Partial rows only, grouped so each slice is one pull request. Can't 
 5. **Edits on their lines** (row 13). Place each edit's snippet against the file, as T3 does, so diffs show line numbers. Done: Zach picked variant B, only the changed lines with the file's numbers (`prototype/antigravity-edit-lines`).
 6. **PDFs in** (row 10b). Send a PDF as embedded context.
 7. **Sub-agents' work** (rows 15 and 6b). Read `agy`'s child agents from its `brain` folder into the Agents pane, as T3 does, so a sub-agent's row has its work and a thread can start from it.
-8. **The model list after an update** (row 28). Read the account's models again when `agy` updates.
+8. **The model list after an update** (row 28). Read the account's models again when `agy` updates. Done.
 9. **Paired hosts** (row 22). Sotto's own `agy` download on a host and Gemini Enterprise there. This one has UI on a host's tile.
 
 Suggested order: 1, 2, 3, 4, then 8, 5, 6, 7, 9. The first four are what Zach does most with Claude; 8 is small; 5 to 7 fill in detail; 9 is the only one with new UI.

@@ -1,3 +1,4 @@
+import { confirmedWorktreeFiles } from './threadWorktrees'
 import type { ThreadMediaStore } from './threadMedia'
 import { dormantProviderConfigurationSchema, parkedChoices, type DormantProviderConfiguration } from './parkedChoices'
 import { changeOwlet, makeOwlet, owletsRoot, strayOwletFolder } from './owlets'
@@ -1094,6 +1095,7 @@ export class AgentControl {
   private readonly localClient: ClientIdentity = desktopWindowClient()
   constructor(private readonly dependencies: {
     directory: string; host: AgentHost; credentials: AgentCredentials; reasoner: AgentReasoner
+    reclaimAfterSettle?: (threadId: string) => Promise<AgentHostSnapshot>
     bindRequestDraftDecision?: BindRequestDraftDecision
     historyEnabled?: () => boolean
     /** Release gate only; the saved Watcher record is retained on either track. */
@@ -1596,8 +1598,7 @@ export class AgentControl {
           const titles = this.clearTitles()
           const title = titles.get(command.threadId)?.title ?? ''
           const result = await host.deleteThreads!([command.threadId], { automatic: false, hold: id => this.clearHold(id),
-            worktree: { ...command.confirmedIgnored ? { confirmedIgnored: command.confirmedIgnored } : {}, ...command.confirmedItems ? { confirmedItems: command.confirmedItems } : {},
-              ...command.confirmedRepositories ? { confirmedRepositories: command.confirmedRepositories } : {} } })
+            worktree: confirmedWorktreeFiles(command) })
           if (!result.deleted.length) {
             const kept = result.kept[0]
             if (kept) this.logClear('thread-clear-kept', kept.reason)
@@ -4944,8 +4945,12 @@ export class AgentControl {
         return
       }
       case 'reclaim-thread-worktree': {
+        if (command.afterSettle) {
+          if (this.dependencies.reclaimAfterSettle) this.acceptSnapshot(await this.dependencies.reclaimAfterSettle(command.threadId))
+          return
+        }
         if (!this.dependencies.host.reclaimThreadWorktree) throw new Error('Removing this thread’s worktree is unavailable.')
-        this.acceptSnapshot(await this.dependencies.host.reclaimThreadWorktree(command.threadId, { withUncommittedChanges: command.withUncommittedChanges === true, ...(command.confirmedIgnored ? { confirmedIgnored: command.confirmedIgnored } : {}), ...(command.confirmedItems ? { confirmedItems: command.confirmedItems } : {}), ...(command.confirmedRepositories ? { confirmedRepositories: command.confirmedRepositories } : {}) }))
+        this.acceptSnapshot(await this.dependencies.host.reclaimThreadWorktree(command.threadId, { withUncommittedChanges: command.withUncommittedChanges === true, ...confirmedWorktreeFiles(command) }))
         this.state.notice = 'Worktree removed. The branch is kept.'
         return
       }

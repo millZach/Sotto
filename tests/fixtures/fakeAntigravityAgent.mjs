@@ -7,7 +7,8 @@
 //
 // `node fakeAntigravityAgent.mjs <root> --version` answers as `agy` does; `node fakeAntigravityAgent.mjs <root> acp ...`
 // speaks ACP on stdio as one thread's process. Sessions are kept one file each under <root>/sessions. script.json may
-// name `cliVersion`, `signedOut`, `dropPromptAck`, `rejectResume`, `rejectSettings`, `noAuto` and `sideAnswer`.
+// name `cliVersion`, `signedOut`, `dropPromptAck`, `rejectResume`, `rejectSettings`, `noAuto`, `sideAnswer` and `newModels`, the
+// models a newer `agy` lists besides these.
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -29,6 +30,7 @@ const MODELS = [
   { value: 'gemini-4-carbon', name: 'Gemini 4 Carbon', thinking: ['low', 'high'] },
   { value: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },
 ]
+const models = () => [...MODELS, ...(read('script.json', {}).newModels ?? [])]
 const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n')
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
 const appData = args[args.indexOf('--app-data-dir') + 1]
@@ -47,11 +49,11 @@ const loadSession = id => { if (sessions.has(id)) return sessions.get(id); try {
 const save = id => writeFileSync(sessionFile(id), JSON.stringify(sessions.get(id)))
 const modes = () => ['default', 'accept-edits', ...(read('script.json', {}).noAuto ? [] : ['auto']), 'plan']
 const configOptions = session => {
-  const model = MODELS.find(entry => entry.value === session.model)
+  const model = models().find(entry => entry.value === session.model)
   return [
     { id: 'model', name: 'Model', type: 'select', currentValue: session.model,
-      options: [{ group: 'gemini', name: 'Gemini', options: MODELS.filter(entry => entry.value.startsWith('gemini')).map(({ value, name }) => ({ value, name })) },
-        { group: 'partners', name: 'Partner models', options: MODELS.filter(entry => !entry.value.startsWith('gemini')).map(({ value, name }) => ({ value, name })) }] },
+      options: [{ group: 'gemini', name: 'Gemini', options: models().filter(entry => entry.value.startsWith('gemini')).map(({ value, name }) => ({ value, name })) },
+        { group: 'partners', name: 'Partner models', options: models().filter(entry => !entry.value.startsWith('gemini')).map(({ value, name }) => ({ value, name })) }] },
     ...(model?.thinking ? [{ id: 'thinking_level', name: 'Thinking', category: 'thought_level', type: 'select', currentValue: session.thinking ?? model.thinking.at(-1),
       options: model.thinking.map(value => ({ value, name: value })) }] : []),
     { id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: session.mode ?? 'default', options: modes().map(value => ({ value, name: value })) },
@@ -153,10 +155,10 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (!session) { send({ id: frame.id, error: { code: -32602, message: 'Session not found' } }); return }
     if (script.rejectSettings) { send({ id: frame.id, error: { code: -32602, message: 'Rejected' } }); return }
     if (p.configId === 'model') {
-      if (!MODELS.some(entry => entry.value === p.value)) { send({ id: frame.id, error: { code: -32602, message: 'Unknown model' } }); return }
+      if (!models().some(entry => entry.value === p.value)) { send({ id: frame.id, error: { code: -32602, message: 'Unknown model' } }); return }
       session.model = p.value; delete session.thinking
     } else if (p.configId === 'thinking_level') {
-      const model = MODELS.find(entry => entry.value === session.model)
+      const model = models().find(entry => entry.value === session.model)
       if (!model?.thinking?.includes(p.value)) { send({ id: frame.id, error: { code: -32602, message: 'Unknown thinking level' } }); return }
       session.thinking = p.value
     } else if (p.configId === 'mode') {

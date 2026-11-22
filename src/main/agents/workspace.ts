@@ -66,7 +66,7 @@ import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirecto
 import { isThreadArchived, isThreadClosed, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { npmCi, preparePackages, type PackageInstaller } from './checkWorktree'
-import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
+import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees, type WorktreeReclaimOptions } from './threadWorktrees'
 import { claudeSkillFolder, claudeSkillPath } from './providers/claude/claudeSkills'
 import { providerTakesNoSkills } from './providerSwitch'
 import { gitStatusFingerprint, type GitStatus } from '../../shared/gitStatus'
@@ -2374,11 +2374,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return { ...facts, ignored: [...facts.ignored], items: [...facts.items], repositories: [...facts.repositories], untracked: [...facts.untracked] }
     })
   }
-  async reclaimThreadWorktree(threadId: string, options: { withUncommittedChanges?: boolean; automatic?: boolean; confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories']; expectedMergedTip?: string } = {}): Promise<AgentHostSnapshot> {
+  async reclaimThreadWorktree(threadId: string, options: WorktreeReclaimOptions & {
+    expectedMergedTip?: string
+    stillEligible?: (thread: AgentThread) => boolean
+  } = {}): Promise<AgentHostSnapshot> {
     return this.onLane(threadId, async () => {
       await this.initialize()
       const thread = this.thread(threadId)
       const worktree = thread.worktree
+      const { stillEligible, ...removal } = options
+      const canRemove = stillEligible ? () => stillEligible(this.thread(threadId)) : undefined
+      if (canRemove && !canRemove()) return this.workspaceSnapshot()
       if (worktree?.mode !== 'independent' || !worktree.path || worktree.reused) throw new Error('This thread has no worktree of its own to remove.')
       if (worktree.reclaimedAt) return this.workspaceSnapshot()
       if (thread.status === 'running' || thread.requests.length || this.preparations.has(threadId)) throw new Error('This thread is still working. Wait for it to finish and answer its requests before removing its folder.')
@@ -2393,7 +2399,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (options.expectedMergedTip && (await runWorktreeGit(worktree.path!, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim() !== options.expectedMergedTip) {
           throw new Error('This branch changed after its merged pull request was checked. Its folder stays.')
         }
-        const reclaimed = await this.worktrees.reclaim(worktree, options)
+        const reclaimed = await this.worktrees.reclaim(worktree, canRemove ? { ...removal, canRemove } : removal)
+        if (!reclaimed.reclaimedAt) return this.workspaceSnapshot()
         this.touched(this.thread(threadId)).worktree = reclaimed
         this.dirty = true
         try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }

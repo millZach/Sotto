@@ -120,7 +120,7 @@ export function SettleToast({ command, threads, list, platform: givenPlatform, p
       </>
       : shown.kind === 'removed' || shown.kind === 'removing'
         ? <span className="settle-toast__words">{shown.kind === 'removed'
-          ? <Trans comment="A toast after the user settled a thread and Sotto removed its worktree folder; {title} is the thread's name.">Settled {title} and removed its worktree. The branch is kept.</Trans>
+          ? <Trans comment="A toast after the user settled a thread and Sotto removed its worktree folder; {title} is the thread's name.">Settled {title} and removed its worktree. Its commits are kept.</Trans>
           : <Trans comment="A toast while a cleanup rule removes a settled thread's worktree folder; {title} is the thread's name.">Settled {title}. Removing its worktree…</Trans>}</span>
         : <>
           <span className="settle-toast__words">{shown.kind === 'refused'

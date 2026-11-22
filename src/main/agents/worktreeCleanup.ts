@@ -353,6 +353,15 @@ export class WorktreeCleanup {
       return read === null || read.has(branch) ? 'pull-request' : null
     }
   }
+  private canReclaim(thread: AgentThread): boolean {
+    const folder = thread.worktree
+    return folder?.mode === 'independent' && folder.status === 'ready' && Boolean(folder.path && folder.repositoryRoot)
+      && !folder.reused && !folder.reclaimedAt && !busy(thread) && !this.dependencies.keeps?.(thread.id)
+  }
+  /** The desktop requests the host's own rule after Settle. A restore, a move or a change of setting can still keep the folder. */
+  canReclaimOnSettle(thread: AgentThread): boolean {
+    return !this.disposed && this.dependencies.rules().onSettle && isWorkspaceThreadSettled(thread) && this.canReclaim(thread)
+  }
   private async sweepWorktrees(): Promise<void> {
     const rules = this.dependencies.rules()
     const settle = this.autoSettleOn()
@@ -368,10 +377,7 @@ export class WorktreeCleanup {
     const defaults = this.defaults
     for (const thread of snapshot.threads) {
       if (this.disposed) return
-      const worktree = thread.worktree
-      // A folder on a detached HEAD is looked at too: the reclaim keeps it unless a branch or remote branch has its commit.
-      if (worktree?.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || !worktree.repositoryRoot || worktree.reused || worktree.reclaimedAt) continue
-      if (busy(thread) || this.dependencies.keeps?.(thread.id) === true) continue
+      if (!this.canReclaim(thread)) continue
       try {
         const eligibility = await this.eligible(thread, rules, defaults)
         if (!eligibility) continue

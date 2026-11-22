@@ -311,7 +311,10 @@ export function useSettleThread(command: AgentConnection['command'], fallbackFoc
     if (onSettleRule && !dirty) {
       // The rule takes a clean folder at once. The toast says so while it does, and offers Undo only should main refuse it.
       settleOffers.settled(thread.id, title, { removing: true })
-      void command({ type: 'reclaim-thread-worktree', threadId: thread.id }).then(reclaimed => settleOffers.answered(thread.id, Boolean(reclaimed && !reclaimed.error)), () => settleOffers.answered(thread.id, false))
+      void command({ type: 'reclaim-thread-worktree', threadId: thread.id, afterSettle: true }).then(result => {
+        const folder = result?.host.threads.find(item => item.id === thread.id)?.worktree
+        settleOffers.answered(thread.id, Boolean(folder?.reclaimedAt))
+      }, () => settleOffers.answered(thread.id, false))
       return true
     }
     settleOffers.settled(thread.id, title, { asking: true })

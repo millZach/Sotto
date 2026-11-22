@@ -56,7 +56,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // on the computer whose Settings set them, so neither is a remote command.
   'preview-delete-thread': ['threadId'],
   'delete-thread': ['threadId', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
-  'reclaim-thread-worktree': ['threadId', 'withUncommittedChanges', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
+  'reclaim-thread-worktree': ['threadId', 'afterSettle', 'withUncommittedChanges', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
   'configure-thread-working-copy': ['threadId', 'workingCopy', 'baseBranch', 'startFromOrigin', 'existingWorktreePath'],
   // The Git actions run on the host's own folder and discard nothing: Git refuses a switch that would lose work,
   // a push is never forced, and a pull is fast-forward only (ADR-0027).
