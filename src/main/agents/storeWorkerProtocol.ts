@@ -7,6 +7,8 @@ import type { MessagePort } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { AgentThreadWords } from '../../shared/threadWords'
+import type { WatcherAsk } from '../../shared/watcherAsks'
+import type { StoredVisual, ThreadMessageWindow, ThreadSummaryMessages } from './threadStore'
 import type { ThreadStoreWrite } from './threadStoreWriter'
 
 /**
@@ -63,6 +65,7 @@ export type WorkerRequest =
   | { readonly kind: 'read-more'; readonly read: number }
   | { readonly kind: 'read-prompts'; readonly read: number; readonly threadId: string; readonly beforeMessageId: string; readonly wakeUps: readonly string[] }
   | { readonly kind: 'read-words'; readonly read: number; readonly query: string }
+  | { readonly kind: 'read-window'; readonly read: number; readonly threadId: string; readonly turns: number }
   | { readonly kind: 'stop' }
 
 /**
@@ -113,5 +116,21 @@ export interface WorkerWordsAnswer {
   readonly answer?: AgentThreadWords | undefined
 }
 
+/** A thread's pane window and store-held annotations read together on the worker (#2733), so opening a thread does no SQLite read on main. */
+export interface WindowReadData {
+  readonly window: ThreadMessageWindow
+  readonly visuals: readonly StoredVisual[]
+  readonly wakeUps: readonly string[]
+  readonly wakeUpAsks: readonly (readonly [string, readonly WatcherAsk[]])[]
+  readonly hiddenWakeUps: readonly string[]
+  readonly summary?: ThreadSummaryMessages | undefined
+}
+
+/** The worker's answer to a pane window read (`read-window`): the window and its annotations, or none when unreadable. */
+export interface WorkerWindowAnswer {
+  readonly windowRead: number
+  readonly answer?: WindowReadData | undefined
+}
+
 /** Whatever the worker posts main: a write's answer or a read's. */
-export type WorkerMessage = WorkerAnswer | WorkerReadAnswer | WorkerPromptsAnswer | WorkerWordsAnswer
+export type WorkerMessage = WorkerAnswer | WorkerReadAnswer | WorkerPromptsAnswer | WorkerWordsAnswer | WorkerWindowAnswer

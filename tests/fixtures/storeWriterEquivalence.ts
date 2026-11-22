@@ -226,6 +226,11 @@ export function readsInFlight(host: WorkspaceHost): ReadonlyMap<string, { readon
   return (host as unknown as { activityReads: ReadonlyMap<string, { readonly held: readonly unknown[]; readonly done: Promise<void> }> }).activityReads
 }
 
+/** Threads whose pane message windows are currently loading off main on the store worker (#2733), read for a test alone. */
+export function windowReadsInFlight(host: WorkspaceHost): ReadonlyMap<string, { readonly done: Promise<void> }> {
+  return (host as unknown as { windowReads: ReadonlyMap<string, { readonly done: Promise<void> }> }).windowReads
+}
+
 /** Whether a thread's records are in the store and not in memory, read for a test alone. */
 export function storedIn(host: WorkspaceHost, threadId: string): boolean {
   return (host as unknown as { storedActivity: ReadonlySet<string> }).storedActivity.has(threadId)
@@ -233,7 +238,11 @@ export function storedIn(host: WorkspaceHost, threadId: string): boolean {
 
 /** Waits until every read back the workspace has begun has been dealt with, reads begun meanwhile included. */
 export async function readsArrived(host: WorkspaceHost): Promise<void> {
-  for (let reads = readsInFlight(host); reads.size; reads = readsInFlight(host)) await Promise.all([...reads.values()].map(read => read.done))
+  for (;;) {
+    const reads = [...readsInFlight(host).values(), ...windowReadsInFlight(host).values()]
+    if (reads.length === 0) return
+    await Promise.all(reads.map(read => read.done))
+  }
 }
 
 /** Whether a workspace still holds events for a thread that it has not posted, read for the comparison below alone. */
@@ -277,6 +286,7 @@ export function compareShown(reference: WorkspaceHost, later: WorkspaceHost, swi
     const aliasHeld = aliasUnconfirmed(later, id)
     expect(strip(mine.summary, aliasHeld), id).toEqual(strip(theirs.summary, aliasHeld))
     if (!readsInFlight(later).has(id)) expect(mine.activities?.map(activity => activity.id), id).toEqual(theirs.activities?.map(activity => activity.id))
+    if (windowReadsInFlight(later).has(id)) continue
     const shown = namedVisuals(mine.messages), reference = namedVisuals(theirs.messages)
     const first = reference[0] ? shown.findIndex(message => message.id === reference[0]!.id) : shown.length
     if (first > 0) {
@@ -312,7 +322,7 @@ function controlOf(later: Fixture): LaterControl {
     settle: async () => {
       for (;;) {
         later.host.workspaceSnapshot()
-        if (!writes.unconfirmed() && readsInFlight(later.host).size === 0) return
+        if (!writes.unconfirmed() && readsInFlight(later.host).size === 0 && windowReadsInFlight(later.host).size === 0) return
         await writes.confirmed()
         await readsArrived(later.host)
       }
@@ -480,8 +490,8 @@ export async function runEquivalence(seed: number, mode: { readonly worker?: str
           if (control.unconfirmed(threadId)) held++
           expect(later.host.messageIdentities(threadId)).toEqual(onMain.host.messageIdentities(threadId))
           // A pane's loaded window answers both of these for a watched thread, and the screen keeps it across a switch
-          // until the thread is read again (`compareShown`).
-          if (switched.has(threadId)) break
+          // until the thread is read again (`compareShown`). While an off-main window read is in flight, skip until it lands.
+          if (switched.has(threadId) || windowReadsInFlight(later.host).has(threadId)) break
           expect(namedVisuals(later.host.threadMessages(threadId))).toEqual(namedVisuals(onMain.host.threadMessages(threadId)))
           const user = messages.findLast(item => item.role === 'user')
           if (user) expect(later.host.hasRecordedUserMessage(threadId, user.id)).toBe(onMain.host.hasRecordedUserMessage(threadId, user.id))

@@ -155,6 +155,11 @@ const migrations = [{
   // Watcher's room still leaves it out after a restart. Null for every other message.
   version: 10,
   sql: 'ALTER TABLE messages ADD COLUMN provider_error INTEGER;',
+}, {
+  // Covers newest-turns boundary lookups (`readMessages`) and role-filtered lookups (`summaryMessages`, `promptsBefore`)
+  // without scanning wide message rows (#2733).
+  version: 11,
+  sql: 'CREATE INDEX IF NOT EXISTS messages_thread_role_position ON messages(thread_id, role, position);',
 }]
 
 /** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */

@@ -4,6 +4,7 @@ import type { WatcherAsk } from '../../shared/watcherAsks'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { AgentThreadWords } from '../../shared/threadWords'
 import type { StoreWorker, StoreWorkerResult, UnansweredWrite } from './storeWorker'
+import type { WindowReadData } from './storeWorkerProtocol'
 import type { StoredVisual, ThreadStore } from './threadStore'
 
 /**
@@ -64,6 +65,12 @@ export type WordsReadBack =
   | { readonly unreadable: true }
   | { readonly lost: true }
 
+/** What came back of a pane window read off main (#2733): the window and its annotations, unreadable, or lost. */
+export type WindowReadBack =
+  | { readonly data: WindowReadData }
+  | { readonly unreadable: true }
+  | { readonly lost: true }
+
 /** What one write did, once it committed or failed. */
 export interface ThreadStoreWriteOutcome {
   /** The threads whose part did not commit. Empty when all of it did. */
@@ -110,6 +117,8 @@ export interface ThreadStoreWriter {
   readPrompts?(threadId: string, beforeMessageId: string, wakeUps: ReadonlySet<string>): Promise<PromptsReadBack> | undefined
   /** Search threads' read of what was said, on the worker as `readPrompts` is; undefined when the caller reads on main. */
   readWords?(query: string): Promise<WordsReadBack> | undefined
+  /** Reads a thread's message window and store-held annotations on the worker (#2733); undefined when the caller reads on main. */
+  readWindow?(threadId: string, turns: number): Promise<WindowReadBack> | undefined
   /** True while store-worker writes are held unsent behind a privacy switch or recovery, so external SQLite reads must not answer. */
   readonly writesHeld?: boolean
 }
@@ -312,6 +321,13 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
     // the search finds what the rows say this once instead.
     if (this.writesHeld) return Promise.resolve({ unreadable: true })
     return new Promise(resolve => { worker.readWords(query, resolve) })
+  }
+
+  /** On the worker, behind every write sent before it, as `readActivities` is; with writes held unsent, the caller reads on main. */
+  readWindow(threadId: string, turns: number): Promise<WindowReadBack> | undefined {
+    const worker = this.store.writer
+    if (!worker || this.held > 0 || this.switching || this.recovering) return undefined
+    return new Promise(resolve => { worker.readWindow(threadId, turns, resolve) })
   }
 
   confirmed(threadId?: string): Promise<void> {
