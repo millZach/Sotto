@@ -619,6 +619,10 @@ msgstr ""
 msgid "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
 msgstr ""
 
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "{name} signs in with your Google account in this computer's browser, then shows a code or page address to bring back here."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "{name} still starts at boot"
 msgstr ""

@@ -8,6 +8,7 @@ import type { ProviderSignInView } from '../../../src/shared/hostProviders'
 import type { LocalSignInRequest } from '../../../src/shared/localProviderSignIn'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ProvidersSettings } from '../../../src/renderer/src/features/settings/ProvidersSettings'
+import { HostProviderSignIn } from '../../../src/renderer/src/features/settings/HostProviderSignIn'
 import { modeChoices } from '../../../src/renderer/src/agents/permissionPresentation'
 import { modelSources } from '../../../src/renderer/src/agents/ModelPicker'
 import { AppProvider } from '../../../src/renderer/src/state/AppContext'
@@ -176,5 +177,13 @@ describe('Antigravity in a thread', () => {
     expect(lines['auto-accept-edits']).toBe('Sotto answers Antigravity’s requests to change files for you. Commands and anything else still come to you, and so do its questions.')
     expect(lines['full-access']).toMatch(/^Sotto answers every Antigravity request for you/u)
     expect(lines.auto).toBe('Antigravity’s own Auto decides what runs without asking. What it asks about comes to you.')
+  })
+
+  it('says Google account rather than Claude subscription in the paired host sign-in dialog', async () => {
+    render(<AppProvider bridge={createBridge()} createController={createController}>
+      <HostProviderSignIn place="forge" provider="antigravity" signIn={async () => waiting} onClose={vi.fn()} />
+    </AppProvider>)
+    expect(await screen.findByText(/signs in with your Google account in this computer's browser/u)).toBeVisible()
+    expect(screen.queryByText(/Claude subscription/u)).toBeNull()
   })
 })

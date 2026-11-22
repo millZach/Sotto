@@ -103,10 +103,15 @@ data class ModelCatalogCache(val held: CarriedCatalog? = null) {
     // shown without it, the computer would read as having no models.
     fun whole(shell: Shell): Shell? {
         val revision = shell.host.modelsRevision
-        if (revision == null || shell.host.models != null) return shell
+        val rawModels = shell.host.models
+        if (rawModels != null) {
+            val filtered = AntigravityCatalog.filtered(rawModels)
+            return if (filtered.size == rawModels.size) shell else shell.copy(host = shell.host.copy(models = filtered))
+        }
+        if (revision == null) return shell
         val held = held ?: return null
         if (held.revision != revision) return null
-        return shell.copy(host = shell.host.copy(models = held.models))
+        return shell.copy(host = shell.host.copy(models = AntigravityCatalog.filtered(held.models)))
     }
 
     fun whole(hello: Hello): Hello? = whole(hello.shell)?.let { hello.copy(shell = it) }
@@ -116,7 +121,7 @@ val HostSnapshot.carriedCatalog: CarriedCatalog?
     get() {
         val revision = modelsRevision ?: return null
         val models = models ?: return null
-        return CarriedCatalog(revision, models)
+        return CarriedCatalog(revision, AntigravityCatalog.filtered(models))
     }
 
 // What arrives on the socket, read into the fields the phone displays.
@@ -163,7 +168,7 @@ sealed interface IncomingFrame {
             val revision = host["modelsRevision"].longValueOrNull() ?: return null
             val models = host["models"] ?: return null
             if (models.isNullish()) return null
-            return try { CarriedCatalog(revision, models.decodeAs()) } catch (_: ClientError) { null }
+            return try { CarriedCatalog(revision, AntigravityCatalog.filtered(models.decodeAs<List<ThreadModel>>())) } catch (_: ClientError) { null }
         }
     }
 }

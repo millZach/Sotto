@@ -1,7 +1,9 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
+import { retryWindowsFileOperation } from '../storage/windowsFileRetry'
 import { ANTIGRAVITY_APP_DATA, type AntigravityFolders } from './antigravityFolders'
 import { withCliPath } from './cliLookup'
 import { ANTIGRAVITY_SIGN_IN_METHODS, type AntigravitySignInMethod } from '../../shared/antigravity'
@@ -77,18 +79,38 @@ export function antigravityArguments(folders: AntigravityFolders, extra: readonl
   return ['acp', '--gemini-dir', folders.gemini, '--app-data-dir', ANTIGRAVITY_APP_DATA, ...extra]
 }
 
+const settingsWrites = new Map<string, Promise<void>>()
+
 /**
  * `agy`'s own settings in Sotto's app data folder, written before each start as T3 writes them: the sign-in method and,
  * where it has them, the Google Cloud project and location. Never a credential. Everything else `agy` keeps there,
  * such as permission rules a past answer saved, stays as it was.
+ *
+ * Writes for the same profile serialize behind each other, stage to a unique synced temp file and replace atomically
+ * with Windows lock retries so overlapping thread or sign-in starts never lose updates or leave a half-written file.
  */
 export async function writeAntigravitySettings(folders: AntigravityFolders, signIn: AntigravitySignIn): Promise<void> {
+  const path = join(folders.appData, 'settings.json')
+  const key = resolve(path)
+  const previous = settingsWrites.get(key) ?? Promise.resolve()
+  const run = previous.then(() => writeAntigravitySettingsOnce(folders, path, signIn))
+  const tail = run.catch(() => undefined)
+  settingsWrites.set(key, tail)
+  try {
+    await run
+  } finally {
+    if (settingsWrites.get(key) === tail) settingsWrites.delete(key)
+  }
+}
+
+async function writeAntigravitySettingsOnce(folders: AntigravityFolders, path: string, signIn: AntigravitySignIn): Promise<void> {
   await mkdir(folders.appData, { recursive: true })
   await mkdir(join(folders.root, 'tmp'), { recursive: true })
-  const path = join(folders.appData, 'settings.json')
   let current: Record<string, unknown> = {}
+  let raw: string | undefined
   try {
-    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
+    raw = await readFile(path, 'utf8')
+    const parsed: unknown = JSON.parse(raw)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed as Record<string, unknown>
   } catch { /* A missing or unreadable file is written afresh. */ }
   const gcp = { ...(signIn.project ? { project: signIn.project } : {}), ...(signIn.location ? { location: signIn.location } : {}) }
@@ -96,14 +118,20 @@ export async function writeAntigravitySettings(folders: AntigravityFolders, sign
   void _previous
   const next = { ...rest, auth: { type: signIn.method }, ...(Object.keys(gcp).length ? { gcp } : {}) }
   const text = JSON.stringify(next, null, 2) + '\n'
-  if (JSON.stringify(current, null, 2) + '\n' === text) return
-  const staged = `${path}.${process.pid}.${Date.now()}.tmp`
-  await writeFile(staged, text, 'utf8')
-  try { await rename(staged, path) }
-  catch {
-    // Windows refuses the move while another process holds the file; the settings are written in place instead.
+  if (raw !== undefined && (raw === text || JSON.stringify(current, null, 2) + '\n' === text)) return
+  const staged = `${path}.${process.pid}.${randomUUID()}.tmp`
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    handle = await open(staged, 'wx', 0o600)
+    await handle.writeFile(text, 'utf8')
+    await handle.sync()
+    await handle.close()
+    handle = undefined
+    await retryWindowsFileOperation(() => rename(staged, path))
+  } catch (error) {
+    if (handle !== undefined) await handle.close().catch(() => undefined)
     await rm(staged, { force: true }).catch(() => undefined)
-    await writeFile(path, text, 'utf8')
+    throw error
   }
 }
 
