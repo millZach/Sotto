@@ -245,10 +245,10 @@ const running = async () => {
 };
 // Finds the running host, or starts the one the installation folder names as a detached process, and answers once it listens.
 const startDetached = async () => {
-  const found = await running();
-  if (found) return found;
   const useRust = await wantsRustHost();
   await syncRustHostMarker(useRust);
+  const found = await running();
+  if (found) return found;
   const rustBin = await rustHostEntry();
   const entry = rustBin || await hostEntry();
   if (!rustBin && !(await exists(entry))) throw new Error('archive-missing');
