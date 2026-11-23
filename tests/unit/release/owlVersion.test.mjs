@@ -1,11 +1,20 @@
 // @vitest-environment node
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { checkedFullOwlVersion, checkedOwlVersion, checkOwlSource, digestFile, owlBuildArguments, owlPublishConfig, resolveOwlVersion } from '../../../scripts/owl-release.mjs'
+import { parse } from 'yaml'
+import { checkedFullOwlVersion, checkedOwlVersion, checkOwlSource, digestFile, owlBuildArguments, owlExtraResources, owlPublishConfig, resolveOwlVersion } from '../../../scripts/owl-release.mjs'
+
+const root = resolve(import.meta.dirname, '../../..')
+const requireFromTest = createRequire(import.meta.url)
+const requireFromElectronBuilder = createRequire(requireFromTest.resolve('electron-builder'))
+const requireFromAppBuilderLib = createRequire(requireFromElectronBuilder.resolve('app-builder-lib'))
+const { deepAssign } = requireFromAppBuilderLib('builder-util-runtime')
+const { getConfig } = requireFromElectronBuilder('app-builder-lib/out/util/config/config')
 
 describe('Owl build version', () => {
   it('uses the next stable patch and an explicit daily number', () => {
@@ -97,5 +106,37 @@ describe('What the Windows and Mac Owl share', () => {
       expect(await digestFile(path)).toEqual({ digest: createHash('sha256').update(bytes).digest('hex'), size: bytes.length })
       expect(await digestFile(path, { algorithm: 'sha512', encoding: 'base64' })).toEqual({ digest: createHash('sha512').update(bytes).digest('base64'), size: bytes.length })
     } finally { await rm(folder, { recursive: true, force: true }) }
+  })
+
+  it.each([
+    ['win32', 'sotto-engine.exe'],
+    ['darwin', 'sotto-engine'],
+    ['linux', 'sotto-engine'],
+  ])('merges Owl extraResources for %s without duplicating electron-builder.yml entries', async (platform, exe) => {
+    const extraResources = owlExtraResources(platform)
+    expect(extraResources).toEqual([{ from: 'dist/rust-engine', to: 'rust-engine', filter: [exe] }])
+    expect(owlExtraResources(platform)).not.toBe(extraResources)
+    expect(owlExtraResources(platform)[0]).not.toBe(extraResources[0])
+
+    const yamlConfig = parse(await readFile(resolve(root, 'electron-builder.yml'), 'utf8'))
+    const mergedByDeepAssign = deepAssign(JSON.parse(JSON.stringify(yamlConfig)), { extraResources: owlExtraResources(platform) }).extraResources
+    const mergedByBuilder = (await getConfig(root, null, { extraResources: owlExtraResources(platform) })).extraResources
+
+    for (const combined of [mergedByDeepAssign, mergedByBuilder]) {
+      const pairs = combined.map(entry => `${entry.from}=>${entry.to}`)
+      expect(new Set(pairs).size).toBe(pairs.length)
+      expect(combined).toEqual(expect.arrayContaining([
+        expect.objectContaining({ from: 'node_modules/@anthropic-ai/claude-agent-sdk', to: 'claude-sdk' }),
+        expect.objectContaining({ from: 'LICENSE.md', to: 'LICENSE.md' }),
+        expect.objectContaining({ from: 'THIRD_PARTY_NOTICES.md', to: 'THIRD_PARTY_NOTICES.md' }),
+        expect.objectContaining({ from: 'README.md', to: 'README.md' }),
+        { from: 'dist/rust-engine', to: 'rust-engine', filter: [exe] },
+      ]))
+      expect(combined).toHaveLength(yamlConfig.extraResources.length + 1)
+    }
+
+    const packager = await readFile(resolve(root, 'scripts/package-owl.mjs'), 'utf8')
+    expect(packager).toContain('owlExtraResources')
+    expect(packager).not.toContain('[...existing,')
   })
 })
