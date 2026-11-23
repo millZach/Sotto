@@ -233,6 +233,7 @@ const REACTIVE_TURN_WAIT_MS = 30_000
 const REACTIVE_TURN_MAX_MS = 120_000
 const MAX_INHERITED_TOOL_KEYS = 256
 const ANTIGRAVITY_QUESTIONS = questionInstructions('ask_question', false)
+const ANTIGRAVITY_SYSTEM_WAKEUP = /^(?:The following is a <SYSTEM_MESSAGE> not actually sent by the user\.|<SYSTEM_MESSAGE>|\[Message\]\s+timestamp=)/u
 
 /**
  * Where each update of one turn belongs. Replies are counted by segment: a reply runs on until a tool or a thought breaks
@@ -424,7 +425,7 @@ export class AntigravityAcpHost implements ProviderHost {
       ...(options.sessionIdleMs === undefined ? {} : { idleAfterMs: options.sessionIdleMs }),
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
-      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
+      whyBusy: id => busyHolds({ busy: this.foregroundWorking(id), request: this.asking(id), background: this.backgroundWorking(id) }),
       stop: id => this.stopSession(id),
     })
   }
@@ -854,12 +855,15 @@ export class AntigravityAcpHost implements ProviderHost {
   // ---- Sessions ------------------------------------------------------------------------------------------------------
 
   private busy(id: string): boolean { return this.working(id) || this.asking(id) }
-  private working(id: string): boolean {
+  private foregroundWorking(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || this.compactions.has(id) || (turn !== undefined && !turn.ended)
-      || [...this.children.values()].some(watch => watch.threadId === id && watch.answeredAt === undefined)
+  }
+  private backgroundWorking(id: string): boolean {
+    return [...this.children.values()].some(watch => watch.threadId === id && watch.answeredAt === undefined)
       || Boolean(this.threads.get(id)?.backgroundWork?.length)
   }
+  private working(id: string): boolean { return this.foregroundWorking(id) || this.backgroundWorking(id) }
   private backgroundWatch(id: string): BackgroundCommandWatch {
     let watch = this.backgroundCommands.get(id)
     if (!watch) {
@@ -1188,6 +1192,8 @@ export class AntigravityAcpHost implements ProviderHost {
       const turn = this.turns.get(id)
       // `agy` may echo a prompt Sotto sent; Sotto already holds it. Anything else was typed into the session elsewhere.
       if (turn?.origin && !turn.ended && digest(words) === turn.origin.digest) { this.taken(id); return }
+      // Out-of-turn background task completion notifications arrive from `agy`'s runtime, never from the user.
+      if (ANTIGRAVITY_SYSTEM_WAKEUP.test(words.trimStart())) return
       if (turn) this.clearReactiveTimers(turn)
       const index = alias.turns; alias.turns++
       void this.persist().catch(() => undefined)

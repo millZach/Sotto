@@ -5,7 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AntigravityAcpHost } from '../../src/main/agents/antigravity'
 import type { ChildProcessRow } from '../../src/main/agents/detachedRunScan'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
+import { watcherNewsText, watcherReplyStart } from '../../src/main/agents/watcherNews'
+import { watcherNewestTurnReply } from '../../src/main/agents/watcherOutcomes'
+import { WatcherWakeUp } from '../../src/main/agents/watcherWakeUp'
 import { agentBackgroundWorkSchema } from '../../src/shared/agentMonitoring'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
+import type { WatcherNews } from '../../src/shared/watcherNews'
+import { emptyWatcherRecord, type WatcherRecord } from '../../src/shared/watcher'
 
 const FAKE_AGENT_SOURCE = `
 import { readFileSync, appendFileSync } from 'node:fs'
@@ -294,6 +300,39 @@ rl.on('line', line => {
         rawInput: { CommandLine: 'git status' },
       } } })
       write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+    if (promptText.includes('agy-colab-render')) {
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'cmd-colab-1',
+        title: 'Running python render.py',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { CommandLine: 'python render.py', WaitMsBeforeAsync: 5000 },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'cmd-colab-1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text',
+          text: 'Tool is running as a background task with task id: conv-1/task-7\\nTask logs are available at: /tmp/colab.log\\nLog output:\\nSetup done\\n0 failed\\nWaiting on remote GPU...' } }],
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Started Colab render in background.' },
+      } } })
+      write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: '<SYSTEM_MESSAGE>\\nBackground task conv-1/task-7 completed with exit code 0.\\n</SYSTEM_MESSAGE>' },
+        } } })
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'GPU DONE' },
+        } } })
+      }, 60)
       return
     }
     write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
@@ -623,5 +662,74 @@ describe('Antigravity ACP background work, reactive continuations, worker questi
     const overflowWork = (await host.snapshot()).threads.find(t => t.id === 't-mcp')?.backgroundWork ?? []
     expect(overflowWork).toHaveLength(64)
     expect(overflowWork.some(item => item.label === 'sleep 30')).toBe(true)
+  })
+
+  it('keeps text-backgrounded agy commands in backgroundWork and delivers Watcher turn-finished news when wakeup posts GPU DONE', async () => {
+    const { host } = await setup({ reactiveTurnSettleMs: 30, reactiveTurnWaitMs: 60, lookBeforeEndMs: 50 })
+    await host.execute({ type: 'create-thread', commandId: 'c-colab', projectId: 'proj-1', threadId: 't-colab', title: 'Colab', modelId: 'gemini-3.1-pro' })
+
+    let latestSnapshot = await host.snapshot()
+    const hostId = 'local-host', watcherId = 'watcher-1', requestId = 'req-1'
+    const record: WatcherRecord = {
+      ...emptyWatcherRecord(),
+      current: { target: { hostId, threadId: watcherId }, projectId: 'proj-1', provider: 'antigravity', creationOperationId: 'op-w', createdAt: new Date().toISOString() },
+      watches: [{ id: 'watch-1', target: { hostId, threadId: 't-colab' }, createdAt: new Date().toISOString(), generation: 0, lastUserMessageId: 'm-colab' }],
+      requests: [{
+        id: requestId,
+        watcher: { hostId, threadId: watcherId },
+        rootUserMessageId: 'root-1',
+        state: 'active',
+        createdAt: new Date().toISOString(),
+        closedAt: null,
+        participants: [{ requestId, target: { hostId, threadId: 't-colab' }, startedBy: 'watcher', generation: 0, promptCount: 1, state: 'participating', lastUserMessageId: 'm-colab' }],
+      }],
+    }
+    const delivered: { news: WatcherNews; text: string }[] = []
+    const currentSnapshot = (): AgentHostSnapshot => ({
+      ...latestSnapshot,
+      hostId,
+      threads: [
+        ...latestSnapshot.threads.map(t => ({ ...t, hostId })),
+        { id: watcherId, hostId, providerId: 'antigravity', projectId: 'proj-1', modelId: 'gemini-3.1-pro', title: 'Watcher', kind: 'watcher', status: 'idle', messages: [], requests: [] },
+      ],
+    })
+    const wakes = new WatcherWakeUp({
+      snapshot: currentSnapshot,
+      record: () => record,
+      canDeliver: () => true,
+      deliver: async news => {
+        const snap = currentSnapshot()
+        const text = watcherNewsText(news, event => {
+          const t = snap.threads.find(item => item.id === event.target.threadId)
+          return t && event.kind === 'turn-finished' ? watcherReplyStart(t, event.turnId, watcherNewestTurnReply(t)) : undefined
+        })
+        delivered.push({ news, text })
+        wakes.settled(news.events, 'told')
+      },
+      remember: async () => undefined,
+      prune: async () => undefined,
+      ordinaryBatch: { quietMs: 20, maxMs: 40 },
+    })
+    wakes.start()
+    cleanups.push(async () => { wakes.close(); await wakes.drained() })
+
+    let sawForegroundBg = false
+    host.subscribe(snap => {
+      latestSnapshot = snap
+      wakes.observe()
+      const t = snap.threads.find(item => item.id === 't-colab')
+      if (t?.status === 'idle' && t.lastTurn?.id === 'm-colab' && (t.backgroundWork?.length ?? 0) > 0) sawForegroundBg = true
+    })
+
+    await host.execute({ type: 'send', threadId: 't-colab', commandId: 's-colab', messageId: 'm-colab', text: 'agy-colab-render' })
+
+    await expect.poll(() => sawForegroundBg, { timeout: 3_000 }).toBe(true)
+    await expect.poll(() => delivered.find(item => item.news.events.some(event => event.kind === 'turn-finished' && event.turnId === 'm-colab:wakeup:1')), { timeout: 3_000 }).toBeTruthy()
+
+    const wakeupDelivery = delivered.find(item => item.news.events.some(event => event.kind === 'turn-finished' && event.turnId === 'm-colab:wakeup:1'))!
+    const wakeupEvent = wakeupDelivery.news.events.find(event => event.kind === 'turn-finished' && event.turnId === 'm-colab:wakeup:1')!
+    expect(wakeupEvent.backgroundWorkCount).toBe(0)
+    expect(wakeupDelivery.text).toContain('GPU DONE')
+    expect((await host.snapshot()).threads.find(item => item.id === 't-colab')?.messages.some(m => m.role === 'user' && m.text.includes('<SYSTEM_MESSAGE>'))).toBe(false)
   })
 })

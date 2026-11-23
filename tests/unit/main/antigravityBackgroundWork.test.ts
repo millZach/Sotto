@@ -359,4 +359,57 @@ describe('antigravityBackgroundWork', () => {
     // Once OS process exits, the sawProcess command task clears.
     expect(tasks.working(new Set(), [], false)).toEqual([])
   })
+
+  it('recognizes real agy background-task output containing finished words in Log output and extracts nativeTaskId', () => {
+    const tasks = new AntigravityBackgroundTasks()
+    const launched = antigravityToolCallSignal({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'cmd-agy-1',
+      title: 'Running python train_colab.py',
+      kind: 'execute',
+      status: 'completed',
+      rawInput: { CommandLine: 'python train_colab.py', WaitMsBeforeAsync: 5000 },
+      content: [{
+        type: 'content',
+        content: {
+          type: 'text',
+          text: 'Tool is running as a background task with task id: conv-9/task-42\nTask logs are available at: /tmp/task.log\nLog output:\nSetup done\n0 failed\nWaiting on Colab GPU...',
+        },
+      }],
+    }, 'k-agy-1')!
+    expect(launched.backgroundLaunch).toBe(true)
+    expect(launched.nativeTaskId).toBe('conv-9/task-42')
+    expect(tasks.observe(launched, 't1')).toBe(true)
+    expect(tasks.working(new Set(), [], false).map(item => item.label)).toEqual(['python train_colab.py'])
+
+    const stillRunning = antigravityToolCallSignal({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'cmd-agy-check',
+      title: 'Running command_status',
+      status: 'completed',
+      rawInput: { Action: 'status', TaskId: 'conv-9/task-42' },
+      content: [{
+        type: 'content',
+        content: {
+          type: 'text',
+          text: 'Background command is still running after 300s: step 1 done',
+        },
+      }],
+    }, 'k-agy-check')!
+    expect(stillRunning.isControlTool).toBe(true)
+    expect(stillRunning.statusQueryRunning).toBe(true)
+    expect(stillRunning.statusQueryFinished).toBe(false)
+
+    // Matching nativeTaskId extracted from text lets manage_task kill clear it later.
+    const killed = antigravityToolCallSignal({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'cmd-agy-kill',
+      title: 'Running manage_task',
+      status: 'completed',
+      rawInput: { Action: 'kill', TaskId: 'conv-9/task-42' },
+      content: [{ type: 'content', content: { type: 'text', text: 'Task cancelled.' } }],
+    }, 'k-agy-kill')!
+    expect(tasks.observe(killed, 't2')).toBe(true)
+    expect(tasks.working(new Set(), [], false)).toEqual([])
+  })
 })
