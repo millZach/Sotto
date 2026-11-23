@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Semaphore};
 
 use sotto_core::{
     acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, AcpAdapter,
@@ -699,6 +699,9 @@ async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
     });
 
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+    // Cap concurrent heavy Git/Files offloads so burst refreshes cannot starve `ops.hostFacts`
+    // or `ops.threadWords`.
+    let io_limiter = Arc::new(Semaphore::new(8));
     let mut shutdown_req_id: Option<u64> = None;
     let shutdown_signal = shutdown_future();
     tokio::pin!(shutdown_signal);
@@ -720,7 +723,21 @@ async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
                     }
                     let data_dir = parsed.data_directory.clone();
                     let out = out_tx.clone();
+                    let limiter = Arc::clone(&io_limiter);
                     rpc_tasks.spawn(async move {
+                        let needs_permit = matches!(
+                            method.as_str(),
+                            "ops.gitRefsByFolder"
+                                | "ops.threadFiles"
+                                | "ops.threadFilePreview"
+                                | "ops.threadChanges"
+                                | "ops.threadChangesReview"
+                        );
+                        let _permit = if needs_permit {
+                            limiter.acquire_owned().await.ok()
+                        } else {
+                            None
+                        };
                         let frame = match handle_accelerator_rpc(&data_dir, &method, &args).await {
                             Ok(val) => ok_response_frame(id, val),
                             Err(err) => err_response_frame(id, err),

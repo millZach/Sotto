@@ -19,8 +19,11 @@ use crate::git_review::{
 pub use crate::host_facts::{
     global_host_facts_sampler, host_facts_report, prime_host_facts_load, HostFactsSampler,
 };
-use crate::stores::{SubagentStore, UsageStore};
-use crate::workspace::now_iso;
+pub use crate::usage_ops::{
+    canonical_model_id, filter_usage_read_for_peer, parse_usage_time_zone, usage_clear,
+    usage_exclusion_hash, usage_read, usage_refresh, UsageReadQuery, USAGE_LIMIT_PROVIDERS,
+    USAGE_PROVIDERS,
+};
 
 pub const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
 pub const MAX_IMAGE_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
@@ -103,7 +106,7 @@ pub fn is_valid_relative_path(path: &str) -> bool {
     if path.is_empty() {
         return true;
     }
-    if path.len() > 4_096 {
+    if path.encode_utf16().count() > 4_096 {
         return false;
     }
     if path.chars().any(|c| {
@@ -354,11 +357,15 @@ pub fn git_refs_with_refresh(
     include_matching_remote: bool,
     refresh: bool,
 ) -> Result<Value, String> {
-    let common = match run_git(
+    let common = match run_git_clean(
         folder,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        &[],
+        None,
+        None,
     ) {
-        Ok(out) if !out.trim().is_empty() => out.trim().to_string(),
+        Ok(out) if !out.stdout.trim().is_empty() => out.stdout.trim().to_string(),
+        Err(GitRunError::Unavailable(msg)) => return Err(msg),
         _ => {
             return Ok(json!({
                 "refs": [],
@@ -536,18 +543,18 @@ pub fn git_changed_files(folder: &str) -> Result<Value, String> {
 
 fn porcelain_status(code: &str) -> &'static str {
     let trimmed = code.trim();
-    if trimmed == "??" {
-        "untracked"
-    } else if code.contains('U') || trimmed == "AA" || trimmed == "DD" {
+    if code.contains('U') || trimmed == "AA" || trimmed == "DD" {
         "conflicted"
+    } else if trimmed == "??" {
+        "untracked"
     } else if code.contains('R') {
         "renamed"
-    } else if code.contains('T') {
-        "type-changed"
     } else if code.contains('D') {
         "deleted"
     } else if code.contains('A') {
         "added"
+    } else if code.contains('T') {
+        "type-changed"
     } else {
         "modified"
     }
@@ -593,12 +600,24 @@ fn safe_git_path(root_canon: &Path, rel_path: &str) -> Result<SafeGitPathInfo, (
                     .modified()
                     .ok()
                     .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis())
-                    .unwrap_or(0);
+                    .map(|d| d.as_secs_f64() * 1000.0)
+                    .unwrap_or(0.0);
+                #[cfg(unix)]
+                let ctime_ms = {
+                    use std::os::unix::fs::MetadataExt;
+                    (meta.ctime() as f64) * 1000.0 + (meta.ctime_nsec() as f64) / 1_000_000.0
+                };
+                #[cfg(not(unix))]
+                let ctime_ms = meta
+                    .created()
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64() * 1000.0)
+                    .unwrap_or(mtime_ms);
                 let size = meta.len();
                 let is_exact = candidate == target;
                 return Ok(SafeGitPathInfo {
-                    stamp: format!("{size}:{mtime_ms}"),
+                    stamp: format!("{size}:{mtime_ms}:{ctime_ms}"),
                     size: if is_exact { size } else { 0 },
                     regular: is_exact && meta.is_file(),
                 });
@@ -729,7 +748,7 @@ fn collect_git_listing(workspace: &ThreadWorkspace) -> Result<GitListingInternal
         let Some(rel_after_prefix) = repo_path.strip_prefix(&prefix) else {
             continue;
         };
-        let path = rel_after_prefix.replace('\\', "/");
+        let path = rel_after_prefix.to_string();
         if path.is_empty() || !is_valid_relative_path(&path) {
             truncated = true;
             continue;
@@ -741,7 +760,7 @@ fn collect_git_listing(workspace: &ThreadWorkspace) -> Result<GitListingInternal
         let status = porcelain_status(xy);
         let original_path = original
             .and_then(|o| o.strip_prefix(&prefix))
-            .map(|o| o.replace('\\', "/"))
+            .map(ToString::to_string)
             .filter(|o| !o.is_empty() && is_valid_relative_path(o));
 
         let stamp = match safe_git_path(&canon_root, &path) {
@@ -984,6 +1003,11 @@ fn thread_changes_review_inner(
                 .join(format!("sotto-changes-{}", uuid::Uuid::new_v4()));
             if fs::create_dir_all(&temp_dir).is_err() {
                 return tools_err("unavailable", "Could not prepare temporary Git index.");
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&temp_dir, fs::Permissions::from_mode(0o700));
             }
             let temp_index = temp_dir.join("index");
             _temp_guard = Some(TempDirGuard(temp_dir));
@@ -1272,7 +1296,7 @@ fn thread_changes_review_inner(
                     json!({ "kind": "binary", "message": BINARY_DIFF_MSG })
                 }
             }
-            Some(&(_, sec)) if sec.len() > MAX_GIT_PATCH_BYTES => {
+            Some(&(_, sec)) if sec.encode_utf16().count() > MAX_GIT_PATCH_BYTES => {
                 json!({ "kind": "too-large", "message": TOO_LARGE_FILE_DIFF_MSG })
             }
             Some(&(_, sec)) => json!({ "kind": "text", "patch": sec }),
@@ -1486,9 +1510,42 @@ pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
     if !target_meta.is_dir() {
         return tools_err("not-directory", "Select a directory to browse.");
     }
-    let Ok(rd) = fs::read_dir(&target) else {
+    // Pin an open directory handle and prove it still resolves inside `canon_root` so an
+    // intermediate symlink swap between resolve and read_dir cannot leak outside entries.
+    let Ok(dir_handle) = open_contained_dir(&target) else {
+        return tools_err(
+            "path-unavailable",
+            "This path is unavailable or changed. Refresh Files and try again.",
+        );
+    };
+    if !verify_open_handle_inside(&canon_root, &dir_handle) {
+        return tools_err(
+            "path-unavailable",
+            "This path changed while it was being read. Refresh Files and try again.",
+        );
+    }
+    #[cfg(target_os = "linux")]
+    let rd_res = {
+        use std::os::fd::AsRawFd;
+        fs::read_dir(format!("/proc/self/fd/{}", dir_handle.as_raw_fd()))
+    };
+    #[cfg(not(target_os = "linux"))]
+    let rd_res = fs::read_dir(&target);
+    let Ok(rd) = rd_res else {
         return tools_err("path-unavailable", "Could not read that folder.");
     };
+    let Ok(after_target) = resolve_contained_checked(&canon_root, rel_path) else {
+        return tools_err(
+            "path-unavailable",
+            "This path changed while it was being read. Refresh Files and try again.",
+        );
+    };
+    if after_target != target || !verify_open_handle_inside(&canon_root, &dir_handle) {
+        return tools_err(
+            "path-unavailable",
+            "This path changed while it was being read. Refresh Files and try again.",
+        );
+    }
     let mut entries = Vec::new();
     let mut truncated = false;
     for entry in rd.flatten() {
@@ -1503,7 +1560,7 @@ pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
             format!("{rel_path}/{name}")
         };
         if !is_valid_relative_path(&rel) {
-            if rel.len() <= 4_096 {
+            if rel.encode_utf16().count() <= 4_096 {
                 entries.push(json!({
                     "name": name,
                     "path": rel,
@@ -1529,6 +1586,15 @@ pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
             "kind": kind,
         }));
     }
+    // Re-verify the directory path after reading so a mid-read symlink swap cannot leak entries.
+    if resolve_contained_checked(&canon_root, rel_path).ok().as_deref() != Some(target.as_path())
+        || !verify_open_handle_inside(&canon_root, &dir_handle)
+    {
+        return tools_err(
+            "path-unavailable",
+            "This path changed while it was being read. Refresh Files and try again.",
+        );
+    }
     entries.sort_by(|a, b| {
         let dir_a = a["kind"] != "directory";
         let dir_b = b["kind"] != "directory";
@@ -1547,6 +1613,100 @@ pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
     }))
 }
 
+fn open_contained_dir(path: &Path) -> std::io::Result<fs::File> {
+    let mut opts = fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        #[cfg(all(target_os = "linux", any(target_arch = "aarch64", target_arch = "arm")))]
+        const FLAGS: i32 = 0o100000 | 0o40000; // O_NOFOLLOW | O_DIRECTORY (ARM/ARM64 Linux)
+        #[cfg(all(
+            target_os = "linux",
+            not(any(target_arch = "aarch64", target_arch = "arm"))
+        ))]
+        const FLAGS: i32 = 0o400000 | 0o200000; // O_NOFOLLOW | O_DIRECTORY (x86_64/generic Linux)
+        #[cfg(target_os = "macos")]
+        const FLAGS: i32 = 0x0100 | 0x0010_0000; // O_NOFOLLOW | O_DIRECTORY
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const FLAGS: i32 = 0;
+        if FLAGS != 0 {
+            opts.custom_flags(FLAGS);
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        opts.custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    opts.open(path)
+}
+
+#[cfg(target_os = "linux")]
+fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+    use std::os::fd::AsRawFd;
+    let fd_path = format!("/proc/self/fd/{}", file.as_raw_fd());
+    fs::canonicalize(fd_path).is_ok_and(|p| p.starts_with(canon_root))
+}
+
+#[cfg(target_os = "macos")]
+fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+    use std::ffi::CStr;
+    use std::os::fd::AsRawFd;
+    const F_GETPATH: i32 = 50;
+    extern "C" {
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    }
+    let mut buf = [0u8; 4096];
+    let rc = unsafe { fcntl(file.as_raw_fd(), F_GETPATH, buf.as_mut_ptr()) };
+    if rc == -1 {
+        return false;
+    }
+    let Ok(cstr) = CStr::from_bytes_until_nul(&buf) else {
+        return false;
+    };
+    let Ok(path_str) = cstr.to_str() else {
+        return false;
+    };
+    fs::canonicalize(path_str).is_ok_and(|p| p.starts_with(canon_root))
+}
+
+#[cfg(windows)]
+fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetFinalPathNameByHandleW(
+            h_file: *mut std::ffi::c_void,
+            lpsz_file_path: *mut u16,
+            cch_file_path: u32,
+            dw_flags: u32,
+        ) -> u32;
+    }
+    let mut buf = vec![0u16; 4096];
+    let len = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle(),
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            0,
+        )
+    } as usize;
+    if len == 0 || len >= buf.len() {
+        return false;
+    }
+    let path = PathBuf::from(std::ffi::OsString::from_wide(&buf[..len]));
+    let norm = fs::canonicalize(&path).unwrap_or(path);
+    norm.starts_with(canon_root)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn verify_open_handle_inside(_canon_root: &Path, _file: &fs::File) -> bool {
+    true
+}
+
 fn open_preview_file(path: &Path) -> std::io::Result<fs::File> {
     let mut opts = fs::OpenOptions::new();
     opts.read(true);
@@ -1554,8 +1714,13 @@ fn open_preview_file(path: &Path) -> std::io::Result<fs::File> {
     {
         use std::os::unix::fs::OpenOptionsExt;
         // Avoid hanging on a FIFO or following a last-component symlink exchange.
-        #[cfg(target_os = "linux")]
-        const FLAGS: i32 = 0o400000 | 0o4000; // O_NOFOLLOW | O_NONBLOCK
+        #[cfg(all(target_os = "linux", any(target_arch = "aarch64", target_arch = "arm")))]
+        const FLAGS: i32 = 0o100000 | 0o4000; // O_NOFOLLOW | O_NONBLOCK (ARM/ARM64 Linux)
+        #[cfg(all(
+            target_os = "linux",
+            not(any(target_arch = "aarch64", target_arch = "arm"))
+        ))]
+        const FLAGS: i32 = 0o400000 | 0o4000; // O_NOFOLLOW | O_NONBLOCK (x86_64/generic Linux)
         #[cfg(target_os = "macos")]
         const FLAGS: i32 = 0x0100 | 0x0004; // O_NOFOLLOW | O_NONBLOCK
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -1568,17 +1733,16 @@ fn open_preview_file(path: &Path) -> std::io::Result<fs::File> {
 }
 
 fn same_file_revision(a: &fs::Metadata, b: &fs::Metadata) -> bool {
-    if a.len() != b.len() || a.modified().ok() != b.modified().ok() {
-        return false;
-    }
+    let basic = a.len() == b.len() && a.modified().ok() == b.modified().ok();
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if a.dev() != b.dev() || a.ino() != b.ino() || a.ctime_nsec() != b.ctime_nsec() {
-            return false;
-        }
+        basic && a.dev() == b.dev() && a.ino() == b.ino() && a.ctime_nsec() == b.ctime_nsec()
     }
-    true
+    #[cfg(not(unix))]
+    {
+        basic
+    }
 }
 
 /// Reads a bounded preview strictly contained within `workspace.working_directory`,
@@ -1623,6 +1787,13 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
             "This path is unavailable or changed. Refresh Files and try again.",
         );
     };
+    // Prove the opened file descriptor itself lives inside `canon_root` (blocks intermediate dir symlink swap).
+    if !verify_open_handle_inside(&canon_root, &file) {
+        return tools_err(
+            "path-unavailable",
+            "This file changed. Refresh Files and try again.",
+        );
+    }
     let Ok(before) = file.metadata() else {
         return tools_err(
             "path-unavailable",
@@ -1647,13 +1818,19 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
     if bytes.len() > MAX_IMAGE_PREVIEW_BYTES {
         return tools_err("too-large", "This file exceeds the 8 MiB preview limit.");
     }
-    if let Ok(after_meta) = fs::metadata(&target) {
-        if !same_file_revision(&before, &after_meta) || bytes.len() as u64 != before.len() {
-            return tools_err(
-                "path-unavailable",
-                "This file changed while it was being read. Refresh Files and try again.",
-            );
-        }
+    let after_ok = resolve_contained_checked(&canon_root, rel_path)
+        .ok()
+        .as_deref()
+        == Some(target.as_path())
+        && fs::metadata(&target)
+            .ok()
+            .is_some_and(|after_meta| same_file_revision(&before, &after_meta))
+        && bytes.len() as u64 == before.len();
+    if !after_ok {
+        return tools_err(
+            "path-unavailable",
+            "This file changed while it was being read. Refresh Files and try again.",
+        );
     }
 
     let name = rel_path
@@ -1689,19 +1866,25 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
     if bytes.len() > MAX_TEXT_PREVIEW_BYTES {
         return tools_err("too-large", "Text previews are limited to 512 KiB.");
     }
-    let Ok(text) = std::str::from_utf8(&bytes) else {
+    let Ok(raw_text) = std::str::from_utf8(&bytes) else {
         return tools_err(
             "binary",
             "This file is not supported UTF-8 text or a raster image.",
         );
     };
+    // Match `new TextDecoder('utf-8', { fatal: true })`, which strips a leading UTF-8 BOM.
+    let text = raw_text.strip_prefix('\u{feff}').unwrap_or(raw_text);
+    if text.encode_utf16().count() > MAX_TEXT_PREVIEW_BYTES {
+        return tools_err("too-large", "Text previews are limited to 512 KiB.");
+    }
     if text
         .bytes()
         .any(|b| matches!(b, 0x00..=0x08 | 0x0b | 0x0e..=0x1f | 0x7f))
     {
         return tools_err("binary", "Binary files cannot be previewed as text.");
     }
-    let ext = target
+    // Check the requested workspace path's extension (not a symlink target's) matching `FilesService.preview`.
+    let ext = Path::new(rel_path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
@@ -1898,126 +2081,230 @@ fn build_word_quote(text: &str, needle_lower: &str) -> String {
     format!("{prefix}{}{suffix}", slice.trim())
 }
 
-/// Reads subagent page matching `subagentPageSchema` (`src/shared/subagents.ts`).
-pub fn read_subagent_page(data_directory: &Path, thread_id: &str) -> Value {
+pub const SUBAGENT_PAGE_SIZE: usize = 50;
+pub const SUBAGENT_ASSIGNMENT_PAGE_SIZE: usize = 10;
+
+/// Reads subagent page from `subagents.sqlite` matching `subagentPageSchema` (`src/shared/subagents.ts`)
+/// and `SubagentStore.page` (`src/main/agents/subagentStore.ts`), including parent rows split across pages.
+pub fn read_subagent_page(data_directory: &Path, thread_id: &str, before: Option<i64>) -> Value {
+    let empty_summary = json!({
+        "total": 0,
+        "working": 0,
+        "completed": 0,
+        "failed": 0,
+        "interrupted": 0,
+        "unknown": 0,
+    });
     let db = data_directory.join("subagents.sqlite");
-    let count = SubagentStore::open(&db)
-        .and_then(|s| s.row_count(thread_id))
-        .unwrap_or(0)
-        .max(0) as u64;
-    json!({
-        "threadId": thread_id,
-        "revision": 0,
-        "rows": [],
-        "summary": {
-            "total": count,
-            "working": 0,
-            "completed": 0,
-            "failed": 0,
-            "interrupted": 0,
-            "unknown": count,
-        },
-    })
-}
-
-/// Reads subagent assignments page matching `subagentAssignmentsPageSchema` (`src/shared/subagents.ts`).
-pub fn read_subagent_assignments(thread_id: &str, agent_id: &str) -> Value {
-    json!({
-        "threadId": thread_id,
-        "agentId": agent_id,
-        "assignments": [],
-    })
-}
-
-/// Reads usage dashboard data matching `usageLocalHostReadSchema` (`src/shared/usageDashboard.ts`).
-pub fn usage_read(data_directory: &Path, time_zone: Option<&str>) -> Value {
-    let tz = time_zone
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or("UTC");
-    let db = data_directory.join("usage.sqlite");
-    let meta_opt = UsageStore::open(&db).and_then(|s| s.read_meta()).ok().flatten();
-    let started_at = meta_opt
-        .as_ref()
-        .map(|m| m.started_at.clone())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(now_iso);
-    let revision = meta_opt.as_ref().map(|m| m.revision.max(0)).unwrap_or(0);
-    let generation = meta_opt.as_ref().map(|m| m.generation.max(0)).unwrap_or(0);
-    let empty_field = json!({ "knownRows": 0, "rows": 0, "partial": false });
-    let empty_agg = json!({
-        "tokens": {
-            "input": empty_field,
-            "output": empty_field,
-            "cached": empty_field,
-            "cacheWrite": empty_field,
-            "cacheWrite5m": empty_field,
-            "cacheWrite1h": empty_field,
-            "total": empty_field,
-        },
-        "prompts": { "user": 0, "watcher": 0, "wakeUp": 0, "total": 0, "steered": 0 },
-        "tokenRecords": 0,
-        "partialTokenRecords": 0,
-        "undatedTokenRecords": 0,
-        "activeThreads": 0,
-        "activeDays": 0,
-    });
-    let metadata = json!({
-        "startedAt": started_at,
-        "revision": revision,
-        "generation": generation,
-        "legacySeedCompleted": meta_opt.map(|m| m.seed_completed).unwrap_or(false),
-    });
-    json!({
-        "status": "ready",
-        "activity": {
-            "metadata": metadata,
-            "totals": empty_agg,
-            "timeZone": tz,
-            "providers": [],
-            "models": [],
-            "modelCount": 0,
-            "modelsTruncated": false,
-            "daily": [],
-            "dailyCoverage": "not-requested",
-            "hourly": [],
-        },
-        "quotas": [],
-    })
-}
-
-/// Clears usage dashboard data matching `usageLocalClearResultSchema` (`src/shared/usageDashboard.ts`).
-pub fn usage_clear(data_directory: &Path, expected_revision: i64) -> Value {
-    let db = data_directory.join("usage.sqlite");
-    let meta_opt = UsageStore::open(&db).and_then(|s| s.read_meta()).ok().flatten();
-    let current_rev = meta_opt.as_ref().map(|m| m.revision).unwrap_or(0);
-    let current_gen = meta_opt.as_ref().map(|m| m.generation).unwrap_or(0);
-    let started_at = meta_opt
-        .as_ref()
-        .map(|m| m.started_at.clone())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(now_iso);
-    if current_rev != expected_revision {
+    if !db.is_file() {
         return json!({
-            "status": "stale",
-            "metadata": {
-                "startedAt": started_at,
-                "revision": current_rev.max(0),
-                "generation": current_gen.max(0),
-                "legacySeedCompleted": false,
-            },
+            "threadId": thread_id,
+            "revision": 0,
+            "rows": [],
+            "summary": empty_summary,
         });
     }
-    let cleared_at = now_iso();
-    json!({
-        "status": "cleared",
-        "metadata": {
-            "startedAt": started_at,
-            "revision": current_rev.max(0) + 1,
-            "generation": current_gen.max(0) + 1,
-            "clearedAt": cleared_at,
-            "legacySeedCompleted": false,
-        },
-    })
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return json!({
+            "threadId": thread_id,
+            "revision": 0,
+            "rows": [],
+            "summary": empty_summary,
+        });
+    };
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+
+    let thread_state: Option<Value> = conn
+        .query_row(
+            "SELECT value FROM subagent_threads WHERE thread_id = ?1",
+            [thread_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok());
+    let revision = thread_state
+        .as_ref()
+        .and_then(|v| v.get("revision"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let mut summary = thread_state
+        .as_ref()
+        .and_then(|v| v.get("summary"))
+        .cloned()
+        .unwrap_or(empty_summary);
+    // Rust host does not write live subagents to `subagents.sqlite`; any persisted `working` count
+    // belongs to a stopped Node host and must surface as `unknown` (matching Node after restart).
+    if let Some(obj) = summary.as_object_mut() {
+        let working = obj.get("working").and_then(Value::as_u64).unwrap_or(0);
+        if working > 0 {
+            let unknown = obj.get("unknown").and_then(Value::as_u64).unwrap_or(0);
+            obj.insert("working".into(), json!(0));
+            obj.insert("unknown".into(), json!(unknown.saturating_add(working)));
+        }
+    }
+
+    let cutoff = before.unwrap_or(i64::MAX);
+    let fetch = (SUBAGENT_PAGE_SIZE + 1) as i64;
+    let raw_rows: Vec<String> = conn
+        .prepare(
+            "SELECT value FROM subagent_rows
+             WHERE thread_id = ?1 AND sequence < ?2
+             ORDER BY sequence DESC
+             LIMIT ?3",
+        )
+        .and_then(|mut stmt| {
+            let mapped = stmt.query_map(rusqlite::params![thread_id, cutoff, fetch], |r| {
+                r.get::<_, String>(0)
+            })?;
+            Ok(mapped.flatten().collect())
+        })
+        .unwrap_or_default();
+
+    let has_more = raw_rows.len() > SUBAGENT_PAGE_SIZE;
+    let mut rows: Vec<Value> = raw_rows
+        .into_iter()
+        .take(SUBAGENT_PAGE_SIZE)
+        .filter_map(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .collect();
+    rows.reverse();
+
+    let next_before = if has_more {
+        rows.first()
+            .and_then(|r| r.get("sequence"))
+            .and_then(Value::as_i64)
+    } else {
+        None
+    };
+
+    // Bring missing parent rows along so workflow agents are never orphaned by a page split.
+    let present_ids: std::collections::HashSet<String> = rows
+        .iter()
+        .filter_map(|r| r.get("id").and_then(Value::as_str).map(ToString::to_string))
+        .collect();
+    let mut missing_parents: Vec<String> = Vec::new();
+    let mut seen_missing: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for row in &rows {
+        if let Some(pid) = row.get("parentId").and_then(Value::as_str) {
+            if !present_ids.contains(pid) && seen_missing.insert(pid.to_string()) {
+                missing_parents.push(pid.to_string());
+                if missing_parents.len() >= SUBAGENT_PAGE_SIZE {
+                    break;
+                }
+            }
+        }
+    }
+    let mut combined: Vec<Value> = Vec::with_capacity(missing_parents.len() + rows.len());
+    if !missing_parents.is_empty() {
+        if let Ok(mut parent_stmt) =
+            conn.prepare("SELECT value FROM subagent_rows WHERE thread_id = ?1 AND agent_id = ?2")
+        {
+            for pid in &missing_parents {
+                if let Ok(raw) = parent_stmt.query_row(
+                    rusqlite::params![thread_id, pid.as_str()],
+                    |r| r.get::<_, String>(0),
+                ) {
+                    if let Ok(val) = serde_json::from_str::<Value>(&raw) {
+                        combined.push(val);
+                    }
+                }
+            }
+        }
+    }
+    combined.extend(rows);
+    for row in &mut combined {
+        if let Some(obj) = row.as_object_mut() {
+            if obj.get("status").and_then(Value::as_str) == Some("running") {
+                obj.insert("status".into(), json!("unknown"));
+            }
+        }
+    }
+    combined.sort_by_key(|r| r.get("sequence").and_then(Value::as_i64).unwrap_or(0));
+
+    let mut out = json!({
+        "threadId": thread_id,
+        "revision": revision,
+        "rows": combined,
+        "summary": summary,
+    });
+    if let Some(cursor) = next_before.filter(|&n| n > 0) {
+        out["before"] = json!(cursor);
+    }
+    out
+}
+
+/// Reads subagent assignments page from `subagents.sqlite` matching `subagentAssignmentsPageSchema`
+/// (`src/shared/subagents.ts`) and `SubagentStore.assignments` (`src/main/agents/subagentStore.ts`).
+pub fn read_subagent_assignments(
+    data_directory: &Path,
+    thread_id: &str,
+    agent_id: &str,
+    before: Option<i64>,
+) -> Value {
+    let db = data_directory.join("subagents.sqlite");
+    if !db.is_file() {
+        return json!({
+            "threadId": thread_id,
+            "agentId": agent_id,
+            "assignments": [],
+        });
+    }
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return json!({
+            "threadId": thread_id,
+            "agentId": agent_id,
+            "assignments": [],
+        });
+    };
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+
+    let cutoff = before.unwrap_or(i64::MAX);
+    let fetch = (SUBAGENT_ASSIGNMENT_PAGE_SIZE + 1) as i64;
+    let raw_rows: Vec<String> = conn
+        .prepare(
+            "SELECT value FROM subagent_assignments
+             WHERE thread_id = ?1 AND agent_id = ?2 AND sequence < ?3
+             ORDER BY sequence DESC
+             LIMIT ?4",
+        )
+        .and_then(|mut stmt| {
+            let mapped = stmt.query_map(
+                rusqlite::params![thread_id, agent_id, cutoff, fetch],
+                |r| r.get::<_, String>(0),
+            )?;
+            Ok(mapped.flatten().collect())
+        })
+        .unwrap_or_default();
+
+    let has_more = raw_rows.len() > SUBAGENT_ASSIGNMENT_PAGE_SIZE;
+    let assignments: Vec<Value> = raw_rows
+        .into_iter()
+        .take(SUBAGENT_ASSIGNMENT_PAGE_SIZE)
+        .filter_map(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .collect();
+    let next_before = if has_more {
+        assignments
+            .last()
+            .and_then(|a| a.get("sequence"))
+            .and_then(Value::as_i64)
+    } else {
+        None
+    };
+
+    let mut out = json!({
+        "threadId": thread_id,
+        "agentId": agent_id,
+        "assignments": assignments,
+    });
+    if let Some(cursor) = next_before.filter(|&n| n > 0) {
+        out["before"] = json!(cursor);
+    }
+    out
 }
 
 enum ContainedError {
@@ -2044,6 +2331,7 @@ struct GitRunOutput {
 }
 
 enum GitRunError {
+    Unavailable(String),
     MaxBuffer(String),
     Failed(String),
 }
@@ -2092,9 +2380,13 @@ fn run_git_clean(
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| GitRunError::Failed(format!("Could not run git: {e}")))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            GitRunError::Unavailable("Git is unavailable.".into())
+        } else {
+            GitRunError::Failed(format!("Could not run git: {e}"))
+        }
+    })?;
 
     if let Some(input) = stdin_bytes {
         if let Some(mut stdin) = child.stdin.take() {
@@ -2102,24 +2394,56 @@ fn run_git_clean(
         }
     }
 
-    let mut buf = Vec::new();
-    let mut overflowed = false;
-    if let Some(mut stdout) = child.stdout.take() {
-        if let Some(limit) = max_buffer {
-            let mut limited = stdout.take((limit as u64).saturating_add(1));
-            let _ = limited.read_to_end(&mut buf);
-            if buf.len() > limit {
-                buf.truncate(limit);
-                overflowed = true;
-                let _ = child.kill();
+    // Drain stdout on a dedicated reader thread while enforcing a 10-second wall-clock
+    // timeout (matching TS `GitChangesService`'s `timeout: 10_000`) so a stalled git clean
+    // filter or hook is always terminated instead of wedging a blocking worker indefinitely.
+    const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+    let stdout_pipe = child.stdout.take();
+    let reader = std::thread::spawn(move || -> (Vec<u8>, bool) {
+        let mut buf = Vec::new();
+        let mut overflowed = false;
+        if let Some(mut stdout) = stdout_pipe {
+            if let Some(limit) = max_buffer {
+                let mut limited = stdout.take((limit as u64).saturating_add(1));
+                let _ = limited.read_to_end(&mut buf);
+                if buf.len() > limit {
+                    buf.truncate(limit);
+                    overflowed = true;
+                }
+            } else {
+                let _ = stdout.read_to_end(&mut buf);
             }
-        } else {
-            let _ = stdout.read_to_end(&mut buf);
         }
+        (buf, overflowed)
+    });
+
+    let deadline = Instant::now() + GIT_COMMAND_TIMEOUT;
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break Ok(st),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    timed_out = true;
+                    let _ = child.kill();
+                    break child.wait();
+                }
+                if reader.is_finished() {
+                    // Reader stopped early (e.g., max_buffer overflow); kill if still running.
+                    let _ = child.kill();
+                    break child.wait();
+                }
+                std::thread::sleep(Duration::from_millis(15));
+            }
+            Err(e) => break Err(e),
+        }
+    };
+    let (buf, overflowed) = reader.join().unwrap_or_default();
+    if timed_out {
+        return Err(GitRunError::Failed("git timed out".into()));
     }
-    let status = child
-        .wait()
-        .map_err(|e| GitRunError::Failed(format!("Could not wait for git: {e}")))?;
+    let status =
+        status.map_err(|e| GitRunError::Failed(format!("Could not wait for git: {e}")))?;
     let stdout_str = String::from_utf8_lossy(&buf).into_owned();
     if overflowed {
         return Err(GitRunError::MaxBuffer(stdout_str));
@@ -2136,6 +2460,7 @@ fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
     run_git_clean(folder, args, &[], None, None)
         .map(|o| o.stdout)
         .map_err(|e| match e {
+            GitRunError::Unavailable(msg) => msg,
             GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
             GitRunError::Failed(msg) => msg,
         })
@@ -2209,5 +2534,134 @@ mod tests {
         let quote = build_word_quote(&text, "target");
         assert!(quote.contains("target word here"));
         assert!(quote.encode_utf16().count() <= 182);
+    }
+
+    #[test]
+    fn reads_real_subagent_pages_with_parent_inclusion_and_assignments_pagination() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("subagents.sqlite");
+        let _store = crate::stores::SubagentStore::open(&db_path).unwrap();
+        let conn = crate::stores::open_sqlite(&db_path).unwrap();
+
+        let summary = json!({
+            "total": 2,
+            "working": 1,
+            "completed": 1,
+            "failed": 0,
+            "interrupted": 0,
+            "unknown": 0,
+        });
+        conn.execute(
+            "INSERT INTO subagent_threads (thread_id, value) VALUES (?1, ?2)",
+            rusqlite::params![
+                "t-sub",
+                json!({ "revision": 7, "sequence": 52, "summary": summary }).to_string()
+            ],
+        )
+        .unwrap();
+
+        // Sequence 1 is a workflow parent; sequences 2..=52 are children (51 children -> page size 50 splits parent off!).
+        let parent_row = json!({
+            "id": "wf-1",
+            "sequence": 1,
+            "revision": 1,
+            "assignmentId": "wf-1:initial",
+            "assignmentCount": 1,
+            "title": "Workflow",
+            "description": "Parent workflow",
+            "status": "running",
+            "lastObservedAt": "2026-11-22T00:00:00.000Z",
+            "kind": "workflow",
+        });
+        conn.execute(
+            "INSERT INTO subagent_rows (thread_id, agent_id, sequence, status, value) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["t-sub", "wf-1", 1i64, "running", parent_row.to_string()],
+        )
+        .unwrap();
+        for seq in 2..=52i64 {
+            let aid = format!("agent-{seq}");
+            let row = json!({
+                "id": aid,
+                "parentId": "wf-1",
+                "sequence": seq,
+                "revision": 1,
+                "assignmentId": format!("{aid}:a1"),
+                "assignmentCount": 1,
+                "title": format!("Agent {seq}"),
+                "description": "Worker task",
+                "status": if seq == 52 { "running" } else { "completed" },
+                "lastObservedAt": "2026-11-22T00:01:00.000Z",
+            });
+            conn.execute(
+                "INSERT INTO subagent_rows (thread_id, agent_id, sequence, status, value) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params!["t-sub", aid, seq, row["status"].as_str().unwrap(), row.to_string()],
+            )
+            .unwrap();
+        }
+
+        // Insert 12 assignments for agent-52 to test newest-first paging (page size 10).
+        for seq in 1..=12i64 {
+            let asgn_id = format!("asgn-{seq}");
+            let asgn = json!({
+                "id": asgn_id,
+                "sequence": seq,
+                "title": format!("Task {seq}"),
+                "status": "completed",
+                "prompt": format!("Prompt {seq}"),
+                "result": format!("Result {seq}"),
+            });
+            conn.execute(
+                "INSERT INTO subagent_assignments (thread_id, agent_id, assignment_id, sequence, value, fingerprint, observed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    "t-sub",
+                    "agent-52",
+                    asgn_id,
+                    seq,
+                    asgn.to_string(),
+                    "fp",
+                    "2026-11-22T00:01:00.000Z",
+                ],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        let page1 = read_subagent_page(dir.path(), "t-sub", None);
+        assert_eq!(page1["revision"], 7);
+        assert_eq!(page1["summary"]["total"], 2);
+        // Stored `running` rows from a stopped Node host map to `unknown` on the read-only Rust host.
+        assert_eq!(page1["summary"]["working"], 0);
+        assert_eq!(page1["summary"]["unknown"], 1);
+        assert_eq!(page1["before"], 3);
+        let rows = page1["rows"].as_array().unwrap();
+        // 50 rows (seq 3..=52) + workflow parent (seq 1) brought along, sorted ascending by sequence.
+        assert_eq!(rows.len(), 51);
+        assert_eq!(rows[0]["id"], "wf-1");
+        assert_eq!(rows[0]["status"], "unknown");
+        assert_eq!(rows[1]["sequence"], 3);
+        assert_eq!(rows.last().unwrap()["sequence"], 52);
+        assert_eq!(rows.last().unwrap()["status"], "unknown");
+
+        let page2 = read_subagent_page(dir.path(), "t-sub", Some(3));
+        assert!(page2.get("before").is_none());
+        let rows2 = page2["rows"].as_array().unwrap();
+        assert_eq!(rows2.len(), 2);
+        assert_eq!(rows2[0]["sequence"], 1);
+        assert_eq!(rows2[1]["sequence"], 2);
+
+        let asgn_page1 = read_subagent_assignments(dir.path(), "t-sub", "agent-52", None);
+        let a1 = asgn_page1["assignments"].as_array().unwrap();
+        assert_eq!(a1.len(), 10);
+        assert_eq!(a1[0]["sequence"], 12);
+        assert_eq!(a1[9]["sequence"], 3);
+        assert_eq!(asgn_page1["before"], 3);
+
+        let asgn_page2 = read_subagent_assignments(dir.path(), "t-sub", "agent-52", Some(3));
+        let a2 = asgn_page2["assignments"].as_array().unwrap();
+        assert_eq!(a2.len(), 2);
+        assert_eq!(a2[0]["sequence"], 2);
+        assert_eq!(a2[1]["sequence"], 1);
+        assert!(asgn_page2.get("before").is_none());
     }
 }

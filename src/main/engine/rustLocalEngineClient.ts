@@ -31,6 +31,9 @@ import {
 
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const RPC_TIMEOUT_MS = 5_000
+// Below `THREAD_WORDS_HOST_WAIT_MS` (3_000 ms) in `src/shared/threadWords.ts` so a stalled Rust call
+// falls back to TypeScript before the desktop router times out the local host.
+const THREAD_WORDS_RPC_TIMEOUT_MS = 2_500
 const LIVE_HOST_FACTS_TIMEOUT_MS = 6_000
 const GIT_REVIEW_RPC_TIMEOUT_MS = 10_000
 const SHUTDOWN_TIMEOUT_MS = 5_000
@@ -194,7 +197,7 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
       async searchThreadWords(query: string): Promise<AgentThreadWords | undefined> {
         if (closed || activeConnection.isClosed) return undefined
         try {
-          const raw = await activeConnection.request('ops.threadWords', [query], RPC_TIMEOUT_MS)
+          const raw = await activeConnection.request('ops.threadWords', [query], THREAD_WORDS_RPC_TIMEOUT_MS)
           const parsed = agentThreadWordsSchema.safeParse(raw)
           return parsed.success ? parsed.data : undefined
         } catch {

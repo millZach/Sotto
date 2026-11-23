@@ -20,6 +20,7 @@ import { PairedClients } from '../../src/main/agents/pairing'
 import { SubagentStore } from '../../src/main/agents/subagentStore'
 import { ThreadRegistry } from '../../src/main/agents/threads'
 import { ThreadStore } from '../../src/main/agents/threadStore'
+import { UsageStore } from '../../src/main/agents/usageStore'
 import { migrateDatabase } from '../../src/main/memory/migrations.mjs'
 import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
@@ -195,6 +196,8 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
     expect(health.sottoVersion).toBe(descriptor.sottoVersion)
     expect(health.status).toBe('ready')
     expect(Array.isArray(health.features)).toBe(true)
+    expect(health.features).not.toContain('answer-receipts')
+    expect(health.features).not.toContain('provider-deepseek')
     expect(health.adminToken).toBeUndefined()
 
     const sessionRes = await fetch(`http://127.0.0.1:${descriptor.port}/v1/session`, {
@@ -261,7 +264,13 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
       pairedClientId = paired.clientId
       const socket = await openSocket(running.port, paired.session, DESKTOP_DEFLATE_OFFER)
       try {
-        socket.send({ v: 1, id: 'h1', op: 'hello', session: paired.session })
+        socket.send({
+          v: 1,
+          id: 'h1',
+          op: 'hello',
+          session: paired.session,
+          accepts: ['provider-deepseek', 'provider-hermes'],
+        })
         const reply = await new Promise<Record<string, unknown>>((resolvePromise, rejectPromise) => {
           const timer = setTimeout(() => rejectPromise(new Error('Timed out waiting for hello')), 5_000)
           const check = (): void => {
@@ -272,10 +281,18 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
           check()
         })
         expect(reply.ok).toBe(true)
-        const result = reply.result as { clientId: string; capabilities: { mayAnswer: boolean }; sottoVersion: string }
+        const result = reply.result as {
+          clientId: string
+          capabilities: { mayAnswer: boolean }
+          sottoVersion: string
+          shell: { host: { providers: Array<{ id: string }> } }
+        }
         expect(result.clientId).toBe(pairedClientId)
         expect(result.capabilities.mayAnswer).toBe(true)
         expect(result.sottoVersion).toBe('0.1.44-owl.20261118.2')
+        const providerIds = result.shell.host.providers.map(p => p.id)
+        expect(providerIds).not.toContain('deepseek')
+        expect(providerIds).toContain('hermes')
       } finally {
         socket.close()
       }
@@ -470,12 +487,72 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
     await writeFile(join(projectDir, 'readme.md'), '# Contract test\nhello world\n', 'utf8')
     await writeFile(join(projectDir, 'oversized.txt'), Buffer.alloc(512 * 1024 + 32, 0x61))
 
+    const threadId = '00000000-0000-4000-8000-0000000000c1'
+    // Seed real TypeScript `SubagentStore` and `UsageStore` databases before starting Rust `sotto-host`
+    // so we prove real cross-language SQLite reads, rollups, pagination, and transactional clear parity.
+    const seedSubagents = new SubagentStore(join(dataDir, 'subagents.sqlite'))
+    seedSubagents.open()
+    seedSubagents.ingest(threadId, [
+      {
+        id: 'agent-1',
+        assignmentId: 'asgn-1',
+        title: 'Inspect Rust store',
+        description: 'Verify subagent page rows',
+        prompt: 'Check subagents.sqlite parity',
+        message: 'Parity verified',
+        status: 'completed',
+        model: 'claude-opus-4-6',
+        observedAt: '2026-11-22T10:00:00.000Z',
+        startedAt: '2026-11-22T09:59:00.000Z',
+        completedAt: '2026-11-22T10:00:00.000Z',
+        durationMs: 60_000,
+      },
+    ])
+    seedSubagents.close()
+
+    const seedUsage = new UsageStore(join(dataDir, 'usage.sqlite'))
+    seedUsage.open()
+    const recordHash = createHash('sha256').update('rust-usage-parity-1').digest('hex')
+    const unicodeThreadId = 'thread-café-🚀'
+    const unicodeRecordKey = createHash('sha256').update('rust-usage-parity-unicode').digest('hex')
+    seedUsage.observeTokens({
+      providerId: 'codex',
+      threadId,
+      recordKey: recordHash,
+      modelId: 'native:codex:model:gpt-5.2-2026-01-15',
+      tokens: { input: 420, output: 80, cached: 100 },
+      at: '2026-11-22T12:15:00.000Z',
+      phase: 'live',
+      partial: false,
+    })
+    seedUsage.observeTokens({
+      providerId: 'codex',
+      threadId: unicodeThreadId,
+      recordKey: unicodeRecordKey,
+      modelId: 'native:codex:model:gpt-5.2-2026-01-15',
+      tokens: { input: 10, output: 5 },
+      at: '2026-11-22T12:16:00.000Z',
+      phase: 'live',
+      partial: false,
+    })
+    seedUsage.submitPrompt({
+      providerId: 'codex',
+      threadId,
+      messageId: 'prompt-msg-1',
+      modelId: 'native:codex:model:gpt-5.2-2026-01-15',
+      at: '2026-11-22T12:14:00.000Z',
+      kind: 'user',
+      inputKind: 'send',
+    })
+    seedUsage.acceptSubmittedPrompt(threadId, 'prompt-msg-1')
+    const seededUsageRevision = seedUsage.metadata().revision
+    seedUsage.close()
+
     const running = await startHost(
       [hostBinary, '--data', '{data}', '--port', '0', '--sotto-version', '0.1.44-owl.20261118.2', '--mock-provider', 'codex'],
       dataDir,
       'codex',
     )
-    const threadId = '00000000-0000-4000-8000-0000000000c1'
     try {
       const pair = await pairClient(running.port, dataDir, 'Contract Desktop')
       const sock = await openSocket(running.port, pair.session, PROFILES.desktop.offer)
@@ -621,8 +698,20 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         toolsResultSchema(gitReviewSchema).parse((await rpc({ op: 'thread-changes-review', request: { threadId, workspaceId, scope: { kind: 'working' } } })).result)
         hostFoldersResultSchema.parse((await rpc({ op: 'host-folders', request: { path: projectDir } })).result)
         hostMachineReportSchema.parse((await rpc({ op: 'host-facts' })).result)
-        subagentPageSchema.parse((await rpc({ op: 'subagent-page', request: { threadId } })).result)
-        subagentAssignmentsPageSchema.parse((await rpc({ op: 'subagent-assignments', request: { threadId, agentId: 'a1' } })).result)
+        const subPage = subagentPageSchema.parse((await rpc({ op: 'subagent-page', request: { threadId } })).result)
+        expect(subPage.revision).toBeGreaterThan(0)
+        expect(subPage.rows).toHaveLength(1)
+        expect(subPage.rows[0]).toMatchObject({ id: 'agent-1', title: 'Inspect Rust store', status: 'completed' })
+        expect(subPage.summary).toMatchObject({ total: 1, completed: 1 })
+        const subAsgn = subagentAssignmentsPageSchema.parse(
+          (await rpc({ op: 'subagent-assignments', request: { threadId, agentId: 'agent-1' } })).result,
+        )
+        expect(subAsgn.assignments).toHaveLength(1)
+        expect(subAsgn.assignments[0]).toMatchObject({
+          id: 'asgn-1',
+          prompt: 'Check subagents.sqlite parity',
+          result: 'Parity verified',
+        })
 
         // Send a prompt so thread-words finds a match matching `agentThreadWordsSchema`.
         await rpc({ op: 'command', command: { type: 'manual-send', threadId, text: 'UniqueNeedleWord42', attachments: [imgHandle] } })
@@ -630,12 +719,37 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         expect(words.found).toHaveLength(1)
         expect(words.found[0]!.threadId).toBe(threadId)
 
-        // Usage dashboard real v1 ops (`usage-read`, `usage-refresh`, `usage-clear`).
+        // Usage dashboard real v1 ops (`usage-read`, `usage-refresh`, `usage-clear`) reading TS-seeded `usage.sqlite`.
         const uRead = usageLocalHostReadSchema.parse((await rpc({ op: 'usage-read', query: { timeZone: 'UTC' } })).result)
         expect(uRead.status).toBe('ready')
-        usageLocalHostReadSchema.parse((await rpc({ op: 'usage-refresh' })).result)
-        const uClear = usageLocalClearResultSchema.parse((await rpc({ op: 'usage-clear', request: { expectedRevision: 0 } })).result)
+        expect(uRead.activity?.totals.tokens.input.value).toBe(430)
+        expect(uRead.activity?.totals.tokens.output.value).toBe(85)
+        expect(uRead.activity?.totals.tokens.total.value).toBe(515)
+        expect(uRead.activity?.totals.prompts.user).toBe(1)
+        expect(uRead.activity?.models[0]).toMatchObject({ providerId: 'codex', modelId: 'gpt-5.2' })
+        expect(uRead.activity?.daily).toHaveLength(1)
+        expect(uRead.activity?.daily[0]?.day).toBe('2026-11-22')
+        expect(uRead.activity?.hourly).toHaveLength(1)
+        expect(uRead.activity?.hourly[0]).toMatchObject({ weekday: 6, hour: 12 })
+        expect(uRead.quotas.find(q => q.providerId === 'codex')?.reason).toBe('unsupported')
+        expect(uRead.quotas.find(q => q.providerId === 'claude')?.reason).toBe('not-connected')
+
+        const uRefresh = usageLocalHostReadSchema.parse((await rpc({ op: 'usage-refresh' })).result)
+        expect(uRefresh.status).toBe('ready')
+        expect(uRefresh.quotas.some(q => q.providerId === 'codex')).toBe(true)
+
+        const uStale = usageLocalClearResultSchema.parse(
+          (await rpc({ op: 'usage-clear', request: { expectedRevision: seededUsageRevision + 99 } })).result,
+        )
+        expect(uStale.status).toBe('stale')
+        const uClear = usageLocalClearResultSchema.parse(
+          (await rpc({ op: 'usage-clear', request: { expectedRevision: seededUsageRevision } })).result,
+        )
         expect(uClear.status).toBe('cleared')
+        expect(uClear.metadata.revision).toBe(seededUsageRevision + 1)
+        const uAfterClear = usageLocalHostReadSchema.parse((await rpc({ op: 'usage-read', query: { timeZone: 'UTC' } })).result)
+        expect(uAfterClear.activity?.totals.tokenRecords).toBe(0)
+        expect(uAfterClear.activity?.totals.prompts.total).toBe(0)
       } finally {
         sock.close()
       }
@@ -650,6 +764,38 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
     expect(binding).toBeDefined()
     expect(binding?.provider).toBe('codex')
     expect(binding?.createdAt).toBeTruthy()
+
+    // 7. Verify TS `UsageStore` honors Rust's `usage-clear` exclusions so cleared records never resurrect!
+    const verifyUsage = new UsageStore(join(dataDir, 'usage.sqlite'))
+    verifyUsage.open()
+    try {
+      expect(verifyUsage.metadata().revision).toBe(seededUsageRevision + 1)
+      const reingest = verifyUsage.observeTokens({
+        providerId: 'codex',
+        threadId,
+        recordKey: recordHash,
+        modelId: 'native:codex:model:gpt-5.2-2026-01-15',
+        tokens: { input: 420, output: 80, cached: 100 },
+        at: '2026-11-22T12:15:00.000Z',
+        phase: 'replay',
+        partial: false,
+      })
+      expect(reingest.status).toBe('suppressed')
+      // Non-ASCII / surrogate-pair IDs must hash identically (UTF-16 code-unit prefix) across Rust and TS.
+      const reingestUnicode = verifyUsage.observeTokens({
+        providerId: 'codex',
+        threadId: unicodeThreadId,
+        recordKey: unicodeRecordKey,
+        modelId: 'native:codex:model:gpt-5.2-2026-01-15',
+        tokens: { input: 10, output: 5 },
+        at: '2026-11-22T12:16:00.000Z',
+        phase: 'replay',
+        partial: false,
+      })
+      expect(reingestUnicode.status).toBe('suppressed')
+    } finally {
+      verifyUsage.close()
+    }
 
     await rm(dataDir, { recursive: true, force: true })
   }, 30_000)

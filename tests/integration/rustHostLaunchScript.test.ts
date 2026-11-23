@@ -4,7 +4,7 @@
 // `/v1/health` discovery, `startedBy: "launch-script"` ownership, `stop-host`, and strict default
 // preservation when `useRustHost` is omitted.
 import { spawn } from 'node:child_process'
-import { access, copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { access, chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -114,6 +114,80 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host opt-in launch script integratio
       if (hostId) {
         await runLaunchScript({ ...baseCfg, op: 'stop-host', hostId }).catch(() => undefined)
       }
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('falls back cleanly to Node host when sotto-host is non-executable, wrong-arch, or fails startup on unreadable agents.json (N5)', async () => {
+    const binary = await findRustHostBinary()
+    const root = await mkdtemp(join(tmpdir(), 'sotto-rust-launch-n5-'))
+    const installPath = join(root, 'install')
+    const dataDirectory = join(root, 'data')
+    const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+    const rustBinPath = join(installPath, 'host', exe)
+    await mkdir(join(installPath, 'host'), { recursive: true })
+    await mkdir(dataDirectory, { recursive: true })
+    await writeFile(join(installPath, 'package.json'), JSON.stringify({ type: 'module' }))
+    await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(installPath, 'host', 'index.js'))
+
+    const baseCfg = {
+      installPath,
+      dataDirectory,
+      remotePort: 0,
+      nodeRange: '>=24.0.0 <25',
+      readyTimeoutMs: 15_000,
+      stopDrainMs: 5_000,
+      archiveLimitBytes: 100_000_000,
+      downloadTimeoutMs: 10_000,
+      updateLockUnnamedMs: 5_000,
+    }
+
+    const stopIfRunning = async (id: string | undefined): Promise<void> => {
+      if (id) await runLaunchScript({ ...baseCfg, op: 'stop-host', hostId: id }).catch(() => undefined)
+    }
+
+    try {
+      // 1. Wrong-arch / invalid binary falls back cleanly to Node `host/index.js`.
+      const wrongElf = Buffer.alloc(24)
+      wrongElf.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0], 0)
+      // Write the opposite architecture machine ID (arm64 on x64, x64 on arm64).
+      wrongElf.writeUInt16LE(process.arch === 'x64' ? 0xb7 : 0x3e, 18)
+      await writeFile(rustBinPath, wrongElf)
+      if (process.platform !== 'win32') await chmod(rustBinPath, 0o755)
+      const wrongArchEvents = await runLaunchScript({ ...baseCfg, op: 'launch', useRustHost: true })
+      const wrongArchReady = wrongArchEvents.find(ev => ev.type === 'ready')
+      expect(wrongArchReady).toBeDefined()
+      expect(wrongArchReady?.hostId).toBe('11111111-1111-4111-8111-111111111111')
+      await stopIfRunning(String(wrongArchReady!.hostId))
+
+      // 2. Non-executable `host/sotto-host` falls back cleanly to Node `host/index.js` on POSIX.
+      if (process.platform !== 'win32') {
+        await copyFile(binary, rustBinPath)
+        await chmod(rustBinPath, 0o644)
+        const nonExecEvents = await runLaunchScript({ ...baseCfg, op: 'launch', useRustHost: true })
+        const nonExecReady = nonExecEvents.find(ev => ev.type === 'ready')
+        expect(nonExecReady).toBeDefined()
+        expect(nonExecReady?.hostId).toBe('11111111-1111-4111-8111-111111111111')
+        await stopIfRunning(String(nonExecReady!.hostId))
+      }
+
+      // 3. Valid `sotto-host` binary that fails startup (corrupt `agents.json`) falls back cleanly to Node `host/index.js`.
+      await copyFile(binary, rustBinPath)
+      if (process.platform !== 'win32') await chmod(rustBinPath, 0o755)
+      await writeFile(join(dataDirectory, 'agents.json'), '{not-valid-json', 'utf8')
+      const fallbackEvents = await runLaunchScript({ ...baseCfg, op: 'launch', useRustHost: true })
+      const fallbackReady = fallbackEvents.find(ev => ev.type === 'ready')
+      expect(fallbackReady).toBeDefined()
+      expect(fallbackReady?.hostId).toBe('11111111-1111-4111-8111-111111111111')
+      await stopIfRunning(String(fallbackReady!.hostId))
+
+      // 4. Without Node fallback, a non-runnable `sotto-host` reports `host-start-failed` (not `archive-missing`).
+      await rm(join(installPath, 'host', 'index.js'))
+      await writeFile(rustBinPath, wrongElf)
+      if (process.platform !== 'win32') await chmod(rustBinPath, 0o755)
+      const noFallbackEvents = await runLaunchScript({ ...baseCfg, op: 'launch', useRustHost: true })
+      expect(noFallbackEvents.at(-1)).toMatchObject({ type: 'error', reason: 'host-start-failed' })
+    } finally {
       await rm(root, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 45_000)

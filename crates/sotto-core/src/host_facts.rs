@@ -116,7 +116,14 @@ impl HostFactsSampler {
         }
 
         let static_facts = self.static_facts();
-        let (total_mem, free_mem, _) = read_memory_bytes();
+        let (total_mem, free_mem, available_mem) = read_memory_bytes();
+        // On Linux, `MemFree` excludes reclaimable page cache and can read ~40x below usable memory;
+        // report `MemAvailable` when present, falling back to `MemFree`.
+        let reported_free_mem = if cfg!(target_os = "linux") {
+            available_mem.or(free_mem)
+        } else {
+            free_mem
+        };
         let value = json!({
             "observedAt": now_iso(),
             "os": {
@@ -126,7 +133,7 @@ impl HostFactsSampler {
             },
             "architecture": static_facts.architecture,
             "totalMemoryBytes": bound_bytes(total_mem),
-            "freeMemoryBytes": bound_bytes(free_mem),
+            "freeMemoryBytes": bound_bytes(reported_free_mem),
             "logicalCpuCount": static_facts.logical_cpu_count,
         });
 
@@ -295,11 +302,29 @@ fn cpu_busy_percent(start: Option<CpuCounters>, end: Option<CpuCounters>) -> Opt
     Some(rounded.clamp(0.0, 100.0))
 }
 
-fn read_static_os_facts() -> StaticOsFacts {
-    let cpus = std::thread::available_parallelism()
+fn read_logical_cpu_count() -> Option<usize> {
+    #[cfg(target_os = "linux")]
+    {
+        // Match Node's `os.cpus().length` (online CPUs via `/proc/cpuinfo`) rather than cgroup-capped
+        // `available_parallelism()`, falling back if `/proc/cpuinfo` is unavailable.
+        if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
+            let count = content
+                .lines()
+                .filter(|line| line.starts_with("processor"))
+                .count();
+            if (1..=HOST_FACTS_CPU_COUNT_MAX).contains(&count) {
+                return Some(count);
+            }
+        }
+    }
+    std::thread::available_parallelism()
         .ok()
         .map(|n| n.get())
-        .filter(|n| (1..=HOST_FACTS_CPU_COUNT_MAX).contains(n));
+        .filter(|n| (1..=HOST_FACTS_CPU_COUNT_MAX).contains(n))
+}
+
+fn read_static_os_facts() -> StaticOsFacts {
+    let cpus = read_logical_cpu_count();
     let arch = match std::env::consts::ARCH {
         "x86_64" => "x64",
         "aarch64" => "arm64",
@@ -564,7 +589,6 @@ fn read_memory_bytes() -> (Option<u64>, Option<u64>, Option<u64>) {
 
 #[cfg(target_os = "macos")]
 fn read_memory_bytes() -> (Option<u64>, Option<u64>, Option<u64>) {
-    use std::ffi::CStr;
     extern "C" {
         fn sysctlbyname(
             name: *const std::ffi::c_char,
@@ -584,7 +608,7 @@ fn read_memory_bytes() -> (Option<u64>, Option<u64>, Option<u64>) {
     }
     let mut total: u64 = 0;
     let mut len = std::mem::size_of::<u64>();
-    let name = CStr::from_bytes_with_nul(b"hw.memsize\0").unwrap();
+    let name = c"hw.memsize";
     let total_mem = if unsafe {
         sysctlbyname(
             name.as_ptr(),

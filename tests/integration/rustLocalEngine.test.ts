@@ -335,8 +335,8 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
     await writeFile(join(repoDir, 'src', 'app.ts'), 'export const value = 2\n', 'utf8')
     git(['add', 'src/app.ts'])
     git(['commit', '-m', 'Feature branch change'])
-    // Working-tree edits: modify README.md with whitespace + text change, add untracked file.
-    await writeFile(join(repoDir, 'README.md'), '# Stage 4a\n  line one\nline two\n', 'utf8')
+    // Working-tree edits: modify README.md with UTF-8 BOM + whitespace + text change, add untracked file.
+    await writeFile(join(repoDir, 'README.md'), '\uFEFF# Stage 4a\n  line one\nline two\n', 'utf8')
     await writeFile(join(repoDir, 'notes.txt'), 'Untracked note\n', 'utf8')
 
     const client = await startRustLocalEngine({
@@ -360,6 +360,12 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(facts.totalMemoryBytes).toBeGreaterThan(0)
       expect(facts.freeMemoryBytes).not.toBeNull()
       expect(facts.logicalCpuCount).toBeGreaterThanOrEqual(1)
+      // Direct Rust-vs-Node host facts parity check.
+      const nodeFacts = await new HostFactsSource().read()
+      expect(facts.os.family).toBe(nodeFacts.os.family)
+      expect(facts.architecture).toBe(nodeFacts.architecture)
+      expect(facts.logicalCpuCount).toBe(nodeFacts.logicalCpuCount)
+      expect(facts.totalMemoryBytes).toBe(nodeFacts.totalMemoryBytes)
       const load = await factsSource.load()
       expect(rustFactsCalls).toBe(2)
       expect(load.windowMs).toBeGreaterThanOrEqual(1)
@@ -393,7 +399,8 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
 
       const mdPreview = await files.preview({ threadId: 't-4a', workspaceId: wsId, path: 'README.md' })
       expect(mdPreview.ok).toBe(true)
-      if (mdPreview.ok) expect(mdPreview.value.content).toMatchObject({ kind: 'markdown' })
+      // UTF-8 BOM stripped matching TS TextDecoder('utf-8').
+      if (mdPreview.ok) expect(mdPreview.value.content).toEqual({ kind: 'markdown', text: '# Stage 4a\n  line one\nline two\n' })
 
       const pngPreview = await files.preview({ threadId: 't-4a', workspaceId: wsId, path: 'dot.png' })
       expect(pngPreview.ok).toBe(true)
@@ -447,12 +454,19 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(branchReview.value.scope).toMatchObject({ kind: 'branch', base: 'main', head: 'feature/accel' })
       expect(branchReview.value.files.some(f => f.path === 'src/app.ts' && f.status === 'modified')).toBe(true)
 
-      // 5. After Rust accelerator closes, every TS service transparently falls back without errors.
+      // 5. After Rust accelerator closes, every TS service transparently falls back and matches Rust parity.
       await client!.close()
       const fallbackFiles = await files.preview({ threadId: 't-4a', workspaceId: wsId, path: 'README.md' })
       expect(fallbackFiles.ok).toBe(true)
+      if (fallbackFiles.ok && mdPreview.ok) {
+        expect(fallbackFiles.value.content).toEqual(mdPreview.value.content)
+      }
       const fallbackChanges = await gitChanges.list({ threadId: 't-4a', workspaceId: wsId })
       expect(fallbackChanges.ok).toBe(true)
+      if (fallbackChanges.ok) {
+        expect(fallbackChanges.value.files).toEqual(changes.value.files)
+        expect(fallbackChanges.value.branch).toBe(changes.value.branch)
+      }
       gitChanges.dispose()
     } finally {
       await client?.close().catch(() => undefined)

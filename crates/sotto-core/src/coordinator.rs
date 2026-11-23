@@ -105,6 +105,10 @@ enum AsyncCommandOutcome {
         suppress_notice: bool,
     },
     Disconnect {
+        explicit_provider: Option<String>,
+        provider_ids: Vec<String>,
+    },
+    Configure {
         provider_ids: Vec<String>,
     },
     ConfigureThread {
@@ -158,6 +162,9 @@ enum ActorMessage {
     },
     GetRunningThreadsCount {
         reply: oneshot::Sender<usize>,
+    },
+    GetConnectedProviders {
+        reply: oneshot::Sender<Vec<String>>,
     },
     GetAttachmentContent {
         digest: String,
@@ -309,6 +316,16 @@ impl CoordinatorHandle {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(ActorMessage::GetRunningThreadsCount { reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn connected_providers(&self) -> Result<Vec<String>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetConnectedProviders { reply: reply_tx })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
         reply_rx
             .await
@@ -772,6 +789,15 @@ impl CoordinatorActor {
                 let count = self.threads.iter().filter(|t| t.status == "running").count();
                 let _ = reply.send(count);
             }
+            ActorMessage::GetConnectedProviders { reply } => {
+                let connected = self
+                    .provider_statuses
+                    .iter()
+                    .filter(|(_, status)| status.connection == "connected")
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                let _ = reply.send(connected);
+            }
             ActorMessage::GetAttachmentContent { digest, reply } => {
                 let found = self.staged.get_by_digest(&digest).and_then(|entry| {
                     std::fs::read(&entry.path)
@@ -977,10 +1003,6 @@ impl CoordinatorActor {
 
         match cmd_type {
             // Fast, purely local commands execute synchronously and release the lane immediately.
-            "configure" => {
-                let res = self.cmd_configure(&command);
-                self.finish_sync_command(lane, &client, res, reply);
-            }
             "refresh" => {
                 let res = self.cmd_refresh(&command);
                 self.finish_sync_command(lane, &client, res, reply);
@@ -1024,6 +1046,7 @@ impl CoordinatorActor {
             }
 
             // Slow provider / git-worktree commands run outside the owner loop while holding only their lane.
+            "configure" => self.spawn_cmd_configure(lane, client, &command, reply),
             "connect" => self.spawn_cmd_connect(lane, client, &command, reply),
             "disconnect" => self.spawn_cmd_disconnect(lane, client, &command, reply),
             "configure-thread" => self.spawn_cmd_configure_thread(lane, client, &command, reply),
@@ -1142,21 +1165,30 @@ impl CoordinatorActor {
     ) {
         let explicit_provider = command.get("provider").and_then(Value::as_str).map(ToString::to_string);
         let available = self.available_providers();
-        let targets: Vec<(String, Arc<dyn ProviderAdapter>)> = match explicit_provider {
-            Some(provider_id) => match self.providers.get(&provider_id).cloned() {
+        let targets: Vec<(String, Arc<dyn ProviderAdapter>)> = match &explicit_provider {
+            Some(provider_id) => match self.providers.get(provider_id).cloned() {
                 Some(adapter) => {
                     self.configuration
                         .mark_providers_turned_off(&[provider_id.as_str()], &[], &available);
-                    vec![(provider_id, adapter)]
+                    vec![(provider_id.clone(), adapter)]
                 }
                 None => {
+                    if ALL_PROVIDER_IDS.contains(&provider_id.as_str()) {
+                        self.configuration
+                            .mark_providers_turned_off(&[provider_id.as_str()], &[], &available);
+                        self.notice = format!("{} disconnected.", provider_label(provider_id));
+                        self.save_workspace();
+                    }
                     self.finish_sync_command(lane, &client, Ok(()), reply);
                     return;
                 }
             },
             None => {
-                // Disconnect-all records every Node provider ID (`ALL_PROVIDER_IDS`, including
-                // `deepseek`, `hermes`, `pi`) so switching back to Node never reconnects them.
+                // Mirror `src/main/agents/control.ts:4801-4806` (concurrentProviders headless host):
+                // clear `enabledProviders`, keep `enabled` unchanged, record every Node provider ID
+                // (`ALL_PROVIDER_IDS`, including `deepseek`, `hermes`, `pi`) plus any unknown future
+                // off IDs so switching back to Node never reconnects them, and disconnect all active
+                // adapters concurrently.
                 let existing: Vec<String> = self
                     .configuration
                     .disconnected_providers
@@ -1178,15 +1210,26 @@ impl CoordinatorActor {
         self.save_workspace();
         let self_tx = self.self_tx.clone();
         tokio::spawn(async move {
-            let mut provider_ids = Vec::with_capacity(targets.len());
+            let mut join_set = tokio::task::JoinSet::new();
             for (provider_id, adapter) in targets {
-                let _ = adapter.disconnect().await;
-                provider_ids.push(provider_id);
+                join_set.spawn(async move {
+                    let _ = adapter.disconnect().await;
+                    provider_id
+                });
+            }
+            let mut provider_ids = Vec::new();
+            while let Some(joined) = join_set.join_next().await {
+                if let Ok(provider_id) = joined {
+                    provider_ids.push(provider_id);
+                }
             }
             let _ = self_tx.send(ActorMessage::AsyncCommandDone {
                 lane,
                 client,
-                outcome: Box::new(AsyncCommandOutcome::Disconnect { provider_ids }),
+                outcome: Box::new(AsyncCommandOutcome::Disconnect {
+                    explicit_provider,
+                    provider_ids,
+                }),
                 reply,
             });
         });
@@ -1634,13 +1677,34 @@ impl CoordinatorActor {
                     self.error = None;
                 }
             }
-            AsyncCommandOutcome::Disconnect { provider_ids } => {
+            AsyncCommandOutcome::Disconnect {
+                explicit_provider,
+                provider_ids,
+            } => {
                 for provider_id in provider_ids {
                     if let Some(adapter) = self.providers.get(&provider_id).cloned() {
                         self.provider_statuses.insert(provider_id, adapter.status());
                     }
                 }
                 self.rebuild_catalog();
+                match explicit_provider {
+                    Some(provider_id) => {
+                        self.notice = format!("{} disconnected.", provider_label(&provider_id));
+                    }
+                    None => {
+                        self.notice = "Sotto disconnected.".into();
+                        self.error = None;
+                    }
+                }
+            }
+            AsyncCommandOutcome::Configure { provider_ids } => {
+                for provider_id in provider_ids {
+                    if let Some(adapter) = self.providers.get(&provider_id).cloned() {
+                        self.provider_statuses.insert(provider_id, adapter.status());
+                    }
+                }
+                self.rebuild_catalog();
+                self.save_workspace();
             }
             AsyncCommandOutcome::ConfigureThread {
                 thread_id,
@@ -1812,20 +1876,38 @@ impl CoordinatorActor {
         Ok(self.build_shell(client.may_answer))
     }
 
-    fn cmd_configure(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+    fn spawn_cmd_configure(
+        &mut self,
+        lane: Option<String>,
+        client: ClientContext,
+        command: &Map<String, Value>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
         let Some(patch) = command.get("patch").and_then(Value::as_object) else {
-            return Err(CoordinatorError::invalid("Configure needs a patch object."));
+            self.finish_sync_command(
+                lane,
+                &client,
+                Err(CoordinatorError::invalid("Configure needs a patch object.")),
+                reply,
+            );
+            return;
         };
         let before_enabled = self.configuration.enabled_providers.clone();
-        self.configuration
-            .apply_patch(patch)
-            .map_err(CoordinatorError::invalid)?;
+        if let Err(err) = self.configuration.apply_patch(patch) {
+            self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid(err)), reply);
+            return;
+        }
         let available = self.available_providers();
         let mut to_disconnect: Vec<String> = Vec::new();
         if patch.contains_key("disconnectedProviders") {
-            let off_owned = self.configuration.disconnected_providers.clone().unwrap_or_default();
+            let off_owned = self
+                .configuration
+                .disconnected_providers
+                .clone()
+                .unwrap_or_default();
             let off: HashSet<&str> = off_owned.iter().map(String::as_str).collect();
-            self.configuration.set_disconnected_providers(&off, &available);
+            self.configuration
+                .set_disconnected_providers(&off, &available);
             for id in &before_enabled {
                 if off.contains(id.as_str()) {
                     to_disconnect.push(id.clone());
@@ -1844,20 +1926,96 @@ impl CoordinatorActor {
                 .mark_providers_turned_off(&removed_refs, &next_refs, &available);
             to_disconnect = removed;
         }
-        for provider_id in to_disconnect {
-            if let Some(adapter) = self.providers.get(&provider_id).cloned() {
-                tokio::spawn(async move {
-                    let _ = adapter.disconnect().await;
-                });
-                if let Some(status) = self.provider_statuses.get_mut(&provider_id) {
-                    status.connection = "disconnected".into();
-                    status.error = None;
+
+        // Mirror `scheduleProviderReconnects()` in `src/main/agents/control.ts`: when a user
+        // newly re-enables a provider in Settings, reconnect it off the global lane so slow or
+        // failing connects never stall `configure` or queued global commands, and surface errors.
+        let mut to_connect: Vec<String> = Vec::new();
+        if patch.contains_key("disconnectedProviders") || patch.contains_key("enabledProviders") {
+            for id in &self.configuration.enabled_providers {
+                if before_enabled.contains(id) || to_disconnect.contains(id) {
+                    continue;
+                }
+                let is_disconnected = self
+                    .provider_statuses
+                    .get(id)
+                    .is_some_and(|s| s.connection == "disconnected");
+                let is_live_adapter = self.providers.get(id).is_some_and(|a| !a.is_held());
+                if is_disconnected && is_live_adapter {
+                    to_connect.push(id.clone());
                 }
             }
         }
-        self.rebuild_catalog();
+
+        let disconnect_targets: Vec<(String, Arc<dyn ProviderAdapter>)> = to_disconnect
+            .into_iter()
+            .filter_map(|id| self.providers.get(&id).cloned().map(|a| (id, a)))
+            .collect();
+        let connect_targets: Vec<(String, Arc<dyn ProviderAdapter>)> = to_connect
+            .into_iter()
+            .filter_map(|id| self.providers.get(&id).cloned().map(|a| (id, a)))
+            .collect();
+
         self.save_workspace();
-        Ok(())
+        let spawn_detached_connects = |targets: Vec<(String, Arc<dyn ProviderAdapter>)>,
+                                       events_tx: mpsc::UnboundedSender<ProviderEvent>| {
+            for (provider_id, adapter) in targets {
+                let tx = events_tx.clone();
+                tokio::spawn(async move {
+                    let status = match adapter.connect(tx.clone()).await {
+                        Ok(()) => adapter.status(),
+                        Err(err) => {
+                            let mut st = adapter.status();
+                            st.connection = "error".into();
+                            st.error = Some(err);
+                            st
+                        }
+                    };
+                    let _ = tx.send(ProviderEvent::StatusChanged {
+                        provider_id,
+                        status,
+                        models: adapter.models(),
+                        client_update: adapter.client_update(),
+                    });
+                });
+            }
+        };
+
+        if disconnect_targets.is_empty() {
+            if !connect_targets.is_empty() {
+                spawn_detached_connects(connect_targets, self.provider_events_tx.clone());
+            }
+            self.rebuild_catalog();
+            self.finish_sync_command(lane, &client, Ok(()), reply);
+            return;
+        }
+
+        let events_tx = self.provider_events_tx.clone();
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let mut provider_ids = Vec::with_capacity(disconnect_targets.len());
+            let mut disc_set = tokio::task::JoinSet::new();
+            for (provider_id, adapter) in disconnect_targets {
+                disc_set.spawn(async move {
+                    let _ = adapter.disconnect().await;
+                    provider_id
+                });
+            }
+            while let Some(joined) = disc_set.join_next().await {
+                if let Ok(provider_id) = joined {
+                    provider_ids.push(provider_id);
+                }
+            }
+            if !connect_targets.is_empty() {
+                spawn_detached_connects(connect_targets, events_tx);
+            }
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                lane,
+                client,
+                outcome: Box::new(AsyncCommandOutcome::Configure { provider_ids }),
+                reply,
+            });
+        });
     }
 
     fn cmd_refresh(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
@@ -3648,5 +3806,158 @@ mod tests {
         );
         assert!(shell["configuration"].get("disconnectedProviders").is_none());
         coord2.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn configure_awaits_disconnect_in_lane_and_reconnects_reenabled_provider() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use crate::provider::BoxFuture;
+
+        struct DelayedDisconnectAdapter {
+            inner: MockProviderAdapter,
+            disconnect_finished: Arc<AtomicBool>,
+        }
+
+        impl ProviderAdapter for DelayedDisconnectAdapter {
+            fn id(&self) -> &str { self.inner.id() }
+            fn name(&self) -> &str { self.inner.name() }
+            fn status(&self) -> AgentProviderStatus { self.inner.status() }
+            fn models(&self) -> Vec<AgentModel> { self.inner.models() }
+            fn connect(&self, tx: mpsc::UnboundedSender<ProviderEvent>) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.connect(tx)
+            }
+            fn disconnect(&self) -> BoxFuture<'_, Result<(), String>> {
+                let flag = Arc::clone(&self.disconnect_finished);
+                Box::pin(async move {
+                    tokio::time::sleep(Duration::from_millis(60)).await;
+                    let res = self.inner.disconnect().await;
+                    flag.store(true, Ordering::SeqCst);
+                    res
+                })
+            }
+            fn create_thread(
+                &self,
+                thread_id: String,
+                cwd: String,
+                model_id: Option<String>,
+                runtime_mode: Option<String>,
+                reasoning_effort: Option<String>,
+            ) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.create_thread(thread_id, cwd, model_id, runtime_mode, reasoning_effort)
+            }
+            fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
+                self.inner.send_message(req)
+            }
+            fn answer_request(&self, input: AnswerRequestInput) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.answer_request(input)
+            }
+            fn interrupt(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.interrupt(thread_id)
+            }
+            fn compact(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.compact(thread_id)
+            }
+        }
+
+        let dir = tempdir().unwrap();
+        let disconnect_finished = Arc::new(AtomicBool::new(false));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+        providers.insert(
+            "claude".into(),
+            Arc::new(DelayedDisconnectAdapter {
+                inner: MockProviderAdapter::new("claude"),
+                disconnect_finished: Arc::clone(&disconnect_finished),
+            }),
+        );
+
+        let coord = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000008".into(),
+            false,
+            providers,
+        )
+        .unwrap();
+        let client = ClientContext {
+            client_id: "c1".into(),
+            user: "Test".into(),
+            may_answer: true,
+        };
+
+        // Turning claude off via `configure` MUST await its disconnect before replying.
+        let after_disable = coord
+            .run_command(
+                client.clone(),
+                json!({ "type": "configure", "patch": { "enabledProviders": ["codex"] } })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        assert!(disconnect_finished.load(Ordering::SeqCst));
+        let claude_after_off = after_disable["host"]["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == "claude")
+            .unwrap();
+        assert_eq!(claude_after_off["connection"], "disconnected");
+
+        // Re-enabling claude via `configure` answers without blocking the global lane and
+        // reconnects the adapter in the background without requiring a restart.
+        let _ = coord
+            .run_command(
+                client.clone(),
+                json!({ "type": "configure", "patch": { "enabledProviders": ["codex", "claude"] } })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        let mut reconnected = false;
+        for _ in 0..40 {
+            let shell = coord.shell(true).await.unwrap();
+            let claude_status = shell["host"]["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["id"] == "claude")
+                .unwrap();
+            if claude_status["connection"] == "connected" {
+                reconnected = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert!(reconnected);
+
+        // Disconnect single provider & disconnect-all emit exact Node notice wording.
+        let after_single = coord
+            .run_command(
+                client.clone(),
+                json!({ "type": "disconnect", "provider": "claude" })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(after_single["notice"], "Claude Code disconnected.");
+
+        let enabled_before = after_single["configuration"]["enabled"].clone();
+        let after_all = coord
+            .run_command(
+                client,
+                json!({ "type": "disconnect" }).as_object().unwrap().clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(after_all["notice"], "Sotto disconnected.");
+        assert_eq!(after_all["configuration"]["enabled"], enabled_before);
+        assert_eq!(after_all["configuration"]["enabledProviders"], json!([]));
+
+        coord.shutdown().await;
     }
 }

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
+import process from 'node:process'
 
 /** Resolve a local Owl build without rewriting the source package manifest. */
 export function resolveOwlVersion(stableVersion, date, buildNumber) {
@@ -25,6 +26,15 @@ export function resolveOwlVersion(stableVersion, date, buildNumber) {
  */
 export function owlPublishConfig() {
   return { provider: 'github', owner: 'millZach', repo: 'Sotto-releases', channel: 'owl', releaseType: 'prerelease' }
+}
+
+/**
+ * Owl-only extraResources appended by electron-builder's config merge (`deepAssign` concatenates array keys onto
+ * `electron-builder.yml` rather than replacing them). Each build gets a fresh array and entry object.
+ */
+export function owlExtraResources(platform = process.platform) {
+  const exe = platform === 'win32' ? 'sotto-engine.exe' : 'sotto-engine'
+  return [{ from: 'dist/rust-engine', to: 'rust-engine', filter: [exe] }]
 }
 
 const fullOwlVersion = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-owl\.([1-9]\d{7})\.[1-9]\d*$/u

@@ -6,6 +6,7 @@ pub mod host_facts;
 pub mod identity;
 pub mod lock;
 pub mod ops;
+pub mod usage_ops;
 pub mod pairing;
 pub mod protocol;
 pub mod provider;

@@ -161,11 +161,49 @@ const syncRustHostMarker = async useRust => {
     else if (!useRust) await fs.rm(rustMarkerPath, { force: true }).catch(() => undefined);
   }
 };
+const rustHostCandidate = async () => {
+  const version = await currentVersion();
+  return version ? rustEntryOf(version) : rustEntryOf(null);
+};
+// Checks that host/sotto-host is a regular executable file matching this machine's binary format and
+// architecture before choosing it over Node host/index.js (non-executable or wrong-arch binaries fall back).
+const rustHostRunnable = async candidate => {
+  let handle;
+  try {
+    const info = await fs.stat(candidate);
+    if (!info.isFile()) return false;
+    if (process.platform !== 'win32') await fs.access(candidate, fs.constants.X_OK);
+    handle = await fs.open(candidate, 'r');
+    const head = Buffer.alloc(24);
+    const { bytesRead } = await handle.read(head, 0, 24, 0);
+    if (bytesRead < 2) return false;
+    if (head[0] === 0x23 && head[1] === 0x21) return true;
+    if (process.platform === 'linux') {
+      if (bytesRead < 20 || head[0] !== 0x7f || head[1] !== 0x45 || head[2] !== 0x4c || head[3] !== 0x46) return false;
+      const machine = head[5] === 1 ? head.readUInt16LE(18) : head.readUInt16BE(18);
+      if (process.arch === 'x64') return machine === 0x3e;
+      if (process.arch === 'arm64') return machine === 0xb7;
+      return true;
+    }
+    if (process.platform === 'darwin') {
+      if (bytesRead < 4) return false;
+      const magic = head.readUInt32BE(0);
+      if (magic === 0xcffaedfe && bytesRead >= 8) {
+        const cpu = head.readUInt32LE(4);
+        if (process.arch === 'arm64') return cpu === 0x0100000c;
+        if (process.arch === 'x64') return cpu === 0x01000007;
+      }
+      return magic === 0xcffaedfe || magic === 0xfeedfacf || magic === 0xcafebabe || magic === 0xbebafeca;
+    }
+    if (process.platform === 'win32') return head[0] === 0x4d && head[1] === 0x5a;
+    return true;
+  } catch { return false; }
+  finally { if (handle) await handle.close().catch(() => undefined); }
+};
 const rustHostEntry = async () => {
   if (!(await wantsRustHost())) return null;
-  const version = await currentVersion();
-  const candidate = version ? rustEntryOf(version) : rustEntryOf(null);
-  return (await exists(candidate)) ? candidate : null;
+  const candidate = await rustHostCandidate();
+  return (await rustHostRunnable(candidate)) ? candidate : null;
 };
 const readLegacyLauncher = async () => {
   try { const value = JSON.parse(await fs.readFile(legacyLauncherPath, 'utf8')); return value && value.v === 1 && Number.isInteger(value.pid) ? value : null; }
@@ -242,6 +280,34 @@ const running = async () => {
   const holder = await lockHolder();
   return holder === null ? null : awaitHolder(holder);
 };
+const stopTimedOutChild = async child => {
+  if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGTERM'); } catch {} }
+  const stopDeadline = Date.now() + 2000;
+  while (Date.now() < stopDeadline) {
+    if ((child.exitCode !== null || child.signalCode !== null) && (await lockHolder()) === null) return;
+    await pause(50);
+  }
+  if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGKILL'); } catch {} }
+  const killDeadline = Date.now() + 1000;
+  while (Date.now() < killDeadline && (await lockHolder()) !== null) await pause(50);
+};
+const spawnDetachedHost = async (command, args, env, deadline) => {
+  const child = spawn(command, args, { detached: true, stdio: 'ignore', env });
+  child.unref();
+  let childFailed = false; child.on('error', () => { childFailed = true; });
+  while (Date.now() < deadline) {
+    const current = await discover();
+    if (current) return { ready: { type: 'ready', ...current } };
+    // A child that lost the lock to a host another launch started a moment earlier exits at once; that host is waited for instead.
+    if ((childFailed || child.exitCode !== null || child.signalCode !== null) && (await lockHolder()) === null) {
+      if (await portAnswers(cfg.remotePort)) throw new Error('port-taken');
+      return { failed: true };
+    }
+    await pause(100);
+  }
+  await stopTimedOutChild(child);
+  return { timedOut: true };
+};
 // Finds the running host, or starts the one the installation folder names as a detached process, and answers once it listens.
 const startDetached = async () => {
   const useRust = await wantsRustHost();
@@ -249,24 +315,31 @@ const startDetached = async () => {
   const found = await running();
   if (found) return found;
   const rustBin = await rustHostEntry();
-  const entry = rustBin || await hostEntry();
-  if (!rustBin && !(await exists(entry))) throw new Error('archive-missing');
-  await say({ type: 'starting' });
-  const child = rustBin
-    ? spawn(rustBin, ['--data', data, '--port', String(cfg.remotePort)], { detached: true, stdio: 'ignore', env: { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script', SOTTO_HOST_ENABLE_PROVIDERS: '1' } })
-    : spawn(process.execPath, [entry, '--data', data, '--port', String(cfg.remotePort)], { detached: true, stdio: 'ignore', env: { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script' } });
-  child.unref();
-  let childFailed = false; child.on('error', () => { childFailed = true; });
-  const deadline = Date.now() + cfg.readyTimeoutMs;
-  while (Date.now() < deadline) {
-    const current = await discover();
-    if (current) return { type: 'ready', ...current };
-    // A child that lost the lock to a host another launch started a moment earlier exits at once; that host is waited for instead.
-    if ((childFailed || child.exitCode !== null || child.signalCode !== null) && (await lockHolder()) === null) throw new Error((await portAnswers(cfg.remotePort)) ? 'port-taken' : 'host-start-failed');
-    await pause(100);
+  const nodeEntry = await hostEntry();
+  const hasNode = await exists(nodeEntry);
+  if (!rustBin && !hasNode) {
+    if (useRust && (await exists(await rustHostCandidate()))) throw new Error('host-start-failed');
+    throw new Error('archive-missing');
   }
-  if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGTERM'); } catch {} }
-  throw new Error('host-timeout');
+  await say({ type: 'starting' });
+  if (rustBin) {
+    const rustOutcome = await spawnDetachedHost(
+      rustBin,
+      ['--data', data, '--port', String(cfg.remotePort)],
+      { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script', SOTTO_HOST_ENABLE_PROVIDERS: '1' },
+      Date.now() + cfg.readyTimeoutMs,
+    );
+    if (rustOutcome.ready) return rustOutcome.ready;
+    if (!hasNode) throw new Error(rustOutcome.timedOut ? 'host-timeout' : 'host-start-failed');
+  }
+  const nodeOutcome = await spawnDetachedHost(
+    process.execPath,
+    [nodeEntry, '--data', data, '--port', String(cfg.remotePort)],
+    { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script' },
+    Date.now() + cfg.readyTimeoutMs,
+  );
+  if (nodeOutcome.ready) return nodeOutcome.ready;
+  throw new Error(nodeOutcome.timedOut ? 'host-timeout' : 'host-start-failed');
 };
 // Start at boot (ADR-0054): the account's systemd user unit, and the script in the installation folder that it runs.
 const UNIT = 'sotto-host';
@@ -307,7 +380,7 @@ const bootScriptText = (useRust = false) => ['#!/bin/sh',
   'version=$("$node" -e ' + shellQuote("try { const v=require('fs').readFileSync(require('path').join(process.argv[1],'current'),'utf8').trim(); if (/^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-owl\\.[1-9]\\d{7}\\.[1-9]\\d*)?$/.test(v)) process.stdout.write(v); } catch {}") + ' "$install")',
   ...(useRust ? [
     'if [ -n "$version" ]; then rust_entry="$install/versions/$version/host/' + rustBinName + '"; else rust_entry="$install/host/' + rustBinName + '"; fi',
-    'if [ -f "$rust_entry" ]; then SOTTO_HOST_ENABLE_PROVIDERS=1; export SOTTO_HOST_ENABLE_PROVIDERS; exec "$rust_entry" --data "$data" --port "$port"; fi',
+    'if [ -x "$rust_entry" ] && "$rust_entry" --version >/dev/null 2>&1; then SOTTO_HOST_ENABLE_PROVIDERS=1; export SOTTO_HOST_ENABLE_PROVIDERS; exec "$rust_entry" --data "$data" --port "$port"; fi',
   ] : []),
   'if [ -n "$version" ] && [ -f "$install/versions/$version/host/index.js" ]; then entry="$install/versions/$version/host/index.js"; fi',
   'exec "$node" "$entry" --data "$data" --port "$port"', ''].join('\n');

@@ -141,28 +141,58 @@ function cutJson(text: string, limit: number): { text: string; shortened: boolea
 const readsAsInput = (record: AgentActivity): boolean => !['reasoning', 'plan', 'status', 'turn'].includes(record.kind)
 
 /**
+ * Strips `agents[].steps` from an activity record before it leaves main/host in a thread detail or delta.
+ * Only main's `SubagentStore` consumes `agents[].steps`; windows, paired desktops and phones read live child steps
+ * from the Agents roster store instead, so shipping up to 200 steps per agent in every thread detail would waste
+ * megabytes of IPC/WebSocket traffic.
+ */
+export function stripAgentSteps(record: AgentActivity): AgentActivity {
+  if (!record.agents?.some(agent => agent.steps !== undefined)) return record
+  return {
+    ...record,
+    agents: record.agents.map(agent => {
+      if (agent.steps === undefined) return agent
+      const { steps: _steps, ...rest } = agent
+      void _steps
+      return rest
+    }),
+  }
+}
+
+export function detailWithoutAgentSteps(detail: AgentThreadDetail): AgentThreadDetail {
+  if (!detail.activities?.some(record => record.agents?.some(agent => agent.steps !== undefined))) return detail
+  return { ...detail, activities: detail.activities.map(stripAgentSteps) }
+}
+
+export function deltaWithoutAgentSteps(delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
+  if (!delta.activityDeltas.some(item => 'record' in item && item.record.agents?.some(agent => agent.steps !== undefined))) return delta
+  return { ...delta, activityDeltas: delta.activityDeltas.map(item => 'record' in item ? { record: stripAgentSteps(item.record) } : item) }
+}
+
+/**
  * A record as a desktop that accepts `activity-bodies` is sent it: each body over the limit cut, and `cut` naming each
  * one's whole size in UTF-8 bytes (diffs by their change's index). The record itself when nothing is over the limit.
  */
 export function cutActivityBodies(record: AgentActivity, limit = ACTIVITY_BODY_LIMIT): AgentActivity {
+  const base = stripAgentSteps(record)
   const cut: Cut = {}
-  let next: AgentActivity | undefined
-  const edit = (): AgentActivity => next ??= { ...record }
-  if (record.output !== undefined) {
-    const bytes = utf8Bytes(record.output)
-    if (bytes > limit) { edit().output = cutText(record.output, 'end', limit); cut.output = bytes }
+  let next: AgentActivity | undefined = base === record ? undefined : base
+  const edit = (): AgentActivity => next ??= { ...base }
+  if (base.output !== undefined) {
+    const bytes = utf8Bytes(base.output)
+    if (bytes > limit) { edit().output = cutText(base.output, 'end', limit); cut.output = bytes }
   }
-  if (record.text !== undefined) {
-    const bytes = utf8Bytes(record.text)
+  if (base.text !== undefined) {
+    const bytes = utf8Bytes(base.text)
     if (bytes > limit) {
-      const json = readsAsInput(record) ? cutJson(record.text, limit) : null
-      edit().text = json ? json.text : cutText(record.text, 'start', limit)
+      const json = readsAsInput(base) ? cutJson(base.text, limit) : null
+      edit().text = json ? json.text : cutText(base.text, 'start', limit)
       if (!json || json.shortened) cut.text = bytes
     }
   }
-  if (record.changes?.some(change => change.diff !== undefined && change.diff.length * 3 > limit)) {
+  if (base.changes?.some(change => change.diff !== undefined && change.diff.length * 3 > limit)) {
     const diffs: NonNullable<Cut['diffs']> = []
-    const changes = record.changes.map((change, index) => {
+    const changes = base.changes.map((change, index) => {
       if (change.diff === undefined) return change
       const bytes = utf8Bytes(change.diff)
       if (bytes <= limit) return change

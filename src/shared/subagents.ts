@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { workflowProgressSchema } from './agentActivity'
+import { MAX_SUBAGENT_STEPS, subagentStepSchema, workflowProgressSchema } from './agentActivity'
 
 export const SUBAGENTS_PAGE = 'sotto:subagents:page'
 export const SUBAGENTS_ASSIGNMENTS = 'sotto:subagents:assignments'
@@ -30,6 +30,9 @@ export const subagentRowSchema = z.object({
   lastObservedAt: z.string(), durationMs: z.number().nonnegative().optional(),
   /** A workflow's row stands for the run; its agents are rows of their own under it and it is not counted as one. */
   kind: z.literal('workflow').optional(), progress: workflowProgressSchema.optional(),
+  /** Total observed steps on the current assignment, and the active/latest step while working. */
+  stepCount: z.number().int().nonnegative().optional(),
+  currentStep: subagentStepSchema.optional(),
 })
 export type SubagentRow = z.infer<typeof subagentRowSchema>
 export const subagentSummarySchema = z.object({ total: z.number().int().nonnegative(), working: z.number().int().nonnegative(), completed: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), interrupted: z.number().int().nonnegative(), unknown: z.number().int().nonnegative() })
@@ -41,6 +44,8 @@ export const subagentAssignmentSchema = z.object({
   id, sequence: z.number().int().positive(), title: z.string(), status: subagentStatusSchema,
   prompt: z.string().optional(), result: z.string().optional(), model: z.string().optional(),
   startedAt: z.string().optional(), completedAt: z.string().optional(), durationMs: z.number().nonnegative().optional(),
+  steps: z.array(subagentStepSchema).max(MAX_SUBAGENT_STEPS).optional(),
+  stepCount: z.number().int().nonnegative().optional(),
 })
 export type SubagentAssignment = z.infer<typeof subagentAssignmentSchema>
 export const subagentAssignmentsPageSchema = z.object({ threadId: id, agentId: id, assignments: z.array(subagentAssignmentSchema), before: z.number().int().positive().optional() })

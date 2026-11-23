@@ -10,6 +10,7 @@ publish = false
 aes-gcm.workspace = true
 base64.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 hmac.workspace = true
 rand.workspace = true
 rusqlite.workspace = true

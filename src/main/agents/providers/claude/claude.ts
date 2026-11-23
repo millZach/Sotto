@@ -58,7 +58,7 @@ import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachmen
 import { ClaudeActivity } from './claudeActivity'
 import { looserModeStopped, nativePermissionModes, permissionModeDrift, stricterModeNote } from './claudePermissionMode'
 import { stoppedWork } from '../../stoppedWork'
-import { ClaudeSubagentModels } from './claudeSubagentModels'
+import { ClaudeSubagentTranscripts } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper, busyHolds, type HeldSession } from '../../sessionReaper'
 import type { RunMark } from '../../detachedRunScan'
@@ -539,8 +539,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
   private liveSessions: Set<string> | undefined
   private readonly reaper: SessionReaper
   private readonly activity = new Map<string, ClaudeActivity>()
-  /** Per thread: the subagent transcripts still being read for a model the stream never named. */
-  private readonly subagentModels = new Map<string, ClaudeSubagentModels>()
+  /** Per thread: the subagent transcripts tailed for live child steps and resolved models. */
+  private readonly subagentModels = new Map<string, ClaudeSubagentTranscripts>()
   private readonly monitoring = new Map<string, ClaudeMonitoring>()
   /** When each thread's own background work or watch last ended, until its CLI ends: see {@link REPORT_HOLD_MS}. */
   private readonly workEndedAt = new Map<string, number>()
@@ -1586,24 +1586,24 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     replay.reading = false; replay.seen.clear(); delete replay.words
   }
   /**
-   * A subagent's model from its own transcript, for the workflow and background agents the stream never
-   * named one for. Read when the thread's transcript is, bounded per thread, and only until each row has one.
+   * A subagent's live steps and resolved model from its own transcript, for background and workflow agents.
+   * Read when the thread's transcript is, bounded per thread and per file.
    */
   private async readSubagentModels(id: string, log: ClaudeSessionLog): Promise<void> {
     const projector = this.activity.get(id)
-    const targets = projector?.modelTargets()
+    const targets = projector?.transcriptTargets()
     if (!projector || !targets?.length) return
     const folder = await log.sessionFolder(); if (!folder) return
     let reader = this.subagentModels.get(id)
-    if (!reader) { reader = new ClaudeSubagentModels(); this.subagentModels.set(id, reader) }
-    const models = await reader.read(folder, targets)
+    if (!reader) { reader = new ClaudeSubagentTranscripts(); this.subagentModels.set(id, reader) }
+    const updates = await reader.read(folder, targets)
     // A reconnect or a changed session replaced the projector while the files were read; its rows are not these.
-    if (!models.size || this.activity.get(id) !== projector) return
+    if (!updates.size || this.activity.get(id) !== projector) return
     const thread = this.ensureActivityHistory(id)
     if (!thread) return
     const before = thread.activities ?? []
     let rows = before
-    for (const [agent, model] of models) rows = projector.applyModel(rows, agent, model)
+    for (const [agent, update] of updates) rows = projector.applyTranscript(rows, agent, update)
     if (rows !== before) { thread.activities = rows; this.changed(id); this.emit() }
   }
   /** Messages the workspace still holds; a thread whose history is handed back may resume its cursor. */

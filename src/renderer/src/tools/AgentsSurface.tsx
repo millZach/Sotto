@@ -3,12 +3,13 @@ import { ArrowLeft, ChevronRight, Laptop, Server, Unplug, Users } from 'lucide-r
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import type { WorkflowProgress } from '../../../shared/agentActivity'
+import type { SubagentStep, WorkflowProgress } from '../../../shared/agentActivity'
 import { distinctModels, type SubagentAssignment, type SubagentRow, type SubagentsBridge } from '../../../shared/subagents'
 import { type SubagentsStore, useThreadSubagents } from './subagentsStore'
 import { ToolsChrome, ToolsChromeLead } from './ToolsChrome'
 import { AgentContinue, AgentContinueContext, type AgentContinueOptions } from './AgentContinue'
 import { clockLabel } from '../agents/threadFacts'
+import { shownCount } from '../state/interfaceNumbers'
 import { DelegatedThreadRow, useDelegatedRoster, type DelegatedRosterSource } from './DelegatedThreads'
 import { machineCount, mixedRoster, rosterByMachine, rosterCounts, rosterMachine, THIS_COMPUTER, type RosterBlock, type RosterMachineGroup } from './delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
@@ -49,10 +50,69 @@ export function SubagentElapsed({ row }: { readonly row: SubagentRow }): ReactNo
   return Number.isFinite(duration) ? <span>{elapsedLabel(duration)}</span> : null
 }
 
+const CHILD_STEPS_VISIBLE = 6
+const REMOTE_FOLLOW_MS = 3_000
+
+function stepTooltip(step: SubagentStep): string {
+  return step.detail ? `${step.title} ${step.detail}` : step.title
+}
+
+const STEP_STATUS_WORDS: Record<Exclude<SubagentStep['status'], 'completed'>, MessageDescriptor> = {
+  running: msg({ message: 'Running', comment: 'A subagent step that is currently running.' }),
+  failed: msg({ message: 'Failed', comment: 'A subagent step that failed.' }),
+  interrupted: msg({ message: 'Stopped', comment: 'A subagent step that was stopped before finishing.' }),
+  unknown: msg({ message: 'Unknown', comment: 'A subagent step whose outcome is unknown.' }),
+}
+
+function stepMetaLabel(step: SubagentStep): string {
+  if (step.status === 'completed') return step.durationMs !== undefined ? elapsedLabel(step.durationMs) : ''
+  if (step.status === 'failed' && step.exitCode !== undefined && step.exitCode !== 0) {
+    const code = step.exitCode
+    return i18n._(msg({ message: `Exit ${code}`, comment: 'A subagent command step that exited with a non-zero exit code.' }))
+  }
+  return i18n._(STEP_STATUS_WORDS[step.status])
+}
+
+/** Chronological live child steps inside an opened agent row (Variant A: newest 6 inline, with Show N earlier). */
+function SubagentStepsList({ steps, total }: { readonly steps: readonly SubagentStep[]; readonly total?: number | undefined }): ReactNode {
+  const { t } = useLingui()
+  const [showAll, setShowAll] = useState(false)
+  const count = Math.max(total ?? steps.length, steps.length)
+  const trimmed = Math.max(0, count - steps.length)
+  const hidden = !showAll && steps.length > CHILD_STEPS_VISIBLE ? steps.length - CHILD_STEPS_VISIBLE : 0
+  const shown = hidden > 0 ? steps.slice(-CHILD_STEPS_VISIBLE) : steps
+  return <>
+    <h3>
+      {t({ message: 'Steps', comment: 'Heading over the live tool and command steps a subagent took.' })}
+      <span className="subagent-steps__count"> · {shownCount(count)}</span>
+    </h3>
+    {hidden > 0 ? <button type="button" className="files-link tt-focusable subagent-steps__more" onClick={() => setShowAll(true)}>
+      {plural(hidden, { one: `Show ${{ count: shownCount(hidden) }} earlier step`, other: `Show ${{ count: shownCount(hidden) }} earlier steps` })}
+    </button> : trimmed > 0 ? <p className="subagent-steps__trimmed">
+      {t({ message: `Showing the latest ${shownCount(steps.length)} of ${shownCount(count)} steps.`, comment: 'Shown when older child-agent steps were trimmed beyond the retained cap.' })}
+    </p> : null}
+    <ol className="subagent-steps" aria-label={t({ message: 'Agent steps', comment: 'Accessible name for the list of steps a subagent took.' })}>
+      {shown.map(step => {
+        const meta = stepMetaLabel(step)
+        return <li className="subagent-step" key={step.id} data-status={step.status}>
+          <span className="subagent-step__dot" data-status={step.status} aria-hidden="true" />
+          <span className="subagent-step__body" title={stepTooltip(step)}>
+            <span className="subagent-step__verb">{step.title}</span>
+            {step.detail ? <span className={step.mono ? 'subagent-step__detail subagent-step__detail--mono' : 'subagent-step__detail'} dir={step.mono ? 'ltr' : undefined}>{step.detail}</span> : null}
+          </span>
+          {meta ? <span className="subagent-step__meta" data-status={step.status}>{meta}</span> : null}
+          {step.error ? <span className="subagent-step__error">{step.error}</span> : null}
+        </li>
+      })}
+    </ol>
+  </>
+}
+
 function AssignmentText({ assignment }: { readonly assignment: SubagentAssignment }): ReactNode {
   const { t } = useLingui()
   return <>
     <h3>{t({ message: 'Task', comment: 'Heading over what a subagent was asked to do.' })}</h3><p>{assignment.prompt || assignment.title}</p>
+    {assignment.steps?.length ? <SubagentStepsList steps={assignment.steps} total={assignment.stepCount} /> : null}
     <h3>{assignment.status === 'running' ? t`Latest update` : assignment.status === 'unknown' ? t`Last update` : assignment.status === 'failed' ? t`What happened` : t({ message: 'Result', comment: 'Heading over what a subagent reported when it finished.' })}</h3>
     <p className="subagent-result">{assignment.result || (assignment.status === 'running' ? t`No result reported yet.` : t`No result was reported.`)}</p>
   </>
@@ -67,7 +127,9 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
   const request = useRef(0)
   const mounted = useRef(true)
   const loadedEarlier = useRef(false)
-  const load = async (older?: number): Promise<void> => {
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasLoaded = useRef(false)
+  const load = useCallback(async (older?: number): Promise<void> => {
     const token = ++request.current
     setLoading(true)
     setError(false)
@@ -75,6 +137,7 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
       if (!bridge) throw new Error('unavailable')
       const page = await bridge.assignments({ threadId, agentId: row.id, ...(older !== undefined ? { before: older } : {}) })
       if (!mounted.current || token !== request.current) return
+      hasLoaded.current = true
       setAssignments(previous => {
         const merged = new Map(previous.map(assignment => [assignment.id, assignment]))
         for (const assignment of page.assignments) merged.set(assignment.id, assignment)
@@ -84,14 +147,32 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
       if (older !== undefined || !loadedEarlier.current) setBefore(page.before)
     } catch { if (mounted.current && token === request.current) setError(true) }
     finally { if (mounted.current && token === request.current) setLoading(false) }
-  }
-  // A burst of live metadata is coalesced into one bounded detail read. Terminal states load immediately.
+  }, [bridge, threadId, row.id])
   useEffect(() => {
     mounted.current = true
-    const timer = setTimeout(() => { void load() }, assignments.length && row.status === 'running' ? 250 : 0)
-    return () => { mounted.current = false; request.current++; clearTimeout(timer) }
+    return () => {
+      mounted.current = false
+      hasLoaded.current = false
+      request.current++
+      if (pendingTimer.current !== null) { clearTimeout(pendingTimer.current); pendingTimer.current = null }
+    }
+  }, [bridge, threadId, row.id])
+  // Coalesce bursts of live step updates into a bounded 250 ms throttle (never starving while streaming);
+  // first open and terminal states load immediately.
+  useEffect(() => {
+    const immediate = !hasLoaded.current || row.status !== 'running'
+    if (immediate) {
+      if (pendingTimer.current !== null) { clearTimeout(pendingTimer.current); pendingTimer.current = null }
+      void load()
+      return
+    }
+    if (pendingTimer.current !== null) return
+    pendingTimer.current = setTimeout(() => {
+      pendingTimer.current = null
+      if (mounted.current) void load()
+    }, 250)
     // The bridge and row revision identify the provider data; local paging never retriggers this read.
-  }, [bridge, threadId, row.id, row.revision])
+  }, [load, row.revision, row.status])
   const current = assignments.find(assignment => assignment.id === row.assignmentId)
   return <>
     {current ? <AssignmentText assignment={current} /> : <><h3>{t({ message: 'Task', comment: 'Heading over what a subagent was asked to do.' })}</h3><p>{row.description || row.title}</p></>}
@@ -114,6 +195,8 @@ const AgentRow = memo(function AgentRow({ threadId, row, depth, bridge, startMet
   const { t, i18n } = useLingui()
   const [open, setOpen] = useState(false)
   const runs = row.assignmentCount
+  const stepsCount = row.stepCount
+  const activeStep = row.status === 'running' ? row.currentStep : undefined
   const started = startMeta && row.startedAt ? clockLabel(Date.parse(row.startedAt)) : ''
   const id = useId()
   const button = useRef<HTMLButtonElement>(null)
@@ -121,8 +204,15 @@ const AgentRow = memo(function AgentRow({ threadId, row, depth, bridge, startMet
     <button ref={button} type="button" className="subagent-head tt-focusable" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
       <span className="subagent-dot" data-status={row.status} aria-hidden="true" />
       <span className="subagent-main"><span className="subagent-title" title={row.title || undefined}>{row.title || t`Agent task`}</span>
-        {row.description && row.description !== row.title ? <span className="subagent-description">{row.description}</span> : null}
-        <span className="subagent-meta"><span className="subagent-model">{row.model || t`Model not reported`}{started ? ` · ${started}` : ''}</span>{row.assignmentCount > 1 ? <span className="subagent-run">{t({ message: `· Run ${runs}`, comment: '{runs} counts how many times this subagent has been given work.' })}</span> : null}</span>
+        {activeStep
+          ? <span className="subagent-live-step" title={stepTooltip(activeStep)}>
+              <span className="subagent-live-step__verb">{activeStep.title}</span>
+              {activeStep.detail ? <span className={activeStep.mono ? 'subagent-live-step__detail subagent-live-step__detail--mono' : 'subagent-live-step__detail'} dir={activeStep.mono ? 'ltr' : undefined}>{activeStep.detail}</span> : null}
+            </span>
+          : row.description && row.description !== row.title ? <span className="subagent-description">{row.description}</span> : null}
+        <span className="subagent-meta"><span className="subagent-model">{row.model || t`Model not reported`}{started ? ` · ${started}` : ''}</span>
+          {stepsCount !== undefined && stepsCount > 0 ? <span className="subagent-step-count">{plural(stepsCount, { one: `· ${{ count: shownCount(stepsCount) }} step`, other: `· ${{ count: shownCount(stepsCount) }} steps` })}</span> : null}
+          {row.assignmentCount > 1 ? <span className="subagent-run">{t({ message: `· Run ${runs}`, comment: '{runs} counts how many times this subagent has been given work.' })}</span> : null}</span>
       </span>
       <span className="subagent-right"><span className="subagent-time"><SubagentElapsed row={row} /><ChevronRight size={12} aria-hidden="true" /></span><span>{i18n._(STATUS[row.status])}</span></span>
     </button>
@@ -288,8 +378,17 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   useEffect(() => {
     if (followed.current === rosterSignal) return
     followed.current = rosterSignal
-    if (rosterSignal !== undefined) void store.page(threadId)
+    if (rosterSignal !== undefined) void store.refresh(threadId)
   }, [store, threadId, rosterSignal])
+  // A paired host pushes no roster changes; while an agent runs on one, poll periodically without discarding earlier pages.
+  const hasRunning = state.rows.some(item => item.status === 'running')
+  useEffect(() => {
+    if (rosterSignal === undefined || !hasRunning) return
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'hidden') void store.refresh(threadId)
+    }, REMOTE_FOLLOW_MS)
+    return () => clearInterval(timer)
+  }, [store, threadId, rosterSignal, hasRunning])
   const [page, setPage] = useState<{ threadId: string; id: string } | null>(null)
   const surface = useRef<HTMLDivElement>(null)
   // A waiting check's row hands focus and its open details on as it goes (#1312).

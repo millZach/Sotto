@@ -164,6 +164,86 @@ describe('Agents roster', () => {
     unmount()
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('shows the active step on a running row and chronological inline steps with Show earlier when expanded', async () => {
+    const steps = Array.from({ length: 8 }, (_, index) => ({
+      id: `step-${index + 1}`,
+      kind: index === 7 ? 'command' as const : 'read' as const,
+      status: index === 7 ? 'running' as const : index === 6 ? 'failed' as const : 'completed' as const,
+      title: index === 7 ? 'Run' : 'Read',
+      detail: index === 7 ? 'npm test' : `src/file-${index + 1}.ts`,
+      mono: true,
+      ...(index === 6 ? { error: 'ENOENT: missing file' } : {}),
+      ...(index < 6 ? { durationMs: 200 } : {}),
+    }))
+    const liveRow = row('live', 1, {
+      status: 'running',
+      model: 'gemini-4-neon-high',
+      stepCount: 8,
+      currentStep: steps[7],
+    })
+    const { bridge } = fixture([liveRow])
+    vi.mocked(bridge.assignments).mockResolvedValue({
+      threadId: 'thread',
+      agentId: 'live',
+      assignments: [{
+        id: 'live-run', sequence: 1, title: 'Audit files', prompt: 'Check all files', status: 'running',
+        steps, stepCount: 8,
+      }],
+    })
+    render(<AgentsSurface threadId="thread" store={store()} bridge={bridge} />)
+    const button = await screen.findByRole('button', { name: /Task live/ })
+    expect(screen.getByText('npm test')).toBeInTheDocument()
+    expect(screen.getByText(/8 steps/)).toBeInTheDocument()
+
+    fireEvent.click(button)
+    const list = await screen.findByRole('list', { name: 'Agent steps' })
+    expect(list.querySelectorAll(':scope > li')).toHaveLength(6)
+    expect(screen.getByText('ENOENT: missing file')).toBeInTheDocument()
+    expect(screen.queryByText('src/file-1.ts')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 earlier steps' }))
+    expect(list.querySelectorAll(':scope > li')).toHaveLength(8)
+    expect(screen.getByText('src/file-1.ts')).toBeInTheDocument()
+  })
+
+  it('shows a trimmed-steps notice when stepCount exceeds retained steps and preserves earlier pages during paired-host refresh', async () => {
+    const steps = Array.from({ length: 6 }, (_, index) => ({
+      id: `step-${index + 1}`,
+      kind: 'read' as const,
+      status: 'completed' as const,
+      title: 'Read',
+      detail: `src/file-${index + 1}.ts`,
+      mono: true,
+    }))
+    const olderRow = row('older-agent', 1, { status: 'completed', title: 'Earlier worker' })
+    const newerRow = row('live-agent', 2, { status: 'running', title: 'Live worker', stepCount: 250 })
+    const cache = store()
+    const bridge: SubagentsBridge = {
+      page: vi.fn(async ({ before }) => before !== undefined
+        ? { threadId: 'thread', revision: 1, rows: [olderRow], summary: { total: 2, working: 1, completed: 1, failed: 0, interrupted: 0, unknown: 0 } }
+        : { threadId: 'thread', revision: 2, rows: [newerRow], before: 2, summary: { total: 2, working: 1, completed: 1, failed: 0, interrupted: 0, unknown: 0 } }),
+      assignments: vi.fn(async () => ({
+        threadId: 'thread',
+        agentId: 'live-agent',
+        assignments: [{ id: 'live-agent-run', sequence: 1, title: 'Live worker', prompt: 'Do work', status: 'running' as const, steps, stepCount: 250 }],
+      })),
+      onChanged: vi.fn(() => () => undefined),
+    }
+
+    render(<AgentsSurface threadId="thread" store={cache} bridge={bridge} rosterSignal="running:1" />)
+    const liveButton = await screen.findByRole('button', { name: /Live worker/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Load earlier agents' }))
+    expect(await screen.findByRole('button', { name: /Earlier worker/ })).toBeInTheDocument()
+
+    // Quiet paired-host refresh keeps the earlier loaded row instead of discarding it.
+    await act(async () => { await cache.refresh('thread') })
+    expect(screen.getByRole('button', { name: /Earlier worker/ })).toBeInTheDocument()
+
+    // Expanding a row with more total steps than retained shows the trimmed caption.
+    fireEvent.click(liveButton)
+    expect(await screen.findByText('Showing the latest 6 of 250 steps.')).toBeInTheDocument()
+  })
 })
 
 describe('a workflow in the roster', () => {
