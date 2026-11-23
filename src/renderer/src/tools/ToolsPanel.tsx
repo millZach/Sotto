@@ -293,7 +293,7 @@ export function ToolsPanel({ focusedThreadId, state, command, onOpenBeside, file
   // The thread is read by the fields the form shows, so a publish that changes none of them keeps the form as it is.
   }, [startsOn, thread?.id, thread?.title, thread?.providerId, thread?.projectId, thread?.remoteHost, thread?.hostLabel, thread?.modelId, thread?.kind, continueModels, command, sourceRepository, sourceBranch, t])
   const filesFor = thread?.remoteHost ? hostFiles : bridge
-  const peerCoordination = useMemo(() => command && thread && !thread.remoteHost ? { state, command, onOpenBeside } : undefined, [command, thread, state, onOpenBeside])
+  const peerCoordination = useMemo(() => command && thread ? { state, command, onOpenBeside } : undefined, [command, thread, state, onOpenBeside])
   const changesFor = thread?.remoteHost ? hostChanges : changesBridge
   const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId
   const workingCopyThread = state.host.threads.find(item => item.id === workingCopyTarget)

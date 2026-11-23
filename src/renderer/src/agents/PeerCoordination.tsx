@@ -107,6 +107,7 @@ export function IncomingPeerHeader({ exchange, createdAt }: { readonly exchange:
         : <span>{title}</span>}
     </span>
     {providerId && providerName ? <span className="peer-card__provider"><ProviderMark provider={providerId} name={providerName} size={12} /><span>{providerName}</span></span> : null}
+    {exchange.peerMachine ? <span className="peer-card__hop">{exchange.peerMachine}</span> : null}
     <span className="peer-card__hop">{hopLabel}</span>
     <time dateTime={createdAt}>{clockLabel(Date.parse(createdAt))}</time>
     {peer && world ? <button type="button" className="peer-card__open tt-focusable" aria-label={t`Open thread ${title}`} onClick={() => world.open(peer.id)}>
@@ -198,6 +199,7 @@ export function PeerExchangeRow({ view }: { readonly view: CoordinationExchangeV
     </span>
     <p className="peer-work__meta">
       {providerId && providerName ? <><ProviderMark provider={providerId} name={providerName} size={12} /><span>{providerName}</span><span aria-hidden="true">·</span></> : null}
+      {view.peerMachine ? <><span>{view.peerMachine}</span><span aria-hidden="true">·</span></> : null}
       <span>{hopLabel}</span>
       {view.delivery === 'steered' ? <><span aria-hidden="true">·</span><span>{t({ message: 'Steered', comment: 'A peer message sent as a mid-turn steer.' })}</span></> : null}
     </p>
@@ -293,6 +295,7 @@ function PeerAgentsRow({ view, source, readReply }: {
     </div>
     <p className="peer-agents__meta">
       {providerId && providerName ? <><ProviderMark provider={providerId} name={providerName} size={12} /><span>{providerName}</span><span aria-hidden="true">·</span></> : null}
+      {view.peerMachine ? <><span>{view.peerMachine}</span><span aria-hidden="true">·</span></> : null}
       <span>{hopLabel}</span>
       <span aria-hidden="true">·</span>
       <time dateTime={view.updatedAt}>{clockLabel(Date.parse(view.updatedAt))}</time>

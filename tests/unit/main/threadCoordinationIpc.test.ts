@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { registerThreadCoordinationIpc, type ThreadCoordinationViews } from '../../../src/main/agents/threadCoordinationIpc'
+import { registerThreadCoordinationIpc, type RemoteCoordinationViews, type ThreadCoordinationViews } from '../../../src/main/agents/threadCoordinationIpc'
 import { formatIncomingPeerMessage } from '../../../src/main/agents/threadCoordinationNews'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { COORDINATION_CHANGED, COORDINATION_READ, COORDINATION_REPLY_READ, parseIncomingPeerMessageBody, type CoordinationExchangeView } from '../../../src/shared/threadCoordination'
@@ -83,8 +83,8 @@ describe('parent-to-parent thread coordination IPC (ADR-0216, Slice 2)', () => {
     })
     expect(asked).toEqual(['views:sender-1', 'views:target-1'])
 
-    expect(() => read(widgetEvent, { threadId: 'sender-1' })).toThrow('main Sotto window')
-    expect(() => read(mainEvent, { threadId: 'sender-1', extra: true })).toThrow()
+    await expect(read(widgetEvent, { threadId: 'sender-1' })).rejects.toThrow('main Sotto window')
+    await expect(read(mainEvent, { threadId: 'sender-1', extra: true })).rejects.toThrow()
     close()
     expect(handlers.size).toBe(0)
   })
@@ -107,8 +107,8 @@ describe('parent-to-parent thread coordination IPC (ADR-0216, Slice 2)', () => {
     expect(await readReply(mainEvent, { threadId: hostEntityKey(REMOTE, 'sender-1'), exchangeId })).toBeNull()
     expect(asked).toHaveLength(2)
 
-    expect(() => readReply(widgetEvent, { threadId: 'sender-1', exchangeId })).toThrow('main Sotto window')
-    expect(() => readReply(mainEvent, { threadId: 'sender-1', exchangeId: 'not-a-uuid' })).toThrow()
+    await expect(readReply(widgetEvent, { threadId: 'sender-1', exchangeId })).rejects.toThrow('main Sotto window')
+    await expect(readReply(mainEvent, { threadId: 'sender-1', exchangeId: 'not-a-uuid' })).rejects.toThrow()
     close()
     expect(handlers.size).toBe(0)
   })
@@ -147,5 +147,69 @@ describe('parent-to-parent thread coordination IPC (ADR-0216, Slice 2)', () => {
     expect(parseIncomingPeerMessageBody(framed)).toBe(originalBody)
     expect(parseIncomingPeerMessageBody(framed, forgedExchangeId)).toBeNull()
     expect(parseIncomingPeerMessageBody('Plain user message with no framing')).toBeNull()
+  })
+
+  it('forwards remote-host reads, replies, and change notifications and qualifies cross-machine peerHostId (Slice 3)', async () => {
+    const { ipc, handlers, main, mainEvent } = ipcRegistry()
+    const send = vi.fn()
+    const crossSent = exchangeView({
+      direction: 'sent',
+      peerThreadId: 'remote-target',
+      peerHostId: REMOTE,
+      peerMachine: 'Forge',
+      outcome: 'answered',
+      hasReply: true,
+    })
+    const asyncReply = vi.fn(async () => ({ text: 'Fetched cross-machine reply.', truncated: false }))
+    const { service } = fakeService({ 'local-sender': { sent: [crossSent], received: [] } })
+    const serviceWithAsync: ThreadCoordinationViews = { ...service, replyAsync: asyncReply }
+
+    let remoteListener: ((threadIds: readonly string[]) => void) | undefined
+    const remoteExchange = exchangeView({
+      direction: 'received',
+      peerThreadId: hostEntityKey(LOCAL, 'local-sender'),
+      peerHostId: LOCAL,
+      peerMachine: 'This computer',
+    })
+    const remote: RemoteCoordinationViews = {
+      coordinationViews: vi.fn(async threadKey => ({ threadId: threadKey, sent: [], received: [remoteExchange] })),
+      coordinationReply: vi.fn(async (_threadKey, exchangeId) => ({ exchangeId, text: 'Remote reply body.', truncated: false })),
+      subscribeCoordinationViews: listener => { remoteListener = listener; return () => { remoteListener = undefined } },
+    }
+
+    const close = registerThreadCoordinationIpc(ipc, serviceWithAsync, () => [main], () => LOCAL, send, remote)
+    const read = handlers.get(COORDINATION_READ)!
+    const readReply = handlers.get(COORDINATION_REPLY_READ)!
+
+    // Local thread's cross-machine sent row qualifies peerThreadId with peerHostId (REMOTE), not LOCAL.
+    expect(await read(mainEvent, { threadId: hostEntityKey(LOCAL, 'local-sender') })).toMatchObject({
+      sent: [{ id: crossSent.id, peerThreadId: hostEntityKey(REMOTE, 'remote-target'), peerHostId: REMOTE, peerMachine: 'Forge' }],
+    })
+    // Local thread's on-demand reply uses replyAsync when provided.
+    expect(await readReply(mainEvent, { threadId: hostEntityKey(LOCAL, 'local-sender'), exchangeId: crossSent.id })).toEqual({
+      exchangeId: crossSent.id,
+      text: 'Fetched cross-machine reply.',
+      truncated: false,
+    })
+    expect(asyncReply).toHaveBeenCalledWith('local-sender', crossSent.id)
+
+    // Remote thread reads and replies forward to RemoteCoordinationViews.
+    const remoteKey = hostEntityKey(REMOTE, 'remote-target')
+    expect(await read(mainEvent, { threadId: remoteKey })).toMatchObject({
+      threadId: remoteKey,
+      received: [{ id: remoteExchange.id, peerThreadId: hostEntityKey(LOCAL, 'local-sender') }],
+    })
+    expect(await readReply(mainEvent, { threadId: remoteKey, exchangeId: remoteExchange.id })).toEqual({
+      exchangeId: remoteExchange.id,
+      text: 'Remote reply body.',
+      truncated: false,
+    })
+
+    // Remote change events push directly on COORDINATION_CHANGED.
+    remoteListener?.([remoteKey])
+    expect(send).toHaveBeenCalledWith(COORDINATION_CHANGED, { threadIds: [remoteKey] })
+
+    close()
+    expect(remoteListener).toBeUndefined()
   })
 })

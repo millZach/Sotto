@@ -29,7 +29,8 @@
        "provider-hermes", "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
        "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
        "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
-       "usage-antigravity-no-limits", "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
+       "usage-antigravity-no-limits", "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup",
+       "thread-coordination-views", "thread-coordination-relay"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -76,7 +77,8 @@
        "provider-hermes", "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
        "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
        "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
-       "usage-antigravity-no-limits", "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
+       "usage-antigravity-no-limits", "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup",
+       "thread-coordination-views", "thread-coordination-relay"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -123,7 +125,8 @@
        "provider-hermes", "provider-antigravity", "project-git-init", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies",
        "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending", "plugin-meshy-models", "plugin-meshy-phone",
        "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "thread-words", "usage-antigravity",
-       "usage-antigravity-no-limits", "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup"
+       "usage-antigravity-no-limits", "detail-read-held", "detached-runs-elsewhere", "owlets", "settle-worktree-cleanup",
+       "thread-coordination-views", "thread-coordination-relay"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",

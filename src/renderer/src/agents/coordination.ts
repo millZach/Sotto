@@ -28,6 +28,8 @@ function sameExchangeList(left: readonly CoordinationExchangeView[], right: read
       a.id !== b.id
       || a.direction !== b.direction
       || a.peerThreadId !== b.peerThreadId
+      || a.peerHostId !== b.peerHostId
+      || a.peerMachine !== b.peerMachine
       || a.peerTitle !== b.peerTitle
       || a.peerProvider !== b.peerProvider
       || a.messageId !== b.messageId

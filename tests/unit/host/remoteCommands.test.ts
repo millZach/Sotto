@@ -215,6 +215,13 @@ describe('remote command allow-list', () => {
       // A delegation on this host for a thread on another machine, asked by a recorded desktop on a listener that offers
       // delegation-remote (#1316 part 2): admitted by the host's own delegation under its own rules, never a grant.
       'delegation-remote-ask',
+      // Parent-to-parent coordination views and on-demand reply reads for a recorded desktop's window (ADR-0216 Slice 3;
+      // Owl only, thread-coordination-views): read-only, never a grant.
+      'coordination-views', 'coordination-reply',
+      // Cross-machine parent-to-parent coordination relay (ADR-0216 Slice 3; Owl only, thread-coordination-relay): only
+      // from a recorded desktop whose hello accepted it. Target hosts enforce every ADR-0004 permission ceiling, hop cap,
+      // and remote-answer clamp locally; none answers a card or grants permission.
+      'coordination-relay-answer', 'coordination-relay-news', 'coordination-remote-ask',
       // A confirmation receipt for the merge, close or auto-merge the client sends next (#1691): evidence of a second step,
       // never a grant, given only for a pull request the host read for that client.
       'pull-request-confirmation',

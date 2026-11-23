@@ -38,7 +38,8 @@ export const COORDINATION_NEWS_MAX = 50
 const id = z.string().min(1).max(512)
 
 export const coordinateListThreadsInputSchema = z.object({
-  project: z.string().min(1).max(512).optional().describe('Which project to list: "same" (default, this thread\'s project), "all" (every project on this machine), or a specific projectId.'),
+  hostId: z.string().min(1).max(128).optional().describe('Which machine to list: "local" (default, this machine), "all" (this machine and connected paired machines), or a specific hostId.'),
+  project: z.string().min(1).max(512).optional().describe('Which project to list: "same" (default, this thread\'s project on this machine; lists all projects on remote machines), "all" (every project), or a specific projectId.'),
   includeSettled: z.boolean().optional().describe('Include settled parent threads. False when left out.'),
   query: z.string().trim().min(1).max(200).optional().describe('Filter by text in the thread title or branch name.'),
   status: z.enum(['idle', 'running', 'needs-you', 'error']).optional().describe('Filter by current thread status.'),
@@ -48,7 +49,8 @@ export const coordinateListThreadsInputSchema = z.object({
 export type CoordinateListThreadsInput = z.infer<typeof coordinateListThreadsInputSchema>
 
 export const coordinateReadThreadInputSchema = z.object({
-  threadId: id.describe('The Sotto thread ID of the parent thread to read, from list_threads.'),
+  threadId: id.describe('The Sotto thread ID of the parent thread to read, from list_threads. May also be host-qualified (host:<hostId>:<threadId>).'),
+  hostId: z.string().min(1).max(128).optional().describe('Optional machine hostId from list_threads when reading a parent thread on another connected machine.'),
   view: z.enum(['messages', 'summary']).optional().describe('"messages" (default) returns metadata and recent messages; "summary" returns metadata and status only.'),
   beforePosition: z.number().int().min(0).max(1_000_000).optional().describe('Read messages older than this zero-based position (from earlierPosition).'),
   afterPosition: z.number().int().min(-1).max(1_000_000).optional().describe('Read messages newer than this zero-based position (-1 starts from the oldest message).'),
@@ -60,7 +62,8 @@ export const coordinationDeliveryRequestSchema = z.enum(['queue', 'steer', 'auto
 export type CoordinationDeliveryRequest = z.infer<typeof coordinationDeliveryRequestSchema>
 
 export const coordinateSendInputSchema = z.object({
-  threadId: id.describe('The Sotto thread ID of the target parent thread, from list_threads.'),
+  threadId: id.describe('The Sotto thread ID of the target parent thread, from list_threads. May also be host-qualified (host:<hostId>:<threadId>).'),
+  hostId: z.string().min(1).max(128).optional().describe('Optional machine hostId from list_threads when messaging a parent thread on another connected machine.'),
   message: z.string().trim().min(1).max(COORDINATION_MESSAGE_MAX).describe('Plain-text coordination message for the target parent thread. Cannot be a slash command.'),
   delivery: coordinationDeliveryRequestSchema.optional().describe('"queue" (default: starts idle thread or queues after a running turn), "steer" (mid-turn steer if supported, else queues), or "auto" (starts idle or queues).'),
   expect_reply: z.boolean().optional().describe('When true (default), Sotto tracks the target\'s turn and wakes this thread with its reply once done.'),
@@ -97,6 +100,7 @@ export const coordinationRefusalCodeSchema = z.enum([
   'TARGET_CHANGED',
   'RETRY_KEY_CONFLICT',
   'UNKNOWN_EXCHANGE',
+  'HOST_UNAVAILABLE',
   'STOPPING',
   'PAUSED',
 ])
@@ -149,6 +153,8 @@ export const coordinationExchangeViewSchema = z.object({
   id: z.uuid(),
   direction: z.enum(['sent', 'received']),
   peerThreadId: id,
+  peerHostId: id.optional(),
+  peerMachine: z.string().max(128).optional(),
   peerTitle: z.string().max(512).nullable(),
   peerProvider: providerIdSchema.nullable(),
   messageId: id,

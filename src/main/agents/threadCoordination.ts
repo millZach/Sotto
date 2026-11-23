@@ -1,20 +1,42 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { capabilitiesForThread, isThreadProviderConnected, isVisualMessage, lastUserMessageIdOf, PROVIDER_LABELS, threadTakesSottoTools,
+import { agentRuntimeModeSchema, capabilitiesForThread, isThreadProviderConnected, isVisualMessage, lastUserMessageIdOf, PROVIDER_LABELS, providerIdSchema, threadTakesSottoTools,
   type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../shared/agents'
+import { parseHostEntityKey } from '../../shared/clientIdentity'
 import { RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { COORDINATION_HOP_MAX, COORDINATION_LIST_LIMIT_DEFAULT, COORDINATION_PROMPTS_PER_TARGET, COORDINATION_RATE_LIMIT, COORDINATION_RATE_WINDOW_MS,
   COORDINATION_READ_BYTES_MAX, COORDINATION_READ_LIMIT_DEFAULT, COORDINATION_REPLY_BYTES_MAX, COORDINATION_VIEWS_MAX, COORDINATION_WAIT_MAX_SECONDS,
   coordinateListThreadsInputSchema, coordinateReadExchangeInputSchema, coordinateReadThreadInputSchema, coordinateSendInputSchema,
   coordinationDeliverySchema, coordinationOutcomeSchema, isCoordinationSlashCommand, isEligibleParentThread,
-  type CoordinationDelivery, type CoordinationExchangeView, type CoordinationNews, type CoordinationOutcome, type CoordinationRefusal, type CoordinationRefusalCode } from '../../shared/threadCoordination'
+  type CoordinateListThreadsInput, type CoordinateReadThreadInput, type CoordinateSendInput, type CoordinationDelivery, type CoordinationExchangeView,
+  type CoordinationNews, type CoordinationOutcome, type CoordinationRefusal, type CoordinationRefusalCode } from '../../shared/threadCoordination'
+import { COORDINATION_RELAY_READ_TIMEOUT_MS, COORDINATION_RELAY_SEND_TIMEOUT_MS, type CoordinationRelayAsk, type CoordinationRelayedReply,
+  type CoordinationRemoteCaller } from '../../shared/threadCoordinationRelay'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { HostThreadsView } from './hostThreadIndex'
 import { sendOutcome } from './sendOutcome'
 import { coordinationNewsText, formatIncomingPeerMessage, type CoordinationNewsDetail } from './threadCoordinationNews'
 import { WATCHER_FINAL_OUTCOMES, watcherTurnOutcome } from './watcherOutcomes'
+
+/** Outcome push emitted by a target host for an exchange originated on another machine (ADR-0216, Slice 3). */
+export interface CoordinationRemoteOutcomePush {
+  readonly clientId: string
+  readonly callerThreadId: string
+  readonly callerHostId: string
+  readonly news: CoordinationNews
+  readonly replies?: readonly CoordinationRelayedReply[] | undefined
+  readonly exchange?: CoordinationExchangeView | undefined
+}
+
+/** Optional cross-machine relay plugged into `ThreadCoordinationService` on Owl desktop and headless hosts (ADR-0216, Slice 3). */
+export interface CoordinationRelayAdapter {
+  localMachineName?(): string
+  ask(ask: CoordinationRelayAsk, timeoutMs: number): Promise<Record<string, unknown>>
+  notifyRemoteOutcome?(payload: CoordinationRemoteOutcomePush): Promise<void>
+  remoteCallerAuthority?(clientId: string): { readonly recorded: boolean; readonly mayAnswer: boolean }
+}
 
 /** Commands parent-thread coordination may send on a peer parent thread: send or mid-turn steer only (ADR-0216). */
 export type CoordinationCommand = Extract<AgentCommand, { type: 'manual-send' | 'steer' }>
@@ -68,6 +90,7 @@ export interface ThreadCoordinationServiceOptions {
 }
 
 const id = z.string().min(1).max(512)
+const uuidSchema = z.uuid()
 const RECORDS_MAX = 500
 const OWNED_PER_TARGET_MAX = 200
 const RATE_TIMESTAMPS_MAX = 64
@@ -101,6 +124,13 @@ const exchangeRecordSchema = z.object({
   hopCount: z.number().int().min(1).max(COORDINATION_HOP_MAX + 1),
   senderThreadId: id,
   targetThreadId: id,
+  peerHostId: id.optional(),
+  peerMachine: z.string().max(128).optional(),
+  peerTitleSnapshot: z.string().max(512).optional(),
+  peerProviderSnapshot: providerIdSchema.optional(),
+  remoteMirror: z.boolean().optional(),
+  remoteCallerClientId: id.optional(),
+  remoteCallerRuntimeMode: agentRuntimeModeSchema.optional(),
   rootUserMessageId: id,
   anchorMessageId: id.optional(),
   retryKey: z.uuid().optional(),
@@ -155,6 +185,16 @@ const QUEUE_HELD_MESSAGES: Record<string, string> = {
 
 class CoordinationRefusalError extends Error {
   constructor(readonly refusal: CoordinationRefusal) { super(refusal.message) }
+}
+
+const BARE_HOST_THREAD_REF = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}):([\s\S]+)$/iu
+
+/** Parses either canonical `host:<hostId>:<threadId>` or bare `<hostId>:<threadId>` (L6). */
+function parseCoordinationThreadRef(key: string): { readonly hostId: string; readonly id: string } | null {
+  const canonical = parseHostEntityKey(key)
+  if (canonical) return canonical
+  const bare = BARE_HOST_THREAD_REF.exec(key)
+  return bare ? { hostId: bare[1]!, id: bare[2]! } : null
 }
 
 function refuse(code: CoordinationRefusalCode, message: string): never {
@@ -281,6 +321,11 @@ export class ThreadCoordinationService {
   private readonly deliveringNews = new Set<string>()
   private readonly newsAttempts = new Map<string, number>()
   private readonly newsRetryCancels = new Map<string, () => void>()
+  /** In-memory reply prose relayed from remote target hosts for wake-ups and UI reads; never written to disk (ADR-0216, Slice 3). */
+  private readonly relayedReplies = new Map<string, { readonly messageId: string; readonly text: string; readonly truncated: boolean }>()
+  /** Remote mirrors currently awaiting their initial relay.ask; excluded from disk persists and counted in in-flight limits (L3, N4). */
+  private readonly provisionalMirrors = new Set<string>()
+  private relay: CoordinationRelayAdapter | undefined
   private messagesVersion = 0
   private closed = false
   private persistTail: Promise<void> = Promise.resolve()
@@ -312,22 +357,78 @@ export class ThreadCoordinationService {
 
   private nowIso(): string { return new Date(this.nowMs()).toISOString() }
 
+  /** Attaches the optional cross-machine relay adapter (desktop or headless host; ADR-0216, Slice 3). */
+  useRelay(relay: CoordinationRelayAdapter | undefined): void {
+    this.relay = relay
+  }
+
+  /** This host's own ID, for relay helpers (`HostCoordinationRelay`, N6). */
+  localHostId(): string | undefined {
+    return this.options.control.hostId()
+  }
+
+  /** Live runtimeMode of an eligible local parent thread, read directly from this host's snapshot (N6). */
+  localThreadRuntimeMode(threadId: string): AgentRuntimeMode | undefined {
+    const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === threadId)
+    return this.isLocalEligibleParent(thread) ? thread.runtimeMode : undefined
+  }
+
+  /** Re-attempts delivery of untold final remote-caller outcomes once a desktop or paired origin host reconnects (L8). */
+  replayUntoldRemoteNews(filter?: { readonly clientId?: string; readonly callerHostId?: string }): void {
+    if (this.closed) return
+    for (const record of this.records) {
+      if (record.remoteCallerClientId === undefined || !record.expectReply) continue
+      if (filter?.clientId !== undefined && record.remoteCallerClientId !== filter.clientId) continue
+      if (filter?.callerHostId !== undefined && record.peerHostId !== filter.callerHostId) continue
+      const outcome = effectiveOutcome(record)
+      if (!WATCHER_FINAL_OUTCOMES.has(outcome) || record.told === outcome) continue
+      this.newsRetryCancels.get(record.id)?.()
+      this.newsRetryCancels.delete(record.id)
+      this.newsAttempts.delete(record.id)
+      this.maybeDeliverNews(record)
+    }
+  }
+
+  private rememberRelayedReply(exchangeId: string, reply: { readonly messageId: string; readonly text: string; readonly truncated: boolean }): void {
+    this.relayedReplies.delete(exchangeId)
+    this.relayedReplies.set(exchangeId, reply)
+    if (this.relayedReplies.size > RECORDS_MAX) {
+      const oldest = this.relayedReplies.keys().next().value
+      if (oldest !== undefined) this.relayedReplies.delete(oldest)
+    }
+  }
+
   /** Reads persisted coordination metadata on startup, marks pre-restart in-flight exchanges unresolved without replay, and notifies senders (L1, L2, L6). */
   async recover(): Promise<void> {
     if (!this.options.historyEnabled()) return
     const saved = await this.store.read()
-    this.records = [...saved.exchanges]
+    this.records = saved.exchanges.filter(record => !(record.remoteMirror === true && !record.charged))
+    let changed = this.records.length !== saved.exchanges.length
     this.rates.clear()
     for (const entry of saved.rates ?? []) this.rates.set(entry.senderThreadId, [...entry.timestamps])
     this.ownedByTarget.clear()
     for (const entry of saved.ownedByTarget ?? []) {
       this.ownedByTarget.set(entry.targetThreadId, entry.messageIds.slice(-OWNED_PER_TARGET_MAX))
     }
-    for (const record of this.records) this.rememberOwnedMessage(record.targetThreadId, record.messageId)
+    for (const record of this.records) {
+      if (!record.remoteMirror) this.rememberOwnedMessage(record.targetThreadId, record.messageId)
+    }
     this.rebuildIndexes()
-    let changed = false
     const stamp = this.nowIso()
     for (const record of this.records) {
+      // Remote mirrors track a turn running on another machine that did not restart: keep accepted/queued mirrors working so
+      // real outcome news wakes the sender once instead of firing a spurious 'unknown' wake-up first (N4).
+      if (record.remoteMirror) {
+        if (record.deliveryState === 'dispatching') {
+          record.deliveryState = 'uncertain'
+          record.outcome = 'unknown'
+          record.unknownBecause = 'restarted'
+          record.outcomeAt = stamp
+          record.updatedAt = stamp
+          changed = true
+        }
+        continue
+      }
       if (record.deliveryState === 'queued') {
         record.deliveryState = 'failed'
         record.failure = 'restarted'
@@ -349,13 +450,18 @@ export class ThreadCoordinationService {
     if (changed) {
       await this.persist()
       const affected = new Set<string>()
-      for (const record of this.records) { affected.add(record.senderThreadId); affected.add(record.targetThreadId) }
+      for (const record of this.records) {
+        if (!record.remoteCallerClientId) affected.add(record.senderThreadId)
+        if (!record.remoteMirror) affected.add(record.targetThreadId)
+      }
       this.notifyViewsChanged([...affected])
     }
     this.options.control.refreshCoordinationObservation()
-    // Notify senders once for any exchange left failed, unknown, or untold across restart (L2).
+    // Notify senders once for any exchange left failed, unknown, or untold across restart (L2, N4).
     for (const record of this.records) {
-      if (record.expectReply && WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record)) && record.told !== effectiveOutcome(record)) {
+      const outcome = effectiveOutcome(record)
+      if (record.remoteMirror && outcome === 'unknown') continue
+      if (record.expectReply && WATCHER_FINAL_OUTCOMES.has(outcome) && record.told !== outcome) {
         this.maybeDeliverNews(record)
       }
     }
@@ -367,7 +473,7 @@ export class ThreadCoordinationService {
     const before = this.records.length
     let ownedChanged = false
     for (const record of this.records) {
-      if (threadIds.has(record.senderThreadId) && !threadIds.has(record.targetThreadId)) {
+      if (!record.remoteMirror && !record.remoteCallerClientId && threadIds.has(record.senderThreadId) && !threadIds.has(record.targetThreadId)) {
         this.rememberOwnedMessage(record.targetThreadId, record.messageId)
         ownedChanged = true
       }
@@ -379,16 +485,19 @@ export class ThreadCoordinationService {
     const removedIds = new Set<string>()
     const affected = new Set<string>()
     this.records = this.records.filter(record => {
-      const drop = threadIds.has(record.senderThreadId) || threadIds.has(record.targetThreadId)
+      const dropSender = !record.remoteCallerClientId && threadIds.has(record.senderThreadId)
+      const dropTarget = !record.remoteMirror && threadIds.has(record.targetThreadId)
+      const drop = dropSender || dropTarget
       if (drop) {
         removedIds.add(record.id)
-        if (!threadIds.has(record.senderThreadId)) affected.add(record.senderThreadId)
-        if (!threadIds.has(record.targetThreadId)) affected.add(record.targetThreadId)
+        if (!record.remoteCallerClientId && !dropSender) affected.add(record.senderThreadId)
+        if (!record.remoteMirror && !dropTarget) affected.add(record.targetThreadId)
       }
       return !drop
     })
     for (const recordId of removedIds) {
       this.pendingTexts.delete(recordId)
+      this.relayedReplies.delete(recordId)
       this.newsRetryCancels.get(recordId)?.()
       this.newsRetryCancels.delete(recordId)
     }
@@ -404,6 +513,8 @@ export class ThreadCoordinationService {
     if (this.closed) return
     this.closed = true
     this.pendingTexts.clear()
+    this.relayedReplies.clear()
+    this.provisionalMirrors.clear()
     for (const cancel of this.newsRetryCancels.values()) cancel()
     this.newsRetryCancels.clear()
     for (const waiter of [...this.waiters]) {
@@ -451,6 +562,7 @@ export class ThreadCoordinationService {
       for (const messageId of ids) this.ownedMessages.add(messageId)
     }
     for (const record of this.records) {
+      if (record.remoteMirror) continue
       this.ownedMessages.add(record.messageId)
       this.recordByMessageId.set(record.messageId, record)
       this.recordByDraftId.set(record.draftId, record)
@@ -468,7 +580,7 @@ export class ThreadCoordinationService {
       : []
     const kept = new Set([...finished, ...open])
     for (const record of this.records) {
-      if (!kept.has(record)) this.rememberOwnedMessage(record.targetThreadId, record.messageId)
+      if (!kept.has(record) && !record.remoteMirror) this.rememberOwnedMessage(record.targetThreadId, record.messageId)
     }
     this.records = [...finished, ...open].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     this.rebuildIndexes()
@@ -489,7 +601,10 @@ export class ThreadCoordinationService {
       .map(([targetThreadId, messageIds]) => ({ targetThreadId, messageIds: messageIds.slice(-OWNED_PER_TARGET_MAX) }))
       .filter(entry => entry.messageIds.length > 0)
       .slice(-RECORDS_MAX)
-    const payload: CoordinationFile = { version: 1, exchanges: this.records, rates, ownedByTarget }
+    const exchanges = this.provisionalMirrors.size > 0
+      ? this.records.filter(record => !this.provisionalMirrors.has(record.id))
+      : this.records
+    const payload: CoordinationFile = { version: 1, exchanges, rates, ownedByTarget }
     const write = this.persistTail.catch(() => undefined).then(() => this.store.write(payload)).catch(() => undefined)
     this.persistTail = write
     return write
@@ -498,6 +613,7 @@ export class ThreadCoordinationService {
   private observedThreadIds(): readonly string[] {
     const ids = new Set<string>()
     for (const record of this.records) {
+      if (record.remoteMirror) continue
       if (isOpenRecord(record) || isReconcilableAfterRestart(record) || this.pendingTexts.has(record.id)) {
         ids.add(record.targetThreadId)
       }
@@ -505,19 +621,123 @@ export class ThreadCoordinationService {
     return [...ids]
   }
 
-  private messagePermissionAssessment(snapshot: AgentHostSnapshot, caller: AgentThread, target: AgentThread, settled: boolean): { readonly canMessage: boolean; readonly reason?: string } {
+  private messagePermissionAssessment(
+    snapshot: AgentHostSnapshot,
+    callerMode: AgentRuntimeMode | undefined,
+    target: AgentThread,
+    settled: boolean,
+  ): { readonly canMessage: boolean; readonly reason?: string } {
     if (settled) return { canMessage: false, reason: 'This thread is settled.' }
     if (!isThreadProviderConnected(snapshot, target) || target.clientConnected === false) {
       return { canMessage: false, reason: 'This thread\'s provider is disconnected.' }
     }
     if (target.requests.length > 0) return { canMessage: false, reason: 'Waiting on a user permission or question.' }
-    const callerRank = runtimeModeRank(caller.runtimeMode)
+    const callerRank = runtimeModeRank(callerMode)
     const targetRank = runtimeModeRank(target.runtimeMode)
     if (callerRank < 0 || targetRank < 0) return { canMessage: false, reason: 'Permission level cannot be compared.' }
     if (targetRank > callerRank) {
-      return { canMessage: false, reason: `Permission level (${target.runtimeMode}) is wider than this thread's (${caller.runtimeMode}).` }
+      return { canMessage: false, reason: `Permission level (${target.runtimeMode}) is wider than this thread's (${callerMode}).` }
     }
     return { canMessage: true }
+  }
+
+  private callerSnapshotForRelay(caller: AgentThread, chain?: { readonly chainId: string; readonly hopCount: number; readonly rootUserMessageId: string; readonly anchorMessageId?: string }): CoordinationRemoteCaller {
+    const localHostId = this.options.control.hostId()
+    if (!localHostId) refuse('HOST_UNAVAILABLE', 'This machine has no host identity yet, so it cannot reach other machines. Nothing was sent.')
+    const machineName = this.relay?.localMachineName?.()
+    return {
+      threadId: caller.id,
+      hostId: localHostId,
+      ...(machineName ? { machineName } : {}),
+      title: caller.title,
+      projectId: caller.projectId,
+      ...(caller.providerId ? { provider: caller.providerId } : {}),
+      ...(caller.runtimeMode ? { runtimeMode: caller.runtimeMode } : {}),
+      ...(chain ? {
+        chainId: chain.chainId,
+        hopCount: chain.hopCount,
+        rootUserMessageId: chain.rootUserMessageId,
+        ...(chain.anchorMessageId ? { anchorMessageId: chain.anchorMessageId } : {}),
+      } : {}),
+    }
+  }
+
+  private resolveTargetHost(inputThreadId: string, inputHostId: string | undefined): { readonly targetHostId: string | undefined; readonly rawThreadId: string; readonly isRemote: boolean } {
+    const localHostId = this.options.control.hostId()
+    const parsedKey = parseCoordinationThreadRef(inputThreadId)
+    if (parsedKey && inputHostId) {
+      const matchesLocal = inputHostId === 'local' && localHostId !== undefined && parsedKey.hostId === localHostId
+      if (!matchesLocal && parsedKey.hostId !== inputHostId) {
+        refuse('INVALID_INPUT', 'The hostId in threadId does not match the hostId argument. Pass one consistent hostId.')
+      }
+    }
+    const rawThreadId = parsedKey?.id ?? inputThreadId
+    const explicitHostId = inputHostId === 'local' ? undefined : (inputHostId ?? parsedKey?.hostId)
+    const isRemote = explicitHostId !== undefined && explicitHostId !== localHostId
+    return { targetHostId: explicitHostId, rawThreadId, isRemote }
+  }
+
+  private listLocalThreads(
+    snapshot: AgentHostSnapshot,
+    caller: { readonly threadId: string; readonly hostId?: string | undefined; readonly projectId: string; readonly runtimeMode?: AgentRuntimeMode | undefined },
+    input: CoordinateListThreadsInput,
+  ): Record<string, unknown> {
+    const localHostId = this.options.control.hostId()
+    const sameHost = caller.hostId === undefined || localHostId === undefined || caller.hostId === localHostId
+    const projectsById = new Map(snapshot.projects.map(project => [project.id, project]))
+    const scope = input.project === undefined || input.project === 'same' ? (sameHost ? 'same' : 'all') : input.project
+    const query = input.query?.toLowerCase()
+
+    const candidates = snapshot.threads.filter(thread => {
+      if (sameHost && thread.id === caller.threadId) return false
+      if (!this.isLocalEligibleParent(thread)) return false
+      if (scope === 'same' && thread.projectId !== caller.projectId) return false
+      if (scope !== 'same' && scope !== 'all' && thread.projectId !== scope) return false
+      const settled = isWorkspaceThreadSettled(thread, projectsById.get(thread.projectId))
+      if (settled && input.includeSettled !== true) return false
+      if (input.status && threadStatusLabel(thread) !== input.status) return false
+      if (query) {
+        const title = thread.title.toLowerCase()
+        const branch = (branchOf(thread) ?? '').toLowerCase()
+        if (!title.includes(query) && !branch.includes(query)) return false
+      }
+      return true
+    }).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.id.localeCompare(b.id))
+
+    const cursor = input.cursor ?? 0
+    const limit = input.limit ?? COORDINATION_LIST_LIMIT_DEFAULT
+    const page = candidates.slice(cursor, cursor + limit)
+    const nextCursor = cursor + page.length < candidates.length ? cursor + page.length : null
+
+    return {
+      status: 'ok',
+      ...(localHostId ? { hostId: localHostId } : {}),
+      scope,
+      total: candidates.length,
+      nextCursor,
+      threads: page.map(thread => {
+        const project = projectsById.get(thread.projectId)
+        const settled = isWorkspaceThreadSettled(thread, project)
+        const assessment = this.messagePermissionAssessment(snapshot, caller.runtimeMode, thread, settled)
+        return {
+          threadId: thread.id,
+          ...(localHostId ? { hostId: localHostId } : {}),
+          title: thread.title,
+          projectId: thread.projectId,
+          projectTitle: project?.title ?? null,
+          provider: thread.providerId ?? null,
+          modelId: thread.modelId,
+          branch: branchOf(thread),
+          runtimeMode: thread.runtimeMode ?? null,
+          status: threadStatusLabel(thread),
+          settled,
+          pendingRequestsCount: thread.requests.length,
+          updatedAt: thread.updatedAt,
+          canMessage: assessment.canMessage,
+          ...(assessment.reason ? { cannotMessageReason: assessment.reason } : {}),
+        }
+      }),
+    }
   }
 
   async listThreads(callerId: string, rawArgs: unknown): Promise<Record<string, unknown>> {
@@ -530,61 +750,158 @@ export class ThreadCoordinationService {
       const caller = snapshot.threads.find(item => item.id === callerId)
       if (!caller) refuse('NOT_ADMITTED', COORDINATION_NOT_ADMITTED)
 
-      const projectsById = new Map(snapshot.projects.map(project => [project.id, project]))
-      const scope = input.project === undefined || input.project === 'same' ? 'same' : input.project
-      const query = input.query?.toLowerCase()
-
-      const candidates = snapshot.threads.filter(thread => {
-        if (thread.id === callerId) return false
-        if (!this.isLocalEligibleParent(thread)) return false
-        if (scope === 'same' && thread.projectId !== caller.projectId) return false
-        if (scope !== 'same' && scope !== 'all' && thread.projectId !== scope) return false
-        const settled = isWorkspaceThreadSettled(thread, projectsById.get(thread.projectId))
-        if (settled && input.includeSettled !== true) return false
-        if (input.status && threadStatusLabel(thread) !== input.status) return false
-        if (query) {
-          const title = thread.title.toLowerCase()
-          const branch = (branchOf(thread) ?? '').toLowerCase()
-          if (!title.includes(query) && !branch.includes(query)) return false
-        }
-        return true
-      }).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.id.localeCompare(b.id))
-
-      const cursor = input.cursor ?? 0
-      const limit = input.limit ?? COORDINATION_LIST_LIMIT_DEFAULT
-      const page = candidates.slice(cursor, cursor + limit)
-      const nextCursor = cursor + page.length < candidates.length ? cursor + page.length : null
-
-      return {
-        status: 'ok',
-        scope,
-        total: candidates.length,
-        nextCursor,
-        threads: page.map(thread => {
-          const project = projectsById.get(thread.projectId)
-          const settled = isWorkspaceThreadSettled(thread, project)
-          const assessment = this.messagePermissionAssessment(snapshot, caller, thread, settled)
-          return {
-            threadId: thread.id,
-            title: thread.title,
-            projectId: thread.projectId,
-            projectTitle: project?.title ?? null,
-            provider: thread.providerId ?? null,
-            modelId: thread.modelId,
-            branch: branchOf(thread),
-            runtimeMode: thread.runtimeMode ?? null,
-            status: threadStatusLabel(thread),
-            settled,
-            pendingRequestsCount: thread.requests.length,
-            updatedAt: thread.updatedAt,
-            canMessage: assessment.canMessage,
-            ...(assessment.reason ? { cannotMessageReason: assessment.reason } : {}),
-          }
-        }),
+      const localHostId = this.options.control.hostId()
+      const targetHost = input.hostId
+      if (targetHost === undefined || targetHost === 'local' || (localHostId !== undefined && targetHost === localHostId)) {
+        return this.listLocalThreads(snapshot, { threadId: caller.id, hostId: localHostId, projectId: caller.projectId, runtimeMode: caller.runtimeMode }, input)
       }
+      const listAllLocalFallback = (): Record<string, unknown> => {
+        const local = this.listLocalThreads(snapshot, { threadId: caller.id, hostId: localHostId, projectId: caller.projectId, runtimeMode: caller.runtimeMode }, input)
+        const machine = this.relay?.localMachineName?.()
+        const threads = Array.isArray(local.threads)
+          ? local.threads.map(item => item && typeof item === 'object' ? { ...(item as Record<string, unknown>), ...(machine ? { machine } : {}) } : item)
+          : []
+        return {
+          ...local,
+          hostId: 'all',
+          threads,
+          unavailableHosts: [{ hostId: 'other-machines', machine: 'Other machines', reason: 'disconnected' }],
+        }
+      }
+      if (!this.relay) {
+        if (targetHost === 'all') return listAllLocalFallback()
+        refuse('HOST_UNAVAILABLE', 'Cross-machine parent-thread coordination is not connected right now. Nothing was sent.')
+      }
+      const remoteInput: CoordinateListThreadsInput = targetHost !== 'all' && (input.project === undefined || input.project === 'same')
+        ? { ...input, project: 'all' }
+        : input
+      const relayed = await this.relay.ask({
+        type: 'list',
+        targetHostId: targetHost,
+        caller: this.callerSnapshotForRelay(caller),
+        input: remoteInput,
+      }, COORDINATION_RELAY_READ_TIMEOUT_MS)
+      // On a headless host with no desktop connected, `hostId:"all"` still returns this host's own threads (N3).
+      if (targetHost === 'all' && relayed.status === 'refused' && relayed.code === 'HOST_UNAVAILABLE') {
+        return listAllLocalFallback()
+      }
+      return relayed
     } catch (error) {
       if (error instanceof CoordinationRefusalError) return { ...error.refusal }
       throw error
+    }
+  }
+
+  /** Serves a cross-machine `list_threads` ask on this machine (ADR-0216, Slice 3). */
+  async listThreadsForRemote(caller: CoordinationRemoteCaller, rawInput: unknown): Promise<Record<string, unknown>> {
+    try {
+      const parsed = coordinateListThreadsInputSchema.safeParse(rawInput ?? {})
+      if (!parsed.success) refuse('INVALID_INPUT', parsed.error.issues[0]?.message ?? 'Invalid list_threads arguments.')
+      const snapshot = this.options.control.watcherSnapshot()
+      return this.listLocalThreads(snapshot, caller, parsed.data)
+    } catch (error) {
+      if (error instanceof CoordinationRefusalError) return { ...error.refusal }
+      throw error
+    }
+  }
+
+  private readLocalThread(targetThreadId: string, input: CoordinateReadThreadInput): Record<string, unknown> {
+    if (input.beforePosition !== undefined && input.afterPosition !== undefined) {
+      refuse('INVALID_INPUT', 'Pass either beforePosition or afterPosition, not both.')
+    }
+    const snapshot = this.options.control.watcherSnapshot()
+    const target = snapshot.threads.find(item => item.id === targetThreadId)
+    if (!target) refuse('UNKNOWN_THREAD', 'That thread was not found on this machine.')
+    if (!this.isLocalEligibleParent(target)) refuse('INELIGIBLE_TARGET', 'That thread is not an eligible parent thread for coordination.')
+
+    const localHostId = this.options.control.hostId()
+    const project = snapshot.projects.find(item => item.id === target.projectId)
+    const settled = isWorkspaceThreadSettled(target, project)
+    const rawMessages = (this.options.host.threadMessages?.(target.id) ?? target.messages).filter(message => !isVisualMessage(message))
+    const base = {
+      status: 'ok',
+      thread: {
+        threadId: target.id,
+        ...(localHostId ? { hostId: localHostId } : {}),
+        title: target.title,
+        projectId: target.projectId,
+        projectTitle: project?.title ?? null,
+        provider: target.providerId ?? null,
+        modelId: target.modelId,
+        branch: branchOf(target),
+        runtimeMode: target.runtimeMode ?? null,
+        status: threadStatusLabel(target),
+        settled,
+        pendingRequestsCount: target.requests.length,
+        updatedAt: target.updatedAt,
+        messageCount: rawMessages.length,
+        lastUserMessageId: userHead(target),
+      },
+      untrustedNotice: UNTRUSTED_READ_NOTICE,
+    }
+    if (input.view === 'summary') return base
+
+    const limit = input.limit ?? COORDINATION_READ_LIMIT_DEFAULT
+    let start: number
+    let end: number
+    if (input.afterPosition !== undefined) {
+      start = Math.min(rawMessages.length, input.afterPosition + 1)
+      end = Math.min(rawMessages.length, start + limit)
+    } else if (input.beforePosition !== undefined) {
+      end = Math.min(rawMessages.length, input.beforePosition)
+      start = Math.max(0, end - limit)
+    } else {
+      end = rawMessages.length
+      start = Math.max(0, end - limit)
+    }
+
+    const slice = rawMessages.slice(start, end)
+    let remainingBytes = COORDINATION_READ_BYTES_MAX
+    const entries: Array<{
+      readonly position: number
+      readonly id: string
+      readonly role: AgentMessage['role']
+      readonly createdAt: string
+      readonly provenance: 'user' | 'assistant' | 'peer-coordination' | 'wake-up' | 'delegation'
+      readonly text: string
+      readonly truncated: boolean
+    }> = []
+
+    // Keep newest messages inside the byte budget when reading backward/latest; oldest-first when reading afterPosition.
+    const forward = input.afterPosition !== undefined
+    const ordered = forward
+      ? slice.map((message, offset) => ({ message, position: start + offset }))
+      : slice.map((message, offset) => ({ message, position: start + offset })).reverse()
+
+    for (const { message, position } of ordered) {
+      if (remainingBytes <= 0) break
+      const cut = cutUtf8(message.text, remainingBytes)
+      const used = new TextEncoder().encode(cut.text).byteLength
+      remainingBytes -= used
+      const provenance: 'user' | 'assistant' | 'peer-coordination' | 'wake-up' | 'delegation' =
+        message.role !== 'user' ? 'assistant'
+          : this.ownedMessages.has(message.id) ? 'peer-coordination'
+            : isWakeUpOf(target, message.id) ? 'wake-up'
+              : this.options.control.delegationMessage?.(message.id) ? 'delegation'
+                : 'user'
+      entries.push({
+        position,
+        id: message.id,
+        role: message.role,
+        createdAt: message.createdAt,
+        provenance,
+        text: cut.text,
+        truncated: cut.truncated,
+      })
+    }
+
+    if (!forward) entries.reverse()
+    const firstPos = entries[0]?.position
+    return {
+      ...base,
+      messages: entries,
+      earlierPosition: firstPos !== undefined && firstPos > 0 ? firstPos : null,
+      latestPosition: rawMessages.length > 0 ? rawMessages.length - 1 : -1,
     }
   }
 
@@ -594,103 +911,39 @@ export class ThreadCoordinationService {
       if (!parsed.success) refuse('INVALID_INPUT', parsed.error.issues[0]?.message ?? 'Invalid read_thread arguments.')
       if (!this.admits(callerId)) refuse('NOT_ADMITTED', COORDINATION_NOT_ADMITTED)
       const input = parsed.data
-      if (input.threadId === callerId) refuse('SELF_TARGET', 'You cannot read your own thread through sotto_coordinate.')
-      if (input.beforePosition !== undefined && input.afterPosition !== undefined) {
-        refuse('INVALID_INPUT', 'Pass either beforePosition or afterPosition, not both.')
+      const { targetHostId, rawThreadId, isRemote } = this.resolveTargetHost(input.threadId, input.hostId)
+      if (!isRemote && rawThreadId === callerId) refuse('SELF_TARGET', 'You cannot read your own thread through sotto_coordinate.')
+      if (!isRemote) return this.readLocalThread(rawThreadId, input)
+      if (!this.relay) {
+        refuse('HOST_UNAVAILABLE', 'Cross-machine parent-thread coordination is not connected right now.')
       }
-
       const snapshot = this.options.control.watcherSnapshot()
-      const target = snapshot.threads.find(item => item.id === input.threadId)
-      if (!target) refuse('UNKNOWN_THREAD', 'That thread was not found on this machine.')
-      if (!this.isLocalEligibleParent(target)) refuse('INELIGIBLE_TARGET', 'That thread is not an eligible parent thread for coordination.')
+      const caller = snapshot.threads.find(item => item.id === callerId)
+      if (!caller) refuse('NOT_ADMITTED', COORDINATION_NOT_ADMITTED)
+      return await this.relay.ask({
+        type: 'read',
+        targetHostId: targetHostId!,
+        caller: this.callerSnapshotForRelay(caller),
+        input: { ...input, threadId: rawThreadId },
+      }, COORDINATION_RELAY_READ_TIMEOUT_MS)
+    } catch (error) {
+      if (error instanceof CoordinationRefusalError) return { ...error.refusal }
+      throw error
+    }
+  }
 
-      const project = snapshot.projects.find(item => item.id === target.projectId)
-      const settled = isWorkspaceThreadSettled(target, project)
-      const rawMessages = (this.options.host.threadMessages?.(target.id) ?? target.messages).filter(message => !isVisualMessage(message))
-      const base = {
-        status: 'ok',
-        thread: {
-          threadId: target.id,
-          title: target.title,
-          projectId: target.projectId,
-          projectTitle: project?.title ?? null,
-          provider: target.providerId ?? null,
-          modelId: target.modelId,
-          branch: branchOf(target),
-          runtimeMode: target.runtimeMode ?? null,
-          status: threadStatusLabel(target),
-          settled,
-          pendingRequestsCount: target.requests.length,
-          updatedAt: target.updatedAt,
-          messageCount: rawMessages.length,
-          lastUserMessageId: userHead(target),
-        },
-        untrustedNotice: UNTRUSTED_READ_NOTICE,
+  /** Serves a cross-machine `read_thread` ask on this machine (ADR-0216, Slice 3). */
+  async readThreadForRemote(caller: CoordinationRemoteCaller, rawInput: unknown): Promise<Record<string, unknown>> {
+    try {
+      const parsed = coordinateReadThreadInputSchema.safeParse(rawInput ?? {})
+      if (!parsed.success) refuse('INVALID_INPUT', parsed.error.issues[0]?.message ?? 'Invalid read_thread arguments.')
+      const input = parsed.data
+      const rawThreadId = parseCoordinationThreadRef(input.threadId)?.id ?? input.threadId
+      const localHostId = this.options.control.hostId()
+      if (localHostId && caller.hostId === localHostId && rawThreadId === caller.threadId) {
+        refuse('SELF_TARGET', 'You cannot read your own thread through sotto_coordinate.')
       }
-      if (input.view === 'summary') return base
-
-      const limit = input.limit ?? COORDINATION_READ_LIMIT_DEFAULT
-      let start: number
-      let end: number
-      if (input.afterPosition !== undefined) {
-        start = Math.min(rawMessages.length, input.afterPosition + 1)
-        end = Math.min(rawMessages.length, start + limit)
-      } else if (input.beforePosition !== undefined) {
-        end = Math.min(rawMessages.length, input.beforePosition)
-        start = Math.max(0, end - limit)
-      } else {
-        end = rawMessages.length
-        start = Math.max(0, end - limit)
-      }
-
-      const slice = rawMessages.slice(start, end)
-      let remainingBytes = COORDINATION_READ_BYTES_MAX
-      const entries: Array<{
-        readonly position: number
-        readonly id: string
-        readonly role: AgentMessage['role']
-        readonly createdAt: string
-        readonly provenance: 'user' | 'assistant' | 'peer-coordination' | 'wake-up' | 'delegation'
-        readonly text: string
-        readonly truncated: boolean
-      }> = []
-
-      // Keep newest messages inside the byte budget when reading backward/latest; oldest-first when reading afterPosition.
-      const forward = input.afterPosition !== undefined
-      const ordered = forward
-        ? slice.map((message, offset) => ({ message, position: start + offset }))
-        : slice.map((message, offset) => ({ message, position: start + offset })).reverse()
-
-      for (const { message, position } of ordered) {
-        if (remainingBytes <= 0) break
-        const cut = cutUtf8(message.text, remainingBytes)
-        const used = new TextEncoder().encode(cut.text).byteLength
-        remainingBytes -= used
-        const provenance: 'user' | 'assistant' | 'peer-coordination' | 'wake-up' | 'delegation' =
-          message.role !== 'user' ? 'assistant'
-            : this.ownedMessages.has(message.id) ? 'peer-coordination'
-              : isWakeUpOf(target, message.id) ? 'wake-up'
-                : this.options.control.delegationMessage?.(message.id) ? 'delegation'
-                  : 'user'
-        entries.push({
-          position,
-          id: message.id,
-          role: message.role,
-          createdAt: message.createdAt,
-          provenance,
-          text: cut.text,
-          truncated: cut.truncated,
-        })
-      }
-
-      if (!forward) entries.reverse()
-      const firstPos = entries[0]?.position
-      return {
-        ...base,
-        messages: entries,
-        earlierPosition: firstPos !== undefined && firstPos > 0 ? firstPos : null,
-        latestPosition: rawMessages.length > 0 ? rawMessages.length - 1 : -1,
-      }
+      return this.readLocalThread(rawThreadId, input)
     } catch (error) {
       if (error instanceof CoordinationRefusalError) return { ...error.refusal }
       throw error
@@ -727,11 +980,11 @@ export class ThreadCoordinationService {
     return { chainId: randomUUID(), hopCount: 1, rootUserMessageId: root, ...anchor }
   }
 
-  private validateTargetAndPermission(callerId: string, targetId: string, snapshot: AgentHostSnapshot): { readonly caller: AgentThread; readonly target: AgentThread } {
-    const caller = snapshot.threads.find(item => item.id === callerId)
-    if (!this.isLocalEligibleParent(caller) || !threadTakesSottoTools(caller)) {
-      refuse('NOT_ADMITTED', COORDINATION_NOT_ADMITTED)
-    }
+  private validateTargetPermission(
+    callerMode: AgentRuntimeMode | undefined,
+    targetId: string,
+    snapshot: AgentHostSnapshot,
+  ): AgentThread {
     const target = snapshot.threads.find(item => item.id === targetId)
     if (!target) refuse('UNKNOWN_THREAD', 'That parent thread was not found on this machine. Nothing was sent.')
     if (!this.isLocalEligibleParent(target)) refuse('INELIGIBLE_TARGET', 'That thread is not an eligible parent thread for coordination. Nothing was sent.')
@@ -740,15 +993,38 @@ export class ThreadCoordinationService {
     if (!isThreadProviderConnected(snapshot, target) || target.clientConnected === false) {
       refuse('PROVIDER_UNAVAILABLE', `That parent thread's provider (${target.providerId ? PROVIDER_LABELS[target.providerId] : 'unknown'}) is not connected. Nothing was sent.`)
     }
-    const callerRank = runtimeModeRank(caller.runtimeMode)
+    const callerRank = runtimeModeRank(callerMode)
     const targetRank = runtimeModeRank(target.runtimeMode)
     if (callerRank < 0 || targetRank < 0) {
       refuse('PERMISSION_NOT_COMPARABLE', 'Sotto could not compare the permission levels of these two threads, so nothing was sent.')
     }
     if (targetRank > callerRank) {
-      refuse('PERMISSION_TOO_WIDE', `That parent thread runs with wider permissions (${target.runtimeMode}) than this thread (${caller.runtimeMode}), so Sotto will not send to it. Nothing was sent.`)
+      refuse('PERMISSION_TOO_WIDE', `That parent thread runs with wider permissions (${target.runtimeMode}) than this thread (${callerMode}), so Sotto will not send to it. Nothing was sent.`)
     }
+    return target
+  }
+
+  private validateTargetAndPermission(callerId: string, targetId: string, snapshot: AgentHostSnapshot): { readonly caller: AgentThread; readonly target: AgentThread } {
+    const caller = snapshot.threads.find(item => item.id === callerId)
+    if (!this.isLocalEligibleParent(caller) || !threadTakesSottoTools(caller)) {
+      refuse('NOT_ADMITTED', COORDINATION_NOT_ADMITTED)
+    }
+    const target = this.validateTargetPermission(caller.runtimeMode, targetId, snapshot)
     return { caller, target }
+  }
+
+  private validateRemoteTargetAndPermission(
+    clientId: string,
+    callerMode: AgentRuntimeMode | undefined,
+    targetId: string,
+    snapshot: AgentHostSnapshot,
+  ): AgentThread {
+    const authority = this.relay?.remoteCallerAuthority?.(clientId)
+    if (authority && !authority.recorded) {
+      refuse('NOT_ADMITTED', 'This machine no longer takes parent-thread coordination requests from that desktop. Nothing was sent.')
+    }
+    const effectiveMode: AgentRuntimeMode | undefined = authority && !authority.mayAnswer ? 'approval-required' : callerMode
+    return this.validateTargetPermission(effectiveMode, targetId, snapshot)
   }
 
   private checkDirectUserWork(target: AgentThread, admitting = false): void {
@@ -770,7 +1046,8 @@ export class ThreadCoordinationService {
 
   private hasInFlightOrQueuedForTarget(targetThreadId: string): boolean {
     return this.records.some(record =>
-      record.targetThreadId === targetThreadId
+      !record.remoteMirror
+      && record.targetThreadId === targetThreadId
       && (record.deliveryState === 'queued' || record.deliveryState === 'dispatching'))
   }
 
@@ -787,7 +1064,9 @@ export class ThreadCoordinationService {
       throw new CoordinationRefusalError({ status: 'refused', code: 'PAUSED', message: 'This coordination message was cancelled before dispatch. Nothing was sent.' })
     }
     const snapshot = this.options.control.watcherSnapshot()
-    const { target } = this.validateTargetAndPermission(record.senderThreadId, record.targetThreadId, snapshot)
+    const target = record.remoteCallerClientId !== undefined
+      ? this.validateRemoteTargetAndPermission(record.remoteCallerClientId, record.remoteCallerRuntimeMode, record.targetThreadId, snapshot)
+      : this.validateTargetAndPermission(record.senderThreadId, record.targetThreadId, snapshot).target
     this.checkDirectUserWork(target)
     if (this.hasTargetUserWork(target.id, record.draftId)) {
       throw new CoordinationRefusalError({ status: 'refused', code: 'QUEUE_HELD', message: 'That parent thread has queued or in-flight user work ahead of this peer message. Nothing was sent.' })
@@ -808,18 +1087,24 @@ export class ThreadCoordinationService {
       if (isCoordinationSlashCommand(input.message)) {
         refuse('SLASH_COMMAND_FORBIDDEN', 'Peer coordination messages cannot run slash commands. Send plain text instead. Nothing was sent.')
       }
-      if (input.threadId === callerId) refuse('SELF_TARGET', 'A parent thread cannot send a coordination message to itself. Nothing was sent.')
+      const { targetHostId, rawThreadId, isRemote } = this.resolveTargetHost(input.threadId, input.hostId)
+      if (!isRemote && rawThreadId === callerId) refuse('SELF_TARGET', 'A parent thread cannot send a coordination message to itself. Nothing was sent.')
 
       const expectReply = input.expect_reply !== false
       const requestedDelivery = input.delivery ?? 'queue'
-      const inputDigest = digestOf({ targetThreadId: input.threadId, message: input.message, delivery: requestedDelivery, expectReply })
+      const inputDigest = isRemote
+        ? digestOf({ targetHostId, targetThreadId: rawThreadId, message: input.message, delivery: requestedDelivery, expectReply })
+        : digestOf({ targetThreadId: rawThreadId, message: input.message, delivery: requestedDelivery, expectReply })
 
       // Idempotent retry_key lookup runs BEFORE target validation so retries against a later-archived/settled target return the original receipt (L3).
       if (input.retry_key !== undefined) {
-        const existing = this.records.find(record => record.senderThreadId === callerId && record.retryKey === input.retry_key)
+        const existing = this.records.find(record => !record.remoteCallerClientId && record.senderThreadId === callerId && record.retryKey === input.retry_key)
         if (existing) {
           if (existing.inputDigest !== inputDigest) {
             refuse('RETRY_KEY_CONFLICT', 'That retry_key was already used for a different coordination message. Use a new UUID for a different message. Nothing was sent.')
+          }
+          if (existing.remoteMirror && existing.peerHostId) {
+            await this.refreshRemoteMirror(callerId, existing)
           }
           const waitMs = Math.min(COORDINATION_WAIT_MAX_SECONDS, input.wait_seconds ?? 0) * 1000
           if (existing.expectReply && waitMs > 0 && !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(existing))) {
@@ -829,8 +1114,12 @@ export class ThreadCoordinationService {
         }
       }
 
+      if (isRemote) {
+        return await this.sendToRemoteThread(callerId, targetHostId!, rawThreadId, input, expectReply, requestedDelivery, inputDigest)
+      }
+
       const snapshot = this.options.control.watcherSnapshot()
-      const { caller, target } = this.validateTargetAndPermission(callerId, input.threadId, snapshot)
+      const { caller, target } = this.validateTargetAndPermission(callerId, rawThreadId, snapshot)
       this.checkDirectUserWork(target, true)
 
       // Anti-loop & budgets.
@@ -839,7 +1128,8 @@ export class ThreadCoordinationService {
         refuse('LOOP_LIMIT', `Peer coordination reached the ${COORDINATION_HOP_MAX}-hop safety limit without a new message from the user. Ask the user to step in before coordinating further. Nothing was sent.`)
       }
       const perTargetCount = this.records.filter(record =>
-        record.charged && record.senderThreadId === callerId && record.targetThreadId === target.id && record.rootUserMessageId === chain.rootUserMessageId).length
+        record.charged && !record.remoteMirror && !record.remoteCallerClientId
+        && record.senderThreadId === callerId && record.targetThreadId === target.id && record.rootUserMessageId === chain.rootUserMessageId).length
       if (perTargetCount >= COORDINATION_PROMPTS_PER_TARGET) {
         refuse('PROMPT_LIMIT', `This thread already sent ${COORDINATION_PROMPTS_PER_TARGET} coordination messages to "${target.title}" during this turn. Wait for a new user message before sending more. Nothing was sent.`)
       }
@@ -926,6 +1216,346 @@ export class ThreadCoordinationService {
     }
   }
 
+  /** Refunds one reserved rate-limit timestamp without clobbering concurrent charges (L3). */
+  private refundRateSlot(callerId: string, timestamp: number): void {
+    const list = this.rates.get(callerId)
+    if (!list) return
+    const index = list.lastIndexOf(timestamp)
+    if (index !== -1) list.splice(index, 1)
+    if (list.length === 0) this.rates.delete(callerId)
+  }
+
+  /** Sends a coordination message to a parent thread on another connected machine via the relay (ADR-0216, Slice 3). */
+  private async sendToRemoteThread(
+    callerId: string,
+    targetHostId: string,
+    rawTargetThreadId: string,
+    input: CoordinateSendInput,
+    expectReply: boolean,
+    requestedDelivery: 'queue' | 'steer' | 'auto',
+    inputDigest: string,
+  ): Promise<Record<string, unknown>> {
+    if (!this.relay) {
+      refuse('HOST_UNAVAILABLE', 'Cross-machine parent-thread coordination is not connected right now. Nothing was sent.')
+    }
+    const snapshot = this.options.control.watcherSnapshot()
+    const caller = snapshot.threads.find(item => item.id === callerId)
+    if (!this.isLocalEligibleParent(caller) || !threadTakesSottoTools(caller)) {
+      refuse('NOT_ADMITTED', COORDINATION_NOT_ADMITTED)
+    }
+    const chain = this.resolveCausalChain(caller)
+    if (chain.hopCount > COORDINATION_HOP_MAX) {
+      refuse('LOOP_LIMIT', `Peer coordination reached the ${COORDINATION_HOP_MAX}-hop safety limit without a new message from the user. Ask the user to step in before coordinating further. Nothing was sent.`)
+    }
+    // Count both charged mirrors and currently in-flight provisional mirrors before awaiting so parallel remote sends cannot bypass PROMPT_LIMIT (L3).
+    const perTargetCount = this.records.filter(record =>
+      (record.charged || this.provisionalMirrors.has(record.id)) && record.remoteMirror === true && record.peerHostId === targetHostId
+      && record.senderThreadId === callerId && record.targetThreadId === rawTargetThreadId && record.rootUserMessageId === chain.rootUserMessageId).length
+    if (perTargetCount >= COORDINATION_PROMPTS_PER_TARGET) {
+      refuse('PROMPT_LIMIT', `This thread already sent ${COORDINATION_PROMPTS_PER_TARGET} coordination messages to that peer thread during this turn. Wait for a new user message before sending more. Nothing was sent.`)
+    }
+    const now = this.nowMs()
+    const cutoff = now - COORDINATION_RATE_WINDOW_MS
+    const liveRecent = (this.rates.get(callerId) ?? []).filter(ts => ts > cutoff)
+    if (liveRecent.length >= COORDINATION_RATE_LIMIT) {
+      refuse('RATE_LIMIT', `This thread reached the rate limit of ${COORDINATION_RATE_LIMIT} coordination messages per ${Math.round(COORDINATION_RATE_WINDOW_MS / 60_000)} minutes. Nothing was sent.`)
+    }
+
+    const callerInfo = this.callerSnapshotForRelay(caller, chain)
+    const exchangeId = randomUUID()
+    let currentExchangeId: string = exchangeId
+    const stamp = this.nowIso()
+    // Reserve the rate slot and mark the mirror provisional BEFORE awaiting the relay so parallel sends cannot race limits,
+    // while persist() omits provisional mirrors until the relay call settles (L3, N4).
+    liveRecent.push(now)
+    this.rates.set(callerId, liveRecent)
+    const mirror: ExchangeRecord = {
+      id: exchangeId,
+      chainId: chain.chainId,
+      hopCount: chain.hopCount,
+      senderThreadId: callerId,
+      targetThreadId: rawTargetThreadId,
+      peerHostId: targetHostId,
+      remoteMirror: true,
+      rootUserMessageId: chain.rootUserMessageId,
+      ...(chain.anchorMessageId ? { anchorMessageId: chain.anchorMessageId } : {}),
+      ...(input.retry_key ? { retryKey: input.retry_key } : {}),
+      inputDigest,
+      draftId: randomUUID(),
+      messageId: randomUUID(),
+      expectedLastUserMessageId: null,
+      delivery: requestedDelivery === 'steer' ? 'steered' : 'queued',
+      expectReply,
+      deliveryState: 'dispatching',
+      charged: false,
+      createdAt: stamp,
+      updatedAt: stamp,
+    }
+    this.records.push(mirror)
+    this.provisionalMirrors.add(exchangeId)
+    this.activeSendCalls.add(exchangeId)
+    const markUncertain = async (): Promise<Record<string, unknown>> => {
+      // Delivery is unconfirmed after forwarding: keep the mirror charged & open for late news/read_exchange (L1).
+      const at = this.nowIso()
+      mirror.charged = true
+      if (mirror.deliveryState === 'dispatching') {
+        mirror.deliveryState = 'uncertain'
+        mirror.outcome = 'unknown'
+        mirror.unknownBecause = 'unconfirmed'
+        mirror.outcomeAt ??= at
+      }
+      mirror.updatedAt = at
+      await this.persist()
+      this.notifyViewsChanged([callerId])
+      return this.receiptOf(mirror, true)
+    }
+    const timeoutMs = Math.min(COORDINATION_RELAY_SEND_TIMEOUT_MS, ((input.wait_seconds ?? 0) + 30) * 1000)
+    try {
+      const result = await this.relay.ask({
+        type: 'send',
+        targetHostId,
+        exchangeId,
+        caller: callerInfo,
+        input: { ...input, threadId: rawTargetThreadId },
+      }, timeoutMs)
+      this.provisionalMirrors.delete(exchangeId)
+      if (result.status !== 'ok') {
+        if (result.uncertain === true) {
+          return await markUncertain()
+        }
+        // Definite pre-forward refusal: remove provisional mirror and refund its reserved rate slot cleanly (L1, L3).
+        const index = this.records.indexOf(mirror)
+        if (index !== -1) this.records.splice(index, 1)
+        this.relayedReplies.delete(exchangeId)
+        this.refundRateSlot(callerId, now)
+        return result
+      }
+      // If the target deduplicated a retry_key and returned an earlier exchangeId, adopt it so late news and read_exchange match (L2).
+      const parsedReturnedId = uuidSchema.safeParse(result.exchangeId)
+      const returnedId = parsedReturnedId.success ? parsedReturnedId.data : exchangeId
+      if (returnedId !== mirror.id) {
+        const existingMirror = this.records.find(record =>
+          record !== mirror && record.id === returnedId && record.senderThreadId === callerId && record.remoteMirror === true)
+        const bufferedReply = this.relayedReplies.get(exchangeId)
+        if (bufferedReply) {
+          this.relayedReplies.delete(exchangeId)
+          this.rememberRelayedReply(returnedId, bufferedReply)
+        }
+        if (existingMirror) {
+          const index = this.records.indexOf(mirror)
+          if (index !== -1) this.records.splice(index, 1)
+          this.refundRateSlot(callerId, now)
+          this.applyRemoteReceiptToMirror(existingMirror, result)
+          existingMirror.charged = true
+          const existingOutcome = effectiveOutcome(existingMirror)
+          if (WATCHER_FINAL_OUTCOMES.has(existingOutcome)) existingMirror.told = existingOutcome
+          await this.persist()
+          this.notifyViewsChanged([callerId])
+          return this.receiptOf(existingMirror, true)
+        }
+        this.activeSendCalls.delete(currentExchangeId)
+        mirror.id = returnedId
+        currentExchangeId = returnedId
+        this.activeSendCalls.add(currentExchangeId)
+      }
+      this.applyRemoteReceiptToMirror(mirror, result)
+      mirror.charged = true
+      const outcome = effectiveOutcome(mirror)
+      if (WATCHER_FINAL_OUTCOMES.has(outcome)) mirror.told = outcome
+      await this.persist()
+      this.notifyViewsChanged([callerId])
+      return this.receiptOf(mirror, true)
+    } catch {
+      this.provisionalMirrors.delete(exchangeId)
+      return await markUncertain()
+    } finally {
+      this.provisionalMirrors.delete(exchangeId)
+      this.activeSendCalls.delete(currentExchangeId)
+    }
+  }
+
+  private applyRemoteReceiptToMirror(mirror: ExchangeRecord, result: Record<string, unknown>): void {
+    const now = this.nowIso()
+    if (typeof result.targetTitle === 'string' && result.targetTitle.length > 0) mirror.peerTitleSnapshot = result.targetTitle
+    if (typeof result.targetMachine === 'string' && result.targetMachine.length > 0) mirror.peerMachine = result.targetMachine
+    if (typeof result.targetProvider === 'string') {
+      const parsed = providerIdSchema.safeParse(result.targetProvider)
+      if (parsed.success) mirror.peerProviderSnapshot = parsed.data
+    }
+    if (result.delivery === 'started' || result.delivery === 'queued' || result.delivery === 'steered') {
+      mirror.delivery = result.delivery
+    }
+    if (typeof result.turnMessageId === 'string') mirror.turnMessageId = result.turnMessageId
+    const parsedOutcome = coordinationOutcomeSchema.safeParse(result.outcome)
+    // Treat 'unknown' (e.g. from an uncertain send) as non-definitive so refreshRemoteMirror and retries can promote it (L1, L2).
+    const alreadyDefinitive = mirror.outcome !== undefined && WATCHER_FINAL_OUTCOMES.has(mirror.outcome) && mirror.outcome !== 'unknown'
+    if (parsedOutcome.success && (!alreadyDefinitive || (WATCHER_FINAL_OUTCOMES.has(parsedOutcome.data) && parsedOutcome.data !== 'unknown'))) {
+      mirror.outcome = parsedOutcome.data
+      if (parsedOutcome.data !== 'unknown') delete mirror.unknownBecause
+      if (WATCHER_FINAL_OUTCOMES.has(parsedOutcome.data)) mirror.outcomeAt ??= now
+      else delete mirror.outcomeAt
+    }
+    if (result.deliveryState === 'queued' || result.deliveryState === 'dispatching' || result.deliveryState === 'accepted' || result.deliveryState === 'uncertain' || result.deliveryState === 'failed') {
+      if (!alreadyDefinitive) mirror.deliveryState = result.deliveryState
+    } else if (!alreadyDefinitive) {
+      mirror.deliveryState = mirror.outcome === 'failed' ? 'failed' : mirror.delivery === 'queued' && mirror.outcome === 'working' ? 'queued' : 'accepted'
+    }
+    if (mirror.deliveryState === 'failed' && !mirror.failure) {
+      mirror.failure = mirror.outcome === 'paused' ? 'paused' : mirror.outcome === 'stopped' ? 'stopped' : 'provider'
+    }
+    const replyObj = result.reply
+    if (replyObj && typeof replyObj === 'object' && !Array.isArray(replyObj)) {
+      const rec = replyObj as Record<string, unknown>
+      if (typeof rec.messageId === 'string' && typeof rec.text === 'string') {
+        mirror.replyMessageId = rec.messageId
+        this.rememberRelayedReply(mirror.id, { messageId: rec.messageId, text: rec.text, truncated: rec.truncated === true })
+      }
+    }
+    mirror.updatedAt = now
+  }
+
+  /** Serves a cross-machine `send_to_thread` ask on this machine, enforcing every ADR-0004 guard locally (ADR-0216, Slice 3). */
+  async sendToThreadForRemote(
+    clientId: string,
+    caller: CoordinationRemoteCaller,
+    exchangeId: string,
+    rawInput: unknown,
+    context: { readonly signal?: AbortSignal } = {},
+  ): Promise<Record<string, unknown>> {
+    try {
+      const parsed = coordinateSendInputSchema.safeParse(rawInput ?? {})
+      if (!parsed.success) refuse('INVALID_INPUT', parsed.error.issues[0]?.message ?? 'Invalid send_to_thread arguments.')
+      if (this.closed) refuse('STOPPING', 'Sotto is closing. Nothing was sent.')
+      const input = parsed.data
+      if (isCoordinationSlashCommand(input.message)) {
+        refuse('SLASH_COMMAND_FORBIDDEN', 'Peer coordination messages cannot run slash commands. Send plain text instead. Nothing was sent.')
+      }
+      const rawTargetThreadId = parseCoordinationThreadRef(input.threadId)?.id ?? input.threadId
+      const localHostId = this.options.control.hostId()
+      if (localHostId && caller.hostId === localHostId && rawTargetThreadId === caller.threadId) {
+        refuse('SELF_TARGET', 'A parent thread cannot send a coordination message to itself. Nothing was sent.')
+      }
+      const hopCount = caller.hopCount ?? 1
+      if (hopCount > COORDINATION_HOP_MAX) {
+        refuse('LOOP_LIMIT', `Peer coordination reached the ${COORDINATION_HOP_MAX}-hop safety limit without a new message from the user. Ask the user to step in before coordinating further. Nothing was sent.`)
+      }
+
+      const expectReply = input.expect_reply !== false
+      const requestedDelivery = input.delivery ?? 'queue'
+      const inputDigest = digestOf({ callerHostId: caller.hostId, targetThreadId: rawTargetThreadId, message: input.message, delivery: requestedDelivery, expectReply })
+
+      // Idempotent retry_key lookup runs BEFORE target validation (L3), keyed on caller host & thread rather than relaying desktop clientId (L2).
+      if (input.retry_key !== undefined) {
+        const existing = this.records.find(record =>
+          record.remoteCallerClientId !== undefined && record.peerHostId === caller.hostId
+          && record.senderThreadId === caller.threadId && record.retryKey === input.retry_key)
+        if (existing) {
+          if (existing.inputDigest !== inputDigest) {
+            refuse('RETRY_KEY_CONFLICT', 'That retry_key was already used for a different coordination message. Use a new UUID for a different message. Nothing was sent.')
+          }
+          if (existing.remoteCallerClientId !== clientId) {
+            existing.remoteCallerClientId = clientId
+            existing.updatedAt = this.nowIso()
+            void this.persist()
+          }
+          const waitMs = Math.min(COORDINATION_WAIT_MAX_SECONDS, input.wait_seconds ?? 0) * 1000
+          if (existing.expectReply && waitMs > 0 && !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(existing))) {
+            await this.waitForOutcome(existing.id, waitMs, context.signal)
+          }
+          return this.receiptOf(existing, true)
+        }
+      }
+
+      const snapshot = this.options.control.watcherSnapshot()
+      const target = this.validateRemoteTargetAndPermission(clientId, caller.runtimeMode, rawTargetThreadId, snapshot)
+      this.checkDirectUserWork(target, true)
+
+      const targetRunning = isThreadTurnRunning(target)
+      const targetHasUserWork = this.hasTargetUserWork(target.id)
+      const canSteer = capabilitiesForThread(snapshot, target).steer === true
+      const delivery: CoordinationDelivery = !targetRunning && !targetHasUserWork && !this.sending.has(target.id) && !this.hasInFlightOrQueuedForTarget(target.id)
+        ? 'started'
+        : targetRunning && requestedDelivery === 'steer' && canSteer
+          ? 'steered'
+          : 'queued'
+
+      const stamp = this.nowIso()
+      const record: ExchangeRecord = {
+        id: exchangeId,
+        chainId: caller.chainId ?? randomUUID(),
+        hopCount,
+        senderThreadId: caller.threadId,
+        targetThreadId: target.id,
+        peerHostId: caller.hostId,
+        ...(caller.machineName ? { peerMachine: caller.machineName } : {}),
+        peerTitleSnapshot: caller.title,
+        ...(caller.provider ? { peerProviderSnapshot: caller.provider } : {}),
+        remoteCallerClientId: clientId,
+        ...(caller.runtimeMode ? { remoteCallerRuntimeMode: caller.runtimeMode } : {}),
+        rootUserMessageId: caller.rootUserMessageId ?? `remote:${caller.hostId}:${caller.threadId}`,
+        ...(caller.anchorMessageId ? { anchorMessageId: caller.anchorMessageId } : {}),
+        ...(input.retry_key ? { retryKey: input.retry_key } : {}),
+        inputDigest,
+        draftId: randomUUID(),
+        messageId: randomUUID(),
+        expectedLastUserMessageId: userHead(target, this.options.host.threadMessages?.(target.id)),
+        delivery,
+        expectReply,
+        deliveryState: 'queued',
+        charged: true,
+        createdAt: stamp,
+        updatedAt: stamp,
+      }
+
+      const formatted = formatIncomingPeerMessage({
+        senderThreadId: caller.threadId,
+        senderTitle: caller.title,
+        senderProvider: caller.provider,
+        senderMachine: caller.machineName,
+        exchangeId: record.id,
+        hopCount: record.hopCount,
+        hopMax: COORDINATION_HOP_MAX,
+        message: input.message,
+        expectReply,
+      })
+
+      this.records.push(record)
+      this.rememberOwnedMessage(target.id, record.messageId)
+      this.pendingTexts.set(record.id, formatted)
+      this.rebuildIndexes()
+      this.activeSendCalls.add(record.id)
+      try {
+        await this.persist()
+        this.options.control.refreshCoordinationObservation()
+        this.notifyViewsChanged([target.id])
+        if (delivery === 'started' || delivery === 'steered') {
+          const refusal = await this.dispatchNow(record, delivery === 'steered' ? 'steer' : 'manual-send', true)
+          if (refusal) return { ...refusal }
+        } else {
+          this.pumpQueued(target.id)
+        }
+
+        const waitMs = Math.min(COORDINATION_WAIT_MAX_SECONDS, input.wait_seconds ?? 0) * 1000
+        if (expectReply && waitMs > 0 && !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record))) {
+          await this.waitForOutcome(record.id, waitMs, context.signal)
+        }
+        return this.receiptOf(record, true)
+      } finally {
+        this.activeSendCalls.delete(record.id)
+      }
+    } catch (error) {
+      if (error instanceof CoordinationRefusalError) return { ...error.refusal }
+      throw error
+    }
+  }
+
+  private localThreadsOf(record: ExchangeRecord): string[] {
+    const ids: string[] = []
+    if (!record.remoteCallerClientId) ids.push(record.senderThreadId)
+    if (!record.remoteMirror) ids.push(record.targetThreadId)
+    return ids
+  }
+
   private async dispatchNow(record: ExchangeRecord, commandType: 'manual-send' | 'steer', synchronousCaller: boolean): Promise<CoordinationRefusal | undefined> {
     const text = this.pendingTexts.get(record.id)
     if (text === undefined || record.deliveryState !== 'queued' || this.sending.has(record.targetThreadId)) return undefined
@@ -933,7 +1563,7 @@ export class ThreadCoordinationService {
     record.deliveryState = 'dispatching'
     record.updatedAt = this.nowIso()
     await this.persist()
-    this.notifyViewsChanged([record.senderThreadId, record.targetThreadId])
+    this.notifyViewsChanged(this.localThreadsOf(record))
     let refusal: CoordinationRefusal | undefined
     try {
       this.assertDispatchAllowed(record.id)
@@ -978,8 +1608,10 @@ export class ThreadCoordinationService {
         this.pendingTexts.delete(record.id)
         if (synchronousCaller) {
           // Refund rate timestamp when refused synchronously before anything left Sotto.
-          const list = this.rates.get(record.senderThreadId)
-          if (list && list.length > 0) list.pop()
+          if (!record.remoteCallerClientId) {
+            const list = this.rates.get(record.senderThreadId)
+            if (list && list.length > 0) list.pop()
+          }
           refusal = error.refusal
         }
       } else {
@@ -995,7 +1627,7 @@ export class ThreadCoordinationService {
       record.updatedAt = this.nowIso()
       await this.persist()
       this.options.control.refreshCoordinationObservation()
-      this.notifyViewsChanged([record.senderThreadId, record.targetThreadId])
+      this.notifyViewsChanged(this.localThreadsOf(record))
       this.notifyWaiters(record.id)
       // Reconcile immediately in case the reply already arrived during dispatch.
       this.observe(this.options.control.watcherSnapshot())
@@ -1010,7 +1642,8 @@ export class ThreadCoordinationService {
   private pumpQueued(targetThreadId: string): void {
     if (this.closed || this.sending.has(targetThreadId)) return
     const next = this.records.find(record =>
-      record.targetThreadId === targetThreadId
+      !record.remoteMirror
+      && record.targetThreadId === targetThreadId
       && record.deliveryState === 'queued'
       && this.pendingTexts.has(record.id)
       && !(this.activeSendCalls.has(record.id) && record.delivery !== 'queued'))
@@ -1045,7 +1678,7 @@ export class ThreadCoordinationService {
     this.pendingTexts.delete(record.id)
     void this.persist()
     this.options.control.refreshCoordinationObservation()
-    this.notifyViewsChanged([record.senderThreadId, record.targetThreadId])
+    this.notifyViewsChanged(this.localThreadsOf(record))
     this.notifyWaiters(record.id)
     if (record.expectReply) this.maybeDeliverNews(record)
   }
@@ -1084,7 +1717,7 @@ export class ThreadCoordinationService {
       && command.type !== 'queue-followup' && command.type !== 'interrupt' && command.type !== 'settle-thread') return
     const failure: Failure = command.type === 'interrupt' || command.type === 'settle-thread' ? 'stopped' : 'target-changed'
     for (const record of this.records) {
-      if (record.targetThreadId !== threadId) continue
+      if (record.remoteMirror || record.targetThreadId !== threadId) continue
       if (record.deliveryState === 'dispatching') this.fenced.add(record.id)
       else if (record.deliveryState === 'queued') this.failQueued(record, failure)
     }
@@ -1098,6 +1731,7 @@ export class ThreadCoordinationService {
     const threadOf = (threadId: string): AgentThread | undefined => threads ? threads.thread(threadId) : snapshot.threads.find(item => item.id === threadId)
 
     for (const record of this.records) {
+      if (record.remoteMirror) continue
       if (record.deliveryState === 'queued') {
         queuedTargets.add(record.targetThreadId)
         continue
@@ -1112,8 +1746,7 @@ export class ThreadCoordinationService {
           record.outcomeAt = this.nowIso()
           record.updatedAt = record.outcomeAt
           dirty = true
-          changedThreads.add(record.senderThreadId)
-          changedThreads.add(record.targetThreadId)
+          for (const id of this.localThreadsOf(record)) changedThreads.add(id)
           this.notifyWaiters(record.id)
           if (record.expectReply) this.maybeDeliverNews(record)
         }
@@ -1130,8 +1763,7 @@ export class ThreadCoordinationService {
         }
         this.pendingTexts.delete(record.id)
         dirty = true
-        changedThreads.add(record.senderThreadId)
-        changedThreads.add(record.targetThreadId)
+        for (const id of this.localThreadsOf(record)) changedThreads.add(id)
       }
       if (record.deliveryState !== 'accepted') continue
       const observed = watcherTurnOutcome(
@@ -1155,8 +1787,7 @@ export class ThreadCoordinationService {
       if (record.outcome !== prevOutcome || record.replyMessageId !== prevReply) {
         record.updatedAt = this.nowIso()
         dirty = true
-        changedThreads.add(record.senderThreadId)
-        changedThreads.add(record.targetThreadId)
+        for (const id of this.localThreadsOf(record)) changedThreads.add(id)
       }
       if (WATCHER_FINAL_OUTCOMES.has(observed.outcome)) {
         this.notifyWaiters(record.id)
@@ -1197,7 +1828,48 @@ export class ThreadCoordinationService {
         ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       }],
     }
-    void this.options.control.deliverWakeUp(record.senderThreadId, news, { tool: false }).then(() => {
+    const delivery: Promise<void> = record.remoteCallerClientId !== undefined
+      ? (() => {
+        if (!this.relay?.notifyRemoteOutcome || !record.peerHostId) return Promise.reject(new Error('No cross-machine relay is connected.'))
+        const reply = this.replyFor(record)
+        const snapshot = this.options.control.watcherSnapshot()
+        const target = snapshot.threads.find(item => item.id === record.targetThreadId)
+        const exchangeView: CoordinationExchangeView = {
+          id: record.id,
+          direction: 'sent',
+          peerThreadId: record.targetThreadId,
+          peerTitle: target?.title ?? null,
+          peerProvider: target?.providerId ?? null,
+          messageId: record.messageId,
+          ...(record.anchorMessageId ? { anchorMessageId: record.anchorMessageId } : {}),
+          delivery: record.delivery,
+          deliveryState: record.deliveryState,
+          outcome,
+          hopCount: record.hopCount,
+          hopMax: COORDINATION_HOP_MAX,
+          expectReply: record.expectReply,
+          hasReply: outcome === 'answered' && record.replyMessageId !== undefined,
+          ...(record.deliveryState === 'failed'
+        ? { note: FAILURE_NOTES[record.failure ?? 'provider'] }
+        : record.deliveryState === 'uncertain'
+          ? { note: 'Sotto did not hear back in time to confirm delivery. Call read_exchange before trying again.' }
+          : {}),
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+          ...(record.outcomeAt ? { outcomeAt: record.outcomeAt } : {}),
+        }
+        return this.relay.notifyRemoteOutcome({
+          clientId: record.remoteCallerClientId,
+          callerThreadId: record.senderThreadId,
+          callerHostId: record.peerHostId,
+          news,
+          ...(reply ? { replies: [{ exchangeId: record.id, messageId: reply.messageId, text: reply.text, truncated: reply.truncated }] } : {}),
+          exchange: exchangeView,
+        })
+      })()
+      : this.options.control.deliverWakeUp(record.senderThreadId, news, { tool: false })
+
+    void delivery.then(() => {
       this.deliveringNews.delete(record.id)
       record.told = outcome
       record.updatedAt = this.nowIso()
@@ -1215,7 +1887,66 @@ export class ThreadCoordinationService {
     })
   }
 
+  /** Applies outcome news pushed back across the relay for a cross-machine exchange sent from this host (ADR-0216, Slice 3). */
+  async applyRelayedNews(
+    callerThreadId: string,
+    news: CoordinationNews,
+    replies?: readonly CoordinationRelayedReply[],
+    exchange?: CoordinationExchangeView,
+    sourceHostId?: string,
+  ): Promise<void> {
+    if (this.closed) return
+    const replyByExchange = new Map((replies ?? []).map(item => [item.exchangeId, item]))
+    let changed = false
+    const toNotify: ExchangeRecord[] = []
+    const stamp = this.nowIso()
+
+    for (const item of news.items) {
+      const mirror = this.records.find(record => record.id === item.exchangeId && record.senderThreadId === callerThreadId && record.remoteMirror === true)
+      if (!mirror) continue
+      // Defense-in-depth: verify the news came from the mirror's target host before caching reply text or mutating state (N1).
+      const verifiedHostId = sourceHostId ?? exchange?.peerHostId
+      if (verifiedHostId !== undefined && mirror.peerHostId !== undefined && mirror.peerHostId !== verifiedHostId) continue
+      const reply = replyByExchange.get(item.exchangeId)
+      if (reply) this.rememberRelayedReply(item.exchangeId, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated })
+      mirror.outcome = item.outcome
+      if (item.outcome !== 'unknown') delete mirror.unknownBecause
+      if (item.turnMessageId) mirror.turnMessageId = item.turnMessageId
+      if (reply) mirror.replyMessageId = reply.messageId
+      if (exchange && exchange.id === mirror.id) {
+        mirror.deliveryState = exchange.deliveryState
+        if (exchange.peerTitle) mirror.peerTitleSnapshot = exchange.peerTitle
+        if (exchange.peerProvider) mirror.peerProviderSnapshot = exchange.peerProvider
+        if (exchange.peerMachine) mirror.peerMachine = exchange.peerMachine
+        if (exchange.outcomeAt) mirror.outcomeAt = exchange.outcomeAt
+      } else {
+        mirror.deliveryState = item.outcome === 'failed' ? 'failed' : 'accepted'
+        if (WATCHER_FINAL_OUTCOMES.has(item.outcome)) mirror.outcomeAt ??= stamp
+      }
+      if (mirror.deliveryState === 'failed' && !mirror.failure) {
+        mirror.failure = item.outcome === 'paused' ? 'paused' : item.outcome === 'stopped' ? 'stopped' : 'provider'
+      }
+      mirror.updatedAt = stamp
+      changed = true
+      this.notifyWaiters(mirror.id)
+      if (mirror.expectReply && WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(mirror)) && mirror.told !== effectiveOutcome(mirror)) {
+        toNotify.push(mirror)
+      }
+    }
+
+    if (changed) {
+      await this.persist()
+      this.notifyViewsChanged([callerThreadId])
+    }
+    for (const mirror of toNotify) {
+      this.maybeDeliverNews(mirror)
+    }
+  }
+
   private replyFor(record: ExchangeRecord): { readonly messageId: string; readonly text: string; readonly truncated: boolean } | undefined {
+    const cached = this.relayedReplies.get(record.id)
+    if (cached && effectiveOutcome(record) === 'answered') return cached
+    if (record.remoteMirror) return undefined
     if (effectiveOutcome(record) !== 'answered' || !record.replyMessageId) return undefined
     const stored = this.options.host.threadMessage(record.targetThreadId, record.replyMessageId)
       ?? this.options.control.watcherSnapshot().threads.find(item => item.id === record.targetThreadId)?.messages.find(item => item.id === record.replyMessageId)
@@ -1231,15 +1962,16 @@ export class ThreadCoordinationService {
     for (const news of newsList) {
       for (const item of news.items) {
         mergedItems.push(item)
-        const record = this.records.find(candidate => candidate.id === item.exchangeId && candidate.senderThreadId === threadId)
-        const target = snapshot.threads.find(candidate => candidate.id === item.threadId)
+        const record = this.records.find(candidate => candidate.id === item.exchangeId && candidate.senderThreadId === threadId && !candidate.remoteCallerClientId)
+        const target = record?.remoteMirror ? undefined : snapshot.threads.find(candidate => candidate.id === item.threadId)
         if (!record) {
           if (target) details.set(item.exchangeId, { targetTitle: target.title })
           continue
         }
         const reply = this.replyFor(record)
+        const title = target?.title ?? record.peerTitleSnapshot
         details.set(item.exchangeId, {
-          ...(target ? { targetTitle: target.title } : {}),
+          ...(title ? { targetTitle: title } : {}),
           ...(record.deliveryState === 'failed' ? { notSent: FAILURE_NOTES[record.failure ?? 'provider'] } : {}),
           ...(reply ? { reply } : item.outcome === 'answered' ? { replyUnavailable: 'Its reply text is no longer retained locally; call read_thread to inspect the thread.' } : {}),
         })
@@ -1257,8 +1989,10 @@ export class ThreadCoordinationService {
       void this.persist()
     }
     const snapshot = this.options.control.watcherSnapshot()
-    const target = snapshot.threads.find(item => item.id === record.targetThreadId)
+    const target = record.remoteMirror ? undefined : snapshot.threads.find(item => item.id === record.targetThreadId)
     const reply = this.replyFor(record)
+    const targetTitle = target?.title ?? record.peerTitleSnapshot ?? null
+    const targetProvider = target?.providerId ?? record.peerProviderSnapshot ?? null
     return {
       status: 'ok',
       exchangeId: record.id,
@@ -1267,12 +2001,20 @@ export class ThreadCoordinationService {
       hopMax: COORDINATION_HOP_MAX,
       senderThreadId: record.senderThreadId,
       targetThreadId: record.targetThreadId,
-      targetTitle: target?.title ?? null,
+      ...(record.remoteMirror && record.peerHostId ? { targetHostId: record.peerHostId } : {}),
+      ...(record.remoteMirror && record.peerMachine ? { targetMachine: record.peerMachine } : {}),
+      targetTitle,
+      ...(targetProvider ? { targetProvider } : {}),
       delivery: record.delivery,
+      deliveryState: record.deliveryState,
       expectReply: record.expectReply,
       outcome,
       ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
-      ...(record.deliveryState === 'failed' ? { note: FAILURE_NOTES[record.failure ?? 'provider'] } : {}),
+      ...(record.deliveryState === 'failed'
+        ? { note: FAILURE_NOTES[record.failure ?? 'provider'] }
+        : record.deliveryState === 'uncertain'
+          ? { note: 'Sotto did not hear back in time to confirm delivery. Call read_exchange before trying again.' }
+          : {}),
       ...(reply ? {
         reply: {
           messageId: reply.messageId,
@@ -1298,52 +2040,135 @@ export class ThreadCoordinationService {
     for (const listener of [...this.viewListeners]) listener(unique)
   }
 
+  private viewOf(record: ExchangeRecord, direction: 'sent' | 'received', byId: ReadonlyMap<string, AgentThread>): CoordinationExchangeView {
+    const peerId = direction === 'sent' ? record.targetThreadId : record.senderThreadId
+    const isCrossMachine = record.peerHostId !== undefined
+    const peer = isCrossMachine ? undefined : byId.get(peerId)
+    const outcome = effectiveOutcome(record)
+    return {
+      id: record.id,
+      direction,
+      peerThreadId: peerId,
+      ...(record.peerHostId ? { peerHostId: record.peerHostId } : {}),
+      ...(record.peerMachine ? { peerMachine: record.peerMachine } : {}),
+      peerTitle: peer?.title ?? record.peerTitleSnapshot ?? null,
+      peerProvider: peer?.providerId ?? record.peerProviderSnapshot ?? null,
+      messageId: record.messageId,
+      ...(record.anchorMessageId ? { anchorMessageId: record.anchorMessageId } : {}),
+      delivery: record.delivery,
+      deliveryState: record.deliveryState,
+      outcome,
+      hopCount: record.hopCount,
+      hopMax: COORDINATION_HOP_MAX,
+      expectReply: record.expectReply,
+      hasReply: outcome === 'answered' && (record.replyMessageId !== undefined || this.relayedReplies.has(record.id)),
+      ...(record.deliveryState === 'failed'
+        ? { note: FAILURE_NOTES[record.failure ?? 'provider'] }
+        : record.deliveryState === 'uncertain'
+          ? { note: 'Sotto did not hear back in time to confirm delivery. Call read_exchange before trying again.' }
+          : {}),
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      ...(record.outcomeAt ? { outcomeAt: record.outcomeAt } : {}),
+    }
+  }
+
   /** Read-only UI views of a thread's sent and received peer exchanges (oldest first; identities and metadata only). */
   views(threadId: string): { readonly sent: readonly CoordinationExchangeView[]; readonly received: readonly CoordinationExchangeView[] } {
     const snapshot = this.options.control.watcherSnapshot()
     const byId = new Map(snapshot.threads.map(thread => [thread.id, thread]))
-    const toView = (record: ExchangeRecord, direction: 'sent' | 'received'): CoordinationExchangeView => {
-      const peerId = direction === 'sent' ? record.targetThreadId : record.senderThreadId
-      const peer = byId.get(peerId)
-      const outcome = effectiveOutcome(record)
-      return {
-        id: record.id,
-        direction,
-        peerThreadId: peerId,
-        peerTitle: peer?.title ?? null,
-        peerProvider: peer?.providerId ?? null,
-        messageId: record.messageId,
-        ...(record.anchorMessageId ? { anchorMessageId: record.anchorMessageId } : {}),
-        delivery: record.delivery,
-        deliveryState: record.deliveryState,
-        outcome,
-        hopCount: record.hopCount,
-        hopMax: COORDINATION_HOP_MAX,
-        expectReply: record.expectReply,
-        hasReply: outcome === 'answered' && record.replyMessageId !== undefined,
-        ...(record.deliveryState === 'failed' ? { note: FAILURE_NOTES[record.failure ?? 'provider'] } : {}),
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt,
-        ...(record.outcomeAt ? { outcomeAt: record.outcomeAt } : {}),
-      }
-    }
     const sent = this.records
-      .filter(record => record.senderThreadId === threadId && record.charged)
+      .filter(record => record.senderThreadId === threadId && record.remoteCallerClientId === undefined && record.charged)
       .slice(-COORDINATION_VIEWS_MAX)
-      .map(record => toView(record, 'sent'))
+      .map(record => this.viewOf(record, 'sent', byId))
     const received = this.records
-      .filter(record => record.targetThreadId === threadId && record.deliveryState !== 'failed')
+      .filter(record => record.targetThreadId === threadId && record.remoteMirror !== true && record.deliveryState !== 'failed')
       .slice(-COORDINATION_VIEWS_MAX)
-      .map(record => toView(record, 'received'))
+      .map(record => this.viewOf(record, 'received', byId))
     return { sent, received }
   }
 
-  /** On-demand read of an answered exchange's reply text for the UI (never pushed automatically). */
+  /** On-demand read of an answered exchange's reply text for the UI (local sync lookup). */
   reply(threadId: string, exchangeId: string): { readonly text: string; readonly truncated: boolean } | undefined {
-    const record = this.records.find(item => item.id === exchangeId && (item.senderThreadId === threadId || item.targetThreadId === threadId))
+    const record = this.records.find(item => item.id === exchangeId
+      && ((item.senderThreadId === threadId && item.remoteCallerClientId === undefined)
+        || (item.targetThreadId === threadId && item.remoteMirror !== true)))
     if (!record) return undefined
     const found = this.replyFor(record)
     return found === undefined ? undefined : { text: found.text, truncated: found.truncated }
+  }
+
+  /** On-demand async read of an answered exchange's reply text, fetching across the relay for cross-machine mirrors when needed. */
+  async replyAsync(threadId: string, exchangeId: string): Promise<{ readonly text: string; readonly truncated: boolean } | undefined> {
+    const local = this.reply(threadId, exchangeId)
+    if (local !== undefined) return local
+    const mirror = this.records.find(item => item.id === exchangeId && item.senderThreadId === threadId && item.remoteMirror === true)
+    if (!mirror || !mirror.peerHostId) return undefined
+    await this.refreshRemoteMirror(threadId, mirror)
+    const fetched = this.replyFor(mirror)
+    return fetched === undefined ? undefined : { text: fetched.text, truncated: fetched.truncated }
+  }
+
+  /** Refreshes a cross-machine mirror exchange from its target host on demand (for `read_exchange` and UI `Read reply`). */
+  private async refreshRemoteMirror(callerId: string, mirror: ExchangeRecord): Promise<void> {
+    if (!this.relay || !mirror.peerHostId) return
+    const localHostId = this.options.control.hostId()
+    if (!localHostId) return
+    const snapshot = this.options.control.watcherSnapshot()
+    const caller = snapshot.threads.find(item => item.id === callerId)
+    const callerInfo: CoordinationRemoteCaller = {
+      threadId: callerId,
+      hostId: localHostId,
+      title: caller?.title ?? callerId,
+      projectId: caller?.projectId ?? 'unknown',
+      ...(caller?.providerId ? { provider: caller.providerId } : {}),
+      ...(caller?.runtimeMode ? { runtimeMode: caller.runtimeMode } : {}),
+    }
+    try {
+      const result = await this.relay.ask({
+        type: 'read-exchange',
+        targetHostId: mirror.peerHostId,
+        caller: callerInfo,
+        exchangeId: mirror.id,
+      }, COORDINATION_RELAY_READ_TIMEOUT_MS)
+      if (result.status === 'ok') {
+        const prevOutcome = mirror.outcome
+        const prevReply = mirror.replyMessageId
+        this.applyRemoteReceiptToMirror(mirror, result)
+        if (mirror.outcome !== prevOutcome || mirror.replyMessageId !== prevReply) {
+          await this.persist()
+          this.notifyViewsChanged([callerId])
+        }
+      }
+    } catch {
+      // Target host unreachable right now: keep the last known mirror state cleanly.
+    }
+  }
+
+  /** Serves a cross-machine `read_exchange` ask on this machine, scoped to the verified caller (ADR-0216, Slice 3). */
+  async readExchangeForRemote(
+    clientId: string,
+    callerHostId: string,
+    callerThreadId: string,
+    exchangeId: string,
+  ): Promise<Record<string, unknown>> {
+    try {
+      const record = this.records.find(item =>
+        item.id === exchangeId
+        && item.remoteCallerClientId !== undefined
+        && item.peerHostId === callerHostId
+        && item.senderThreadId === callerThreadId)
+      if (!record) refuse('UNKNOWN_EXCHANGE', 'That coordination exchange was not found for this thread.')
+      if (record.remoteCallerClientId !== clientId) {
+        record.remoteCallerClientId = clientId
+        record.updatedAt = this.nowIso()
+        void this.persist()
+      }
+      return this.receiptOf(record, true)
+    } catch (error) {
+      if (error instanceof CoordinationRefusalError) return { ...error.refusal }
+      throw error
+    }
   }
 
   async readExchange(callerId: string, rawArgs: unknown): Promise<Record<string, unknown>> {
@@ -1354,13 +2179,20 @@ export class ThreadCoordinationService {
       const input = parsed.data
 
       if (input.exchangeId !== undefined) {
-        const record = this.records.find(item => item.id === input.exchangeId && (item.senderThreadId === callerId || item.targetThreadId === callerId))
+        const record = this.records.find(item => item.id === input.exchangeId
+          && ((item.senderThreadId === callerId && item.remoteCallerClientId === undefined)
+            || (item.targetThreadId === callerId && item.remoteMirror !== true)))
         if (!record) refuse('UNKNOWN_EXCHANGE', 'That coordination exchange was not found for this thread.')
-        return this.receiptOf(record, record.senderThreadId === callerId)
+        if (record.remoteMirror && record.peerHostId
+          && (record.deliveryState === 'uncertain' || !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record)) || (effectiveOutcome(record) === 'answered' && !this.relayedReplies.has(record.id)))) {
+          await this.refreshRemoteMirror(callerId, record)
+        }
+        return this.receiptOf(record, record.senderThreadId === callerId && record.remoteCallerClientId === undefined)
       }
 
       const mine = this.records
-        .filter(item => item.senderThreadId === callerId || item.targetThreadId === callerId)
+        .filter(item => (item.senderThreadId === callerId && item.remoteCallerClientId === undefined)
+          || (item.targetThreadId === callerId && item.remoteMirror !== true))
         .slice(-25)
         .reverse()
       const cutoff = this.nowMs() - COORDINATION_RATE_WINDOW_MS

@@ -1004,6 +1004,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     } } } : {}),
     // And answers the desktop window's read of those threads' delegations, for its Tools › Agents and rows of delegated work (#1310).
     ...(desktopDefaults && delegationRecord ? { delegationViews: delegationRecord } : {}),
+    // Parent-to-parent coordination views for this host's threads (ADR-0216, Slice 3; Owl only).
+    ...(threadCoordination && options.runsAs === 'headless-host' ? { coordinationViews: threadCoordination } : {}),
     // And sends its own check queue to those desktops' windows, for the machine's panel and Tools › Agents (#1312).
     ...(checks && options.runsAs === 'headless-host' ? { checks } : {}),
     ...(crossMachine && gitStatus ? { bringBack: true } : {}),

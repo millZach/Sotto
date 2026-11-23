@@ -283,6 +283,8 @@ export class DesktopHosts {
     productEventAnswer?: () => ProductEventPermission;
     /** This desktop relays hosts' delegations to This computer (#1316), only while Work across machines and Watcher run. */
     relaysDelegation?: boolean;
+    /** Parent-to-parent thread coordination (ADR-0216 Slice 3; Owl only): accepts `thread-coordination-views` and `thread-coordination-relay`. */
+    parentCoordinationEnabled?: boolean;
     /**
      * The host version the update this computer is downloading brings, with Update all on (ADR-0077 decision 6). A host
      * updated to it before Sotto restarts runs ahead of this computer until then, and is told apart from a newer host.
@@ -1585,7 +1587,7 @@ export class DesktopHosts {
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
-      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, pairedHostBrowser: this.options.pairedHostBrowser === true, meshyModels: this.options.meshyModels === true, elevenLabsSounds: this.options.elevenLabsSounds === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), ...(this.options.productEventAnswer ? { productEventAnswer: this.options.productEventAnswer } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, parentCoordinationEnabled: this.options.parentCoordinationEnabled === true, pairedHostBrowser: this.options.pairedHostBrowser === true, meshyModels: this.options.meshyModels === true, elevenLabsSounds: this.options.elevenLabsSounds === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), ...(this.options.productEventAnswer ? { productEventAnswer: this.options.productEventAnswer } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null

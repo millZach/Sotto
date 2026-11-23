@@ -41,6 +41,7 @@ import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
 import { CoordinationToolServer } from '../main/agents/threadCoordinationTools'
+import { HostCoordinationRelay } from '../main/agents/threadCoordinationRelay'
 import { MediaToolServer } from '../main/agents/mediaTools'
 import { hostBrowserTools, type HostBrowserTools } from './browser/hostBrowserTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
@@ -219,6 +220,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   let memory: ReturnType<typeof openRuntimeMemory>
   let browser: HostBrowserTools | undefined
   let delegationRelay: HostDelegationRelay | undefined
+  let coordinationRelay: HostCoordinationRelay | undefined
   let startedRuntime: Awaited<ReturnType<typeof createAgentRuntime>> | undefined
   // The copies a phone's tile asks for at its own size (`thread-media-edge`, ADR-0203), made in the picture worker with the
   // decoders compiled into this host, on either release track, as the desktop makes them with Electron's. Only where that
@@ -327,6 +329,14 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const agentHost = runtime.agentHost
     // Watcher runs on a desktop, so a thread here reaches it over that desktop's connection (ADR-0073, November 2, 2026).
     const tellWatcherRelay = watcherEnabled && runtime.watcher ? new HostTellWatcherRelay() : undefined
+    // Cross-machine parent-to-parent coordination relay (ADR-0216, Slice 3; Owl only).
+    if (parentCoordinationEnabled && runtime.threadCoordination) {
+      coordinationRelay = new HostCoordinationRelay({
+        recorded: clientId => recordedDesktop(clientId),
+        mayAnswer: desktopCounts,
+      })
+      coordinationRelay.useService(runtime.threadCoordination)
+    }
     const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = [
       ...(runtime.delegation && crossMachineEnabled
         ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []),
@@ -414,7 +424,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false, ...heldMoves ? { sources: heldMoves } : {} }) : undefined
         // The browser goes to both listeners; each lists it only to desktops (ADR-0198).
         const hostedBrowser = browser as HostBrowserTools | undefined
-        const listenerServices = { ...hostedBrowser ? { browser: hostedBrowser } : {}, ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {}, ...pluginMeshyModels ? { phoneModels: pluginMeshyModels } : {} }
+        const listenerServices = { ...hostedBrowser ? { browser: hostedBrowser } : {}, ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {}, ...coordinationRelay && runtime.threadCoordination ? { coordinationRelay } : {}, ...pluginMeshyModels ? { phoneModels: pluginMeshyModels } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
@@ -471,6 +481,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           const pluginsClosed = plugins?.close()
           productEvents.stop()
           delegationRelay?.close()
+          coordinationRelay?.close()
           signIns.close()
           // Phone access goes first: it takes Sotto's Serve setting away, so nothing on the tailnet points at a closed port.
           // The descriptor is no longer written from here on, so the one removed below stays removed.
@@ -495,7 +506,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     }
   } catch (error) {
     await Promise.allSettled([
-      async () => productEvents.stop(), async () => delegationRelay?.close(), async () => browser?.close(), async () => plugins?.close(), async () => startedRuntime?.close(),
+      async () => productEvents.stop(), async () => delegationRelay?.close(), async () => coordinationRelay?.close(), async () => browser?.close(), async () => plugins?.close(), async () => startedRuntime?.close(),
       async () => pictures?.close(),
     ].map(stop => stop()))
     try { memory?.close() } catch { /* Keep the startup failure. */ }
