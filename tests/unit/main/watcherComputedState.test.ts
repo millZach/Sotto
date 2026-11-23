@@ -2,7 +2,7 @@
 // What read_state works out from live data at each read (#1274): the merge queue, what holds a pending settle, and the
 // kept notes that name something Sotto's records say is over.
 import { expect, it } from 'vitest'
-import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
+import { mergeTurnHolds, watcherMergeHoldRunning, watcherMergeQueue, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
 import { WatcherEvidenceStore } from '../../../src/main/agents/watcherEvidence'
 import type { WatcherKeptItem } from '../../../src/shared/watcher'
 import { toldEventsForLater } from '../../../src/main/agents/watcherNews'
@@ -19,20 +19,23 @@ function kept(words: { decisions?: string[]; rules?: string[]; issues?: string[]
 }
 const nothing = kept({})
 
-it('queues open pull requests whose summaries are not stale, that are not drafts and whose checks passed, oldest pass first', () => {
+it('queues open READY TO MERGE pull requests whose summaries are not stale and that are not drafts, oldest ready first, leaving non-ready green PRs out', () => {
+  const ready = (at: string, head = 'a'.repeat(40)) => ({ since: at, ready: { head, at } })
   const queue = watcherMergeQueue([
     { target: target('a'), title: 'Login fix', open: [
-      { summary: { number: 12, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z' },
+      { summary: { number: 12, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z', train: ready('2026-10-21T10:05:00.000Z') },
       { summary: { number: 13, state: 'open', checks: 'pending' }, draft: false },
-      { summary: { number: 14, state: 'open', checks: 'passed' }, draft: true, checksPassedAt: '2026-10-21T09:00:00.000Z' },
+      // Green CI without READY TO MERGE stays out of mergeQueue (#strict-ready).
+      { summary: { number: 17, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T09:30:00.000Z' },
+      { summary: { number: 14, state: 'open', checks: 'passed' }, draft: true, checksPassedAt: '2026-10-21T09:00:00.000Z', train: ready('2026-10-21T09:00:00.000Z') },
       // Read only from evidence, which does not say whether it is a draft: not queued.
-      { summary: { number: 15, state: 'open', checks: 'passed' }, draft: undefined, checksPassedAt: '2026-10-21T08:30:00.000Z' },
-      { summary: { number: 16, state: 'open', checks: 'passed', stale: true }, draft: false, checksPassedAt: '2026-10-21T08:00:00.000Z' }] },
+      { summary: { number: 15, state: 'open', checks: 'passed' }, draft: undefined, checksPassedAt: '2026-10-21T08:30:00.000Z', train: ready('2026-10-21T08:30:00.000Z') },
+      { summary: { number: 16, state: 'open', checks: 'passed', stale: true }, draft: false, checksPassedAt: '2026-10-21T08:00:00.000Z', train: ready('2026-10-21T08:00:00.000Z') }] },
     { target: target('b'), title: 'Docs pass', open: [
-      { summary: { number: 9, state: 'open', checks: 'passed', approved: true }, draft: false, checksPassedAt: '2026-10-21T10:00:00.000Z' },
-      { summary: { number: 8, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z' },
+      { summary: { number: 9, state: 'open', checks: 'passed', approved: true }, draft: false, checksPassedAt: '2026-10-21T10:00:00.000Z', train: ready('2026-10-21T10:00:00.000Z') },
+      { summary: { number: 8, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T10:05:00.000Z', train: ready('2026-10-21T10:05:00.000Z') },
       // Merged since its links were read: not open, so not queued.
-      { summary: { number: 7, state: 'merged', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T08:00:00.000Z' }] },
+      { summary: { number: 7, state: 'merged', checks: 'passed' }, draft: false, checksPassedAt: '2026-10-21T08:00:00.000Z', train: ready('2026-10-21T08:00:00.000Z') }] },
   ])
   expect(queue.map(item => [item.title, item.pullRequest.number])).toEqual([['Docs pass', 9], ['Docs pass', 8], ['Login fix', 12]])
   expect(queue[0]).toMatchObject({ target: target('b'), pullRequest: { approved: true }, checksPassedAt: '2026-10-21T10:00:00.000Z' })
@@ -67,13 +70,13 @@ it('flags a kept note that names a settled or unwatched thread, by title or ID, 
       'Compare https://github.com/o/s/pull/43 with https://github.com/o/r/pull/43', 'Look at fix ci again'],
   }), threads, pullRequests, NOW)
   expect(stale).toEqual([
-    { list: 'decisions', id: 'd1', reasons: ['Names pull request #40, which is merged.'] },
-    { list: 'decisions', id: 'd2', reasons: ['Names pull request #41, which is closed.'] },
-    { list: 'decisions', id: 'd3', reasons: ['Names pull request #40, which is merged.'] },
-    { list: 'rules', id: 'r1', reasons: ['Names the thread “Release notes draft”, which is settled.'] },
-    { list: 'rules', id: 'r2', reasons: ['Names the thread “Flaky e2e hunt”, which Watcher does not watch.'] },
-    { list: 'issues', id: 'i4', reasons: ['Names pull request #43, which is merged.'] },
-    { list: 'issues', id: 'i5', reasons: ['Names the thread “Fix CI”, which is settled.'] },
+    { list: 'decisions', id: 'd1', reasons: ['pr-merged: #40'] },
+    { list: 'decisions', id: 'd2', reasons: ['pr-closed: #41'] },
+    { list: 'decisions', id: 'd3', reasons: ['pr-merged: #40'] },
+    { list: 'rules', id: 'r1', reasons: ['settled-thread: Release notes draft'] },
+    { list: 'rules', id: 'r2', reasons: ['unwatched-thread: Flaky e2e hunt'] },
+    { list: 'issues', id: 'i4', reasons: ['pr-merged: #43'] },
+    { list: 'issues', id: 'i5', reasons: ['settled-thread: Fix CI'] },
   ])
 })
 
@@ -84,8 +87,8 @@ it('reads `owner/repo#N` in its own repository, and a bare number in the issues 
     // Issue numbers are written as pull request numbers are: only "PR 40" or a link names a pull request here.
     issues: ['#40 Watcher keeps stale notes', 'o/other#40 crash on start', 'PR 40 follow-up'],
   }), [], pullRequests, NOW)).toEqual([
-    { list: 'decisions', id: 'd1', reasons: ['Names pull request #40, which is merged.'] },
-    { list: 'issues', id: 'i3', reasons: ['Names pull request #40, which is merged.'] },
+    { list: 'decisions', id: 'd1', reasons: ['pr-merged: #40'] },
+    { list: 'issues', id: 'i3', reasons: ['pr-merged: #40'] },
   ])
 })
 
@@ -98,9 +101,9 @@ it('flags nothing when the kept notes name only what is live, or nothing at all'
 it('flags an open line not added or edited for three days, beside anything else it names, and never a closed one', () => {
   const old = kept({ decisions: ['Merge #40 once CI is green?', 'Ask Zach which icon he wants'], rules: ['Suites run in CI.'] }, 3 * DAY + 60_000)
   old.rules[0] = { ...old.rules[0]!, closedAt: new Date(NOW - DAY / 2).toISOString() }
-  const review = 'Not added or edited for 3 days. If it is done, close it; if it still stands, edit it, with the same words if they still fit; if it is wrong, drop it.'
+  const review = 'untouched: 3d'
   expect(watcherStaleNotes(old, threads, pullRequests, NOW)).toEqual([
-    { list: 'decisions', id: 'd1', reasons: ['Names pull request #40, which is merged.', review] },
+    { list: 'decisions', id: 'd1', reasons: ['pr-merged: #40', review] },
     { list: 'decisions', id: 'd2', reasons: [review] },
   ])
   // Touched under three days ago: nothing to review yet.
@@ -122,8 +125,8 @@ it('keeps since when a pull request’s checks first passed, through later reads
   expect(store.checksPassedSince(at, url)).toBeUndefined()
 })
 
-// #2229: the merge queue is the merge train. A pull request joins it when its checks first pass or its thread says READY TO
-// MERGE, keeps its place while its checks run again after a push, and says whose required checks a merge would land in.
+// #2229: the merge queue is the merge train. A pull request joins it only when its thread sends READY TO MERGE,
+// keeps its place while its checks run again after a push, and says whose required checks a merge would land in.
 const pr = (number: number, repository = 'o/r') => `https://github.com/${repository}/pull/${number}`
 it('keeps a train pull request in its place while its checks run again, and says whose checks are running', () => {
   const queue = watcherMergeQueue([
@@ -132,7 +135,8 @@ it('keeps a train pull request in its place while its checks run again, and says
       { url: pr(1959), summary: { number: 1959, state: 'open', checks: 'pending' }, draft: false, head: 'b'.repeat(40), pending: { required: 2, optional: 1 },
         train: { since: '2026-11-01T04:00:00.000Z', ready: { head: 'a'.repeat(40), at: '2026-11-01T04:00:00.000Z' } } },
       // Only an optional check still runs: the train waits for it too (#2432).
-      { url: pr(1960), summary: { number: 1960, state: 'open', checks: 'pending' }, draft: false, pending: { required: 0, optional: 1 }, train: { since: '2026-11-01T04:30:00.000Z' } },
+      { url: pr(1960), summary: { number: 1960, state: 'open', checks: 'pending' }, draft: false, pending: { required: 0, optional: 1 },
+        train: { since: '2026-11-01T04:30:00.000Z', ready: { head: 'b'.repeat(40), at: '2026-11-01T04:30:00.000Z' } } },
       // Running and never in the train: not listed.
       { url: pr(1961), summary: { number: 1961, state: 'open', checks: 'pending' }, draft: false, pending: { required: 3, optional: 0 } }] },
     { target: target('b'), title: 'Settings copy', open: [
@@ -146,15 +150,18 @@ it('keeps a train pull request in its place while its checks run again, and says
 })
 
 it('holds a GO MERGE while another train pull request of the same repository runs its checks, or its base branch is red', () => {
+  const train = (at: string) => ({ since: at, ready: { head: 'a'.repeat(40), at } })
   const queue = watcherMergeQueue([{ target: target('a'), title: 'Train', open: [
-    { url: pr(1), summary: { number: 1, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-11-01T04:00:00.000Z' },
-    { url: pr(2), summary: { number: 2, state: 'open', checks: 'pending' }, draft: false, pending: { required: 1, optional: 0 }, train: { since: '2026-11-01T04:10:00.000Z' } },
+    { url: pr(1), summary: { number: 1, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-11-01T04:00:00.000Z', train: train('2026-11-01T04:00:00.000Z') },
+    { url: pr(2), summary: { number: 2, state: 'open', checks: 'pending' }, draft: false, pending: { required: 1, optional: 0 }, train: train('2026-11-01T04:10:00.000Z') },
     // Another repository's running checks hold nothing here.
-    { url: pr(3, 'o/other'), summary: { number: 3, state: 'open', checks: 'pending' }, draft: false, train: { since: '2026-11-01T04:20:00.000Z' } },
+    { url: pr(3, 'o/other'), summary: { number: 3, state: 'open', checks: 'pending' }, draft: false, train: train('2026-11-01T04:20:00.000Z') },
     // A stale read is out of the train until Sotto reads it again, so it holds nothing (#2102).
-    { url: pr(4), summary: { number: 4, state: 'open', checks: 'pending', stale: true }, draft: false, train: { since: '2026-11-01T04:30:00.000Z' } },
+    { url: pr(4), summary: { number: 4, state: 'open', checks: 'pending', stale: true }, draft: false, train: train('2026-11-01T04:30:00.000Z') },
     // Unknown checks hold nothing either: Sotto cannot say they run.
-    { url: pr(6), summary: { number: 6, state: 'open', checks: 'unknown' }, draft: false, train: { since: '2026-11-01T04:40:00.000Z' } }] }])
+    { url: pr(6), summary: { number: 6, state: 'open', checks: 'unknown' }, draft: false, train: train('2026-11-01T04:40:00.000Z') },
+    // Green CI without READY TO MERGE never enters the train and holds nothing.
+    { url: pr(7), summary: { number: 7, state: 'open', checks: 'pending' }, draft: false, pending: { required: 1, optional: 0 } }] }])
   expect(queue.map(item => [item.pullRequest.number, item.requiredChecks])).toEqual([[1, 'passed'], [2, 'running'], [3, 'running'], [6, 'unknown']])
   const green = { branch: 'main', head: 'd'.repeat(40), state: 'passed' as const }
   expect(mergeTurnHolds(queue, pr(1), green).running.map(item => item.pullRequest.number)).toEqual([2])
@@ -166,16 +173,17 @@ it('holds a GO MERGE while another train pull request of the same repository run
   expect(mergeTurnHolds(queue, pr(2), undefined)).toEqual({ running: [] })
   // A check that failed early leaves required ones running, and those still hold the turn.
   const failedEarly = watcherMergeQueue([{ target: target('b'), title: 'Failing', open: [
-    { url: pr(5), summary: { number: 5, state: 'open', checks: 'failed' }, draft: false, pending: { required: 2, optional: 0 }, train: { since: '2026-11-01T05:00:00.000Z' } }] }])
+    { url: pr(5), summary: { number: 5, state: 'open', checks: 'failed' }, draft: false, pending: { required: 2, optional: 0 }, train: train('2026-11-01T05:00:00.000Z') }] }])
   expect(failedEarly[0]).toMatchObject({ requiredChecks: 'failed', checksRunning: { required: 2, optional: 0 } })
   expect(mergeTurnHolds(failedEarly, pr(1), green).running.map(item => item.pullRequest.number)).toEqual([5])
 })
 
-it('puts a pull request in the train at its first pass or READY TO MERGE, and keeps it there when its checks run again', () => {
+it('puts a pull request in the train only once READY TO MERGE is sent, never on checks passing alone', () => {
   const store = new WatcherEvidenceStore(), url = pr(7), at = target('worker')
   const read = (head: string, checks: 'passed' | 'pending', observedAt: string) =>
     store.pullRequest(at, { url, head, observedAt, availability: 'available', checks, checkCount: 1, state: 'open' })
   read('e'.repeat(40), 'pending', '2026-11-01T09:00:00.000Z')
+  read('e'.repeat(40), 'passed', '2026-11-01T09:02:00.000Z')
   expect(store.trainOf(at, url)).toBeUndefined()
   store.noteReady(at, url, 'e'.repeat(40), '2026-11-01T09:05:00.000Z')
   read('e'.repeat(40), 'passed', '2026-11-01T09:10:00.000Z')
@@ -199,4 +207,25 @@ it('holds READY TO MERGE news that would not fit for the next wake-up, after the
   expect(going.length).toBeGreaterThan(0)
   expect(later.size).toBeGreaterThan(0)
   expect(going.map(item => item.id)).toEqual(events.filter(item => item.kind === 'thread-ready').slice(0, going.length).map(item => item.id))
+})
+
+it('still holds concurrent GO MERGEs when a non-READY green PR pushes new commits whose checks re-run', () => {
+  const store = new WatcherEvidenceStore(), readyUrl = pr(10), greenReRunningUrl = pr(11)
+  const atReady = target('ready-worker'), atOther = target('other-worker')
+  store.pullRequest(atReady, { url: readyUrl, head: 'a'.repeat(40), observedAt: '2026-11-01T09:00:00.000Z', availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  store.noteReady(atReady, readyUrl, 'a'.repeat(40), '2026-11-01T09:01:00.000Z')
+  // PR #11 never sent READY TO MERGE, passed on an earlier commit, then pushed a new commit with pending checks.
+  store.pullRequest(atOther, { url: greenReRunningUrl, head: 'b'.repeat(40), observedAt: '2026-11-01T09:00:00.000Z', availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  expect(store.hasChecksEverPassed(atOther, greenReRunningUrl)).toBe(true)
+  store.pullRequest(atOther, { url: greenReRunningUrl, head: 'c'.repeat(40), observedAt: '2026-11-01T09:02:00.000Z', availability: 'available', checks: 'pending', checkCount: 2, state: 'open', pendingChecks: { required: 1, optional: 1 } })
+  expect(store.hasChecksEverPassed(atOther, greenReRunningUrl)).toBe(true)
+  const readyTrain = store.trainOf(atReady, readyUrl)
+  const threads = [
+    { target: atReady, title: 'Ready worker', open: [{ url: readyUrl, summary: { number: 10, state: 'open' as const, checks: 'passed' as const }, draft: false, head: 'a'.repeat(40), previouslyPassed: true, ...(readyTrain ? { train: readyTrain } : {}) }] },
+    { target: atOther, title: 'Green pusher', open: [{ url: greenReRunningUrl, summary: { number: 11, state: 'open' as const, checks: 'pending' as const }, draft: false, head: 'c'.repeat(40), pending: { required: 1, optional: 1 }, previouslyPassed: store.hasChecksEverPassed(atOther, greenReRunningUrl) }] },
+  ]
+  const queue = watcherMergeQueue(threads)
+  expect(queue.map(item => item.pullRequest.number)).toEqual([10])
+  const holds = mergeTurnHolds(queue, readyUrl, { branch: 'main', head: 'd'.repeat(40), state: 'passed' }, watcherMergeHoldRunning(threads))
+  expect(holds.running.map(item => item.pullRequest.number)).toEqual([11])
 })

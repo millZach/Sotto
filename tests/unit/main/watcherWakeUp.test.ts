@@ -2004,7 +2004,7 @@ it('tells Watcher to end its turn while a watched thread works rather than readi
 it('tells Watcher what wakes it, and that news which needs nothing of it ends its turn with no reply (#2226)', () => {
   expect(WATCHER_SYSTEM_PROMPT).toContain('Sotto wakes you with news only for what may need you: a question or permission card')
   expect(WATCHER_SYSTEM_PROMPT).toContain('such as a pull request\'s reviews, comments, approval, conflict or close, a card closing, swarm progress, a restart or a move, comes with that news, or in the note with the user\'s next message to you, rather than by itself.')
-  expect(WATCHER_SYSTEM_PROMPT).toContain('When news needs nothing from you, no start, send, steer, settle or word to the user, end your turn with no reply at all.')
+  expect(WATCHER_SYSTEM_PROMPT).toContain('When news needs nothing from you, no start, send, steer, settle or word to the user, end your turn with no reply at all — or with the exact single token NO_REPLY and nothing else if your provider requires a non-empty reply, which Sotto hides from the user.')
 })
 
 it('tells a finish again under the older request when the newer one it was made under stops before it goes', async () => {
@@ -2911,5 +2911,71 @@ describe('at-rest news: the idle clock (#2307, #1152)', () => {
     expect(text).toContain('every twenty minutes while it stays at rest')
     expect(text).toContain('#9 (checks running)')
     expect(text).toContain('not review or merge approval')
+  })
+
+  it('suppresses 20-minute at-rest pings for a parked standing watch while PR events and cards still wake Watcher', async () => {
+    const f = fixture()
+    const watch = { id: randomUUID(), target: centerTarget, createdAt: centerTime, generation: 0, parked: true as const }
+    f.record.watches = [watch]
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.wakes.observe()
+    await f.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(f)).toHaveLength(0)
+    // Pull request check failures and question cards still wake Watcher while parked.
+    f.checks('failed')
+    await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(f.delivered.flatMap(news => news.events).some(event => event.kind === 'evidence-changed')).toBe(true)
+    f.thread.requests = [{ id: 'card-1', kind: 'question', text: 'Pick an option', options: [] }]
+    f.wakes.observe()
+    await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(f.delivered.flatMap(news => news.events).some(event => event.kind === 'needs-user')).toBe(true)
+    // Unparking starts the 20-minute idle clock again.
+    f.record.watches = [{ id: watch.id, target: centerTarget, createdAt: centerTime, generation: 0 }]
+    f.wakes.observe()
+    await f.advance(WATCHER_AT_REST_MS + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(1)
+  })
+
+  it('treats a thread whose user card was just answered as resuming until running or grace expiry, and clears on undo', async () => {
+    const f = fixture()
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    const undo = f.wakes.answering(centerTarget, 'card-1', 'user')
+    expect(f.wakes.resumingAfterAnswer(centerTarget)).toBe(true)
+    f.wakes.observe()
+    await f.advance(5_000)
+    // Inside the 10s grace window, resumingAfterAnswer holds; once grace passes, it clears.
+    expect(f.wakes.resumingAfterAnswer(centerTarget)).toBe(true)
+    await f.advance(5_000)
+    expect(f.wakes.resumingAfterAnswer(centerTarget)).toBe(false)
+    // Failed delivery undo clears it immediately; a running turn clears it on observe.
+    const undoFailed = f.wakes.answering(centerTarget, 'card-2', 'user')
+    expect(f.wakes.resumingAfterAnswer(centerTarget)).toBe(true)
+    undoFailed()
+    expect(f.wakes.resumingAfterAnswer(centerTarget)).toBe(false)
+    f.wakes.answering(centerTarget, 'card-3', 'user')
+    f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }
+    f.wakes.observe()
+    expect(f.wakes.resumingAfterAnswer(centerTarget)).toBe(false)
+    undo()
+  })
+
+  it('re-arms the 20-minute at-rest clock automatically after the 10s card-answer grace expires without another update', async () => {
+    const f = fixture()
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.wakes.answering(centerTarget, 'card-grace', 'user')
+    // Observe only once inside the 10s grace window, with no further host updates afterwards.
+    f.wakes.observe()
+    await f.advance(WATCHER_AT_REST_MS + 10_000 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(1)
+  })
+
+  it('suppresses 20-minute at-rest pings for a request-only active watch marked parked', async () => {
+    const f = fixture()
+    f.record.watches = []
+    f.record.requests[0]!.participants[0]!.parked = true
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.wakes.observe()
+    await f.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(f)).toHaveLength(0)
   })
 })

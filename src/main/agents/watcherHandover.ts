@@ -6,6 +6,7 @@ import { projectWatcherMessages } from './watcherMessageDisplay'
 import { watcherReplyAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherTextAsTyped } from './watcherRequestNote'
 import { watcherWakeUpShown } from './watcherNews'
+import { isWatcherSilentReply } from '../../shared/watcherRoom'
 
 /**
  * Watcher's handover after a provider change (ADR-0073). When the user chooses to continue, the new Watcher's first
@@ -113,7 +114,11 @@ export function watcherHandoversShown(snapshot: AgentHostSnapshot, requests: rea
  * the conversation shows it: without Watcher's news, or not at all (`null`).
  */
 export function watcherMessageAsShown(hostId: string, threadId: string, message: AgentMessage, requests: readonly WatcherRequest[]): AgentMessage | null {
-  if (message.role === 'assistant') { const text = watcherReplyAsShown(message); return text === message.text ? message : { ...message, text } }
+  if (message.role === 'assistant') {
+    const text = watcherReplyAsShown(message)
+    if (text === '' && !message.attachments?.length && isWatcherSilentReply(message.text)) return null
+    return text === message.text ? message : { ...message, text }
+  }
   if (message.role !== 'user') return message
   if (message.wakeUp === true) return watcherWakeUpShown(message)
   const proof = proofsOf(requests).get(`${threadId}\n${message.id}`)

@@ -15,6 +15,7 @@ import type { ThreadToolDefinition } from '../../../src/main/agents/threadToolSe
 import { visualizeDefinition } from '../../../src/main/agents/visualTools'
 import {
   ASK_USER_DEFINITION,
+  PARK_THREAD_DEFINITION,
   PROPOSE_MOVES_DEFINITION,
   TEAM_TOOL_DEFINITIONS,
   watcherToolDefinitions,
@@ -207,6 +208,7 @@ function collectAllMcpTools(): ToolEntry[] {
   }
   push('sotto_threads', 'static', [
     ASK_USER_DEFINITION,
+    PARK_THREAD_DEFINITION,
     PROPOSE_MOVES_DEFINITION,
     ...TEAM_TOOL_DEFINITIONS,
   ])

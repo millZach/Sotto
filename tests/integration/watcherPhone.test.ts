@@ -1424,6 +1424,21 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
     expect(updatedShells().at(-1)!.state.watcher?.conversationDelta?.appendLastText).toBe(' Delta resumes.')
     expect(updatedShells().at(-1)!.state.watcher?.conversation).toBeUndefined()
   })
+
+  it('does not set earlierAvailable just because hidden NO_REPLY messages were filtered out', async () => {
+    const f = await fixture(), peer = await f.pair()
+    await peer.call('send', f.send(peer.paired.clientId))
+    const native = f.native(f.target.threadId)
+    native.messages.push(
+      { id: 'silent-1', role: 'assistant', text: 'NO_REPLY', createdAt: new Date().toISOString() },
+      { id: 'visible-1', role: 'assistant', text: 'Actual reply.', createdAt: new Date().toISOString() },
+    )
+    f.workspace.adapters.codex.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    const state = f.phone.state(false)
+    expect(state.conversation.messages.some(item => item.text === 'NO_REPLY')).toBe(false)
+    expect(state.conversation.earlierAvailable).toBe(false)
+  })
 })
 
 /** Bytes of one push to the phone above while its Watcher page is kept: the changed thread record and the parts' names. */

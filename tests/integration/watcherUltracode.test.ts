@@ -45,7 +45,8 @@ it('lists a Claude worker model\'s levels without Ultracode', async () => {
   expect(claude.reasoningEfforts).toContain('ultracode')
   const listed = await call('list_projects', { includeModels: true })
   if (listed.status !== 'ok' || !('projects' in listed)) throw new Error('list refused')
-  const worker = listed.projects.find(item => item.target.projectId === project.id)!.workers!.find(item => item.modelId === claude.id)!
+  const hostId = listed.projects.find(item => item.target.projectId === project.id)!.target.hostId
+  const worker = listed.workersByHost!.find(item => item.hostId === hostId)!.workers.find(item => item.modelId === claude.id)!
   expect(worker.reasoningEfforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
 })
 

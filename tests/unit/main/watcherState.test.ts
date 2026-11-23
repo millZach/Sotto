@@ -191,6 +191,9 @@ it('says a thread waits on its own card first, then on the card of a thread it d
   expect(watcherWaitsOn({ ...thread, delegatedWaitsOn: [{ kind: 'question' }] })).toBe('The user’s answer to a question in a thread it delegated to.')
   expect(watcherWaitsOn({ ...thread, delegatedWaitsOn: [{ kind: 'question' }, { kind: 'permission' }] })).toBe('The user’s answer to a permission request in a thread it delegated to.')
   expect(watcherWaitsOn({ ...thread, waitsOn: [{ kind: 'question' }], delegatedWaitsOn: [{ kind: 'permission' }] })).toBe('The user’s answer to its question.')
+  expect(watcherWaitsOn({ ...thread, resumingAfterAnswer: true })).toBe('Its turn to finish.')
+  expect(watcherWaitsOn({ ...thread, parked: true })).toBe('Nothing. It is parked.')
+  expect(watcherWaitsOn({ ...thread, parked: true, waitsOn: [{ kind: 'question' }] })).toBe('The user’s answer to its question.')
   expect(watcherWaitsOn(thread)).toBe('Nothing. It is at rest.')
 })
 

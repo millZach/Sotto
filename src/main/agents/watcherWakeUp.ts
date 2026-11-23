@@ -17,6 +17,8 @@ import { byPlace, type WatcherHostsIndex, type WatcherHostsReader, type WatcherH
 
 const RETRY_LIMIT = 8
 const RETRY_MAX_MS = 60_000
+/** Grace window after the user answers a card before an idle snapshot reads at rest. */
+const ANSWER_RESUME_GRACE_MS = 10_000
 /** A thread whose own facts Watcher has not been told: the digest of none. */
 const NOTHING_TOLD = observationDigest([])
 /** No news held: the answer while nothing waits, made once. */
@@ -410,6 +412,8 @@ export class WatcherWakeUp {
   private readonly openCards = new Map<string, CardHolder>()
   /** Cards being answered now, by holder and card, and who answers them: the user, or Sotto sending a question back. */
   private readonly answers = new Map<string, WatcherCardAnswerer>()
+  /** Threads whose card the user just answered, kept working briefly until the provider's running status lands. */
+  private readonly answeredRecently = new Map<string, { readonly requestId: string; readonly until: number }>()
   /** Events an unknown send let go of: observed again, they are not news that came since. */
   private readonly reobserved = new Set<string>()
   private pending: WatcherEvent[] = []
@@ -446,7 +450,7 @@ export class WatcherWakeUp {
     workers?: Workers; closedWorkers?: Workers; requests?: Map<string, WatcherRecord['requests'][number]>; threads?: Map<string, Map<string, AgentThread>>
     index?: WatcherHostsIndex | null; owners?: Owners; indexedOwners?: Owners
     /** The pass's look-ups by thread key (`row`), and what the hosts' journal says changed since the last pass's (`touchedSince`). */
-    rows?: Map<string, Row>; touched?: WatcherHostsTouched | null } | undefined
+    rows?: Map<string, Row>; touched?: WatcherHostsTouched | null; parked?: ReadonlySet<string> } | undefined
   /**
    * What the last pass looked up through the hosts' look-ups, by thread key, and the threads under the watched threads it
    * worked out, as they stood at its `takeChanges` (#1248). A look-up of a key the hosts' journal does not name since
@@ -521,6 +525,37 @@ export class WatcherWakeUp {
   private reportsWork(hostId: string): boolean {
     const read = () => this.options.reportsWork?.() ?? (() => true)
     return (this.pass ? this.pass.reportsWork ??= read() : read())(hostId)
+  }
+  private isParked(target: WatcherThreadTarget, key: string): boolean {
+    if (this.pass) {
+      if (!this.pass.parked) {
+        const record = this.record(), keys = new Set<string>()
+        for (const watch of record.watches ?? []) if (watch.parked === true && !watch.remoteOrigin) keys.add(targetKey(watch.target))
+        for (const request of record.requests) if (request.state === 'active') for (const participant of request.participants) {
+          if (participant.state === 'participating' && !participant.automationStopped && participant.parked === true) keys.add(targetKey(participant.target))
+        }
+        this.pass.parked = keys
+      }
+      return this.pass.parked.has(key)
+    }
+    const record = this.record()
+    return (record.watches ?? []).some(watch => watch.parked === true && !watch.remoteOrigin
+      && watch.target.hostId === target.hostId && watch.target.threadId === target.threadId)
+      || record.requests.some(request => request.state === 'active' && request.participants.some(participant =>
+        participant.state === 'participating' && !participant.automationStopped && participant.parked === true
+        && participant.target.hostId === target.hostId && participant.target.threadId === target.threadId))
+  }
+  /** Deadline in epoch ms while a user card answer grace window is still active for `target`, or undefined. */
+  private resumingAfterAnswerUntil(target: WatcherThreadTarget, key?: string): number | undefined {
+    if (this.answeredRecently.size === 0) return undefined
+    const k = key ?? targetKey(target), entry = this.answeredRecently.get(k)
+    if (!entry) return undefined
+    if (this.now() >= entry.until) { this.answeredRecently.delete(k); return undefined }
+    return entry.until
+  }
+  /** Whether the user recently answered a card on `target` and the worker is still inside its resume grace window. */
+  resumingAfterAnswer(target: WatcherThreadTarget, key?: string): boolean {
+    return this.resumingAfterAnswerUntil(target, key) !== undefined
   }
   /**
    * Runs `read` as one synchronous pass that reads the merged snapshot, the Watcher record and which hosts report work at
@@ -1450,6 +1485,12 @@ export class WatcherWakeUp {
     if (changedProgress) { progress.fingerprint = fingerprint; progress.progressAt = this.now(); progress.quiet = false }
     progress.connected = connected
     this.progress.set(key, progress)
+    if (this.answeredRecently.size > 0) {
+      const recent = this.answeredRecently.get(key)
+      if (recent && (isThreadTurnRunning(thread) || this.now() >= recent.until || changedProgress && !thread.requests.length && thread.status !== 'idle')) {
+        this.answeredRecently.delete(key)
+      }
+    }
     const observed: WatcherObservation = { observedAt: stamp, fresh: connected && threadCapabilities(snapshot, thread).observe,
       connectedAt: new Date(progress.connectedAt).toISOString(), lastProgressAt: new Date(progress.progressAt).toISOString() }
     // A thread that was already there unwatched and has just become watched starts from its facts as they are: what it
@@ -1539,7 +1580,8 @@ export class WatcherWakeUp {
    * line is the one check for that wait (Zach's pick on November 11, 2026). A thread waiting on the user's card is: Zach
    * chose no exemption for it on November 13, 2026.
    */
-  private atRest(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget): boolean {
+  private atRest(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget, key: string = targetKey(target)): boolean {
+    if (this.isParked(target, key) || this.resumingAfterAnswer(target, key)) return false
     // At rest after work: a thread that never ran a turn has not gone idle from work. A thread restored after a restart can
     // hold its history without its last turn's record, as a Claude Code thread does, and is at rest all the same.
     if (!thread.lastTurn && !thread.messages.length && !thread.summary?.messageCount && !thread.activities?.length) return false
@@ -1558,7 +1600,21 @@ export class WatcherWakeUp {
    */
   private restCheck(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget, key: string, progress: Progress, fired = false): void {
     progress.rest?.(); delete progress.rest
-    if (!this.atRest(snapshot, thread, target)) { delete progress.rested; return }
+    if (!this.atRest(snapshot, thread, target, key)) {
+      delete progress.rested
+      const graceUntil = !this.isParked(target, key) ? this.resumingAfterAnswerUntil(target, key) : undefined
+      if (graceUntil !== undefined) {
+        progress.rest = this.schedule(() => {
+          delete progress.rest
+          const current = this.options.snapshot(), live = this.lookUp(current, target)
+          if (!live || this.progress.get(key) !== progress) return
+          if ((this.options.progress?.(target, key) ?? watcherProgressFingerprint(live)) !== progress.fingerprint) return
+          this.restCheck(current, live, target, key, progress, false)
+          this.options.changed?.()
+        }, Math.max(1, graceUntil - this.now()))
+      }
+      return
+    }
     const from = Math.max(progress.progressAt, progress.connectedAt)
     // Counted from when Sotto saw the thread at rest: a pass follows its last progress at once, and a thread that comes back
     // to rest with no progress of its own, as a settled thread restored does, starts from then rather than an old stretch.
@@ -1640,10 +1696,16 @@ export class WatcherWakeUp {
    * user instead. The answer's words never come here. The undo is for an answer that did not go.
    */
   answering(holder: WatcherThreadTarget, requestId: string, by: WatcherCardAnswerer): () => void {
-    const slot = JSON.stringify([targetKey(holder), requestId])
+    const holderKey = targetKey(holder), slot = JSON.stringify([holderKey, requestId])
     this.answers.delete(slot); this.answers.set(slot, by)
     while (this.answers.size > 2_000) this.answers.delete(this.answers.keys().next().value!)
+    if (by === 'user') {
+      this.answeredRecently.delete(holderKey)
+      this.answeredRecently.set(holderKey, { requestId, until: this.now() + ANSWER_RESUME_GRACE_MS })
+      while (this.answeredRecently.size > 2_000) this.answeredRecently.delete(this.answeredRecently.keys().next().value!)
+    }
     return () => {
+      if (by === 'user' && this.answeredRecently.get(holderKey)?.requestId === requestId) this.answeredRecently.delete(holderKey)
       if (this.answers.get(slot) !== by) return
       this.answers.delete(slot)
       // A closing already made while this answer went claims the user answered: not so, so the claim is taken back.
@@ -1895,6 +1957,6 @@ export class WatcherWakeUp {
     if (busyFinish(event) && thread.lastTurn && thread.lastTurn.id !== event.turnId) return true
     return !!thread.lastTurn && thread.lastTurn.id === event.turnId && thread.status !== 'running' && thread.lastTurn.status === (event.kind === 'turn-failed' ? 'failed' : 'completed')
   }
-  close(): void { this.closed = true; this.cancelBatch?.(); this.cancelRipen?.(); this.cancelRipen = undefined; this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) stopTimers(progress); this.pending = []; this.rememberPending.clear() }
+  close(): void { this.closed = true; this.cancelBatch?.(); this.cancelRipen?.(); this.cancelRipen = undefined; this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) stopTimers(progress); this.answeredRecently.clear(); this.pending = []; this.rememberPending.clear() }
   async drained(): Promise<void> { await this.tail }
 }

@@ -57,3 +57,7 @@ Zach asked for "a per thread clock and only starts when they are idle and ends/r
 - **A restart starts the clock at zero.** Sotto keeps no stretch across a restart or a reconnect, as quiet's clock keeps none: the first wake-up after one comes twenty minutes after Sotto first sees the thread at rest. A thread's records give no activity time every provider fills in (`updatedAt` is unset on Claude Code threads), and a history read as Sotto starts can count as progress, so resuming from the last activity would rest on a time Sotto often does not have. At worst the first wake-up comes twenty minutes later than it would have without the restart.
 - **Cost.** One timer per watched thread at rest, set again on each pass that reads it, as the at-rest check already had. The work per pass does not grow with history.
 
+## November 22, 2026 amendment: parked watches
+
+Watcher can mark a standing watch **parked** (`park_thread`, ADR-0073) when a finished thread's open pull requests are intentionally held. A parked watch suppresses the 20-minute idle clock (`atRest` returns `false`) without suppressing pull request news, cards, worker signals, or user turns. Starting a new user or Watcher turn automatically unparks the watch and resumes the idle clock once it rests again; pull request events alone leave it parked.
+

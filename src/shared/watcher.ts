@@ -42,6 +42,7 @@ export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
 const watcherWatchOriginSchema = z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict()
 export const watcherStandingWatchSchema = z.object({ id: z.uuid(), target: watcherThreadTargetSchema,
   createdAt: time, generation: counter, pausedByUserMessageId: id.nullable().optional(), lastUserMessageId: id.nullable().optional(),
+  parked: z.literal(true).optional(),
   remoteOrigin: watcherWatchOriginSchema.optional() }).strict()
 export type WatcherStandingWatch = z.infer<typeof watcherStandingWatchSchema>
 export const watcherPositionSchema = z.object({ historyEpoch: id, afterPosition: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER) }).strict()
@@ -280,9 +281,9 @@ const keptCount = z.object({ open: counter, closed: counter }).strict()
 /** How many lines each list holds after a keep_state, open and closed. */
 export const watcherKeptCountsSchema = z.object({ decisions: keptCount, rules: keptCount, issues: keptCount }).strict()
 export type WatcherKeptCounts = z.infer<typeof watcherKeptCountsSchema>
-/** A watched thread as Watcher's state gives it: who it is and, in Sotto's words, what it waits on. */
+/** A watched thread as Watcher's state gives it: who it is, whether it is parked, and, in Sotto's words, what it waits on. */
 export const watcherStateThreadSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
-  waitsOn: z.string().min(1).max(200) }).strict()
+  waitsOn: z.string().min(1).max(200), parked: z.literal(true).optional() }).strict()
 export type WatcherStateThread = z.infer<typeof watcherStateThreadSchema>
 /**
  * What read_state computes from live data each time it is read (#1274), so none of it can go stale the way notes Watcher
@@ -293,17 +294,18 @@ export const WATCHER_STATE_COMPUTED_MAX = 100
 const sottoSentence = z.string().min(1).max(300)
 const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequests: z.array(watcherPullRequestSummarySchema).max(50) }).strict()
 /**
- * A pull request in the merge queue, which is Watcher's merge train (#2229): open, not a draft, in the train since its
- * checks first passed or its thread said READY TO MERGE, in that order. `requiredChecks` says whether a merge now would
- * land while its checks run, required or not (#2432), and `checksRunning` how many required and other checks are still to finish on its
- * head, where Sotto can read which are required; `head` is the commit Sotto last read it on, and `readyToMerge` the newest READY TO
- * MERGE its thread sent, with `onHead` saying whether that is still the head.
+ * A pull request in the merge queue, which is Watcher's merge train (#2229): open, not a draft, in the train once its
+ * thread sent READY TO MERGE. Green-CI pull requests without READY TO MERGE stay out of the train in `watching[].pullRequests`.
+ * `requiredChecks` says whether a merge now would land while its checks run, required or not (#2432), and `checksRunning`
+ * how many required and other checks are still to finish on its head, where Sotto can read which are required; `head` is
+ * the commit Sotto last read it on, and `readyToMerge` the newest READY TO MERGE its thread sent, with `onHead` saying
+ * whether that is still the head.
  */
 export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   pullRequest: watcherPullRequestSummarySchema, url: z.string().max(2_048).optional(), inTrainSince: time, checksPassedAt: time.optional(),
   requiredChecks: z.enum(['passed', 'running', 'failed', 'unknown']), head: z.string().max(64).optional(),
   checksRunning: z.object({ required: z.number().int().nonnegative(), optional: z.number().int().nonnegative() }).strict().optional(),
-  readyToMerge: z.object({ head: z.string().max(64), at: time, onHead: z.boolean().optional() }).strict().optional() }).strict()
+  readyToMerge: z.object({ head: z.string().max(64), at: time, onHead: z.boolean().optional() }).strict() }).strict()
 export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
 /**
  * One thing that waits on the user among the watched threads, worked out from live data at each read: an open question or
@@ -371,6 +373,16 @@ export type WatcherGoMerge = z.infer<typeof watcherGoMergeSchema>
 export const watcherGoMergeReceiptSchema = z.object({ held: z.array(z.string().min(1).max(400)).max(WATCHER_STATE_COMPUTED_MAX + 1),
   overrideReason: z.string().max(WATCHER_OVERRIDE_REASON_MAX).optional(), note: z.string().min(1).max(400).optional() }).strict()
 export type WatcherGoMergeReceipt = z.infer<typeof watcherGoMergeReceiptSchema>
+
+const watcherProjectWorkerSchema = z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
+  speeds: z.array(agentModelSpeedSchema).max(2).optional(),
+  defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()
+export const watcherHostWorkersSchema = z.object({ hostId: z.uuid(), workers: z.array(watcherProjectWorkerSchema).max(100) }).strict()
+export const WATCHER_PARK_TOOL = 'park_thread'
+export const watcherParkThreadInputSchema = z.object({ target: watcherThreadTargetSchema, parked: z.boolean().default(true) }).strict()
+export const watcherParkThreadOutputSchema = result({ target: watcherThreadTargetSchema, parked: z.boolean() })
+export type WatcherParkThreadInput = z.infer<typeof watcherParkThreadInputSchema>
+export type WatcherParkThreadOutput = z.infer<typeof watcherParkThreadOutputSchema>
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
@@ -481,11 +493,11 @@ export const watcherToolSchemas = {
     input: z.object({ hostId: z.uuid().optional(), projectId: entityId.optional(), query: z.string().min(1).max(200).optional(),
       provider: providerIdSchema.optional(), includeModels: z.boolean().optional(), ...paging }).strict(),
     output: result({ projects: z.array(z.object({ target: watcherProjectTargetSchema, title: z.string().max(512), displayRoot: z.string().max(4_096),
-      // Left out unless includeModels: every project on a computer offers the same models.
-      workers: z.array(z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
-        speeds: z.array(agentModelSpeedSchema).max(2).optional(),
-        defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100).optional(),
-      controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
+      repository: z.string().min(1).max(512).optional(),
+      // Left on the host's raw row only; desktop slim reads deduplicate ready models once per host in `workersByHost`.
+      workers: z.array(watcherProjectWorkerSchema).max(100).optional(),
+      controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100),
+      workersByHost: z.array(watcherHostWorkersSchema).max(100).optional(), ...page }),
   },
   // A folder made a project at the user's word (ADR-0073, November 12, 2026): an existing one, or one `newFolder` makes,
   // with `gitInit` running `git init` in it first. It keeps no operation, as unsettle_thread keeps none: a retry answers
@@ -556,6 +568,7 @@ export const watcherIdentitySchema = z.object({ target: watcherThreadTargetSchem
   provider: watcherProviderSchema, creationOperationId: z.uuid(), createdAt: time }).strict()
 export const watcherParticipantSchema = participation.extend({ target: watcherThreadTargetSchema,
   lastUserMessageId: id.nullable().optional(),
+  parked: z.literal(true).optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 /** Text-free proof of the user's boundary in the exact native message Sotto sent. */
 export const watcherDisplayPromptSchema = z.object({ originalLength: counter,
@@ -598,9 +611,13 @@ export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid
   // another host: each host observes its own threads, and a paired desktop copies them from exact operation reads.
   outcome: watcherOutcomeSchema.optional(), outcomeAt: time.optional(), turnMessageId: id.optional(), nativeTurnId: id.optional(),
   replyMessageId: id.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
+export const watcherReadyPullRequestSchema = z.object({ target: watcherThreadTargetSchema, url: z.string().min(1).max(2_048),
+  head: z.string().min(1).max(128), at: time }).strict()
+export type WatcherReadyPullRequest = z.infer<typeof watcherReadyPullRequestSchema>
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
+  readyPullRequests: z.array(watcherReadyPullRequestSchema).max(200).optional(),
   watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: watcherWatchOriginSchema.optional() }).strict()).optional(),
   // The threads the user stopped watching and has not handed back. Watcher's own watch_thread needs a newer user message
   // to Watcher than `watcherHead`, the newest one when the user stopped it; Watch hands one back at once.

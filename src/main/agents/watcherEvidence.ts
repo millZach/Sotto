@@ -159,10 +159,14 @@ export class WatcherEvidenceStore {
    */
   private readonly passing = new Map<string, Map<string, { head: string | undefined; since: string }>>()
   /**
-   * Each pull request in the merge train by thread and pull request key (#2229): since when, the first time Sotto saw its
-   * checks pass or its thread said READY TO MERGE, and that READY TO MERGE's head. A pull request stays in the train when
-   * its checks run again after a push, so the train can say that a merge now would land in the middle of them. In memory
-   * only, like the passes: after a restart a pull request joins again at its next pass or READY TO MERGE.
+   * Pull request keys per thread whose checks have passed at least once (#2229), so even before READY TO MERGE arrives
+   * their re-running checks still hold other GO MERGE turns from landing in the middle of them.
+   */
+  private readonly everPassed = new Map<string, Set<string>>()
+  /**
+   * Each pull request in the merge train by thread and pull request key (#2229): since when its thread sent READY TO MERGE,
+   * and that READY TO MERGE's head. Non-ready green PRs stay out of the train until their thread sends `ready_to_merge`.
+   * Kept in memory from `WatcherService`'s saved `readyPullRequests` and restored on startup (#2826).
    */
   private readonly trains = new Map<string, Map<string, { since: string; ready?: { head: string; at: string } }>>()
   /** The thread keys written since `removeMissing` last ran, which the next run may have to let go of. */
@@ -227,10 +231,21 @@ export class WatcherEvidenceStore {
     const passing = this.passing.get(key) ?? new Map<string, { head: string | undefined; since: string }>()
     const kept = passing.get(slot)
     if (item.checksState !== 'passed') passing.delete(slot)
-    else if (!kept || kept.head !== item.headId || previous?.checksState !== 'passed') passing.set(slot, { head: item.headId, since: item.observedAt })
+    else {
+      if (!kept || kept.head !== item.headId || previous?.checksState !== 'passed') passing.set(slot, { head: item.headId, since: item.observedAt })
+      const prKey = slot.replace(/^(?:host:github:|pr:)/u, '').replace(/:checks$/u, '')
+      const seen = this.everPassed.get(key) ?? new Set<string>()
+      seen.delete(prKey); seen.add(prKey)
+      while (seen.size > EVIDENCE_CACHE_MAX) seen.delete(seen.values().next().value!)
+      this.everPassed.set(key, seen)
+      this.written.add(key)
+    }
     while (passing.size > EVIDENCE_CACHE_MAX) passing.delete(passing.keys().next().value!)
     if (passing.size) { this.passing.set(key, passing); this.written.add(key) } else this.passing.delete(key)
-    if (item.checksState === 'passed') this.joinTrain(key, slot.replace(/^(?:pr:|host:github:)/u, '').replace(/:checks$/u, ''), item.observedAt)
+  }
+  /** Whether this pull request's checks have ever been observed passing on this thread (#2229). */
+  hasChecksEverPassed(target: WatcherThreadTarget, url: string): boolean {
+    return this.everPassed.get(targetKey(target))?.has(pullRequestKey(url) ?? url) === true
   }
   private joinTrain(key: string, pr: string, at: string): Map<string, { since: string; ready?: { head: string; at: string } }> {
     const train = this.trains.get(key) ?? new Map<string, { since: string; ready?: { head: string; at: string } }>()
@@ -396,6 +411,7 @@ export class WatcherEvidenceStore {
     for (const key of this.attending.keys()) if (!targets.has(key)) this.attending.delete(key)
     for (const key of this.returning.keys()) if (!targets.has(key)) this.returning.delete(key)
     for (const key of this.passing.keys()) if (!targets.has(key)) this.passing.delete(key)
+    for (const key of this.everPassed.keys()) if (!targets.has(key)) this.everPassed.delete(key)
     for (const key of this.trains.keys()) if (!targets.has(key)) this.trains.delete(key)
     for (const key of this.lives.keys()) if (!targets.has(key)) this.lives.delete(key)
     for (const key of this.unlinked.keys()) if (!targets.has(key)) this.unlinked.delete(key)
@@ -409,12 +425,12 @@ export class WatcherEvidenceStore {
   removeMissingOf(moved: Iterable<string>, listed: (key: string) => boolean): void {
     for (const key of [...this.written, ...moved]) {
       if (listed(key)) continue
-      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.trains.delete(key); this.lives.delete(key); this.unlinked.delete(key)
+      this.entries.delete(key); this.attending.delete(key); this.returning.delete(key); this.passing.delete(key); this.everPassed.delete(key); this.trains.delete(key); this.lives.delete(key); this.unlinked.delete(key)
     }
     this.written.clear()
   }
   /** Every thread key the store holds anything for, for verifying mode. */
-  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.trains.keys(), ...this.lives.keys(), ...this.unlinked.keys()]) }
+  heldKeys(): Set<string> { return new Set([...this.entries.keys(), ...this.attending.keys(), ...this.returning.keys(), ...this.passing.keys(), ...this.everPassed.keys(), ...this.trains.keys(), ...this.lives.keys(), ...this.unlinked.keys()]) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false
     const turn = thread.lastTurn

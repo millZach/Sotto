@@ -62,7 +62,7 @@ export const watcherRoomStateSchema = z.object({
   standingWatches: z.array(watcherStandingWatchSchema).optional(), ownChanges: z.array(watcherOwnChangeSchema).optional(),
   requests: z.array(watcherRequestSchema),
   watchedThreads: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(),
-    watched: z.boolean().optional(), paused: z.boolean().optional(),
+    watched: z.boolean().optional(), paused: z.boolean().optional(), parked: z.boolean().optional(),
     status: z.enum(['idle', 'running', 'error', 'unavailable']), connected: z.boolean(),
     settled: z.boolean(), backgroundWorkCount: z.number().int().nonnegative(),
     waitsOn: z.array(pending), participation: z.array(watcherParticipantSchema),
@@ -318,13 +318,19 @@ export function takesPartInActiveRequest(participation: WatcherRoomRow['particip
 export function isWatchedRow(row: WatcherRoomRow, requests: WatcherRoomState['requests']): boolean {
   return row.watched ?? takesPartInActiveRequest(row.participation, new Set(requests.filter(request => request.state === 'active').map(request => request.id)))
 }
+/** Exact single-token reply a Watcher provider that rejects empty turns emits for a no-op news turn. */
+export const WATCHER_SILENT_REPLY = 'NO_REPLY'
+/** Whether a Watcher assistant reply is the silent no-op sentinel and carries nothing for the user. */
+export const isWatcherSilentReply = (text: string): boolean => text.trim() === WATCHER_SILENT_REPLY
+
 /**
  * A Watcher reply the transcript draws: an assistant message with words or attachments, never a visual (the
- * transcript's own rule for what it draws). Main places receipt cards by it and the window places takeover lines by it,
- * so both mean the same reply.
+ * transcript's own rule for what it draws) and never the silent no-op sentinel (`NO_REPLY`). Main places receipt cards by it
+ * and the window places takeover lines by it, so both mean the same reply.
  */
 export function isShownReply(message: Pick<AgentMessage, 'id' | 'role' | 'text' | 'attachments' | 'visual'>): boolean {
-  return message.role === 'assistant' && !isVisualMessage(message) && (message.text.length > 0 || Boolean(message.attachments?.length))
+  return message.role === 'assistant' && !isVisualMessage(message)
+    && ((message.text.length > 0 && !isWatcherSilentReply(message.text)) || Boolean(message.attachments?.length))
 }
 
 /** One takeover line (CONTEXT.md): the user sent in a thread the current Watcher was driving, and when. */

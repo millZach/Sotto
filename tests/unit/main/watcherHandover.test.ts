@@ -52,10 +52,11 @@ describe('a handover as every copy shows it', () => {
 })
 
 describe('an earlier conversation, handed over as its pane showed it', () => {
-  it('carries a reply without the reason line its own-change line shows', () => {
+  it('carries a reply without the reason line its own-change line shows, and drops silent NO_REPLY turns', () => {
     const reply: AgentMessage = { id: 'reply', role: 'assistant', text: 'Fixed the footer.\nWatcher change reason: A typo is smaller than a brief.', createdAt: at,
       watcherOwnChange: { replyMessageId: 'reply', turnId: 'turn', files: ['README.md'], fileCount: 1, reason: 'A typo is smaller than a brief.', source: 'provider-file-change' } }
     expect(watcherMessageAsShown(HOST, 'watcher-new', reply, [])!.text).toBe('Fixed the footer.')
+    expect(watcherMessageAsShown(HOST, 'watcher-new', { id: 'silent', role: 'assistant', text: 'NO_REPLY', createdAt: at }, [])).toBeNull()
   })
 
   it('carries the user’s words alone: no handover it began with, and no line Sotto put after them', () => {
