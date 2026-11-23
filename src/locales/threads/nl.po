@@ -10534,6 +10534,10 @@ msgstr ""
 msgid "This thread’s project folder. Both threads change the same files."
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "This thread’s reply to {peerTitle}."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "This thread’s worktree folder and everything installed in it is removed. Its commits are kept, and sending to this thread puts the folder back."
 msgstr ""

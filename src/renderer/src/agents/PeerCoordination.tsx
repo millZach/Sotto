@@ -58,6 +58,8 @@ export function usePeerCoordinationWorld(
 ): PeerCoordinationWorld | null {
   const enabled = useCoordinationEnabled()
   const threads = state.host.threads
+  // Keep readReply identity stable across streaming/host publishes so an open reply panel never cancels mid-read (L4).
+  const readReply = useCallback((exchangeId: string) => store.readReply(threadId, exchangeId), [store, threadId])
   return useMemo(() => {
     if (!enabled) return null
     const byId = new Map(threads.map(thread => [thread.id, thread]))
@@ -65,9 +67,9 @@ export function usePeerCoordinationWorld(
       threadId,
       thread: id => byId.get(id),
       open: id => { void command({ type: 'select-thread', threadId: id }) },
-      readReply: exchangeId => store.readReply(threadId, exchangeId),
+      readReply,
     }
-  }, [enabled, threadId, threads, command, store])
+  }, [enabled, threadId, threads, command, readReply])
 }
 
 /** Groups outgoing peer exchanges by the sender turn's anchor message ID (matches `delegationsByTurn`). */
@@ -120,8 +122,9 @@ export function IncomingPeerFooter(): ReactNode {
 }
 
 /** Lazily loaded reply panel for an answered peer exchange; Escape closes and returns focus to its button. */
-function PeerReplyPanel({ exchangeId, peerTitle, readReply, open, onClose, returnFocus }: {
+function PeerReplyPanel({ exchangeId, direction, peerTitle, readReply, open, onClose, returnFocus }: {
   readonly exchangeId: string
+  readonly direction: 'sent' | 'received'
   readonly peerTitle: string
   readonly readReply: (exchangeId: string) => Promise<CoordinationReply>
   readonly open: boolean
@@ -130,28 +133,32 @@ function PeerReplyPanel({ exchangeId, peerTitle, readReply, open, onClose, retur
 }): ReactNode {
   const { t } = useLingui()
   const [state, setState] = useState<{ readonly status: 'idle' | 'loading' | 'ready' | 'missing' | 'error'; readonly reply?: NonNullable<CoordinationReply> }>({ status: 'idle' })
+  // Record loadedFor only once a read settles so closing or re-rendering mid-read never sticks on Loading (L4).
   const loadedFor = useRef<string | null>(null)
   React.useEffect(() => {
     if (!open || loadedFor.current === exchangeId) return
     let active = true
-    loadedFor.current = exchangeId
     setState({ status: 'loading' })
     void readReply(exchangeId).then(
       reply => {
         if (!active) return
+        loadedFor.current = exchangeId
         if (reply === null) setState({ status: 'missing' })
         else setState({ status: 'ready', reply })
       },
-      () => { if (active) { loadedFor.current = null; setState({ status: 'error' }) } },
+      () => { if (active) setState({ status: 'error' }) },
     )
     return () => { active = false }
   }, [open, exchangeId, readReply])
   if (!open) return null
+  const label = direction === 'sent'
+    ? t`Reply in ${peerTitle}’s own words — approves nothing.`
+    : t`This thread’s reply to ${peerTitle}.`
   return <div className="peer-work__reply" onKeyDown={event => {
     if (event.key !== 'Escape' || event.defaultPrevented) return
     event.preventDefault(); event.stopPropagation(); onClose(); returnFocus()
   }}>
-    <p className="peer-work__reply-label">{t`Reply in ${peerTitle}’s own words — approves nothing.`}</p>
+    <p className="peer-work__reply-label">{label}</p>
     {state.status === 'loading' ? <p className="peer-work__reply-body" role="status">{t`Loading reply…`}</p>
       : state.status === 'ready' && state.reply ? <>
         <pre className="peer-work__reply-body">{state.reply.text}</pre>
@@ -201,7 +208,7 @@ export function PeerExchangeRow({ view }: { readonly view: CoordinationExchangeV
         onClick={() => setReplyOpen(current => !current)}>{replyOpen ? t`Hide reply` : t`Read reply`}</button> : null}
     </div>
     {view.hasReply ? <div id={replyId} style={{ display: 'contents' }}>
-      <PeerReplyPanel exchangeId={view.id} peerTitle={title} readReply={world.readReply} open={replyOpen}
+      <PeerReplyPanel exchangeId={view.id} direction={view.direction} peerTitle={title} readReply={world.readReply} open={replyOpen}
         onClose={() => setReplyOpen(false)} returnFocus={() => toggleRef.current?.focus()} />
     </div> : null}
   </li>
@@ -303,7 +310,7 @@ function PeerAgentsRow({ view, source, readReply }: {
       {view.hasReply ? <button ref={toggleRef} type="button" className="peer-agents__btn tt-focusable" aria-expanded={replyOpen}
         onClick={() => setReplyOpen(current => !current)}>{replyOpen ? t`Hide reply` : t`Read reply`}</button> : null}
     </div>
-    {view.hasReply ? <PeerReplyPanel exchangeId={view.id} peerTitle={title} readReply={readReply} open={replyOpen}
+    {view.hasReply ? <PeerReplyPanel exchangeId={view.id} direction={view.direction} peerTitle={title} readReply={readReply} open={replyOpen}
       onClose={() => setReplyOpen(false)} returnFocus={() => toggleRef.current?.focus()} /> : null}
   </li>
 }

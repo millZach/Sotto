@@ -2,11 +2,12 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentState } from '../../../src/shared/agents'
-import type { CoordinationBridge, CoordinationChanged, CoordinationExchangeView } from '../../../src/shared/threadCoordination'
+import { COORDINATION_NEWS_OPENING, type CoordinationBridge, type CoordinationChanged, type CoordinationExchangeView, type CoordinationReply } from '../../../src/shared/threadCoordination'
 import { formatIncomingPeerMessage } from '../../../src/main/agents/threadCoordinationNews'
 import { CoordinationStore } from '../../../src/renderer/src/agents/coordination'
-import { PeerCoordinationAgentsSection, PeerCoordinationHeaderBadge, PeerCoordinationWorldProvider, PeerExchangeRow, peerExchangesByTurn, type PeerCoordinationWorld } from '../../../src/renderer/src/agents/PeerCoordination'
+import { PeerCoordinationAgentsSection, PeerCoordinationHeaderBadge, PeerCoordinationWorldProvider, PeerExchangeRow, peerExchangesByTurn, usePeerCoordinationWorld, type PeerCoordinationWorld } from '../../../src/renderer/src/agents/PeerCoordination'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { ToolsPanelStore } from '../../../src/renderer/src/tools/toolsPanelStore'
@@ -122,7 +123,7 @@ afterEach(() => {
 })
 
 describe('parent-to-parent coordination UI (ADR-0216, Slice 2)', () => {
-  it('renders an incoming peer message as a quiet left-aligned attributed card (Option A) with Open thread and ADR-0004 note', () => {
+  it('renders an incoming peer message marked wakeUp: true as a quiet left-aligned attributed card (L1, Option A)', () => {
     setOwl(true)
     const state = twoParentThreadsState()
     const exchangeId = crypto.randomUUID()
@@ -138,7 +139,8 @@ describe('parent-to-parent coordination UI (ADR-0216, Slice 2)', () => {
       expectReply: true,
     })
     const messages: AgentMessage[] = [
-      { id: msgId, role: 'user', text: framedText, createdAt: '2026-11-23T10:01:00.000Z' },
+      // Real deliveries are marked wakeUp: true by recordSottoMessage (#2835); verified peerExchange must win (L1).
+      { id: msgId, role: 'user', wakeUp: true, text: framedText, createdAt: '2026-11-23T10:01:00.000Z' },
       { id: 'reply-1', role: 'assistant', text: 'Yes, pass refreshToken in the JSON body.', createdAt: '2026-11-23T10:01:10.000Z' },
     ]
     const received = makeExchange({
@@ -308,5 +310,173 @@ describe('parent-to-parent coordination UI (ADR-0216, Slice 2)', () => {
     expect(map.get('m1')).toEqual([anchored])
     expect(map.get('')).toEqual([unanchored])
     expect(map.has('m0')).toBe(false)
+  })
+
+  it('keeps hidden coordination-news wake-ups as separate turns with preserved activity and hop-2 stopped exchanges (L2, L3)', () => {
+    setOwl(true)
+    const state = twoParentThreadsState()
+    const messages: AgentMessage[] = [
+      { id: 'u1', role: 'user', text: 'Coordinate with API refactor', createdAt: '2026-11-23T10:00:00.000Z' },
+      { id: 'a1', role: 'assistant', text: 'Sent initial request to API refactor.', createdAt: '2026-11-23T10:00:10.000Z' },
+      { id: 'w1', role: 'user', wakeUp: true, text: `${COORDINATION_NEWS_OPENING}\n- Exchange ex-1 replied.`, createdAt: '2026-11-23T10:01:00.000Z' },
+      { id: 'a2', role: 'assistant', text: 'Updated UI client to match v2 response.', createdAt: '2026-11-23T10:01:20.000Z' },
+    ]
+    const activities: AgentActivity[] = [
+      { id: 'turn-1', turnId: 't1', kind: 'turn', title: 'Turn 1', status: 'completed', sequence: 1, afterMessageId: 'u1', startedAt: '2026-11-23T10:00:01.000Z', completedAt: '2026-11-23T10:00:10.000Z' },
+      { id: 'c1', turnId: 't1', kind: 'command', title: 'Ran initial check', status: 'completed', sequence: 2, afterMessageId: 'u1', startedAt: '2026-11-23T10:00:02.000Z', completedAt: '2026-11-23T10:00:05.000Z' },
+      { id: 'turn-2', turnId: 't2', kind: 'turn', title: 'Turn 2', status: 'completed', sequence: 3, afterMessageId: 'w1', startedAt: '2026-11-23T10:01:01.000Z', completedAt: '2026-11-23T10:01:20.000Z' },
+      { id: 'c2', turnId: 't2', kind: 'command', title: 'Ran follow-up check', status: 'completed', sequence: 4, afterMessageId: 'w1', startedAt: '2026-11-23T10:01:02.000Z', completedAt: '2026-11-23T10:01:15.000Z' },
+    ]
+    const hop2Stopped = makeExchange({
+      anchorMessageId: 'w1',
+      hopCount: 2,
+      outcome: 'stopped',
+      hasReply: false,
+      createdAt: '2026-11-23T10:01:05.000Z',
+    })
+    const world: PeerCoordinationWorld = {
+      threadId: 'ui-thread',
+      thread: id => state.host.threads.find(item => item.id === id),
+      open: vi.fn(),
+      readReply: vi.fn(async () => null),
+    }
+
+    const { container } = render(
+      <PeerCoordinationWorldProvider world={world}>
+        <MessageList
+          messages={messages}
+          provider="Claude Code"
+          running={false}
+          placement={placeActivities(messages, messages, activities, false, false)}
+          context={dummyActivity}
+          threadId="ui-thread"
+          peerExchanges={peerExchangesByTurn([hop2Stopped], messages)}
+          hideCoordinationWakeUps
+        />
+      </PeerCoordinationWorldProvider>,
+    )
+
+    // Raw coordination-news wake-up bubble is hidden.
+    expect(screen.queryByText(/Sotto has news of a peer parent-thread coordination exchange/)).toBeNull()
+    // Both replies remain visible as separate turns (a1 is NOT collapsed into u1's work fold).
+    expect(screen.getByText('Sent initial request to API refactor.')).toBeTruthy()
+    expect(screen.getByText('Updated UI client to match v2 response.')).toBeTruthy()
+    // Both turns retain their own Worked-for fold sections (c1 on turn 1, c2 on turn 2).
+    expect(container.querySelectorAll('section.thread-work')).toHaveLength(2)
+    // Hop-2 stopped exchange anchored to w1 is still rendered under turn 2.
+    expect(screen.getByText('hop 2/6')).toBeTruthy()
+    expect(screen.getByText('Stopped')).toBeTruthy()
+  })
+
+  it('does not stick Read reply on Loading across host publishes or Hide/Read toggles (L4)', async () => {
+    setOwl(true)
+    const exchange = makeExchange({ outcome: 'answered', hasReply: true })
+    let resolveFirst!: (value: CoordinationReply) => void
+    let resolveSecond!: (value: CoordinationReply) => void
+    let call = 0
+    const bridge: CoordinationBridge = {
+      read: vi.fn(async ({ threadId }) => ({ threadId, sent: [exchange], received: [] })),
+      reply: vi.fn(() => new Promise<CoordinationReply>(resolve => {
+        call += 1
+        if (call === 1) resolveFirst = resolve
+        else resolveSecond = resolve
+      })),
+      onChanged: () => () => undefined,
+    }
+    ;(window as { sotto?: unknown }).sotto = { coordination: bridge }
+    const store = new CoordinationStore(() => bridge)
+    const command = vi.fn(async () => twoParentThreadsState())
+
+    function Harness({ state }: { readonly state: AgentState }) {
+      const world = usePeerCoordinationWorld('ui-thread', state, command, store)
+      return <PeerCoordinationWorldProvider world={world}><ul><PeerExchangeRow view={exchange} /></ul></PeerCoordinationWorldProvider>
+    }
+
+    const firstState = twoParentThreadsState()
+    const { rerender } = render(<Harness state={firstState} />)
+
+    // Open Read reply, then trigger a host publish (fresh threads array) before it settles.
+    fireEvent.click(screen.getByRole('button', { name: 'Read reply' }))
+    expect(screen.getByText('Loading reply…')).toBeTruthy()
+    const nextState = twoParentThreadsState()
+    nextState.host.threads[1] = { ...nextState.host.threads[1]!, updatedAt: '2026-11-23T10:02:00.000Z' }
+    rerender(<Harness state={nextState} />)
+    expect(bridge.reply).toHaveBeenCalledTimes(1)
+
+    // Hide then Read again before first promise resolves, then resolve second promise.
+    fireEvent.click(screen.getByRole('button', { name: 'Hide reply' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Read reply' }))
+    expect(bridge.reply).toHaveBeenCalledTimes(2)
+    act(() => {
+      resolveFirst({ exchangeId: exchange.id, text: 'Stale first read', truncated: false })
+      resolveSecond({ exchangeId: exchange.id, text: 'Fresh settled reply', truncated: false })
+    })
+    await waitFor(() => expect(screen.getByText('Fresh settled reply')).toBeTruthy())
+    expect(screen.queryByText('Loading reply…')).toBeNull()
+  })
+
+  it('labels received rows in Tools › Agents as this thread’s own reply, not the peer’s words (L5)', async () => {
+    setOwl(true)
+    const state = twoParentThreadsState()
+    const received = makeExchange({
+      direction: 'received',
+      peerThreadId: 'ui-thread',
+      peerTitle: 'UI Polish',
+      peerProvider: 'claude',
+      outcome: 'answered',
+      hasReply: true,
+    })
+    const { bridge } = makeBridge({ 'api-thread': { sent: [], received: [received] } }, {
+      [received.id]: { text: 'Added refreshToken support.', truncated: false },
+    })
+    ;(window as { sotto?: unknown }).sotto = { coordination: bridge }
+    const store = new CoordinationStore(() => bridge)
+
+    render(<PeerCoordinationAgentsSection threadId="api-thread" source={{ state, command: vi.fn(async () => state) }} store={store} />)
+    await waitFor(() => expect(screen.getByText('UI Polish')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Read reply' }))
+    await waitFor(() => expect(screen.getByText('Added refreshToken support.')).toBeTruthy())
+    expect(screen.getByText('This thread’s reply to UI Polish.')).toBeTruthy()
+    expect(screen.queryByText(/UI Polish’s own words/)).toBeNull()
+  })
+
+  it('retains cached views across thread switches (N2), retries after a failed first read (N3), and skips reads/subscriptions when Owl gate is off', async () => {
+    const working = makeExchange({ outcome: 'working' })
+    let failFirst = true
+    const listeners = new Set<(change: CoordinationChanged) => void>()
+    const bridge: CoordinationBridge = {
+      read: vi.fn(async ({ threadId }) => {
+        if (failFirst) { failFirst = false; throw new Error('transient') }
+        return { threadId, sent: [working], received: [] }
+      }),
+      reply: vi.fn(async () => null),
+      onChanged: vi.fn(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }),
+    }
+    ;(window as { sotto?: unknown }).sotto = { coordination: bridge }
+
+    // Gate off: zero bridge reads and zero subscriptions.
+    setOwl(false)
+    const offStore = new CoordinationStore(() => bridge)
+    const state = twoParentThreadsState()
+    render(<>
+      <PeerCoordinationHeaderBadge threadId="ui-thread" store={offStore} panelStore={new ToolsPanelStore()} />
+      <PeerCoordinationAgentsSection threadId="ui-thread" source={{ state, command: vi.fn(async () => state) }} store={offStore} />
+    </>)
+    expect(bridge.read).not.toHaveBeenCalled()
+    expect(bridge.onChanged).not.toHaveBeenCalled()
+    cleanup()
+
+    // N3: failed first read retries cleanly on next want().
+    const store = new CoordinationStore(() => bridge)
+    const unsub1 = store.subscribe('ui-thread', () => undefined)
+    store.want('ui-thread')
+    await waitFor(() => expect(bridge.read).toHaveBeenCalledTimes(1))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    store.want('ui-thread')
+    await waitFor(() => expect(store.views('ui-thread').sent).toHaveLength(1))
+
+    // N2: leaving the thread retains cached views immediately on return (no flash to empty).
+    unsub1()
+    expect(store.views('ui-thread').sent).toHaveLength(1)
   })
 })

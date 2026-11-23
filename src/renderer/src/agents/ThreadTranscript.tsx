@@ -65,7 +65,7 @@ import { COORDINATION_NEWS_OPENING, parseIncomingPeerMessageBody, type Coordinat
 import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, DetachedRunStopContext, StillWorking, useDetachedRunStop, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { IncomingPeerFooter, IncomingPeerHeader, PeerCoordinationWork, PeerCoordinationWorldProvider, peerExchangesByTurn, usePeerCoordinationWorld } from './PeerCoordination'
-import { isActiveExchange, useCoordinationEnabled, useThreadCoordination } from './coordination'
+import { useCoordinationEnabled, useThreadCoordination } from './coordination'
 import { finishedDelegation } from './delegationWords'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
@@ -386,12 +386,13 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     setWorkOpen(false)
   }
   const workMark = speaker === 'watcher' && (lifecycle?.status ?? 'completed') === 'completed'
+  // An incoming message from another parent thread, verified by main's coordination record (ADR-0216).
+  // Verified peer messages are also marked wakeUp by recordSottoMessage (#2835), so the verified exchange wins (L1).
+  const peer = peerExchange !== undefined && message.role === 'user'
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
   // provider received, as it received it (ADR-0061 decision 8).
-  const wakeUp = isWakeUpMessage(message)
-  // An incoming message from another parent thread, verified by main's coordination record (ADR-0216).
-  const peer = peerExchange !== undefined && message.role === 'user' && !wakeUp
-  const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : peer ? (parseIncomingPeerMessageBody(message.text) ?? message.text) : message.text, [wakeUp, peer, message.text])
+  const wakeUp = isWakeUpMessage(message) && !peer
+  const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : peer ? (parseIncomingPeerMessageBody(message.text, peerExchange.id) ?? message.text) : message.text, [wakeUp, peer, peerExchange?.id, message.text])
   // A brief the delegating thread sent here is that thread's, never the user's (ADR-0081).
   const brief = delegatedBy !== undefined && message.role === 'user' && !wakeUp && !peer
   // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073), and so does the one
@@ -443,7 +444,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, peerExchanges, receivedPeers, backgroundWork, briefs, continuedIn, close }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, peerExchanges, receivedPeer, hideCoordinationWakeUps = false, backgroundWork, briefs, continuedIn, close }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
   /** Watcher's replies written within five minutes of the Watcher reply before them (`closeReplies`). */
   readonly close?: ReadonlySet<string> | undefined
@@ -459,8 +460,10 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   readonly delegations?: readonly DelegationView[] | undefined
   /** Outgoing parent-to-parent coordination exchanges sent during this turn (ADR-0216, Slice 2). */
   readonly peerExchanges?: readonly CoordinationExchangeView[] | undefined
-  /** Incoming peer coordination exchanges keyed by target message ID (ADR-0216, Slice 2). */
-  readonly receivedPeers?: ReadonlyMap<string, CoordinationExchangeView> | undefined
+  /** Incoming peer coordination exchange for this turn's user message, if any (ADR-0216, Slice 2). */
+  readonly receivedPeer?: CoordinationExchangeView | undefined
+  /** Hides raw coordination-news wake-up bubbles while preserving their turn boundary, activities, and hop-2+ anchors (L2, L3). */
+  readonly hideCoordinationWakeUps?: boolean | undefined
   /** The provider's agents still running after this turn's reply: given only to the newest turn, once it has finished. */
   readonly backgroundWork?: readonly AgentBackgroundWork[] | undefined
   readonly briefs?: DelegatedBriefs | undefined
@@ -480,8 +483,10 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // "Writing a reply", so nothing says it twice (Zach's pick A, November 9, 2026).
   const article = (message: AgentMessage, work?: { readonly label: string; readonly groups: readonly ActivityGroup[] }): ReactNode => isDrawableVisual(message)
     ? <VisualCard visual={message.visual} threadId={threadId} />
-    : drawn(message) && (streamText || message.id !== writing) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} threadId={threadId} speaker={speaker}
-      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} peerExchange={receivedPeers?.get(message.id)} forkable={message.id === forkableId} close={close?.has(message.id)}
+    : hideCoordinationWakeUps && isWakeUpMessage(message) && message.text.startsWith(COORDINATION_NEWS_OPENING)
+      ? null
+      : drawn(message) && (streamText || message.id !== writing) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} threadId={threadId} speaker={speaker}
+      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} peerExchange={receivedPeer?.messageId === message.id ? receivedPeer : undefined} forkable={message.id === forkableId} close={close?.has(message.id)}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {message.id === writing && writingBelow ? createPortal(article(message), writingBelow, message.id) : article(message)}
@@ -656,7 +661,7 @@ function turnBefore(turns: readonly TranscriptTurn[], at: string): number {
   return found
 }
 
-export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, notWriting = false, writingBelow = null, placement, context, streamText = true, threadId, speaker, delegations, peerExchanges, receivedPeers, backgroundWork, briefs, continuedIn, modelMoved }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, notWriting = false, writingBelow = null, placement, context, streamText = true, threadId, speaker, delegations, peerExchanges, receivedPeers, hideCoordinationWakeUps = false, backgroundWork, briefs, continuedIn, modelMoved }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   /** A prompt the user sent is drawn below these messages until the history carries it, so the newest reply here is not the one being written. */
   readonly sending?: boolean
@@ -682,6 +687,8 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   readonly peerExchanges?: ReadonlyMap<string, readonly CoordinationExchangeView[]> | undefined
   /** Incoming peer coordination exchanges keyed by target message ID (ADR-0216, Slice 2). */
   readonly receivedPeers?: ReadonlyMap<string, CoordinationExchangeView> | undefined
+  /** Hide raw coordination-news wake-up bubbles while keeping their turn boundaries and activity placement (L2, L3). */
+  readonly hideCoordinationWakeUps?: boolean | undefined
   /** The provider's own agents still running in the background, which the newest turn shows under its reply once it has finished. */
   readonly backgroundWork?: readonly AgentBackgroundWork[] | undefined
   /** In a delegated thread, the briefs that are the delegating thread's words rather than the user's. */
@@ -695,7 +702,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
   const trailingDelegations = useMemo(() => delegations?.get('')?.filter(view => !finishedDelegation(view)), [delegations])
-  const trailingPeerExchanges = useMemo(() => peerExchanges?.get('')?.filter(view => isActiveExchange(view) || view.hasReply), [peerExchanges])
+  const trailingPeerExchanges = peerExchanges?.get('')
   // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation when that turn
   // ended and another turn's lifecycle runs: Watcher is then working on news, whose wake-up the conversation leaves out
   // (`watcherWakeUpsAsShown`), so the news turn has nothing drawn until its first reply. Drawn as the running turn, the
@@ -742,7 +749,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} peerExchanges={turn.user ? peerExchanges?.get(turn.user.id) : undefined} receivedPeers={receivedPeers} backgroundWork={index === agentsAt ? shownAgents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} peerExchanges={turn.user ? peerExchanges?.get(turn.user.id) : undefined} receivedPeer={turn.user ? receivedPeers?.get(turn.user.id) : undefined} hideCoordinationWakeUps={hideCoordinationWakeUps} backgroundWork={index === agentsAt ? shownAgents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />
@@ -1031,14 +1038,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // While reading earlier history, retain the first rendered message. A sliding
   // last-N slice would otherwise remove a row above the reader on every arrival.
   const start = !following.current && retainedStart >= 0 ? retainedStart : Math.max(0, thread.messages.length - (sameThread ? limit : TRANSCRIPT_PAGE))
-  // Parent-to-parent thread coordination (ADR-0216, Slice 2; Owl only): hide raw peer-reply wake-up text from the
-  // user bubble stream because the exchange row under the sending turn already shows status and expandable reply.
+  // Keep raw coordination-news wake-ups in `messages` so splitTurns, placeActivities, and hop-2+ exchange anchors stay
+  // intact (L2, L3); TurnView hides only the wake-up bubble itself when parent-thread coordination is enabled.
   const coordinationOn = useCoordinationEnabled() && !watcher
-  const visibleSlice = useMemo(() => thread.messages.slice(start), [thread.messages, start])
-  const messages = useMemo(() => coordinationOn
-    ? visibleSlice.filter(message => !(isWakeUpMessage(message) && message.text.startsWith(COORDINATION_NEWS_OPENING)))
-    : visibleSlice, [visibleSlice, coordinationOn])
-  const hidden = thread.messages.length - visibleSlice.length
+  const messages = useMemo(() => thread.messages.slice(start), [thread.messages, start])
+  const hidden = thread.messages.length - messages.length
   const lastMessageId = thread.messages.at(-1)?.id
   // Placement is rebuilt whenever a message arrives, but the groups it holds are mostly the ones already on
   // screen; sharing their structure keeps the memoised activity views from redrawing the whole history.
@@ -1058,7 +1062,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const delegationWorld = useDelegationWorld(state, command, undefined, { thread, lastReadAt: delegations.lastReadAt })
   const coordination = useThreadCoordination(coordinationOn ? thread.id : undefined)
   const peerExchanges = useShared(useMemo(() => peerExchangesByTurn(coordination.sent, messages), [coordination.sent, messages]))
-  const receivedPeers = useMemo(() => coordination.received.length ? new Map(coordination.received.map(view => [view.messageId, view])) : undefined, [coordination.received])
+  const receivedPeers = useShared(useMemo(() => coordination.received.length ? new Map(coordination.received.map(view => [view.messageId, view])) : undefined, [coordination.received]))
   const peerWorld = usePeerCoordinationWorld(thread.id, state, command)
   // The provider's own agents still running in the background, which stand under the last reply when the composer's
   // ornament may show them too. A command waits rather than works, so it stays the ornament's alone.
@@ -1464,7 +1468,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><PeerCoordinationWorldProvider world={peerWorld}><DetachedRunStopContext.Provider value={stopDetachedRun}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
-          delegations={delegatedWork.size ? delegatedWork : undefined} peerExchanges={peerExchanges.size ? peerExchanges : undefined} receivedPeers={receivedPeers} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
+          delegations={delegatedWork.size ? delegatedWork : undefined} peerExchanges={peerExchanges.size ? peerExchanges : undefined} receivedPeers={receivedPeers} hideCoordinationWakeUps={coordinationOn} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DetachedRunStopContext.Provider></PeerCoordinationWorldProvider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null

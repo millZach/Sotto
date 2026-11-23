@@ -197,23 +197,36 @@ export interface CoordinationBridge {
   onChanged(listener: (change: CoordinationChanged) => void): () => void
 }
 
-const BEGIN_PEER_MESSAGE_LINE = /^--- Begin message from parent thread .+, exchange [0-9a-f-]{36} ---$/u
-const END_PEER_MESSAGE_LINE = /^--- End message from parent thread .+, exchange [0-9a-f-]{36} ---$/u
+const PEER_HEADER_PREFIX = '[Sotto · Message from parent thread "'
+const BEGIN_PEER_MESSAGE_LINE = /^--- Begin message from parent thread .+, exchange ([0-9a-f-]{36}) ---$/u
+const END_PEER_MESSAGE_LINE = /^--- End message from parent thread .+, exchange ([0-9a-f-]{36}) ---$/u
+const STUFFED_FENCE_LINE = /^> (?:> )*---(?:[ \t]|$)/u
 
 /**
- * Extracts the inner message body from Sotto's framed incoming peer message text.
+ * Extracts the inner message body from Sotto's framed incoming peer message text, reversing `escapePeerFenceLines`.
  * Call only for a message already verified by Sotto's coordination record, never as a trust signal.
  */
-export function parseIncomingPeerMessageBody(text: string): string | null {
+export function parseIncomingPeerMessageBody(text: string, expectedExchangeId?: string): string | null {
   const lines = text.split('\n')
-  const beginIndex = lines.findIndex(line => BEGIN_PEER_MESSAGE_LINE.test(line))
-  if (beginIndex < 0) return null
+  if (!lines[0]?.startsWith(PEER_HEADER_PREFIX)) return null
+  let beginIndex = -1
+  let matchedExchangeId: string | undefined
+  for (let index = 1; index < lines.length; index++) {
+    const match = BEGIN_PEER_MESSAGE_LINE.exec(lines[index]!)
+    if (!match) continue
+    if (expectedExchangeId !== undefined && match[1] !== expectedExchangeId) continue
+    beginIndex = index
+    matchedExchangeId = match[1]
+    break
+  }
+  if (beginIndex < 0 || matchedExchangeId === undefined) return null
   let endIndex = -1
   for (let index = lines.length - 1; index > beginIndex; index--) {
-    if (END_PEER_MESSAGE_LINE.test(lines[index]!)) { endIndex = index; break }
+    const match = END_PEER_MESSAGE_LINE.exec(lines[index]!)
+    if (match && match[1] === matchedExchangeId) { endIndex = index; break }
   }
   if (endIndex <= beginIndex) return null
-  return lines.slice(beginIndex + 1, endIndex).map(line => line.startsWith('> ---') ? line.slice(2) : line).join('\n')
+  return lines.slice(beginIndex + 1, endIndex).map(line => STUFFED_FENCE_LINE.test(line) ? line.slice(2) : line).join('\n')
 }
 
 /**

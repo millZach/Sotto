@@ -9,6 +9,7 @@ export interface ThreadCoordinationViews {
 }
 
 const NONE: ThreadCoordinationViews = { sent: [], received: [] }
+const CACHE_ENTRIES_MAX = 200
 
 interface Entry {
   views: ThreadCoordinationViews
@@ -18,26 +19,70 @@ interface Entry {
   asked: boolean
 }
 
+function sameExchangeList(left: readonly CoordinationExchangeView[], right: readonly CoordinationExchangeView[]): boolean {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index++) {
+    const a = left[index]!, b = right[index]!
+    if (
+      a.id !== b.id
+      || a.direction !== b.direction
+      || a.peerThreadId !== b.peerThreadId
+      || a.peerTitle !== b.peerTitle
+      || a.peerProvider !== b.peerProvider
+      || a.messageId !== b.messageId
+      || a.anchorMessageId !== b.anchorMessageId
+      || a.delivery !== b.delivery
+      || a.deliveryState !== b.deliveryState
+      || a.outcome !== b.outcome
+      || a.hopCount !== b.hopCount
+      || a.hopMax !== b.hopMax
+      || a.expectReply !== b.expectReply
+      || a.hasReply !== b.hasReply
+      || a.note !== b.note
+      || a.createdAt !== b.createdAt
+      || a.updatedAt !== b.updatedAt
+      || a.outcomeAt !== b.outcomeAt
+    ) return false
+  }
+  return true
+}
+
 /**
  * Renderer store for parent-to-parent coordination exchanges (ADR-0216, Slice 2).
- * Reads once when a thread pane or Tools › Agents mounts, and re-reads only when main announces that thread changed.
+ * Reads once when a thread pane or Tools › Agents mounts, re-reads when main announces a change, retains a bounded
+ * cache across thread switches so returning does not flash raw framing (N2), and retries after a failed first read (N3).
  */
 export class CoordinationStore {
   private readonly entries = new Map<string, Entry>()
   private stopChanges: (() => void) | undefined
+  private activeSubscriptions = 0
 
   constructor(private readonly bridge: () => CoordinationBridge | undefined) {}
 
   readonly subscribe = (threadId: string, listener: () => void): (() => void) => {
-    const entry = this.entries.get(threadId) ?? { views: NONE, listeners: new Set<() => void>(), reading: false, again: false, asked: false }
-    this.entries.set(threadId, entry)
+    let entry = this.entries.get(threadId)
+    if (!entry) {
+      entry = { views: NONE, listeners: new Set<() => void>(), reading: false, again: false, asked: false }
+      this.entries.set(threadId, entry)
+      this.trimCache()
+    } else {
+      // Refresh LRU order.
+      this.entries.delete(threadId)
+      this.entries.set(threadId, entry)
+    }
     entry.listeners.add(listener)
+    this.activeSubscriptions += 1
     this.listen()
     return () => {
       entry.listeners.delete(listener)
-      if (entry.listeners.size || this.entries.get(threadId) !== entry) return
-      this.entries.delete(threadId)
-      if (!this.entries.size) { this.stopChanges?.(); this.stopChanges = undefined }
+      this.activeSubscriptions = Math.max(0, this.activeSubscriptions - 1)
+      if (this.activeSubscriptions === 0) {
+        this.stopChanges?.()
+        this.stopChanges = undefined
+        // Mark cached entries stale when we stop listening so returning refreshes in the background without flashing.
+        for (const cached of this.entries.values()) cached.asked = false
+      }
     }
   }
 
@@ -58,13 +103,26 @@ export class CoordinationStore {
     return bridge.reply({ threadId, exchangeId })
   }
 
+  private trimCache(): void {
+    if (this.entries.size <= CACHE_ENTRIES_MAX) return
+    for (const [key, candidate] of this.entries) {
+      if (this.entries.size <= CACHE_ENTRIES_MAX) break
+      if (candidate.listeners.size === 0 && !candidate.reading) this.entries.delete(key)
+    }
+  }
+
   private listen(): void {
     const bridge = this.bridge()
     if (this.stopChanges || !bridge) return
     this.stopChanges = bridge.onChanged(change => {
       for (const threadId of change.threadIds) {
         const entry = this.entries.get(threadId)
-        if (!entry?.listeners.size) continue
+        if (!entry) continue
+        if (!entry.listeners.size) {
+          // Cached thread changed while off-screen: refresh on next visit.
+          entry.asked = false
+          continue
+        }
         entry.asked = true
         this.read(threadId, entry)
       }
@@ -73,14 +131,23 @@ export class CoordinationStore {
 
   private read(threadId: string, entry: Entry): void {
     const bridge = this.bridge()
-    if (!bridge) return
+    if (!bridge) { entry.asked = false; return }
     if (entry.reading) { entry.again = true; return }
     entry.reading = true
     void bridge.read({ threadId }).then(answer => {
       if (this.entries.get(threadId) !== entry) return
-      entry.views = { sent: answer.sent, received: answer.received }
+      const sameSent = sameExchangeList(entry.views.sent, answer.sent)
+      const sameReceived = sameExchangeList(entry.views.received, answer.received)
+      if (sameSent && sameReceived) return
+      entry.views = {
+        sent: sameSent ? entry.views.sent : answer.sent,
+        received: sameReceived ? entry.views.received : answer.received,
+      }
       for (const listener of [...entry.listeners]) listener()
-    }, () => undefined).finally(() => {
+    }, () => {
+      // Allow subsequent visits or pushes to retry after a transient failure (N3).
+      if (this.entries.get(threadId) === entry) entry.asked = false
+    }).finally(() => {
       entry.reading = false
       if (entry.again && this.entries.get(threadId) === entry) { entry.again = false; this.read(threadId, entry) }
     })
