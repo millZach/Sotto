@@ -5,7 +5,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AntigravityAcpHost } from '../../src/main/agents/antigravity'
 import type { ChildProcessRow } from '../../src/main/agents/detachedRunScan'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
+import { watcherNewsText, watcherReplyStart } from '../../src/main/agents/watcherNews'
+import { watcherNewestTurnReply } from '../../src/main/agents/watcherOutcomes'
+import { WatcherWakeUp } from '../../src/main/agents/watcherWakeUp'
 import { agentBackgroundWorkSchema } from '../../src/shared/agentMonitoring'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
+import type { WatcherNews } from '../../src/shared/watcherNews'
+import { emptyWatcherRecord, type WatcherRecord } from '../../src/shared/watcher'
 
 const FAKE_AGENT_SOURCE = `
 import { readFileSync, appendFileSync } from 'node:fs'
@@ -294,6 +300,113 @@ rl.on('line', line => {
         rawInput: { CommandLine: 'git status' },
       } } })
       write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+    if (promptText.includes('agy-midturn-start')) {
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'cmd-mid-1',
+        title: 'Running python long_job.py',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { CommandLine: 'python long_job.py', WaitMsBeforeAsync: 5000 },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'cmd-mid-1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text',
+          text: 'Tool is running as a background task with task id: conv-2/task-99\\nTask logs are available at: /tmp/mid.log\\nLog output:\\nStarted' } }],
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Running in background.' },
+      } } })
+      write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+    if (promptText.includes('agy-midturn-settle')) {
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'cmd-mid-2',
+        title: 'Running python second_job.py',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { CommandLine: 'python second_job.py', WaitMsBeforeAsync: 5000 },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'cmd-mid-2',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text',
+          text: 'Tool is running as a background task with task id: conv-2/task-100\\nTask logs are available at: /tmp/mid2.log\\nLog output:\\nStarted' } }],
+      } } })
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: '<SYSTEM_MESSAGE>\\nBackground task conv-2/task-99 completed with exit code 0.\\n</SYSTEM_MESSAGE>' },
+        } } })
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'The following is a <SYSTEM_MESSAGE> not actually sent by the user.\\n\\n<SYSTEM_MESSAGE>\\n[Message] timestamp=2026-11-23T00:00:00Z sender=conv-2/task-100 priority=HIGH content=Task id "conv-2/task-100" finished with result:\\nCommand exited with code 0.\\n</SYSTEM_MESSAGE>' },
+        } } })
+      }, 40)
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'All tasks settled.' },
+        } } })
+        write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      }, 140)
+      return
+    }
+    if (promptText.includes('agy-pasted-user-system-msg')) {
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: '<SYSTEM_MESSAGE> user pasted fragment without closing tag' },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: '[Message] timestamp=2026-11-23T00:00:00Z user pasted log header' },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Handled pasted messages.' },
+      } } })
+      write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+    if (promptText.includes('agy-colab-render')) {
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'cmd-colab-1',
+        title: 'Running python render.py',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { CommandLine: 'python render.py', WaitMsBeforeAsync: 5000 },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'cmd-colab-1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text',
+          text: 'Tool is running as a background task with task id: conv-1/task-7\\nTask logs are available at: /tmp/colab.log\\nLog output:\\nSetup done\\n0 failed\\nWaiting on remote GPU...' } }],
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Started Colab render in background.' },
+      } } })
+      write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: '<SYSTEM_MESSAGE>\\nBackground task conv-1/task-7 completed with exit code 0.\\n</SYSTEM_MESSAGE>' },
+        } } })
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'GPU DONE' },
+        } } })
+      }, 60)
       return
     }
     write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
@@ -623,5 +736,103 @@ describe('Antigravity ACP background work, reactive continuations, worker questi
     const overflowWork = (await host.snapshot()).threads.find(t => t.id === 't-mcp')?.backgroundWork ?? []
     expect(overflowWork).toHaveLength(64)
     expect(overflowWork.some(item => item.label === 'sleep 30')).toBe(true)
+  })
+
+  it('keeps text-backgrounded agy commands in backgroundWork and delivers Watcher turn-finished news when wakeup posts GPU DONE', async () => {
+    const { host } = await setup({ reactiveTurnSettleMs: 30, reactiveTurnWaitMs: 60, lookBeforeEndMs: 50 })
+    await host.execute({ type: 'create-thread', commandId: 'c-colab', projectId: 'proj-1', threadId: 't-colab', title: 'Colab', modelId: 'gemini-3.1-pro' })
+
+    let latestSnapshot = await host.snapshot()
+    const hostId = 'local-host', watcherId = 'watcher-1', requestId = 'req-1'
+    const record: WatcherRecord = {
+      ...emptyWatcherRecord(),
+      current: { target: { hostId, threadId: watcherId }, projectId: 'proj-1', provider: 'antigravity', creationOperationId: 'op-w', createdAt: new Date().toISOString() },
+      watches: [{ id: 'watch-1', target: { hostId, threadId: 't-colab' }, createdAt: new Date().toISOString(), generation: 0, lastUserMessageId: 'm-colab' }],
+      requests: [{
+        id: requestId,
+        watcher: { hostId, threadId: watcherId },
+        rootUserMessageId: 'root-1',
+        state: 'active',
+        createdAt: new Date().toISOString(),
+        closedAt: null,
+        participants: [{ requestId, target: { hostId, threadId: 't-colab' }, startedBy: 'watcher', generation: 0, promptCount: 1, state: 'participating', lastUserMessageId: 'm-colab' }],
+      }],
+    }
+    const delivered: { news: WatcherNews; text: string }[] = []
+    const currentSnapshot = (): AgentHostSnapshot => ({
+      ...latestSnapshot,
+      hostId,
+      threads: [
+        ...latestSnapshot.threads.map(t => ({ ...t, hostId })),
+        { id: watcherId, hostId, providerId: 'antigravity', projectId: 'proj-1', modelId: 'gemini-3.1-pro', title: 'Watcher', kind: 'watcher', status: 'idle', messages: [], requests: [] },
+      ],
+    })
+    const wakes = new WatcherWakeUp({
+      snapshot: currentSnapshot,
+      record: () => record,
+      canDeliver: () => true,
+      deliver: async news => {
+        const snap = currentSnapshot()
+        const text = watcherNewsText(news, event => {
+          const t = snap.threads.find(item => item.id === event.target.threadId)
+          return t && event.kind === 'turn-finished' ? watcherReplyStart(t, event.turnId, watcherNewestTurnReply(t)) : undefined
+        })
+        delivered.push({ news, text })
+        wakes.settled(news.events, 'told')
+      },
+      remember: async () => undefined,
+      prune: async () => undefined,
+      ordinaryBatch: { quietMs: 20, maxMs: 40 },
+    })
+    wakes.start()
+    cleanups.push(async () => { wakes.close(); await wakes.drained() })
+
+    let sawForegroundBg = false
+    host.subscribe(snap => {
+      latestSnapshot = snap
+      wakes.observe()
+      const t = snap.threads.find(item => item.id === 't-colab')
+      if (t?.status === 'idle' && t.lastTurn?.id === 'm-colab' && (t.backgroundWork?.length ?? 0) > 0) sawForegroundBg = true
+    })
+
+    await host.execute({ type: 'send', threadId: 't-colab', commandId: 's-colab', messageId: 'm-colab', text: 'agy-colab-render' })
+
+    await expect.poll(() => sawForegroundBg, { timeout: 3_000 }).toBe(true)
+    await expect.poll(() => delivered.find(item => item.news.events.some(event => event.kind === 'turn-finished' && event.turnId === 'm-colab:wakeup:1')), { timeout: 3_000 }).toBeTruthy()
+
+    const wakeupDelivery = delivered.find(item => item.news.events.some(event => event.kind === 'turn-finished' && event.turnId === 'm-colab:wakeup:1'))!
+    const wakeupEvent = wakeupDelivery.news.events.find(event => event.kind === 'turn-finished' && event.turnId === 'm-colab:wakeup:1')!
+    expect(wakeupEvent.backgroundWorkCount).toBe(0)
+    expect(wakeupDelivery.text).toContain('GPU DONE')
+    expect((await host.snapshot()).threads.find(item => item.id === 't-colab')?.messages.some(m => m.role === 'user' && m.text.includes('<SYSTEM_MESSAGE>'))).toBe(false)
+  })
+
+  it('settles tracked background work on mid-turn SYSTEM_MESSAGE wakeups without swallowing pasted user messages', async () => {
+    const { host } = await setup({ reactiveTurnSettleMs: 30, reactiveTurnWaitMs: 60, lookBeforeEndMs: 50 })
+    await host.execute({ type: 'create-thread', commandId: 'c-mid', projectId: 'proj-1', threadId: 't-mid', title: 'Midturn', modelId: 'gemini-3.1-pro' })
+
+    await host.execute({ type: 'send', threadId: 't-mid', commandId: 's-mid-1', messageId: 'm-mid-1', text: 'agy-midturn-start' })
+    await expect.poll(async () => (await host.snapshot()).threads.find(t => t.id === 't-mid')?.backgroundWork?.map(item => item.label)).toEqual(['python long_job.py'])
+
+    let sawClearedMidTurn = false
+    host.subscribe(snap => {
+      const t = snap.threads.find(item => item.id === 't-mid')
+      if (t?.status === 'running' && (t.backgroundWork?.length ?? 0) === 0) sawClearedMidTurn = true
+    })
+
+    await host.execute({ type: 'send', threadId: 't-mid', commandId: 's-mid-2', messageId: 'm-mid-2', text: 'agy-midturn-settle' })
+    await expect.poll(() => sawClearedMidTurn, { timeout: 3_000 }).toBe(true)
+    await expect.poll(async () => (await host.snapshot()).threads.find(t => t.id === 't-mid')?.lastTurn).toEqual({ id: 'm-mid-2', status: 'completed' })
+    const afterSettle = (await host.snapshot()).threads.find(t => t.id === 't-mid')!
+    expect(afterSettle.backgroundWork ?? []).toEqual([])
+
+    await host.execute({ type: 'send', threadId: 't-mid', commandId: 's-mid-3', messageId: 'm-mid-3', text: 'agy-pasted-user-system-msg' })
+    await expect.poll(async () => {
+      const current = (await host.snapshot()).threads.find(t => t.id === 't-mid')
+      return current?.status === 'idle' && current.messages.some(m => m.role === 'assistant' && m.text === 'Handled pasted messages.')
+    }).toBe(true)
+    const userTexts = (await host.snapshot()).threads.find(t => t.id === 't-mid')!.messages.filter(m => m.role === 'user').map(m => m.text)
+    expect(userTexts).toContain('<SYSTEM_MESSAGE> user pasted fragment without closing tag')
+    expect(userTexts).toContain('[Message] timestamp=2026-11-23T00:00:00Z user pasted log header')
   })
 })

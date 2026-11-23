@@ -11,7 +11,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
-import { antigravityActivities, antigravityReadCallInfo, antigravityReadImagePath, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX, type AntigravityReadCallInfo } from './antigravityActivity'
+import { antigravityActivities, antigravityReadCallInfo, antigravityReadImagePath, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX, parseAntigravitySystemWakeup, type AntigravityReadCallInfo } from './antigravityActivity'
 import { AntigravityBackgroundTasks, antigravityBackgroundCommand, mergeAntigravityBackgroundWork, sanitizeAntigravityWorkLabel } from './antigravityBackgroundWork'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
 import { antigravityChildReading, CHILD_PASS_FILES, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
@@ -427,7 +427,7 @@ export class AntigravityAcpHost implements ProviderHost {
       ...(options.sessionIdleMs === undefined ? {} : { idleAfterMs: options.sessionIdleMs }),
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
-      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
+      whyBusy: id => busyHolds({ busy: this.foregroundWorking(id), request: this.asking(id), background: this.backgroundWorking(id) }),
       stop: id => this.stopSession(id),
     })
   }
@@ -857,12 +857,15 @@ export class AntigravityAcpHost implements ProviderHost {
   // ---- Sessions ------------------------------------------------------------------------------------------------------
 
   private busy(id: string): boolean { return this.working(id) || this.asking(id) }
-  private working(id: string): boolean {
+  private foregroundWorking(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || this.compactions.has(id) || (turn !== undefined && !turn.ended)
-      || [...this.children.values()].some(watch => watch.threadId === id && watch.answeredAt === undefined)
+  }
+  private backgroundWorking(id: string): boolean {
+    return [...this.children.values()].some(watch => watch.threadId === id && watch.answeredAt === undefined)
       || Boolean(this.threads.get(id)?.backgroundWork?.length)
   }
+  private working(id: string): boolean { return this.foregroundWorking(id) || this.backgroundWorking(id) }
   private backgroundWatch(id: string): BackgroundCommandWatch {
     let watch = this.backgroundCommands.get(id)
     if (!watch) {
@@ -1191,6 +1194,15 @@ export class AntigravityAcpHost implements ProviderHost {
       const turn = this.turns.get(id)
       // `agy` may echo a prompt Sotto sent; Sotto already holds it. Anything else was typed into the session elsewhere.
       if (turn?.origin && !turn.ended && digest(words) === turn.origin.digest) { this.taken(id); return }
+      // Out-of-turn background task completion notifications arrive from `agy`'s runtime, never from the user.
+      const wakeup = parseAntigravitySystemWakeup(words)
+      if (wakeup.isWakeup) {
+        let settled = false
+        const tasks = this.backgroundTasks.get(id)
+        if (tasks) for (const taskId of wakeup.completedTaskIds) if (tasks.settleNativeTask(taskId)) settled = true
+        if (settled && this.syncBackgroundWork(id)) this.emit()
+        return
+      }
       if (turn) this.clearReactiveTimers(turn)
       const index = alias.turns; alias.turns++
       void this.persist().catch(() => undefined)
