@@ -2169,8 +2169,7 @@ export class CodexAppServerHost implements ProviderHost {
           if (!pending || pending.sessionId !== id) throw new Error('This Codex request is no longer pending.')
           if (this.watcherProfiles.has(id)) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
           const result = answerRequest(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice, command.skipped)
-          await this.respond(pending, result)
-          if (markThreadRunningAfterAnswer(this.ensureThread(id), this.runningTurns.get(id))) { this.changed(id); this.emit() }
+          await this.respond(pending, result, true)
         } else if (command.type === 'interrupt') {
           if (!watcherGuard) await this.decline(id)
           watcherGuard?.()
@@ -2456,10 +2455,12 @@ export class CodexAppServerHost implements ProviderHost {
     this.changed(pending.sessionId)
   }
   /** Answer a request on the app-server that asked it. */
-  private async respond(pending: HeldRequest, result: unknown): Promise<void> {
+  private async respond(pending: HeldRequest, result: unknown, afterAnswer = false): Promise<void> {
     if (!pending.server.alive) throw new Uncertain('Codex disconnected before receiving the answer.')
     this.inFlightRequestIds.add(pending.request.id)
-    this.removeRequest(pending.request.id); this.emit()
+    this.removeRequest(pending.request.id)
+    if (afterAnswer) markThreadRunningAfterAnswer(this.ensureThread(pending.sessionId), this.runningTurns.get(pending.sessionId))
+    this.emit()
     try { await pending.server.answer(pending.id, result) }
     finally { this.inFlightRequestIds.delete(pending.request.id) }
   }

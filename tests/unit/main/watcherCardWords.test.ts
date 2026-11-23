@@ -42,9 +42,11 @@ it('says which tool a permission card asks for and its summary, never its comman
 
 it('keeps a card\'s words short: the question, eight choices with short descriptions and how many more (#2230)', () => {
   const long = '🦉'.repeat(400)
-  const words = watcherWaitingCardWords({ kind: 'question', text: long, options: Array.from({ length: 11 }, (_, n) => choice(`${n} ${'x'.repeat(400)}`)) })!
+  const longChoice = '🦉'.repeat(350)
+  const words = watcherWaitingCardWords({ kind: 'question', text: long, options: [choice(longChoice), ...Array.from({ length: 10 }, (_, n) => choice(`${n} ${'x'.repeat(400)}`))] })!
   expect([...words.question]).toHaveLength(300)
   expect(words.choices).toHaveLength(8)
+  expect([...words.choices[0]!]).toHaveLength(300)
   expect(words.choices.every(label => [...label].length <= 300)).toBe(true)
   expect(words.moreChoices).toBe(3)
   expect(watcherCardWordsSchema.safeParse(words).success).toBe(true)

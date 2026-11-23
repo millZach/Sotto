@@ -1304,7 +1304,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
         runtime.answered.add(pending.id)
         if (this.runtimes.get(id) === runtime && runtime.requests.get(pending.id) === pending) {
           runtime.requests.delete(pending.id); thread.requests = thread.requests.filter(request => request.id !== pending.id)
-          if (!pending.resumeDialog) markThreadRunningAfterAnswer(thread)
+          const activeTurnId = this.selfTurns.get(id) ?? (thread.lastTurn?.status === 'running' ? thread.lastTurn.id : undefined)
+          if (!pending.resumeDialog) markThreadRunningAfterAnswer(thread, activeTurnId)
           this.changed(id); this.emit()
         }
         if (pending.resumeDialog && answer.result === 'never') {

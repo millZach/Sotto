@@ -320,7 +320,7 @@ export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
  * them, worked out live and never saved.
  */
 // Cut by characters where they are made, so these bounds are in UTF-16 units with room for any character.
-export const watcherCardWordsSchema = z.object({ question: z.string().min(1).max(1_200), choices: z.array(z.string().max(400)).max(8),
+export const watcherCardWordsSchema = z.object({ question: z.string().min(1).max(1_200), choices: z.array(z.string().max(1_200)).max(8),
   moreChoices: z.number().int().positive().optional(), moreQuestions: z.number().int().positive().optional(),
   prototype: z.array(z.string().max(800)).max(3).optional(), links: z.array(z.string().max(500)).max(3).optional() }).strict()
 export type WatcherCardWords = z.infer<typeof watcherCardWordsSchema>

@@ -1275,9 +1275,10 @@ export class DevinAcpHost implements ProviderHost {
           }
           if (this.pending.get(command.requestId) !== saved || this.connections.get(id) !== connection) return { accepted: false, uncertain: true }
           checkScope()
-          try { await connection.rpc.reply(decision.wireId, answer); this.removeRequest(command.requestId) }
+          try { await connection.rpc.reply(decision.wireId, answer); this.removeRequest(command.requestId, false) }
           catch { decision.request.delivery = 'uncertain'; this.changed(id); this.emit(); return { accepted: false, uncertain: true } }
-          if (markThreadRunningAfterAnswer(this.threads.get(id))) this.changed(id)
+          const activeTurn = this.active.get(id)
+          if (markThreadRunningAfterAnswer(this.threads.get(id), activeTurn && !activeTurn.ended ? activeTurn.origin.messageId : undefined)) this.changed(id)
         } else if (command.type === 'interrupt') {
           for (const [requestId, saved] of this.pending) if (!watcherGuard && saved.decision.threadId === id && !saved.decision.answering) {
             await connection.rpc.reply(saved.decision.wireId, devinDecline(saved.decision)); this.removeRequest(requestId)
@@ -1434,7 +1435,7 @@ export class DevinAcpHost implements ProviderHost {
       })
     }
   }
-  private removeRequest(id: string): void {
+  private removeRequest(id: string, emit = true): void {
     const saved = this.pending.get(id); if (!saved) return
     this.pending.delete(id); this.thread(saved.decision.threadId).requests = this.thread(saved.decision.threadId).requests.filter(request => request.id !== id)
     // A tool that ended while this request waited was kept for it alone, and is let go with it.
@@ -1442,7 +1443,7 @@ export class DevinAcpHost implements ProviderHost {
     if (toolId !== undefined && tool && settledTool(tool.status) && !this.requestWaitsOn(saved.connection, toolId)) {
       saved.connection.tools.delete(toolId); saved.connection.toolBytes -= Buffer.byteLength(JSON.stringify(tool))
     }
-    this.emit()
+    if (emit) this.emit()
   }
   private clearRequests(id: string): void {
     for (const [requestId, saved] of this.pending) if (saved.decision.threadId === id) this.pending.delete(requestId)

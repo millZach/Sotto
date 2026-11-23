@@ -17,9 +17,28 @@ describe('plainTextQuestionHint', () => {
       '2. Keep changes local',
       'Reply with 1 or 2.',
     ].join('\n'))).toBe(true)
+
+    expect(looksLikePlainTextQuestionCard([
+      'I prepared two layouts:',
+      'Option A: Compact rail',
+      'Option B: Wide sidebar',
+      'Which do you prefer?',
+    ].join('\n'))).toBe(true)
   })
 
   it('ignores normal summaries, changelogs, checklists, and code blocks', () => {
+    expect(looksLikePlainTextQuestionCard([
+      '1. Updated the defaults',
+      '2. Added tests',
+      'The defaults now prefer cached results. Everything is done.',
+    ].join('\n'))).toBe(false)
+
+    expect(looksLikePlainTextQuestionCard([
+      '1. Updated the handler',
+      '2. Added logging',
+      'The server will reply with 200 OK.',
+    ].join('\n'))).toBe(false)
+
     expect(looksLikePlainTextQuestionCard([
       'Done! Summary of changes:',
       '1. Updated antigravity.ts',
