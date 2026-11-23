@@ -1,3 +1,4 @@
+import { posix, win32 } from 'node:path'
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { antigravityCommand } from './antigravityRequests'
 import { shownCommand, splitCommandLine } from './detachedRunScan'
@@ -38,6 +39,10 @@ const ANTIGRAVITY_THINKING: AcpThinking = { idPrefix: ANTIGRAVITY_THINKING_ID_PR
 /** `agy`'s subagent tools, by the titles T3 Code recognises them by: shown as a subagent's row. */
 const SUBAGENT_TITLES = new Set(['Running start_subagent', 'Run start_subagent?', 'Running invoke_subagent', 'Run invoke_subagent?', 'Run invoke_subagent'])
 const NON_BACKGROUND_KINDS = new Set(['read', 'edit', 'delete', 'move', 'search', 'fetch', 'think'])
+const RASTER_IMAGE_PATH = /\.(?:png|jpe?g|gif|webp)$/iu
+const RASTER_IMAGE_MIME = /\bimage\/(?:png|jpeg|gif|webp)\b/iu
+const READ_TOOL_TITLE = /\b(?:read_file|view_file)\b/iu
+const IMAGE_PATH_KEYS = ['Path', 'path', 'file_path', 'filePath', 'AbsolutePath', 'absolute_path'] as const
 const RUNNING_TEXT_PATTERN = /\b(?:running in (?:the )?background|moved to (?:the )?background|continuing in (?:the )?background|still running in (?:the )?background|background (?:task|command|job)\b)/iu
 const FINISHED_TEXT_PATTERN = /\b(?:completed|exited|finished|done|failed|killed|cancelled)\b/iu
 const TASK_ID_KEYS = ['backgroundTaskId', 'background_task_id', 'commandId', 'command_id', 'taskId', 'task_id', 'scheduleId', 'schedule_id', 'workflowId', 'workflow_id', 'jobId', 'job_id'] as const
@@ -153,6 +158,49 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
     ...(killSucceeded ? { killTaskId: nativeTaskId } : {}),
     ...(isStatusTool && nativeTaskId ? { statusQueryRunning: outputSaysRunning && !outputSaysFinished, statusQueryFinished: outputSaysFinished } : {}),
   }
+}
+
+function resolveReadImagePath(rawPath: string, cwd: string, platform: NodeJS.Platform = process.platform): string {
+  const paths = platform === 'win32' ? win32 : posix
+  const local = platform === 'win32' && /^\/[A-Za-z]:[\\/]/u.test(rawPath) ? rawPath.slice(1) : rawPath
+  return paths.isAbsolute(local) ? paths.normalize(local) : paths.resolve(cwd, local)
+}
+
+function firstLocationPath(locations: unknown): string | undefined {
+  if (!Array.isArray(locations)) return undefined
+  for (const item of locations) {
+    const path = object(item)?.path
+    if (typeof path === 'string' && path.trim()) return path.trim()
+  }
+  return undefined
+}
+
+/**
+ * The raster picture a completed Antigravity file read inspected, when Sotto should read and attach it (`captureMediaFile`).
+ * Pre-filters by raster extension (or image MIME output for extensionless paths) and skips incomplete/failed rows, non-read
+ * tools, SVGs, and rows that already hold media.
+ */
+export function antigravityReadImagePath(
+  update: Record<string, unknown>,
+  row: Pick<AgentActivity, 'status' | 'title' | 'media' | 'changes'> | undefined,
+  cwd: string,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  const sessionUpdate = String(update.sessionUpdate)
+  if ((sessionUpdate !== 'tool_call' && sessionUpdate !== 'tool_call_update') || !row || row.media?.length || row.status !== 'completed') return undefined
+  const fields = parseToolFields(update, row)
+  const isRead = update.kind === 'read'
+    || READ_TOOL_TITLE.test(row.title ?? '')
+    || READ_TOOL_TITLE.test(typeof update.name === 'string' ? update.name : '')
+    || READ_TOOL_TITLE.test(typeof update.title === 'string' ? update.title : '')
+    || row.changes?.some(change => change.kind === 'read') === true
+  if (!isRead) return undefined
+  const rawPath = firstString(fields.input, IMAGE_PATH_KEYS)
+    ?? firstLocationPath(update.locations)
+    ?? row.changes?.find(change => typeof change.path === 'string' && change.path.trim())?.path.trim()
+  if (!rawPath) return undefined
+  if (!RASTER_IMAGE_PATH.test(rawPath) && !(fields.outputText && RASTER_IMAGE_MIME.test(fields.outputText))) return undefined
+  return resolveReadImagePath(rawPath, cwd, platform)
 }
 
 /** The activity for one live `session/update`: a thought, a tool call, or the turn's plan. */

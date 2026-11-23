@@ -11,7 +11,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
-import { antigravityActivities, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
+import { antigravityActivities, antigravityReadImagePath, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
 import { AntigravityBackgroundTasks, antigravityBackgroundCommand, mergeAntigravityBackgroundWork, sanitizeAntigravityWorkLabel } from './antigravityBackgroundWork'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
 import { antigravityChildReading, CHILD_PASS_FILES, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
@@ -48,7 +48,7 @@ import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import type { UsageHistorySink } from './usageHistory/sink'
-import type { MediaCapture } from './threadMedia'
+import type { MediaCapture, MediaFileCapture } from './threadMedia'
 import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
@@ -329,6 +329,7 @@ export interface AntigravityAcpOptions {
   reaperSweepMs?: number
   sessionIdleMs?: number
   captureMedia?: MediaCapture
+  captureMediaFile?: MediaFileCapture
   /** Usage on: `agy`'s token counts from its conversation files (`antigravityUsage.ts`). Never the account's limits (ADR-0212). */
   usageEnabled?: boolean
   /** How long a child agent is read before Sotto stops (`antigravityChildren.ts`); four hours unless a test says otherwise. */
@@ -376,6 +377,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private readonly reactiveTurnCounts = new Map<string, number>()
   private readonly observed = new Set<string>()
   private readonly outdated = new Set<string>()
+  private readonly readingMedia = new Set<string>()
   private readonly processes = new Set<AntigravityRpc>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
@@ -1233,6 +1235,9 @@ export class AntigravityAcpHost implements ProviderHost {
           if (priorSignal && ((!priorSignal.backgroundLaunch && priorSignal.status !== 'running') || alreadyOutlived)) {
             const rows = antigravityActivities(update, { turnId: priorTurnId, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key: priorKey }, thread.activities, this.options.captureMedia)
             if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.changed(id) }
+            const priorRow = rows.find(item => item.id === antigravityToolId(priorKey))
+            const imagePath = antigravityReadImagePath(update, priorRow, alias.cwd)
+            if (priorRow && imagePath) this.captureReadImage(id, priorRow.id, imagePath)
             this.backgroundTasksFor(id).observe(priorSignal, priorTurnId)
             this.syncBackgroundWork(id)
             this.emit()
@@ -1255,6 +1260,8 @@ export class AntigravityAcpHost implements ProviderHost {
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
     const edits = antigravityEdits(update), row = key ? rows.find(item => item.id === antigravityToolId(key)) : undefined
     if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
+    const imagePath = antigravityReadImagePath(update, row, alias.cwd)
+    if (row && imagePath) this.captureReadImage(id, row.id, imagePath)
     if ((row?.kind === 'command' || signal?.isCommand) && !signal?.pending) turn!.ranCommand = true
     const wasOutlived = signal ? (this.backgroundTasks.get(id)?.isOutlived(signal.toolCallId) ?? false) : false
     if (signal && this.backgroundTasksFor(id).observe(signal, rowTurnId)) {
@@ -1424,6 +1431,26 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!thread || !row?.changes || row.changes.length !== placed.length || !placed.some(Boolean) || row.changes.some((change, index) => change.diff !== reported[index])) return
     thread.activities = mergeAgentActivities(thread.activities, [{ ...row, changes: row.changes.map((change, index) => placed[index] ? { ...change, diff: placed[index] } : change) }])
     this.changed(id); this.emit()
+  }
+  /** Captures a raster image a completed file read viewed, off the update path (`ThreadMediaStore.captureFile`). */
+  private captureReadImage(id: string, rowId: string, path: string): void {
+    const captureFile = this.options.captureMediaFile
+    const key = `${id}\n${rowId}`
+    if (!captureFile || this.readingMedia.has(key)) return
+    this.readingMedia.add(key)
+    const generation = this.generation
+    void captureFile(path, 'tool').catch(() => [] as const).then(found => {
+      if (!found.length) {
+        if (this.readingMedia.size > 1_000) this.readingMedia.delete(this.readingMedia.values().next().value!)
+        return
+      }
+      this.readingMedia.delete(key)
+      if (generation !== this.generation) return
+      const thread = this.threads.get(id), row = thread?.activities?.find(item => item.id === rowId)
+      if (!thread || !row || row.media?.length) return
+      thread.activities = mergeAgentActivities(thread.activities, [{ ...row, media: [...found] }])
+      this.changed(id); this.emit()
+    })
   }
   private taken(id: string): void {
     const turn = this.turns.get(id)
@@ -1930,7 +1957,7 @@ export class AntigravityAcpHost implements ProviderHost {
     this.pending.clear()
     for (const turn of this.turns.values()) this.clearReactiveTimers(turn)
     for (const watch of this.backgroundCommands.values()) watch.stop()
-    this.backgroundCommands.clear(); this.backgroundTasks.clear(); this.lookingBeforeEnd.clear(); this.reactiveTurnCounts.clear()
+    this.backgroundCommands.clear(); this.backgroundTasks.clear(); this.lookingBeforeEnd.clear(); this.reactiveTurnCounts.clear(); this.readingMedia.clear()
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
     // Published once, with the rest of the disconnect.
     for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST, false)

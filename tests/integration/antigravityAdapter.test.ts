@@ -1,14 +1,16 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../src/shared/agentActivity'
-import type { AgentRuntimeMode } from '../../src/shared/agents'
+import { AGENT_MAX_IMAGE_BYTES, type AgentRuntimeMode } from '../../src/shared/agents'
+import { agentCaptures, ThreadMediaStore, type MediaFileCapture } from '../../src/main/agents/threadMedia'
 import { describeAdapterContract } from './adapterContract'
 import { antigravityFixture, antigravityFixtureSkips } from '../fixtures/fakeAntigravityFixture'
+import { pngHeader } from '../fixtures/stagedImages'
 
 describeAdapterContract('Antigravity ACP', session => antigravityFixture(undefined, undefined, session), antigravityFixtureSkips)
 
@@ -700,5 +702,82 @@ describe('Antigravity ACP adapter', () => {
     expect(allWatches.some(item => item.rowId === 'antigravity-tool-m1-0')).toBe(false)
     expect(allWatches.some(item => item.rowId === 'antigravity-tool-m2-0')).toBe(false)
     expect((await thread(id)).activities?.find(row => row.id === 'antigravity-tool-m2-0')?.agents?.[0]?.status).toBe('unknown')
+  })
+
+  it('captures raster images viewed via read_file under showEvery and enforces media/size/type guards', async () => {
+    const tempDirs: string[] = []
+    try {
+      const mediaDir = await mkdtemp(join(tmpdir(), 'sotto-agy-read-media-'))
+      const outsideDir = await mkdtemp(join(tmpdir(), 'sotto-agy-read-outside-'))
+      tempDirs.push(mediaDir, outsideDir)
+      const store = new ThreadMediaStore(mediaDir)
+      await store.load()
+      let showEvery = true
+      const attemptedPaths: string[] = []
+      const baseCaptures = agentCaptures(store, () => showEvery)
+      const captureMediaFile: MediaFileCapture = (filePath, source) => {
+        attemptedPaths.push(filePath)
+        return baseCaptures.captureMediaFile(filePath, source)
+      }
+
+      const id = await open({ fixture: { captureMediaFile } })
+      const relPng = pngHeader(4, 3)
+      const extPng = pngHeader(6, 5)
+      await writeFile(join(f!.root, 'shot.png'), relPng)
+      const outsidePath = join(outsideDir, 'outside.png')
+      await writeFile(outsidePath, extPng)
+      await writeFile(join(f!.root, 'spoof.png'), 'not a real png')
+      await writeFile(join(f!.root, 'huge.png'), Buffer.concat([pngHeader(8, 8), Buffer.alloc(AGENT_MAX_IMAGE_BYTES)]))
+      await writeFile(join(f!.root, 'app.ts'), 'export const ok = true\n')
+      await writeFile(join(f!.root, 'vector.svg'), '<svg/>')
+
+      await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm-read-1', text: 'Inspect files' })
+      const runRead = async (path: string) => {
+        const title = `Read ${path}`
+        await f!.action(id, { type: 'read-file', path })
+        await expect.poll(async () => (await thread(id)).activities?.some(row => row.title === title && row.status === 'completed')).toBe(true)
+      }
+      await runRead('shot.png')
+      await runRead(outsidePath)
+      await runRead('spoof.png')
+      await runRead('huge.png')
+      await runRead('app.ts')
+      await runRead('vector.svg')
+
+      await expect.poll(async () => {
+        const rows = (await thread(id)).activities ?? []
+        return rows.filter(row => (row.media?.length ?? 0) > 0).length
+      }).toBe(2)
+
+      const rows = (await thread(id)).activities ?? []
+      const relRow = rows.find(row => row.title === 'Read shot.png')
+      const extRow = rows.find(row => row.title === `Read ${outsidePath}`)
+      expect(relRow?.media?.[0]).toEqual(expect.objectContaining({ id: 'm0', mimeType: 'image/png', width: 4, height: 3, source: 'tool' }))
+      expect(extRow?.media?.[0]).toEqual(expect.objectContaining({ id: 'm0', mimeType: 'image/png', width: 6, height: 5, source: 'tool' }))
+      expect(await store.read(relRow!, 'm0')).toBe(`data:image/png;base64,${relPng.toString('base64')}`)
+      expect(await store.read(extRow!, 'm0')).toBe(`data:image/png;base64,${extPng.toString('base64')}`)
+
+      const spoofRow = rows.find(row => row.title === 'Read spoof.png')
+      const hugeRow = rows.find(row => row.title === 'Read huge.png')
+      expect(spoofRow?.media).toBeUndefined()
+      expect(hugeRow?.media).toBeUndefined()
+      expect(attemptedPaths).toContain(join(f!.root, 'spoof.png'))
+      expect(attemptedPaths).toContain(join(f!.root, 'huge.png'))
+      expect(attemptedPaths).not.toContain(join(f!.root, 'app.ts'))
+      expect(attemptedPaths).not.toContain(join(f!.root, 'vector.svg'))
+
+      // Switching showEvery off stops further read_file captures.
+      showEvery = false
+      const attemptsBeforeOff = attemptedPaths.length
+      await writeFile(join(f!.root, 'second.png'), relPng)
+      await f!.action(id, { type: 'read-file', path: 'second.png' })
+      await expect.poll(async () => (await thread(id)).activities?.some(row => row.title === 'Read second.png' && row.status === 'completed')).toBe(true)
+      const secondRow = (await thread(id)).activities?.find(row => row.title === 'Read second.png')
+      expect(secondRow?.media).toBeUndefined()
+      expect(attemptedPaths.length).toBeGreaterThan(attemptsBeforeOff)
+      expect((await thread(id)).activities?.filter(row => (row.media?.length ?? 0) > 0)).toHaveLength(2)
+    } finally {
+      await Promise.all(tempDirs.map(dir => rm(dir, { recursive: true, force: true })))
+    }
   })
 })

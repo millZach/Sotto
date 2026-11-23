@@ -291,4 +291,23 @@ function run(command) {
     ask(sessionId, { toolCallId: `interaction_${randomUUID().slice(0, 8)}`, title: command.text, kind: 'other', status: 'pending' },
       [{ optionId: 'Blue', name: 'Blue', kind: 'allow_once' }, { optionId: 'Red', name: 'Red', kind: 'allow_once' }])
   }
+  if (command.type === 'read-file') {
+    const toolCallId = `call_${randomUUID().slice(0, 8)}`
+    const title = command.title ?? `Read ${command.path}`
+    const kind = command.kind ?? 'read'
+    const rawInput = command.rawInput ?? { Path: command.path }
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, name: command.name ?? 'read_file', kind, title, status: 'in_progress', rawInput, ...(command.locations ? { locations: command.locations } : {}) })
+    update(sessionId, {
+      sessionUpdate: 'tool_call_update',
+      toolCallId,
+      name: command.name ?? 'read_file',
+      kind,
+      title,
+      status: command.status ?? 'completed',
+      rawInput,
+      ...(command.locations ? { locations: command.locations } : {}),
+      ...(command.output ? { content: [{ type: 'content', content: { type: 'text', text: command.output } }] } : {}),
+      rawOutput: command.rawOutput ?? {},
+    })
+  }
 }
