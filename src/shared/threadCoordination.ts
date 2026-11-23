@@ -49,7 +49,7 @@ export const coordinateListThreadsInputSchema = z.object({
 export type CoordinateListThreadsInput = z.infer<typeof coordinateListThreadsInputSchema>
 
 export const coordinateReadThreadInputSchema = z.object({
-  threadId: id.describe('The Sotto thread ID of the parent thread to read, from list_threads. May also be host-qualified (<hostId>:<threadId>).'),
+  threadId: id.describe('The Sotto thread ID of the parent thread to read, from list_threads. May also be host-qualified (host:<hostId>:<threadId>).'),
   hostId: z.string().min(1).max(128).optional().describe('Optional machine hostId from list_threads when reading a parent thread on another connected machine.'),
   view: z.enum(['messages', 'summary']).optional().describe('"messages" (default) returns metadata and recent messages; "summary" returns metadata and status only.'),
   beforePosition: z.number().int().min(0).max(1_000_000).optional().describe('Read messages older than this zero-based position (from earlierPosition).'),
@@ -62,7 +62,7 @@ export const coordinationDeliveryRequestSchema = z.enum(['queue', 'steer', 'auto
 export type CoordinationDeliveryRequest = z.infer<typeof coordinationDeliveryRequestSchema>
 
 export const coordinateSendInputSchema = z.object({
-  threadId: id.describe('The Sotto thread ID of the target parent thread, from list_threads. May also be host-qualified (<hostId>:<threadId>).'),
+  threadId: id.describe('The Sotto thread ID of the target parent thread, from list_threads. May also be host-qualified (host:<hostId>:<threadId>).'),
   hostId: z.string().min(1).max(128).optional().describe('Optional machine hostId from list_threads when messaging a parent thread on another connected machine.'),
   message: z.string().trim().min(1).max(COORDINATION_MESSAGE_MAX).describe('Plain-text coordination message for the target parent thread. Cannot be a slash command.'),
   delivery: coordinationDeliveryRequestSchema.optional().describe('"queue" (default: starts idle thread or queues after a running turn), "steer" (mid-turn steer if supported, else queues), or "auto" (starts idle or queues).'),

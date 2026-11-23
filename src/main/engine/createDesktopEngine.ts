@@ -871,7 +871,11 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   const threadCoordinationService = 'threadCoordination' in localRuntime ? localRuntime.threadCoordination : undefined
   const coordinationRelay = threadCoordinationService
-    ? new DesktopCoordinationRelay({ service: threadCoordinationService, localHostId: () => agentControl.hostId() })
+    ? new DesktopCoordinationRelay({
+      service: threadCoordinationService,
+      localHostId: () => agentControl.hostId(),
+      localMachineName: () => (e2eConfiguration === null ? osHostname().trim().slice(0, 64) : E2E_COMPUTER_NAME) || 'Desktop',
+    })
     : undefined
   coordinationRelay?.useHosts(hostRouter)
   const councilService = councilEnabled && startupSettings.localHostEnabled ? new CouncilService({

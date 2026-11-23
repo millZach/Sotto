@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import type { AgentRuntimeMode, AgentState } from '../../shared/agents'
 import { RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
-import { isEligibleParentThread, type CoordinationExchangeView, type CoordinationNews } from '../../shared/threadCoordination'
+import { COORDINATION_LIST_LIMIT_MAX, isEligibleParentThread, type CoordinationExchangeView, type CoordinationNews } from '../../shared/threadCoordination'
 import { COORDINATION_RELAY_READ_TIMEOUT_MS, COORDINATION_RELAY_SEND_TIMEOUT_MS, coordinationRelayAskSchema, coordinationRemoteAskSchema,
   type CoordinationRelayAsk, type CoordinationRelayedReply, type CoordinationRemoteAsk, type CoordinationRemoteCaller } from '../../shared/threadCoordinationRelay'
 import type { CoordinationRelayAdapter, CoordinationRemoteOutcomePush, ThreadCoordinationService } from './threadCoordination'
@@ -81,6 +81,11 @@ export class HostCoordinationRelay implements CoordinationRelayAdapter {
     const at = this.desktops.indexOf(desktop)
     if (at !== -1) this.desktops.splice(at, 1)
     this.desktops.push(desktop)
+    // Defer replay until after the hello response is written on the socket (L8).
+    setImmediate(() => {
+      if (this.closed || !this.desktops.includes(desktop)) return
+      this.service?.replayUntoldRemoteNews({ clientId: desktop.clientId })
+    })
   }
 
   desktopGone(desktop: CoordinationRelayDesktop): void {
@@ -90,7 +95,8 @@ export class HostCoordinationRelay implements CoordinationRelayAdapter {
       if (entry.desktop !== desktop) continue
       clearTimeout(entry.timer)
       this.pending.delete(askId)
-      entry.resolve({ status: 'refused', code: 'HOST_UNAVAILABLE', message: HOST_UNAVAILABLE_NO_DESKTOP })
+      // The ask was already pushed to the desktop before it dropped, so delivery is unconfirmed (L1).
+      entry.resolve({ status: 'refused', code: 'HOST_UNAVAILABLE', uncertain: true, message: HOST_UNAVAILABLE_TIMEOUT })
     }
   }
 
@@ -102,7 +108,7 @@ export class HostCoordinationRelay implements CoordinationRelayAdapter {
     clearTimeout(entry.timer)
     const answer = result !== null && typeof result === 'object' && !Array.isArray(result)
       ? result as Record<string, unknown>
-      : { status: 'refused', code: 'HOST_UNAVAILABLE', message: HOST_UNAVAILABLE_TIMEOUT }
+      : { status: 'refused', code: 'HOST_UNAVAILABLE', uncertain: true, message: HOST_UNAVAILABLE_TIMEOUT }
     entry.resolve(answer)
     return true
   }
@@ -116,7 +122,7 @@ export class HostCoordinationRelay implements CoordinationRelayAdapter {
       const askId = randomUUID()
       const timer = setTimeout(() => {
         this.pending.delete(askId)
-        resolve({ status: 'refused', code: 'HOST_UNAVAILABLE', message: HOST_UNAVAILABLE_TIMEOUT })
+        resolve({ status: 'refused', code: 'HOST_UNAVAILABLE', uncertain: true, message: HOST_UNAVAILABLE_TIMEOUT })
       }, timeoutMs)
       timer.unref?.()
       this.pending.set(askId, { desktop, resolve, timer })
@@ -143,6 +149,16 @@ export class HostCoordinationRelay implements CoordinationRelayAdapter {
       return { status: 'refused', code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message ?? 'Invalid remote coordination ask.' }
     }
     const ask = parsed.data
+    // For read-only `list_threads(hostId:"all")` asking about this host's own threads from a thread on this same host,
+    // evaluate `canMessage` against this host's own local thread runtimeMode rather than clamping by the desktop's remote-answer grant (N6).
+    const localHostId = service.localHostId()
+    if (ask.type === 'list' && localHostId !== undefined && ask.caller.hostId === localHostId) {
+      const localMode = service.localThreadRuntimeMode(ask.caller.threadId)
+      const { runtimeMode: _ignored, ...rest } = ask.caller
+      void _ignored
+      const localCaller: CoordinationRemoteCaller = { ...rest, ...(localMode ? { runtimeMode: localMode } : {}) }
+      return await service.listThreadsForRemote(localCaller, ask.input)
+    }
     // Clamp remote caller's permission mode when this desktop does not hold a `remote-answer` grant (ADR-0004).
     const caller: CoordinationRemoteCaller = authority.mayAnswer
       ? ask.caller
@@ -209,6 +225,7 @@ export interface CoordinationRelayConnection {
   readonly service: {
     readonly supportsCoordinationRelay?: boolean
     view?(): AgentState
+    subscribe?(listener: (state: AgentState) => void): () => void
     coordinationRemoteAsk?(ask: CoordinationRemoteAsk, timeoutMs: number): Promise<unknown>
     subscribeCoordinationRelay?(listener: (askId: string, ask: CoordinationRelayAsk) => void): () => void
     answerCoordinationRelay?(askId: string, answer: unknown): Promise<void>
@@ -229,7 +246,19 @@ export interface CoordinationRelayHostSource {
   remoteConnections(): Iterable<CoordinationRelayConnection>
 }
 
+interface PendingHostNewsEntry {
+  readonly callerThreadId: string
+  readonly callerHostId: string
+  readonly news: CoordinationNews
+  readonly replies?: readonly CoordinationRelayedReply[] | undefined
+  readonly exchange?: CoordinationExchangeView | undefined
+}
+
 const LOCAL_DESKTOP_CLIENT_ID = 'local-desktop'
+const PENDING_HOST_NEWS_MAX = 200
+const LIST_ALL_PAGES_MAX = 50
+const PENDING_HOST_NEWS_RETRY_MS = 1_000
+const PENDING_HOST_NEWS_RETRY_MAX_MS = 30_000
 
 /**
  * Desktop-side relay for cross-machine parent-to-parent coordination (ADR-0216, Slice 3).
@@ -240,6 +269,11 @@ const LOCAL_DESKTOP_CLIENT_ID = 'local-desktop'
 export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
   private readonly followed = new WeakSet<object>()
   private readonly hostStops = new Map<string, () => void>()
+  /** Outcome news from target hosts waiting for an offline origin host to reconnect (L8; bounded per host, deduped by exchangeId). */
+  private readonly pendingHostNews = new Map<string, Map<string, PendingHostNewsEntry>>()
+  private readonly pendingHostNewsTimers = new Map<string, NodeJS.Timeout>()
+  private readonly pendingHostNewsAttempts = new Map<string, number>()
+  private readonly flushingHosts = new Set<string>()
   private hosts: CoordinationRelayHostSource | undefined
   private unfollowHosts: (() => void) | undefined
   private unfollowRemoved: (() => void) | undefined
@@ -254,7 +288,7 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
   }
 
   localMachineName(): string {
-    return this.options.localMachineName?.() ?? 'This computer'
+    return this.options.localMachineName?.() ?? (hostname().trim().slice(0, 64) || 'Desktop')
   }
 
   remoteCallerAuthority(): { readonly recorded: boolean; readonly mayAnswer: boolean } {
@@ -269,6 +303,7 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
     this.unfollowRemoved = source.subscribeRemoved?.(hostId => {
       this.hostStops.get(hostId)?.()
       this.hostStops.delete(hostId)
+      this.clearPendingHostNews(hostId)
     })
     for (const connection of source.remoteConnections()) this.follow(connection)
   }
@@ -281,6 +316,10 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
     this.unfollowRemoved = undefined
     for (const stop of this.hostStops.values()) stop()
     this.hostStops.clear()
+    for (const timer of this.pendingHostNewsTimers.values()) clearTimeout(timer)
+    this.pendingHostNewsTimers.clear()
+    this.pendingHostNews.clear()
+    this.pendingHostNewsAttempts.clear()
   }
 
   private remoteConnection(hostId: string): CoordinationRelayConnection | undefined {
@@ -289,6 +328,10 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
       if (connection.kind === 'remote' && connection.hostId === hostId) return connection
     }
     return undefined
+  }
+
+  private machineNameOf(hostId: string, fallback: string): string {
+    return this.remoteConnection(hostId)?.name ?? fallback
   }
 
   private connectedRemoteMachines(): CoordinationRelayConnection[] {
@@ -320,9 +363,11 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
       if (answer !== null && typeof answer === 'object' && !Array.isArray(answer)) {
         return decorateRemoteAnswer(answer as Record<string, unknown>, target.hostId!, target.name)
       }
-      return { status: 'refused', code: 'HOST_UNAVAILABLE', message: HOST_UNAVAILABLE_TIMEOUT }
+      // Request was already sent to target before receiving an unreadable response, so delivery is unconfirmed (L1).
+      return { status: 'refused', code: 'HOST_UNAVAILABLE', uncertain: true, message: HOST_UNAVAILABLE_TIMEOUT }
     } catch {
-      return { status: 'refused', code: 'HOST_UNAVAILABLE', message: HOST_UNAVAILABLE_TARGET }
+      // Transport failed or timed out AFTER forwarding to target, so delivery is unconfirmed (L1).
+      return { status: 'refused', code: 'HOST_UNAVAILABLE', uncertain: true, message: HOST_UNAVAILABLE_TIMEOUT }
     }
   }
 
@@ -332,7 +377,11 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
     if (!target || target.available?.() === false || target.service.supportsCoordinationRelay !== true || !target.service.coordinationRelayNews) {
       throw new Error('The paired host that sent this coordination message is not connected.')
     }
-    await target.service.coordinationRelayNews(payload.callerThreadId, payload.news, payload.replies, payload.exchange)
+    const localId = this.options.localHostId()
+    const decoratedExchange: CoordinationExchangeView | undefined = payload.exchange
+      ? { ...payload.exchange, ...(localId ? { peerHostId: localId } : {}), peerMachine: this.localMachineName() }
+      : undefined
+    await target.service.coordinationRelayNews(payload.callerThreadId, payload.news, payload.replies, decoratedExchange)
   }
 
   private async dispatchLocal(ask: CoordinationRelayAsk): Promise<Record<string, unknown>> {
@@ -351,32 +400,67 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
     return localId ? decorateRemoteAnswer(answer, localId, machine) : answer
   }
 
+  private async fetchHostPages(
+    need: number,
+    fetchPage: (cursor: number, limit: number) => Promise<unknown>,
+  ): Promise<{ readonly ok: true; readonly threads: Record<string, unknown>[]; readonly total: number } | { readonly ok: false }> {
+    const rows: Record<string, unknown>[] = []
+    let pageCursor = 0
+    let reportedTotal: number | undefined
+    for (let pageIndex = 0; pageIndex < LIST_ALL_PAGES_MAX && rows.length < need; pageIndex++) {
+      const pageLimit = Math.min(COORDINATION_LIST_LIMIT_MAX, Math.max(1, need - rows.length))
+      let res: unknown
+      try {
+        res = await fetchPage(pageCursor, pageLimit)
+      } catch {
+        return pageIndex === 0 ? { ok: false } : { ok: true, threads: rows, total: reportedTotal ?? rows.length }
+      }
+      if (!res || typeof res !== 'object' || (res as Record<string, unknown>).status !== 'ok' || !Array.isArray((res as Record<string, unknown>).threads)) {
+        return pageIndex === 0 ? { ok: false } : { ok: true, threads: rows, total: reportedTotal ?? rows.length }
+      }
+      const record = res as { threads: unknown[]; total?: unknown; nextCursor?: unknown }
+      if (reportedTotal === undefined && typeof record.total === 'number' && Number.isFinite(record.total)) {
+        reportedTotal = record.total
+      }
+      let added = 0
+      for (const item of record.threads) {
+        if (item && typeof item === 'object') {
+          rows.push(item as Record<string, unknown>)
+          added++
+        }
+      }
+      const next = typeof record.nextCursor === 'number' ? record.nextCursor : null
+      if (next === null || next <= pageCursor || added === 0) break
+      pageCursor = next
+    }
+    return { ok: true, threads: rows, total: reportedTotal ?? rows.length }
+  }
+
   private async aggregateListAcrossHosts(
     caller: CoordinationRemoteCaller,
     input: Extract<CoordinationRelayAsk, { type: 'list' }>['input'],
   ): Promise<Record<string, unknown>> {
     const localId = this.options.localHostId()
-    const perHostInput = {
-      ...input,
-      cursor: 0,
-      limit: Math.min(50, (input.cursor ?? 0) + (input.limit ?? 20)),
-    }
+    const cursor = input.cursor ?? 0
+    const limit = input.limit ?? 20
+    const need = cursor + limit
     const collected: Record<string, unknown>[] = []
     const unavailableHosts: { readonly hostId: string; readonly machine: string; readonly reason: string }[] = []
+    let totalCount = 0
 
     const tasks: Promise<void>[] = []
 
-    // Local desktop threads (when caller is remote, use listThreadsForRemote; when local, listThreads already includes local if called from local, OR caller asks desktop relay for all machines and desktop handles local + remote uniformly!).
     if (localId) {
       tasks.push((async () => {
-        const remoteProject = caller.hostId === localId ? perHostInput.project : (!perHostInput.project || perHostInput.project === 'same' ? 'all' : perHostInput.project)
-        const res = await this.options.service.listThreadsForRemote(caller, { ...perHostInput, ...(remoteProject ? { project: remoteProject } : {}) })
-        if (res.status === 'ok' && Array.isArray(res.threads)) {
-          for (const item of res.threads) {
-            if (item && typeof item === 'object') {
-              collected.push({ ...(item as Record<string, unknown>), hostId: localId, machine: this.localMachineName() })
-            }
-          }
+        const remoteProject = caller.hostId === localId ? input.project : (!input.project || input.project === 'same' ? 'all' : input.project)
+        const baseInput = { ...input, ...(remoteProject ? { project: remoteProject } : {}) }
+        const fetched = await this.fetchHostPages(need, (pageCursor, pageLimit) =>
+          this.options.service.listThreadsForRemote(caller, { ...baseInput, cursor: pageCursor, limit: pageLimit }),
+        )
+        if (fetched.ok) {
+          totalCount += fetched.total
+          const machine = this.localMachineName()
+          for (const item of fetched.threads) collected.push({ ...item, hostId: localId, machine })
         }
       })())
     }
@@ -391,40 +475,35 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
         unavailableHosts.push({ hostId, machine: connection.name, reason: 'unsupported' })
         continue
       }
-      const remoteProject = caller.hostId === hostId ? perHostInput.project : (!perHostInput.project || perHostInput.project === 'same' ? 'all' : perHostInput.project)
+      const remoteProject = caller.hostId === hostId ? input.project : (!input.project || input.project === 'same' ? 'all' : input.project)
+      const baseInput = { ...input, ...(remoteProject ? { project: remoteProject } : {}) }
       tasks.push((async () => {
-        try {
-          const res = await connection.service.coordinationRemoteAsk!({
+        const fetched = await this.fetchHostPages(need, (pageCursor, pageLimit) =>
+          connection.service.coordinationRemoteAsk!({
             type: 'list',
             caller,
-            input: { ...perHostInput, ...(remoteProject ? { project: remoteProject } : {}) },
-          }, COORDINATION_RELAY_READ_TIMEOUT_MS)
-          if (res && typeof res === 'object' && (res as Record<string, unknown>).status === 'ok' && Array.isArray((res as Record<string, unknown>).threads)) {
-            for (const item of (res as { threads: unknown[] }).threads) {
-              if (item && typeof item === 'object') {
-                collected.push({ ...(item as Record<string, unknown>), hostId, machine: connection.name })
-              }
-            }
-          } else {
-            unavailableHosts.push({ hostId, machine: connection.name, reason: 'unavailable' })
-          }
-        } catch {
-          unavailableHosts.push({ hostId, machine: connection.name, reason: 'unavailable' })
+            input: { ...baseInput, cursor: pageCursor, limit: pageLimit },
+          }, COORDINATION_RELAY_READ_TIMEOUT_MS),
+        )
+        if (fetched.ok) {
+          totalCount += fetched.total
+          const machine = this.machineNameOf(hostId, connection.name)
+          for (const item of fetched.threads) collected.push({ ...item, hostId, machine })
+        } else {
+          unavailableHosts.push({ hostId, machine: this.machineNameOf(hostId, connection.name), reason: 'unavailable' })
         }
       })())
     }
 
     await Promise.all(tasks)
     collected.sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')) || String(a.threadId ?? '').localeCompare(String(b.threadId ?? '')))
-    const cursor = input.cursor ?? 0
-    const limit = input.limit ?? 20
     const page = collected.slice(cursor, cursor + limit)
-    const nextCursor = cursor + page.length < collected.length ? cursor + page.length : null
+    const nextCursor = cursor + page.length < totalCount && page.length > 0 ? cursor + page.length : null
     return {
       status: 'ok',
       hostId: 'all',
       scope: input.project ?? 'same',
-      total: collected.length,
+      total: totalCount,
       nextCursor,
       threads: page,
       ...(unavailableHosts.length > 0 ? { unavailableHosts } : {}),
@@ -433,25 +512,113 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
 
   private follow(connection: CoordinationRelayConnection): void {
     const { service, hostId } = connection
-    if (connection.kind !== 'remote' || !hostId || this.followed.has(service)) return
-    this.followed.add(service)
-    // Release any previous connection's listeners for this hostId on reconnect so closed sockets can be GC'd.
-    this.hostStops.get(hostId)?.()
-    const stops: (() => void)[] = []
+    if (connection.kind !== 'remote' || !hostId) return
+    if (!this.followed.has(service)) {
+      this.followed.add(service)
+      // Release any previous connection's listeners for this hostId on reconnect so closed sockets can be GC'd.
+      this.hostStops.get(hostId)?.()
+      const stops: (() => void)[] = []
 
-    if (service.subscribeCoordinationRelay) {
-      stops.push(service.subscribeCoordinationRelay((askId, raw) => {
-        void this.handleHostRelayAsk(connection, hostId, askId, raw)
-      }))
+      if (service.subscribeCoordinationRelay) {
+        stops.push(service.subscribeCoordinationRelay((askId, raw) => {
+          void this.handleHostRelayAsk(connection, hostId, askId, raw)
+        }))
+      }
+
+      if (service.subscribeCoordinationRemoteNews) {
+        stops.push(service.subscribeCoordinationRemoteNews(payload => {
+          void this.handleRemoteOutcomeNews(hostId, this.machineNameOf(hostId, connection.name), payload)
+        }))
+      }
+
+      if (service.subscribe) {
+        let wasAvailable = connection.available?.() !== false
+        stops.push(service.subscribe(() => {
+          const nowAvailable = connection.available?.() !== false
+          const recovered = !wasAvailable && nowAvailable
+          wasAvailable = nowAvailable
+          if (recovered) this.onHostAvailable(hostId)
+        }))
+      }
+
+      this.hostStops.set(hostId, () => { for (const stop of stops) stop() })
     }
+    if (connection.available?.() !== false) this.onHostAvailable(hostId)
+  }
 
-    if (service.subscribeCoordinationRemoteNews) {
-      stops.push(service.subscribeCoordinationRemoteNews(payload => {
-        void this.handleRemoteOutcomeNews(hostId, connection.name, payload)
-      }))
+  private onHostAvailable(hostId: string): void {
+    if (this.closed) return
+    void this.flushPendingHostNews(hostId)
+    this.options.service.replayUntoldRemoteNews({ callerHostId: hostId })
+  }
+
+  private clearPendingHostNews(hostId: string): void {
+    const timer = this.pendingHostNewsTimers.get(hostId)
+    if (timer) { clearTimeout(timer); this.pendingHostNewsTimers.delete(hostId) }
+    this.pendingHostNews.delete(hostId)
+    this.pendingHostNewsAttempts.delete(hostId)
+  }
+
+  private enqueuePendingHostNews(entry: PendingHostNewsEntry): void {
+    if (this.closed) return
+    let bucket = this.pendingHostNews.get(entry.callerHostId)
+    if (!bucket) {
+      bucket = new Map()
+      this.pendingHostNews.set(entry.callerHostId, bucket)
     }
+    const key = entry.news.items.map(item => item.exchangeId).join(',')
+    bucket.delete(key)
+    bucket.set(key, entry)
+    if (bucket.size > PENDING_HOST_NEWS_MAX) {
+      const oldest = bucket.keys().next().value
+      if (oldest !== undefined) bucket.delete(oldest)
+    }
+    this.schedulePendingHostNewsFlush(entry.callerHostId)
+  }
 
-    this.hostStops.set(hostId, () => { for (const stop of stops) stop() })
+  private schedulePendingHostNewsFlush(hostId: string): void {
+    if (this.closed || this.pendingHostNewsTimers.has(hostId)) return
+    const attempt = (this.pendingHostNewsAttempts.get(hostId) ?? 0) + 1
+    this.pendingHostNewsAttempts.set(hostId, attempt)
+    const delay = Math.min(PENDING_HOST_NEWS_RETRY_MAX_MS, PENDING_HOST_NEWS_RETRY_MS * Math.min(attempt, 30))
+    const timer = setTimeout(() => {
+      this.pendingHostNewsTimers.delete(hostId)
+      void this.flushPendingHostNews(hostId)
+    }, delay)
+    timer.unref?.()
+    this.pendingHostNewsTimers.set(hostId, timer)
+  }
+
+  private async flushPendingHostNews(hostId: string): Promise<void> {
+    if (this.closed || this.flushingHosts.has(hostId)) return
+    const bucket = this.pendingHostNews.get(hostId)
+    if (!bucket || bucket.size === 0) return
+    const callerHost = this.remoteConnection(hostId)
+    if (!callerHost || callerHost.available?.() === false || callerHost.service.supportsCoordinationRelay !== true || !callerHost.service.coordinationRelayNews) {
+      this.schedulePendingHostNewsFlush(hostId)
+      return
+    }
+    this.flushingHosts.add(hostId)
+    const timer = this.pendingHostNewsTimers.get(hostId)
+    if (timer) { clearTimeout(timer); this.pendingHostNewsTimers.delete(hostId) }
+    try {
+      for (const [key, entry] of [...bucket]) {
+        if (this.closed) return
+        try {
+          await callerHost.service.coordinationRelayNews(entry.callerThreadId, entry.news, entry.replies, entry.exchange)
+          bucket.delete(key)
+        } catch {
+          this.schedulePendingHostNewsFlush(hostId)
+          return
+        }
+      }
+      if (bucket.size === 0) {
+        this.pendingHostNews.delete(hostId)
+        this.pendingHostNewsAttempts.delete(hostId)
+      }
+    } finally {
+      this.flushingHosts.delete(hostId)
+    }
   }
 
   /** Handles an incoming `coordination-relay-ask` from a paired host, strictly verifying caller identity from its authenticated socket & snapshot. */
@@ -463,17 +630,27 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
         answer = { status: 'refused', code: 'INVALID_INPUT', message: parsed.error.issues[0]?.message ?? 'Invalid relay coordination ask.' }
       } else {
         const ask = parsed.data
-        // Verify caller thread strictly against this authenticated host's own zero-copy snapshot (never trust spoofed hostId or runtimeMode).
+        // Verify caller thread strictly against this authenticated host's own zero-copy snapshot (never trust spoofed hostId, provider, or runtimeMode; L4).
         const snapshot = connection.service.view?.().host
         const callerThread = snapshot?.threads.find(item => item.id === ask.caller.threadId)
         if (!callerThread || !isEligibleParentThread(callerThread)) {
           answer = { status: 'refused', code: 'NOT_ADMITTED', message: NOT_ADMITTED_REMOTE }
         } else {
-          const verifiedMode = narrowerMode(callerThread.runtimeMode, ask.caller.runtimeMode)
+          const {
+            runtimeMode: claimedMode,
+            provider: _claimedProvider,
+            hostId: _claimedHostId,
+            machineName: _claimedMachine,
+            title: _claimedTitle,
+            projectId: _claimedProject,
+            ...chainFields
+          } = ask.caller
+          void _claimedProvider; void _claimedHostId; void _claimedMachine; void _claimedTitle; void _claimedProject
+          const verifiedMode = narrowerMode(callerThread.runtimeMode, claimedMode)
           const verifiedCaller: CoordinationRemoteCaller = {
-            ...ask.caller,
+            ...chainFields,
             hostId: callerHostId,
-            machineName: connection.name,
+            machineName: this.machineNameOf(callerHostId, connection.name),
             title: callerThread.title,
             projectId: callerThread.projectId,
             ...(callerThread.providerId ? { provider: callerThread.providerId } : {}),
@@ -487,7 +664,7 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
         }
       }
     } catch {
-      answer = { status: 'refused', code: 'HOST_UNAVAILABLE', message: HOST_UNAVAILABLE_TARGET }
+      answer = { status: 'refused', code: 'HOST_UNAVAILABLE', uncertain: true, message: HOST_UNAVAILABLE_TIMEOUT }
     }
     await connection.service.answerCoordinationRelay?.(askId, answer).catch(() => undefined)
   }
@@ -509,12 +686,26 @@ export class DesktopCoordinationRelay implements CoordinationRelayAdapter {
       : undefined
     const localId = this.options.localHostId()
     if (localId && payload.callerHostId === localId) {
-      await this.options.service.applyRelayedNews(payload.callerThreadId, payload.news, payload.replies, decoratedExchange).catch(() => undefined)
+      await this.options.service.applyRelayedNews(payload.callerThreadId, payload.news, payload.replies, decoratedExchange, targetHostId).catch(() => undefined)
       return
     }
+    const entry: PendingHostNewsEntry = {
+      callerThreadId: payload.callerThreadId,
+      callerHostId: payload.callerHostId,
+      news: payload.news,
+      ...(payload.replies ? { replies: payload.replies } : {}),
+      ...(decoratedExchange ? { exchange: decoratedExchange } : {}),
+    }
     const callerHost = this.remoteConnection(payload.callerHostId)
-    if (!callerHost || callerHost.available?.() === false || callerHost.service.supportsCoordinationRelay !== true || !callerHost.service.coordinationRelayNews) return
-    await callerHost.service.coordinationRelayNews(payload.callerThreadId, payload.news, payload.replies, decoratedExchange).catch(() => undefined)
+    if (!callerHost || callerHost.available?.() === false || callerHost.service.supportsCoordinationRelay !== true || !callerHost.service.coordinationRelayNews) {
+      this.enqueuePendingHostNews(entry)
+      return
+    }
+    try {
+      await callerHost.service.coordinationRelayNews(entry.callerThreadId, entry.news, entry.replies, entry.exchange)
+    } catch {
+      this.enqueuePendingHostNews(entry)
+    }
   }
 }
 

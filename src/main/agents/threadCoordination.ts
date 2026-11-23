@@ -90,6 +90,7 @@ export interface ThreadCoordinationServiceOptions {
 }
 
 const id = z.string().min(1).max(512)
+const uuidSchema = z.uuid()
 const RECORDS_MAX = 500
 const OWNED_PER_TARGET_MAX = 200
 const RATE_TIMESTAMPS_MAX = 64
@@ -184,6 +185,16 @@ const QUEUE_HELD_MESSAGES: Record<string, string> = {
 
 class CoordinationRefusalError extends Error {
   constructor(readonly refusal: CoordinationRefusal) { super(refusal.message) }
+}
+
+const BARE_HOST_THREAD_REF = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}):([\s\S]+)$/iu
+
+/** Parses either canonical `host:<hostId>:<threadId>` or bare `<hostId>:<threadId>` (L6). */
+function parseCoordinationThreadRef(key: string): { readonly hostId: string; readonly id: string } | null {
+  const canonical = parseHostEntityKey(key)
+  if (canonical) return canonical
+  const bare = BARE_HOST_THREAD_REF.exec(key)
+  return bare ? { hostId: bare[1]!, id: bare[2]! } : null
 }
 
 function refuse(code: CoordinationRefusalCode, message: string): never {
@@ -312,6 +323,8 @@ export class ThreadCoordinationService {
   private readonly newsRetryCancels = new Map<string, () => void>()
   /** In-memory reply prose relayed from remote target hosts for wake-ups and UI reads; never written to disk (ADR-0216, Slice 3). */
   private readonly relayedReplies = new Map<string, { readonly messageId: string; readonly text: string; readonly truncated: boolean }>()
+  /** Remote mirrors currently awaiting their initial relay.ask; excluded from disk persists and counted in in-flight limits (L3, N4). */
+  private readonly provisionalMirrors = new Set<string>()
   private relay: CoordinationRelayAdapter | undefined
   private messagesVersion = 0
   private closed = false
@@ -349,6 +362,33 @@ export class ThreadCoordinationService {
     this.relay = relay
   }
 
+  /** This host's own ID, for relay helpers (`HostCoordinationRelay`, N6). */
+  localHostId(): string | undefined {
+    return this.options.control.hostId()
+  }
+
+  /** Live runtimeMode of an eligible local parent thread, read directly from this host's snapshot (N6). */
+  localThreadRuntimeMode(threadId: string): AgentRuntimeMode | undefined {
+    const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === threadId)
+    return this.isLocalEligibleParent(thread) ? thread.runtimeMode : undefined
+  }
+
+  /** Re-attempts delivery of untold final remote-caller outcomes once a desktop or paired origin host reconnects (L8). */
+  replayUntoldRemoteNews(filter?: { readonly clientId?: string; readonly callerHostId?: string }): void {
+    if (this.closed) return
+    for (const record of this.records) {
+      if (record.remoteCallerClientId === undefined || !record.expectReply) continue
+      if (filter?.clientId !== undefined && record.remoteCallerClientId !== filter.clientId) continue
+      if (filter?.callerHostId !== undefined && record.peerHostId !== filter.callerHostId) continue
+      const outcome = effectiveOutcome(record)
+      if (!WATCHER_FINAL_OUTCOMES.has(outcome) || record.told === outcome) continue
+      this.newsRetryCancels.get(record.id)?.()
+      this.newsRetryCancels.delete(record.id)
+      this.newsAttempts.delete(record.id)
+      this.maybeDeliverNews(record)
+    }
+  }
+
   private rememberRelayedReply(exchangeId: string, reply: { readonly messageId: string; readonly text: string; readonly truncated: boolean }): void {
     this.relayedReplies.delete(exchangeId)
     this.relayedReplies.set(exchangeId, reply)
@@ -362,7 +402,8 @@ export class ThreadCoordinationService {
   async recover(): Promise<void> {
     if (!this.options.historyEnabled()) return
     const saved = await this.store.read()
-    this.records = [...saved.exchanges]
+    this.records = saved.exchanges.filter(record => !(record.remoteMirror === true && !record.charged))
+    let changed = this.records.length !== saved.exchanges.length
     this.rates.clear()
     for (const entry of saved.rates ?? []) this.rates.set(entry.senderThreadId, [...entry.timestamps])
     this.ownedByTarget.clear()
@@ -373,9 +414,21 @@ export class ThreadCoordinationService {
       if (!record.remoteMirror) this.rememberOwnedMessage(record.targetThreadId, record.messageId)
     }
     this.rebuildIndexes()
-    let changed = false
     const stamp = this.nowIso()
     for (const record of this.records) {
+      // Remote mirrors track a turn running on another machine that did not restart: keep accepted/queued mirrors working so
+      // real outcome news wakes the sender once instead of firing a spurious 'unknown' wake-up first (N4).
+      if (record.remoteMirror) {
+        if (record.deliveryState === 'dispatching') {
+          record.deliveryState = 'uncertain'
+          record.outcome = 'unknown'
+          record.unknownBecause = 'restarted'
+          record.outcomeAt = stamp
+          record.updatedAt = stamp
+          changed = true
+        }
+        continue
+      }
       if (record.deliveryState === 'queued') {
         record.deliveryState = 'failed'
         record.failure = 'restarted'
@@ -404,9 +457,11 @@ export class ThreadCoordinationService {
       this.notifyViewsChanged([...affected])
     }
     this.options.control.refreshCoordinationObservation()
-    // Notify senders once for any exchange left failed, unknown, or untold across restart (L2).
+    // Notify senders once for any exchange left failed, unknown, or untold across restart (L2, N4).
     for (const record of this.records) {
-      if (record.expectReply && WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record)) && record.told !== effectiveOutcome(record)) {
+      const outcome = effectiveOutcome(record)
+      if (record.remoteMirror && outcome === 'unknown') continue
+      if (record.expectReply && WATCHER_FINAL_OUTCOMES.has(outcome) && record.told !== outcome) {
         this.maybeDeliverNews(record)
       }
     }
@@ -459,6 +514,7 @@ export class ThreadCoordinationService {
     this.closed = true
     this.pendingTexts.clear()
     this.relayedReplies.clear()
+    this.provisionalMirrors.clear()
     for (const cancel of this.newsRetryCancels.values()) cancel()
     this.newsRetryCancels.clear()
     for (const waiter of [...this.waiters]) {
@@ -545,7 +601,10 @@ export class ThreadCoordinationService {
       .map(([targetThreadId, messageIds]) => ({ targetThreadId, messageIds: messageIds.slice(-OWNED_PER_TARGET_MAX) }))
       .filter(entry => entry.messageIds.length > 0)
       .slice(-RECORDS_MAX)
-    const payload: CoordinationFile = { version: 1, exchanges: this.records, rates, ownedByTarget }
+    const exchanges = this.provisionalMirrors.size > 0
+      ? this.records.filter(record => !this.provisionalMirrors.has(record.id))
+      : this.records
+    const payload: CoordinationFile = { version: 1, exchanges, rates, ownedByTarget }
     const write = this.persistTail.catch(() => undefined).then(() => this.store.write(payload)).catch(() => undefined)
     this.persistTail = write
     return write
@@ -604,13 +663,16 @@ export class ThreadCoordinationService {
   }
 
   private resolveTargetHost(inputThreadId: string, inputHostId: string | undefined): { readonly targetHostId: string | undefined; readonly rawThreadId: string; readonly isRemote: boolean } {
-    const parsedKey = parseHostEntityKey(inputThreadId)
-    if (parsedKey && inputHostId && inputHostId !== 'local' && parsedKey.hostId !== inputHostId) {
-      refuse('INVALID_INPUT', 'The hostId in threadId does not match the hostId argument. Pass one consistent hostId.')
+    const localHostId = this.options.control.hostId()
+    const parsedKey = parseCoordinationThreadRef(inputThreadId)
+    if (parsedKey && inputHostId) {
+      const matchesLocal = inputHostId === 'local' && localHostId !== undefined && parsedKey.hostId === localHostId
+      if (!matchesLocal && parsedKey.hostId !== inputHostId) {
+        refuse('INVALID_INPUT', 'The hostId in threadId does not match the hostId argument. Pass one consistent hostId.')
+      }
     }
     const rawThreadId = parsedKey?.id ?? inputThreadId
     const explicitHostId = inputHostId === 'local' ? undefined : (inputHostId ?? parsedKey?.hostId)
-    const localHostId = this.options.control.hostId()
     const isRemote = explicitHostId !== undefined && explicitHostId !== localHostId
     return { targetHostId: explicitHostId, rawThreadId, isRemote }
   }
@@ -693,18 +755,37 @@ export class ThreadCoordinationService {
       if (targetHost === undefined || targetHost === 'local' || (localHostId !== undefined && targetHost === localHostId)) {
         return this.listLocalThreads(snapshot, { threadId: caller.id, hostId: localHostId, projectId: caller.projectId, runtimeMode: caller.runtimeMode }, input)
       }
+      const listAllLocalFallback = (): Record<string, unknown> => {
+        const local = this.listLocalThreads(snapshot, { threadId: caller.id, hostId: localHostId, projectId: caller.projectId, runtimeMode: caller.runtimeMode }, input)
+        const machine = this.relay?.localMachineName?.()
+        const threads = Array.isArray(local.threads)
+          ? local.threads.map(item => item && typeof item === 'object' ? { ...(item as Record<string, unknown>), ...(machine ? { machine } : {}) } : item)
+          : []
+        return {
+          ...local,
+          hostId: 'all',
+          threads,
+          unavailableHosts: [{ hostId: 'other-machines', machine: 'Other machines', reason: 'disconnected' }],
+        }
+      }
       if (!this.relay) {
+        if (targetHost === 'all') return listAllLocalFallback()
         refuse('HOST_UNAVAILABLE', 'Cross-machine parent-thread coordination is not connected right now. Nothing was sent.')
       }
       const remoteInput: CoordinateListThreadsInput = targetHost !== 'all' && (input.project === undefined || input.project === 'same')
         ? { ...input, project: 'all' }
         : input
-      return await this.relay.ask({
+      const relayed = await this.relay.ask({
         type: 'list',
         targetHostId: targetHost,
         caller: this.callerSnapshotForRelay(caller),
         input: remoteInput,
       }, COORDINATION_RELAY_READ_TIMEOUT_MS)
+      // On a headless host with no desktop connected, `hostId:"all"` still returns this host's own threads (N3).
+      if (targetHost === 'all' && relayed.status === 'refused' && relayed.code === 'HOST_UNAVAILABLE') {
+        return listAllLocalFallback()
+      }
+      return relayed
     } catch (error) {
       if (error instanceof CoordinationRefusalError) return { ...error.refusal }
       throw error
@@ -857,7 +938,7 @@ export class ThreadCoordinationService {
       const parsed = coordinateReadThreadInputSchema.safeParse(rawInput ?? {})
       if (!parsed.success) refuse('INVALID_INPUT', parsed.error.issues[0]?.message ?? 'Invalid read_thread arguments.')
       const input = parsed.data
-      const rawThreadId = parseHostEntityKey(input.threadId)?.id ?? input.threadId
+      const rawThreadId = parseCoordinationThreadRef(input.threadId)?.id ?? input.threadId
       const localHostId = this.options.control.hostId()
       if (localHostId && caller.hostId === localHostId && rawThreadId === caller.threadId) {
         refuse('SELF_TARGET', 'You cannot read your own thread through sotto_coordinate.')
@@ -1135,6 +1216,15 @@ export class ThreadCoordinationService {
     }
   }
 
+  /** Refunds one reserved rate-limit timestamp without clobbering concurrent charges (L3). */
+  private refundRateSlot(callerId: string, timestamp: number): void {
+    const list = this.rates.get(callerId)
+    if (!list) return
+    const index = list.lastIndexOf(timestamp)
+    if (index !== -1) list.splice(index, 1)
+    if (list.length === 0) this.rates.delete(callerId)
+  }
+
   /** Sends a coordination message to a parent thread on another connected machine via the relay (ADR-0216, Slice 3). */
   private async sendToRemoteThread(
     callerId: string,
@@ -1157,23 +1247,28 @@ export class ThreadCoordinationService {
     if (chain.hopCount > COORDINATION_HOP_MAX) {
       refuse('LOOP_LIMIT', `Peer coordination reached the ${COORDINATION_HOP_MAX}-hop safety limit without a new message from the user. Ask the user to step in before coordinating further. Nothing was sent.`)
     }
+    // Count both charged mirrors and currently in-flight provisional mirrors before awaiting so parallel remote sends cannot bypass PROMPT_LIMIT (L3).
     const perTargetCount = this.records.filter(record =>
-      record.charged && record.remoteMirror === true && record.peerHostId === targetHostId
+      (record.charged || this.provisionalMirrors.has(record.id)) && record.remoteMirror === true && record.peerHostId === targetHostId
       && record.senderThreadId === callerId && record.targetThreadId === rawTargetThreadId && record.rootUserMessageId === chain.rootUserMessageId).length
     if (perTargetCount >= COORDINATION_PROMPTS_PER_TARGET) {
       refuse('PROMPT_LIMIT', `This thread already sent ${COORDINATION_PROMPTS_PER_TARGET} coordination messages to that peer thread during this turn. Wait for a new user message before sending more. Nothing was sent.`)
     }
     const now = this.nowMs()
     const cutoff = now - COORDINATION_RATE_WINDOW_MS
-    const recent = (this.rates.get(callerId) ?? []).filter(ts => ts > cutoff)
-    if (recent.length >= COORDINATION_RATE_LIMIT) {
+    const liveRecent = (this.rates.get(callerId) ?? []).filter(ts => ts > cutoff)
+    if (liveRecent.length >= COORDINATION_RATE_LIMIT) {
       refuse('RATE_LIMIT', `This thread reached the rate limit of ${COORDINATION_RATE_LIMIT} coordination messages per ${Math.round(COORDINATION_RATE_WINDOW_MS / 60_000)} minutes. Nothing was sent.`)
     }
 
     const callerInfo = this.callerSnapshotForRelay(caller, chain)
     const exchangeId = randomUUID()
+    let currentExchangeId: string = exchangeId
     const stamp = this.nowIso()
-    // Insert a provisional uncharged mirror record while the relay call is in flight so fast outcome news cannot outrun creation.
+    // Reserve the rate slot and mark the mirror provisional BEFORE awaiting the relay so parallel sends cannot race limits,
+    // while persist() omits provisional mirrors until the relay call settles (L3, N4).
+    liveRecent.push(now)
+    this.rates.set(callerId, liveRecent)
     const mirror: ExchangeRecord = {
       id: exchangeId,
       chainId: chain.chainId,
@@ -1197,7 +1292,23 @@ export class ThreadCoordinationService {
       updatedAt: stamp,
     }
     this.records.push(mirror)
+    this.provisionalMirrors.add(exchangeId)
     this.activeSendCalls.add(exchangeId)
+    const markUncertain = async (): Promise<Record<string, unknown>> => {
+      // Delivery is unconfirmed after forwarding: keep the mirror charged & open for late news/read_exchange (L1).
+      const at = this.nowIso()
+      mirror.charged = true
+      if (mirror.deliveryState === 'dispatching') {
+        mirror.deliveryState = 'uncertain'
+        mirror.outcome = 'unknown'
+        mirror.unknownBecause = 'unconfirmed'
+        mirror.outcomeAt ??= at
+      }
+      mirror.updatedAt = at
+      await this.persist()
+      this.notifyViewsChanged([callerId])
+      return this.receiptOf(mirror, true)
+    }
     const timeoutMs = Math.min(COORDINATION_RELAY_SEND_TIMEOUT_MS, ((input.wait_seconds ?? 0) + 30) * 1000)
     try {
       const result = await this.relay.ask({
@@ -1207,27 +1318,59 @@ export class ThreadCoordinationService {
         caller: callerInfo,
         input: { ...input, threadId: rawTargetThreadId },
       }, timeoutMs)
+      this.provisionalMirrors.delete(exchangeId)
       if (result.status !== 'ok') {
+        if (result.uncertain === true) {
+          return await markUncertain()
+        }
+        // Definite pre-forward refusal: remove provisional mirror and refund its reserved rate slot cleanly (L1, L3).
         const index = this.records.indexOf(mirror)
         if (index !== -1) this.records.splice(index, 1)
         this.relayedReplies.delete(exchangeId)
+        this.refundRateSlot(callerId, now)
         return result
+      }
+      // If the target deduplicated a retry_key and returned an earlier exchangeId, adopt it so late news and read_exchange match (L2).
+      const parsedReturnedId = uuidSchema.safeParse(result.exchangeId)
+      const returnedId = parsedReturnedId.success ? parsedReturnedId.data : exchangeId
+      if (returnedId !== mirror.id) {
+        const existingMirror = this.records.find(record =>
+          record !== mirror && record.id === returnedId && record.senderThreadId === callerId && record.remoteMirror === true)
+        const bufferedReply = this.relayedReplies.get(exchangeId)
+        if (bufferedReply) {
+          this.relayedReplies.delete(exchangeId)
+          this.rememberRelayedReply(returnedId, bufferedReply)
+        }
+        if (existingMirror) {
+          const index = this.records.indexOf(mirror)
+          if (index !== -1) this.records.splice(index, 1)
+          this.refundRateSlot(callerId, now)
+          this.applyRemoteReceiptToMirror(existingMirror, result)
+          existingMirror.charged = true
+          const existingOutcome = effectiveOutcome(existingMirror)
+          if (WATCHER_FINAL_OUTCOMES.has(existingOutcome)) existingMirror.told = existingOutcome
+          await this.persist()
+          this.notifyViewsChanged([callerId])
+          return this.receiptOf(existingMirror, true)
+        }
+        this.activeSendCalls.delete(currentExchangeId)
+        mirror.id = returnedId
+        currentExchangeId = returnedId
+        this.activeSendCalls.add(currentExchangeId)
       }
       this.applyRemoteReceiptToMirror(mirror, result)
       mirror.charged = true
-      this.rates.set(callerId, [...recent, now])
       const outcome = effectiveOutcome(mirror)
       if (WATCHER_FINAL_OUTCOMES.has(outcome)) mirror.told = outcome
       await this.persist()
       this.notifyViewsChanged([callerId])
       return this.receiptOf(mirror, true)
     } catch {
-      const index = this.records.indexOf(mirror)
-      if (index !== -1) this.records.splice(index, 1)
-      this.relayedReplies.delete(exchangeId)
-      return { status: 'refused', code: 'HOST_UNAVAILABLE', message: 'That paired machine did not answer. Nothing was sent.' }
+      this.provisionalMirrors.delete(exchangeId)
+      return await markUncertain()
     } finally {
-      this.activeSendCalls.delete(exchangeId)
+      this.provisionalMirrors.delete(exchangeId)
+      this.activeSendCalls.delete(currentExchangeId)
     }
   }
 
@@ -1244,14 +1387,17 @@ export class ThreadCoordinationService {
     }
     if (typeof result.turnMessageId === 'string') mirror.turnMessageId = result.turnMessageId
     const parsedOutcome = coordinationOutcomeSchema.safeParse(result.outcome)
-    const alreadyFinal = mirror.outcome !== undefined && WATCHER_FINAL_OUTCOMES.has(mirror.outcome)
-    if (parsedOutcome.success && (!alreadyFinal || WATCHER_FINAL_OUTCOMES.has(parsedOutcome.data))) {
+    // Treat 'unknown' (e.g. from an uncertain send) as non-definitive so refreshRemoteMirror and retries can promote it (L1, L2).
+    const alreadyDefinitive = mirror.outcome !== undefined && WATCHER_FINAL_OUTCOMES.has(mirror.outcome) && mirror.outcome !== 'unknown'
+    if (parsedOutcome.success && (!alreadyDefinitive || (WATCHER_FINAL_OUTCOMES.has(parsedOutcome.data) && parsedOutcome.data !== 'unknown'))) {
       mirror.outcome = parsedOutcome.data
+      if (parsedOutcome.data !== 'unknown') delete mirror.unknownBecause
       if (WATCHER_FINAL_OUTCOMES.has(parsedOutcome.data)) mirror.outcomeAt ??= now
+      else delete mirror.outcomeAt
     }
     if (result.deliveryState === 'queued' || result.deliveryState === 'dispatching' || result.deliveryState === 'accepted' || result.deliveryState === 'uncertain' || result.deliveryState === 'failed') {
-      if (!alreadyFinal) mirror.deliveryState = result.deliveryState
-    } else if (!alreadyFinal) {
+      if (!alreadyDefinitive) mirror.deliveryState = result.deliveryState
+    } else if (!alreadyDefinitive) {
       mirror.deliveryState = mirror.outcome === 'failed' ? 'failed' : mirror.delivery === 'queued' && mirror.outcome === 'working' ? 'queued' : 'accepted'
     }
     if (mirror.deliveryState === 'failed' && !mirror.failure) {
@@ -1284,7 +1430,7 @@ export class ThreadCoordinationService {
       if (isCoordinationSlashCommand(input.message)) {
         refuse('SLASH_COMMAND_FORBIDDEN', 'Peer coordination messages cannot run slash commands. Send plain text instead. Nothing was sent.')
       }
-      const rawTargetThreadId = parseHostEntityKey(input.threadId)?.id ?? input.threadId
+      const rawTargetThreadId = parseCoordinationThreadRef(input.threadId)?.id ?? input.threadId
       const localHostId = this.options.control.hostId()
       if (localHostId && caller.hostId === localHostId && rawTargetThreadId === caller.threadId) {
         refuse('SELF_TARGET', 'A parent thread cannot send a coordination message to itself. Nothing was sent.')
@@ -1298,14 +1444,19 @@ export class ThreadCoordinationService {
       const requestedDelivery = input.delivery ?? 'queue'
       const inputDigest = digestOf({ callerHostId: caller.hostId, targetThreadId: rawTargetThreadId, message: input.message, delivery: requestedDelivery, expectReply })
 
-      // Idempotent retry_key lookup runs BEFORE target validation (L3).
+      // Idempotent retry_key lookup runs BEFORE target validation (L3), keyed on caller host & thread rather than relaying desktop clientId (L2).
       if (input.retry_key !== undefined) {
         const existing = this.records.find(record =>
-          record.remoteCallerClientId === clientId && record.peerHostId === caller.hostId
+          record.remoteCallerClientId !== undefined && record.peerHostId === caller.hostId
           && record.senderThreadId === caller.threadId && record.retryKey === input.retry_key)
         if (existing) {
           if (existing.inputDigest !== inputDigest) {
             refuse('RETRY_KEY_CONFLICT', 'That retry_key was already used for a different coordination message. Use a new UUID for a different message. Nothing was sent.')
+          }
+          if (existing.remoteCallerClientId !== clientId) {
+            existing.remoteCallerClientId = clientId
+            existing.updatedAt = this.nowIso()
+            void this.persist()
           }
           const waitMs = Math.min(COORDINATION_WAIT_MAX_SECONDS, input.wait_seconds ?? 0) * 1000
           if (existing.expectReply && waitMs > 0 && !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(existing))) {
@@ -1698,7 +1849,11 @@ export class ThreadCoordinationService {
           hopMax: COORDINATION_HOP_MAX,
           expectReply: record.expectReply,
           hasReply: outcome === 'answered' && record.replyMessageId !== undefined,
-          ...(record.deliveryState === 'failed' ? { note: FAILURE_NOTES[record.failure ?? 'provider'] } : {}),
+          ...(record.deliveryState === 'failed'
+        ? { note: FAILURE_NOTES[record.failure ?? 'provider'] }
+        : record.deliveryState === 'uncertain'
+          ? { note: 'Sotto did not hear back in time to confirm delivery. Call read_exchange before trying again.' }
+          : {}),
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
           ...(record.outcomeAt ? { outcomeAt: record.outcomeAt } : {}),
@@ -1738,6 +1893,7 @@ export class ThreadCoordinationService {
     news: CoordinationNews,
     replies?: readonly CoordinationRelayedReply[],
     exchange?: CoordinationExchangeView,
+    sourceHostId?: string,
   ): Promise<void> {
     if (this.closed) return
     const replyByExchange = new Map((replies ?? []).map(item => [item.exchangeId, item]))
@@ -1746,11 +1902,15 @@ export class ThreadCoordinationService {
     const stamp = this.nowIso()
 
     for (const item of news.items) {
-      const reply = replyByExchange.get(item.exchangeId)
-      if (reply) this.rememberRelayedReply(item.exchangeId, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated })
       const mirror = this.records.find(record => record.id === item.exchangeId && record.senderThreadId === callerThreadId && record.remoteMirror === true)
       if (!mirror) continue
+      // Defense-in-depth: verify the news came from the mirror's target host before caching reply text or mutating state (N1).
+      const verifiedHostId = sourceHostId ?? exchange?.peerHostId
+      if (verifiedHostId !== undefined && mirror.peerHostId !== undefined && mirror.peerHostId !== verifiedHostId) continue
+      const reply = replyByExchange.get(item.exchangeId)
+      if (reply) this.rememberRelayedReply(item.exchangeId, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated })
       mirror.outcome = item.outcome
+      if (item.outcome !== 'unknown') delete mirror.unknownBecause
       if (item.turnMessageId) mirror.turnMessageId = item.turnMessageId
       if (reply) mirror.replyMessageId = reply.messageId
       if (exchange && exchange.id === mirror.id) {
@@ -1850,7 +2010,11 @@ export class ThreadCoordinationService {
       expectReply: record.expectReply,
       outcome,
       ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
-      ...(record.deliveryState === 'failed' ? { note: FAILURE_NOTES[record.failure ?? 'provider'] } : {}),
+      ...(record.deliveryState === 'failed'
+        ? { note: FAILURE_NOTES[record.failure ?? 'provider'] }
+        : record.deliveryState === 'uncertain'
+          ? { note: 'Sotto did not hear back in time to confirm delivery. Call read_exchange before trying again.' }
+          : {}),
       ...(reply ? {
         reply: {
           messageId: reply.messageId,
@@ -1898,7 +2062,11 @@ export class ThreadCoordinationService {
       hopMax: COORDINATION_HOP_MAX,
       expectReply: record.expectReply,
       hasReply: outcome === 'answered' && (record.replyMessageId !== undefined || this.relayedReplies.has(record.id)),
-      ...(record.deliveryState === 'failed' ? { note: FAILURE_NOTES[record.failure ?? 'provider'] } : {}),
+      ...(record.deliveryState === 'failed'
+        ? { note: FAILURE_NOTES[record.failure ?? 'provider'] }
+        : record.deliveryState === 'uncertain'
+          ? { note: 'Sotto did not hear back in time to confirm delivery. Call read_exchange before trying again.' }
+          : {}),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       ...(record.outcomeAt ? { outcomeAt: record.outcomeAt } : {}),
@@ -1987,10 +2155,15 @@ export class ThreadCoordinationService {
     try {
       const record = this.records.find(item =>
         item.id === exchangeId
-        && item.remoteCallerClientId === clientId
+        && item.remoteCallerClientId !== undefined
         && item.peerHostId === callerHostId
         && item.senderThreadId === callerThreadId)
       if (!record) refuse('UNKNOWN_EXCHANGE', 'That coordination exchange was not found for this thread.')
+      if (record.remoteCallerClientId !== clientId) {
+        record.remoteCallerClientId = clientId
+        record.updatedAt = this.nowIso()
+        void this.persist()
+      }
       return this.receiptOf(record, true)
     } catch (error) {
       if (error instanceof CoordinationRefusalError) return { ...error.refusal }
@@ -2010,7 +2183,8 @@ export class ThreadCoordinationService {
           && ((item.senderThreadId === callerId && item.remoteCallerClientId === undefined)
             || (item.targetThreadId === callerId && item.remoteMirror !== true)))
         if (!record) refuse('UNKNOWN_EXCHANGE', 'That coordination exchange was not found for this thread.')
-        if (record.remoteMirror && record.peerHostId && (!WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record)) || (effectiveOutcome(record) === 'answered' && !this.relayedReplies.has(record.id)))) {
+        if (record.remoteMirror && record.peerHostId
+          && (record.deliveryState === 'uncertain' || !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record)) || (effectiveOutcome(record) === 'answered' && !this.relayedReplies.has(record.id)))) {
           await this.refreshRemoteMirror(callerId, record)
         }
         return this.receiptOf(record, record.senderThreadId === callerId && record.remoteCallerClientId === undefined)

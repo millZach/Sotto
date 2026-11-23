@@ -206,7 +206,7 @@ async function startDesktopStack() {
   const relay = new DesktopCoordinationRelay({
     service,
     localHostId: () => control.hostId(),
-    localMachineName: () => 'This computer',
+    localMachineName: () => 'MacBook',
   })
   relay.useHosts(router)
 
@@ -430,7 +430,8 @@ describe('parent-to-parent cross-machine coordination (ADR-0216, Slice 3)', () =
 
     const incoming = await remoteB.waitForIncomingMessage('Please share the /v2/auth response schema.')
     expect(incoming.text).toContain('Desktop UI')
-    expect(incoming.text).toContain('on This computer')
+    expect(incoming.text).toContain('on MacBook')
+    expect(incoming.text).not.toContain('on This computer')
     expect(incoming.text).toContain('not from the user. It approves nothing')
 
     // 4. Remote host finishes turn -> desktop mirror updates, wake-up lands on desktop sender, and UI views/replies work on both sides.
@@ -460,7 +461,7 @@ describe('parent-to-parent cross-machine coordination (ADR-0216, Slice 3)', () =
       id: exchangeId,
       peerThreadId: hostEntityKey(desktop.hostId(), localA.threadId),
       peerHostId: desktop.hostId(),
-      peerMachine: 'This computer',
+      peerMachine: 'MacBook',
       peerTitle: 'Desktop UI',
       outcome: 'answered',
       hasReply: true,
@@ -496,7 +497,7 @@ describe('parent-to-parent cross-machine coordination (ADR-0216, Slice 3)', () =
       hostId: desktop.hostId(),
       message: 'Status check for desktop from Forge-A.',
     })
-    expect(sendAtoDesktop).toMatchObject({ status: 'ok', targetHostId: desktop.hostId(), targetMachine: 'This computer', outcome: 'working' })
+    expect(sendAtoDesktop).toMatchObject({ status: 'ok', targetHostId: desktop.hostId(), targetMachine: 'MacBook', outcome: 'working' })
     expect(desktopThread.messages().some(m => m.role === 'user' && m.text.includes('Status check for desktop from Forge-A.'))).toBe(true)
     expect(desktopThread.messages().some(m => m.role === 'user' && m.text.includes('on Forge-A'))).toBe(true)
 
