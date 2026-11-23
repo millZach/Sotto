@@ -45,9 +45,11 @@ import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
 import type { HostThreadFolders } from './hostedTerminals'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
+import type { CoordinationRead, CoordinationReply } from '../../shared/threadCoordination'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
 import { RemoteDelegationReads } from './remoteDelegations'
+import { RemoteCoordinationReads } from './remoteCoordination'
 import { HostConnectionError, HostRequestUnanswered, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
 
@@ -60,7 +62,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   subscribeBrowserFrames?(listener: (frame: HostBrowserFrame) => void): () => void
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'supportsDetachedRunsElsewhere' | 'detachedRunsElsewhere' | 'subscribeDetachedRunsElsewhere' | 'lookForDetachedRuns' | 'stopDetachedRunElsewhere' | 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsWatcherAntigravity' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'supportsPluginElevenLabsSpending' | 'sharePluginElevenLabsSpending' | 'subscribePluginElevenLabsSpending' | 'supportsPluginMeshyModels' | 'pluginMeshyModels' | 'supportsPluginElevenLabsSounds' | 'pluginElevenLabsSounds' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsOwlets' | 'supportsBringBack' | 'threadPrompts' | 'threadWords' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'supportsDetachedRunsElsewhere' | 'detachedRunsElsewhere' | 'subscribeDetachedRunsElsewhere' | 'lookForDetachedRuns' | 'stopDetachedRunElsewhere' | 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'view' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsWatcherAntigravity' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'supportsPluginElevenLabsSpending' | 'sharePluginElevenLabsSpending' | 'subscribePluginElevenLabsSpending' | 'supportsPluginMeshyModels' | 'pluginMeshyModels' | 'supportsPluginElevenLabsSounds' | 'pluginElevenLabsSounds' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsOwlets' | 'supportsBringBack' | 'threadPrompts' | 'threadWords' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCoordinationViews' | 'coordinationViews' | 'coordinationReply' | 'subscribeCoordinationViews' | 'supportsCoordinationRelay' | 'coordinationRemoteAsk' | 'subscribeCoordinationRelay' | 'answerCoordinationRelay' | 'coordinationRelayNews' | 'subscribeCoordinationRemoteNews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -399,6 +401,11 @@ export class DesktopHostRouter {
     connection: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection?.kind === 'remote' ? connection : undefined },
     connected: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection !== undefined && !this.reconnecting.has(hostId) && connection.available?.() !== false },
   })
+  /** The window's reads of each remote host's parent-to-parent coordination views (ADR-0216, Slice 3). */
+  private readonly coordination = new RemoteCoordinationReads({
+    connection: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection?.kind === 'remote' ? connection : undefined },
+    connected: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection !== undefined && !this.reconnecting.has(hostId) && connection.available?.() !== false },
+  })
   /**
    * Each remote thread's revisions as the window is given them. A host counts a thread's revisions in memory, so after
    * it restarts they start again from one, and a window that held the thread at a higher revision threw every newer
@@ -703,6 +710,9 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeDelegationViews) off.push(connection.service.subscribeDelegationViews(change => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.delegations.heard(connection.hostId, change)
     }))
+    if (connection.kind === 'remote' && connection.service.subscribeCoordinationViews) off.push(connection.service.subscribeCoordinationViews(change => {
+      if (this.hosts.get(connection.hostId)?.connection === connection) this.coordination.heard(connection.hostId, change)
+    }))
     // The detached runs a host found with marks none of its threads owns (#2749), for this computer's own threads to claim:
     // what it reports now and each report after, and none once this connection is gone.
     const subscribeRuns = connection.service.subscribeDetachedRunsElsewhere?.bind(connection.service)
@@ -754,7 +764,7 @@ export class DesktopHostRouter {
     this.selectedHostId ??= connection.hostId
     this.emit()
     this.connected(connection)
-    if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    if (connection.kind === 'remote') { this.delegations.taken(connection.hostId); this.coordination.taken(connection.hostId) }
     // The host pushed its check queue after the hello, before this connection was taken, so the queue it holds is told now.
     if (connection.kind === 'remote' && connection.service.checkQueue?.() !== undefined) this.checksChanged()
     // So are the next prompts it pushed (ADR-0173).
@@ -792,7 +802,7 @@ export class DesktopHostRouter {
     this.watcherChanged(connection.hostId)
     this.emit()
     this.connected(connection)
-    if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    if (connection.kind === 'remote') { this.delegations.taken(connection.hostId); this.coordination.taken(connection.hostId) }
     // In place of the old connection's queue, the one this connection's hello brought, or none.
     if (connection.kind === 'remote') this.checksChanged()
     // And in place of its next prompts, the ones this connection holds: what only the old one held is let go.
@@ -804,7 +814,8 @@ export class DesktopHostRouter {
     if (value) this.reconnecting.set(hostId, (this.options.now ?? Date.now)()); else this.reconnecting.delete(hostId)
     this.watcherChanged(hostId)
     this.emit()
-    if (value) this.delegations.lostHost(hostId); else this.delegations.taken(hostId)
+    if (value) { this.delegations.lostHost(hostId); this.coordination.lostHost(hostId) }
+    else { this.delegations.taken(hostId); this.coordination.taken(hostId) }
   }
   remove(hostId: string): void {
     // Its runs from elsewhere leave this computer's threads with it; while it is only away they stay as last reported.
@@ -821,6 +832,7 @@ export class DesktopHostRouter {
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
     this.delegations.removed(hostId)
+    this.coordination.removed(hostId)
     this.checksChanged()
     this.letGoNextPrompts(hostId)
     for (const listener of [...this.removedListeners]) { try { listener(hostId) } catch { /* A listener's failure is its own. */ } }
@@ -1707,6 +1719,12 @@ export class DesktopHostRouter {
   delegationBrief(threadKey: string): Promise<DelegationBrief> { return this.delegations.brief(threadKey) }
   /** Hears the window keys of remote threads whose delegations changed, or whose host was lost or connected again. */
   subscribeDelegationViews(listener: (threadIds: readonly string[]) => void): () => void { return this.delegations.subscribe(listener) }
+  /** Parent-to-parent coordination views for a thread on a remote host (ADR-0216, Slice 3). */
+  coordinationViews(threadKey: string): Promise<CoordinationRead> { return this.coordination.views(threadKey) }
+  /** On-demand reply read for an answered peer exchange on a remote host (ADR-0216, Slice 3). */
+  coordinationReply(threadKey: string, exchangeId: string): Promise<CoordinationReply> { return this.coordination.reply(threadKey, exchangeId) }
+  /** Hears window keys of remote threads whose coordination views changed, or whose host reconnected/disconnected. */
+  subscribeCoordinationViews(listener: (threadIds: readonly string[]) => void): () => void { return this.coordination.subscribe(listener) }
   subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> { return this.threadToolRead('subagentAssignments', request) }
   /**
    * Copy path in Files for a thread on a paired host: the host's own path to the file or folder, in the host's format,

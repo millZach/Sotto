@@ -542,8 +542,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined || thread.owlet !== undefined ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
         {/* The Council, in this pane's drawer, for a thread on this computer (ADR-0177; Owl only). */}
         {terminal && !thread.remoteHost ? <PaneCouncilToggle threadId={thread.id} /> : null}
-        {/* Active/queued peer parent-thread coordination indicator (ADR-0216, Slice 2; Owl only). */}
-        {tools && !thread.remoteHost && thread.delegatedBy === undefined && thread.owlet === undefined ? <PeerCoordinationHeaderBadge threadId={thread.id} /> : null}
+        {/* Active/queued peer parent-thread coordination indicator (ADR-0216, Slices 2 & 3; Owl only). */}
+        {tools && thread.delegatedBy === undefined && thread.owlet === undefined ? <PeerCoordinationHeaderBadge threadId={thread.id} /> : null}
         {tools ? <ToolsToggle threadId={thread.id} focused={focused} state={state} /> : null}
         {terminal ? <PaneTerminalToggle threadId={thread.id} /> : tools && thread.remoteHost ? <PaneTerminalOnHost host={threadMachineName(state, thread)} /> : null}
         {actions}

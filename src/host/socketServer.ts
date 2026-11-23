@@ -3,6 +3,8 @@ import { withoutOwlets } from '../shared/owletVisibility'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
 import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
+import type { CoordinationRelayDesktop, HostCoordinationRelay } from '../main/agents/threadCoordinationRelay'
+import { COORDINATION_CHANGED_MAX, coordinationReadSchema, coordinationReplySchema } from '../shared/threadCoordination'
 import type { HostHeldSession } from '../main/agents/sessionReaper'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -161,7 +163,7 @@ const READ_AHEAD_LIMIT = 16
 function sentDigest(detail: AgentThreadDetail): string {
   return createHash('sha256').update(JSON.stringify({ ...detail, revision: 0 })).digest('base64')
 }
-interface Peer { owlets?: boolean | undefined; browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherPhoneParts: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { owlets?: boolean | undefined; browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; coordinationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; coordinationRelay?: CoordinationRelayDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherPhoneParts: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -381,6 +383,8 @@ export interface SocketServerOptions {
    * either listener, to a client the launch script recorded as a desktop, and to no other.
    */
   delegationRemote?: Pick<HostRemoteCallers, 'desktopConnected' | 'desktopGone' | 'answer' | 'hold'>
+  /** Cross-machine parent-to-parent coordination relay (`thread-coordination-relay`, ADR-0216 Slice 3; Owl only, recorded desktops only). */
+  coordinationRelay?: Pick<HostCoordinationRelay, 'desktopConnected' | 'desktopGone' | 'answered' | 'handleRemoteAsk' | 'receiveRelayNews'>
 }
 /**
  * Which paired clients a tailnet listener admits, and as what. `desktops` is read again before a session and a hello,
@@ -539,6 +543,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
     && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && desktopRecords)
+    // Parent-to-parent coordination views & cross-machine relay (ADR-0216 Slice 3; Owl only, recorded desktops only).
+    && (feature !== 'thread-coordination-views' || service.supportsCoordinationViews === true && service.coordinationViews !== undefined && desktopRecords)
+    && (feature !== 'thread-coordination-relay' || options.coordinationRelay !== undefined && service.supportsCoordinationViews === true && desktopRecords)
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // The message scrubber's prompts above a pane's window (ADR-0109) are for a desktop; the desktop's own phone listener serves none.
@@ -617,7 +624,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
     .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
-    .filter(feature => feature !== 'host-delegation' && feature !== 'every-agent-picture' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views' && feature !== 'detached-runs-elsewhere'
+    .filter(feature => feature !== 'host-delegation' && feature !== 'every-agent-picture' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views' && feature !== 'detached-runs-elsewhere' && feature !== 'thread-coordination-views' && feature !== 'thread-coordination-relay'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
@@ -1434,6 +1441,15 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (threadIds.length) push(peer, { v: 1, event: 'delegations-changed', threadIds })
     }
   })
+  // Which threads' parent coordination views changed (ADR-0216 Slice 3), pushed only to recorded desktops accepting `thread-coordination-views`.
+  const unsubscribeCoordination = service.subscribeCoordinationViews?.(change => {
+    if (!('threadIds' in change) || closing) return
+    for (const peer of peers) {
+      if (!peer.ready || !peer.coordinationViews || peer.frames.isClosed) continue
+      const threadIds = change.threadIds.filter(threadId => !hiddenThread(peer, threadId)).slice(0, COORDINATION_CHANGED_MAX)
+      if (threadIds.length) push(peer, { v: 1, event: 'coordination-changed', threadIds })
+    }
+  })
   /**
    * The host's check queue (#1312), pushed whole to a desktop whose hello accepted `check-queue-views`: after its hello and
    * whenever the queue changes. A thread this peer is not sent is not named to it, and nor is a check on a provider it does
@@ -2023,6 +2039,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.usageAntigravity = (request.accepts?.includes('usage-antigravity') ?? false) && offers(peer, 'usage-antigravity')
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
         peer.delegationViews = (request.accepts?.includes('delegation-views') ?? false) && offers(peer, 'delegation-views')
+        peer.coordinationViews = (request.accepts?.includes('thread-coordination-views') ?? false) && offers(peer, 'thread-coordination-views')
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
         peer.runsElsewhere = (request.accepts?.includes('detached-runs-elsewhere') ?? false) && offers(peer, 'detached-runs-elsewhere')
         followRunsElsewhere()
@@ -2075,6 +2092,29 @@ export async function startSocketServer(options: SocketServerOptions) {
             push: (caller, news, replies) => !remotePeer.frames.isClosed && authenticated(remotePeer)
               && push(remotePeer, { v: 1, event: 'delegation-remote-news', caller, news, ...replies.length ? { replies: [...replies] } : {} }) }
           options.delegationRemote.desktopConnected(peer.delegationRemote)
+        }
+        // A recorded desktop that relays cross-machine parent coordination (`thread-coordination-relay`, ADR-0216 Slice 3).
+        if ((request.accepts?.includes('thread-coordination-relay') ?? false) && offers(peer, 'thread-coordination-relay') && options.coordinationRelay) {
+          const coordPeer = peer
+          peer.coordinationRelay ??= {
+            clientId: peer.client.clientId,
+            pushAsk: (askId, ask) => !coordPeer.frames.isClosed && authenticated(coordPeer)
+              && push(coordPeer, { v: 1, event: 'coordination-relay-ask', askId, ask }),
+            pushRemoteNews: payload => !coordPeer.frames.isClosed && authenticated(coordPeer)
+              && push(coordPeer, {
+                v: 1,
+                event: 'coordination-remote-news',
+                callerThreadId: payload.callerThreadId,
+                callerHostId: payload.callerHostId,
+                news: payload.news,
+                ...(payload.replies?.length ? { replies: [...payload.replies] } : {}),
+                ...(payload.exchange ? { exchange: payload.exchange } : {}),
+              }),
+          }
+          options.coordinationRelay.desktopConnected(peer.coordinationRelay)
+        } else if (peer.coordinationRelay) {
+          options.coordinationRelay?.desktopGone(peer.coordinationRelay)
+          peer.coordinationRelay = undefined
         }
         // A provider is sent to this client only once its hello says it knows the provider (#1107).
         peer.unknownProviders = providersUnknownTo(request.accepts)
@@ -2486,6 +2526,40 @@ export async function startSocketServer(options: SocketServerOptions) {
           try { return { result: await options.delegationRemote.answer(peer.client.clientId, request.ask, () => !peer.gone.signal.aborted) } } catch { throw new Refusal('unavailable') }
         } finally { release() }
       }
+      case 'coordination-views': {
+        if (!offers(peer, 'thread-coordination-views') || !service.coordinationViews) throw new Refusal('invalid_request')
+        if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+        const read = await toolRead(() => service.coordinationViews!(request.threadId))
+        let parsed: ReturnType<typeof coordinationReadSchema.parse>
+        try { parsed = coordinationReadSchema.parse(read) } catch { throw new Refusal('unavailable') }
+        const shown = (row: (typeof parsed.sent)[number]) =>
+          (row.peerProvider === null || !peer.unknownProviders.has(row.peerProvider))
+          && (row.peerHostId !== undefined || !hiddenThread(peer, row.peerThreadId))
+        return { ...parsed, sent: parsed.sent.filter(shown), received: parsed.received.filter(shown) }
+      }
+      case 'coordination-reply': {
+        if (!offers(peer, 'thread-coordination-views') || !service.coordinationReply) throw new Refusal('invalid_request')
+        if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+        const reply = await toolRead(() => service.coordinationReply!(request.threadId, request.exchangeId))
+        try { return coordinationReplySchema.parse(reply) } catch { throw new Refusal('unavailable') }
+      }
+      case 'coordination-relay-answer': {
+        if (!options.coordinationRelay || !peer.coordinationRelay) throw new Refusal('invalid_request')
+        return { taken: options.coordinationRelay.answered(peer.coordinationRelay, request.askId, request.result) }
+      }
+      case 'coordination-relay-news': {
+        if (!options.coordinationRelay || !peer.coordinationRelay) throw new Refusal('invalid_request')
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (options.watcherDesktops?.has(peer.client.clientId) !== true) throw new Refusal('forbidden')
+        try { await options.coordinationRelay.receiveRelayNews(request.threadId, request.news, request.replies, request.exchange) } catch { throw new Refusal('unavailable') }
+        return { told: true }
+      }
+      case 'coordination-remote-ask': {
+        if (!options.coordinationRelay || !peer.coordinationRelay) throw new Refusal('invalid_request')
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (options.watcherDesktops?.has(peer.client.clientId) !== true) throw new Refusal('forbidden')
+        try { return { result: await options.coordinationRelay.handleRemoteAsk(peer.client.clientId, request.ask) } } catch { throw new Refusal('unavailable') }
+      }
       case 'host-update': {
         // A host update the host runs on itself (ADR-0088): a recorded desktop that may answer, after its hello, and only
         // on a host that can. Failures are answers in the launch script's own words, never a refusal.
@@ -2847,10 +2921,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, usageAntigravity: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherPhoneParts: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), readHeld: false, readAhead: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, coordinationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, usageAntigravity: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherPhoneParts: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), readHeld: false, readAhead: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); followRunsElsewhere(); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); followRunsElsewhere(); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (peer.coordinationRelay) options.coordinationRelay?.desktopGone(peer.coordinationRelay); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }
@@ -2885,7 +2959,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeRunsElsewhere?.(); unsubscribeSpending?.(); unsubscribeElevenLabsSpending?.(); unsubscribeModels?.(); unsubscribeSounds?.(); unsubscribePhoneModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeCoordination?.(); unsubscribeChecks?.(); unsubscribeRunsElsewhere?.(); unsubscribeSpending?.(); unsubscribeElevenLabsSpending?.(); unsubscribeModels?.(); unsubscribeSounds?.(); unsubscribePhoneModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')

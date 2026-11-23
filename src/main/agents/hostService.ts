@@ -41,6 +41,9 @@ import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatche
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
+import type { CoordinationExchangeView, CoordinationNews, CoordinationRead, CoordinationReply } from '../../shared/threadCoordination'
+import type { CoordinationRelayAsk, CoordinationRelayedReply, CoordinationRemoteAsk } from '../../shared/threadCoordinationRelay'
+import type { ThreadCoordinationViews } from './threadCoordinationIpc'
 import type { CheckQueue } from './checkQueue'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
 import type { QuestionPageTarget } from './questionPages'
@@ -230,6 +233,23 @@ export interface HostService {
   delegationViews?(threadId: string): Promise<DelegationsRead>
   delegationBrief?(threadId: string): Promise<DelegationBrief>
   subscribeDelegationViews?(listener: (change: DelegationViewsChange) => void): () => void
+  /**
+   * Parent-to-parent thread coordination views (`thread-coordination-views`, ADR-0216 Slice 3; Owl only):
+   * sent and received exchanges for a host's thread, on-demand reply text, and change pushes.
+   */
+  readonly supportsCoordinationViews?: boolean
+  coordinationViews?(threadId: string): Promise<CoordinationRead>
+  coordinationReply?(threadId: string, exchangeId: string): Promise<CoordinationReply>
+  subscribeCoordinationViews?(listener: (change: CoordinationViewsChange) => void): () => void
+  /**
+   * Cross-machine parent-to-parent coordination relay (`thread-coordination-relay`, ADR-0216 Slice 3; Owl only).
+   */
+  readonly supportsCoordinationRelay?: boolean
+  coordinationRemoteAsk?(ask: CoordinationRemoteAsk, timeoutMs: number): Promise<unknown>
+  subscribeCoordinationRelay?(listener: (askId: string, ask: CoordinationRelayAsk) => void): () => void
+  answerCoordinationRelay?(askId: string, answer: unknown): Promise<void>
+  coordinationRelayNews?(threadId: string, news: CoordinationNews, replies?: readonly CoordinationRelayedReply[], exchange?: CoordinationExchangeView): Promise<void>
+  subscribeCoordinationRemoteNews?(listener: (payload: CoordinationRemoteNewsPayload) => void): () => void
   /**
    * The host's own check queue as its machine's panel shows it (`check-queue-views`, #1312, fourth part), the running check
    * first, present only where it keeps one. Thread IDs are the host's own. `subscribeCheckQueue` hears it change; on a
@@ -428,6 +448,14 @@ export interface HostService {
 
 /** What a host's delegation reads hear: the threads whose delegations changed, or its connection lost or taken again. */
 export type DelegationViewsChange = { readonly threadIds: readonly string[] } | { readonly connected: boolean }
+export type CoordinationViewsChange = { readonly threadIds: readonly string[] } | { readonly connected: boolean }
+export interface CoordinationRemoteNewsPayload {
+  readonly callerThreadId: string
+  readonly callerHostId: string
+  readonly news: CoordinationNews
+  readonly replies?: readonly CoordinationRelayedReply[] | undefined
+  readonly exchange?: CoordinationExchangeView | undefined
+}
 
 export interface RequestAnswerRecovery {
   uncertainRequestIds: string[]
@@ -600,6 +628,8 @@ export class LocalHostService implements HostService {
     everyAgentPicture?: boolean
     /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
     delegationViews?: DelegationViews
+    /** Parent-to-parent coordination views for this host's threads (ADR-0216 Slice 3; Owl only). */
+    coordinationViews?: ThreadCoordinationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
     checks?: CheckQueue
     /** The watch for detached runs (ADR-0204), present only where this machine looks for them: its runs from elsewhere (#2749). */
@@ -696,6 +726,22 @@ export class LocalHostService implements HostService {
   }
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
+  }
+  get supportsCoordinationViews(): boolean { return this.options.coordinationViews !== undefined }
+  async coordinationViews(threadId: string): Promise<CoordinationRead> {
+    if (!this.options.coordinationViews) throw new Error('This host does not have parent-thread coordination enabled.')
+    const { sent, received } = this.options.coordinationViews.views(threadId)
+    return { threadId, sent: [...sent], received: [...received] }
+  }
+  async coordinationReply(threadId: string, exchangeId: string): Promise<CoordinationReply> {
+    if (!this.options.coordinationViews) throw new Error('This host does not have parent-thread coordination enabled.')
+    const found = this.options.coordinationViews.replyAsync
+      ? await this.options.coordinationViews.replyAsync(threadId, exchangeId)
+      : this.options.coordinationViews.reply(threadId, exchangeId)
+    return found === undefined ? null : { exchangeId, text: found.text, truncated: found.truncated }
+  }
+  subscribeCoordinationViews(listener: (change: CoordinationViewsChange) => void): () => void {
+    return this.options.coordinationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
   }
   get supportsDetachedRunsElsewhere(): boolean { return this.options.detachedRuns !== undefined }
   detachedRunsElsewhere(): readonly DetachedRunElsewhere[] { return this.options.detachedRuns?.foreignRuns() ?? [] }

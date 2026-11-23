@@ -39,7 +39,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
 import type { BrowserEvent } from '../../shared/browser'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
-import type { HostService, ClientIdentity, DelegationViewsChange, RequestAnswerRecovery } from './hostService'
+import type { HostService, ClientIdentity, CoordinationRemoteNewsPayload, CoordinationViewsChange, DelegationViewsChange, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { compareOwlHostTarget } from '../../shared/hostUpdates'
 import { getReleaseTrack } from '../../shared/releaseTrack'
@@ -64,6 +64,8 @@ import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../.
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
 import { delegationBriefSchema, delegationsReadSchema, type DelegationBrief, type DelegationsRead } from '../../shared/delegation'
+import { coordinationReadSchema, coordinationReplySchema, type CoordinationExchangeView, type CoordinationNews, type CoordinationRead, type CoordinationReply } from '../../shared/threadCoordination'
+import type { CoordinationRelayAsk, CoordinationRelayedReply, CoordinationRemoteAsk } from '../../shared/threadCoordinationRelay'
 import type { CheckQueueEntry } from '../../shared/checkQueue'
 import { reportsUsageLimits, USAGE_LIMIT_PROVIDERS, usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, usageProvidersBeforeAntigravity, usageProvidersBeforeMuse, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
@@ -162,6 +164,8 @@ export interface SocketHostServiceOptions {
    * does its hello accept `delegation-relay`. Stable relays nothing and is asked nothing.
    */
   relaysDelegation?: boolean
+  /** Parent-to-parent thread coordination (ADR-0216 Slice 3; Owl only): accepts `thread-coordination-views` and `thread-coordination-relay`. */
+  parentCoordinationEnabled?: boolean
   streamingPublishCost?: boolean
   /** The providers held to Owl on this run (ADR-0072); absent holds every one. */
   heldProviders?: HeldProviders
@@ -283,6 +287,10 @@ export class SocketHostService implements HostService {
   private readonly held: HeldProviders
   private readonly watcherListeners = new Set<(projection: WatcherHostProjection | undefined) => void>()
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
+  private readonly coordinationViewListeners = new Set<(change: CoordinationViewsChange) => void>()
+  private readonly coordinationRelayListeners = new Set<(askId: string, ask: CoordinationRelayAsk) => void>()
+  private readonly heldCoordinationAsks: { readonly askId: string; readonly ask: CoordinationRelayAsk }[] = []
+  private readonly coordinationRemoteNewsListeners = new Set<(payload: CoordinationRemoteNewsPayload) => void>()
   /** The host's check queue as it last pushed it (#1312), on this connection only; undefined before a push and once it closes. */
   private checks: readonly CheckQueueEntry[] | undefined
   /** The host's next prompts as it pushed them on this connection, by its own thread IDs (ADR-0173). */
@@ -464,7 +472,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'usage-antigravity-no-limits', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'usage-antigravity-no-limits', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.parentCoordinationEnabled === true ? ['thread-coordination-views', 'thread-coordination-relay'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -506,10 +514,12 @@ export class SocketHostService implements HostService {
     }
     this.heldAsks.length = 0
     this.heldTells.length = 0
+    this.heldCoordinationAsks.length = 0
     this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
     if (this.options.crossMachineEnabled === true) this.delegationsChanged({ connected: false })
+    if (this.options.parentCoordinationEnabled === true) this.coordinationViewsChanged({ connected: false })
     // A queue read on a closed connection is not current: the machine's panel says nothing of it until the host pushes again.
     if (this.checks !== undefined) { this.checks = undefined; this.checksChanged() }
     // The runs it reported stay as it last reported them: they run on there, and the thread is not called at rest while
@@ -528,6 +538,9 @@ export class SocketHostService implements HostService {
   }
   private delegationsChanged(change: DelegationViewsChange): void {
     for (const listener of [...this.delegationListeners]) { try { listener(change) } catch { /* A listener's failure is its own. */ } }
+  }
+  private coordinationViewsChanged(change: CoordinationViewsChange): void {
+    for (const listener of [...this.coordinationViewListeners]) { try { listener(change) } catch { /* A listener's failure is its own. */ } }
   }
   private receive(text: string): void {
     let raw: unknown
@@ -641,6 +654,34 @@ export class SocketHostService implements HostService {
           // Only to a desktop whose hello accepted `delegation-remote` (#1316 part 2).
           if (this.supportsDelegationRemote) for (const listener of [...this.remoteNewsListeners]) {
             try { listener(message.caller, message.news, message.replies ?? []) } catch { /* A listener's failure is its own. */ }
+          }
+        }
+        else if (message.event === 'coordination-changed') {
+          if (this.supportsCoordinationViews) this.coordinationViewsChanged({ threadIds: message.threadIds })
+        }
+        else if (message.event === 'coordination-relay-ask') {
+          if (this.options.parentCoordinationEnabled === true) {
+            if (!this.coordinationRelayListeners.size) {
+              if (this.heldCoordinationAsks.length < 64) this.heldCoordinationAsks.push({ askId: message.askId, ask: message.ask })
+            } else {
+              for (const listener of [...this.coordinationRelayListeners]) {
+                try { listener(message.askId, message.ask) } catch { /* A listener's failure is its own. */ }
+              }
+            }
+          }
+        }
+        else if (message.event === 'coordination-remote-news') {
+          if (this.supportsCoordinationRelay) {
+            const payload: CoordinationRemoteNewsPayload = {
+              callerThreadId: message.callerThreadId,
+              callerHostId: message.callerHostId,
+              news: message.news,
+              ...(message.replies ? { replies: message.replies } : {}),
+              ...(message.exchange ? { exchange: message.exchange } : {}),
+            }
+            for (const listener of [...this.coordinationRemoteNewsListeners]) {
+              try { listener(payload) } catch { /* A listener's failure is its own. */ }
+            }
           }
         }
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
@@ -1848,6 +1889,55 @@ export class SocketHostService implements HostService {
   subscribeDelegationRemoteNews(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void {
     this.remoteNewsListeners.add(listener)
     return () => { this.remoteNewsListeners.delete(listener) }
+  }
+  /** The host lists `thread-coordination-views` and this desktop accepted it (ADR-0216 Slice 3; Owl only). */
+  get supportsCoordinationViews(): boolean { return this.options.parentCoordinationEnabled === true && this.features.includes('thread-coordination-views') }
+  async coordinationViews(threadId: string): Promise<CoordinationRead> {
+    if (this.options.parentCoordinationEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('thread-coordination-views')
+    return this.read(coordinationReadSchema, await this.call({ op: 'coordination-views', threadId }, undefined, undefined, 10000))
+  }
+  async coordinationReply(threadId: string, exchangeId: string): Promise<CoordinationReply> {
+    if (this.options.parentCoordinationEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('thread-coordination-views')
+    return this.read(coordinationReplySchema, await this.call({ op: 'coordination-reply', threadId, exchangeId }, undefined, undefined, 10000))
+  }
+  subscribeCoordinationViews(listener: (change: CoordinationViewsChange) => void): () => void {
+    this.coordinationViewListeners.add(listener)
+    return () => { this.coordinationViewListeners.delete(listener) }
+  }
+  /** The host lists `thread-coordination-relay` and this desktop accepted it (ADR-0216 Slice 3; Owl only). */
+  get supportsCoordinationRelay(): boolean { return this.options.parentCoordinationEnabled === true && this.features.includes('thread-coordination-relay') }
+  async coordinationRemoteAsk(ask: CoordinationRemoteAsk, timeoutMs: number): Promise<unknown> {
+    if (this.options.parentCoordinationEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('thread-coordination-relay')
+    const answer = await this.call({ op: 'coordination-remote-ask', ask }, undefined, undefined, timeoutMs)
+    return answer !== null && typeof answer === 'object' && 'result' in answer ? (answer as { result: unknown }).result : undefined
+  }
+  subscribeCoordinationRelay(listener: (askId: string, ask: CoordinationRelayAsk) => void): () => void {
+    this.coordinationRelayListeners.add(listener)
+    for (const held of this.heldCoordinationAsks.splice(0)) { try { listener(held.askId, held.ask) } catch { /* A listener's failure is its own. */ } }
+    return () => { this.coordinationRelayListeners.delete(listener) }
+  }
+  async answerCoordinationRelay(askId: string, answer: unknown): Promise<void> {
+    if (this.options.parentCoordinationEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('thread-coordination-relay')
+    await this.call({ op: 'coordination-relay-answer', askId, result: answer }, undefined, undefined, 10000)
+  }
+  async coordinationRelayNews(threadId: string, news: CoordinationNews, replies?: readonly CoordinationRelayedReply[], exchange?: CoordinationExchangeView): Promise<void> {
+    if (this.options.parentCoordinationEnabled !== true) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    this.offers('thread-coordination-relay')
+    await this.call({
+      op: 'coordination-relay-news',
+      threadId,
+      news,
+      ...(replies?.length ? { replies: [...replies] } : {}),
+      ...(exchange ? { exchange } : {}),
+    }, undefined, undefined, 30000)
+  }
+  subscribeCoordinationRemoteNews(listener: (payload: CoordinationRemoteNewsPayload) => void): () => void {
+    this.coordinationRemoteNewsListeners.add(listener)
+    return () => { this.coordinationRemoteNewsListeners.delete(listener) }
   }
   /**
    * The host lists `plugin-meshy-spending` (ADR-0205): one monthly limit for a Meshy account wherever it is. In its

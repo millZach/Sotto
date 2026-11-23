@@ -43,6 +43,7 @@ import { registerDelegationIpc } from '../agents/delegationIpc'
 import { DelegationToolServer } from '../agents/delegationTools'
 import { CoordinationToolServer } from '../agents/threadCoordinationTools'
 import { registerThreadCoordinationIpc } from '../agents/threadCoordinationIpc'
+import { DesktopCoordinationRelay } from '../agents/threadCoordinationRelay'
 import { DevinAcpHost } from '../agents/devin'
 import { DynamicRecord } from '../agents/dynamicRecord'
 import { registerDynamicRecordIpc } from '../agents/dynamicRecordIpc'
@@ -597,6 +598,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}),
     productEventAnswer: () => productEventsPermission(workingCopySettings),
     relaysDelegation: delegationRelay !== undefined,
+    parentCoordinationEnabled: owlFeatures['parent-thread-coordination'],
     heldProviders,
     streamingPublishCost: owlFeatures['streaming-publish-cost'],
     clientVersion: hostVersion,
@@ -868,6 +870,10 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   })
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   const threadCoordinationService = 'threadCoordination' in localRuntime ? localRuntime.threadCoordination : undefined
+  const coordinationRelay = threadCoordinationService
+    ? new DesktopCoordinationRelay({ service: threadCoordinationService, localHostId: () => agentControl.hostId() })
+    : undefined
+  coordinationRelay?.useHosts(hostRouter)
   const councilService = councilEnabled && startupSettings.localHostEnabled ? new CouncilService({
     directory: userDataPath,
     control: agentControl,
@@ -1173,7 +1179,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const cleanupDelegations = registerDelegationIpc(ipc, delegationService, senders, () => agentControl.hostId(),
     (channel, payload) => { shellBridge.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled, owlFeatures['dynamic-threads'])
   const cleanupCoordination = registerThreadCoordinationIpc(ipc, threadCoordinationService, senders, () => agentControl.hostId(),
-    (channel, payload) => { shellBridge.sendToMain(channel, payload) })
+    (channel, payload) => { shellBridge.sendToMain(channel, payload) }, owlFeatures['parent-thread-coordination'] ? hostRouter : undefined)
   const dynamicRecord = 'dynamicRecord' in localRuntime && localRuntime.dynamicRecord ? localRuntime.dynamicRecord : owlFeatures['dynamic-threads'] ? new DynamicRecord(userDataPath) : undefined
   const cleanupDynamicRecord = registerDynamicRecordIpc(ipc, owlFeatures['dynamic-threads'], dynamicRecord, senders)
   const cleanupCheckQueues = registerCheckQueueIpc(ipc, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
@@ -1424,6 +1430,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     cleanupProductEvents()
     cleanupDelegations()
     cleanupCoordination()
+    coordinationRelay?.close()
     cleanupDynamicRecord()
     cleanupCheckQueues()
     cleanupContinue()
