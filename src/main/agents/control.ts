@@ -30,7 +30,10 @@ import {
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isAnyRestartNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isLimitRestartNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isAnyRestartNews, isCoordinationNews, isCoordinationOnlyWakeUp, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isLimitRestartNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherNewsAsks, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { HostThreadIndex, PositionQueue, type HostThreadsChange, type HostThreadsView } from './hostThreadIndex'
+export type { HostThreadsChange, HostThreadsView } from './hostThreadIndex'
+import type { CoordinationCommand, CoordinationControlHooks } from './threadCoordination'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { samePlainValue, withoutHiddenWakeUps } from './hiddenWakeUpDisplay'
@@ -127,117 +130,6 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
 const EMPTY_MODELS: AgentModel[] = []
 const EMPTY_THREADS: AgentThread[] = []
-/**
- * The coordinator's host snapshot's threads, read without a walk of its list (ADR-0016, #925 step 5): Watcher's and
- * delegation's passes look threads up here rather than search the list for each. Only ever for the host snapshot it was
- * asked of (`AgentControl.hostThreadsOf`), and only while the coordinator holds that snapshot.
- */
-export interface HostThreadsView {
-  /** The thread with this ID, the first a search of the list finds. */
-  thread(id: string): AgentThread | undefined
-  /** Where the thread with this ID is in the list, the first place a search finds it. */
-  position(id: string): number | undefined
-  /** The threads that name this one as the thread that delegated them (ADR-0081), in no order. */
-  delegatedFrom(parentId: string): ReadonlySet<string> | undefined
-  /** Watcher's conversations, current and earlier. */
-  readonly watcherKinds: ReadonlySet<string>
-  /** Whether a thread names a host other than this one, which a look-up by this host's ID would not find as a search does. */
-  readonly foreign: boolean
-}
-/**
- * What an accept of thread changes changed in the host snapshot (#925 step 5), handed to Watcher with the snapshot it
- * made. Each thread it does not name is the very record `from` listed, in the same place.
- */
-export interface HostThreadsChange {
-  /** The host snapshot the change was made from. A reader that last read another reads this one whole. */
-  readonly from: AgentHostSnapshot
-  /** The threads shown again, in display order: the records the host snapshot now lists. */
-  readonly threads: readonly AgentThread[]
-  /** Each named thread's record as `from` listed it; a thread `from` did not list has none. */
-  readonly previous: ReadonlyMap<string, AgentThread>
-}
-/**
- * The host snapshot's threads by ID and by position, for the very list they were read from (#925). An accept of thread
- * changes keeps it up to date as it patches the list; any other list is indexed afresh the first time it is read. It is
- * also how Watcher and delegation read the host's threads without a walk of the list (`HostThreadsView`, #925 step 5).
- */
-class HostThreadIndex implements HostThreadsView {
-  readonly byId = new Map<string, AgentThread>()
-  readonly at = new Map<string, number>()
-  /** Threads that carry hidden wake-ups, which the detail broadcast keeps projections for. */
-  readonly hidden = new Set<string>()
-  /** Watcher's conversations, shown again whenever Watcher's requests move. */
-  readonly watcherKinds = new Set<string>()
-  /** The threads each thread delegated to, by its ID. */
-  private readonly children = new Map<string, Set<string>>()
-  /** Threads that name a host other than the host snapshot's own. */
-  private readonly elsewhere = new Set<string>()
-  /**
-   * `list` is the list the host snapshot carries; `raw` the same threads in a list of the index's own, which a change
-   * copies and replaces threads in. `hostId` is the host snapshot's own.
-   */
-  constructor(public list: readonly AgentThread[], public raw: AgentThread[], readonly hostId: string | undefined) {}
-  get foreign(): boolean { return this.elsewhere.size > 0 }
-  thread(id: string): AgentThread | undefined { return this.byId.get(id) }
-  position(id: string): number | undefined { return this.at.get(id) }
-  delegatedFrom(parentId: string): ReadonlySet<string> | undefined { return this.children.get(parentId) }
-  /** Notes what a thread newly read into the index says, `previous` being the record it replaced, if any. */
-  note(thread: AgentThread, previous?: AgentThread): void {
-    if (thread.hiddenWakeUpMessageIds?.length) this.hidden.add(thread.id); else this.hidden.delete(thread.id)
-    if (isWatcherKind(thread)) this.watcherKinds.add(thread.id); else this.watcherKinds.delete(thread.id)
-    if (thread.hostId !== undefined && thread.hostId !== this.hostId) this.elsewhere.add(thread.id); else this.elsewhere.delete(thread.id)
-    if (previous?.delegatedBy === thread.delegatedBy) return
-    if (previous?.delegatedBy !== undefined) {
-      const siblings = this.children.get(previous.delegatedBy)
-      siblings?.delete(thread.id)
-      if (siblings?.size === 0) this.children.delete(previous.delegatedBy)
-    }
-    if (thread.delegatedBy === undefined) return
-    const siblings = this.children.get(thread.delegatedBy)
-    if (siblings) siblings.add(thread.id); else this.children.set(thread.delegatedBy, new Set([thread.id]))
-  }
-}
-/**
- * Thread IDs taken out in the order of their place, smallest first: a binary heap, so each push and pop costs the log of
- * what it holds. An ID already held is not held twice.
- */
-class PositionQueue {
-  private readonly heap: string[] = []
-  private readonly held = new Set<string>()
-  constructor(private readonly position: (id: string) => number) {}
-  push(id: string): void {
-    if (this.held.has(id)) return
-    this.held.add(id)
-    const heap = this.heap
-    heap.push(id)
-    for (let at = heap.length - 1; at > 0;) {
-      const parent = (at - 1) >> 1
-      if (this.position(heap[parent]!) <= this.position(heap[at]!)) break
-      ;[heap[parent], heap[at]] = [heap[at]!, heap[parent]!]
-      at = parent
-    }
-  }
-  pop(): string | undefined {
-    const heap = this.heap
-    if (!heap.length) return undefined
-    const top = heap[0]!
-    const last = heap.pop()!
-    if (heap.length) {
-      heap[0] = last
-      for (let at = 0; ;) {
-        const left = at * 2 + 1, right = left + 1
-        let least = at
-        if (left < heap.length && this.position(heap[left]!) < this.position(heap[least]!)) least = left
-        if (right < heap.length && this.position(heap[right]!) < this.position(heap[least]!)) least = right
-        if (least === at) break
-        ;[heap[least], heap[at]] = [heap[at]!, heap[least]!]
-        at = least
-      }
-    }
-    this.held.delete(top)
-    return top
-  }
-}
 /** The history every thread record a broadcast lists stands on: frozen, as the records that share it are. */
 const BROADCAST_MESSAGES = Object.freeze([]) as unknown as AgentMessage[]
 const BROADCAST_ACTIVITIES = Object.freeze([]) as unknown as AgentActivity[]
@@ -522,6 +414,8 @@ export class AgentControl {
   private watcherHooks: WatcherControlHooks | undefined
   /** Delegation between threads (ADR-0081), given only while the Owl feature is on. */
   private delegationHooks: DelegationControlHooks | undefined
+  /** Parent-to-parent thread coordination (ADR-0216), given only while its Owl feature is on. */
+  private coordinationHooks: CoordinationControlHooks | undefined
   /** The Council (ADR-0177), given only while its Owl feature is on: the threads it follows, and its prompts' identities. */
   private councilHooks: CouncilControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
@@ -561,8 +455,12 @@ export class AgentControl {
     return { deliveries: (this.state.deliveries ?? []).filter(item => this.threadAvailable(item.threadId)),
       followups: (this.state.followups ?? []).filter(item => this.threadAvailable(item.threadId)) }
   }
-  /** Whether a message is a brief delegation sent, so Watcher never takes it for the user's own message. */
-  delegationMessage(messageId: string): boolean { return this.delegationHooks?.ownsMessage?.(messageId) === true || this.councilHooks?.ownsMessage(messageId) === true }
+  /** Whether a message is a brief delegation, Council, or peer coordination sent, so Watcher never takes it for the user's own message. */
+  delegationMessage(messageId: string): boolean {
+    return this.delegationHooks?.ownsMessage?.(messageId) === true
+      || this.councilHooks?.ownsMessage(messageId) === true
+      || this.coordinationHooks?.ownsMessage(messageId) === true
+  }
   /**
    * What `delegationMessage` answers from, as a number that moves when a message stops being a brief, delegation is
    * turned on or off, or another delegation takes its place (#925 step 5).
@@ -570,7 +468,7 @@ export class AgentControl {
   delegationBriefsRevision(): number {
     const hooks = this.delegationHooks
     if (hooks !== this.briefsHooks) { this.briefsHooks = hooks; this.briefsHooksTurn++ }
-    return this.briefsHooksTurn * 1_000_000_000 + (hooks?.briefsRevision?.() ?? 0)
+    return this.briefsHooksTurn * 1_000_000_000 + (hooks?.briefsRevision?.() ?? 0) + (this.coordinationHooks?.messagesRevision() ?? 0)
   }
   private briefsHooks: DelegationControlHooks | undefined
   private briefsHooksTurn = 0
@@ -602,6 +500,18 @@ export class AgentControl {
   commandFromDelegation(command: DelegationCommand, guard: () => void): Promise<AgentState> {
     if (!this.delegationHooks || !['create-thread', 'manual-send', 'interrupt'].includes(command.type)) throw new Error('Delegation cannot answer requests or change permissions.')
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard }); this.delegationOrigins.add(parsed)
+    return this.admitCommandShell(parsed)
+  }
+  /** Parent-to-parent coordination hooks (ADR-0216). Returns the unhook. */
+  useCoordination(hooks: CoordinationControlHooks): () => void {
+    this.coordinationHooks = hooks
+    this.refreshCoordinationObservation()
+    return () => { if (this.coordinationHooks === hooks) { this.coordinationHooks = undefined; this.refreshCoordinationObservation() } }
+  }
+  /** A guarded send or steer sent by parent-to-parent coordination (ADR-0216). Never answers requests or changes permissions. */
+  commandFromCoordination(command: CoordinationCommand, guard: () => void): Promise<AgentState> {
+    if (!this.coordinationHooks || !['manual-send', 'steer'].includes(command.type)) throw new Error('Parent-thread coordination cannot answer requests or change permissions.')
+    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
   }
   /** The Council's own hooks (ADR-0177): every snapshot, the threads it follows, and its prompts' identities. Returns the unhook. */
@@ -701,6 +611,13 @@ export class AgentControl {
     const ids = JSON.stringify(this.delegationHooks?.observedThreadIds() ?? [])
     if (this.delegationObservedIds === ids) return
     this.delegationObservedIds = ids; this.observe()
+  }
+  private coordinationObservedIds = ''
+  /** Peer coordination's target threads to observe changed: they join the observed set while exchanges are open. */
+  refreshCoordinationObservation(): void {
+    const ids = JSON.stringify(this.coordinationHooks?.observedThreadIds() ?? [])
+    if (this.coordinationObservedIds === ids) return
+    this.coordinationObservedIds = ids; this.observe()
   }
   /**
    * Authenticated phone user input; its origin stays private to this command and the main-owned request. A steer, a
@@ -2890,7 +2807,7 @@ export class AgentControl {
    * waiting on its lane to a thread the user moved away from read as unconfirmed although the provider took it.
    */
   private liveSessionIds(extra: readonly string[] = []): string[] {
-    return [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.councilHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
+    return [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.coordinationHooks?.observedThreadIds() ?? [], ...this.councilHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
       ...this.outboxEntries.flatMap(item => item.threadId ? [item.threadId] : []), ...this.threadPrompts.keys(), ...this.draftSends.keys(), ...extra])].filter(id => this.threadAvailable(id))
   }
   /**
@@ -2960,8 +2877,11 @@ export class AgentControl {
     }
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
-    // While delegation is off, a delegation's waiting news is kept apart, so it holds back none of this (ADR-0081).
-    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, this.delegationHooks ? undefined : isDelegationNews)
+    // While delegation or peer coordination is off, its waiting news is kept apart, so it holds back none of this (ADR-0081, ADR-0216).
+    const apart = !this.delegationHooks || !this.coordinationHooks
+      ? (part: WakeUpNews) => !this.delegationHooks && isDelegationNews(part) || !this.coordinationHooks && isCoordinationNews(part)
+      : undefined
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, apart)
     if (this.syncFollowups()) this.publish()
     this.pumpFollowups()
   }
@@ -3505,8 +3425,8 @@ export class AgentControl {
       : isRestartNews(news) ? this.restartHooks?.due() !== true
         // A limit restart's note goes only while the feature and its setting are on (ADR-0144).
         : isLimitRestartNews(news) ? this.limitRestart?.due() !== true
-        // A delegation's news is never outdated: while delegation is off the pump holds it, unsent and whole (ADR-0081).
-        : isDelegationNews(news) ? false
+        // A delegation's or peer coordination's news is never outdated: while off, the pump holds it unsent and whole (ADR-0081, ADR-0216).
+        : isDelegationNews(news) || isCoordinationNews(news) ? false
           : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
   }
   /**
@@ -3529,11 +3449,11 @@ export class AgentControl {
         // A delegation's news asks nothing: it is never outdated, so it adds no ask to the batch (ADR-0081).
         due: news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true
           : isLimitRestartNews(news) ? this.limitRestart?.due() === true
-          : isDelegationNews(news) ? true : !guard || guard.due(threadId, news),
+          : isDelegationNews(news) || isCoordinationNews(news) ? true : !guard || guard.due(threadId, news),
         word: kept => queuedWakeUpText(kept, { tool: guard?.tool(threadId) ?? false }),
         transform: news => {
-          // A resume note and a delegation's news are no pull request's: babysitting has nothing to say of them (ADR-0076, ADR-0081).
-          if (isAnyRestartNews(news) || isDelegationNews(news)) return news
+          // A resume note, delegation news, and coordination news are no pull request's: babysitting has nothing to say of them.
+          if (isAnyRestartNews(news) || isDelegationNews(news) || isCoordinationNews(news)) return news
           if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
           const events = news.events.filter(due)
           return events.length ? { ...news, events } : undefined
@@ -3795,6 +3715,9 @@ export class AgentControl {
     // here: it never refuses the command.
     if (!this.watcherOrigins.has(command) || command.type === 'interrupt' && !this.delegationOrigins.has(command)) {
       try { this.delegationHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion) } catch { /* The next snapshot reconciles it. */ }
+    }
+    if (!this.watcherOrigins.has(command)) {
+      try { this.coordinationHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined) } catch { /* The next snapshot reconciles it. */ }
     }
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
     const releaseAnswer = answerThreadId ? this.holdAnswer(answerThreadId) : () => undefined
@@ -4152,7 +4075,8 @@ export class AgentControl {
     return this.watcherHooks?.lastSendWasWakeUp?.(threadId) ?? isWatcherWakeUpTurn(thread)
   }
   private isUserFollowup(item: Readonly<QueuedFollowup>): boolean {
-    return !item.wakeUp && !item.watcherOperationId && !item.news?.length && !this.delegationHooks?.guardFor(item.draftId)
+    return !item.wakeUp && !item.watcherOperationId && !item.news?.length
+      && !this.delegationHooks?.guardFor(item.draftId) && !this.coordinationHooks?.guardFor(item.draftId)
   }
   /**
    * Whether a thread waits on a request: one every client sees, or a question about a prototype Sotto holds (ADR-0108),
@@ -4254,12 +4178,21 @@ export class AgentControl {
       // A set-aside prompt holds automatic news, including a leading resume note, without holding the user's new messages
       // or a delegation's hidden news (ADR-0081, October 19, 2026).
       const recovering = recoveringThreads.has(threadId)
-      const held = (item: Readonly<QueuedFollowup>): boolean => recovering && isWaitingWakeUp(item) && !isDelegationOnlyWakeUp(item)
+      const isAutoNewsOnly = (item: Readonly<QueuedFollowup>): boolean => isDelegationOnlyWakeUp(item) || isCoordinationOnlyWakeUp(item)
+      const held = (item: Readonly<QueuedFollowup>): boolean => recovering && isWaitingWakeUp(item) && !isAutoNewsOnly(item)
         || !this.delegationHooks && (item.news ?? []).some(isDelegationNews)
+        || !this.coordinationHooks && (item.news ?? []).some(isCoordinationNews)
       if (items.some(item => item.threadId === threadId && isWaitingWakeUp(item)
         && item.news?.some(isDelegationNews) && item.news.some(news => !isDelegationNews(news)))) {
         const word = (kept: readonly WakeUpNews[]) => queuedWakeUpText(kept, { tool: this.wakeUpGuard?.tool(threadId) ?? false })
         this.runFollowup(threadId, () => this.followupStore.separateWakeUps(threadId, isDelegationNews, word),
+          { failure: 'Could not save the follow-up queue.' })
+        continue
+      }
+      if (items.some(item => item.threadId === threadId && isWaitingWakeUp(item)
+        && item.news?.some(isCoordinationNews) && item.news.some(news => !isCoordinationNews(news)))) {
+        const word = (kept: readonly WakeUpNews[]) => queuedWakeUpText(kept, { tool: this.wakeUpGuard?.tool(threadId) ?? false })
+        this.runFollowup(threadId, () => this.followupStore.separateWakeUps(threadId, isCoordinationNews, word),
           { failure: 'Could not save the follow-up queue.' })
         continue
       }
@@ -4284,15 +4217,15 @@ export class AgentControl {
       // A delegation's hidden news goes past whatever of the user's waits without going, leaving it in place and in order:
       // paused or failed follow-ups, ones a machine Stop holds, ones a set-aside prompt holds (ADR-0081, October 19, 2026).
       // A ready prompt at the head goes first, and a queue the last turn left unreviewed is paused first, as before.
-      const news = echoed || !this.delegationHooks ? undefined : items.find(item => item.threadId === threadId && isDelegationOnlyWakeUp(item) && !held(item))
+      const news = echoed || !this.delegationHooks && !this.coordinationHooks ? undefined : items.find(item => item.threadId === threadId && isAutoNewsOnly(item) && !held(item))
       const headActs = (): boolean => head.status === 'dispatching' || head.status === 'queued' && (unreviewed(head)
         ? head.watcherOperationId !== undefined || !this.watcherHooks?.preserveUserQueue(threadId) : this.followupReady(threadId, head))
       const first = news && news !== head && !headActs() ? news : head
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
       // While Watcher's provider is limited or failing, what is queued for Watcher waits; a restart note goes (#2234).
       if (first !== echoed && first.status === 'queued' && !first.news?.some(isAnyRestartNews) && this.watcherHooks?.holdsWatcherQueue?.(threadId)) continue
-      // A delegation's hidden news follows only its own thread's turn, never the review a queue waits for.
-      const terminalBlocked = !isDelegationOnlyWakeUp(first) && unreviewed(first)
+      // A delegation's or peer coordination's hidden news follows only its own thread's turn, never the review a queue waits for.
+      const terminalBlocked = !isAutoNewsOnly(first) && unreviewed(first)
       // Watcher's hidden wake-up is shown nowhere, so no one can resume, reorder or remove it. It never changes and never
       // pauses: it goes, waits, or leaves whole (hiddenWakeUp.ts). A turn of Watcher's that did not finish holds it as it
       // holds a user's queue, so it leaves as unsent and its news waits for the next.
@@ -4311,7 +4244,7 @@ export class AgentControl {
       }
       // A delegation's hidden news, like Watcher's, is shown nowhere, so no one can resume or remove it: it goes, waits, or
       // leaves whole. One whose send surely did not go waits again, and a thread's next free turn takes it.
-      if (isDelegationOnlyWakeUp(first) && thread && first !== echoed) {
+      if (isAutoNewsOnly(first) && thread && first !== echoed) {
         const step = hiddenWakeUpStep(first, { echoed: false, reconciling: this.outbox.some(item => item.id === first.commandId), outdated: false })
         if (step === 'wait' || step === 'withdrawn') continue
         if (step === 'send' && (!this.delegationNewsReady(threadId, first) || (this.delegationNewsRetryAt.get(threadId) ?? 0) > Date.now())) continue
@@ -4346,7 +4279,7 @@ export class AgentControl {
           { failure: 'Could not pause the follow-up queue.' })
         continue
       }
-      const ready = (item: Readonly<QueuedFollowup>): boolean => isDelegationOnlyWakeUp(item) ? this.delegationNewsReady(threadId, item) : this.followupReady(threadId, item)
+      const ready = (item: Readonly<QueuedFollowup>): boolean => isAutoNewsOnly(item) ? this.delegationNewsReady(threadId, item) : this.followupReady(threadId, item)
       if (!confirmed && (first.status !== 'queued' || !ready(first))) continue
       if (!confirmed && this.wakeUpOutdated(threadId, first)) {
         // What babysitting ended since it was told is taken out before the wake-up goes, and the rest goes after.
@@ -4365,8 +4298,8 @@ export class AgentControl {
         try {
           this.assertCanAct(threadId)
           if (first.watcherOperationId) this.watcherHooks?.guardOperation(first.watcherOperationId)
-          // A delegation's hidden news goes past what waits ahead of it, so it claims itself rather than the head.
-          await this.followupStore.claim(first.id, 'send', isDelegationOnlyWakeUp(first) ? candidate => candidate.id !== first.id : held); claimed = true
+          // A delegation's or peer coordination's hidden news goes past what waits ahead of it, so it claims itself rather than the head.
+          await this.followupStore.claim(first.id, 'send', isAutoNewsOnly(first) ? candidate => candidate.id !== first.id : held); claimed = true
           // A claimed item's thread is observed from here until the send settles, so its read and its echo carry its
           // messages even when no window shows it. Otherwise a wake-up to a thread the user moved away from could not be
           // confirmed, and held back what queued behind it until something else had the thread observed (#1263).
@@ -4391,7 +4324,7 @@ export class AgentControl {
             phoneGuard?.()
             if (this.disposed || !ready(item)) throw new Error('The thread is no longer ready. Review it and resume its queue when ready.')
             // A prompt queued under a machine Stop since its pause waits for that pause too: the news goes on a later pass.
-            if (isDelegationOnlyWakeUp(item) && this.watcherHooks?.preserveUserQueue(threadId) && this.followupStore.peek().items.some(queued => queued.threadId === threadId
+            if (isAutoNewsOnly(item) && this.watcherHooks?.preserveUserQueue(threadId) && this.followupStore.peek().items.some(queued => queued.threadId === threadId
               && queued.status === 'queued' && queued.id !== item.id && this.isUserFollowup(queued))) throw new Error('The thread\'s queue changed before the news went.')
             const latest = this.thread(threadId)
             if (latest.status === 'running' || this.waitsOnRequest(latest) || isThreadClosed(latest)
@@ -4406,7 +4339,7 @@ export class AgentControl {
           if (turn) { turn.threadId = threadId; turn.projectId = this.thread(threadId).projectId }
           // A saved user prompt keeps its user origin. Only its Watcher stop fence travels to the native writer.
           // A delegation's hidden news is not the user's queue: a machine Stop does not hold it (ADR-0081, October 19, 2026).
-          const hiddenNews = isDelegationOnlyWakeUp(item)
+          const hiddenNews = isAutoNewsOnly(item)
           const queueGuard = !item.watcherOperationId && !hiddenNews && this.watcherHooks ? () => {
             if (this.watcherHooks?.preserveUserQueue(threadId)) throw new Error('Watcher stopped this thread. Review it and resume its queue when ready.')
           } : undefined
@@ -4426,10 +4359,13 @@ export class AgentControl {
           // record, so Watcher's pane can show their cards under it (ADR-0073). They answer nothing. A delegated thread's
           // card, told as news of the watched thread above it (#1190), is the delegated thread's: it is recorded there.
           const watcherAsks = watcherNews && item.news ? watcherNewsAsks(item.news) : []
-          // A delegation's news is worded as it goes, from delegation's own record: an answered one carries its reply,
-          // labelled as the delegated thread's words, which the queue never holds (decision 3 of October 19, 2026).
+          // A delegation's or peer coordination's news is worded as it goes: an answered one carries its reply,
+          // labelled as that thread's own words, which the queue never holds (ADR-0081, ADR-0216).
           const delegationNews = hiddenNews ? item.news!.flatMap(news => isDelegationNews(news) ? [news] : []) : []
-          const text = (delegationNews.length && this.delegationHooks?.newsText?.(threadId, delegationNews)) || item.text
+          const coordinationNews = hiddenNews ? item.news!.flatMap(news => isCoordinationNews(news) ? [news] : []) : []
+          const text = (delegationNews.length && this.delegationHooks?.newsText?.(threadId, delegationNews))
+            || (coordinationNews.length && this.coordinationHooks?.newsText?.(threadId, coordinationNews))
+            || item.text
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(hiddenNews ? { hiddenWakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}),
             ...(watcherAsks.length ? { watcherAsks } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
@@ -4447,7 +4383,7 @@ export class AgentControl {
               : this.outbox.some(o => o.id === item?.commandId) ? undefined : 'failed'
             await (outcome ? this.settleWatcherWakeUp(first, outcome) : this.followupStore.settle(first.id, 'uncertain', failure))
           } else if (claimed && error instanceof WakeUpNoLongerDue) { await this.pruneWakeUps([first.id]); requeued = true }
-          else if (claimed && isDelegationOnlyWakeUp(first)) {
+          else if (claimed && isAutoNewsOnly(first)) {
             // Hidden news leaves once its send is known to have gone. One that surely did not go waits again, a little
             // later, so a send the provider keeps refusing is not tried again at once; one that may have gone waits for
             // its outbox entry to settle it.
@@ -4577,6 +4513,7 @@ export class AgentControl {
     }
     const validate = (): void => {
       this.assertCanAct(command.threadId)
+      origin?.guard()
       const thread = this.thread(command.threadId)
       if (!capabilitiesForThread(this.state.host, thread).steer) throw new Error('This provider does not support native steering. Queue a follow-up instead.')
       if (thread.status !== 'running') throw new Error('There is no running turn to steer. Send or queue this prompt instead.')
@@ -4589,7 +4526,7 @@ export class AgentControl {
     // A thread settled while its turn ran is restored by the steer, as by any new work.
     if (this.settledForWork(this.thread(command.threadId))) await this.reopenForWork(command.threadId)
     if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
-    await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? randomUUID(), text: command.text.trim(),
+    await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? (command.draftId ? this.coordinationHooks?.messageIdFor(command.draftId) : undefined) ?? randomUUID(), text: command.text.trim(),
       ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
       expectedLastUserMessageId: lastUserMessageIdOf(this.thread(command.threadId)) }, turn, validate, command.draftId, this.localClient, undefined, origin)
     if (!origin || origin.phoneOrigin) this.say(`Steered ${this.thread(command.threadId).title}.`)
@@ -5439,7 +5376,7 @@ export class AgentControl {
     const prompt = promptOf(command)
     const operation = draftId ? this.watcher.operations.find(item => item.draftId === draftId) : undefined
     // A delegated brief carries delegation's own guard to the writer, as a Watcher operation carries Watcher's (ADR-0081).
-    const delegationGuard = !machineOrigin && !operation && draftId ? this.delegationHooks?.guardFor(draftId) ?? this.councilHooks?.guardFor(draftId) : undefined
+    const delegationGuard = !machineOrigin && !operation && draftId ? this.delegationHooks?.guardFor(draftId) ?? this.coordinationHooks?.guardFor(draftId) ?? this.councilHooks?.guardFor(draftId) : undefined
     const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) }
       : delegationGuard ? { guard: delegationGuard } : undefined)
     origin?.guard()
@@ -5863,7 +5800,7 @@ export class AgentControl {
     this.assertCanAct()
     this.observe(threadId)
     const messageId = this.watcher.operations.find(item => item.draftId === draftId)?.messageId
-      ?? (draftId ? this.delegationHooks?.messageIdFor(draftId) ?? this.councilHooks?.messageIdFor(draftId) : undefined) ?? randomUUID()
+      ?? (draftId ? this.delegationHooks?.messageIdFor(draftId) ?? this.coordinationHooks?.messageIdFor(draftId) ?? this.councilHooks?.messageIdFor(draftId) : undefined) ?? randomUUID()
     const readStartedAt = performance.now()
     const read = await this.readThread(threadId, undefined, readBeforeSend(messageId))
     this.sendStages(turn)?.addRead(performance.now() - readStartedAt)
@@ -6237,6 +6174,7 @@ export class AgentControl {
   private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: HostThreadsChange & { readonly gone: ReadonlySet<string> }): void {
     this.observeWatcher(snapshot, changed)
     if (!this.disposed) this.delegationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
+    if (!this.disposed) this.coordinationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
     if (!this.disposed) this.councilHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
     const shownThread = (id: string): AgentThread | undefined => snapshot === this.state.host ? this.threadById(id) : snapshot.threads.find(thread => thread.id === id)
     if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !shownThread(this.state.activeThreadId)) {

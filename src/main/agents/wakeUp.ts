@@ -9,6 +9,8 @@ import { WORK_LEFT_RESTART_NOTE, limitRestartNewsSchema, limitRestartNote, type 
 import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT, type WatcherNewsDetail, type WatcherNewsHeld } from './watcherNews'
 import { delegationNewsSchema, type DelegationNews } from '../../shared/delegation'
 import { delegationNewsText, foldDelegationNews } from './delegationNews'
+import { coordinationNewsSchema, type CoordinationNews } from '../../shared/threadCoordination'
+import { coordinationNewsText, foldCoordinationNews } from './threadCoordinationNews'
 import { watcherAsksOf, type WatcherAsk } from '../../shared/watcherAsks'
 
 /**
@@ -52,19 +54,21 @@ export const babysitNewsSchema = z.object({
   unreadable: z.enum(['sign-in', 'not-found', 'no-answer', 'answer']).optional(),
 })
 
-/** Old queue files remain readable; neither Watcher, a restart nor a delegation ever impersonates a pull request. */
-export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema, restartNewsSchema, delegationNewsSchema, limitRestartNewsSchema])
-export type WakeUpNews = BabysitNews | WatcherNews | RestartNews | DelegationNews | LimitRestartNews
+/** Old queue files remain readable; neither Watcher, a restart, a delegation nor peer coordination ever impersonates a pull request. */
+export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema, restartNewsSchema, delegationNewsSchema, coordinationNewsSchema, limitRestartNewsSchema])
+export type WakeUpNews = BabysitNews | WatcherNews | RestartNews | DelegationNews | CoordinationNews | LimitRestartNews
 export const isWatcherNews = (news: WakeUpNews): news is WatcherNews => 'source' in news && news.source === 'watcher'
 /** A resume note's news (ADR-0076): Sotto closing stopped the thread's turn. */
 export const isRestartNews = (news: WakeUpNews): news is RestartNews => 'source' in news && news.source === 'restart'
 /** News of this thread's delegations (ADR-0081): which delegation, which thread, which turn and its outcome. */
 export const isDelegationNews = (news: WakeUpNews): news is DelegationNews => 'source' in news && news.source === 'delegation'
+/** News of peer parent-thread coordination exchanges (ADR-0216): which exchange, which peer thread, which turn and its outcome. */
+export const isCoordinationNews = (news: WakeUpNews): news is CoordinationNews => 'source' in news && news.source === 'coordination'
 /** A limit restart's news (ADR-0144): the provider's usage limit that stopped the thread's turn has reset. */
 export const isLimitRestartNews = (news: WakeUpNews): news is LimitRestartNews => 'source' in news && news.source === 'limit-restart'
 /** News of either restart: Sotto closing stopped the turn, or a usage limit did. Each leads its thread's queue. */
 export const isAnyRestartNews = (news: WakeUpNews): news is RestartNews | LimitRestartNews => isRestartNews(news) || isLimitRestartNews(news)
-export const isBabysitNews = (news: WakeUpNews): news is BabysitNews => !isWatcherNews(news) && !isAnyRestartNews(news) && !isDelegationNews(news)
+export const isBabysitNews = (news: WakeUpNews): news is BabysitNews => !isWatcherNews(news) && !isAnyRestartNews(news) && !isDelegationNews(news) && !isCoordinationNews(news)
 /** The limit restart note for a provider, by its own name (ADR-0144); an ID this build does not know is named as it is. */
 export const limitRestartNoteFor = (provider: string): string => limitRestartNote(Object.hasOwn(PROVIDER_LABELS, provider) ? PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] : provider)
 /**
@@ -74,15 +78,17 @@ export const limitRestartNoteFor = (provider: string): string => limitRestartNot
 export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews): WakeUpNews[] {
   const restart = earlier.filter(isAnyRestartNews), workers = earlier.filter(isWatcherNews), prs = earlier.filter(isBabysitNews)
   const delegations = earlier.filter(isDelegationNews)
+  const coordinations = earlier.filter(isCoordinationNews)
   // One restart note, the newest, whichever stopped the turn: the thread has one turn to carry on.
-  if (isAnyRestartNews(later)) return [later, ...prs, ...workers, ...delegations]
-  if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later), ...delegations]
+  if (isAnyRestartNews(later)) return [later, ...prs, ...workers, ...delegations, ...coordinations]
+  if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later), ...delegations, ...coordinations]
   // Kept for queues an earlier build saved: delegation news now waits in a wake-up of its own (`isDelegationOnlyWakeUp`).
-  if (isDelegationNews(later)) return [...restart, ...prs, ...workers, foldDelegationNews(delegations[0], later)]
-  return [...restart, ...foldNews(prs, later), ...workers, ...delegations]
+  if (isDelegationNews(later)) return [...restart, ...prs, ...workers, foldDelegationNews(delegations[0], later), ...coordinations]
+  if (isCoordinationNews(later)) return [...restart, ...prs, ...workers, ...delegations, foldCoordinationNews(coordinations[0], later)]
+  return [...restart, ...foldNews(prs, later), ...workers, ...delegations, ...coordinations]
 }
 /**
- * A waiting wake-up's message: a resume note, pull request news and delegation news, in Sotto's words, as before. Watcher's news is not
+ * A waiting wake-up's message: a resume note, pull request news, delegation news and peer-coordination news, in Sotto's words, as before. Watcher's news is not
  * in it but beside it (`watcherWakeUpNote`), so a wake-up holding only that sends Watcher a short message instead.
  */
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
@@ -90,9 +96,10 @@ export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOpt
   const restart = limit ? limit.cause === 'work-left' ? WORK_LEFT_RESTART_NOTE : limitRestartNoteFor(limit.provider) : news.some(isRestartNews) ? RESUME_NOTE : ''
   const prs = news.filter(isBabysitNews)
   const delegation = news.filter(isDelegationNews).map(item => delegationNewsText(item)).join('\n\n')
-  if (!restart && !prs.length && !delegation) return news.some(isWatcherNews) ? WATCHER_WAKE_UP_PROMPT : ''
-  const room = AGENT_TEXT_MAX - [restart, delegation].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
-  return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...delegation ? [delegation] : []].join('\n\n')
+  const coordination = news.filter(isCoordinationNews).map(item => coordinationNewsText(item)).join('\n\n')
+  if (!restart && !prs.length && !delegation && !coordination) return news.some(isWatcherNews) ? WATCHER_WAKE_UP_PROMPT : ''
+  const room = AGENT_TEXT_MAX - [restart, delegation, coordination].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
+  return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...delegation ? [delegation] : [], ...coordination ? [coordination] : []].join('\n\n')
 }
 /**
  * Watcher's news in a wake-up, as the note its send carries (ADR-0073): the provider's own per-turn context channel,
@@ -119,9 +126,12 @@ export const isWatcherOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; 
  */
 export const isDelegationOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
   item.wakeUp === true && !!item.news?.length && item.news.every(isDelegationNews)
-/** A wake-up no one is shown: Watcher's news or a delegation's (`isWatcherOnlyWakeUp`, `isDelegationOnlyWakeUp`). */
+/** A wake-up holding nothing but peer parent-thread coordination news (ADR-0216): delivered privately like delegation news. */
+export const isCoordinationOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
+  item.wakeUp === true && !!item.news?.length && item.news.every(isCoordinationNews)
+/** A wake-up no one is shown: Watcher's news, a delegation's, or peer coordination's. */
 export const isHiddenWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
-  isWatcherOnlyWakeUp(item) || isDelegationOnlyWakeUp(item)
+  isWatcherOnlyWakeUp(item) || isDelegationOnlyWakeUp(item) || isCoordinationOnlyWakeUp(item)
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
 type Change<Kind extends BabysitChange['kind']> = Extract<BabysitChange, { kind: Kind }>

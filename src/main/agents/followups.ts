@@ -12,7 +12,7 @@ import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import { hiddenEvents } from './hiddenWakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { wakeUpNewsSchema, foldWakeUpNews, isAnyRestartNews, isBabysitNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isWatcherNews, isWatcherOnlyWakeUp,
+import { wakeUpNewsSchema, foldWakeUpNews, isAnyRestartNews, isBabysitNews, isCoordinationNews, isCoordinationOnlyWakeUp, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isWatcherNews, isWatcherOnlyWakeUp,
   WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
@@ -279,11 +279,12 @@ export class FollowupStore {
       if (hidden && state.items.some(item => item.threadId === threadId && isWatcherOnlyWakeUp(item))) throw new Error('Watcher already has news on its way.')
       // News `apart` picks out may not go yet, so it never shares a wake-up with news that may: neither holds the other.
       const side = apart?.(news) ?? false
-      // A delegation's news waits in a hidden wake-up of its own, one a thread, and folds into nothing else, nor anything
-      // else into it (ADR-0081, October 19, 2026): only the thread's own turn holds it, so it shares no other wake-up's wait.
+      // A delegation's news or peer coordination's news waits in a hidden wake-up of its own, one a thread, and folds into nothing else.
       const delegation = isDelegationNews(news)
+      const coordination = isCoordinationNews(news)
       const waiting = hidden ? undefined : state.items.find(item => waitingWakeUp(item, threadId) && !isWatcherOnlyWakeUp(item)
-        && isDelegationOnlyWakeUp(item) === delegation && (!apart || (item.news ?? []).every(held => apart(held) === side)))
+        && isDelegationOnlyWakeUp(item) === delegation && isCoordinationOnlyWakeUp(item) === coordination
+        && (!apart || (item.news ?? []).every(held => apart(held) === side)))
       if (waiting) {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
@@ -358,7 +359,7 @@ export class FollowupStore {
   requeueDelegationNews(id: string): Promise<void> {
     return this.change(state => {
       const item = state.items.find(candidate => candidate.id === id)
-      if (!item || !isDelegationOnlyWakeUp(item) || item.status === 'queued' || item.status === 'dispatching') return false
+      if (!item || !isDelegationOnlyWakeUp(item) && !isCoordinationOnlyWakeUp(item) || item.status === 'queued' || item.status === 'dispatching') return false
       item.status = 'queued'; item.updatedAt = new Date().toISOString()
       delete item.error; delete item.commandId; delete item.messageId
     })

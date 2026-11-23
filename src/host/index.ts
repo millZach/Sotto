@@ -40,6 +40,7 @@ import { HostRemoteCallers } from '../main/agents/delegationRemoteHost'
 import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
+import { CoordinationToolServer } from '../main/agents/threadCoordinationTools'
 import { MediaToolServer } from '../main/agents/mediaTools'
 import { hostBrowserTools, type HostBrowserTools } from './browser/hostBrowserTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
@@ -193,6 +194,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A thread's link to the thread that delegated to it reaches clients only where delegation is on. This host's own
   // threads delegate on this machine only where Work across machines is on (#1310), below.
   const delegation = owlFeatures['thread-delegation'] || owlFeatures['cross-machine-work']
+  const parentCoordinationEnabled = owlFeatures['parent-thread-coordination']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   // Work across machines (ADR-0082) only where the host's Owl answer turns it on: the host names its projects' GitHub
   // origins to a desktop placing work (#1032), and reads its live load and counts its work placed but not started
@@ -282,7 +284,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], owletsEnabled: owlFeatures.owlets, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, parentCoordinationEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], owletsEnabled: owlFeatures.owlets, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
       nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
@@ -328,6 +330,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = [
       ...(runtime.delegation && crossMachineEnabled
         ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []),
+      ...(runtime.threadCoordination ? [new CoordinationToolServer(runtime.threadCoordination)] : []),
       ...(owlFeatures['inline-media'] ? [new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) })] : []),
       // `sotto_plugins` (ADR-0205): this host's threads use the account copies it holds and this machine's own gh.
       ...(plugins ? [plugins.tools] : []),
