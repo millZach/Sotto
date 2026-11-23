@@ -96,6 +96,21 @@ describe('a host’s tiles and chip', () => {
     expect(within(tile('Codex')).getByRole('button', { name: 'Disconnect Codex on forge' })).toBeInTheDocument()
   })
 
+  it('offers Update on a paired host’s Antigravity tile when standalone agy is behind (#2842)', async () => {
+    const user = userEvent.setup()
+    const { bridge, updateClients } = hosts()
+    const antigravityUpdate: ProviderClientUpdate = {
+      id: 'antigravity', installed: '1.5.14', published: '1.5.15', behind: true,
+      channel: 'self-update', command: 'agy update', byHand: ['agy update'], steps: 1,
+      canInstall: true, checkedAt: '2026-11-23T12:00:00.000Z', state: 'idle',
+    }
+    render(<div className="hosts-settings"><HostProviders host={forge} providers={[...PROVIDERS, connected('antigravity', '1.5.14 / ACP 1')]} bridge={bridge} updates={[antigravityUpdate]} /></div>)
+    await user.click(screen.getByRole('button', { name: 'Show providers on forge' }))
+    expect(within(tile('Antigravity')).getByText('1.5.15 available')).toBeInTheDocument()
+    await user.click(within(tile('Antigravity')).getByRole('button', { name: 'Update Antigravity on forge to 1.5.15' }))
+    expect(updateClients).toHaveBeenCalledWith({ id: HOST, action: 'update', providers: ['antigravity'] })
+  })
+
   it('says what a waiting tile waits for, shows the step of Grok Build’s two, and lets a waiting one be cancelled', async () => {
     const user = userEvent.setup()
     const { bridge, updateClients } = hosts()

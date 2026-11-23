@@ -1,9 +1,9 @@
 // @vitest-environment node
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { findAntigravityExecutable, withAntigravityBinaryPath } from '../../../src/main/agents/antigravityLookup'
+import { antigravityInstallFolders, findAntigravityExecutable, withAntigravityBinaryPath } from '../../../src/main/agents/antigravityLookup'
 import { locateClient } from '../../../src/main/agents/providerClients'
 
 const roots: string[] = []
@@ -35,4 +35,18 @@ it('counts Antigravity installed when only Settings’ binary path names its agy
   expect(await withAntigravityBinaryPath(['codex'], agy, nowhere)).toEqual(['codex', 'antigravity'])
   expect(await withAntigravityBinaryPath(['codex'], await program('node'), nowhere)).toEqual(['codex'])
   expect(await withAntigravityBinaryPath(['codex'], '', nowhere)).toEqual(['codex'])
+})
+
+it('checks Google’s default install folders on POSIX and Windows', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-antigravity-folders-')); roots.push(root)
+  const localAppData = join(root, 'AppData', 'Local')
+  expect(antigravityInstallFolders({ HOME: root }, 'linux')).toEqual([join(root, '.local', 'bin')])
+  expect(antigravityInstallFolders({ HOME: root }, 'darwin')).toEqual([join(root, '.local', 'bin')])
+  expect(antigravityInstallFolders({ USERPROFILE: root, LOCALAPPDATA: localAppData }, 'win32'))
+    .toEqual([join(localAppData, 'agy', 'bin'), join(root, '.local', 'bin')])
+  const winBin = join(localAppData, 'agy', 'bin')
+  await mkdir(winBin, { recursive: true })
+  const winAgy = join(winBin, 'agy.exe')
+  await writeFile(winAgy, 'fake\n')
+  expect(await findAntigravityExecutable({ ...nowhere, LOCALAPPDATA: localAppData }, { platform: 'win32', home: root })).toBe(winAgy)
 })
