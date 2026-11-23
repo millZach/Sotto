@@ -297,17 +297,27 @@ function run(command) {
     const kind = command.kind ?? 'read'
     const rawInput = command.rawInput ?? { Path: command.path }
     update(sessionId, { sessionUpdate: 'tool_call', toolCallId, name: command.name ?? 'read_file', kind, title, status: 'in_progress', rawInput, ...(command.locations ? { locations: command.locations } : {}) })
-    update(sessionId, {
-      sessionUpdate: 'tool_call_update',
-      toolCallId,
-      name: command.name ?? 'read_file',
-      kind,
-      title,
-      status: command.status ?? 'completed',
-      rawInput,
-      ...(command.locations ? { locations: command.locations } : {}),
-      ...(command.output ? { content: [{ type: 'content', content: { type: 'text', text: command.output } }] } : {}),
-      rawOutput: command.rawOutput ?? {},
-    })
+    if (command.minimalCompletion) {
+      update(sessionId, {
+        sessionUpdate: 'tool_call_update',
+        toolCallId,
+        status: command.status ?? 'completed',
+        ...(command.output ? { content: [{ type: 'content', content: { type: 'text', text: command.output } }] } : {}),
+        rawOutput: command.rawOutput ?? {},
+      })
+    } else {
+      update(sessionId, {
+        sessionUpdate: 'tool_call_update',
+        toolCallId,
+        name: command.name ?? 'read_file',
+        kind,
+        title,
+        status: command.status ?? 'completed',
+        rawInput,
+        ...(command.locations ? { locations: command.locations } : {}),
+        ...(command.output ? { content: [{ type: 'content', content: { type: 'text', text: command.output } }] } : {}),
+        rawOutput: command.rawOutput ?? {},
+      })
+    }
   }
 }

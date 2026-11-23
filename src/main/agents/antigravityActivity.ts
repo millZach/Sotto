@@ -166,6 +166,12 @@ function resolveReadImagePath(rawPath: string, cwd: string, platform: NodeJS.Pla
   return paths.isAbsolute(local) ? paths.normalize(local) : paths.resolve(cwd, local)
 }
 
+function hasFileExtension(rawPath: string, platform: NodeJS.Platform = process.platform): boolean {
+  const paths = platform === 'win32' ? win32 : posix
+  const local = platform === 'win32' && /^\/[A-Za-z]:[\\/]/u.test(rawPath) ? rawPath.slice(1) : rawPath
+  return paths.extname(local).length > 0
+}
+
 function firstLocationPath(locations: unknown): string | undefined {
   if (!Array.isArray(locations)) return undefined
   for (const item of locations) {
@@ -175,6 +181,34 @@ function firstLocationPath(locations: unknown): string | undefined {
   return undefined
 }
 
+function rawInputPathFromRowText(text: string | undefined): string | undefined {
+  if (!text || !text.startsWith('{')) return undefined
+  try { return firstString(object(JSON.parse(text) as unknown), IMAGE_PATH_KEYS) } catch { return undefined }
+}
+
+export interface AntigravityReadCallInfo {
+  readonly isRead: boolean
+  readonly rawPath?: string | undefined
+}
+
+/** Extracts read tool identity and raw path from a `tool_call` or `tool_call_update` frame and merged row. */
+export function antigravityReadCallInfo(
+  update: Record<string, unknown>,
+  row: Pick<AgentActivity, 'status' | 'title' | 'media' | 'changes' | 'text'> | undefined,
+): AntigravityReadCallInfo {
+  const fields = parseToolFields(update, row)
+  const isRead = update.kind === 'read'
+    || READ_TOOL_TITLE.test(row?.title ?? '')
+    || READ_TOOL_TITLE.test(typeof update.name === 'string' ? update.name : '')
+    || READ_TOOL_TITLE.test(typeof update.title === 'string' ? update.title : '')
+    || row?.changes?.some(change => change.kind === 'read') === true
+  const rawPath = firstString(fields.input, IMAGE_PATH_KEYS)
+    ?? firstLocationPath(update.locations)
+    ?? row?.changes?.find(change => typeof change.path === 'string' && change.path.trim())?.path.trim()
+    ?? rawInputPathFromRowText(row?.text)
+  return { isRead, ...(rawPath ? { rawPath } : {}) }
+}
+
 /**
  * The raster picture a completed Antigravity file read inspected, when Sotto should read and attach it (`captureMediaFile`).
  * Pre-filters by raster extension (or image MIME output for extensionless paths) and skips incomplete/failed rows, non-read
@@ -182,24 +216,19 @@ function firstLocationPath(locations: unknown): string | undefined {
  */
 export function antigravityReadImagePath(
   update: Record<string, unknown>,
-  row: Pick<AgentActivity, 'status' | 'title' | 'media' | 'changes'> | undefined,
+  row: Pick<AgentActivity, 'status' | 'title' | 'media' | 'changes' | 'text'> | undefined,
   cwd: string,
   platform: NodeJS.Platform = process.platform,
+  remembered?: AntigravityReadCallInfo,
 ): string | undefined {
   const sessionUpdate = String(update.sessionUpdate)
   if ((sessionUpdate !== 'tool_call' && sessionUpdate !== 'tool_call_update') || !row || row.media?.length || row.status !== 'completed') return undefined
-  const fields = parseToolFields(update, row)
-  const isRead = update.kind === 'read'
-    || READ_TOOL_TITLE.test(row.title ?? '')
-    || READ_TOOL_TITLE.test(typeof update.name === 'string' ? update.name : '')
-    || READ_TOOL_TITLE.test(typeof update.title === 'string' ? update.title : '')
-    || row.changes?.some(change => change.kind === 'read') === true
-  if (!isRead) return undefined
-  const rawPath = firstString(fields.input, IMAGE_PATH_KEYS)
-    ?? firstLocationPath(update.locations)
-    ?? row.changes?.find(change => typeof change.path === 'string' && change.path.trim())?.path.trim()
+  const current = antigravityReadCallInfo(update, row)
+  if (!current.isRead && !remembered?.isRead) return undefined
+  const rawPath = current.rawPath ?? remembered?.rawPath
   if (!rawPath) return undefined
-  if (!RASTER_IMAGE_PATH.test(rawPath) && !(fields.outputText && RASTER_IMAGE_MIME.test(fields.outputText))) return undefined
+  const fields = parseToolFields(update, row)
+  if (!RASTER_IMAGE_PATH.test(rawPath) && (hasFileExtension(rawPath, platform) || !(fields.outputText && RASTER_IMAGE_MIME.test(fields.outputText)))) return undefined
   return resolveReadImagePath(rawPath, cwd, platform)
 }
 

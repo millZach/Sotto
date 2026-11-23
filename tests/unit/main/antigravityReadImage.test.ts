@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { antigravityReadImagePath } from '../../../src/main/agents/antigravityActivity'
+import { antigravityReadCallInfo, antigravityReadImagePath } from '../../../src/main/agents/antigravityActivity'
 
 describe('antigravityReadImagePath', () => {
   it('resolves relative and absolute raster image paths from completed read calls', () => {
@@ -122,5 +122,71 @@ describe('antigravityReadImagePath', () => {
       { status: 'completed', title: 'Read' },
       '/repo',
     )).toBeUndefined()
+  })
+
+  it('captures status-only completion updates using remembered call info or row.text JSON fallback', () => {
+    const startInfo = antigravityReadCallInfo(
+      { sessionUpdate: 'tool_call', toolCallId: 'call_13', kind: 'read', title: 'Read', status: 'in_progress', rawInput: { Path: 'assets/chart.png' } },
+      { status: 'running', title: 'Read' },
+    )
+    expect(startInfo).toEqual({ isRead: true, rawPath: 'assets/chart.png' })
+    expect(antigravityReadImagePath(
+      { sessionUpdate: 'tool_call_update', toolCallId: 'call_13', status: 'completed' },
+      { status: 'completed', title: 'Read' },
+      '/repo',
+      'linux',
+      startInfo,
+    )).toBe('/repo/assets/chart.png')
+
+    expect(antigravityReadImagePath(
+      { sessionUpdate: 'tool_call_update', toolCallId: 'call_14', status: 'completed' },
+      { status: 'completed', title: 'Run read_file', text: JSON.stringify({ file_path: 'saved.webp' }) },
+      '/repo',
+      'linux',
+    )).toBe('/repo/saved.webp')
+  })
+
+  it('restricts image MIME fallback to extensionless paths even when output text mentions raster MIME types', () => {
+    expect(antigravityReadImagePath(
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call_15',
+        kind: 'read',
+        status: 'completed',
+        rawInput: { Path: 'logo.svg' },
+        content: [{ type: 'content', content: { type: 'text', text: '<image href="data:image/png;base64,AAAA"/>' } }],
+      },
+      { status: 'completed', title: 'Read logo.svg' },
+      '/repo',
+      'linux',
+    )).toBeUndefined()
+
+    expect(antigravityReadImagePath(
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call_16',
+        kind: 'read',
+        status: 'completed',
+        rawInput: { Path: 'src/upload.ts' },
+        content: [{ type: 'content', content: { type: 'text', text: "export const ACCEPT = 'image/png'" } }],
+      },
+      { status: 'completed', title: 'Read src/upload.ts' },
+      '/repo',
+      'linux',
+    )).toBeUndefined()
+
+    expect(antigravityReadImagePath(
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call_17',
+        kind: 'read',
+        status: 'completed',
+        rawInput: { file_path: '/tmp/dir.v1/blob-123' },
+        content: [{ type: 'content', content: { type: 'text', text: 'Loaded image/png (800x600)' } }],
+      },
+      { status: 'completed', title: 'Read' },
+      '/repo',
+      'linux',
+    )).toBe('/tmp/dir.v1/blob-123')
   })
 })

@@ -11,7 +11,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
-import { antigravityActivities, antigravityReadImagePath, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
+import { antigravityActivities, antigravityReadCallInfo, antigravityReadImagePath, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX, type AntigravityReadCallInfo } from './antigravityActivity'
 import { AntigravityBackgroundTasks, antigravityBackgroundCommand, mergeAntigravityBackgroundWork, sanitizeAntigravityWorkLabel } from './antigravityBackgroundWork'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
 import { antigravityChildReading, CHILD_PASS_FILES, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
@@ -378,6 +378,7 @@ export class AntigravityAcpHost implements ProviderHost {
   private readonly observed = new Set<string>()
   private readonly outdated = new Set<string>()
   private readonly readingMedia = new Set<string>()
+  private readonly pendingReads = new Map<string, AntigravityReadCallInfo>()
   private readonly processes = new Set<AntigravityRpc>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
@@ -1236,7 +1237,8 @@ export class AntigravityAcpHost implements ProviderHost {
             const rows = antigravityActivities(update, { turnId: priorTurnId, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key: priorKey }, thread.activities, this.options.captureMedia)
             if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.changed(id) }
             const priorRow = rows.find(item => item.id === antigravityToolId(priorKey))
-            const imagePath = antigravityReadImagePath(update, priorRow, alias.cwd)
+            const rememberedRead = this.rememberReadCall(id, toolCallId, update, priorRow)
+            const imagePath = antigravityReadImagePath(update, priorRow, alias.cwd, process.platform, rememberedRead)
             if (priorRow && imagePath) this.captureReadImage(id, priorRow.id, imagePath)
             this.backgroundTasksFor(id).observe(priorSignal, priorTurnId)
             this.syncBackgroundWork(id)
@@ -1260,7 +1262,8 @@ export class AntigravityAcpHost implements ProviderHost {
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
     const edits = antigravityEdits(update), row = key ? rows.find(item => item.id === antigravityToolId(key)) : undefined
     if (edits.length && row?.kind === 'file-change' && row.changes?.length === edits.length) void this.placeEdits(id, row.id, edits, row.changes.map(change => change.diff), alias.cwd)
-    const imagePath = antigravityReadImagePath(update, row, alias.cwd)
+    const rememberedRead = isTool ? this.rememberReadCall(id, update.toolCallId, update, row) : undefined
+    const imagePath = antigravityReadImagePath(update, row, alias.cwd, process.platform, rememberedRead)
     if (row && imagePath) this.captureReadImage(id, row.id, imagePath)
     if ((row?.kind === 'command' || signal?.isCommand) && !signal?.pending) turn!.ranCommand = true
     const wasOutlived = signal ? (this.backgroundTasks.get(id)?.isOutlived(signal.toolCallId) ?? false) : false
@@ -1431,6 +1434,30 @@ export class AntigravityAcpHost implements ProviderHost {
     if (!thread || !row?.changes || row.changes.length !== placed.length || !placed.some(Boolean) || row.changes.some((change, index) => change.diff !== reported[index])) return
     thread.activities = mergeAgentActivities(thread.activities, [{ ...row, changes: row.changes.map((change, index) => placed[index] ? { ...change, diff: placed[index] } : change) }])
     this.changed(id); this.emit()
+  }
+  /** Retains read tool identity and path across minimal `tool_call_update` completion frames. */
+  private rememberReadCall(
+    threadId: string,
+    toolCallId: unknown,
+    update: Record<string, unknown>,
+    row: Pick<AgentActivity, 'status' | 'title' | 'media' | 'changes' | 'text'> | undefined,
+  ): AntigravityReadCallInfo | undefined {
+    if (typeof toolCallId !== 'string' || !toolCallId) return undefined
+    const cacheKey = `${threadId}\n${toolCallId}`
+    const prior = this.pendingReads.get(cacheKey)
+    const current = antigravityReadCallInfo(update, row)
+    const merged: AntigravityReadCallInfo = {
+      isRead: prior?.isRead === true || current.isRead,
+      ...(current.rawPath ?? prior?.rawPath ? { rawPath: current.rawPath ?? prior?.rawPath } : {}),
+    }
+    const terminal = row?.status === 'completed' || row?.status === 'failed' || row?.status === 'interrupted'
+    if (terminal) {
+      this.pendingReads.delete(cacheKey)
+    } else if (merged.isRead || merged.rawPath) {
+      if (!prior && this.pendingReads.size >= 1_000) this.pendingReads.delete(this.pendingReads.keys().next().value!)
+      this.pendingReads.set(cacheKey, merged)
+    }
+    return merged
   }
   /** Captures a raster image a completed file read viewed, off the update path (`ThreadMediaStore.captureFile`). */
   private captureReadImage(id: string, rowId: string, path: string): void {
@@ -1957,7 +1984,7 @@ export class AntigravityAcpHost implements ProviderHost {
     this.pending.clear()
     for (const turn of this.turns.values()) this.clearReactiveTimers(turn)
     for (const watch of this.backgroundCommands.values()) watch.stop()
-    this.backgroundCommands.clear(); this.backgroundTasks.clear(); this.lookingBeforeEnd.clear(); this.reactiveTurnCounts.clear(); this.readingMedia.clear()
+    this.backgroundCommands.clear(); this.backgroundTasks.clear(); this.lookingBeforeEnd.clear(); this.reactiveTurnCounts.clear(); this.readingMedia.clear(); this.pendingReads.clear()
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
     // Published once, with the rest of the disconnect.
     for (const [id, commandId] of [...this.compactions]) this.settleCompaction(id, commandId, undefined, COMPACTION_LOST, false)

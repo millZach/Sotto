@@ -724,6 +724,7 @@ describe('Antigravity ACP adapter', () => {
       const relPng = pngHeader(4, 3)
       const extPng = pngHeader(6, 5)
       await writeFile(join(f!.root, 'shot.png'), relPng)
+      await writeFile(join(f!.root, 'minimal.png'), extPng)
       const outsidePath = join(outsideDir, 'outside.png')
       await writeFile(outsidePath, extPng)
       await writeFile(join(f!.root, 'spoof.png'), 'not a real png')
@@ -776,6 +777,13 @@ describe('Antigravity ACP adapter', () => {
       expect(secondRow?.media).toBeUndefined()
       expect(attemptedPaths.length).toBeGreaterThan(attemptsBeforeOff)
       expect((await thread(id)).activities?.filter(row => (row.media?.length ?? 0) > 0)).toHaveLength(2)
+
+      // Status-only tool_call_update completion still captures using info remembered from tool_call.
+      showEvery = true
+      await f!.action(id, { type: 'read-file', path: 'minimal.png', minimalCompletion: true })
+      await expect.poll(async () => (await thread(id)).activities?.find(row => row.title === 'Read minimal.png')?.media?.[0]).toEqual(
+        expect.objectContaining({ id: 'm0', mimeType: 'image/png', width: 6, height: 5, source: 'tool' }),
+      )
     } finally {
       await Promise.all(tempDirs.map(dir => rm(dir, { recursive: true, force: true })))
     }
