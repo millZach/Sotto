@@ -7,6 +7,7 @@ import { GIT_PULL_REQUEST_LINKS_MAX } from '../../../src/shared/gitPullRequests'
 import type { GitStatus } from '../../../src/shared/gitStatus'
 import { READY_TO_MERGE_TOOL, type ReadyToMerge } from '../../../src/shared/tellWatcher'
 import { cleanup, fixture, send } from '../../fixtures/workspaceTestFixture'
+import { workspaceFixture } from '../../fixtures/workspaceFixture'
 
 afterEach(async () => { for (const step of cleanup.splice(0).reverse()) await step() })
 
@@ -89,11 +90,24 @@ describe('multi-PR tracking across branch switches (#2063)', () => {
     await f.host.updateThreadWorktree('ind', false)
     await vi.waitFor(() => expect(f.host.threadPullRequests('ind').branch).toBe(prUrl(101)))
 
-    // Switching to branch 2 with PR 102 retains PR 101 in durable links.
+    // Switching to branch 2 with PR 102 retains PR 101 in durable links (source 'linked', never promoted without switching branches).
     currentStatus = gitStatus('feat/2', prSummary(102, 'open'))
     await f.host.updateThreadWorktree('ind', false)
     await vi.waitFor(() => expect(f.host.threadPullRequests('ind')).toEqual({ branch: prUrl(102), linked: [prUrl(101)] }))
+    expect((await f.host.snapshot()).threads.find(t => t.id === 'ind')?.pullRequests?.find(link => link.url === prUrl(101))?.source).toBe('linked')
     expect(f.host.openPullRequestUrls('ind')).toEqual([prUrl(102), prUrl(101)])
+
+    // Same-branch PR change or transient empty PR read (e.g. rebase / detached check) must NOT auto-promote PR 102.
+    currentStatus = gitStatus('feat/2', prSummary(104, 'open'))
+    await f.host.updateThreadWorktree('ind', false)
+    await vi.waitFor(() => expect(f.host.threadPullRequests('ind').branch).toBe(prUrl(104)))
+    currentStatus = gitStatus('feat/2', null)
+    await f.host.updateThreadWorktree('ind', false)
+    await vi.waitFor(() => expect(f.host.threadPullRequests('ind').branch).toBeUndefined())
+    expect(f.host.threadPullRequests('ind').linked).toEqual([prUrl(101)])
+    currentStatus = gitStatus('feat/2', prSummary(102, 'open'))
+    await f.host.updateThreadWorktree('ind', false)
+    await vi.waitFor(() => expect(f.host.threadPullRequests('ind').branch).toBe(prUrl(102)))
 
     // Unlinking PR 102 prevents re-promotion when switching again to branch 3; explicit re-link clears suppression.
     f.host.setGitPullRequests({ view: vi.fn(async (_cwd: string, reference: string) => { const n = Number(reference.split('/').at(-1)); return pullView(n, prUrl(n), { createdAt: '2026-11-10T00:00:00.000Z' }) }), act: vi.fn() } as never)
@@ -169,5 +183,70 @@ describe('multi-PR tracking across branch switches (#2063)', () => {
     session.status = 'idle'
     f.adapters.codex.emit()
     await vi.waitFor(() => expect(f.host.threadPullRequests('fb').linked).toContain(prUrl(777)))
+
+    // Linking a newly settled PR when already at 50 open links must evict an older link instead of evicting the new one.
+    await f.host.execute({ type: 'create-thread', commandId: 'c-cap', threadId: 'cap', projectId: project.id, title: 'Cap thread', modelId: model.id })
+    for (let i = 0; i < GIT_PULL_REQUEST_LINKS_MAX; i++) await f.host.linkThreadPullRequest('cap', prUrl(500 + i))
+    expect(f.host.threadPullRequests('cap').linked).toHaveLength(GIT_PULL_REQUEST_LINKS_MAX)
+    await f.host.linkThreadPullRequest('cap', prUrl(999))
+    const afterCap = f.host.threadPullRequests('cap').linked
+    expect(afterCap).toHaveLength(GIT_PULL_REQUEST_LINKS_MAX)
+    expect(afterCap).toContain(prUrl(999))
+    expect(afterCap).not.toContain(prUrl(500))
+  })
+
+  it('persists unlinked PR suppression across restarts and ignores concurrent turn-follow links during an unlink', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'codex')!
+    const model = snapshot.models.find(item => item.providerId === 'codex')!
+    const worktree = { mode: 'independent' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, branch: 'feat/1', baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...worktree, status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockResolvedValue(worktree)
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready' }))
+
+    let currentStatus = gitStatus('feat/1', prSummary(101, 'open'))
+    f.host.setGitStatus({ read: vi.fn(async () => currentStatus), readRemote: vi.fn(async () => true), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+
+    // Block followTurnPullRequests view so we can unlink mid-flight before onLane commits.
+    let resolveView!: () => void
+    const viewGate = new Promise<void>(resolve => { resolveView = resolve })
+    const began = Date.now()
+    f.host.setGitPullRequests({
+      view: vi.fn(async (_cwd: string, reference: string) => {
+        const number = Number(reference.split('/').at(-1))
+        if (number === 888) await viewGate
+        return pullView(number, prUrl(number), { createdAt: new Date(began + 1000).toISOString() })
+      }),
+      act: vi.fn(),
+    } as never)
+
+    await f.host.execute({ type: 'create-thread', commandId: 'c-persist', threadId: 'p1', projectId: project.id, title: 'Persist thread', modelId: model.id, workingCopy: 'independent' })
+    await f.host.execute(send('p1'))
+    const session = f.adapters.codex.state.threads.at(-1)!
+    session.activities = [{ id: 't-p1', turnId: 'message-p1', sequence: 0, kind: 'turn', status: 'completed', title: 'Done' }]
+    session.messages.push({ id: 'reply-p1', role: 'assistant', text: `Opened ${prUrl(888)}`, createdAt: new Date(began + 1500).toISOString() })
+    session.status = 'idle'
+    f.adapters.codex.emit()
+    await f.host.unlinkThreadPullRequest('p1', prUrl(888))
+    resolveView()
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(f.host.threadPullRequests('p1').linked).not.toContain(prUrl(888))
+
+    // Link then unlink #101, restart WorkspaceHost over the same directory, then switch branch -> #101 must stay suppressed.
+    await f.host.updateThreadWorktree('p1', false)
+    await vi.waitFor(() => expect(f.host.threadPullRequests('p1').branch).toBe(prUrl(101)))
+    await f.host.unlinkThreadPullRequest('p1', prUrl(101))
+    await f.host.flush()
+    await f.stop()
+
+    const reopened = await workspaceFixture(f.root, { adapters: f.adapters })
+    cleanup.push(() => reopened.stop())
+    await reopened.host.connect()
+    currentStatus = gitStatus('feat/2', prSummary(102, 'open'))
+    reopened.host.setGitStatus({ read: vi.fn(async () => currentStatus), readRemote: vi.fn(async () => true), invalidate: vi.fn() }, { pollIntervalMs: () => 0 })
+    await reopened.host.updateThreadWorktree('p1', false)
+    await vi.waitFor(() => expect(reopened.host.threadPullRequests('p1').branch).toBe(prUrl(102)))
+    expect(reopened.host.threadPullRequests('p1').linked).not.toContain(prUrl(101))
   })
 })
