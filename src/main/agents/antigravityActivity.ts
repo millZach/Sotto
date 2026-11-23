@@ -35,8 +35,12 @@ export const ANTIGRAVITY_THINKING_ID_PREFIX = 'antigravity-thinking-'
 export const antigravityToolId = (key: string): string => `antigravity-tool-${key}`
 const MOVES_ON = new Set(['agent_message_chunk', 'tool_call', 'plan'])
 const ANTIGRAVITY_THINKING: AcpThinking = { idPrefix: ANTIGRAVITY_THINKING_ID_PREFIX, settles: update => MOVES_ON.has(String(update.sessionUpdate)) ? 'completed' : undefined }
-/** `agy`'s subagent tools, by the titles T3 Code recognises them by: shown as a subagent's row. */
-const SUBAGENT_TITLES = new Set(['Running start_subagent', 'Run start_subagent?', 'Running invoke_subagent', 'Run invoke_subagent?', 'Run invoke_subagent'])
+/** `agy`'s subagent tools, by the titles and tool names T3 Code and `agy` 1.5 report them by: shown as a subagent's row. */
+const SUBAGENT_TITLES = new Set([
+  'Running start_subagent', 'Run start_subagent?', 'Run start_subagent', 'start_subagent',
+  'Running invoke_subagent', 'Run invoke_subagent?', 'Run invoke_subagent', 'invoke_subagent',
+])
+const SUBAGENT_TOOL_NAMES = new Set(['invoke_subagent', 'start_subagent'])
 const NON_BACKGROUND_KINDS = new Set(['read', 'edit', 'delete', 'move', 'search', 'fetch', 'think'])
 const AGY_BACKGROUND_HEADER = /^Tool is running as a background task(?:\s+with task id:\s*([^\s,.;]+))?/imu
 const AGY_STILL_RUNNING_HEADER = /^Background command is still running after \d+s\b/imu
@@ -116,7 +120,10 @@ function parseToolFields(update: Record<string, unknown>, old?: Pick<AgentActivi
   const nativeKind = typeof update.kind === 'string' ? update.kind : undefined
   const command = antigravityCommand(update.rawInput) ?? (output ? firstString(output, ['commandLine', 'command_line']) : undefined) ?? old?.command
   const title = typeof update.title === 'string' ? update.title : old?.title
-  const subagent = (nativeKind === undefined || nativeKind === 'other') && title !== undefined && SUBAGENT_TITLES.has(title) && object(update._meta)?.is_mcp_tool_call !== true
+  const toolName = typeof update.name === 'string' ? update.name.trim() : undefined
+  const subagent = (nativeKind === undefined || nativeKind === 'other')
+    && ((title !== undefined && SUBAGENT_TITLES.has(title)) || (toolName !== undefined && SUBAGENT_TOOL_NAMES.has(toolName)))
+    && object(update._meta)?.is_mcp_tool_call !== true
   const status = normalizeToolStatus(update.status) ?? old?.status ?? 'unknown'
   const exitCode = output?.exitCode ?? output?.exit_code
   const printed = firstString(output, ['combinedOutput', 'combined_output', 'stdout']) ?? ''
@@ -249,14 +256,21 @@ const SETTLED = new Set(['completed', 'failed', 'interrupted'])
 function childAgent(key: string, status: string, title: string | undefined, input: Record<string, unknown> | undefined, old: AgentActivity | undefined): ChildAgent {
   const held = old?.agents?.[0]
   if (held && SETTLED.has(held.status)) return held
-  const words = (field: string): string | undefined => firstString(input, [field])?.slice(0, MAX_ACTIVITY_TEXT)
-  const role = words('Role') ?? held?.title, prompt = words('Prompt') ?? held?.prompt, model = words('Model') ?? held?.model
-  const detached = status === 'completed' && (prompt !== undefined || title?.includes('invoke_subagent') === true)
+  const words = (...fields: string[]): string | undefined => firstString(input, fields)?.slice(0, MAX_ACTIVITY_TEXT)
+  const role = words('Role', 'role', 'Description', 'description') ?? held?.title
+  const prompt = words('Prompt', 'prompt') ?? held?.prompt
+  const inputModel = words('Model', 'model')
+  const model = (inputModel && inputModel !== 'inherit' ? inputModel : undefined) ?? held?.model
+  const detached = status === 'completed' && (prompt !== undefined || /\b(?:invoke|start)_subagent\b/u.test(title ?? ''))
   const next = detached ? 'running' : status, now = new Date().toISOString()
   // A child seen at work now is live: without the moment it was seen, the Agents pane reads it as last seen working.
-  return { id: `antigravity-child-${key}`, status: next, title: role ?? title ?? 'Subagent',
-    ...(prompt ? { prompt } : {}), ...(model && model !== 'inherit' ? { model } : {}),
-    ...(next === 'running' ? { observedAt: now, startedAt: held?.startedAt ?? now, timingSource: 'observed' as const } : {}) }
+  return {
+    id: `antigravity-child-${key}`, status: next, title: role ?? title ?? 'Subagent',
+    ...(prompt ? { prompt } : {}), ...(model ? { model } : {}),
+    ...(held?.steps ? { steps: held.steps } : {}),
+    ...(held?.stepsTotal !== undefined ? { stepsTotal: held.stepsTotal } : {}),
+    ...(next === 'running' ? { observedAt: now, startedAt: held?.startedAt ?? now, timingSource: 'observed' as const } : {}),
+  }
 }
 
 /** The turn's one plan row: `agy` replaces its whole list on every plan update. */

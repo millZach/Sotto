@@ -1,13 +1,14 @@
 import { picturesIn, type MediaCapture } from '../../threadMedia'
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { MAX_ACTIVITY_TEXT, compactAgentIdentity, findAgentActivity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, compactAgentIdentity, findAgentActivity, isTerminalActivity, mergeAgentActivities, mergeSubagentSteps, planSteps, type AgentActivity, type ObservedAgent, type SubagentStep, type WorkflowProgress } from '../../../../shared/agentActivity'
 import { observedSubagentStatus } from '../../../../shared/subagents'
+import { buildSubagentStep, stepLine } from '../../subagentSteps'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
 import { ClaudeThinking, THINKING_BLOCKS, claudeNarration, claudeThinkingId, claudeThinkingRow } from './claudeThinking'
 import { thinkingSettledAs } from '../../thinkingActivity'
-import { CLAUDE_TRANSCRIPT_ID, type ClaudeModelTarget, type ClaudeSubagentTranscript } from './claudeSubagentModels'
+import { CLAUDE_TRANSCRIPT_ID, claudeToolStep, type ClaudeModelTarget, type ClaudeSubagentTranscript, type ClaudeSubagentTranscriptUpdate, type ClaudeTranscriptTarget } from './claudeSubagentModels'
 
 const text = (value: unknown): string | undefined => typeof value === 'string' ? value.slice(0, MAX_ACTIVITY_TEXT) : undefined
 const agentAliasId = (id: string): string => `claude-agent-alias-${createHash('sha256').update(id).digest('hex')}`
@@ -115,8 +116,10 @@ export class ClaudeActivity {
   private readonly pendingModels = new Map<string, string>()
   /** Workflow run folders reported by a Workflow launch, by its tool call, until its task is known. */
   private readonly runsByTool = new Map<string, string>()
-  /** Agents with no model yet whose own transcript can name one, by observed agent id. */
+  /** Agents whose own transcript is tailed for live steps and (when missing) resolved model, by observed agent id. */
   private readonly transcripts = new Map<string, { transcript: ClaudeSubagentTranscript } & AgentKeys>()
+  /** Bounded live child steps observed via sidechain stream or subagent transcript, by observed agent id. */
+  private readonly agentSteps = new Map<string, { assignmentId?: string | undefined; steps: SubagentStep[]; total: number }>()
   /** A workflow's agents by observed id, so a model read from one's transcript finds it. */
   private readonly workflowMembers = new Map<string, ObservedAgent>()
   /** How many of each workflow's agents are waiting for a place to start, by the workflow's observed id. */
@@ -221,6 +224,10 @@ export class ClaudeActivity {
         ...(input && !todos?.length ? { text: json(input) } : {}), ...(typeof input?.command === 'string' ? { command: text(input.command) } : {}),
         ...(input && JSON.stringify(input).length > MAX_ACTIVITY_TEXT ? { truncated: true } : {}),
         ...(path ? { changes: [{ path, kind: name, ...(typeof input?.old_string === 'string' && typeof input?.new_string === 'string' ? { diff: text(`--- before\n${input.old_string}\n+++ after\n${input.new_string}`) } : {}) }] } : {}) })
+      if (parentTool) {
+        const step = claudeToolStep(block.id, name, input, observedAt)
+        this.recordChildSteps(previous, rows, parentTool, [step], undefined, observedAt)
+      }
     }
     const blocks = object(frame.message)?.content
     if (Array.isArray(blocks)) for (const [position, value] of blocks.entries()) {
@@ -241,6 +248,15 @@ export class ClaudeActivity {
           const timed = durationMs !== undefined && observedAt && typeof frame.timestamp === 'string'
             ? { startedAt: new Date(Date.parse(observedAt) - durationMs).toISOString(), completedAt: observedAt, timingSource: 'provider' as const, durationMs } : {}
           rows.push(claudeThinkingRow(place, claudeThinkingId(replyId, index), 'completed', words, timed))
+          if (parentTool && stepLine(words)) {
+            this.recordChildSteps(previous, rows, parentTool, [buildSubagentStep({
+              id: `claude-step-think-${replyId}-${index}`, kind: 'reasoning', status: 'completed', title: 'Thinking',
+              detail: stepLine(words), mono: false,
+              startedAt: 'startedAt' in timed ? timed.startedAt : observedAt,
+              completedAt: observedAt,
+              durationMs,
+            })], undefined, observedAt)
+          }
         }
       }
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string' && this.appliedTaskCalls.has(block.tool_use_id)) continue
@@ -304,6 +320,9 @@ export class ClaudeActivity {
           ...(claudeText(block.content).length > MAX_ACTIVITY_TEXT ? { truncated: true } : {}),
           ...(Number.isInteger(result?.exitCode ?? result?.exit_code) ? { exitCode: (result?.exitCode ?? result?.exit_code) as number } : {}),
           ...(base.startedAt ? { completedAt: base.startedAt } : {}) })
+        if (parentTool) {
+          this.completeChildStep(previous, rows, parentTool, block.tool_use_id, block.is_error === true ? 'failed' : 'completed', observedAt, block.is_error === true ? claudeText(block.content) : undefined)
+        }
       }
     }
     if (frame.type === 'stream_event') {
@@ -440,8 +459,8 @@ export class ClaudeActivity {
         const agent = workflowAgent(entry, workflow, prior, observedAt)
         if (!agent) continue
         agents.set(agent.id, agent)
-        // An agent the stream names no model for has its own transcript under the run's folder.
-        if (!agent.model && run && typeof entry.agentId === 'string') this.watchTranscript(agent, { runId: run, agentId: entry.agentId }, undefined, undefined)
+        // Watch every workflow agent's transcript for live child steps and (if missing) resolved model.
+        if (run && typeof entry.agentId === 'string') this.watchTranscript(agent, { runId: run, agentId: entry.agentId }, undefined, undefined)
       }
       this.queuedAgents.set(workflow.id, queued)
       for (const id of this.queuedAgents.keys()) { if (this.queuedAgents.size <= MAX_TRANSCRIPT_TARGETS) break; this.queuedAgents.delete(id) }
@@ -460,8 +479,17 @@ export class ClaudeActivity {
     const targets: ClaudeModelTarget[] = []
     for (const [id, entry] of this.transcripts) {
       const agent = this.current(id, entry)
-      if (agent?.model) { this.transcripts.delete(id); continue }
+      if (agent?.model) continue
       targets.push({ id, transcript: entry.transcript, settled: agent?.status !== 'running' })
+    }
+    return targets.reverse()
+  }
+  /** Watched agents whose own transcript is tailed for live child steps and (if missing) resolved model, newest first. */
+  transcriptTargets(): ClaudeTranscriptTarget[] {
+    const targets: ClaudeTranscriptTarget[] = []
+    for (const [id, entry] of this.transcripts) {
+      const agent = this.current(id, entry)
+      targets.push({ id, transcript: entry.transcript, settled: agent?.status !== 'running', needsModel: !agent?.model })
     }
     return targets.reverse()
   }
@@ -469,9 +497,23 @@ export class ClaudeActivity {
   applyModel(previous: AgentActivity[], id: string, model: string): AgentActivity[] {
     const entry = this.transcripts.get(id)
     if (!entry || this.current(id, entry)?.model) return previous
-    this.transcripts.delete(id)
     const rows: AgentActivity[] = []
     this.patchModel(previous, rows, id, model.slice(0, 512), entry)
+    return rows.length ? mergeAgentActivities(previous, rows) : previous
+  }
+  /** Live steps and/or resolved model read from an agent's own transcript, patched onto the rows that show it. */
+  applyTranscript(previous: AgentActivity[], id: string, update: ClaudeSubagentTranscriptUpdate): AgentActivity[] {
+    const entry = this.transcripts.get(id)
+    if (!entry) return previous
+    const rows: AgentActivity[] = []
+    const model = update.model && !this.current(id, entry)?.model ? update.model.slice(0, 512) : undefined
+    if (model) this.patchModel(previous, rows, id, model, entry)
+    if (update.steps?.length) {
+      const assignmentId = this.current(id, entry)?.assignmentId
+      const stored = this.mergeStoredSteps(id, assignmentId, update.steps, update.stepsTotal)
+      const observedAt = new Date().toISOString()
+      this.patchAgentSteps(previous, rows, id, stored.steps, stored.total, observedAt)
+    }
     return rows.length ? mergeAgentActivities(previous, rows) : previous
   }
   private current(id: string, entry: AgentKeys): ObservedAgent | undefined {
@@ -546,11 +588,56 @@ export class ClaudeActivity {
     return steps.length || old ? { ...place, ...old, id, sequence: 0, kind: 'plan', status: 'running', title: 'Plan', steps } : undefined
   }
   private watchTranscript(agent: ObservedAgent, transcript: ClaudeSubagentTranscript, tool: string | undefined, task: string | undefined): void {
-    if (agent.model || !CLAUDE_TRANSCRIPT_ID.test(transcript.agentId) || (transcript.runId !== undefined && !CLAUDE_TRANSCRIPT_ID.test(transcript.runId))) return
+    if (!CLAUDE_TRANSCRIPT_ID.test(transcript.agentId) || (transcript.runId !== undefined && !CLAUDE_TRANSCRIPT_ID.test(transcript.runId))) return
     const known = this.transcripts.get(agent.id)
     this.transcripts.delete(agent.id)
     this.transcripts.set(agent.id, { transcript, tool: tool ?? known?.tool, task: task ?? known?.task })
     for (const id of this.transcripts.keys()) { if (this.transcripts.size <= MAX_TRANSCRIPT_TARGETS) break; this.transcripts.delete(id) }
+  }
+  private mergeStoredSteps(agentId: string, assignmentId: string | undefined, incoming: readonly SubagentStep[], incomingTotal?: number): { steps: SubagentStep[]; total: number } {
+    const existing = this.agentSteps.get(agentId)
+    const sameAssignment = existing && (assignmentId === undefined || existing.assignmentId === undefined || existing.assignmentId === assignmentId)
+    const merged = mergeSubagentSteps(sameAssignment ? existing.steps : undefined, incoming, sameAssignment ? existing.total : 0, incomingTotal)
+    this.agentSteps.delete(agentId)
+    this.agentSteps.set(agentId, { assignmentId: assignmentId ?? (sameAssignment ? existing.assignmentId : undefined), ...merged })
+    for (const id of this.agentSteps.keys()) { if (this.agentSteps.size <= MAX_TRANSCRIPT_TARGETS * 4) break; this.agentSteps.delete(id) }
+    return merged
+  }
+  private recordChildSteps(previous: readonly AgentActivity[], rows: AgentActivity[], parentTool: string, incoming: readonly SubagentStep[], incomingTotal: number | undefined, observedAt: string | undefined): void {
+    const parent = this.agentsByTool.get(parentTool)
+    if (!parent) return
+    const merged = this.mergeStoredSteps(parent.id, parent.assignmentId, incoming, incomingTotal)
+    this.patchAgentSteps(previous, rows, parent.id, merged.steps, merged.total, observedAt)
+  }
+  private completeChildStep(previous: readonly AgentActivity[], rows: AgentActivity[], parentTool: string, toolUseId: string, status: 'completed' | 'failed', observedAt: string | undefined, errorText?: string): void {
+    const parent = this.agentsByTool.get(parentTool)
+    if (!parent) return
+    const stepId = `claude-step-${toolUseId}`
+    const prior = this.agentSteps.get(parent.id)?.steps.find(step => step.id === stepId)
+    if (!prior) return
+    const updated = buildSubagentStep({
+      ...prior,
+      status,
+      ...(observedAt ? { completedAt: observedAt } : {}),
+      ...(status === 'failed' && errorText ? { error: stepLine(errorText) } : {}),
+    })
+    const merged = this.mergeStoredSteps(parent.id, parent.assignmentId, [updated])
+    this.patchAgentSteps(previous, rows, parent.id, merged.steps, merged.total, observedAt)
+  }
+  private patchAgentSteps(previous: readonly AgentActivity[], rows: AgentActivity[], id: string, steps: readonly SubagentStep[], stepsTotal: number, observedAt: string | undefined): void {
+    const patch = (agent: ObservedAgent): ObservedAgent => agent.id === id
+      ? { ...agent, steps: [...steps], stepsTotal, ...(observedAt && agent.status === 'running' ? { observedAt } : {}) }
+      : agent
+    const touched = new Set<string>()
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index]!
+      if (row.agents?.some(agent => agent.id === id)) {
+        rows[index] = { ...row, agents: row.agents.map(patch) }
+        touched.add(row.id)
+      }
+    }
+    const last = previous.findLast(row => !touched.has(row.id) && row.agents?.some(agent => agent.id === id))
+    if (last) rows.push({ ...last, agents: last.agents!.map(patch) })
   }
   /**
    * Give a known agent its model on every row that already shows it, so the roster updates in place

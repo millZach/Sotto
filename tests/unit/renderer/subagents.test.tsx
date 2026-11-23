@@ -164,6 +164,48 @@ describe('Agents roster', () => {
     unmount()
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('shows the active step on a running row and chronological inline steps with Show earlier when expanded', async () => {
+    const steps = Array.from({ length: 8 }, (_, index) => ({
+      id: `step-${index + 1}`,
+      kind: index === 7 ? 'command' as const : 'read' as const,
+      status: index === 7 ? 'running' as const : index === 6 ? 'failed' as const : 'completed' as const,
+      title: index === 7 ? 'Run' : 'Read',
+      detail: index === 7 ? 'npm test' : `src/file-${index + 1}.ts`,
+      mono: true,
+      ...(index === 6 ? { error: 'ENOENT: missing file' } : {}),
+      ...(index < 6 ? { durationMs: 200 } : {}),
+    }))
+    const liveRow = row('live', 1, {
+      status: 'running',
+      model: 'gemini-4-neon-high',
+      stepCount: 8,
+      currentStep: steps[7],
+    })
+    const { bridge } = fixture([liveRow])
+    vi.mocked(bridge.assignments).mockResolvedValue({
+      threadId: 'thread',
+      agentId: 'live',
+      assignments: [{
+        id: 'live-run', sequence: 1, title: 'Audit files', prompt: 'Check all files', status: 'running',
+        steps, stepCount: 8,
+      }],
+    })
+    render(<AgentsSurface threadId="thread" store={store()} bridge={bridge} />)
+    const button = await screen.findByRole('button', { name: /Task live/ })
+    expect(screen.getByText('npm test')).toBeInTheDocument()
+    expect(screen.getByText(/8 steps/)).toBeInTheDocument()
+
+    fireEvent.click(button)
+    const list = await screen.findByRole('list', { name: 'Agent steps' })
+    expect(list.querySelectorAll(':scope > li')).toHaveLength(6)
+    expect(screen.getByText('ENOENT: missing file')).toBeInTheDocument()
+    expect(screen.queryByText('src/file-1.ts')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 earlier steps' }))
+    expect(list.querySelectorAll(':scope > li')).toHaveLength(8)
+    expect(screen.getByText('src/file-1.ts')).toBeInTheDocument()
+  })
 })
 
 describe('a workflow in the roster', () => {

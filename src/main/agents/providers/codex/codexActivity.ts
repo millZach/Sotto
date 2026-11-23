@@ -2,7 +2,8 @@ import { picturesIn, rasterTypeOf, type MediaCapture, type MediaFileCapture } fr
 import { createHash, randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent } from '../../../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, MAX_SUBAGENT_STEPS, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, mergeSubagentSteps, settleSubagentSteps, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent, type SubagentStep } from '../../../../shared/agentActivity'
+import { buildSubagentStep, shortStepCommand, shortStepPath, stepLine } from '../../subagentSteps'
 import type { AgentThread } from '../../../../shared/agents'
 import { BACKGROUND_WORK_LABELS, MAX_BACKGROUND_WORK, MAX_MONITOR_LABEL, type AgentBackgroundWork } from '../../../../shared/agentMonitoring'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
@@ -86,7 +87,10 @@ type Item = z.infer<typeof codexItemSchema>
  * built per notification cost main 1.4 s a minute (October 2026), and `zodSchemaSites.test.ts` keeps it that way.
  */
 const childItemNotificationSchema = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() })
+const childDeltaNotificationSchema = z.object({ turnId: z.string(), itemId: z.string(), delta: z.string().optional(), summaryIndex: z.number().int().nonnegative().max(199).optional(), message: z.string().optional() })
+const childPlanNotificationSchema = z.object({ turnId: z.string(), explanation: z.string().nullish(), plan: z.array(z.object({ step: z.string(), status: z.string() })).max(200) })
 const childTurnNotificationSchema = z.object({ turn: z.object({ id: z.string().optional(), status: z.string(), startedAt: z.number().nullish(), completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() })
+type ChildStepBucket = { assignmentId?: string | undefined; steps: SubagentStep[]; total: number; summaries: Map<string, Map<number, string>> }
 /** One agent as a conversation observed it: where it was last reported, and its compact identity. */
 type Child = { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
@@ -162,6 +166,8 @@ export class CodexActivityProjection {
    * often history is read again before the agent starts, its assignment is timed from the message.
    */
   private readonly messageTimes = new WeakMap<ActivityConversation, Map<string, number>>()
+  /** Live steps observed on each child thread's current assignment, per conversation. */
+  private readonly childSteps = new WeakMap<ActivityConversation, Map<string, ChildStepBucket>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
   /**
    * Commands still running when their live turn ended (#2634): Codex keeps a unified-exec session that outlives its
@@ -595,6 +601,7 @@ export class CodexActivityProjection {
    */
   runtimeEnded(thread: ActivityConversation): void {
     this.working.delete(thread); this.commandsLeft.delete(thread); this.openCommands.delete(thread); this.outlived.delete(thread)
+    this.childSteps.delete(thread)
     // What it ran past a turn ended with it: no completion will come for those rows, and no agent in them is working,
     // whatever its row says, since every agent runs in this conversation's app-server.
     const terminal = this.terminalTurns.get(thread)
@@ -603,7 +610,11 @@ export class CodexActivityProjection {
       const runningAgent = record.kind === 'subagent' && record.agents?.some(agent => agent.status === 'running')
       if (!runningRow && !runningAgent) continue
       this.put(thread, { ...record, ...(runningRow ? { status: 'unknown' as const } : {}),
-        ...(record.agents ? { agents: record.agents.map(agent => agent.status === 'running' ? { ...agent, status: 'interrupted' } : agent) } : {}) })
+        ...(record.agents ? { agents: record.agents.map(agent => {
+          if (agent.status !== 'running') return agent
+          const steps = settleSubagentSteps(agent.steps, 'interrupted')
+          return { ...agent, status: 'interrupted', ...(steps ? { steps } : {}) }
+        }) } : {}) })
     }
   }
 
@@ -649,14 +660,155 @@ export class CodexActivityProjection {
     if (!owner || owner.thread === thread || live) this.owners.set(native, entry)
   }
 
+  private stepBucket(thread: ActivityConversation, child: string, assignmentId: string | undefined): ChildStepBucket {
+    const byChild = this.childSteps.get(thread) ?? new Map<string, ChildStepBucket>()
+    this.childSteps.set(thread, byChild)
+    let bucket = byChild.get(child)
+    if (!bucket || (assignmentId !== undefined && bucket.assignmentId !== undefined && bucket.assignmentId !== assignmentId)) {
+      bucket = { assignmentId, steps: [], total: 0, summaries: new Map() }
+      byChild.set(child, bucket)
+    } else if (assignmentId !== undefined && bucket.assignmentId === undefined) {
+      bucket.assignmentId = assignmentId
+    }
+    return bucket
+  }
+
+  private codexChildStep(turnId: string, item: Item, phase: 'started' | 'completed', startedAtMs?: number, completedAtMs?: number): SubagentStep | undefined {
+    const status = mappedStatus(item.status, phase === 'started' ? 'running' : 'completed')
+    const id = `codex-step-${opaque(turnId, item.id)}`
+    const startedAt = iso(startedAtMs) ?? (phase === 'started' ? iso(this.now()) : undefined)
+    const completedAt = iso(completedAtMs) ?? (phase === 'completed' ? iso(this.now()) : undefined)
+    const durationMs = item.durationMs ?? undefined
+    const timing = { startedAt, completedAt, durationMs }
+    switch (item.type) {
+      case 'commandExecution':
+        return buildSubagentStep({
+          id, kind: 'command', status, title: 'Run',
+          detail: shortStepCommand(item.command) ?? stepLine(item.command),
+          mono: true,
+          exitCode: item.exitCode ?? undefined,
+          error: status === 'failed' ? item.error?.message ?? stepLine(item.aggregatedOutput ?? undefined) : undefined,
+          ...timing,
+        })
+      case 'fileChange': {
+        const paths = (item.changes ?? []).map(change => shortStepPath(change.path)).filter((p): p is string => Boolean(p))
+        const detail = paths.length > 1 ? `${paths[0]} (+${paths.length - 1} more)` : paths[0]
+        return buildSubagentStep({ id, kind: 'file-change', status, title: 'Edit', detail, mono: true, error: item.error?.message, ...timing })
+      }
+      case 'mcpToolCall':
+        return buildSubagentStep({
+          id, kind: 'tool', status,
+          title: item.computerUse ? 'Computer Use' : [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool',
+          error: item.error?.message,
+          ...timing,
+        })
+      case 'dynamicToolCall':
+        return buildSubagentStep({ id, kind: 'tool', status, title: item.tool ?? 'Tool', error: item.error?.message, ...timing })
+      case 'webSearch':
+        return buildSubagentStep({ id, kind: 'search', status, title: 'Web search', detail: item.query, mono: false, ...timing })
+      case 'reasoning': {
+        const summary = item.summary?.map(part => part.trim()).filter(Boolean).join(' ')
+        if (!summary) return undefined
+        return buildSubagentStep({ id, kind: 'reasoning', status, title: 'Thinking', detail: summary, mono: false, ...timing })
+      }
+      case 'plan':
+        return buildSubagentStep({ id, kind: 'plan', status, title: 'Plan', detail: item.text, mono: false, ...timing })
+      case 'imageGeneration':
+        return buildSubagentStep({ id, kind: 'tool', status, title: 'Image', detail: item.revisedPrompt ?? undefined, mono: false, ...timing })
+      case 'imageView':
+        return buildSubagentStep({ id, kind: 'read', status, title: 'View image', detail: shortStepPath(item.path), mono: true, ...timing })
+      default:
+        return undefined
+    }
+  }
+
+  private publishChildSteps(owner: Child, child: string, bucket: ChildStepBucket): void {
+    const prior = owner.agent
+    const observedAt = iso(this.now())!
+    const agent: ObservedAgent = {
+      ...prior,
+      observedAt,
+      steps: bucket.steps.slice(-MAX_SUBAGENT_STEPS),
+      stepsTotal: bucket.total,
+    }
+    const record = owner.thread.activities?.find(activity => activity.id === owner.activityId)
+    const agents = record?.agents?.map(entry => entry.id === prior.id ? { ...entry, ...agent } : entry)
+    this.put(owner.thread, record
+      ? { ...record, agents }
+      : { id: `codex-child-state-${opaque(child, prior.assignmentId ?? '')}`, turnId: owner.turnId, sequence: 0, kind: 'subagent', title: 'Subagent', status: 'unknown', agents: [agent] })
+  }
+
   childNotification(child: string, method: string, params: unknown): ActivityConversation | undefined {
     let owner = this.owners.get(child)
     if (!owner) return undefined
     if (method === 'item/started' || method === 'item/completed') {
       const nested = childItemNotificationSchema.safeParse(params)
-      if (!nested.success || nested.data.item.type !== 'collabAgentToolCall' && nested.data.item.type !== 'subAgentActivity') return undefined
-      this.item(owner.thread, { ...nested.data.item, senderThreadId: child }, { turnId: nested.data.turnId,
-        phase: method === 'item/started' ? 'started' : 'completed', startedAtMs: nested.data.startedAtMs ?? undefined, completedAtMs: nested.data.completedAtMs ?? undefined }, owner.path)
+      if (!nested.success) return undefined
+      if (nested.data.item.type === 'collabAgentToolCall' || nested.data.item.type === 'subAgentActivity') {
+        this.item(owner.thread, { ...nested.data.item, senderThreadId: child }, { turnId: nested.data.turnId,
+          phase: method === 'item/started' ? 'started' : 'completed', startedAtMs: nested.data.startedAtMs ?? undefined, completedAtMs: nested.data.completedAtMs ?? undefined }, owner.path)
+        return owner.thread
+      }
+      const step = this.codexChildStep(nested.data.turnId, nested.data.item, method === 'item/started' ? 'started' : 'completed',
+        nested.data.startedAtMs ?? undefined, nested.data.completedAtMs ?? undefined)
+      if (!step) return undefined
+      const bucket = this.stepBucket(owner.thread, child, owner.agent.assignmentId)
+      const merged = mergeSubagentSteps(bucket.steps, [step], bucket.total)
+      bucket.steps = merged.steps
+      bucket.total = merged.total
+      if (isTerminalActivity(step.status)) bucket.summaries.delete(step.id)
+      this.publishChildSteps(owner, child, bucket)
+      return owner.thread
+    }
+    if (method === 'item/reasoning/summaryTextDelta' || method === 'item/mcpToolCall/progress') {
+      const delta = childDeltaNotificationSchema.safeParse(params)
+      if (!delta.success) return undefined
+      const bucket = this.stepBucket(owner.thread, child, owner.agent.assignmentId)
+      const stepId = `codex-step-${opaque(delta.data.turnId, delta.data.itemId)}`
+      if (method === 'item/reasoning/summaryTextDelta') {
+        const index = delta.data.summaryIndex
+        if (index === undefined) return undefined
+        const parts = bucket.summaries.get(stepId) ?? new Map<number, string>()
+        parts.set(index, ((parts.get(index) ?? '') + (delta.data.delta ?? '')).slice(0, MAX_ACTIVITY_TEXT))
+        bucket.summaries.set(stepId, parts)
+        const text = [...parts].sort(([a], [b]) => a - b).map(([, value]) => value).join(' ').trim()
+        if (!text) return undefined
+        const prior = bucket.steps.find(step => step.id === stepId)
+        const merged = mergeSubagentSteps(bucket.steps, [buildSubagentStep({
+          id: stepId, kind: 'reasoning', status: prior?.status ?? 'running', title: 'Thinking', detail: text, mono: false,
+          startedAt: prior?.startedAt ?? iso(this.now()),
+        })], bucket.total)
+        bucket.steps = merged.steps; bucket.total = merged.total
+      } else {
+        const message = stepLine(delta.data.message)
+        if (!message) return undefined
+        const prior = bucket.steps.find(step => step.id === stepId)
+        const merged = mergeSubagentSteps(bucket.steps, [buildSubagentStep({
+          id: stepId, kind: prior?.kind ?? 'tool', status: prior?.status ?? 'running', title: prior?.title ?? 'Tool', detail: message, mono: false,
+          startedAt: prior?.startedAt ?? iso(this.now()),
+        })], bucket.total)
+        bucket.steps = merged.steps; bucket.total = merged.total
+      }
+      this.publishChildSteps(owner, child, bucket)
+      return owner.thread
+    }
+    if (method === 'turn/plan/updated') {
+      const planned = childPlanNotificationSchema.safeParse(params)
+      if (!planned.success) return undefined
+      const steps = planSteps(planned.data.plan.map(entry => ({ text: entry.step, status: entry.status })))
+      const done = steps.filter(entry => entry.status === 'completed').length
+      const running = steps.find(entry => entry.status === 'running')
+      const detail = running ? `${running.text} (${done}/${steps.length})` : steps.length ? `${done} of ${steps.length} done` : stepLine(planned.data.explanation ?? undefined)
+      if (!detail) return undefined
+      const bucket = this.stepBucket(owner.thread, child, owner.agent.assignmentId)
+      const stepId = `codex-step-${opaque(planned.data.turnId, '$plan')}`
+      const prior = bucket.steps.find(step => step.id === stepId)
+      const merged = mergeSubagentSteps(bucket.steps, [buildSubagentStep({
+        id: stepId, kind: 'plan', status: steps.length > 0 && done === steps.length ? 'completed' : 'running', title: 'Plan', detail, mono: false,
+        startedAt: prior?.startedAt ?? iso(this.now()),
+      })], bucket.total)
+      bucket.steps = merged.steps; bucket.total = merged.total
+      this.publishChildSteps(owner, child, bucket)
       return owner.thread
     }
     const payload = childTurnNotificationSchema.safeParse(params)
@@ -679,18 +831,25 @@ export class CodexActivityProjection {
     const turn = payload.data.turn
     const startedAt = iso(turn?.startedAt == null ? undefined : turn.startedAt * 1_000)
     const completedAt = iso(turn?.completedAt == null ? undefined : turn.completedAt * 1_000)
+    const bucket = this.childSteps.get(owner.thread)?.get(child)
+    const mapped = mappedStatus(status, 'unknown')
+    const stepsForTurn = bucket && bucket.steps.length && (!prior.assignmentId || !bucket.assignmentId || bucket.assignmentId === prior.assignmentId)
+      ? (isTerminalActivity(mapped) ? settleSubagentSteps(bucket.steps, mapped as 'completed' | 'failed' | 'interrupted', completedAt ?? observedAt) : bucket.steps.slice(-MAX_SUBAGENT_STEPS))
+      : undefined
+    if (stepsForTurn && bucket) bucket.steps = stepsForTurn
     const agent: ObservedAgent = { ...prior, status, observedAt,
       ...(startedAt ? { startedAt, timingSource: 'provider' } : !prior.startedAt && status === 'running' ? { startedAt: observedAt, timingSource: 'observed' } : {}),
-      ...(isTerminalActivity(mappedStatus(status, 'unknown')) ? { completedAt: prior.completedAt ?? completedAt ?? observedAt } : {}),
+      ...(isTerminalActivity(mapped) ? { completedAt: prior.completedAt ?? completedAt ?? observedAt } : {}),
       ...(turn?.durationMs != null ? { durationMs: turn.durationMs } : {}),
       ...(turn?.error ? { message: turn.error.message } : {}),
+      ...(stepsForTurn?.length ? { steps: stepsForTurn, stepsTotal: bucket!.total } : {}),
     }
     owner.agent = compactAgentIdentity(agent)
     const record = owner.thread.activities?.find(activity => activity.id === owner.activityId)
     // A current child remains observable after its spawn has left the bounded activity window.
-    const agents = record?.agents?.map(child => child.id === prior.id ? agent : child)
+    const agents = record?.agents?.map(entry => entry.id === prior.id ? agent : entry)
     // A row kept running past its turn for this agent reads the agent's outcome once none of its agents works (#2634).
-    const settled = record?.status === 'running' && this.terminalTurns.get(owner.thread)?.has(record.turnId) && !agents?.some(child => child.status === 'running')
+    const settled = record?.status === 'running' && this.terminalTurns.get(owner.thread)?.has(record.turnId) && !agents?.some(entry => entry.status === 'running')
     this.put(owner.thread, record ? { ...record, agents, ...(settled ? { status: mappedStatus(agent.status, 'unknown') } : {}) }
       : { id: `codex-child-state-${opaque(child, prior.assignmentId ?? '')}`, turnId: owner.turnId, sequence: 0, kind: 'subagent', title: 'Subagent', status: 'unknown', agents: [agent] })
     return owner.thread

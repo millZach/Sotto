@@ -163,6 +163,10 @@ msgstr "{failures, plural, one {{failureCount} check failed} other {{failureCoun
 msgid "{found, plural, other {{total} matches}}"
 msgstr "{found, plural, other {{total} matches}}"
 
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{hidden, plural, one {Show {count} earlier step} other {Show {count} earlier steps}}"
+msgstr "{hidden, plural, one {Show {count} earlier step} other {Show {count} earlier steps}}"
+
 #. {hostName} is the name of a paired host, as in forge.
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{hostName} isn’t connected"
@@ -406,6 +410,10 @@ msgstr "{steps, plural, other {# recorded steps}}"
 msgid "{steps, plural, other {# recorded steps}}, {unchecked, plural, other {# unchecked}}"
 msgstr "{steps, plural, other {# recorded steps}}, {unchecked, plural, other {# unchecked}}"
 
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{stepsCount, plural, one {· {count} step} other {· {count} steps}}"
+msgstr "{stepsCount, plural, one {· {count} step} other {· {count} steps}}"
+
 #. {surfaceLabel} is a Tools surface's name, as in Terminal.
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{surfaceLabel} is on the host machine."
@@ -631,6 +639,11 @@ msgstr "Agent is browsing"
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Agent is browsing {label}"
 msgstr "Agent is browsing {label}"
+
+#. Accessible name for the list of steps a subagent took.
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Agent steps"
+msgstr "Agent steps"
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Agent task"
@@ -1684,6 +1697,11 @@ msgstr "Every commit, plus a merge commit"
 msgid "Every commit, replayed onto {base}"
 msgstr "Every commit, replayed onto {base}"
 
+#. A subagent command step that exited with a non-zero exit code.
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Exit {code}"
+msgstr "Exit {code}"
+
 #. A terminal's shell has exited.
 #: src/renderer/src/tools/terminalStore.ts
 msgid "Exited"
@@ -1721,6 +1739,7 @@ msgid "Expand tools panel"
 msgstr "Expand tools panel"
 
 #. A check on a pull request failed.
+#. A subagent step that failed.
 #. A subagent's state.
 #: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
@@ -3340,6 +3359,8 @@ msgid "Reviewers wait until it is ready"
 msgstr "Reviewers wait until it is ready"
 
 #. A check on a pull request is running now.
+#. A subagent step that is currently running.
+#: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Running"
 msgstr "Running"
@@ -3726,6 +3747,11 @@ msgstr "Starting terminal…"
 msgid "Starting…"
 msgstr "Starting…"
 
+#. Heading over the live tool and command steps a subagent took.
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Steps"
+msgstr "Steps"
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Still a draft"
 msgstr "Still a draft"
@@ -3772,6 +3798,11 @@ msgstr "Stop sharing page contents with the agent"
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Stop sharing the test iPhone with the agent"
 msgstr "Stop sharing the test iPhone with the agent"
+
+#. A subagent step that was stopped before finishing.
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Stopped"
+msgstr "Stopped"
 
 #. {number} is a pull request's number.
 #: src/renderer/src/tools/PullRequestSurface.tsx
@@ -4467,6 +4498,8 @@ msgid "typed into the page"
 msgstr "typed into the page"
 
 #. A merge checklist line's state, said before its words.
+#. A subagent step whose outcome is unknown.
+#: src/renderer/src/tools/AgentsSurface.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Unknown"
 msgstr "Unknown"

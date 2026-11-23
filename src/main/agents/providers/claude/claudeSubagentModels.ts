@@ -1,6 +1,9 @@
-import { open } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, open, realpath } from 'node:fs/promises'
+import { isAbsolute, join, relative } from 'node:path'
+import { MAX_SUBAGENT_STEPS, mergeSubagentSteps, type SubagentStep, type SubagentStepKind } from '../../../../shared/agentActivity'
+import { buildSubagentStep, humanizeStepTool, shortStepCommand, shortStepPath, stepLine, validIso } from '../../subagentSteps'
 import { object } from './claudeProtocol'
+import { claudeText } from './claudeSessionLog'
 
 /**
  * Where a Claude subagent keeps its own transcript under its parent session's folder: a spawned agent
@@ -10,22 +13,95 @@ import { object } from './claudeProtocol'
 export type ClaudeSubagentTranscript = { readonly agentId: string; readonly runId?: string | undefined }
 /** An agent whose row still has no model, and whether it has stopped (so its transcript is finished). */
 export interface ClaudeModelTarget { readonly id: string; readonly transcript: ClaudeSubagentTranscript; readonly settled: boolean }
+/** An agent whose own transcript is tailed for live child steps and (if missing) its resolved model. */
+export interface ClaudeTranscriptTarget { readonly id: string; readonly transcript: ClaudeSubagentTranscript; readonly settled: boolean; readonly needsModel: boolean }
+/** Incremental update read from a Claude subagent's own transcript. */
+export interface ClaudeSubagentTranscriptUpdate {
+  readonly model?: string
+  readonly steps?: readonly SubagentStep[]
+  readonly stepsTotal?: number
+}
 /** Native agent and run identifiers are short tokens. Anything else is not a file name Sotto will build. */
 export const CLAUDE_TRANSCRIPT_ID = /^[A-Za-z0-9_-]{1,128}$/u
-/** Transcript files opened per thread per poll, across every agent still missing a model. */
+/** Transcript files opened per thread per poll, across every agent still being tailed. */
 export const MAX_SUBAGENT_TRANSCRIPTS = 16
 /** Bytes read from one file per poll. The first assistant line follows the task and a few attachments. */
 const POLL_BYTES = 256 * 1024
-/** A line longer than this is skipped unread: an assistant line that names a model is far smaller. */
+/** A line longer than this is skipped unread: an assistant line that names a model or tool call is far smaller. */
 const LINE_BYTES = 1024 * 1024
-/** Bytes read from one file in all before it is given up; the model sits near the top or nowhere. */
+/** Bytes read from one file in all before model-only scanning gives up; the model sits near the top or nowhere. */
 const FILE_BYTES = 8 * 1024 * 1024
+/** Maximum total bytes tailed from one subagent transcript across all passes. */
+const TRANSCRIPT_MAX_BYTES = 16 * 1024 * 1024
 /** Reads after an agent stops before its transcript is given up: the file can trail the notification. */
 const SETTLED_ATTEMPTS = 3
 const NEWLINE = 0x0a
 
 interface FileState { offset: number; pending: Buffer[]; pendingBytes: number; skipping: boolean; done: boolean }
 interface TargetState { files: Map<string, FileState>; attempts: number; abandoned: boolean }
+
+const isWithin = (parent: string, child: string): boolean => {
+  const within = relative(parent, child)
+  return Boolean(within) && !within.startsWith('..') && !isAbsolute(within)
+}
+
+function firstInput(input: Record<string, unknown> | undefined, keys: readonly string[]): string | undefined {
+  if (!input) return undefined
+  for (const key of keys) {
+    const value = stepLine(input[key])
+    if (value) return value
+  }
+  return undefined
+}
+
+/** Builds a bounded `SubagentStep` from a Claude `tool_use` / `server_tool_use` / `mcp_tool_use` block. */
+export function claudeToolStep(blockId: string, name: string, input: Record<string, unknown> | undefined, startedAt?: string): SubagentStep {
+  let kind: SubagentStepKind = 'tool'
+  let title = humanizeStepTool(name)
+  let detail: string | undefined
+  let mono = false
+
+  if (/^(?:Bash|PowerShell|Shell)$/u.test(name)) {
+    kind = 'command'
+    title = 'Run'
+    detail = shortStepCommand(firstInput(input, ['command', 'description']))
+    mono = true
+  } else if (name === 'Read') {
+    kind = 'read'
+    title = 'Read'
+    detail = shortStepPath(firstInput(input, ['file_path', 'path']))
+    mono = true
+  } else if (/^(?:Write|Edit|MultiEdit|NotebookEdit)$/u.test(name)) {
+    kind = 'file-change'
+    title = name === 'Write' ? 'Write' : 'Edit'
+    detail = shortStepPath(firstInput(input, ['file_path', 'notebook_path', 'path']))
+    mono = true
+  } else if (/^(?:Grep|Glob|LS)$/u.test(name)) {
+    kind = 'search'
+    title = 'Search'
+    detail = firstInput(input, ['pattern', 'path'])
+    mono = true
+  } else if (name === 'WebSearch' || name === 'WebFetch') {
+    kind = 'search'
+    title = name === 'WebSearch' ? 'Web search' : 'Fetch'
+    detail = firstInput(input, ['query', 'url'])
+    mono = name === 'WebFetch'
+  } else if (/^Todo(?:Write|Update)$/u.test(name) || /^Task(?:Create|Update|List|Get)$/u.test(name)) {
+    kind = 'plan'
+    title = 'Plan'
+    detail = firstInput(input, ['subject', 'activeForm', 'description'])
+    mono = false
+  } else if (/^(?:Agent|Task)$/u.test(name)) {
+    kind = 'tool'
+    title = 'Subagent'
+    detail = firstInput(input, ['description', 'prompt'])
+    mono = false
+  } else {
+    detail = firstInput(input, ['description', 'file_path', 'path', 'command', 'query', 'url'])
+  }
+
+  return buildSubagentStep({ id: `claude-step-${blockId}`, kind, status: 'running', title, detail, mono, startedAt })
+}
 
 /**
  * Reads the model a Claude subagent ran on from the first assistant line of its own transcript, for the
@@ -69,7 +145,70 @@ export class ClaudeSubagentModels {
     }
     return found
   }
+}
 
+interface TranscriptTailState {
+  path: string
+  file: FileState
+  attempts: number
+  abandoned: boolean
+  model?: string | undefined
+  steps: SubagentStep[]
+  stepsTotal: number
+  seenLines: number
+}
+
+/**
+ * Incrementally tails Claude subagent transcripts under `<sessionFolder>/subagents/` to extract both the
+ * agent's resolved `message.model` and its live tool/thinking steps (`tool_use`, `tool_result`, `thinking`),
+ * bounded in files per poll, bytes per poll, line length and total file bytes. Verifies every file is a plain
+ * non-symlink file whose real path stays inside `<sessionFolder>/subagents`. Nothing is ever written or logged.
+ */
+export class ClaudeSubagentTranscripts {
+  private readonly targets = new Map<string, TranscriptTailState>()
+  private pending: Promise<unknown> = Promise.resolve()
+
+  read(sessionFolder: string, targets: readonly ClaudeTranscriptTarget[]): Promise<Map<string, ClaudeSubagentTranscriptUpdate>> {
+    const pass = this.pending.then(() => this.pass(sessionFolder, targets))
+    this.pending = pass.catch(() => undefined)
+    return pass
+  }
+
+  private async pass(sessionFolder: string, targets: readonly ClaudeTranscriptTarget[]): Promise<Map<string, ClaudeSubagentTranscriptUpdate>> {
+    const updates = new Map<string, ClaudeSubagentTranscriptUpdate>()
+    const wanted = new Set(targets.map(target => target.id))
+    for (const id of this.targets.keys()) if (!wanted.has(id)) this.targets.delete(id)
+    let subagentsReal: string
+    try { subagentsReal = await realpath(join(sessionFolder, 'subagents')) } catch { return updates }
+    let budget = MAX_SUBAGENT_TRANSCRIPTS
+    for (const target of targets) {
+      if (budget <= 0) break
+      const path = transcriptPath(sessionFolder, target.transcript)
+      if (!path) continue
+      let state = this.targets.get(target.id)
+      if (!state || state.path !== path) {
+        state = {
+          path,
+          file: { offset: 0, pending: [], pendingBytes: 0, skipping: false, done: false },
+          attempts: 0, abandoned: false, steps: [], stepsTotal: 0, seenLines: 0,
+        }
+        this.targets.set(target.id, state)
+      }
+      if (state.abandoned) continue
+      budget--
+      const changed = await tailTranscript(subagentsReal, path, state)
+      if (changed) {
+        updates.set(target.id, {
+          ...(state.model && target.needsModel ? { model: state.model } : {}),
+          ...(state.steps.length ? { steps: state.steps.slice(-MAX_SUBAGENT_STEPS), stepsTotal: state.stepsTotal } : {}),
+        })
+        if (target.settled) state.attempts = 0
+      } else if (target.settled && ++state.attempts >= SETTLED_ATTEMPTS) {
+        state.abandoned = true
+      }
+    }
+    return updates
+  }
 }
 
 /** The one file an agent's transcript is, or nothing when an identifier is not a native token. */
@@ -77,6 +216,130 @@ function transcriptPath(sessionFolder: string, transcript: ClaudeSubagentTranscr
   if (!CLAUDE_TRANSCRIPT_ID.test(transcript.agentId) || (transcript.runId !== undefined && !CLAUDE_TRANSCRIPT_ID.test(transcript.runId))) return undefined
   const subagents = join(sessionFolder, 'subagents')
   return join(...(transcript.runId !== undefined ? [subagents, 'workflows', transcript.runId] : [subagents]), `agent-${transcript.agentId}.jsonl`)
+}
+
+/** Tails new bytes from a single Claude subagent transcript, returning true when model or steps changed. */
+async function tailTranscript(subagentsReal: string, path: string, state: TranscriptTailState): Promise<boolean> {
+  if (state.file.done) return false
+  try {
+    const info = await lstat(path)
+    if (!info.isFile() || info.isSymbolicLink()) return false
+    const fileReal = await realpath(path)
+    if (!isWithin(subagentsReal, fileReal)) return false
+  } catch { return false }
+
+  const handle = await open(path, 'r').catch(() => undefined)
+  if (!handle) return false
+  const beforeModel = state.model
+  const beforeSignature = stepSignature(state.steps, state.stepsTotal)
+  try {
+    const size = (await handle.stat()).size
+    if (size < state.file.offset) {
+      state.file = { offset: 0, pending: [], pendingBytes: 0, skipping: false, done: false }
+      state.steps = []
+      state.stepsTotal = 0
+      state.seenLines = 0
+    }
+    if (size === state.file.offset) return false
+    const end = Math.min(size, state.file.offset + POLL_BYTES, TRANSCRIPT_MAX_BYTES)
+    while (state.file.offset < end) {
+      const chunk = Buffer.alloc(Math.min(64 * 1024, end - state.file.offset))
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, state.file.offset)
+      if (!bytesRead) break
+      state.file.offset += bytesRead
+      let start = 0
+      for (let newline = chunk.indexOf(NEWLINE, 0); newline >= 0 && newline < bytesRead; newline = chunk.indexOf(NEWLINE, start)) {
+        const line = take(state.file, chunk.subarray(start, newline))
+        start = newline + 1
+        if (line && line.length) consumeClaudeLine(state, line)
+      }
+      if (start < bytesRead) keep(state.file, chunk.subarray(start, bytesRead))
+    }
+    if (state.file.offset >= TRANSCRIPT_MAX_BYTES) state.file.done = true
+  } catch { /* Mid-write or transient error; retry next poll. */ }
+  finally { await handle.close().catch(() => undefined) }
+  return state.model !== beforeModel || stepSignature(state.steps, state.stepsTotal) !== beforeSignature
+}
+
+function stepSignature(steps: readonly SubagentStep[], total: number): string {
+  const last = steps.at(-1)
+  return `${total}:${steps.length}:${last?.id ?? ''}:${last?.status ?? ''}:${last?.detail ?? ''}:${last?.error ?? ''}`
+}
+
+function consumeClaudeLine(state: TranscriptTailState, line: Buffer): void {
+  // Fast prefilter: only assistant/user lines carry model, tool_use, thinking, or tool_result.
+  if (!line.includes('"assistant"') && !line.includes('"user"')) return
+  let entry: Record<string, unknown> | undefined
+  try { entry = object(JSON.parse(line.toString('utf8'))) } catch { return }
+  if (!entry) return
+  const lineIdx = state.seenLines++
+  const at = validIso(entry.timestamp)
+  const msg = object(entry.message)
+  const content = msg?.content
+
+  if (entry.type === 'assistant') {
+    const model = msg?.model
+    if (!state.model && typeof model === 'string' && model && model !== '<synthetic>') state.model = model.slice(0, 512)
+    if (!Array.isArray(content)) return
+    const msgId = typeof msg?.id === 'string' ? msg.id : `line-${lineIdx}`
+    const incoming: SubagentStep[] = []
+    let hasToolUse = false
+    for (const value of content) {
+      const block = object(value)
+      if (!block) continue
+      if (['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(String(block.type)) && typeof block.id === 'string' && typeof block.name === 'string') {
+        hasToolUse = true
+        incoming.push(claudeToolStep(block.id, block.name, object(block.input), at))
+      }
+    }
+    if (!hasToolUse) {
+      for (const [pos, value] of content.entries()) {
+        const block = object(value)
+        if (!block || (block.type !== 'thinking' && block.type !== 'redacted_thinking')) continue
+        const words = typeof block.thinking === 'string' ? stepLine(block.thinking) : undefined
+        if (!words) continue
+        incoming.push(buildSubagentStep({
+          id: `claude-step-think-${msgId}-${pos}`,
+          kind: 'reasoning',
+          status: 'completed',
+          title: 'Thinking',
+          detail: words,
+          mono: false,
+          startedAt: at,
+          completedAt: at,
+        }))
+      }
+    }
+    if (incoming.length) {
+      const merged = mergeSubagentSteps(state.steps, incoming, state.stepsTotal)
+      state.steps = merged.steps
+      state.stepsTotal = merged.total
+    }
+    return
+  }
+
+  if (entry.type === 'user' && Array.isArray(content)) {
+    const updates: SubagentStep[] = []
+    for (const value of content) {
+      const block = object(value)
+      if (!block || block.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue
+      const id = `claude-step-${block.tool_use_id}`
+      const prior = state.steps.find(step => step.id === id)
+      if (!prior) continue
+      const failed = block.is_error === true
+      updates.push(buildSubagentStep({
+        ...prior,
+        status: failed ? 'failed' : 'completed',
+        ...(at ? { completedAt: at } : {}),
+        ...(failed ? { error: stepLine(claudeText(block.content)) } : {}),
+      }))
+    }
+    if (updates.length) {
+      const merged = mergeSubagentSteps(state.steps, updates, state.stepsTotal)
+      state.steps = merged.steps
+      state.stepsTotal = merged.total
+    }
+  }
 }
 
 /** Scans on from where the last poll stopped, for the first assistant line's model. Never throws. */

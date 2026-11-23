@@ -173,7 +173,9 @@ interface ChildWatch { readonly backgroundId: string; readonly threadId: string;
   /** When the newest answer read so far was sent: a child that has answered is waiting, no longer at work. */
   answeredAt?: string
   /** SHA-256 of the newest answer text seen so far, so restarts neither drop newer answers nor store message text. */
-  answerDigest?: string }
+  answerDigest?: string
+  /** SHA-256 of the newest child steps + model seen so far, so unchanged polls emit nothing. */
+  stepsDigest?: string }
 function serializeChildWatch(watch: ChildWatch): SavedChildWatch | undefined {
   const agent = watch.row.agents?.[0]
   if (!agent) return undefined
@@ -1380,17 +1382,27 @@ export class AntigravityAcpHost implements ProviderHost {
           this.settleChild(watch, child)
           continue
         }
+        const nextStepsDigest = child && (child.steps?.length || child.model)
+          ? digest(JSON.stringify([child.model ?? null, child.stepsTotal ?? 0, child.steps ?? []]))
+          : undefined
         if (child?.status === 'completed') {
           const nextDigest = child.message !== undefined ? digest(child.message) : undefined
-          const changed = watch.answeredAt === undefined
+          const answerChanged = watch.answeredAt === undefined
             || (nextDigest !== undefined && nextDigest !== watch.answerDigest
               && (child.completedAt === undefined || child.completedAt >= watch.answeredAt))
-          if (changed) {
-            watch.answeredAt = child.completedAt ?? new Date().toISOString()
-            if (nextDigest !== undefined) watch.answerDigest = nextDigest
+          const stepsChanged = nextStepsDigest !== undefined && nextStepsDigest !== watch.stepsDigest
+          if (answerChanged || stepsChanged) {
+            if (answerChanged) {
+              watch.answeredAt = child.completedAt ?? new Date().toISOString()
+              if (nextDigest !== undefined) watch.answerDigest = nextDigest
+            }
+            if (nextStepsDigest !== undefined) watch.stepsDigest = nextStepsDigest
             this.syncBackgroundWork(watch.threadId)
             this.settleChild(watch, child)
           }
+        } else if (child?.status === 'running' && nextStepsDigest !== undefined && nextStepsDigest !== watch.stepsDigest) {
+          watch.stepsDigest = nextStepsDigest
+          this.updateChildProgress(watch, child)
         }
         if (this.children.get(rowId) === watch && Date.now() > watch.until) {
           this.children.delete(rowId)
@@ -1411,16 +1423,36 @@ export class AntigravityAcpHost implements ProviderHost {
       if (!this.children.size && this.childTimer) { clearInterval(this.childTimer); this.childTimer = undefined }
     }
   }
+  private updateChildProgress(watch: ChildWatch, child: AntigravityChild): void {
+    const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.row.id) ?? watch.row, agent = row.agents?.[0]
+    if (!thread || !agent || agent.status !== 'running') return
+    const now = new Date().toISOString()
+    const nextRow: AgentActivity = {
+      ...row,
+      agents: [{
+        ...agent,
+        observedAt: now,
+        ...(child.model ? { model: child.model } : {}),
+        ...(child.steps?.length ? { steps: [...child.steps], ...(child.stepsTotal !== undefined ? { stepsTotal: child.stepsTotal } : {}) } : {}),
+      }],
+    }
+    watch.row = nextRow
+    thread.activities = mergeAgentActivities(thread.activities, [nextRow])
+    this.changed(watch.threadId); this.emit(true)
+  }
   private settleChild(watch: ChildWatch, child: AntigravityChild): void {
     // A row no longer among the thread's newest records is put back from the watch, so its answer is never lost.
     const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.row.id) ?? watch.row, agent = row.agents?.[0]
     const workChanged = this.syncBackgroundWork(watch.threadId)
-    // A running child takes what was read; one that answered takes only a newer answer, which replaces its own.
-    const newer = agent?.status === 'completed' && child.status === 'completed' && child.message !== undefined && child.message !== agent?.message
+    // A running child takes what was read; one that answered takes only a newer answer or newly read steps.
+    const newer = agent?.status === 'completed' && child.status === 'completed'
+      && ((child.message !== undefined && child.message !== agent?.message) || Boolean(child.steps?.length))
     if (!thread || !agent || (agent.status !== 'running' && !newer)) { if (workChanged) this.emit(); return }
     const settledRow: AgentActivity = {
       ...row,
       agents: [{ ...agent, status: child.status,
+        ...(child.model ? { model: child.model } : {}),
+        ...(child.steps?.length ? { steps: [...child.steps], ...(child.stepsTotal !== undefined ? { stepsTotal: child.stepsTotal } : {}) } : {}),
         ...(child.message !== undefined ? { message: child.message } : {}), ...(child.completedAt ? { completedAt: child.completedAt } : {}) }],
     }
     watch.row = settledRow
