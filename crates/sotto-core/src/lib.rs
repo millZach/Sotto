@@ -4,6 +4,7 @@ pub mod desktop_clients;
 pub mod identity;
 pub mod lock;
 pub mod ops;
+pub mod usage_ops;
 pub mod pairing;
 pub mod protocol;
 pub mod provider;

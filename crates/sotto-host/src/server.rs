@@ -40,7 +40,8 @@ pub const DEFAULT_SOTTO_VERSION: &str = match option_env!("SOTTO_HOST_VERSION") 
     _ => env!("CARGO_PKG_VERSION"),
 };
 
-/// Protocol v1 features advertised by this host build.
+/// Protocol v1 features truthfully implemented by this host build.
+/// Never advertise a feature whose protocol ops or wire semantics are stubbed or missing.
 pub fn advertised_features() -> Vec<String> {
     vec![
         "client-liveness".into(),
@@ -50,7 +51,6 @@ pub fn advertised_features() -> Vec<String> {
         "file-staging".into(),
         "activity-summaries".into(),
         "model-catalog-revision".into(),
-        "answer-receipts".into(),
         "changed-thread-records".into(),
         "reply-thread-records".into(),
         "command-changed-thread-records".into(),
@@ -58,7 +58,6 @@ pub fn advertised_features() -> Vec<String> {
         "detail-read-held".into(),
         "provider-opencode".into(),
         "provider-cursor".into(),
-        "provider-deepseek".into(),
         "provider-hermes".into(),
         "provider-antigravity".into(),
         "git-refs".into(),
@@ -70,6 +69,10 @@ pub fn advertised_features() -> Vec<String> {
         "thread-words".into(),
         "subagents".into(),
         "usage-dashboard".into(),
+        "usage-history".into(),
+        "usage-muse-opencode".into(),
+        "usage-antigravity".into(),
+        "usage-antigravity-no-limits".into(),
     ]
 }
 
@@ -869,6 +872,8 @@ async fn handle_ws_request(
 
     match req.op.as_str() {
         "hello" => {
+            let advertised: std::collections::HashSet<&str> =
+                state.features.iter().map(String::as_str).collect();
             let accepts: Vec<String> = req
                 .fields
                 .get("accepts")
@@ -876,6 +881,7 @@ async fn handle_ws_request(
                 .map(|arr| {
                     arr.iter()
                         .filter_map(Value::as_str)
+                        .filter(|feat| advertised.contains(feat))
                         .map(ToString::to_string)
                         .collect()
                 })
@@ -892,11 +898,19 @@ async fn handle_ws_request(
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };
             let shell = wire.encode_reply_shell(raw_shell);
-            let (events, has_more, latest_seq) = state
+            let (raw_events, has_more, latest_seq) = state
                 .coordinator
                 .events(None, after_seq, 200)
                 .await
                 .unwrap_or_default();
+            let allow_aliases = wire.has("message-aliases");
+            let events: Vec<_> = raw_events
+                .into_iter()
+                .filter(|ev| {
+                    allow_aliases
+                        || ev.event.get("kind").and_then(Value::as_str) != Some("message-aliased")
+                })
+                .collect();
             let memory_version = state.memory.lock().unwrap().schema_version().unwrap_or(0);
             let subagents_ok = state
                 .subagents
@@ -1004,14 +1018,25 @@ async fn handle_ws_request(
                 .unwrap_or(200)
                 .min(500) as usize;
             match state.coordinator.events(thread_id, after_seq, limit).await {
-                Ok((events, has_more, latest_seq)) => HostResponseEnvelope::ok(
-                    req.id,
-                    json!({
-                        "events": events,
-                        "hasMore": has_more,
-                        "latestSeq": latest_seq,
-                    }),
-                ),
+                Ok((raw_events, has_more, latest_seq)) => {
+                    let allow_aliases = wire.has("message-aliases");
+                    let events: Vec<_> = raw_events
+                        .into_iter()
+                        .filter(|ev| {
+                            allow_aliases
+                                || ev.event.get("kind").and_then(Value::as_str)
+                                    != Some("message-aliased")
+                        })
+                        .collect();
+                    HostResponseEnvelope::ok(
+                        req.id,
+                        json!({
+                            "events": events,
+                            "hasMore": has_more,
+                            "latestSeq": latest_seq,
+                        }),
+                    )
+                }
                 Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
             }
         }
@@ -1479,11 +1504,17 @@ async fn handle_ws_request(
             HostResponseEnvelope::ok(req.id, res)
         }
         "subagent-page" => {
-            let Some(tid) = req
-                .fields
-                .get("request")
-                .and_then(|r| r.get("threadId"))
+            let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let Some(tid) = r
+                .get("threadId")
                 .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
                 .map(ToString::to_string)
             else {
                 return HostResponseEnvelope::err(
@@ -1492,14 +1523,28 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            let before = match r.get("before") {
+                None | Some(Value::Null) => None,
+                Some(v) => match v.as_i64() {
+                    Some(n) if n > 0 => Some(n),
+                    _ => {
+                        return HostResponseEnvelope::err(
+                            req.id,
+                            HostErrorCode::InvalidRequest,
+                            HostErrorCode::InvalidRequest.default_message(),
+                        );
+                    }
+                },
+            };
             let dir = state.data_directory.clone();
+            let tid_fallback = tid.clone();
             let res = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::read_subagent_page(&dir, &tid)
+                sotto_core::ops::read_subagent_page(&dir, &tid, before)
             })
             .await
             .unwrap_or_else(|_| {
                 json!({
-                    "threadId": "",
+                    "threadId": tid_fallback,
                     "revision": 0,
                     "rows": [],
                     "summary": { "total": 0, "working": 0, "completed": 0, "failed": 0, "interrupted": 0, "unknown": 0 }
@@ -1516,8 +1561,14 @@ async fn handle_ws_request(
                 );
             };
             let (Some(tid), Some(aid)) = (
-                r.get("threadId").and_then(Value::as_str),
-                r.get("agentId").and_then(Value::as_str),
+                r.get("threadId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string),
+                r.get("agentId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string),
             ) else {
                 return HostResponseEnvelope::err(
                     req.id,
@@ -1525,30 +1576,160 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
-            let res = sotto_core::ops::read_subagent_assignments(tid, aid);
+            let before = match r.get("before") {
+                None | Some(Value::Null) => None,
+                Some(v) => match v.as_i64() {
+                    Some(n) if n > 0 => Some(n),
+                    _ => {
+                        return HostResponseEnvelope::err(
+                            req.id,
+                            HostErrorCode::InvalidRequest,
+                            HostErrorCode::InvalidRequest.default_message(),
+                        );
+                    }
+                },
+            };
+            let dir = state.data_directory.clone();
+            let tid_fallback = tid.clone();
+            let aid_fallback = aid.clone();
+            let res = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::read_subagent_assignments(&dir, &tid, &aid, before)
+            })
+            .await
+            .unwrap_or_else(|_| {
+                json!({
+                    "threadId": tid_fallback,
+                    "agentId": aid_fallback,
+                    "assignments": [],
+                })
+            });
             HostResponseEnvelope::ok(req.id, res)
         }
         "usage-read" => {
-            let tz = req
-                .fields
-                .get("query")
-                .and_then(|q| q.get("timeZone"))
+            let q = req.fields.get("query").and_then(Value::as_object);
+            let time_zone = q
+                .and_then(|o| o.get("timeZone"))
                 .and_then(Value::as_str)
                 .map(ToString::to_string);
+            if let Some(ref tz) = time_zone {
+                if sotto_core::ops::parse_usage_time_zone(Some(tz.as_str())).is_err() {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::InvalidRequest,
+                        HostErrorCode::InvalidRequest.default_message(),
+                    );
+                }
+            }
+            let from = q
+                .and_then(|o| o.get("from"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let to = q
+                .and_then(|o| o.get("to"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            if let (Some(ref f), Some(ref t)) = (&from, &to) {
+                if f > t {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::InvalidRequest,
+                        HostErrorCode::InvalidRequest.default_message(),
+                    );
+                }
+            }
+            let parse_str_list = |key: &str| -> Option<Vec<String>> {
+                q.and_then(|o| o.get(key))
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(Value::as_str)
+                            .map(ToString::to_string)
+                            .collect()
+                    })
+            };
+            let accepts_history = wire.has("usage-history");
+            let accepts_muse_opencode = wire.has("usage-muse-opencode");
+            let accepts_antigravity = wire.has("usage-antigravity");
+            let mut provider_ids = parse_str_list("providerIds");
+            if !accepts_muse_opencode {
+                let allowed = sotto_core::usage_ops::USAGE_PROVIDERS_BEFORE_MUSE;
+                provider_ids = Some(match provider_ids {
+                    Some(list) => list.into_iter().filter(|p| allowed.contains(&p.as_str())).collect(),
+                    None => allowed.iter().map(|&s| s.to_string()).collect(),
+                });
+            } else if !accepts_antigravity {
+                let allowed = sotto_core::usage_ops::USAGE_PROVIDERS_BEFORE_ANTIGRAVITY;
+                provider_ids = Some(match provider_ids {
+                    Some(list) => list.into_iter().filter(|p| allowed.contains(&p.as_str())).collect(),
+                    None => allowed.iter().map(|&s| s.to_string()).collect(),
+                });
+            }
+            let query = sotto_core::ops::UsageReadQuery {
+                from,
+                to,
+                time_zone,
+                provider_ids,
+                model_ids: parse_str_list("modelIds"),
+                include_daily: q.and_then(|o| o.get("includeDaily")).and_then(Value::as_bool),
+                sources: if accepts_history {
+                    parse_str_list("sources")
+                } else {
+                    None
+                },
+                since: if accepts_history {
+                    q.and_then(|o| o.get("since"))
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string)
+                } else {
+                    None
+                },
+            };
+            let connected = state
+                .coordinator
+                .connected_providers()
+                .await
+                .unwrap_or_default();
             let dir = state.data_directory.clone();
-            let res = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::usage_read(&dir, tz.as_deref())
+            let raw = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::usage_read(&dir, &query, &connected)
             })
             .await
             .unwrap_or_else(|_| json!({ "status": "error", "quotas": [] }));
-            HostResponseEnvelope::ok(req.id, res)
+            let filtered = sotto_core::ops::filter_usage_read_for_peer(
+                raw,
+                accepts_history,
+                accepts_muse_opencode,
+                accepts_antigravity,
+            );
+            HostResponseEnvelope::ok(req.id, filtered)
         }
         "usage-refresh" => {
-            let dir = state.data_directory.clone();
-            let res = tokio::task::spawn_blocking(move || sotto_core::ops::usage_read(&dir, None))
+            let accepts_history = wire.has("usage-history");
+            let accepts_muse_opencode = wire.has("usage-muse-opencode");
+            let accepts_antigravity = wire.has("usage-antigravity");
+            let provider_ids: Option<Vec<String>> = req
+                .fields
+                .get("providerIds")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .map(ToString::to_string)
+                        .collect()
+                });
+            let connected = state
+                .coordinator
+                .connected_providers()
                 .await
-                .unwrap_or_else(|_| json!({ "status": "error", "quotas": [] }));
-            HostResponseEnvelope::ok(req.id, res)
+                .unwrap_or_default();
+            let raw = sotto_core::ops::usage_refresh(provider_ids.as_deref(), &connected);
+            let filtered = sotto_core::ops::filter_usage_read_for_peer(
+                raw,
+                accepts_history,
+                accepts_muse_opencode,
+                accepts_antigravity,
+            );
+            HostResponseEnvelope::ok(req.id, filtered)
         }
         "usage-clear" => {
             if !may_answer {
@@ -1563,6 +1744,7 @@ async fn handle_ws_request(
                 .get("request")
                 .and_then(|r| r.get("expectedRevision"))
                 .and_then(Value::as_i64)
+                .filter(|&v| v >= 0)
             else {
                 return HostResponseEnvelope::err(
                     req.id,
@@ -1571,22 +1753,18 @@ async fn handle_ws_request(
                 );
             };
             let dir = state.data_directory.clone();
-            let res = tokio::task::spawn_blocking(move || {
+            match tokio::task::spawn_blocking(move || {
                 sotto_core::ops::usage_clear(&dir, expected_rev)
             })
             .await
-            .unwrap_or_else(|_| {
-                json!({
-                    "status": "stale",
-                    "metadata": {
-                        "startedAt": sotto_core::workspace::now_iso(),
-                        "revision": 0,
-                        "generation": 0,
-                        "legacySeedCompleted": false,
-                    }
-                })
-            });
-            HostResponseEnvelope::ok(req.id, res)
+            {
+                Ok(Ok(res)) => HostResponseEnvelope::ok(req.id, res),
+                _ => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
         }
         _ => HostResponseEnvelope::err(
             req.id,

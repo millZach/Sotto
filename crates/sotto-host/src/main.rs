@@ -142,6 +142,14 @@ async fn wait_for_shutdown_signal() {
 
 fn main() -> ExitCode {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if raw_args.iter().any(|arg| arg == "--version") {
+        let payload = serde_json::json!({
+            "runtime": "rust",
+            "version": DEFAULT_SOTTO_VERSION,
+        });
+        println!("{payload}");
+        return ExitCode::SUCCESS;
+    }
     let parsed = match parse_args(&raw_args) {
         Ok(args) => args,
         Err(msg) => {
@@ -466,6 +474,17 @@ mod tests {
         assert_eq!(health["sottoVersion"], "0.1.44-owl.20261118.2");
         assert_eq!(health["status"], "ready");
         assert!(health.get("adminToken").is_none());
+        let features: Vec<&str> = health["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert!(!features.contains(&"answer-receipts"));
+        assert!(!features.contains(&"provider-deepseek"));
+        assert!(features.contains(&"usage-dashboard"));
+        assert!(features.contains(&"usage-antigravity-no-limits"));
+        assert!(features.contains(&"subagents"));
 
         let (status, _) =
             http_request(port, "POST", "/v1/admin/pairing-code", Some("wrong"), None).await;
