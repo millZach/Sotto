@@ -523,14 +523,26 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   // whole when its row opens (#2737).
   const localHistories = windowHistories(agentControl)
   // On Owl builds, start the native Rust `sotto-engine` sidecar in read-only `--accelerator` mode over the
-  // ADR-0210 OS IPC transport (ADR-0215) to offload read-only SQLite thread-word search off the Node event loop.
-  // Hooked inside `WorkspaceHost.threadWords` so pending writes settle and store/visibility guards always run first,
-  // transparently falling back to TypeScript if the binary is absent or exits.
+  // ADR-0210 OS IPC transport (ADR-0215) to offload read-only SQLite, Git, Files, and host-facts sampling off
+  // the Node event loop. Each offload runs behind TS authority/workspace/settle guards and falls back transparently
+  // to TypeScript if the binary is absent, times out, or exits.
   const rustLocalEngine = owlFeatures['rust-local-engine'] && startupSettings.localHostEnabled && e2eConfiguration === null && env['SOTTO_DESIGN_CAPTURE'] !== '1'
     ? await startRustLocalEngine({ userDataPath, isPackaged, log })
     : undefined
+  const rustFilesAccelerator = rustLocalEngine ? {
+    list: (workspace: Parameters<typeof rustLocalEngine.threadFiles>[0], path: string) => rustLocalEngine.threadFiles(workspace, path),
+    preview: (workspace: Parameters<typeof rustLocalEngine.threadFilePreview>[0], path: string) => rustLocalEngine.threadFilePreview(workspace, path),
+  } : undefined
+  const rustGitChangesAccelerator = rustLocalEngine ? {
+    list: (workspace: Parameters<typeof rustLocalEngine.threadChanges>[0]) => rustLocalEngine.threadChanges(workspace),
+    review: (workspace: Parameters<typeof rustLocalEngine.threadChangesReview>[0], scope: Parameters<typeof rustLocalEngine.threadChangesReview>[1], ignoreWhitespace: boolean) =>
+      rustLocalEngine.threadChangesReview(workspace, scope, ignoreWhitespace),
+  } : undefined
   if (rustLocalEngine) {
     agentHost.useThreadWordsAccelerator?.(query => agentHistoryEnabled ? rustLocalEngine.searchThreadWords(query) : Promise.resolve(undefined))
+    agentHost.useGitRefsAccelerator?.((folder, options) => rustLocalEngine.gitRefs(folder, options))
+    localRuntime.useHostFactsAccelerator?.(live => rustLocalEngine.hostFacts(0, live))
+    localRuntime.useToolReadsAccelerator?.({ files: rustFilesAccelerator, gitChanges: rustGitChangesAccelerator })
   }
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
@@ -743,6 +755,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       const error = await shellBridge.openPath(path)
       if (error) throw new Error('No app opened this file.')
     },
+    accelerator: rustFilesAccelerator,
   })
   const fileDownloads = new FileDownloads({
     part: request => hostRouter.threadLinkedFile(request),
@@ -1115,6 +1128,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     copyPath: path => shellBridge.clipboardWrite(path),
     reveal: path => shellBridge.revealInFolder(path),
     emit: event => { shellBridge.sendToMain(GIT_CHANGES_EVENT, event) },
+    accelerator: rustGitChangesAccelerator,
   })
 
   if (worktreeCleanup) {

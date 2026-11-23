@@ -5,13 +5,17 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { FilePath, FileWorkspace } from '../../shared/files'
 import { fileRelativePathSchema } from '../../shared/files'
-import { gitPathRequestSchema, gitReviewRequestSchema, gitWatchRequestSchema, GIT_MAX_PATCH, GIT_REVIEW_MAX_FILES, GIT_REVIEW_MAX_PATCH, type GitChange, type GitChangeListing, type GitReview, type GitReviewFile } from '../../shared/gitChanges'
-import { toolListRequestSchema, type ToolTarget } from '../../shared/tools'
+import { gitPathRequestSchema, gitReviewRequestSchema, gitWatchRequestSchema, GIT_MAX_PATCH, GIT_REVIEW_MAX_FILES, GIT_REVIEW_MAX_PATCH, type GitChange, type GitChangeListing, type GitReview, type GitReviewFile, type GitReviewScope } from '../../shared/gitChanges'
+import { toolListRequestSchema, type ToolsResult, type ToolTarget } from '../../shared/tools'
 import type { FilesService } from '../files/service'
 import { ToolOperations, fail, parse, workspace } from './common'
 import type { CheckpointService } from './checkpoints'
 import { parseNameStatusZ, parseNumstatZ, sectionIsBinary, sectionPath, splitPatch } from './gitReview'
 
+export interface GitChangesAccelerator {
+  list(workspace: FileWorkspace): Promise<ToolsResult<GitChangeListing> | undefined>
+  review(workspace: FileWorkspace, scope: GitReviewScope, ignoreWhitespace: boolean): Promise<ToolsResult<GitReview> | undefined>
+}
 interface GitDependencies {
   files: FilesService
   copyPath(path: string): void | Promise<void>
@@ -22,6 +26,8 @@ interface GitDependencies {
   checkpoints?: CheckpointService
   /** A Git action changed this thread's folder, so the thread's Git status is read again without waiting for the timer. */
   acted?(threadId: string): void
+  /** Optional read-only accelerator (e.g. Rust local engine, ADR-0215) invoked after workspace authorization. */
+  accelerator?: GitChangesAccelerator | undefined
 }
 interface GitRunOptions { readonly maxBuffer?: number; readonly env?: Readonly<Record<string, string>>; readonly input?: string }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -43,7 +49,15 @@ export class GitChangesService extends ToolOperations {
   private readonly children = new Set<ReturnType<typeof execFile>>()
   private timer: ReturnType<typeof setInterval> | null = null
   private polling = false
-  constructor(private readonly dependencies: GitDependencies) { super() }
+  private accelerator: GitChangesAccelerator | undefined
+  constructor(private readonly dependencies: GitDependencies) {
+    super()
+    this.accelerator = dependencies.accelerator
+  }
+  /** Registers or clears an optional read-only Git changes accelerator (ADR-0215) with automatic TS fallback. */
+  useAccelerator(accelerator: GitChangesAccelerator | undefined): void {
+    this.accelerator = accelerator
+  }
   checkpoints(payload: unknown) { return this.dependencies.checkpoints?.checkpoints(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
   inspectCheckpoint(payload: unknown) { return this.dependencies.checkpoints?.inspectCheckpoint(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
   revertCheckpoint(payload: unknown) { return this.dependencies.checkpoints?.revertCheckpoint(payload) ?? this.run(async () => fail('unavailable', 'Checkpoints are unavailable in this window.')) }
@@ -88,6 +102,14 @@ export class GitChangesService extends ToolOperations {
     return this.listing(owner)
   }) }
   private async listing(owner: FileWorkspace): Promise<GitChangeListing> {
+    if (this.accelerator) {
+      const fast = await this.accelerator.list(owner).catch(() => undefined)
+      if (fast !== undefined) {
+        await workspace(this.dependencies.files, owner.threadId, owner.workspaceId)
+        if (fast.ok) return fast.value
+        return fail(fast.error.code, fast.error.message)
+      }
+    }
     let prefix: string, raw: string, head: string, branch: string | null
     try {
       prefix = (await this.git(owner.workingDirectory, ['rev-parse', '--show-prefix'])).trimEnd()
@@ -145,6 +167,14 @@ export class GitChangesService extends ToolOperations {
   private async readReview(payload: unknown, retry = true): Promise<GitReview> {
     const request = parse(gitReviewRequestSchema, payload)
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
+    if (this.accelerator) {
+      const fast = await this.accelerator.review(owner, request.scope, request.ignoreWhitespace === true).catch(() => undefined)
+      if (fast !== undefined) {
+        await workspace(this.dependencies.files, owner.threadId, owner.workspaceId)
+        if (fast.ok) return fast.value
+        return fail(fast.error.code, fast.error.message)
+      }
+    }
     const listing = await this.listing(owner)
     const cwd = owner.workingDirectory
     const hasHead = await this.git(cwd, ['rev-parse', '--verify', '-q', 'HEAD']).then(() => true, () => false)

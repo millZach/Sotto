@@ -9,6 +9,10 @@ import { FILES_DOWNLOAD_PART_BYTES, FILES_MAX_CONCURRENT_REQUESTS, FILES_MAX_ENT
 import { rasterImage } from './imagePreview'
 
 export interface FilesBinding { threadId: string; projectId: string; workingDirectory: string; previewOnly?: boolean }
+export interface FilesAccelerator {
+  list(workspace: FileWorkspace, path: string): Promise<FilesResult<FileListing> | undefined>
+  preview(workspace: FileWorkspace, path: string): Promise<FilesResult<FilePreview> | undefined>
+}
 export interface FilesDependencies {
   /** Resolve from current main-owned thread state, never a renderer-provided root. */
   resolveBinding(threadId: string): FilesBinding | null
@@ -16,6 +20,8 @@ export interface FilesDependencies {
   reveal(path: string): void
   /** Opens a file in its own app, or a folder in the file manager. Absent on a host's own reads, which open nothing. */
   open?(path: string): Promise<void>
+  /** Optional read-only accelerator (e.g. Rust local engine, ADR-0215) invoked after workspace authorization. */
+  accelerator?: FilesAccelerator | undefined
 }
 class FilesFailure extends Error {
   constructor(readonly code: FilesError['code'], message: string) { super(message) }
@@ -103,7 +109,15 @@ async function locateLink(root: string, path: string): Promise<LocatedLink | nul
 
 export class FilesService {
   private active = 0
-  constructor(private readonly dependencies: FilesDependencies) {}
+  private accelerator: FilesAccelerator | undefined
+  constructor(private readonly dependencies: FilesDependencies) {
+    this.accelerator = dependencies.accelerator
+  }
+
+  /** Registers or clears an optional read-only filesystem accelerator (ADR-0215) with automatic TS fallback. */
+  useAccelerator(accelerator: FilesAccelerator | undefined): void {
+    this.accelerator = accelerator
+  }
 
   /** Shared main-owned identity boundary for terminal, browser and Git tools. */
   resolveWorkspace(threadId: string, expected?: string): Promise<FilesResult<FileWorkspace>> {
@@ -173,6 +187,14 @@ export class FilesService {
       if (!parsed.success) return fail('invalid-request', 'Refresh the workspace and use a relative directory path.')
       const request = parsed.data
       const workspace = await this.workspace(request.threadId, request.workspaceId)
+      if (this.accelerator) {
+        const fast = await this.accelerator.list(workspace.value, request.path).catch(() => undefined)
+        if (fast !== undefined) {
+          await this.workspace(workspace.value.threadId, workspace.value.workspaceId)
+          if (fast.ok) return fast.value
+          return fail(fast.error.code, fast.error.message)
+        }
+      }
       const target = await this.target(workspace, request.path)
       if (!target.stats.isDirectory()) return fail('not-directory', 'Select a directory to browse.')
       const entries: FileListing['entries'] = []
@@ -210,6 +232,14 @@ export class FilesService {
       if (!parsed.success) return fail('invalid-request', 'Refresh the workspace and select a file.')
       const request = parsed.data
       const workspace = await this.workspace(request.threadId, request.workspaceId)
+      if (this.accelerator) {
+        const fast = await this.accelerator.preview(workspace.value, request.path).catch(() => undefined)
+        if (fast !== undefined) {
+          await this.workspace(workspace.value.threadId, workspace.value.workspaceId)
+          if (fast.ok) return fast.value
+          return fail(fast.error.code, fast.error.message)
+        }
+      }
       const target = await this.target(workspace, request.path)
       if (!target.stats.isFile()) return fail('not-file', 'Select a regular file to preview.')
       if (target.stats.size > BigInt(FILES_MAX_IMAGE_BYTES)) return fail('too-large', 'This file exceeds the 8 MiB preview limit.')

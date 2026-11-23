@@ -559,6 +559,11 @@ export interface AgentHost extends ProviderHost {
    */
   useThreadWordsAccelerator?(accelerator: ((query: string) => Promise<AgentThreadWords | undefined>) | undefined): void
   /**
+   * Registers an optional read-only Git branch listing accelerator (such as the Rust local engine, ADR-0215)
+   * invoked from `WorkspaceHost.listThreadRefs` after thread/folder resolution with automatic TS fallback.
+   */
+  useGitRefsAccelerator?(accelerator: ((folder: string, options: Omit<GitRefsRequest, 'threadId'>) => Promise<GitRefsPage | undefined>) | undefined): void
+  /**
    * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
    * turn above the window waits there with its messages. A view for the thread detail alone; the records
    * themselves stay whole everywhere else. Absent on hosts that keep no window, which give every record.

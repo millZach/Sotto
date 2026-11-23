@@ -1,9 +1,26 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { access } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import {
+  fileListingSchema,
+  filePreviewSchema,
+  filesResultSchema,
+  type FileListing,
+  type FilePreview,
+  type FileWorkspace,
+  type FilesResult,
+} from '../../shared/files'
+import {
+  gitListingSchema,
+  gitReviewSchema,
+  type GitChangeListing,
+  type GitReview,
+  type GitReviewScope,
+} from '../../shared/gitChanges'
 import { gitRefsPageSchema, type GitRefsPage } from '../../shared/gitRefs'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { agentThreadWordsSchema, type AgentThreadWords } from '../../shared/threadWords'
+import { toolsResultSchema, type ToolsResult } from '../../shared/tools'
 import {
   createEngineEndpoint,
   generateEngineToken,
@@ -17,7 +34,15 @@ const RPC_TIMEOUT_MS = 5_000
 // Below `THREAD_WORDS_HOST_WAIT_MS` (3_000 ms) in `src/shared/threadWords.ts` so a stalled Rust call
 // falls back to TypeScript before the desktop router times out the local host.
 const THREAD_WORDS_RPC_TIMEOUT_MS = 2_500
+const LIVE_HOST_FACTS_TIMEOUT_MS = 6_000
+const GIT_REVIEW_RPC_TIMEOUT_MS = 10_000
 const SHUTDOWN_TIMEOUT_MS = 5_000
+
+// Hoist composite schemas to module scope so RPC calls never recompile zod parsers (AGENTS.md).
+const threadFilesResultSchema = filesResultSchema(fileListingSchema)
+const threadFilePreviewResultSchema = filesResultSchema(filePreviewSchema)
+const threadChangesResultSchema = toolsResultSchema(gitListingSchema)
+const threadChangesReviewResultSchema = toolsResultSchema(gitReviewSchema)
 
 export interface RustLocalEngineOptions {
   readonly userDataPath: string
@@ -27,18 +52,27 @@ export interface RustLocalEngineOptions {
 }
 
 export interface RustLocalEngineGitRefsOptions {
-  readonly query?: string
-  readonly cursor?: number
-  readonly limit?: number
-  readonly includeMatchingRemoteRefs?: boolean
+  readonly query?: string | undefined
+  readonly cursor?: number | undefined
+  readonly limit?: number | undefined
+  readonly includeMatchingRemoteRefs?: boolean | undefined
+  readonly refresh?: boolean | undefined
 }
 
 export interface RustLocalEngineClient {
   readonly version: string
   readonly pid: number
-  hostFacts(runningThreads?: number): Promise<HostMachineReport | undefined>
+  hostFacts(runningThreads?: number, live?: boolean): Promise<HostMachineReport | undefined>
   searchThreadWords(query: string): Promise<AgentThreadWords | undefined>
   gitRefs(folder: string, options?: RustLocalEngineGitRefsOptions): Promise<GitRefsPage | undefined>
+  threadFiles(workspace: FileWorkspace, path: string): Promise<FilesResult<FileListing> | undefined>
+  threadFilePreview(workspace: FileWorkspace, path: string): Promise<FilesResult<FilePreview> | undefined>
+  threadChanges(workspace: FileWorkspace): Promise<ToolsResult<GitChangeListing> | undefined>
+  threadChangesReview(
+    workspace: FileWorkspace,
+    scope: GitReviewScope,
+    ignoreWhitespace?: boolean,
+  ): Promise<ToolsResult<GitReview> | undefined>
   close(): Promise<void>
 }
 
@@ -144,10 +178,16 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
     return {
       version,
       pid,
-      async hostFacts(runningThreads?: number): Promise<HostMachineReport | undefined> {
+      async hostFacts(runningThreads?: number, live?: boolean): Promise<HostMachineReport | undefined> {
         if (closed || activeConnection.isClosed) return undefined
         try {
-          const raw = await activeConnection.request('ops.hostFacts', runningThreads === undefined ? [] : [runningThreads], RPC_TIMEOUT_MS)
+          const rpcArgs = live !== undefined
+            ? [runningThreads ?? 0, { live }]
+            : runningThreads === undefined
+              ? []
+              : [runningThreads]
+          const timeoutMs = live ? LIVE_HOST_FACTS_TIMEOUT_MS : RPC_TIMEOUT_MS
+          const raw = await activeConnection.request('ops.hostFacts', rpcArgs, timeoutMs)
           const parsed = hostMachineReportSchema.safeParse(raw)
           return parsed.success ? parsed.data : undefined
         } catch {
@@ -169,6 +209,54 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
         try {
           const raw = await activeConnection.request('ops.gitRefsByFolder', refOptions ? [folder, refOptions] : [folder], RPC_TIMEOUT_MS)
           const parsed = gitRefsPageSchema.safeParse(raw)
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      },
+      async threadFiles(workspace: FileWorkspace, path: string): Promise<FilesResult<FileListing> | undefined> {
+        if (closed || activeConnection.isClosed) return undefined
+        try {
+          const raw = await activeConnection.request('ops.threadFiles', [workspace, path], RPC_TIMEOUT_MS)
+          const parsed = threadFilesResultSchema.safeParse(raw)
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      },
+      async threadFilePreview(workspace: FileWorkspace, path: string): Promise<FilesResult<FilePreview> | undefined> {
+        if (closed || activeConnection.isClosed) return undefined
+        try {
+          const raw = await activeConnection.request('ops.threadFilePreview', [workspace, path], RPC_TIMEOUT_MS)
+          const parsed = threadFilePreviewResultSchema.safeParse(raw)
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      },
+      async threadChanges(workspace: FileWorkspace): Promise<ToolsResult<GitChangeListing> | undefined> {
+        if (closed || activeConnection.isClosed) return undefined
+        try {
+          const raw = await activeConnection.request('ops.threadChanges', [workspace], RPC_TIMEOUT_MS)
+          const parsed = threadChangesResultSchema.safeParse(raw)
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      },
+      async threadChangesReview(
+        workspace: FileWorkspace,
+        scope: GitReviewScope,
+        ignoreWhitespace = false,
+      ): Promise<ToolsResult<GitReview> | undefined> {
+        if (closed || activeConnection.isClosed) return undefined
+        try {
+          const raw = await activeConnection.request(
+            'ops.threadChangesReview',
+            [workspace, scope, ignoreWhitespace],
+            GIT_REVIEW_RPC_TIMEOUT_MS,
+          )
+          const parsed = threadChangesReviewResultSchema.safeParse(raw)
           return parsed.success ? parsed.data : undefined
         } catch {
           return undefined

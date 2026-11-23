@@ -2,9 +2,14 @@ import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, Fi
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
-import { FilesService, type FilesBinding } from '../files/service'
-import { GitChangesService } from '../tools/gitChanges'
+import { FilesService, type FilesAccelerator, type FilesBinding } from '../files/service'
+import { GitChangesService, type GitChangesAccelerator } from '../tools/gitChanges'
 import type { WorkspaceHost } from './workspace'
+
+export interface ThreadToolReadsAccelerator {
+  readonly files?: FilesAccelerator | undefined
+  readonly gitChanges?: GitChangesAccelerator | undefined
+}
 
 /**
  * The reads a client may make of a thread's tools on this host (ADR-0025, October 5 amendment): a folder's entries
@@ -32,7 +37,7 @@ const notHere = (): never => { throw new Error('This read does not copy or open 
  * The runtime's own Files and Changes services, bound to its threads' working copies through the same resolver the
  * desktop's use. They carry no checkpoints, no watch and no clipboard: those stay with the window on this computer.
  */
-export function threadToolReads(options: { resolveBinding(threadId: string): FilesBinding | null; subagents: Pick<WorkspaceHost, 'subagentPage' | 'subagentAssignments'> }): HostThreadToolReads & { dispose(): void } {
+export function threadToolReads(options: { resolveBinding(threadId: string): FilesBinding | null; subagents: Pick<WorkspaceHost, 'subagentPage' | 'subagentAssignments'> }): HostThreadToolReads & { useAccelerator(accelerator: ThreadToolReadsAccelerator | undefined): void; dispose(): void } {
   const files = new FilesService({ resolveBinding: options.resolveBinding, copyPath: notHere, reveal: notHere })
   const git = new GitChangesService({ files, copyPath: notHere, reveal: notHere, emit: () => undefined })
   return {
@@ -44,6 +49,10 @@ export function threadToolReads(options: { resolveBinding(threadId: string): Fil
     gitReview: request => git.review(request),
     subagentPage: request => options.subagents.subagentPage(request),
     subagentAssignments: request => options.subagents.subagentAssignments(request),
+    useAccelerator: accelerator => {
+      files.useAccelerator(accelerator?.files)
+      git.useAccelerator(accelerator?.gitChanges)
+    },
     dispose: () => git.dispose(),
   }
 }

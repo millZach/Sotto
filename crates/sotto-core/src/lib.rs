@@ -1,6 +1,8 @@
 pub mod coordinator;
 pub mod credentials;
 pub mod desktop_clients;
+pub mod git_review;
+pub mod host_facts;
 pub mod identity;
 pub mod lock;
 pub mod ops;

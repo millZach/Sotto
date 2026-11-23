@@ -4,12 +4,15 @@
 // Windows named pipe / Unix domain socket, verifying token authentication, RPC round-trips,
 // live Codex turn execution & push broadcasts, ops, and clean shutdown (ADR-0210, ADR-0215).
 import { execFileSync, spawn } from 'node:child_process'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { HostFactsSource } from '../../src/main/agents/hostFacts'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
+import { FilesService } from '../../src/main/files/service'
+import { GitChangesService } from '../../src/main/tools/gitChanges'
 import {
   createEngineEndpoint,
   generateEngineToken,
@@ -297,4 +300,178 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 30_000)
+
+  it('offloads gitRefs, threadFiles, threadFilePreview, threadChanges, threadChangesReview, and live hostFacts through TS services with clean fallback', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-stage4a-data-'))
+    const repoDir = await mkdtemp(join(tmpdir(), 'sotto-rust-stage4a-repo-'))
+    const git = (args: string[]) => execFileSync('git', args, {
+      cwd: repoDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test',
+        GIT_AUTHOR_EMAIL: 'test@example.com',
+        GIT_COMMITTER_NAME: 'Test',
+        GIT_COMMITTER_EMAIL: 'test@example.com',
+      },
+    })
+
+    // Seed a real repository with main + feature branch, committed file, modified file, untracked file, binary, and PNG.
+    git(['init', '-b', 'main'])
+    await mkdir(join(repoDir, 'src'), { recursive: true })
+    await writeFile(join(repoDir, 'README.md'), '# Stage 4a\nline one\n', 'utf8')
+    await writeFile(join(repoDir, 'src', 'app.ts'), 'export const value = 1\n', 'utf8')
+    // Minimal 1x1 PNG header + bytes so magic-byte image detection succeeds.
+    const tinyPng = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082',
+      'hex',
+    )
+    await writeFile(join(repoDir, 'dot.png'), tinyPng)
+    await writeFile(join(repoDir, 'raw.bin'), Buffer.from([0x00, 0x01, 0x02, 0xff]))
+    git(['add', '.'])
+    git(['commit', '-m', 'Initial commit'])
+    git(['checkout', '-b', 'feature/accel'])
+    await writeFile(join(repoDir, 'src', 'app.ts'), 'export const value = 2\n', 'utf8')
+    git(['add', 'src/app.ts'])
+    git(['commit', '-m', 'Feature branch change'])
+    // Working-tree edits: modify README.md with UTF-8 BOM + whitespace + text change, add untracked file.
+    await writeFile(join(repoDir, 'README.md'), '\uFEFF# Stage 4a\n  line one\nline two\n', 'utf8')
+    await writeFile(join(repoDir, 'notes.txt'), 'Untracked note\n', 'utf8')
+
+    const client = await startRustLocalEngine({
+      userDataPath: dataDir,
+      isPackaged: false,
+      binaryPath: binary,
+    })
+
+    try {
+      expect(client).toBeDefined()
+
+      // 1. Live hostFacts with real OS/memory/CPU sampling via HostFactsSource.
+      const factsSource = new HostFactsSource()
+      let rustFactsCalls = 0
+      factsSource.useAccelerator(async live => {
+        rustFactsCalls++
+        return client!.hostFacts(2, live)
+      })
+      const facts = await factsSource.read()
+      expect(rustFactsCalls).toBe(1)
+      expect(facts.totalMemoryBytes).toBeGreaterThan(0)
+      expect(facts.freeMemoryBytes).not.toBeNull()
+      expect(facts.logicalCpuCount).toBeGreaterThanOrEqual(1)
+      // Direct Rust-vs-Node host facts parity check.
+      const nodeFacts = await new HostFactsSource().read()
+      expect(facts.os.family).toBe(nodeFacts.os.family)
+      expect(facts.architecture).toBe(nodeFacts.architecture)
+      expect(facts.logicalCpuCount).toBe(nodeFacts.logicalCpuCount)
+      expect(facts.totalMemoryBytes).toBe(nodeFacts.totalMemoryBytes)
+      const load = await factsSource.load()
+      expect(rustFactsCalls).toBe(2)
+      expect(load.windowMs).toBeGreaterThanOrEqual(1)
+      expect(load.cpuBusyPercent === null || (load.cpuBusyPercent >= 0 && load.cpuBusyPercent <= 100)).toBe(true)
+
+      // 2. gitRefsByFolder returns real repository branches with current/default ordering.
+      const refs = await client!.gitRefs(repoDir, { refresh: true })
+      expect(refs).toBeDefined()
+      expect(refs!.isRepository).toBe(true)
+      expect(refs!.refs[0]).toMatchObject({ name: 'feature/accel', current: true })
+      expect(refs!.refs.some(r => r.name === 'main' && r.isDefault)).toBe(true)
+
+      // 3. FilesService offloads list & preview (markdown, image, binary refusal) while preserving TS workspaceId.
+      let rustFileCalls = 0
+      const files = new FilesService({
+        resolveBinding: threadId => threadId === 't-4a' ? { threadId, projectId: 'p-4a', workingDirectory: repoDir } : null,
+        copyPath: () => undefined,
+        reveal: () => undefined,
+        accelerator: {
+          list: (ws, path) => { rustFileCalls++; return client!.threadFiles(ws, path) },
+          preview: (ws, path) => { rustFileCalls++; return client!.threadFilePreview(ws, path) },
+        },
+      })
+      const rootList = await files.list({ threadId: 't-4a', path: '' })
+      expect(rootList.ok).toBe(true)
+      if (!rootList.ok) throw new Error('expected ok root list')
+      expect(rustFileCalls).toBe(1)
+      const wsId = rootList.value.workspace.workspaceId
+      expect(rootList.value.entries.some(e => e.name === 'README.md' && e.kind === 'file')).toBe(true)
+      expect(rootList.value.entries.some(e => e.name === 'src' && e.kind === 'directory')).toBe(true)
+
+      const mdPreview = await files.preview({ threadId: 't-4a', workspaceId: wsId, path: 'README.md' })
+      expect(mdPreview.ok).toBe(true)
+      // UTF-8 BOM stripped matching TS TextDecoder('utf-8').
+      if (mdPreview.ok) expect(mdPreview.value.content).toEqual({ kind: 'markdown', text: '# Stage 4a\n  line one\nline two\n' })
+
+      const pngPreview = await files.preview({ threadId: 't-4a', workspaceId: wsId, path: 'dot.png' })
+      expect(pngPreview.ok).toBe(true)
+      if (pngPreview.ok) expect(pngPreview.value.content).toMatchObject({ kind: 'image', mime: 'image/png' })
+
+      const binPreview = await files.preview({ threadId: 't-4a', workspaceId: wsId, path: 'raw.bin' })
+      expect(binPreview.ok).toBe(false)
+      if (!binPreview.ok) expect(binPreview.error.code).toBe('binary')
+
+      // 4. GitChangesService offloads list & working/branch review (including untracked files & ignoreWhitespace).
+      let rustGitCalls = 0
+      const gitChanges = new GitChangesService({
+        files,
+        copyPath: () => undefined,
+        reveal: () => undefined,
+        emit: () => undefined,
+        accelerator: {
+          list: ws => { rustGitCalls++; return client!.threadChanges(ws) },
+          review: (ws, scope, ignoreWhitespace) => { rustGitCalls++; return client!.threadChangesReview(ws, scope, ignoreWhitespace) },
+        },
+      })
+      const changes = await gitChanges.list({ threadId: 't-4a', workspaceId: wsId })
+      expect(changes.ok).toBe(true)
+      if (!changes.ok) throw new Error('expected ok changes list')
+      expect(rustGitCalls).toBe(1)
+      expect(changes.value.branch).toBe('feature/accel')
+      expect(changes.value.files.some(f => f.path === 'README.md' && f.status === 'modified')).toBe(true)
+      expect(changes.value.files.some(f => f.path === 'notes.txt' && f.status === 'untracked')).toBe(true)
+
+      const workingReview = await gitChanges.review({
+        threadId: 't-4a',
+        workspaceId: wsId,
+        scope: { kind: 'working' },
+        ignoreWhitespace: true,
+      })
+      expect(workingReview.ok).toBe(true)
+      if (!workingReview.ok) throw new Error('expected ok working review')
+      expect(rustGitCalls).toBe(2)
+      const untrackedDiff = workingReview.value.files.find(f => f.path === 'notes.txt')
+      expect(untrackedDiff?.status).toBe('untracked')
+      expect(untrackedDiff?.content.kind).toBe('text')
+      expect(workingReview.value.hiddenWhitespace).toBeDefined()
+
+      const branchReview = await gitChanges.review({
+        threadId: 't-4a',
+        workspaceId: wsId,
+        scope: { kind: 'branch', base: 'main' },
+      })
+      expect(branchReview.ok).toBe(true)
+      if (!branchReview.ok) throw new Error('expected ok branch review')
+      expect(branchReview.value.scope).toMatchObject({ kind: 'branch', base: 'main', head: 'feature/accel' })
+      expect(branchReview.value.files.some(f => f.path === 'src/app.ts' && f.status === 'modified')).toBe(true)
+
+      // 5. After Rust accelerator closes, every TS service transparently falls back and matches Rust parity.
+      await client!.close()
+      const fallbackFiles = await files.preview({ threadId: 't-4a', workspaceId: wsId, path: 'README.md' })
+      expect(fallbackFiles.ok).toBe(true)
+      if (fallbackFiles.ok && mdPreview.ok) {
+        expect(fallbackFiles.value.content).toEqual(mdPreview.value.content)
+      }
+      const fallbackChanges = await gitChanges.list({ threadId: 't-4a', workspaceId: wsId })
+      expect(fallbackChanges.ok).toBe(true)
+      if (fallbackChanges.ok) {
+        expect(fallbackChanges.value.files).toEqual(changes.value.files)
+        expect(fallbackChanges.value.branch).toBe(changes.value.branch)
+      }
+      gitChanges.dispose()
+    } finally {
+      await client?.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
 })

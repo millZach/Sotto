@@ -213,12 +213,15 @@ const windowCurrent = (start: LoadSample, end: LoadSample): boolean => end.at - 
  * samples `HOST_LOAD_SAMPLE_MS` apart when that sample is older than `HOST_LOAD_WINDOW_MAX_MS`. Nothing reads on a timer,
  * so a host nobody asks spends nothing.
  */
+export type HostFactsAccelerator = (live: boolean) => Promise<Pick<HostMachineReport, 'facts' | 'load'> | undefined>
+
 export class HostFactsSource {
   private first: Promise<HostFacts> | undefined
   private latest: HostFacts | undefined
   private sample: LoadSample | undefined
   private lastLoad: HostLoad | undefined
   private loading: Promise<HostLoad> | undefined
+  private accelerator: HostFactsAccelerator | undefined
   private readonly system: HostFactsSystem
   private readonly readFile: (path: string) => Promise<string>
   private readonly sleep: (ms: number) => Promise<void>
@@ -227,6 +230,11 @@ export class HostFactsSource {
     this.system = sources.os ?? nodeOs
     this.readFile = sources.readFile ?? ((path: string) => nodeReadFile(path, 'utf8'))
     this.sleep = sources.sleep ?? (ms => new Promise(resolve => { setTimeout(resolve, ms).unref() }))
+  }
+
+  /** Registers or clears an optional read-only host facts/load accelerator (ADR-0215) with automatic TS fallback. */
+  useAccelerator(accelerator: HostFactsAccelerator | undefined): void {
+    this.accelerator = accelerator
   }
 
   private now(): number { return (this.sources.now?.() ?? new Date()).getTime() }
@@ -238,6 +246,18 @@ export class HostFactsSource {
 
   /** Reads everything the first time; later calls answer the latest facts, with memory read again when that reading is old. */
   async read(): Promise<HostFacts> {
+    if (this.latest) {
+      const now = this.now()
+      const age = now - Date.parse(this.latest.observedAt)
+      if (age >= 0 && age < HOST_FACTS_REFRESH_MS) return this.latest
+    }
+    if (this.accelerator) {
+      const fast = await this.accelerator(false).catch(() => undefined)
+      if (fast?.facts) {
+        this.latest = fast.facts
+        return this.latest
+      }
+    }
     const first = await this.readFirst()
     const latest = this.latest ?? first
     const now = this.now()
@@ -263,10 +283,18 @@ export class HostFactsSource {
   }
 
   private async readLoad(): Promise<HostLoad> {
-    const family = (await this.readFirst()).os.family
     const now = this.now()
     const age = this.lastLoad ? now - Date.parse(this.lastLoad.observedAt) : Number.NaN
     if (this.lastLoad && age >= 0 && age < HOST_FACTS_REFRESH_MS) return this.lastLoad
+    if (this.accelerator) {
+      const fast = await this.accelerator(true).catch(() => undefined)
+      if (fast?.facts) this.latest = fast.facts
+      if (fast?.load) {
+        this.lastLoad = fast.load
+        return this.lastLoad
+      }
+    }
+    const family = (await this.readFirst()).os.family
     // A starting sample too old to say how busy the machine is now, or from a clock that went backwards, is sampled again.
     const kept = this.sample, keptAge = kept ? now - kept.at : Number.NaN
     let start = kept && keptAge >= 0 && keptAge <= HOST_LOAD_WINDOW_MAX_MS ? kept : await this.takeSample(family)

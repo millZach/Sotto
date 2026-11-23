@@ -505,6 +505,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   useThreadWordsAccelerator(accelerator: ((query: string) => Promise<AgentThreadWords | undefined>) | undefined): void {
     this.threadWordsAccelerator = accelerator
   }
+  private gitRefsAccelerator: ((folder: string, options: Omit<GitRefsRequest, 'threadId'>) => Promise<GitRefsPage | undefined>) | undefined
+  private readonly gitRefsAcceleratedAtChange = new Map<string, number>()
+  useGitRefsAccelerator(accelerator: ((folder: string, options: Omit<GitRefsRequest, 'threadId'>) => Promise<GitRefsPage | undefined>) | undefined): void {
+    this.gitRefsAccelerator = accelerator
+    this.gitRefsAcceleratedAtChange.clear()
+  }
   private observePullRequest(view: GitPullRequestView): void {
     if (view.state === 'merged') this.pullRequestMerged(view.url)
     if (!this.watcherPrObserver) return
@@ -1287,6 +1293,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const folder = this.threadRepositoryFolder(request.threadId, 'branches')
     const options = { ...request } as Partial<GitRefsRequest>
     delete options.threadId
+    if (this.gitRefsAccelerator) {
+      const changeEpoch = this.gitChanges
+      const forceRefresh = options.refresh === true || this.gitRefsAcceleratedAtChange.get(folder) !== changeEpoch
+      const accelerated = await this.gitRefsAccelerator(folder, forceRefresh ? { ...options, refresh: true } : options).catch(() => undefined)
+      if (accelerated !== undefined) {
+        this.gitRefsAcceleratedAtChange.set(folder, changeEpoch)
+        return accelerated
+      }
+    }
     return this.gitStatus.listRefs(folder, options)
   }
   /** The changed files of the folder a thread works in, for the commit dialog; a draft's folder answers too, as it does for branches. */
@@ -1401,6 +1416,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * pull is still decided for each thread from what the read found, as it was.
    */
   async projectCheckoutMoved(folder: string): Promise<void> {
+    this.gitChanges++
     const key = (path: string): string => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
     const root = key(folder), movedAt = performance.now(), together: StatusesTogether = {}
     const reads: Promise<void>[] = []
@@ -1974,7 +1990,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (checkout === null) continue
       try { if (sameFolder(resolveThreadWorkingDirectory(thread, projects.get(thread.projectId)), checkout)) ids.push(thread.id) } catch { /* A thread with no folder reads nothing. */ }
     }
-    if (checkout !== null) this.gitStatus?.invalidate(checkout)
+    if (checkout !== null) {
+      this.gitChanges++
+      this.gitStatus?.invalidate(checkout)
+    }
     for (const id of ids) void this.onLane(id, () => this.followGitChange(id)).catch(() => undefined)
   }
   private pullRequestsOrRefuse(): GitPullRequests {
