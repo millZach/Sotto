@@ -3585,6 +3585,13 @@ msgstr ""
 msgid "Showing the first 1,000 items"
 msgstr ""
 
+#. Shown when older child-agent steps were trimmed beyond the retained cap.
+#. placeholder {0}: shownCount(steps.length)
+#. placeholder {1}: shownCount(count)
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Showing the latest {0} of {1} steps."
+msgstr ""
+
 #: src/renderer/src/tools/BrowserPlayer.tsx
 msgid "Shrink"
 msgstr ""

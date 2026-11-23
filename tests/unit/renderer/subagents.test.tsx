@@ -206,6 +206,44 @@ describe('Agents roster', () => {
     expect(list.querySelectorAll(':scope > li')).toHaveLength(8)
     expect(screen.getByText('src/file-1.ts')).toBeInTheDocument()
   })
+
+  it('shows a trimmed-steps notice when stepCount exceeds retained steps and preserves earlier pages during paired-host refresh', async () => {
+    const steps = Array.from({ length: 6 }, (_, index) => ({
+      id: `step-${index + 1}`,
+      kind: 'read' as const,
+      status: 'completed' as const,
+      title: 'Read',
+      detail: `src/file-${index + 1}.ts`,
+      mono: true,
+    }))
+    const olderRow = row('older-agent', 1, { status: 'completed', title: 'Earlier worker' })
+    const newerRow = row('live-agent', 2, { status: 'running', title: 'Live worker', stepCount: 250 })
+    const cache = store()
+    const bridge: SubagentsBridge = {
+      page: vi.fn(async ({ before }) => before !== undefined
+        ? { threadId: 'thread', revision: 1, rows: [olderRow], summary: { total: 2, working: 1, completed: 1, failed: 0, interrupted: 0, unknown: 0 } }
+        : { threadId: 'thread', revision: 2, rows: [newerRow], before: 2, summary: { total: 2, working: 1, completed: 1, failed: 0, interrupted: 0, unknown: 0 } }),
+      assignments: vi.fn(async () => ({
+        threadId: 'thread',
+        agentId: 'live-agent',
+        assignments: [{ id: 'live-agent-run', sequence: 1, title: 'Live worker', prompt: 'Do work', status: 'running' as const, steps, stepCount: 250 }],
+      })),
+      onChanged: vi.fn(() => () => undefined),
+    }
+
+    render(<AgentsSurface threadId="thread" store={cache} bridge={bridge} rosterSignal="running:1" />)
+    const liveButton = await screen.findByRole('button', { name: /Live worker/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Load earlier agents' }))
+    expect(await screen.findByRole('button', { name: /Earlier worker/ })).toBeInTheDocument()
+
+    // Quiet paired-host refresh keeps the earlier loaded row instead of discarding it.
+    await act(async () => { await cache.refresh('thread') })
+    expect(screen.getByRole('button', { name: /Earlier worker/ })).toBeInTheDocument()
+
+    // Expanding a row with more total steps than retained shows the trimmed caption.
+    fireEvent.click(liveButton)
+    expect(await screen.findByText('Showing the latest 6 of 250 steps.')).toBeInTheDocument()
+  })
 })
 
 describe('a workflow in the roster', () => {

@@ -78,6 +78,7 @@ function SubagentStepsList({ steps, total }: { readonly steps: readonly Subagent
   const { t } = useLingui()
   const [showAll, setShowAll] = useState(false)
   const count = Math.max(total ?? steps.length, steps.length)
+  const trimmed = Math.max(0, count - steps.length)
   const hidden = !showAll && steps.length > CHILD_STEPS_VISIBLE ? steps.length - CHILD_STEPS_VISIBLE : 0
   const shown = hidden > 0 ? steps.slice(-CHILD_STEPS_VISIBLE) : steps
   return <>
@@ -87,7 +88,9 @@ function SubagentStepsList({ steps, total }: { readonly steps: readonly Subagent
     </h3>
     {hidden > 0 ? <button type="button" className="files-link tt-focusable subagent-steps__more" onClick={() => setShowAll(true)}>
       {plural(hidden, { one: `Show ${{ count: shownCount(hidden) }} earlier step`, other: `Show ${{ count: shownCount(hidden) }} earlier steps` })}
-    </button> : null}
+    </button> : trimmed > 0 ? <p className="subagent-steps__trimmed">
+      {t({ message: `Showing the latest ${shownCount(steps.length)} of ${shownCount(count)} steps.`, comment: 'Shown when older child-agent steps were trimmed beyond the retained cap.' })}
+    </p> : null}
     <ol className="subagent-steps" aria-label={t({ message: 'Agent steps', comment: 'Accessible name for the list of steps a subagent took.' })}>
       {shown.map(step => {
         const meta = stepMetaLabel(step)
@@ -124,7 +127,9 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
   const request = useRef(0)
   const mounted = useRef(true)
   const loadedEarlier = useRef(false)
-  const load = async (older?: number): Promise<void> => {
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasLoaded = useRef(false)
+  const load = useCallback(async (older?: number): Promise<void> => {
     const token = ++request.current
     setLoading(true)
     setError(false)
@@ -132,6 +137,7 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
       if (!bridge) throw new Error('unavailable')
       const page = await bridge.assignments({ threadId, agentId: row.id, ...(older !== undefined ? { before: older } : {}) })
       if (!mounted.current || token !== request.current) return
+      hasLoaded.current = true
       setAssignments(previous => {
         const merged = new Map(previous.map(assignment => [assignment.id, assignment]))
         for (const assignment of page.assignments) merged.set(assignment.id, assignment)
@@ -141,14 +147,32 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
       if (older !== undefined || !loadedEarlier.current) setBefore(page.before)
     } catch { if (mounted.current && token === request.current) setError(true) }
     finally { if (mounted.current && token === request.current) setLoading(false) }
-  }
-  // A burst of live metadata is coalesced into one bounded detail read. Terminal states load immediately.
+  }, [bridge, threadId, row.id])
   useEffect(() => {
     mounted.current = true
-    const timer = setTimeout(() => { void load() }, assignments.length && row.status === 'running' ? 250 : 0)
-    return () => { mounted.current = false; request.current++; clearTimeout(timer) }
+    return () => {
+      mounted.current = false
+      hasLoaded.current = false
+      request.current++
+      if (pendingTimer.current !== null) { clearTimeout(pendingTimer.current); pendingTimer.current = null }
+    }
+  }, [bridge, threadId, row.id])
+  // Coalesce bursts of live step updates into a bounded 250 ms throttle (never starving while streaming);
+  // first open and terminal states load immediately.
+  useEffect(() => {
+    const immediate = !hasLoaded.current || row.status !== 'running'
+    if (immediate) {
+      if (pendingTimer.current !== null) { clearTimeout(pendingTimer.current); pendingTimer.current = null }
+      void load()
+      return
+    }
+    if (pendingTimer.current !== null) return
+    pendingTimer.current = setTimeout(() => {
+      pendingTimer.current = null
+      if (mounted.current) void load()
+    }, 250)
     // The bridge and row revision identify the provider data; local paging never retriggers this read.
-  }, [bridge, threadId, row.id, row.revision])
+  }, [load, row.revision, row.status])
   const current = assignments.find(assignment => assignment.id === row.assignmentId)
   return <>
     {current ? <AssignmentText assignment={current} /> : <><h3>{t({ message: 'Task', comment: 'Heading over what a subagent was asked to do.' })}</h3><p>{row.description || row.title}</p></>}
@@ -354,14 +378,14 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   useEffect(() => {
     if (followed.current === rosterSignal) return
     followed.current = rosterSignal
-    if (rosterSignal !== undefined) void store.page(threadId)
+    if (rosterSignal !== undefined) void store.refresh(threadId)
   }, [store, threadId, rosterSignal])
-  // A paired host pushes no roster changes; while an agent runs on one, poll periodically so live child steps arrive.
+  // A paired host pushes no roster changes; while an agent runs on one, poll periodically without discarding earlier pages.
   const hasRunning = state.rows.some(item => item.status === 'running')
   useEffect(() => {
     if (rosterSignal === undefined || !hasRunning) return
     const timer = setInterval(() => {
-      if (document.visibilityState !== 'hidden') void store.page(threadId)
+      if (document.visibilityState !== 'hidden') void store.refresh(threadId)
     }, REMOTE_FOLLOW_MS)
     return () => clearInterval(timer)
   }, [store, threadId, rosterSignal, hasRunning])

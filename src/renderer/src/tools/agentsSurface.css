@@ -25,6 +25,7 @@
 .subagent-live-step__detail--mono { font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
 .subagent-steps__count { font-weight: 400; font-variant-numeric: tabular-nums; }
 .subagent-steps__more { margin-bottom: 6px; font-size: var(--tt-type-caption); }
+.subagent-steps__trimmed { margin: 0 0 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 16px; }
 .subagent-steps { list-style: none; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 0 3px; padding: 0 0 0 11px; border-left: 1px solid var(--tt-hairline); }
 .subagent-step { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: baseline; column-gap: 8px; font-size: var(--tt-type-small); line-height: 18px; }
 .subagent-step__dot { width: 5px; height: 5px; align-self: center; border-radius: 50%; background: var(--tt-text-muted); }

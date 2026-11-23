@@ -14,7 +14,13 @@ export type ClaudeSubagentTranscript = { readonly agentId: string; readonly runI
 /** An agent whose row still has no model, and whether it has stopped (so its transcript is finished). */
 export interface ClaudeModelTarget { readonly id: string; readonly transcript: ClaudeSubagentTranscript; readonly settled: boolean }
 /** An agent whose own transcript is tailed for live child steps and (if missing) its resolved model. */
-export interface ClaudeTranscriptTarget { readonly id: string; readonly transcript: ClaudeSubagentTranscript; readonly settled: boolean; readonly needsModel: boolean }
+export interface ClaudeTranscriptTarget {
+  readonly id: string
+  readonly assignmentId?: string | undefined
+  readonly transcript: ClaudeSubagentTranscript
+  readonly settled: boolean
+  readonly needsModel: boolean
+}
 /** Incremental update read from a Claude subagent's own transcript. */
 export interface ClaudeSubagentTranscriptUpdate {
   readonly model?: string
@@ -149,6 +155,7 @@ export class ClaudeSubagentModels {
 
 interface TranscriptTailState {
   path: string
+  assignmentId?: string | undefined
   file: FileState
   attempts: number
   abandoned: boolean
@@ -167,6 +174,7 @@ interface TranscriptTailState {
 export class ClaudeSubagentTranscripts {
   private readonly targets = new Map<string, TranscriptTailState>()
   private pending: Promise<unknown> = Promise.resolve()
+  private cursor = 0
 
   read(sessionFolder: string, targets: readonly ClaudeTranscriptTarget[]): Promise<Map<string, ClaudeSubagentTranscriptUpdate>> {
     const pass = this.pending.then(() => this.pass(sessionFolder, targets))
@@ -178,21 +186,37 @@ export class ClaudeSubagentTranscripts {
     const updates = new Map<string, ClaudeSubagentTranscriptUpdate>()
     const wanted = new Set(targets.map(target => target.id))
     for (const id of this.targets.keys()) if (!wanted.has(id)) this.targets.delete(id)
+    if (!targets.length) { this.cursor = 0; return updates }
     let subagentsReal: string
     try { subagentsReal = await realpath(join(sessionFolder, 'subagents')) } catch { return updates }
     let budget = MAX_SUBAGENT_TRANSCRIPTS
-    for (const target of targets) {
-      if (budget <= 0) break
+    // Rotate the starting offset across polls so >16 concurrent running agents never starve older agents.
+    const start = this.cursor % targets.length
+    let visited = 0
+    for (; visited < targets.length && budget > 0; visited++) {
+      const target = targets[(start + visited) % targets.length]!
       const path = transcriptPath(sessionFolder, target.transcript)
       if (!path) continue
       let state = this.targets.get(target.id)
       if (!state || state.path !== path) {
         state = {
           path,
+          assignmentId: target.assignmentId,
           file: { offset: 0, pending: [], pendingBytes: 0, skipping: false, done: false },
           attempts: 0, abandoned: false, steps: [], stepsTotal: 0, seenLines: 0,
         }
         this.targets.set(target.id, state)
+      } else if (target.assignmentId !== undefined && state.assignmentId !== target.assignmentId) {
+        // Resumed agent on the same transcript file: start the new assignment with a clean step list
+        // while keeping the file offset so only the resumed run's newly appended lines are counted.
+        state.assignmentId = target.assignmentId
+        state.steps = []
+        state.stepsTotal = 0
+        state.attempts = 0
+        state.abandoned = false
+      } else if (!target.settled && state.abandoned) {
+        state.abandoned = false
+        state.attempts = 0
       }
       if (state.abandoned) continue
       budget--
@@ -207,6 +231,7 @@ export class ClaudeSubagentTranscripts {
         state.abandoned = true
       }
     }
+    this.cursor = (start + visited) % targets.length
     return updates
   }
 }
@@ -262,8 +287,11 @@ async function tailTranscript(subagentsReal: string, path: string, state: Transc
 }
 
 function stepSignature(steps: readonly SubagentStep[], total: number): string {
-  const last = steps.at(-1)
-  return `${total}:${steps.length}:${last?.id ?? ''}:${last?.status ?? ''}:${last?.detail ?? ''}:${last?.error ?? ''}`
+  let sig = `${total}:${steps.length}`
+  for (const step of steps) {
+    sig += `\n${step.id}|${step.status}|${step.title}|${step.detail ?? ''}|${step.error ?? ''}|${step.exitCode ?? ''}|${step.completedAt ?? ''}`
+  }
+  return sig
 }
 
 function consumeClaudeLine(state: TranscriptTailState, line: Buffer): void {

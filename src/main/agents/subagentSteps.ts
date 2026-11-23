@@ -68,8 +68,10 @@ export function buildSubagentStep(input: {
   }
 }
 
+const MAX_FOUR_DIGIT_YEAR_MS = 253_402_300_799_999
+
 export function validIso(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined
   const parsed = Date.parse(value)
-  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_FOUR_DIGIT_YEAR_MS ? new Date(parsed).toISOString() : undefined
 }

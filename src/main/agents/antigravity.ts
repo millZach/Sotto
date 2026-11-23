@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../shared/agents'
-import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { mergeAgentActivities, settleSubagentSteps, type AgentActivity } from '../../shared/agentActivity'
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../shared/agentMonitoring'
 import { compactionPending, idleMark } from '../../shared/compaction'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
@@ -1402,7 +1402,11 @@ export class AntigravityAcpHost implements ProviderHost {
           }
         } else if (child?.status === 'running' && nextStepsDigest !== undefined && nextStepsDigest !== watch.stepsDigest) {
           watch.stepsDigest = nextStepsDigest
-          this.updateChildProgress(watch, child)
+          // Once the child has already answered, readAntigravityChild marks the answer file as read so later polls
+          // return `running` while a >256 KiB transcript finishes catching up. Keep applying those steps as settled
+          // without reopening the finished assignment.
+          if (watch.answeredAt !== undefined) this.settleChild(watch, { ...child, status: 'completed', completedAt: watch.answeredAt })
+          else this.updateChildProgress(watch, child)
         }
         if (this.children.get(rowId) === watch && Date.now() > watch.until) {
           this.children.delete(rowId)
@@ -1444,15 +1448,20 @@ export class AntigravityAcpHost implements ProviderHost {
     // A row no longer among the thread's newest records is put back from the watch, so its answer is never lost.
     const thread = this.threads.get(watch.threadId), row = thread?.activities?.find(item => item.id === watch.row.id) ?? watch.row, agent = row.agents?.[0]
     const workChanged = this.syncBackgroundWork(watch.threadId)
-    // A running child takes what was read; one that answered takes only a newer answer or newly read steps.
+    // A running child takes what was read; one that answered takes only a newer answer, newly read steps, or a resolved model.
     const newer = agent?.status === 'completed' && child.status === 'completed'
-      && ((child.message !== undefined && child.message !== agent?.message) || Boolean(child.steps?.length))
+      && ((child.message !== undefined && child.message !== agent?.message)
+        || Boolean(child.steps?.length)
+        || Boolean(child.model && child.model !== agent.model))
     if (!thread || !agent || (agent.status !== 'running' && !newer)) { if (workChanged) this.emit(); return }
+    const settledSteps = child.steps?.length
+      ? (child.status === 'running' ? [...child.steps] : settleSubagentSteps(child.steps, child.status, child.completedAt ?? watch.answeredAt))
+      : undefined
     const settledRow: AgentActivity = {
       ...row,
       agents: [{ ...agent, status: child.status,
         ...(child.model ? { model: child.model } : {}),
-        ...(child.steps?.length ? { steps: [...child.steps], ...(child.stepsTotal !== undefined ? { stepsTotal: child.stepsTotal } : {}) } : {}),
+        ...(settledSteps?.length ? { steps: settledSteps, ...(child.stepsTotal !== undefined ? { stepsTotal: child.stepsTotal } : {}) } : {}),
         ...(child.message !== undefined ? { message: child.message } : {}), ...(child.completedAt ? { completedAt: child.completedAt } : {}) }],
     }
     watch.row = settledRow

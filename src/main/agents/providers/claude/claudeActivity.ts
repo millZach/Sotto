@@ -213,6 +213,12 @@ export class ClaudeActivity {
           ...(observedAt ? { observedAt: live ? observedAt : prior?.observedAt ?? observedAt, startedAt: prior?.startedAt ?? observedAt, timingSource: typeof frame.timestamp === 'string' ? 'provider' : 'observed' } : {}),
         }
         this.agentsByTool.set(block.id, compactAgentIdentity(child))
+        // When resuming an existing background agent, point its watched transcript entry at the new tool call
+        // immediately so transcriptTargets() exposes the new assignmentId and unsettled state before task_started arrives.
+        const existingWatch = resumedId ? this.transcripts.get(resumedId) : undefined
+        if (resumedId && existingWatch) {
+          this.transcripts.set(resumedId, { ...existingWatch, tool: block.id })
+        }
       }
       const path = text(input?.file_path ?? input?.notebook_path)
       // Claude keeps its plan in a todo list; its steps are the plan, not tool input to read as JSON.
@@ -398,7 +404,12 @@ export class ClaudeActivity {
         if (isTerminalActivity(old.status) && old.taskUpdatesExcluded !== false) return mergeChanged(previous, rows)
       }
       const toolId = typeof frame.tool_use_id === 'string' ? frame.tool_use_id : this.toolByTask.get(frame.task_id)
-      const prior = this.agentsByTask.get(frame.task_id) ?? (toolId ? this.agentsByTool.get(toolId) : undefined) ?? old?.agents?.[0]
+      // On task_started, prefer the newly started Agent tool call over an older completed agentsByTask entry so a
+      // resumed agent that reuses the same native task_id starts under its new assignmentId.
+      const prior = (frame.subtype === 'task_started' && toolId ? this.agentsByTool.get(toolId) : undefined)
+        ?? this.agentsByTask.get(frame.task_id)
+        ?? (toolId ? this.agentsByTool.get(toolId) : undefined)
+        ?? old?.agents?.[0]
       const taskDescription = text(frame.description)
       // A workflow's progress frames describe whichever of its agents reported last, so only its start names it.
       const workflow = frame.task_type === 'local_workflow' || prior?.kind === 'workflow' || old?.agents?.[0]?.kind === 'workflow'
@@ -489,7 +500,13 @@ export class ClaudeActivity {
     const targets: ClaudeTranscriptTarget[] = []
     for (const [id, entry] of this.transcripts) {
       const agent = this.current(id, entry)
-      targets.push({ id, transcript: entry.transcript, settled: agent?.status !== 'running', needsModel: !agent?.model })
+      targets.push({
+        id,
+        ...(agent?.assignmentId ? { assignmentId: agent.assignmentId } : {}),
+        transcript: entry.transcript,
+        settled: agent?.status !== 'running',
+        needsModel: !agent?.model,
+      })
     }
     return targets.reverse()
   }

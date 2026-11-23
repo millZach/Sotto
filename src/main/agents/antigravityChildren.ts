@@ -85,6 +85,8 @@ export interface AntigravityChildTranscriptState {
   partialBytes: number
   skipping: boolean
   done: boolean
+  /** True once the reader has reached EOF (or the total byte cap) at least once, so reconnect replays never publish stale head chunks. */
+  caughtUp: boolean
   steps: SubagentStep[]
   stepsTotal: number
   pendingToolIds: string[]
@@ -94,7 +96,7 @@ export interface AntigravityChildTranscriptState {
 }
 
 const blankTranscriptState = (): AntigravityChildTranscriptState => ({
-  offset: 0, partial: [], partialBytes: 0, skipping: false, done: false,
+  offset: 0, partial: [], partialBytes: 0, skipping: false, done: false, caughtUp: false,
   steps: [], stepsTotal: 0, pendingToolIds: [], stepIdByIndex: new Map(), seenLines: 0,
 })
 
@@ -348,7 +350,10 @@ async function readChildTranscript(
   if (replaced || size < state.offset) {
     Object.assign(state, blankTranscriptState(), { identity })
   }
-  if (!replaced && state.identity && size === state.offset) return
+  if (!replaced && state.identity && size === state.offset) {
+    state.caughtUp = true
+    return
+  }
 
   budget.left--
   const handle = await open(transcriptPath, 'r').catch(() => undefined)
@@ -377,6 +382,7 @@ async function readChildTranscript(
       if (start < bytesRead) keepPartial(state, chunk.subarray(start, bytesRead))
     }
     if (state.offset >= TRANSCRIPT_MAX_BYTES) state.done = true
+    if (state.offset >= fileSize || state.done) state.caughtUp = true
   } catch { /* File may rotate or be mid-write; retry next pass. */ }
   finally { await handle.close().catch(() => undefined) }
 }
@@ -430,7 +436,7 @@ export async function readAntigravityChild(appData: string, parent: string, tool
   const transcript = reading.transcript
   const extra: Pick<AntigravityChild, 'model' | 'steps' | 'stepsTotal'> = {
     ...(transcript?.model ? { model: transcript.model } : {}),
-    ...(transcript?.steps.length ? { steps: transcript.steps.slice(-MAX_SUBAGENT_STEPS), stepsTotal: transcript.stepsTotal } : {}),
+    ...(transcript?.caughtUp && transcript.steps.length ? { steps: transcript.steps.slice(-MAX_SUBAGENT_STEPS), stepsTotal: transcript.stepsTotal } : {}),
   }
   const answer = answers.sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? '')).at(-1)
   if (answer) {

@@ -4,13 +4,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MAX_SUBAGENT_STEPS, type AgentActivity, type ObservedAgent, type SubagentStep } from '../../../src/shared/agentActivity'
+import { CutBodies, detailWithoutAgentSteps } from '../../../src/shared/activityBodies'
+import { detailWithActivitySummaries } from '../../../src/shared/hostProtocol'
 import { subagentAssignmentsPageSchema, subagentChangeSchema, subagentPageSchema } from '../../../src/shared/subagents'
 import { antigravityActivities } from '../../../src/main/agents/antigravityActivity'
 import { antigravityChildReading, readAntigravityChild } from '../../../src/main/agents/antigravityChildren'
 import { ClaudeActivity } from '../../../src/main/agents/providers/claude/claudeActivity'
-import { ClaudeSubagentTranscripts } from '../../../src/main/agents/providers/claude/claudeSubagentModels'
+import { ClaudeSubagentTranscripts, MAX_SUBAGENT_TRANSCRIPTS } from '../../../src/main/agents/providers/claude/claudeSubagentModels'
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/providers/codex/codexActivity'
+import { validIso } from '../../../src/main/agents/subagentSteps'
 import { SubagentStore } from '../../../src/main/agents/subagentStore'
+import { WindowActivityBodies } from '../../../src/main/agents/windowActivityBodies'
 
 const dirs: string[] = []
 const stores: SubagentStore[] = []
@@ -147,6 +151,46 @@ describe('live child steps — Antigravity', () => {
     const res2 = await readAntigravityChild(appData, PARENT, CALL, antigravityChildReading())
     expect(res2).toEqual({ conversationId: CHILD, status: 'running' })
   })
+
+  it('holds back partial head chunks on >256 KiB transcripts until EOF so reconnect replays never inflate or reorder steps', async () => {
+    const appData = await tempDir('sotto-agy-large-')
+    const generated = (conversation: string, ...rest: string[]) => join(appData, 'brain', conversation, '.system_generated', ...rest)
+    const putJson = async (path: string, value: unknown) => { await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, JSON.stringify(value)) }
+
+    await putJson(generated(PARENT, 'subagents', `${CHILD}.json`), { conversationId: CHILD, state: 'SUBAGENT_STATE_ALIVE' })
+    await putJson(generated(CHILD, 'messages', 'launch.json'), {
+      id: 'launch', recipient: CHILD, sender: PARENT, content: 'Big audit', timestamp: '2026-11-22T10:00:00.000Z',
+      sourceMetadata: { tool: { toolCall: { id: CALL } } },
+    })
+
+    const logsDir = generated(CHILD, 'logs')
+    await mkdir(logsDir, { recursive: true })
+    const transcript = join(logsDir, 'transcript.jsonl')
+    // Write 240 steps totalling > 300 KiB (more than one 256 KiB poll chunk).
+    const padding = 'x'.repeat(1200)
+    const lines: string[] = []
+    for (let i = 0; i < 240; i++) {
+      lines.push(JSON.stringify({
+        step_index: i + 1, type: 'PLANNER_RESPONSE', status: 'DONE', created_at: '2026-11-22T10:00:01.000Z',
+        model: 'gemini-4-neon-high',
+        tool_calls: [{ name: 'read_file', args: { Path: `/repo/src/file-${i}.ts`, pad: padding } }],
+      }))
+    }
+    await writeFile(transcript, lines.join('\n') + '\n')
+
+    const reading = antigravityChildReading()
+    const pass1 = await readAntigravityChild(appData, PARENT, CALL, reading)
+    // First pass has not reached EOF yet -> steps held back rather than publishing old head steps.
+    expect(pass1?.status).toBe('running')
+    expect(pass1?.steps).toBeUndefined()
+
+    const pass2 = await readAntigravityChild(appData, PARENT, CALL, reading)
+    expect(pass2?.status).toBe('running')
+    expect(pass2?.stepsTotal).toBe(240)
+    expect(pass2?.steps).toHaveLength(MAX_SUBAGENT_STEPS)
+    expect(pass2?.steps?.[0]?.detail).toContain('file-40.ts')
+    expect(pass2?.steps?.at(-1)?.detail).toContain('file-239.ts')
+  })
 })
 
 describe('live child steps — Claude Code', () => {
@@ -223,6 +267,73 @@ describe('live child steps — Claude Code', () => {
       steps: [expect.objectContaining({ id: 'claude-step-tu1', status: 'completed', durationMs: 1000 })],
     })
   })
+
+  it('publishes out-of-order parallel tool_result updates, resets steps on resumed assignments, and rotates >16 concurrent transcripts', async () => {
+    const root = await tempDir('sotto-claude-edge-')
+    const sessionFolder = join(root, 'session-1')
+    const subagentsDir = join(sessionFolder, 'subagents')
+    await mkdir(subagentsDir, { recursive: true })
+
+    // 1. Out-of-order parallel tool results (earlier tool finishes/fails while later tool stays running)
+    const parallelFile = join(subagentsDir, 'agent-par1.jsonl')
+    await writeFile(parallelFile, JSON.stringify({
+      type: 'assistant', timestamp: '2026-11-22T10:00:01.000Z',
+      message: {
+        id: 'a1', model: 'claude-sonnet-5',
+        content: [
+          { type: 'tool_use', id: 'tuA', name: 'Read', input: { file_path: '/repo/a.ts' } },
+          { type: 'tool_use', id: 'tuB', name: 'Bash', input: { command: 'npm test' } },
+        ],
+      },
+    }) + '\n')
+
+    const reader = new ClaudeSubagentTranscripts()
+    const target1 = { id: 'claude-agent-1', assignmentId: 'claude-tool-run1', transcript: { agentId: 'par1' }, settled: false, needsModel: true }
+    const p1 = await reader.read(sessionFolder, [target1])
+    expect(p1.get('claude-agent-1')?.steps?.map(s => `${s.id}:${s.status}`)).toEqual(['claude-step-tuA:running', 'claude-step-tuB:running'])
+
+    await appendFile(parallelFile, JSON.stringify({
+      type: 'user', timestamp: '2026-11-22T10:00:02.000Z',
+      message: { content: [{ type: 'tool_result', tool_use_id: 'tuA', is_error: true, content: 'ENOENT' }] },
+    }) + '\n')
+    const p2 = await reader.read(sessionFolder, [{ ...target1, needsModel: false }])
+    expect(p2.get('claude-agent-1')?.steps?.map(s => `${s.id}:${s.status}`)).toEqual(['claude-step-tuA:failed', 'claude-step-tuB:running'])
+    expect(p2.get('claude-agent-1')?.steps?.[0]?.error).toBe('ENOENT')
+
+    // 2. Abandon after settling, then resume under a new assignmentId on the same transcript file
+    for (let i = 0; i < 4; i++) {
+      await reader.read(sessionFolder, [{ ...target1, settled: true, needsModel: false }])
+    }
+    await appendFile(parallelFile, JSON.stringify({
+      type: 'assistant', timestamp: '2026-11-22T10:01:00.000Z',
+      message: { id: 'a2', content: [{ type: 'tool_use', id: 'tuC', name: 'Grep', input: { pattern: 'TODO' } }] },
+    }) + '\n')
+    const resumed = await reader.read(sessionFolder, [
+      { id: 'claude-agent-1', assignmentId: 'claude-tool-run2', transcript: { agentId: 'par1' }, settled: false, needsModel: false },
+    ])
+    expect(resumed.get('claude-agent-1')).toMatchObject({
+      stepsTotal: 1,
+      steps: [expect.objectContaining({ id: 'claude-step-tuC', kind: 'search', status: 'running' })],
+    })
+
+    // 3. Rotation across > MAX_SUBAGENT_TRANSCRIPTS running agents so older targets are never starved
+    const total = MAX_SUBAGENT_TRANSCRIPTS + 4
+    const manyTargets = []
+    for (let i = 0; i < total; i++) {
+      const aid = `rot${i}`
+      await writeFile(join(subagentsDir, `agent-${aid}.jsonl`), JSON.stringify({
+        type: 'assistant', timestamp: '2026-11-22T10:02:00.000Z',
+        message: { id: `m-${i}`, content: [{ type: 'tool_use', id: `tu-${i}`, name: 'Read', input: { file_path: `/repo/f${i}.ts` } }] },
+      }) + '\n')
+      manyTargets.push({ id: `agent-${i}`, assignmentId: `run-${i}`, transcript: { agentId: aid }, settled: false, needsModel: false })
+    }
+    const rotReader = new ClaudeSubagentTranscripts()
+    const seen = new Set<string>()
+    for (const id of (await rotReader.read(sessionFolder, manyTargets)).keys()) seen.add(id)
+    expect(seen.size).toBe(MAX_SUBAGENT_TRANSCRIPTS)
+    for (const id of (await rotReader.read(sessionFolder, manyTargets)).keys()) seen.add(id)
+    expect(seen.size).toBe(total)
+  })
 })
 
 describe('live child steps — Codex', () => {
@@ -291,6 +402,40 @@ describe('live child steps — Codex', () => {
     expect(agent?.steps?.[2]).toMatchObject({ kind: 'reasoning', detail: 'Checking edge cases', status: 'completed' })
     expect(agent?.steps?.[3]).toMatchObject({ kind: 'plan', detail: 'Fix edge case (1/2)', status: 'completed' })
   })
+
+  it('throttles rapid Codex reasoning deltas to avoid write storms while preserving the accumulated text', () => {
+    let now = 20_000
+    const projection = new CodexActivityProjection(() => now)
+    const thread = { id: 'thread-1', messages: [], activities: [] as AgentActivity[] }
+    projection.item(thread, codexItemSchema.parse({
+      id: 'spawn-1', type: 'subAgentActivity', kind: 'started', agentThreadId: 'child-1', agentPath: '/root/worker',
+    }), { turnId: 'turn-1', phase: 'completed' })
+    projection.childNotification('child-1', 'turn/started', { turn: { id: 'ct-1', status: 'inProgress' } })
+
+    // First chunk publishes immediately.
+    now = 21_000
+    expect(projection.childNotification('child-1', 'item/reasoning/summaryTextDelta', {
+      turnId: 'ct-1', itemId: 'r-1', summaryIndex: 0, delta: 'Checking ',
+    })).toBe(thread)
+
+    // Subsequent rapid chunks within 500 ms are buffered without publishing.
+    now = 21_050
+    expect(projection.childNotification('child-1', 'item/reasoning/summaryTextDelta', {
+      turnId: 'ct-1', itemId: 'r-1', summaryIndex: 0, delta: 'many ',
+    })).toBeUndefined()
+    now = 21_100
+    expect(projection.childNotification('child-1', 'item/reasoning/summaryTextDelta', {
+      turnId: 'ct-1', itemId: 'r-1', summaryIndex: 0, delta: 'files',
+    })).toBeUndefined()
+
+    // Once >= 500 ms elapses, the next delta publishes the full accumulated text.
+    now = 21_600
+    expect(projection.childNotification('child-1', 'item/reasoning/summaryTextDelta', {
+      turnId: 'ct-1', itemId: 'r-1', summaryIndex: 0, delta: ' now',
+    })).toBe(thread)
+    const agent = thread.activities.find(row => row.kind === 'subagent')?.agents?.[0]
+    expect(agent?.steps?.[0]?.detail).toBe('Checking many files now')
+  })
 })
 
 describe('live child steps — SubagentStore retention, bounds, and privacy', () => {
@@ -339,5 +484,28 @@ describe('live child steps — SubagentStore retention, bounds, and privacy', ()
     const bounded = store.assignments({ threadId: 't1', agentId: 'a1' }).assignments[0]!
     expect(bounded.steps?.length).toBeLessThanOrEqual(MAX_SUBAGENT_STEPS)
     expect(bounded.stepCount).toBe(MAX_SUBAGENT_STEPS + 25)
+  })
+
+  it('rejects extended-year timestamps in validIso and strips agents[].steps from outbound thread details', () => {
+    expect(validIso('100000')).toBeUndefined()
+    expect(validIso('-000001-01-01T00:00:00.000Z')).toBeUndefined()
+    expect(validIso('2026-11-22T10:00:00.000Z')).toBe('2026-11-22T10:00:00.000Z')
+
+    const steps: SubagentStep[] = Array.from({ length: MAX_SUBAGENT_STEPS }, (_, i) => step(i, { detail: 'x'.repeat(200) }))
+    const activities: AgentActivity[] = Array.from({ length: 40 }, (_, i) => ({
+      id: `act-${i}`, turnId: 't1', sequence: i, kind: 'subagent', status: i === 0 ? 'running' : 'completed', title: `Agent ${i}`,
+      agents: [{ id: `ag-${i}`, status: i === 0 ? 'running' : 'completed', title: `Agent ${i}`, steps, stepsTotal: MAX_SUBAGENT_STEPS }],
+    }))
+    const detail = { threadId: 't1', revision: 1, messages: [], activities }
+
+    const windowStripped = new WindowActivityBodies(() => null).detail(detail)!
+    const cutStripped = new CutBodies().detail(detail)
+    const legacyStripped = detailWithoutAgentSteps(detail)
+    const summaryStripped = detailWithActivitySummaries(detail)
+
+    for (const view of [windowStripped, cutStripped, legacyStripped, summaryStripped]) {
+      expect(view.activities?.some(a => a.agents?.some(ag => ag.steps !== undefined))).toBe(false)
+      expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(32 * 1024)
+    }
   })
 })

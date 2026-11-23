@@ -2,7 +2,7 @@ import { picturesIn, rasterTypeOf, type MediaCapture, type MediaFileCapture } fr
 import { createHash, randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, MAX_SUBAGENT_STEPS, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, mergeSubagentSteps, settleSubagentSteps, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent, type SubagentStep } from '../../../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, MAX_SUBAGENT_STEPS, MAX_SUBAGENT_STEP_TEXT, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, mergeSubagentSteps, settleSubagentSteps, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent, type SubagentStep } from '../../../../shared/agentActivity'
 import { buildSubagentStep, shortStepCommand, shortStepPath, stepLine } from '../../subagentSteps'
 import type { AgentThread } from '../../../../shared/agents'
 import { BACKGROUND_WORK_LABELS, MAX_BACKGROUND_WORK, MAX_MONITOR_LABEL, type AgentBackgroundWork } from '../../../../shared/agentMonitoring'
@@ -90,7 +90,8 @@ const childItemNotificationSchema = z.object({ turnId: z.string(), item: codexIt
 const childDeltaNotificationSchema = z.object({ turnId: z.string(), itemId: z.string(), delta: z.string().optional(), summaryIndex: z.number().int().nonnegative().max(199).optional(), message: z.string().optional() })
 const childPlanNotificationSchema = z.object({ turnId: z.string(), explanation: z.string().nullish(), plan: z.array(z.object({ step: z.string(), status: z.string() })).max(200) })
 const childTurnNotificationSchema = z.object({ turn: z.object({ id: z.string().optional(), status: z.string(), startedAt: z.number().nullish(), completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() })
-type ChildStepBucket = { assignmentId?: string | undefined; steps: SubagentStep[]; total: number; summaries: Map<string, Map<number, string>> }
+type ChildStepBucket = { assignmentId?: string | undefined; steps: SubagentStep[]; total: number; summaries: Map<string, Map<number, string>>; lastDeltaPublishMs?: number | undefined }
+const CHILD_DELTA_PUBLISH_MS = 500
 /** One agent as a conversation observed it: where it was last reported, and its compact identity. */
 type Child = { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
@@ -722,12 +723,12 @@ export class CodexActivityProjection {
     }
   }
 
-  private publishChildSteps(owner: Child, child: string, bucket: ChildStepBucket): void {
+  private publishChildSteps(owner: Child, child: string, bucket: ChildStepBucket, restampObservedAt = true): void {
     const prior = owner.agent
-    const observedAt = iso(this.now())!
+    const observedAt = restampObservedAt ? iso(this.now()) : prior.observedAt
     const agent: ObservedAgent = {
       ...prior,
-      observedAt,
+      ...(observedAt ? { observedAt } : {}),
       steps: bucket.steps.slice(-MAX_SUBAGENT_STEPS),
       stepsTotal: bucket.total,
     }
@@ -765,31 +766,43 @@ export class CodexActivityProjection {
       if (!delta.success) return undefined
       const bucket = this.stepBucket(owner.thread, child, owner.agent.assignmentId)
       const stepId = `codex-step-${opaque(delta.data.turnId, delta.data.itemId)}`
+      const prior = bucket.steps.find(step => step.id === stepId)
+      let nextStep: SubagentStep
       if (method === 'item/reasoning/summaryTextDelta') {
         const index = delta.data.summaryIndex
         if (index === undefined) return undefined
-        const parts = bucket.summaries.get(stepId) ?? new Map<number, string>()
-        parts.set(index, ((parts.get(index) ?? '') + (delta.data.delta ?? '')).slice(0, MAX_ACTIVITY_TEXT))
-        bucket.summaries.set(stepId, parts)
+        let parts = bucket.summaries.get(stepId)
+        if (!parts) {
+          parts = new Map<number, string>()
+          bucket.summaries.set(stepId, parts)
+          for (const oldest of bucket.summaries.keys()) {
+            if (bucket.summaries.size <= MAX_SUBAGENT_STEPS) break
+            bucket.summaries.delete(oldest)
+          }
+        }
+        parts.set(index, ((parts.get(index) ?? '') + (delta.data.delta ?? '')).slice(0, MAX_SUBAGENT_STEP_TEXT * 2))
         const text = [...parts].sort(([a], [b]) => a - b).map(([, value]) => value).join(' ').trim()
         if (!text) return undefined
-        const prior = bucket.steps.find(step => step.id === stepId)
-        const merged = mergeSubagentSteps(bucket.steps, [buildSubagentStep({
+        nextStep = buildSubagentStep({
           id: stepId, kind: 'reasoning', status: prior?.status ?? 'running', title: 'Thinking', detail: text, mono: false,
           startedAt: prior?.startedAt ?? iso(this.now()),
-        })], bucket.total)
-        bucket.steps = merged.steps; bucket.total = merged.total
+        })
       } else {
         const message = stepLine(delta.data.message)
         if (!message) return undefined
-        const prior = bucket.steps.find(step => step.id === stepId)
-        const merged = mergeSubagentSteps(bucket.steps, [buildSubagentStep({
+        nextStep = buildSubagentStep({
           id: stepId, kind: prior?.kind ?? 'tool', status: prior?.status ?? 'running', title: prior?.title ?? 'Tool', detail: message, mono: false,
           startedAt: prior?.startedAt ?? iso(this.now()),
-        })], bucket.total)
-        bucket.steps = merged.steps; bucket.total = merged.total
+        })
       }
-      this.publishChildSteps(owner, child, bucket)
+      const merged = mergeSubagentSteps(bucket.steps, [nextStep], bucket.total)
+      bucket.steps = merged.steps; bucket.total = merged.total
+      const now = this.now()
+      const visibleChanged = !prior || prior.detail !== nextStep.detail
+      const due = !prior || (visibleChanged && now - (bucket.lastDeltaPublishMs ?? -Infinity) >= CHILD_DELTA_PUBLISH_MS)
+      if (!due) return undefined
+      bucket.lastDeltaPublishMs = now
+      this.publishChildSteps(owner, child, bucket, false)
       return owner.thread
     }
     if (method === 'turn/plan/updated') {
@@ -837,6 +850,7 @@ export class CodexActivityProjection {
       ? (isTerminalActivity(mapped) ? settleSubagentSteps(bucket.steps, mapped as 'completed' | 'failed' | 'interrupted', completedAt ?? observedAt) : bucket.steps.slice(-MAX_SUBAGENT_STEPS))
       : undefined
     if (stepsForTurn && bucket) bucket.steps = stepsForTurn
+    if (isTerminalActivity(mapped) && bucket) bucket.summaries.clear()
     const agent: ObservedAgent = { ...prior, status, observedAt,
       ...(startedAt ? { startedAt, timingSource: 'provider' } : !prior.startedAt && status === 'running' ? { startedAt: observedAt, timingSource: 'observed' } : {}),
       ...(isTerminalActivity(mapped) ? { completedAt: prior.completedAt ?? completedAt ?? observedAt } : {}),

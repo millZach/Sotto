@@ -43,7 +43,7 @@ import { MODEL_VISUAL_KIND, type HostModelViews, model3dHostBytesSchema, model3d
 import { SOUND_VISUAL_KIND, soundHostBytesSchema, soundHostNewsSchema, soundViewOrNullSchema } from '../shared/sounds'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
-import { CutBodies } from '../shared/activityBodies'
+import { CutBodies, deltaWithoutAgentSteps, detailWithoutAgentSteps, stripAgentSteps } from '../shared/activityBodies'
 import { hostAdminPhonesCommandSchema, type HostAdminPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import { HttpBudgets } from './httpBudgets'
@@ -1123,7 +1123,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       return peer.unknownProviders.size ? detailWithoutProviders(cut, peer.unknownProviders) : cut
     }
     // A handover from a thread of a provider this peer does not know loses its record of where it came from (#1107).
-    if (!peer.activitySummaries) return peer.unknownProviders.size ? detailWithoutProviders(withoutVisuals, peer.unknownProviders) : withoutVisuals
+    if (!peer.activitySummaries) {
+      const stripped = detailWithoutAgentSteps(withoutVisuals)
+      return peer.unknownProviders.size ? detailWithoutProviders(stripped, peer.unknownProviders) : stripped
+    }
     const summaries = summarised[kept]!
     let summary = summaries.get(detail)
     if (!summary) summaries.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
@@ -1311,7 +1314,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         const kept = keptLines(peer)
         const these = made[kept]!
         const stripped = these.stripped ??= deltaWithoutVisuals(update as AgentThreadDetailDelta, KEPT_LINES[kept])
-        return peer.activityBodies ? (these.cut ??= cutBodies.delta(stripped)) : peer.activitySummaries ? (these.summaries ??= deltaWithActivitySummaries(stripped)) : stripped
+        return peer.activityBodies ? (these.cut ??= cutBodies.delta(stripped)) : peer.activitySummaries ? (these.summaries ??= deltaWithActivitySummaries(stripped)) : deltaWithoutAgentSteps(stripped)
       },
     }
   }
@@ -2121,8 +2124,9 @@ export async function startSocketServer(options: SocketServerOptions) {
         // One record whole, for the row a desktop opened (ADR-0025, October 18 amendment); a hidden thread was refused above.
         // Its visuals are already gone: a record carries none. It is read without copying, and only serialized here.
         if (!peer.activityBodies || !offers(peer, 'activity-bodies')) throw new Refusal('invalid_request')
-        return service.threadActivity ? service.threadActivity(request.threadId, request.activityId)
+        const record = service.threadActivity ? service.threadActivity(request.threadId, request.activityId)
           : service.threadDetail(request.threadId)?.activities?.find(item => item.id === request.activityId) ?? null
+        return record ? stripAgentSteps(record) : null
       }
       case 'check-answer': {
         if (!offers(peer, 'answer-check') || !service.checkRequestAnswer) throw new Refusal('invalid_request')
