@@ -259,6 +259,8 @@ class TurnPlaces {
     if (opened) { this.current = 'reply'; this.replies++ }
     return { id: `antigravity-reply-${this.key}-${this.replies - 1}`, opened }
   }
+  /** A steered user message breaks any open assistant reply so the next reply opens after the user's words (#2840). */
+  user(): void { this.current = undefined }
   thought(): string {
     if (this.current !== 'thought') { this.current = 'thought'; this.thoughts++ }
     return `${this.key}-${this.thoughts - 1}`
@@ -280,6 +282,8 @@ class TurnPlaces {
 interface LiveTurn {
   readonly places: TurnPlaces
   readonly origin: Origin | undefined
+  /** Digests of every prompt Sotto sent in this turn (initial and steers) so `user_message_chunk` echoes are ignored. */
+  readonly originDigests: Set<string>
   taken: boolean
   ended: boolean
   prompts: number
@@ -942,7 +946,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (turn.reactiveMaxTimer) { clearTimeout(turn.reactiveMaxTimer); turn.reactiveMaxTimer = undefined }
   }
   private createTurn(placesKey: string, origin: Origin | undefined, outcome: AntigravityOutcomeWatcher, reactive: boolean, inheritedPlaces?: TurnPlaces): LiveTurn {
-    return { places: new TurnPlaces(placesKey, inheritedPlaces), origin, taken: origin === undefined, ended: false, prompts: 0, wake: undefined, outcome,
+    return { places: new TurnPlaces(placesKey, inheritedPlaces), origin, originDigests: new Set(origin ? [origin.digest] : []), taken: origin === undefined, ended: false, prompts: 0, wake: undefined, outcome,
       reactive, ranCommand: false, reactiveTools: new Set(), sawReactiveContent: false, reactiveRev: 0, reactiveTimer: undefined, reactiveMaxTimer: undefined }
   }
   private nextReactiveTurnId(id: string, turn: LiveTurn | undefined): string {
@@ -1194,8 +1198,8 @@ export class AntigravityAcpHost implements ProviderHost {
     if (kind === 'user_message_chunk') {
       if (words === undefined) return
       const turn = this.turns.get(id)
-      // `agy` may echo a prompt Sotto sent; Sotto already holds it. Anything else was typed into the session elsewhere.
-      if (turn?.origin && !turn.ended && digest(words) === turn.origin.digest) { this.taken(id); return }
+      // `agy` may echo a prompt Sotto sent (initial or steered); Sotto already holds it. Anything else was typed elsewhere.
+      if (turn && !turn.ended && turn.originDigests.has(digest(words))) { this.taken(id); return }
       // Out-of-turn background task completion notifications arrive from `agy`'s runtime, never from the user.
       const wakeup = parseAntigravitySystemWakeup(words)
       if (wakeup.isWakeup) {
@@ -1833,6 +1837,8 @@ export class AntigravityAcpHost implements ProviderHost {
     try { await this.persist() } catch (error) { index.remove(origin); throw error }
     this.assertGeneration(generation)
     this.log.add(id, { id: origin.messageId, role: 'user', text: command.text, commandId: origin.commandId, createdAt: origin.createdAt })
+    turn.places.user()
+    turn.originDigests.add(origin.digest)
     this.clearReactiveTimers(turn)
     turn.reactive = false
     turn.reactiveTools.clear()

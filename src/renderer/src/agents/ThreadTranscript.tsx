@@ -84,6 +84,13 @@ const NOTHING_AFTER: ReadonlySet<string> = new Set()
 export const TRANSCRIPT_PAGE = 80
 /** Within this many pixels of the end, the reader is following the conversation. */
 const FOLLOW_SLACK_PX = 48
+/**
+ * How long a live assistant reply stays quiet before Sotto treats it as finished writing while the turn remains open
+ * (#2840): short when a running step or background work is known to hold the turn (matching Antigravity's reactive
+ * settle window), and a longer quiet backstop when an open prompt keeps `thread.status === 'running'` after a reply.
+ */
+export const HELD_WORK_REPLY_SETTLE_MS = 2_000
+export const QUIET_REPLY_SETTLE_MS = 15_000
 
 const STATUS_LABELS: Record<SubmissionStatus, MessageDescriptor> = {
   queued: msg({ message: 'Queued', comment: 'A sent message\'s delivery status.' }),
@@ -1049,10 +1056,32 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading', thread.earlierAvailable === true),
     [thread.messages, messages, thread.activities, thread.historyStatus, thread.earlierAvailable]))
   const liveTurn = liveTurnId(thread)
+  const isSending = sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')
+  const live = thread.status === 'running' && !(watcher && placement.newestTurnEnded === true)
+  const hasRunningStep = useMemo(() => {
+    if (liveTurn === null) return false
+    return (thread.activities ?? []).some(record =>
+      record.turnId === liveTurn && isStep(record) && record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
+  }, [thread.activities, liveTurn])
+  const hasHeldWork = hasRunningStep || (thread.backgroundWork?.length ?? 0) > 0
   // The newest reply is being written only while the provider writes it now: connected (the working line reads Working, not
-  // Last seen working), with no request waiting on the user, in a turn not cut short. Otherwise it carries no caret,
-  // whatever the thread's status still says.
-  const notWriting = thread.requests.length > 0 || !row.connected || placement.newestTurnCutShort === true
+  // Last seen working), with no request waiting on the user, in a turn not cut short. When a turn stays running after a reply
+  // finishes — such as an Antigravity `session/prompt` held open by a background command (#2840) — genuine streaming chunks
+  // still reset this timer, and once text stops arriving the reply settles instead of staying hidden under When finished.
+  const baseNotWriting = thread.requests.length > 0 || !row.connected || placement.newestTurnCutShort === true
+  const newestDrawn = thread.messages.findLast(drawn)
+  const candidateReply = live && !isSending && !baseNotWriting && newestDrawn?.role === 'assistant' && !isVisualMessage(newestDrawn) && !placement.after.get(newestDrawn.id)?.length
+  const replyKey = candidateReply ? `${thread.id}\n${newestDrawn.id}` : null
+  const replyText = candidateReply ? newestDrawn.text : ''
+  const [settledReplyKey, setSettledReplyKey] = useState<string | null>(null)
+  const replySettleMs = hasHeldWork ? HELD_WORK_REPLY_SETTLE_MS : QUIET_REPLY_SETTLE_MS
+  useEffect(() => {
+    if (replyKey === null || settledReplyKey === replyKey) return
+    const timer = window.setTimeout(() => setSettledReplyKey(replyKey), replySettleMs)
+    return () => window.clearTimeout(timer)
+  }, [replyKey, settledReplyKey, replyText, replySettleMs])
+  const replySettled = replyKey !== null && settledReplyKey === replyKey
+  const notWriting = baseNotWriting || replySettled
   // Delegation (ADR-0081; Owl only): this thread's own delegations, read once as its pane opens and again when main
   // names it. What it delegated are rows of delegated work in the turn each call was made in; the briefs it was sent are the words of
   // the thread that delegated to it, not the user's.
@@ -1408,7 +1437,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     return stepped ? { startedAt } : null
   }, [thread.activities, liveTurn])
   const newest = thread.messages.at(-1)
-  const writingBelow = liveWork !== null && thread.requests.length === 0 && newest?.role === 'assistant'
+  const writingBelow = !replySettled && liveWork !== null && thread.requests.length === 0 && newest?.role === 'assistant'
     && !(liveWork.startedAt && Date.parse(newest.createdAt) < Date.parse(liveWork.startedAt)) ? writingPlace : null
 
   const showEarlier = (): void => {
@@ -1467,7 +1496,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><PeerCoordinationWorldProvider world={peerWorld}><DetachedRunStopContext.Provider value={stopDetachedRun}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} sending={isSending} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} peerExchanges={peerExchanges.size ? peerExchanges : undefined} receivedPeers={receivedPeers} hideCoordinationWakeUps={coordinationOn} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DetachedRunStopContext.Provider></PeerCoordinationWorldProvider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
@@ -1478,7 +1507,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
         {/* Its opened steps read cut bodies whole from their host, as the rows above do. */}
         <ActivityBodyContext.Provider value={bodyHost}>
-          <LiveActivity thread={thread} connected={row.connected} provider={row.provider} onDisclosure={onDisclosure} sendingSince={sendingSince} />
+          <LiveActivity thread={thread} connected={row.connected} provider={row.provider} onDisclosure={onDisclosure} sendingSince={sendingSince} replySettled={replySettled} />
         </ActivityBodyContext.Provider>
         <div ref={setWritingPlace} className="thread-transcript__writing" />
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
