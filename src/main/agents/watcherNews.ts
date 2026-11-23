@@ -3,6 +3,7 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent,
   type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
+import { looksLikePlainTextQuestionCard, PLAIN_TEXT_QUESTION_HINT } from './plainTextQuestionHint'
 import type { WatcherCardWords, WatcherEvidence } from '../../shared/watcher'
 import { SETTLE_IT } from '../../shared/watcherQuestions'
 
@@ -178,8 +179,16 @@ export function toldEventsForLater(events: readonly WatcherEvent[]): ReadonlySet
   return later
 }
 /** How much of a waiting card's own words Watcher is given (#2230): its question, a few of its choices and its pages. */
-const CARD_QUESTION_CHARS = 300, CARD_CHOICES_MAX = 8, CARD_CHOICE_CHARS = 100, CARD_PAGES_MAX = 3
+const CARD_QUESTION_CHARS = 300, CARD_CHOICES_MAX = 8, CARD_CHOICE_CHARS = 300, CARD_TOOL_CHARS = 100, CARD_PAGES_MAX = 3
 const cut = (text: string, max: number): string => { const characters = [...text.trim()]; return characters.length > max ? `${characters.slice(0, max - 1).join('')}…` : characters.join('') }
+/** Formats a card choice with its short description when present so tradeoffs survive without extra thread reads. */
+const formatCardChoice = (option: { readonly label: string; readonly description?: string | undefined }): string => {
+  const label = option.label.trim()
+  const description = option.description?.trim()
+  if (!label) return description ? cut(description, CARD_CHOICE_CHARS) : ''
+  if (!description || label.toLowerCase().includes(description.toLowerCase())) return cut(label, CARD_CHOICE_CHARS)
+  return cut(`${label} — ${description}`, CARD_CHOICE_CHARS)
+}
 /** Each web address written in a text, once, in the order written, without the punctuation that ends a sentence. */
 const webLinks = (text: string): string[] => [...new Set([...text.matchAll(/https?:\/\/[^\s<>"'`()[\]]+/giu)].map(match => match[0].replace(/[.,;:!?]+$/u, '')))]
   .filter(link => link.length <= 500)
@@ -194,7 +203,7 @@ export function watcherWaitingCardWords(request: Pick<AgentRequest, 'kind' | 'te
   if (request.kind !== 'question') return undefined
   const first = request.questions?.[0], question = first ? first.header?.trim() ? `${first.header.trim()}: ${first.question}` : first.question : request.text
   if (!question.trim()) return undefined
-  const choices = (first ? first.options : request.options).map(option => cut(option.label, CARD_CHOICE_CHARS)).filter(Boolean)
+  const choices = (first ? first.options : request.options).map(option => formatCardChoice(option)).filter(Boolean)
   const more = Math.max(0, (request.questions?.length ?? 0) - 1), pages = (request.pages ?? []).slice(0, CARD_PAGES_MAX).map(page => cut(page.name, 200))
   const links = webLinks([request.text, ...(request.questions ?? []).map(item => item.question), reply].join('\n')).slice(0, CARD_PAGES_MAX)
   return { question: cut(question, CARD_QUESTION_CHARS), choices: choices.slice(0, CARD_CHOICES_MAX),
@@ -213,7 +222,7 @@ export function watcherPermissionCardLine(request: Pick<AgentRequest, 'kind' | '
   if (!tool && !summary) return undefined
   const whose = request.context?.summaryAsk === undefined ? 'in the worker\'s words' : 'written for the card by its thread\'s provider when the worker gave none'
   const asks = summary ? ` Its summary, ${whose}: ${JSON.stringify(cut(summary, CARD_QUESTION_CHARS))}.` : ''
-  return `It asks to use ${tool ? JSON.stringify(cut(tool, CARD_CHOICE_CHARS)) : 'a tool'}.${asks}`
+  return `It asks to use ${tool ? JSON.stringify(cut(tool, CARD_TOOL_CHARS)) : 'a tool'}.${asks}`
 }
 /** A waiting card's words as its news line gives them (#2230), labelled as the worker's. */
 export function watcherCardLine(words: WatcherCardWords): string {
@@ -308,14 +317,15 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
  * line names it the last message and sends Watcher to read_thread for the turn's earlier messages, since read_operation
  * carries only the one reply an operation answers with.
  */
-export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined, operation = false, more = false): string | undefined {
+export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined, operation = false, more = false, hasOpenCard = false): string | undefined {
   if (thread.status === 'running' || !thread.lastTurn || thread.lastTurn.id !== turnId || !reply?.text.trim()) return undefined
   const characters = [...reply.text.trim()]
   const cut = characters.length > WATCHER_NEWS_REPLY_CHARS
   const said = JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))
-  if (cut) return `Its reply begins, in the worker's words: ${said} (cut; ${operation && !more ? 'read_operation' : 'read_thread'} has the rest).`
-  if (more) return `Its last message, in the worker's words: ${said} (the turn said more before it; read_thread has the rest).`
-  return `Its whole reply, in the worker's words: ${said}.`
+  const hint = !hasOpenCard && looksLikePlainTextQuestionCard(reply.text) ? ` ${PLAIN_TEXT_QUESTION_HINT}` : ''
+  if (cut) return `Its reply begins, in the worker's words: ${said} (cut; ${operation && !more ? 'read_operation' : 'read_thread'} has the rest).${hint}`
+  if (more) return `Its last message, in the worker's words: ${said} (the turn said more before it; read_thread has the rest).${hint}`
+  return `Its whole reply, in the worker's words: ${said}.${hint}`
 }
 /**
  * The reply of a finish told after its thread began another turn (#2059): what the worker last said by the time Sotto saw

@@ -42,6 +42,7 @@ import { GrokBackgroundWork } from './grokBackgroundWork'
 import { markTurnActivity } from './turnActivity'
 import { grokToolAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { object } from './providers/claude/claudeProtocol'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { compareClientVersions } from './clientVersions'
@@ -1509,8 +1510,11 @@ export class GrokAcpHost implements ProviderHost {
           delete pending.request.answerRetryReady; this.changed(command.threadId)
           // The answer goes to the process that asked, and only while that process is still the thread's.
           if (pending.rpc !== this.processes.get(command.threadId)?.rpc || !this.state.connected || !this.pending.has(pending.request.id)) return { accepted: false, uncertain: true }
-          try { await pending.rpc.reply(pending.wireId, result); this.removeRequest(pending) }
+          try { await pending.rpc.reply(pending.wireId, result); this.removeRequest(pending, false) }
           catch { pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit(); return { accepted: false, uncertain: true } }
+          const activeTurnId = this.activePrompts.has(command.threadId) ? (alias.origins.at(-1)?.messageId ?? this.threads.get(command.threadId)?.lastTurn?.id) : undefined
+          if (markThreadRunningAfterAnswer(this.threads.get(command.threadId), activeTurnId)) this.changed(command.threadId)
+          this.emit()
         } else if (command.type === 'interrupt') {
           if (!watcherGuard) this.activePrompts.delete(command.threadId)
           if (!watcherGuard) await this.decline(command.threadId)
@@ -1681,7 +1685,7 @@ export class GrokAcpHost implements ProviderHost {
       ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}) })
     this.changed(id)
   }
-  private removeRequest(pending: Pending): void { this.pending.delete(pending.request.id); this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId); this.emit() }
+  private removeRequest(pending: Pending, emit = true): void { this.pending.delete(pending.request.id); this.thread(pending.threadId).requests = this.thread(pending.threadId).requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId); if (emit) this.emit() }
   private refusal(pending: Pending): unknown { return pending.permission ? { outcome: { outcome: 'cancelled' } } : { outcome: 'cancelled' } }
   private async decline(id: string): Promise<void> { for (const pending of [...this.pending.values()]) if (pending.threadId === id && !pending.answering) { this.removeRequest(pending); await pending.rpc.reply(pending.wireId, this.refusal(pending)) } }
   private disconnecting = false

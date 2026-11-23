@@ -40,15 +40,38 @@ it('says which tool a permission card asks for and its summary, never its comman
   expect(watcherPermissionCardLine({ kind: 'question', context: { toolName: 'Bash' } })).toBeUndefined()
 })
 
-it('keeps a card\'s words short: the question, eight choices and how many more (#2230)', () => {
+it('keeps a card\'s words short: the question, eight choices with short descriptions and how many more (#2230)', () => {
   const long = '🦉'.repeat(400)
-  const words = watcherWaitingCardWords({ kind: 'question', text: long, options: Array.from({ length: 11 }, (_, n) => choice(`${n} ${'x'.repeat(200)}`)) })!
+  const longChoice = '🦉'.repeat(350)
+  const words = watcherWaitingCardWords({ kind: 'question', text: long, options: [choice(longChoice), ...Array.from({ length: 10 }, (_, n) => choice(`${n} ${'x'.repeat(400)}`))] })!
   expect([...words.question]).toHaveLength(300)
   expect(words.choices).toHaveLength(8)
-  expect(words.choices.every(label => [...label].length <= 100)).toBe(true)
+  expect([...words.choices[0]!]).toHaveLength(300)
+  expect(words.choices.every(label => [...label].length <= 300)).toBe(true)
   expect(words.moreChoices).toBe(3)
   expect(watcherCardWordsSchema.safeParse(words).success).toBe(true)
   expect(watcherCardLine(words)).toContain(', and 3 more.')
+
+  const withDesc = watcherWaitingCardWords({
+    kind: 'question',
+    text: 'How should we proceed?',
+    options: [],
+    questions: [{
+      id: 'q1',
+      question: 'Pick rollout approach',
+      multiSelect: false,
+      allowFreeText: false,
+      options: [
+        { id: 'strict', label: 'Strict READY TO MERGE gate (Recommended)', description: 'Only PRs after ready_to_merge enter mergeQueue.' },
+        { id: 'loose', label: 'Keep CI auto-admit', description: 'Keep CI auto-admit' },
+      ],
+    }],
+  })!
+  expect(withDesc.choices).toEqual([
+    'Strict READY TO MERGE gate (Recommended) — Only PRs after ready_to_merge enter mergeQueue.',
+    'Keep CI auto-admit',
+  ])
+  expect(watcherCardWordsSchema.safeParse(withDesc).success).toBe(true)
 })
 
 it('gives the web links the card shows: in its words and in the agent\'s message it follows (#2230)', () => {

@@ -42,6 +42,7 @@ import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import type { ScopedThreadTools } from './threadToolServer'
 import { ThreadMessageLog } from './threadMessageLog'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -1522,11 +1523,11 @@ export class OpenCodeHost implements ProviderHost {
     this.thread(pending.threadId).requests.push(pending.request)
     this.emit()
   }
-  private removeRequest(pending: Pending): void {
+  private removeRequest(pending: Pending, emit = true): void {
     this.pending.delete(pending.request.id)
     const thread = this.threads.get(pending.threadId)
     if (thread) { thread.requests = thread.requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId) }
-    this.emit()
+    if (emit) this.emit()
   }
 
   /** One event from one thread's server. Only this thread's provider session is read; everything else is skipped. */
@@ -1902,7 +1903,9 @@ export class OpenCodeHost implements ProviderHost {
             } else if (answer === undefined) {
               await entry.client.request('DELETE', `/api/session/${this.sid(alias)}/form/${pending.form.id}`, { query: { message: command.skipped ? QUESTION_SKIPPED : 'The user chose not to answer.' } })
             } else await entry.client.request('POST', `/api/session/${this.sid(alias)}/form/${pending.form.id}/reply`, { body: { answer } })
-            this.removeRequest(pending)
+            this.removeRequest(pending, false)
+            if (markThreadRunningAfterAnswer(this.threads.get(command.threadId), this.activeTurns.get(command.threadId)?.messageId)) this.changed(command.threadId)
+            this.emit()
           } catch (error) {
             if (error instanceof OpenCodeRejected && (error.status === 404 || error.status === 409)) { this.removeRequest(pending); return { accepted: true } }
             if (error instanceof OpenCodeRejected) { pending.answering = false; throw new Error('OpenCode refused that answer. Nothing was sent. Review the request and answer again.', { cause: error }) }

@@ -38,6 +38,7 @@ import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { markTurnActivity } from './turnActivity'
 import { BackgroundCommandWatch, hermesBackgroundCommand } from './backgroundCommandWatch'
 import { childProcesses } from './detachedRunScan'
@@ -1251,6 +1252,8 @@ export class HermesAcpHost implements ProviderHost {
     if (this.pending.get(command.requestId) !== pending || this.connections.get(command.threadId) !== connection) return { accepted: false, uncertain: true }
     try { await connection.rpc.reply(pending.wireId, result); this.removeRequest(command.requestId) }
     catch { pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit(); return { accepted: false, uncertain: true } }
+    const turn = this.turns.get(command.threadId)
+    if (markThreadRunningAfterAnswer(this.threads.get(command.threadId), turn && !turn.ended ? turn.places.key : undefined)) this.changed(command.threadId)
     this.emit(); return { accepted: true }
   }
   private async interrupt(id: string, alias: Alias, watcherGuard?: () => void): Promise<AgentHostResult> {

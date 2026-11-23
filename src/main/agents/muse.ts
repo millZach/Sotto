@@ -39,6 +39,7 @@ import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type Thr
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
+import { markThreadRunningAfterAnswer } from './postAnswerRunning'
 import { markTurnActivity } from './turnActivity'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
@@ -1383,11 +1384,11 @@ export class MuseMspHost implements ProviderHost {
     this.changed(held.threadId)
     this.emit()
   }
-  private removeRequest(pending: Pending): void {
+  private removeRequest(pending: Pending, emit = true): void {
     if (this.pending.delete(pending.request.id)) this.recordRequestChange(pending)
     const thread = this.threads.get(pending.threadId)
     if (thread) { thread.requests = thread.requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId) }
-    this.emit()
+    if (emit) this.emit()
   }
   /**
    * One item into what the thread said. This is the adapter's one append path: resume history and the live
@@ -2228,7 +2229,10 @@ export class MuseMspHost implements ProviderHost {
                 answers,
               })
             }
-            this.removeRequest(pending)
+            this.removeRequest(pending, false)
+            const active = this.activeTurns.get(command.threadId)
+            if (markThreadRunningAfterAnswer(this.threads.get(command.threadId), active?.messageId ?? active?.turnId)) this.changed(command.threadId)
+            this.emit()
           } catch (error) {
             if (error instanceof MuseRejected && (error.kind === 'approvalAlreadyResolved' || error.kind === 'userInputAlreadySettled')) { this.removeRequest(pending); return { accepted: true } }
             if (error instanceof MuseRejected && error.kind === 'approvalRequirementStale') {
