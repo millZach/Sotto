@@ -27,6 +27,7 @@ const write = obj => process.stdout.write(JSON.stringify(obj) + '\\n')
 const log = entry => appendFileSync(statePath, JSON.stringify(entry) + '\\n')
 
 let nextSession = 1
+const openPrompts = []
 const rl = createInterface({ input: process.stdin, crlfDelay: Infinity })
 rl.on('line', line => {
   if (!line.trim()) return
@@ -374,6 +375,127 @@ rl.on('line', line => {
         content: { type: 'text', text: 'Handled pasted messages.' },
       } } })
       write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      return
+    }
+    if (promptText.includes('agy-held-bg-wakeup-no-steer')) {
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'cmd-held-nosteer',
+        title: 'Running python render.py',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { CommandLine: 'python render.py', WaitMsBeforeAsync: 5000 },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'cmd-held-nosteer',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text',
+          text: 'Tool is running as a background task with task id: conv-nosteer/task-1\\nTask logs are available at: /tmp/nosteer.log\\nLog output:\\nStarted' } }],
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Started the render in the background.' },
+      } } })
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: '<SYSTEM_MESSAGE>\\nBackground task conv-nosteer/task-1 completed with exit code 0.\\n</SYSTEM_MESSAGE>' },
+        } } })
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Render complete.' },
+        } } })
+        write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      }, 60)
+      return
+    }
+    if (promptText.includes('agy-midstream-count')) {
+      openPrompts.push(msg.id)
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Counting 1,' },
+      } } })
+      return
+    }
+    if (promptText.includes('Make it shorter')) {
+      openPrompts.push(msg.id)
+      // Still-in-flight tail of the pre-steer reply arrives before agy starts on the steer.
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: ' 2, 3.' },
+      } } })
+      // Then agy echoes the steer, answers it, and later an external duplicate of the steer text arrives.
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: promptText },
+        } } })
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Short.' },
+        } } })
+        setTimeout(() => {
+          write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+            sessionUpdate: 'user_message_chunk',
+            content: { type: 'text', text: promptText },
+          } } })
+          for (const id of openPrompts.splice(0)) {
+            write({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } })
+          }
+        }, 30)
+      }, 30)
+      return
+    }
+    if (promptText.includes('agy-held-bg-start')) {
+      openPrompts.push(msg.id)
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'cmd-held-1',
+        title: 'Running python render.py',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { CommandLine: 'python render.py', WaitMsBeforeAsync: 5000 },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'cmd-held-1',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text',
+          text: 'Tool is running as a background task with task id: conv-held/task-1\\nTask logs are available at: /tmp/held.log\\nLog output:\\nStarted' } }],
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Started the render in the background.' },
+      } } })
+      return
+    }
+    if (promptText.includes('How is the render going?')) {
+      openPrompts.push(msg.id)
+      // Echo the steered prompt as agy may, then reply directly without a thought or tool call while keeping session/prompt open.
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: promptText },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'The render is at 62%.' },
+      } } })
+      return
+    }
+    if (promptText.includes('agy-held-bg-finish')) {
+      openPrompts.push(msg.id)
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: '<SYSTEM_MESSAGE>\\nBackground task conv-held/task-1 completed with exit code 0.\\n</SYSTEM_MESSAGE>' },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Render complete.' },
+      } } })
+      for (const id of openPrompts.splice(0)) {
+        write({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } })
+      }
       return
     }
     if (promptText.includes('agy-colab-render')) {
@@ -834,5 +956,86 @@ describe('Antigravity ACP background work, reactive continuations, worker questi
     const userTexts = (await host.snapshot()).threads.find(t => t.id === 't-mid')!.messages.filter(m => m.role === 'user').map(m => m.text)
     expect(userTexts).toContain('<SYSTEM_MESSAGE> user pasted fragment without closing tag')
     expect(userTexts).toContain('[Message] timestamp=2026-11-23T00:00:00Z user pasted log header')
+  })
+
+  it('opens a fresh assistant reply after steering a turn held open by a background command and ignores the steered echo (#2840)', async () => {
+    const { host } = await setup()
+    await host.execute({ type: 'create-thread', commandId: 'c-held', projectId: 'proj-1', threadId: 't-held', title: 'Held BG', modelId: 'gemini-3.1-pro' })
+
+    await host.execute({ type: 'send', threadId: 't-held', commandId: 's-held-1', messageId: 'm-held-1', text: 'agy-held-bg-start' })
+    await expect.poll(async () => {
+      const t = (await host.snapshot()).threads.find(item => item.id === 't-held')
+      return t?.status === 'running'
+        && t.backgroundWork?.some(item => item.label === 'python render.py')
+        && t.messages.some(m => m.role === 'assistant' && m.text === 'Started the render in the background.')
+    }, { timeout: 3_000 }).toBe(true)
+
+    const steered = await host.execute({ type: 'steer', threadId: 't-held', commandId: 's-held-2', messageId: 'm-held-2', text: 'How is the render going?' })
+    expect(steered).toEqual({ accepted: true })
+
+    await expect.poll(async () => {
+      const t = (await host.snapshot()).threads.find(item => item.id === 't-held')
+      return t?.messages.map(m => [m.role, m.text])
+    }, { timeout: 3_000 }).toEqual([
+      ['user', 'agy-held-bg-start'],
+      ['assistant', 'Started the render in the background.'],
+      ['user', 'How is the render going?'],
+      ['assistant', 'The render is at 62%.'],
+    ])
+    const mid = (await host.snapshot()).threads.find(item => item.id === 't-held')!
+    expect(mid.status).toBe('running')
+    expect(mid.backgroundWork?.map(item => item.label)).toEqual(['python render.py'])
+
+    await host.execute({ type: 'steer', threadId: 't-held', commandId: 's-held-3', messageId: 'm-held-3', text: 'agy-held-bg-finish' })
+    await expect.poll(async () => {
+      const t = (await host.snapshot()).threads.find(item => item.id === 't-held')
+      return t?.status === 'idle' && (t.backgroundWork?.length ?? 0) === 0
+    }, { timeout: 3_000 }).toBe(true)
+    const done = (await host.snapshot()).threads.find(item => item.id === 't-held')!
+    expect(done.messages.at(-1)).toMatchObject({ role: 'assistant', text: 'Render complete.' })
+  })
+
+  it('opens a separate assistant reply after a held-turn SYSTEM_MESSAGE wakeup without any steer (L1)', async () => {
+    const { host } = await setup()
+    await host.execute({ type: 'create-thread', commandId: 'c-nosteer', projectId: 'proj-1', threadId: 't-nosteer', title: 'No Steer Wakeup', modelId: 'gemini-3.1-pro' })
+
+    await host.execute({ type: 'send', threadId: 't-nosteer', commandId: 's-nosteer-1', messageId: 'm-nosteer-1', text: 'agy-held-bg-wakeup-no-steer' })
+    await expect.poll(async () => (await host.snapshot()).threads.find(item => item.id === 't-nosteer')?.status, { timeout: 3_000 }).toBe('idle')
+
+    const done = (await host.snapshot()).threads.find(item => item.id === 't-nosteer')!
+    expect(done.messages.map(m => [m.role, m.text])).toEqual([
+      ['user', 'agy-held-bg-wakeup-no-steer'],
+      ['assistant', 'Started the render in the background.'],
+      ['assistant', 'Render complete.'],
+    ])
+    expect(done.backgroundWork ?? []).toEqual([])
+  })
+
+  it('keeps in-flight pre-steer chunks on the old reply until agy starts on the steer, and consumes steer echoes once (L4, N2)', async () => {
+    const { host } = await setup()
+    await host.execute({ type: 'create-thread', commandId: 'c-midstream', projectId: 'proj-1', threadId: 't-midstream', title: 'Midstream Steer', modelId: 'gemini-3.1-pro' })
+
+    await host.execute({ type: 'send', threadId: 't-midstream', commandId: 's-midstream-1', messageId: 'm-midstream-1', text: 'agy-midstream-count' })
+    await expect.poll(async () => {
+      const t = (await host.snapshot()).threads.find(item => item.id === 't-midstream')
+      return t?.status === 'running' && t.messages.some(m => m.role === 'assistant' && m.text === 'Counting 1,')
+    }, { timeout: 3_000 }).toBe(true)
+
+    const steered = await host.execute({ type: 'steer', threadId: 't-midstream', commandId: 's-midstream-2', messageId: 'm-midstream-2', text: 'Make it shorter' })
+    expect(steered).toEqual({ accepted: true })
+
+    await expect.poll(async () => {
+      const t = (await host.snapshot()).threads.find(item => item.id === 't-midstream')
+      return t?.messages.length === 5
+    }, { timeout: 3_000 }).toBe(true)
+
+    const done = (await host.snapshot()).threads.find(item => item.id === 't-midstream')!
+    expect(done.messages.map(m => [m.role, m.text])).toEqual([
+      ['user', 'agy-midstream-count'],
+      ['assistant', 'Counting 1, 2, 3.'],
+      ['user', 'Make it shorter'],
+      ['assistant', 'Short.'],
+      ['user', 'Make it shorter'],
+    ])
   })
 })

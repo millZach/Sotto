@@ -770,7 +770,7 @@ function lineStart(threadId: string, turnId: string | null): { readonly threadId
  * variant A of docs/prototypes/turn-steps-glow-prototype.html). The words carry the wait; what the turn is doing is one
  * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
-export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince }: {
+export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince, replySettled = false }: {
   readonly thread: Pick<AgentThread, 'id' | 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction' | 'requests'>>; readonly connected: boolean
   /** Display name of the provider, for the opened steps' "Reported by Codex". */
   readonly provider: string
@@ -781,6 +781,8 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
    * provider's first word; its own running turn takes the line over as soon as it arrives.
    */
   readonly sendingSince?: string | undefined
+  /** The newest reply stopped receiving tokens while the turn stays open on background or held work (#2840). */
+  readonly replySettled?: boolean | undefined
 }): ReactNode {
   const { t, i18n } = useLingui()
   const stepsId = useId()
@@ -813,8 +815,9 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const mark = server === undefined || turn === undefined ? null : <LiveServerMark thread={thread} turn={turn} heard={heard} attempt={server.attempt} />
   const open = start.open
   const last = thread.messages.at(-1)
-  // A reply from before this turn began, such as the one above a Watcher news turn, is not being written now.
-  const replyId = last?.role === 'assistant' && !isVisualMessage(last) && !(turn?.startedAt && Date.parse(last.createdAt) < Date.parse(turn.startedAt)) ? last.id : undefined
+  // A reply from before this turn began, such as the one above a Watcher news turn, or one that has already settled
+  // while the turn waits on background work (#2840), is not being written now.
+  const replyId = !replySettled && last?.role === 'assistant' && !isVisualMessage(last) && !(turn?.startedAt && Date.parse(last.createdAt) < Date.parse(turn.startedAt)) ? last.id : undefined
   // A request waiting on the user holds the turn, so the line says so rather than that a reply is being written.
   const requests = thread.requests
   const waitingOn = requests?.some(request => request.kind === 'permission') ? 'permission' : requests?.length ? 'question' : undefined
