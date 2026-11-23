@@ -25,7 +25,7 @@ import { markTurnActivity } from './turnActivity'
 import { DEVIN_OPEN_FAILED } from '../../shared/threadFailures'
 import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
-import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpToolName, type DevinPending } from './devinRequests'
+import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpToolName, isDevinElicitationMethod, type DevinPending } from './devinRequests'
 import { markSendStage } from './sendStages'
 import type { ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal } from './watcherProfile'
@@ -1086,7 +1086,8 @@ export class DevinAcpHost implements ProviderHost {
       // Ordinary requests stay on the synchronous path; lifecycle checks still refuse promotion.
       if (generation !== this.generation || connection.intentionalClose
         || !observer && this.connections.get(id) !== connection) return
-      if (observer || !params || params.sessionId !== alias.devinSessionId) { this.unsupported(connection.rpc, frame); return }
+      const elicitation = isDevinElicitationMethod(frame.method)
+      if (observer || !params || (params.sessionId !== undefined ? params.sessionId !== alias.devinSessionId : !elicitation)) { this.unsupported(connection.rpc, frame); return }
       try {
         const toolId = record(params.toolCall)?.toolCallId
         const decision = devinPending(frame.id, frame.method, params, id, typeof toolId === 'string' ? connection.tools.get(toolId) : undefined, connection.sottoTools)
@@ -1108,6 +1109,10 @@ export class DevinAcpHost implements ProviderHost {
         if (active && !active.streamed && this.connections.get(id) === connection) this.markTaken(id, active)
         this.reaper.touch(id); this.emit()
       } catch {
+        if (elicitation) {
+          connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported elicitation request' } })
+          return
+        }
         connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported request' } })
         this.state.error = 'Devin requested an action Sotto cannot safely present. Stop the turn and review it in Devin.'
         connection.rpc.close(); this.emit()

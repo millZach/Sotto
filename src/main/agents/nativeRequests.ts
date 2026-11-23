@@ -9,7 +9,7 @@ import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
  * part that has changed.
  */
 export function needsPerson(method: string): boolean {
-  return /requestApproval$|requestUserInput$|request_permission$|ask_user_question$|elicitation\/request$|^item\/permissions\//u.test(method)
+  return /requestApproval$|requestUserInput$|request_permission$|ask_user_question$|elicitation\/(?:request|create)$|session\/elicitation$|^item\/permissions\//u.test(method)
 }
 
 /**

@@ -60,7 +60,8 @@ it('Codex string elicitation exposes every field and preserves native enum value
 it('recognises a request only a person can answer across native naming styles, and nothing else', () => {
   for (const method of ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/commandExecution/v2/requestApproval',
     'item/tool/requestUserInput', 'item/permissions/requestApproval', 'mcpServer/elicitation/request',
-    'session/request_permission', 'session/v2/request_permission', 'x.ai/ask_user_question']) expect(needsPerson(method)).toBe(true)
+    'session/request_permission', 'session/v2/request_permission', 'x.ai/ask_user_question',
+    'elicitation/create', 'session/elicitation']) expect(needsPerson(method)).toBe(true)
   for (const method of ['session/update', 'item/tool/call', 'currentTime/read', 'attestation/generate', 'account/chatgptAuthTokens/refresh',
     'session/write_text_file', 'thread/started', 'turn/completed']) expect(needsPerson(method)).toBe(false)
 })

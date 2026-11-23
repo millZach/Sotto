@@ -477,4 +477,65 @@ describe('Devin dispatch and decision boundaries', () => {
     await f.driver.completeTurn(threadId, 'Done')
     await expect.poll(async () => (await thread()).status).toBe('idle')
   })
+
+  it('answers Devin 3000.14 ask_user elicitations and leaves the session alive when an unreadable elicitation returns -32602', async () => {
+    await send()
+    await f.action(threadId, {
+      type: 'elicitation',
+      method: 'session/elicitation',
+      params: {
+        requestId: 'ask-1',
+        mode: 'form',
+        message: 'Confirm release step',
+        _meta: { 'cognition.ai/toolCallId': 'tool-ask-1' },
+        requestedSchema: {
+          $schema: 'https://json-schema.org/draft/2020-12/schema',
+          type: 'object',
+          properties: {
+            choice: {
+              type: 'string',
+              title: 'Target',
+              oneOf: [{ const: 'staging', title: 'Staging', description: 'Deploy to staging' }],
+              _meta: { 'cognition.ai/allowOther': true, 'cognition.ai/otherOptionValue': '__other__' },
+            },
+            tags: {
+              type: 'array',
+              items: { anyOf: [{ const: 'smoke', title: 'Smoke tests' }] },
+              minItems: 1,
+              uniqueItems: true,
+            },
+          },
+          required: ['choice', 'tags'],
+        },
+      },
+    })
+    await expect.poll(async () => (await thread()).requests.length).toBe(1)
+    const request = (await thread()).requests[0]!
+    expect(request.kind).toBe('question')
+    expect(request.questions?.[0]).toMatchObject({ allowFreeText: true, options: [{ id: 'staging', label: 'Staging', description: 'Deploy to staging' }] })
+    expect(request.questions?.[1]).toMatchObject({ multiSelect: true, options: [{ id: 'smoke', label: 'Smoke tests' }] })
+    await f.host.execute({
+      type: 'answer',
+      commandId: randomUUID(),
+      threadId,
+      requestId: request.id,
+      answer: '',
+      questionAnswers: { choice: { optionIds: [], text: 'canary' }, tags: { optionIds: ['smoke'] } },
+    })
+    await expect.poll(async () => (await f.driver.requests()).some(record => record.result?.action === 'accept')).toBe(true)
+    const accepted = (await f.driver.requests()).find(record => record.result?.action === 'accept')!
+    expect(accepted.result).toEqual({ action: 'accept', content: { choice: 'canary', tags: ['smoke'] } })
+
+    // Unsupported elicitation (e.g. mode: 'url') replies -32602 without closing the Devin RPC connection or failing the host.
+    await f.action(threadId, {
+      type: 'elicitation',
+      method: 'elicitation/create',
+      params: { mode: 'url', message: 'Open URL' },
+    })
+    await expect.poll(async () => (await f.driver.requests()).some(record => record.error?.code === -32602)).toBe(true)
+    expect((await f.host.snapshot()).connected).toBe(true)
+    await f.driver.completeTurn(threadId, 'Continued cleanly after -32602')
+    await expect.poll(async () => (await thread()).status).toBe('idle')
+    expect((await thread()).messages.at(-1)?.text).toBe('Continued cleanly after -32602')
+  })
 })

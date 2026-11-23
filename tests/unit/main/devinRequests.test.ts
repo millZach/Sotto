@@ -43,6 +43,63 @@ describe('Devin native requests', () => {
     expect(() => devinAnswer(pending, '{"injected":"yes"}')).toThrow()
     expect(devinAnswer(pending, 'yes')).toEqual({ action: 'accept', content: { name: 'yes' } })
   })
+  it('supports Devin 3000.14 elicitation shapes: session/elicitation, optional sessionId, descriptions, array multi-select, $schema, and _meta allowOther', () => {
+    const pending = devinPending('devin-ask', 'session/elicitation', {
+      requestId: 'req-1',
+      toolCallId: 'call-1',
+      mode: 'form',
+      message: 'Need choices',
+      _meta: { 'cognition.ai/toolCallId': 'call-1' },
+      requestedSchema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          single: {
+            type: 'string',
+            title: 'Approach',
+            oneOf: [
+              { const: 'fast', title: 'Fast', description: 'Quick fix' },
+              { const: '__other__', title: 'Other' },
+            ],
+            _meta: { 'cognition.ai/allowOther': true, 'cognition.ai/otherOptionValue': '__other__' },
+          },
+          multi: {
+            type: 'array',
+            title: 'Checks',
+            items: { anyOf: [{ const: 'lint', title: 'Lint', description: 'Run eslint' }, { const: 'typecheck', title: 'Typecheck' }] },
+            minItems: 1,
+            maxItems: 2,
+            uniqueItems: true,
+          },
+        },
+        required: ['single', 'multi'],
+      },
+    }, 'thread')!
+    expect(pending.request.questions?.[0]).toMatchObject({
+      id: 'single',
+      multiSelect: false,
+      allowFreeText: true,
+      options: [{ id: 'fast', label: 'Fast', description: 'Quick fix' }],
+    })
+    expect(pending.request.questions?.[1]).toMatchObject({
+      id: 'multi',
+      multiSelect: true,
+      allowFreeText: false,
+      options: [{ id: 'lint', label: 'Lint', description: 'Run eslint' }, { id: 'typecheck', label: 'Typecheck' }],
+    })
+    expect(devinAnswer(pending, '', undefined, {
+      single: { optionIds: [], text: 'Custom approach' },
+      multi: { optionIds: ['lint', 'typecheck'] },
+    })).toEqual({
+      action: 'accept',
+      content: { single: 'Custom approach', multi: ['lint', 'typecheck'] },
+    })
+    expect(() => devinAnswer(pending, '', undefined, {
+      single: { optionIds: ['fast'] },
+      multi: { optionIds: [] },
+    })).toThrow()
+  })
 })
 
 it('shows the complete verified existing-file replacement before one-time approval', () => {
