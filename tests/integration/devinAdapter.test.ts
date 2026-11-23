@@ -526,16 +526,45 @@ describe('Devin dispatch and decision boundaries', () => {
     const accepted = (await f.driver.requests()).find(record => record.result?.action === 'accept')!
     expect(accepted.result).toEqual({ action: 'accept', content: { choice: 'canary', tags: ['smoke'] } })
 
-    // Unsupported elicitation (e.g. mode: 'url') replies -32602 without closing the Devin RPC connection or failing the host.
+    // Unsupported elicitation (e.g. mode: 'url') replies -32602 and surfaces unreadableRequest('Devin') without closing the Devin RPC connection or failing the host.
     await f.action(threadId, {
       type: 'elicitation',
       method: 'elicitation/create',
       params: { mode: 'url', message: 'Open URL' },
     })
     await expect.poll(async () => (await f.driver.requests()).some(record => record.error?.code === -32602)).toBe(true)
+    expect((await thread()).requestNotice).toMatch(/in a form Sotto could not read, so it was declined without reaching you/iu)
     expect((await f.host.snapshot()).connected).toBe(true)
     await f.driver.completeTurn(threadId, 'Continued cleanly after -32602')
     await expect.poll(async () => (await thread()).status).toBe('idle')
     expect((await thread()).messages.at(-1)?.text).toBe('Continued cleanly after -32602')
+  })
+
+  it('closes the RPC and clears pending cards if an elicitation reuses a frame id with different params', async () => {
+    await send()
+    await f.action(threadId, {
+      type: 'elicitation',
+      frameId: 'dup-frame-1',
+      method: 'session/elicitation',
+      params: {
+        mode: 'form',
+        message: 'Original question',
+        requestedSchema: { type: 'object', properties: { answer: { type: 'string' } } },
+      },
+    })
+    await expect.poll(async () => (await thread()).requests.length).toBe(1)
+
+    await f.action(threadId, {
+      type: 'elicitation',
+      frameId: 'dup-frame-1',
+      method: 'session/elicitation',
+      params: {
+        mode: 'form',
+        message: 'Mutated question',
+        requestedSchema: { type: 'object', properties: { answer: { type: 'string' } } },
+      },
+    })
+    await expect.poll(async () => (await thread()).requests.length).toBe(0)
+    await expect.poll(async () => (await f.driver.requests()).some(record => record.error?.message === 'Unsupported request')).toBe(true)
   })
 })

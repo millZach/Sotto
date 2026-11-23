@@ -26,6 +26,7 @@ import { DEVIN_OPEN_FAILED } from '../../shared/threadFailures'
 import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpToolName, isDevinElicitationMethod, type DevinPending } from './devinRequests'
+import { unreadableRequest } from './nativeRequests'
 import { markSendStage } from './sendStages'
 import type { ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal } from './watcherProfile'
@@ -1090,7 +1091,20 @@ export class DevinAcpHost implements ProviderHost {
       if (observer || !params || (params.sessionId !== undefined ? params.sessionId !== alias.devinSessionId : !elicitation)) { this.unsupported(connection.rpc, frame); return }
       try {
         const toolId = record(params.toolCall)?.toolCallId
-        const decision = devinPending(frame.id, frame.method, params, id, typeof toolId === 'string' ? connection.tools.get(toolId) : undefined, connection.sottoTools)
+        let decision: DevinPending | undefined
+        try {
+          decision = devinPending(frame.id, frame.method, params, id, typeof toolId === 'string' ? connection.tools.get(toolId) : undefined, connection.sottoTools)
+        } catch (error) {
+          if (elicitation) {
+            connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported elicitation request' } })
+            const notice = unreadableRequest('Devin'), thread = this.thread(id)
+            if (this.state.error !== notice || thread.requestNotice !== notice) {
+              thread.requestNotice = notice; this.state.error = notice; this.changed(id); this.emit()
+            }
+            return
+          }
+          throw error
+        }
         if (!decision) { this.unsupported(connection.rpc, frame); return }
         decision.request.id = 'devin-request-' + digest(JSON.stringify([id, connection.nonce, frame.id]))
         const fingerprint = digest(JSON.stringify([frame.method, params, typeof toolId === 'string' ? connection.tools.get(toolId)?.rawInput : null]))
@@ -1109,11 +1123,8 @@ export class DevinAcpHost implements ProviderHost {
         if (active && !active.streamed && this.connections.get(id) === connection) this.markTaken(id, active)
         this.reaper.touch(id); this.emit()
       } catch {
-        if (elicitation) {
-          connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported elicitation request' } })
-          return
-        }
         connection.rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'Unsupported request' } })
+        this.clearRequests(id)
         this.state.error = 'Devin requested an action Sotto cannot safely present. Stop the turn and review it in Devin.'
         connection.rpc.close(); this.emit()
       }

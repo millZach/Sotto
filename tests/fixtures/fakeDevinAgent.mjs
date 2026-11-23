@@ -338,7 +338,7 @@ const control = setInterval(() => {
     { optionId: 'deny-once', name: 'Deny', kind: 'reject_once' }] } })
   }
   if (command.type === 'elicitation') {
-   const id = `${processToken}-${++serial}`
+   const id = command.frameId ?? `${processToken}-${++serial}`
    pending.set(id, { kind: 'elicitation', sessionId, keys: Object.keys(command.params?.requestedSchema?.properties ?? {}) })
    send({ id, method: command.method ?? 'session/elicitation', params: command.params })
   }

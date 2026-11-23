@@ -147,3 +147,100 @@ describe('which tool a Devin permission is for', () => {
     expect(pending.request.context).toEqual({ toolCallId: 'tool', command: 'mcp__sotto_browser__browser_open' })
   })
 })
+
+describe('Devin elicitation skippability, zero-minimum arrays, limits, and uniqueItems', () => {
+  it('omits skippable on required choice fields even when allowOther is true', () => {
+    const pending = devinPending('req-choice', 'session/elicitation', {
+      mode: 'form',
+      message: 'Pick one',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          choice: {
+            type: 'string',
+            title: 'Target',
+            oneOf: [{ const: 'staging', title: 'Staging' }],
+            _meta: { 'cognition.ai/allowOther': true },
+          },
+          notes: { type: 'string', title: 'Notes' },
+        },
+        required: ['choice', 'notes'],
+      },
+    }, 'thread')!
+    expect(pending.request.questions?.[0]).toMatchObject({ id: 'choice', allowFreeText: true, required: true })
+    expect(pending.request.questions?.[0]?.skippable).toBeUndefined()
+    expect(pending.request.questions?.[1]).toMatchObject({ id: 'notes', allowFreeText: true, required: true, skippable: true })
+  })
+
+  it('allows zero selections on required arrays when minItems is omitted or zero and shows item limits on array questions', () => {
+    const pending = devinPending('req-arrays', 'session/elicitation', {
+      mode: 'form',
+      message: 'Select checks',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          optionalMin: {
+            type: 'array',
+            title: 'Optional checks',
+            items: { anyOf: [{ const: 'lint', title: 'Lint' }] },
+          },
+          explicitZero: {
+            type: 'array',
+            title: 'Up to two',
+            items: { anyOf: [{ const: 'a', title: 'A' }, { const: 'b', title: 'B' }] },
+            minItems: 0,
+            maxItems: 2,
+          },
+          bounded: {
+            type: 'array',
+            description: 'Pick release checks',
+            items: { anyOf: [{ const: 'unit', title: 'Unit' }, { const: 'e2e', title: 'E2E' }] },
+            minItems: 1,
+            maxItems: 2,
+            uniqueItems: true,
+          },
+        },
+        required: ['optionalMin', 'explicitZero', 'bounded'],
+      },
+    }, 'thread')!
+    expect(pending.request.questions?.[0]).toMatchObject({ id: 'optionalMin', required: false, skippable: true })
+    expect(pending.request.questions?.[1]).toMatchObject({ id: 'explicitZero', required: false, skippable: true, question: 'Up to two\nChoose at most 2 options.' })
+    expect(pending.request.questions?.[2]).toMatchObject({ id: 'bounded', required: true, question: 'Pick release checks\nChoose 1 to 2 options.' })
+    expect(pending.request.questions?.[2]?.skippable).toBeUndefined()
+
+    expect(devinAnswer(pending, '', undefined, {
+      optionalMin: { optionIds: [] },
+      explicitZero: { optionIds: [] },
+      bounded: { optionIds: ['unit'] },
+    })).toEqual({
+      action: 'accept',
+      content: { bounded: ['unit'], optionalMin: [], explicitZero: [] },
+    })
+  })
+
+  it('enforces uniqueItems and surfaces item limit bounds in array validation errors', () => {
+    const pending = devinPending('req-unique', 'session/elicitation', {
+      mode: 'form',
+      message: 'Pick unique items',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          tags: {
+            type: 'array',
+            items: { anyOf: [{ const: 'smoke', title: 'Smoke' }, { const: 'perf', title: 'Perf' }] },
+            minItems: 1,
+            maxItems: 2,
+            uniqueItems: true,
+            _meta: { 'cognition.ai/allowOther': true },
+          },
+        },
+        required: ['tags'],
+      },
+    }, 'thread')!
+
+    expect(() => devinAnswer(pending, '', undefined, { tags: { optionIds: ['smoke'], text: 'smoke' } })).toThrow(/at most once/u)
+    expect(() => devinAnswer(pending, '', undefined, { tags: { optionIds: [] } })).toThrow(/Answer every question/u)
+    expect(() => devinAnswer(pending, '{"tags":[]}')).toThrow(/at least 1 option/u)
+    expect(() => devinAnswer(pending, '', undefined, { tags: { optionIds: ['smoke', 'perf'], text: 'extra' } })).toThrow(/at most 2 options/u)
+  })
+})

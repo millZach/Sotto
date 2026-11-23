@@ -82,6 +82,18 @@ function offeredValues(field: Field): Set<string> | undefined {
   if (source.enum) return new Set(source.enum)
   return undefined
 }
+const noneAllowed = (field: Field): boolean => field.type === 'array' && (field.minItems ?? 0) === 0
+function arrayLimitsHint(field: Extract<Field, { type: 'array' }>): string | undefined {
+  const { minItems, maxItems } = field
+  if (minItems !== undefined && minItems > 0 && maxItems !== undefined) {
+    return minItems === maxItems
+      ? `Choose ${minItems} ${minItems === 1 ? 'option' : 'options'}.`
+      : `Choose ${minItems} to ${maxItems} options.`
+  }
+  if (minItems !== undefined && minItems > 0) return `Choose at least ${minItems} ${minItems === 1 ? 'option' : 'options'}.`
+  if (maxItems !== undefined) return `Choose at most ${maxItems} ${maxItems === 1 ? 'option' : 'options'}.`
+  return undefined
+}
 export type DevinPending = { wireId: string | number; threadId: string; toolCallId?: string; request: AgentRequest; actionDetails?: string
   /** What the answer allows (`devinActionScope`), checked again before the answer goes. */
   scope?: string; permission?: Permission; question?: Question; answering?: boolean }
@@ -164,15 +176,17 @@ export function devinPending(wireId: string | number, method: string, value: unk
     const question = parse(questionSchema, value)
     const questions: NonNullable<AgentRequest['questions']> = Object.entries(question.requestedSchema.properties).map(([id, field]) => {
       const required = question.requestedSchema.required?.includes(id) ?? false
+      const needed = required && !noneAllowed(field)
       const { allowOther, otherValue } = fieldAllowOther(field, question.requestedSchema._meta, question._meta)
       const options = field.type === 'array' ? fieldOptions(field.items, otherValue) : fieldOptions(field, otherValue)
       const words = field.type === 'string' && !field.enum && !field.oneOf && !field.anyOf
       const allowFreeText = words || allowOther
-      // A field may be skipped on its own when it can be left out, when it takes free-form words the skip sentence fits, or when a required multi-select allows zero items.
-      const skippable = !required
-        || (field.type === 'string' ? allowFreeText && skipSentenceFits(field.minLength, field.maxLength) : (field.minItems ?? 0) === 0)
-      return { id, question: field.description ?? field.title ?? id, ...(field.title ? { header: field.title } : {}),
-        options, multiSelect: field.type === 'array', allowFreeText, required, ...(skippable ? { skippable: true as const } : {}) }
+      // A field may be skipped on its own when it can be left out or when it takes plain free-form words the skip sentence fits.
+      const skippable = !needed
+        || (words && skipSentenceFits(field.minLength, field.maxLength))
+      const hint = field.type === 'array' ? arrayLimitsHint(field) : undefined
+      return { id, question: (field.description ?? field.title ?? id) + (hint ? `\n${hint}` : ''), ...(field.title ? { header: field.title } : {}),
+        options, multiSelect: field.type === 'array', allowFreeText, required: needed, ...(skippable ? { skippable: true as const } : {}) }
     })
     return { wireId, threadId, question, request: { id, kind: 'question', text: question.message ?? 'Devin needs your input.', questions, options: questions.length === 1 ? questions[0]!.options : [], skippable: true } }
   }
@@ -223,7 +237,10 @@ export function devinAnswer(pending: DevinPending, answer: string, approved?: bo
       content = { [only]: field.type === 'array' ? [answer] : answer }
     }
   }
-  if ((form.required ?? []).some(key => !Object.hasOwn(content, key))) throw new Error('Answer every required field.')
+  for (const key of form.required ?? []) {
+    if (!Object.hasOwn(content, key) && noneAllowed(form.properties[key]!)) content[key] = []
+    if (!Object.hasOwn(content, key)) throw new Error('Answer every required field.')
+  }
   for (const [key, value] of Object.entries(content)) {
     const field = form.properties[key]
     if (!Object.hasOwn(form.properties, key) || !field) throw new Error('Answer only the fields Devin requested.')
@@ -231,7 +248,10 @@ export function devinAnswer(pending: DevinPending, answer: string, approved?: bo
     const allowed = offeredValues(field)
     if (field.type === 'array') {
       if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error('Answer only the fields Devin requested.')
-      if (value.length < (field.minItems ?? 0) || value.length > (field.maxItems ?? 100)) throw new Error('The answer does not fit this field’s item limits.')
+      const minItems = field.minItems ?? 0, maxItems = field.maxItems ?? 100
+      if (value.length < minItems) throw new Error(`Choose at least ${minItems} ${minItems === 1 ? 'option' : 'options'}.`)
+      if (value.length > maxItems) throw new Error(`Choose at most ${maxItems} ${maxItems === 1 ? 'option' : 'options'}.`)
+      if (field.uniqueItems === true && new Set(value).size !== value.length) throw new Error('Choose each option at most once.')
       if (allowed && !allowOther && value.some(item => !allowed.has(item))) throw new Error('Choose an offered question option.')
       continue
     }
