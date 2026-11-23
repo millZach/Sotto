@@ -280,6 +280,7 @@ export class DesktopHostRouter {
         newOwner: host.service.supportsWatcherNewOwner === true,
         muse: host.service.supportsWatcherMuse === true, cursor: host.service.supportsWatcherCursor === true, antigravity: host.service.supportsWatcherAntigravity === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
+        ...this.reconnecting.has(host.hostId) ? { reconnecting: true } : {},
         // Read only when asked, and without a copy: Watcher lists hosts on every pass (#1023). The host's own stored default
         // is not the user's: Settings keeps that on this computer (ADR-0074). What the host limits is whether this computer
         // may answer there, and so give a thread a mode that acts without asking.
@@ -740,6 +741,9 @@ export class DesktopHostRouter {
     if (this.hosts.has(connection.hostId)) throw new Error(t`This host is already connected.`)
     const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
+    this.reconnecting.delete(connection.hostId)
+    this.watcherSnapshots.delete(connection.hostId)
+    this.watcherRoomInputs.delete(connection.hostId)
     // The answer it was told on connecting may have changed while it was still being set up, out of reach of a broadcast.
     if (connection.kind === 'remote') connection.service.tellProductEventAnswer?.()
     this.watcherChanged(connection.hostId)
@@ -777,8 +781,10 @@ export class DesktopHostRouter {
     entry.off.forEach(off => off())
     const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
-    if (connection.kind === 'remote') connection.service.tellProductEventAnswer?.()
     this.reconnecting.delete(connection.hostId)
+    this.watcherSnapshots.delete(connection.hostId)
+    this.watcherRoomInputs.delete(connection.hostId)
+    if (connection.kind === 'remote') connection.service.tellProductEventAnswer?.()
     this.watcherChanged(connection.hostId)
     this.emit()
     this.connected(connection)
@@ -805,8 +811,8 @@ export class DesktopHostRouter {
     this.dormantProviderIds.delete(hostId)
     this.observedOn.delete(hostId)
     this.owedClientChecks.delete(hostId)
-    this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
+    this.watcherChanged(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()

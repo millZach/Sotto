@@ -1814,6 +1814,9 @@ export class DesktopHosts {
     // A press still running on the SSH connection, such as an update's download or a Phones request, finishes there first.
     if (from.presses) { from.closeWhenIdle = true; this.leaving.add(from) }
     else await from.launcher?.disconnect().catch(() => undefined)
+    if (this.live.get(host.id) !== next) return true
+    // If the tailnet socket dropped before `next.from` cleared, `dropped()` skipped it; handle that drop now instead of reporting connected.
+    if (next.up === false) { this.dropped(host, next); return true }
     await this.connectedOverTailnet(host, address)
     return true
   }

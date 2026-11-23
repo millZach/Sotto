@@ -80,6 +80,7 @@ import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMess
 import { ProjectAdditionUnconfirmed, watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
+const DEFAULT_TRANSIENT_READY_WAIT_MS = 2_500
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
 /** A read leaves room for the unchanged mark (#1552), so a read at the bound can still be marked. */
 const WATCHER_READ_BOUND = WATCHER_READ_BYTES_MAX - 64
@@ -841,7 +842,9 @@ export class WatcherService implements WatcherControlHooks {
      * Hold news while Watcher's own provider is limited or failing (#2234, ADR-0144's November 5 amendment), read once at
      * start: only while Restart stopped threads is on.
      */
-    holdNews?: boolean }) {
+    holdNews?: boolean
+    /** How long a call waits out a transient host reconnect or local provider connect before refusing HOST_DISCONNECTED. */
+    transientReadyWaitMs?: number }) {
     if (options.holdNews === true) this.hold = new WatcherHoldState()
     this.hosts = new WatcherHosts({ local: () => options.control.watcherSnapshot(), localThreads: snapshot => options.control.hostThreadsOf(snapshot), remote: () => this.remote })
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), hosts: this.hosts, record: () => this.view(),
@@ -1840,6 +1843,65 @@ export class WatcherService implements WatcherControlHooks {
   private connected(thread: AgentThread): boolean {
     const snapshot = this.owningSnapshot(thread.hostId ?? this.hostId())
     return Boolean(snapshot && isThreadProviderConnected(snapshot, thread) && thread.clientConnected !== false)
+  }
+  /** Waits briefly when a paired host is actively reconnecting (`reconnecting: true`), so a handoff doesn't race a send. */
+  private async waitForRemoteConnected(hostId: string): Promise<void> {
+    const waitMs = this.options.transientReadyWaitMs ?? DEFAULT_TRANSIENT_READY_WAIT_MS
+    if (waitMs <= 0 || this.closed || !this.remote) return
+    const current = this.remote.hosts().find(item => item.hostId === hostId)
+    if (!current || current.connected || current.reconnecting !== true) return
+    await new Promise<void>(resolve => {
+      let settled = false
+      let off: (() => void) | undefined
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const done = (): void => {
+        if (settled) return
+        settled = true
+        off?.(); off = undefined
+        if (timer) { clearTimeout(timer); timer = undefined }
+        resolve()
+      }
+      const check = (): void => {
+        const next = this.remote?.hosts().find(item => item.hostId === hostId)
+        if (this.closed || !next || next.connected || next.reconnecting !== true) done()
+      }
+      off = this.remote!.subscribe(() => check())
+      timer = setTimeout(done, waitMs)
+      timer.unref?.()
+      check()
+    })
+  }
+  /** Waits briefly when a local thread's provider is transiently connecting or its client is reconnecting. */
+  private async waitForLocalTargetConnected(target: WatcherThreadTarget): Promise<void> {
+    const waitMs = this.options.transientReadyWaitMs ?? DEFAULT_TRANSIENT_READY_WAIT_MS
+    if (waitMs <= 0 || this.closed) return
+    const localHostId = this.options.control.hostId()
+    if (!localHostId || target.hostId !== localHostId) return
+    const isTransient = (): boolean => {
+      if (this.closed) return false
+      const snapshot = this.options.control.watcherSnapshot()
+      const thread = this.localThread(target.threadId, snapshot)
+      if (!thread || this.connected(thread)) return false
+      if (thread.clientReconnecting === true) return true
+      return Boolean(thread.providerId && snapshot.providers?.some(provider => provider.id === thread.providerId && provider.connection === 'connecting'))
+    }
+    if (!isTransient()) return
+    await new Promise<void>(resolve => {
+      let settled = false
+      let off: (() => void) | undefined
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const done = (): void => {
+        if (settled) return
+        settled = true
+        off?.(); off = undefined
+        if (timer) { clearTimeout(timer); timer = undefined }
+        resolve()
+      }
+      off = this.options.control.subscribe(() => { if (!isTransient()) done() })
+      timer = setTimeout(done, waitMs)
+      timer.unref?.()
+      if (!isTransient()) done()
+    })
   }
   private pending(thread: AgentThread): void { if (thread.requests.length) refuse('PENDING_USER_REQUEST', 'This thread needs your answer. Open its own request card. Nothing was sent.') }
   /**
@@ -5001,6 +5063,8 @@ export class WatcherService implements WatcherControlHooks {
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
       const requestId = 'requestId' in parsed.data ? parsed.data.requestId : undefined
+      if (hostId && hostId !== this.hostId()) await this.waitForRemoteConnected(hostId)
+      else if (input.target) await this.waitForLocalTargetConnected(input.target)
       if (hostId && hostId !== this.hostId() && requestId && input.target) await this.reconcileRemote(hostId)
       // A paired host's projects are listed here, from its snapshot, so their permission is the one start and send hold to.
       if (hostId && hostId !== this.hostId() && ['list_threads', 'list_working_copies', 'read_thread'].includes(name)) {
@@ -5023,6 +5087,7 @@ export class WatcherService implements WatcherControlHooks {
           if (!operation || !this.view().requests.some(item => item.id === operation!.requestId && this.owns(this.view(), item))) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this Watcher request.')
           let hosted: OutcomeRead | undefined
           if (operation.target.hostId !== this.hostId()) {
+            await this.waitForRemoteConnected(operation.target.hostId)
             this.requireRemote(operation.target.hostId, false)
             // Only a host that lists watcher-outcomes is asked for them; an older one would refuse the field.
             const outcomes = this.remoteReportsOutcomes(operation.target.hostId)
@@ -5973,9 +6038,10 @@ ${operation.draftId}`)
       if (operation.action === 'send' && operation.standingWatchId) await this.reconcileRemote(operation.target.hostId)
       // A replaced Watcher's request reaches a host that takes it over under the current Watcher, so a read moves it first.
       else if (this.adopts(operation.target.hostId) && this.view().current && key(request.watcher) !== key(this.view().current!.target)) await this.reconcileRemote(operation.target.hostId)
+      await this.waitForRemoteConnected(operation.target.hostId)
       guard()
       // The branch goes before the start does, so the host makes the worker's worktree from it (#1033).
-      if (name === 'start_thread') { landed = await this.moveForStart(operation, input as WatcherToolInput<'start_thread'>); guard() }
+      if (name === 'start_thread') { landed = await this.moveForStart(operation, input as WatcherToolInput<'start_thread'>); await this.waitForRemoteConnected(operation.target.hostId); guard() }
       await this.options.control.watcherRecords.update(record => { record.operations.find(item => item.id === operation.id)!.deliveryState = 'dispatching' })
       guard()
       // A replaced Watcher's request goes only once the host has answered, under the Watcher it is sent as, that it took

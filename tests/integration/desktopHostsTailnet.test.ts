@@ -622,4 +622,23 @@ describe('a tailnet connection (ADR-0053)', () => {
     expect(launchers).toEqual([])
     expect(first().bootStart).toEqual(bootStart)
   })
+
+  it('handles a drop on the new tailnet socket while closing the SSH handoff instead of reporting connected', async () => {
+    returnMs = 200
+    await relaunch()
+    stand.answer(502)
+    await add()
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'connected', via: 'ssh' }), { timeout: 20_000 })
+    const disconnect = FixtureSsh.prototype.disconnect
+    vi.spyOn(FixtureSsh.prototype, 'disconnect').mockImplementation(async function (this: FixtureSsh) {
+      await disconnect.apply(this)
+      stand.cut()
+      await new Promise(resolve => setTimeout(resolve, 60))
+    })
+    retryMs = 60_000
+    stand.answer('proxy')
+    await vi.waitFor(() => expect(first()).toMatchObject({ phase: 'connecting', reconnecting: true }), { timeout: 20_000 })
+    expect(first().tailnetSeen).toBeUndefined()
+    vi.restoreAllMocks()
+  })
 })
