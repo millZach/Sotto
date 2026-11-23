@@ -1,0 +1,334 @@
+/* Parent-to-parent thread coordination (ADR-0216, Slice 2; Owl only).
+   Zach's picks on November 23, 2026 (docs/prototypes/parent-thread-coordination-prototype.html):
+   - Option A: quiet left-aligned attributed card for incoming peer messages in target threads.
+   - Option 1: quiet exchange row under the turn in sender threads with expandable on-demand reply.
+   - Tools › Agents section + quiet header indicator only while a peer exchange is active or queued.
+   Every colour comes from a --tt-* theme token, every size from --tt-type-*, and every corner from --tt-radius-* (ADR-0110, ADR-0169). */
+
+/* Incoming peer message card in the target thread: left-aligned, clearly separate from the user's right-aligned bubble. */
+.thread-message[data-role='user'][data-from='peer'] {
+  width: 100%;
+  max-width: min(680px, 100%);
+  margin-left: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--tt-border);
+  border-radius: var(--tt-radius-card);
+  background: var(--tt-card);
+  color: var(--tt-text);
+}
+.thread-message[data-role='user'][data-from='peer'] .thread-message__text { color: var(--tt-text); }
+.thread-message[data-role='user'][data-from='peer'] .rich-message { --rich-text: var(--tt-text); --rich-strong: var(--tt-text); }
+
+.peer-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  margin-bottom: 8px;
+  font-size: var(--tt-type-caption);
+  color: var(--tt-text-muted);
+}
+.peer-card__who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--tt-text);
+  font-size: var(--tt-type-small);
+  font-weight: 500;
+}
+.peer-card__who > svg { flex: none; color: var(--tt-text-muted); }
+.peer-card__provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.peer-card__provider .provider-mark { color: var(--tt-text-muted); }
+.peer-card__hop {
+  padding: 0 6px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-tag);
+  background: var(--tt-surface-sunken);
+  color: var(--tt-text-2);
+  font-size: var(--tt-type-micro);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.peer-card__open {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--tt-border);
+  border-radius: var(--tt-radius-control);
+  background: var(--tt-surface);
+  color: var(--tt-text-2);
+  font: inherit;
+  font-size: var(--tt-type-caption);
+  white-space: nowrap;
+}
+.peer-card__open:hover { background: var(--tt-hover); color: var(--tt-text); }
+.peer-card__foot {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--tt-hairline);
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+  line-height: 1.45;
+}
+
+/* Outgoing peer exchange rows under the sender's turn (Option 1): matches DelegatedWork ledger geometry. */
+.peer-work { display: grid; gap: 10px; margin: 0 0 16px; padding: 0; list-style: none; }
+.thread-message ~ .peer-work { margin-top: -12px; margin-bottom: 24px; }
+.thread-work__body > ul.peer-work { margin: 4px 0 12px 1px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
+.peer-work__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 8px;
+  min-width: 0;
+  font-size: var(--tt-type-body);
+}
+.peer-work__glyph { flex: none; color: var(--tt-text-muted); }
+.peer-work__name {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  color: var(--tt-text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.peer-work__name > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.peer-work__verb { flex: none; color: var(--tt-text-2); font-weight: 400; }
+.peer-work__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--tt-type-small);
+  white-space: nowrap;
+  color: var(--tt-text-muted);
+}
+.peer-work__state:is([data-state='working'], [data-state='background']) { color: var(--tt-activity); }
+.peer-work__state[data-state='queued'] { color: var(--tt-text-2); }
+.peer-work__state[data-state='paused'] { color: var(--tt-text-2); }
+.peer-work__state[data-state='failed'] { color: var(--tt-error-text); }
+.peer-work__state[data-state='unknown'] { color: var(--tt-warning-text); }
+.peer-work__ring {
+  display: block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--tt-hairline);
+  border-radius: 50%;
+}
+.peer-work__ring:is([data-state='working'], [data-state='background']) {
+  border: 0;
+  background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%);
+  mask: radial-gradient(circle, transparent 38%, currentcolor 42%);
+}
+.peer-work__ring[data-state='queued'] { border-color: var(--tt-text-muted); border-style: dashed; }
+.peer-work__ring[data-state='paused'] { border-color: var(--tt-text-2); border-style: dotted; }
+.peer-work__ring[data-state='failed'] { border-color: var(--tt-error-text); }
+.peer-work__ring[data-state='unknown'] { border-color: var(--tt-warning-text); border-style: dashed; }
+.peer-work__ring[data-state='answered'] { border-color: var(--tt-text-muted); background: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+.peer-work__ring[data-state='stopped'] { width: 9px; height: 9px; border-color: var(--tt-text-muted); border-radius: var(--tt-radius-mark); }
+
+.peer-work__meta {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+  line-height: 1.5;
+}
+.peer-work__meta .provider-mark { color: var(--tt-text-muted); }
+.peer-work__note {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--tt-text-2);
+  font-size: var(--tt-type-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.peer-work__actions {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.peer-work__action {
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-mark);
+  background: transparent;
+  color: var(--tt-link);
+  font: inherit;
+  font-size: var(--tt-type-caption);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.peer-work__action:hover { color: var(--tt-text); }
+
+/* Expandable on-demand reply panel: dashed edge marks another thread's words, never Sotto's or the user's. */
+.peer-work__reply {
+  grid-column: 2 / -1;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--tt-hairline);
+  border-left: 2px dashed var(--tt-field-border);
+  border-radius: var(--tt-radius-control);
+  background: var(--tt-surface-sunken);
+  color: var(--tt-text);
+  font-size: var(--tt-type-small);
+  line-height: 1.55;
+}
+.peer-work__reply-label {
+  margin: 0 0 6px;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+}
+.peer-work__reply-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: var(--tt-type-small);
+}
+.peer-work__reply-cut {
+  margin: 6px 0 0;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+}
+
+/* Quiet header indicator (shown only while a peer exchange is working or queued): rounded control, never a capsule pill. */
+.peer-header-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--tt-border);
+  border-radius: var(--tt-radius-control);
+  background: var(--tt-surface);
+  color: var(--tt-text-2);
+  font: inherit;
+  font-size: var(--tt-type-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+.peer-header-chip:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+/* Tools › Agents: Peer coordination section. */
+.peer-agents { margin-bottom: 18px; }
+.peer-agents__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 4px 6px;
+}
+.peer-agents__title {
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-small);
+  font-weight: 600;
+  line-height: 20px;
+}
+.peer-agents__count {
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+  font-variant-numeric: tabular-nums;
+}
+.peer-agents__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.peer-agents__item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-control);
+  background: var(--tt-card);
+}
+.peer-agents__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.peer-agents__peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--tt-text);
+  font-size: var(--tt-type-small);
+  font-weight: 500;
+}
+.peer-agents__dir {
+  flex: none;
+  color: var(--tt-text-muted);
+  font-weight: 600;
+}
+.peer-agents__peer-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peer-agents__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+}
+.peer-agents__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.peer-agents__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--tt-border);
+  border-radius: var(--tt-radius-control);
+  background: var(--tt-surface);
+  color: var(--tt-text-2);
+  font: inherit;
+  font-size: var(--tt-type-caption);
+  white-space: nowrap;
+}
+.peer-agents__btn:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .peer-work__ring:is([data-state='working'], [data-state='background']) {
+    animation: peer-coord-spin 1.1s linear infinite;
+  }
+}
+@keyframes peer-coord-spin { to { rotate: 360deg; } }

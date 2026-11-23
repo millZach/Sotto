@@ -35,6 +35,8 @@ import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageR
 import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
 import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATION_GIVE, delegationGiveRequestSchema, delegationGiveResultSchema, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
   delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
+import { COORDINATION_CHANGED, COORDINATION_READ, COORDINATION_RENDERER_ARGUMENT, COORDINATION_REPLY_READ, coordinationChangedSchema, coordinationReadRequestSchema,
+  coordinationReadSchema, coordinationReplyRequestSchema, coordinationReplySchema, type CoordinationBridge } from '../shared/threadCoordination'
 import {
   OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
   OPENCODE_SIGN_IN_REOPEN, OPENCODE_SIGN_IN_WAIT, OPENCODE_SIGN_OUT, OPENCODE_SOURCES_READ, modelSourcesSchema, signInAttemptRequestSchema, signInDoneSchema,
@@ -509,6 +511,8 @@ export function createSottoBridge(
   dictationTiming = false,
   /** Dynamic threads' record in Settings and Give it to another model… (ADR-0191): only while the `dynamic-threads` Owl feature is on. */
   dynamicThreadsEnabled = false,
+  /** Parent-to-parent thread coordination views (ADR-0216): only while the `parent-thread-coordination` Owl feature is on. */
+  parentCoordinationEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -582,6 +586,12 @@ export function createSottoBridge(
       // Give it to another model… on a Dynamic thread's worker row (ADR-0191): only while its Owl feature is on.
       ...(dynamicThreadsEnabled ? { give: async request => invokeParsed(renderer, DELEGATION_GIVE, delegationGiveResultSchema, delegationGiveRequestSchema.parse(request)) } : {}),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
+    }) } : {}),
+    // Parent-to-parent thread coordination (ADR-0216): only while its Owl feature is on, so stable's window has no bridge.
+    ...(parentCoordinationEnabled ? { coordination: Object.freeze<CoordinationBridge>({
+      read: async request => invokeParsed(renderer, COORDINATION_READ, coordinationReadSchema, coordinationReadRequestSchema.parse(request)),
+      reply: async request => invokeParsed(renderer, COORDINATION_REPLY_READ, coordinationReplySchema, coordinationReplyRequestSchema.parse(request)),
+      onChanged: listener => subscribe(renderer, COORDINATION_CHANGED, coordinationChangedSchema, listener),
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
     // once and nothing returned carries one.
@@ -1058,7 +1068,7 @@ export function exposeRendererBridge(
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
       parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
-      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT)))
+      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(COORDINATION_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {

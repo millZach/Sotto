@@ -1,0 +1,1072 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not wired to Electron or main.
+  Zach's picks on November 23, 2026: Incoming A (quiet attributed card), Outgoing 1 (quiet exchange row under the turn with expandable reply), and Tools › Agents section + active/queued-only header indicator.
+
+  Question (ADR-0216 Slice 2): Parent-to-parent thread coordination is live in main behind the
+  `parent-thread-coordination` Owl feature. How should the UI make peer coordination visible
+  without losing Sotto's quiet character or blurring ADR-0004 user vs. peer provenance?
+
+  Three decisions compared live (switchable in the top bar, mobile-friendly down to 375px):
+    Incoming (target thread):
+      A · Quiet attributed card (Recommended) — left-aligned bordered row with provenance header, Open link, distinct from right-aligned user bubbles.
+      B · Compact fold row — single quiet line with expandable body, matching "Worked for" folds.
+      C · Left-accented bubble — muted left bubble with subtle accent edge and provider pill.
+    Outgoing (sender thread):
+      1 · Quiet exchange row (Recommended) — matches DelegatedWork rows under the reply with expandable reply preview.
+      2 · Inline peer chips — compact clickable chips beneath the reply; press for detail.
+      3 · Agents panel only — keep sender transcript to ordinary tool steps; show exchanges in Tools > Agents.
+    Scenarios:
+      active   — Claude UI sent to Codex API (working, hop 1/6)
+      queued   — Peer message queued behind user's running turn on Codex API
+      answered — Codex API replied; hidden CoordinationNews woke Claude UI (with expandable reply preview)
+      refused  — Wider permission refused (ADR-0004) / 6-hop cap reached
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Parent-to-parent thread coordination (Slice 2 prototype)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-raised: oklch(0.185 0.008 265);
+  --tt-surface-sunken: oklch(0.13 0.008 265);
+  --tt-hover: oklch(0.21 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: oklch(0.78 0.012 265);
+  --tt-text-muted: oklch(0.66 0.014 265);
+  --tt-hairline: oklch(0.285 0.018 265);
+  --tt-field-border: oklch(0.36 0.022 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-accent-surface: oklch(0.24 0.035 185);
+  --tt-message: oklch(0.205 0.014 265);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-warning: oklch(0.83 0.14 80);
+  --tt-warning-surface: oklch(0.27 0.03 80);
+  --tt-error: oklch(0.72 0.18 22);
+  --tt-error-surface: oklch(0.27 0.04 20);
+  --tt-radius-sm: 6px;
+  --tt-radius-md: 10px;
+  --tt-radius-lg: 14px;
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.992 0.003 85);
+  --tt-surface-raised: oklch(0.955 0.006 85);
+  --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.925 0.01 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.42 0.014 75);
+  --tt-text-muted: oklch(0.52 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.79 0.016 80);
+  --tt-accent: oklch(0.52 0.095 186);
+  --tt-accent-text: oklch(0.42 0.085 186);
+  --tt-accent-surface: oklch(0.92 0.03 186);
+  --tt-message: oklch(0.93 0.012 85);
+  --tt-success: oklch(0.46 0.12 160);
+  --tt-warning: oklch(0.52 0.14 60);
+  --tt-warning-surface: oklch(0.95 0.02 80);
+  --tt-error: oklch(0.51 0.20 25);
+  --tt-error-surface: oklch(0.94 0.025 25);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--tt-canvas);
+  color: var(--tt-text);
+  font: 14px/1.5 var(--tt-font);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; border-radius: 4px; }
+
+/* Top prototype control bar (mobile-scrollable) */
+.proto-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--tt-surface-sunken);
+  border-bottom: 1px solid var(--tt-hairline);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.proto-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.proto-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--tt-text-muted);
+  margin-right: 2px;
+}
+.seg {
+  display: inline-flex;
+  background: var(--tt-canvas);
+  border: 1px solid var(--tt-hairline);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--tt-text-2);
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg button:hover { color: var(--tt-text); background: var(--tt-hover); }
+.seg button[aria-pressed='true'] {
+  background: var(--tt-surface-raised);
+  color: var(--tt-accent-text);
+  font-weight: 600;
+}
+.proto-spacer { flex: 1; }
+.proto-pill {
+  font-size: 11px;
+  color: var(--tt-text-muted);
+  border: 1px dashed var(--tt-field-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.proto-toggle {
+  border: 1px solid var(--tt-hairline);
+  background: var(--tt-surface);
+  color: var(--tt-text-2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.proto-toggle[aria-pressed='true'] {
+  border-color: var(--tt-accent);
+  color: var(--tt-accent-text);
+}
+
+/* Stage wrapper (supports desktop or simulated 390px phone preview) */
+.stage {
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+}
+.frame {
+  width: 100%;
+  max-width: 1220px;
+  background: var(--tt-canvas);
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 640px;
+}
+body[data-viewport='phone'] .frame {
+  max-width: 390px;
+  border-radius: 26px;
+  border-width: 2px;
+  box-shadow: 0 12px 36px oklch(0 0 0 / 0.35);
+}
+
+/* App window layout */
+.win-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--tt-surface);
+  border-bottom: 1px solid var(--tt-hairline);
+  font-size: 13px;
+}
+.win-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+.win-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tt-text-2);
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.win-tab[aria-selected='true'] {
+  background: var(--tt-surface-raised);
+  border-color: var(--tt-hairline);
+  color: var(--tt-text);
+  font-weight: 600;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--tt-text-muted);
+  display: inline-block;
+  flex: none;
+}
+.dot.working { background: var(--tt-accent); }
+.dot.answered { background: var(--tt-success); }
+.dot.queued { background: var(--tt-warning); }
+.dot.refused { background: var(--tt-error); }
+
+.win-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  flex: 1;
+  min-height: 0;
+}
+body[data-viewport='phone'] .win-body {
+  grid-template-columns: 1fr;
+}
+@media (max-width: 820px) {
+  .win-body { grid-template-columns: 1fr; }
+}
+
+/* Conversation pane */
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.pane-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--tt-hairline);
+  font-size: 12.5px;
+  color: var(--tt-text-2);
+  flex-wrap: wrap;
+}
+.pane-strip strong { color: var(--tt-text); font-weight: 600; }
+.pane-strip .meta { color: var(--tt-text-muted); font-size: 12px; }
+.header-peer-pill {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--tt-accent-text);
+  background: var(--tt-accent-surface);
+  border: 1px solid color-mix(in oklab, var(--tt-accent) 35%, transparent);
+  border-radius: 999px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.header-peer-pill[hidden] { display: none; }
+
+.transcript {
+  flex: 1;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.msg-user {
+  align-self: flex-end;
+  max-width: 84%;
+  background: var(--tt-message);
+  border-radius: 13px;
+  padding: 8px 12px;
+  color: var(--tt-text);
+}
+.msg-agent {
+  max-width: 92%;
+  color: var(--tt-text);
+}
+.msg-agent p { margin: 0 0 8px; }
+.msg-agent p:last-child { margin-bottom: 0; }
+.step-line {
+  font-size: 12px;
+  color: var(--tt-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.step-line code {
+  font-family: var(--tt-mono);
+  font-size: 11.5px;
+  color: var(--tt-text-2);
+}
+
+/* Incoming peer message variants (Target thread) */
+.peer-in-A {
+  border: 1px solid var(--tt-hairline);
+  background: var(--tt-surface);
+  border-radius: var(--tt-radius-md);
+  overflow: hidden;
+  max-width: 94%;
+}
+.peer-in-A .peer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  background: var(--tt-surface-sunken);
+  border-bottom: 1px solid var(--tt-hairline);
+  font-size: 12px;
+  color: var(--tt-text-2);
+  flex-wrap: wrap;
+}
+.peer-in-A .peer-head strong { color: var(--tt-text); font-weight: 600; }
+.peer-in-A .peer-body {
+  padding: 9px 11px;
+  color: var(--tt-text);
+  font-size: 13.5px;
+}
+.peer-in-A .peer-foot {
+  padding: 5px 11px 7px;
+  font-size: 11.5px;
+  color: var(--tt-text-muted);
+  border-top: 1px solid color-mix(in oklab, var(--tt-hairline) 60%, transparent);
+}
+
+.peer-in-B {
+  border-left: 2px solid var(--tt-hairline);
+  padding-left: 11px;
+  max-width: 94%;
+}
+.peer-in-B summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--tt-text-2);
+  flex-wrap: wrap;
+}
+.peer-in-B summary::-webkit-details-marker { display: none; }
+.peer-in-B summary strong { color: var(--tt-text); font-weight: 600; }
+.peer-in-B .peer-body {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--tt-text);
+}
+.peer-in-B .peer-note {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--tt-text-muted);
+}
+
+.peer-in-C {
+  max-width: 88%;
+  background: var(--tt-surface-raised);
+  border: 1px solid var(--tt-hairline);
+  border-left: 3px solid var(--tt-accent);
+  border-radius: 4px 12px 12px 4px;
+  padding: 8px 12px;
+}
+.peer-in-C .peer-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--tt-accent-text);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.peer-in-C .peer-body { font-size: 13.5px; color: var(--tt-text); }
+.peer-in-C .peer-note { margin-top: 5px; font-size: 11px; color: var(--tt-text-muted); }
+
+/* Outgoing exchange variants (Sender thread) */
+.ex-row {
+  border: 1px solid var(--tt-hairline);
+  background: var(--tt-surface);
+  border-radius: var(--tt-radius-md);
+  padding: 8px 11px;
+  max-width: 94%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ex-row-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+}
+.ex-row-top strong { font-weight: 600; color: var(--tt-text); }
+.ex-state {
+  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--tt-hairline);
+  color: var(--tt-text-2);
+}
+.ex-state.working { color: var(--tt-accent-text); border-color: color-mix(in oklab, var(--tt-accent) 45%, transparent); background: var(--tt-accent-surface); }
+.ex-state.answered { color: var(--tt-success); border-color: color-mix(in oklab, var(--tt-success) 40%, transparent); }
+.ex-state.queued { color: var(--tt-warning); border-color: color-mix(in oklab, var(--tt-warning) 40%, transparent); background: var(--tt-warning-surface); }
+.ex-state.refused { color: var(--tt-error); border-color: color-mix(in oklab, var(--tt-error) 40%, transparent); background: var(--tt-error-surface); }
+.ex-sub {
+  font-size: 12px;
+  color: var(--tt-text-muted);
+}
+.ex-reply {
+  margin-top: 2px;
+  padding: 7px 9px;
+  background: var(--tt-surface-sunken);
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-sm);
+  font-size: 12.5px;
+  color: var(--tt-text-2);
+}
+.ex-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ex-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--tt-hairline);
+  background: var(--tt-surface);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ex-chip:hover { background: var(--tt-hover); }
+.ex-chip[aria-expanded='true'] { border-color: var(--tt-accent); }
+
+.link-btn {
+  border: 0;
+  background: transparent;
+  color: var(--tt-accent-text);
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+  margin-left: auto;
+}
+.link-btn:hover { text-decoration: underline; }
+.tag-mini {
+  font-size: 11px;
+  color: var(--tt-text-muted);
+  border: 1px solid var(--tt-hairline);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+
+/* Composer stub */
+.composer {
+  margin: 0 14px 12px;
+  border: 1px solid var(--tt-hairline);
+  background: var(--tt-surface);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--tt-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Tools > Agents panel */
+.tools {
+  border-left: 1px solid var(--tt-hairline);
+  background: var(--tt-surface);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+body[data-viewport='phone'] .tools {
+  border-left: 0;
+  border-top: 1px solid var(--tt-hairline);
+}
+@media (max-width: 820px) {
+  .tools { border-left: 0; border-top: 1px solid var(--tt-hairline); }
+}
+.tools-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--tt-hairline);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tt-text-2);
+}
+.tools-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.tools-sec h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tt-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.peer-list-item {
+  border: 1px solid var(--tt-hairline);
+  background: var(--tt-canvas);
+  border-radius: var(--tt-radius-sm);
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.peer-list-item:last-child { margin-bottom: 0; }
+.peer-list-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.peer-list-top strong {
+  font-weight: 600;
+  color: var(--tt-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peer-list-meta {
+  font-size: 11.5px;
+  color: var(--tt-text-muted);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.peer-list-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+.peer-list-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--tt-accent-text);
+  font-size: 11.5px;
+  padding: 0;
+  cursor: pointer;
+}
+.peer-list-actions button:hover { text-decoration: underline; }
+.muted-box {
+  font-size: 12px;
+  color: var(--tt-text-muted);
+  padding: 8px 9px;
+  border: 1px dashed var(--tt-hairline);
+  border-radius: var(--tt-radius-sm);
+}
+
+/* Mobile view switcher when narrow or phone mode */
+.mobile-switch {
+  display: none;
+  border-bottom: 1px solid var(--tt-hairline);
+  background: var(--tt-surface-sunken);
+  padding: 6px 10px;
+  gap: 6px;
+}
+body[data-viewport='phone'] .mobile-switch { display: flex; }
+@media (max-width: 820px) { .mobile-switch { display: flex; } }
+body[data-viewport='phone'][data-mobile-view='agents'] .pane { display: none; }
+body[data-viewport='phone'][data-mobile-view='thread'] .tools { display: none; }
+@media (max-width: 820px) {
+  body[data-mobile-view='agents'] .pane { display: none; }
+  body[data-mobile-view='thread'] .tools { display: none; }
+}
+
+.footer-note {
+  max-width: 1220px;
+  margin: 0 auto 16px;
+  padding: 0 14px;
+  font-size: 12px;
+  color: var(--tt-text-muted);
+}
+</style>
+</head>
+<body data-viewport="auto" data-mobile-view="thread">
+
+<header class="proto-bar" role="toolbar" aria-label="Prototype controls">
+  <div class="proto-row">
+    <span class="proto-label">Incoming</span>
+    <div class="seg" role="group" aria-label="Incoming peer message style">
+      <button data-in="A" aria-pressed="true">A · Quiet card</button>
+      <button data-in="B" aria-pressed="false">B · Fold row</button>
+      <button data-in="C" aria-pressed="false">C · Accented bubble</button>
+    </div>
+
+    <span class="proto-label">Outgoing</span>
+    <div class="seg" role="group" aria-label="Outgoing exchange style">
+      <button data-out="1" aria-pressed="true">1 · Exchange row</button>
+      <button data-out="2" aria-pressed="false">2 · Inline chips</button>
+      <button data-out="3" aria-pressed="false">3 · Agents panel only</button>
+    </div>
+
+    <span class="proto-spacer"></span>
+    <button class="proto-toggle" id="btnHeaderPill" aria-pressed="true">Header status pill</button>
+    <button class="proto-toggle" id="btnViewport" aria-pressed="false">Phone 390px</button>
+    <button class="proto-toggle" id="btnTheme" aria-pressed="false">Light</button>
+    <span class="proto-pill">Owl-only · ADR-0216</span>
+  </div>
+
+  <div class="proto-row">
+    <span class="proto-label">Scenario</span>
+    <div class="seg" role="group" aria-label="Coordination scenario">
+      <button data-sc="active" aria-pressed="true">Active (Claude ↔ Codex)</button>
+      <button data-sc="queued" aria-pressed="false">Queued behind user</button>
+      <button data-sc="answered" aria-pressed="false">Reply back (wake-up)</button>
+      <button data-sc="refused" aria-pressed="false">Refused / hop cap</button>
+    </div>
+  </div>
+</header>
+
+<main class="stage">
+  <section class="frame" aria-label="Sotto window prototype">
+    <div class="win-head">
+      <div class="win-tabs" role="tablist" aria-label="Parent threads">
+        <button class="win-tab" role="tab" data-thread="target" aria-selected="true">
+          <span class="dot working" id="dotTarget"></span>
+          <span>Codex API</span>
+          <span class="tag-mini">Codex</span>
+        </button>
+        <button class="win-tab" role="tab" data-thread="sender" aria-selected="false">
+          <span class="dot answered" id="dotSender"></span>
+          <span>Claude UI</span>
+          <span class="tag-mini">Claude</span>
+        </button>
+      </div>
+      <span class="proto-spacer"></span>
+      <span class="tag-mini">Project: sotto-web</span>
+    </div>
+
+    <div class="mobile-switch" role="group" aria-label="Mobile view switch">
+      <div class="seg" style="width:100%">
+        <button data-mv="thread" aria-pressed="true" style="flex:1">Thread</button>
+        <button data-mv="agents" aria-pressed="false" style="flex:1">Tools › Agents</button>
+      </div>
+    </div>
+
+    <div class="win-body">
+      <div class="pane">
+        <div class="pane-strip">
+          <strong id="paneTitle">Codex API</strong>
+          <span class="meta" id="paneMeta">Auto-accept edits · branch feat/users-v2</span>
+          <button class="header-peer-pill" id="headerPill" type="button">
+            <span class="dot working" id="headerPillDot"></span>
+            <span id="headerPillText">Coordinating with Claude UI</span>
+          </button>
+        </div>
+        <div class="transcript" id="transcript"></div>
+        <div class="composer">
+          <span id="composerHint">Message Codex API…</span>
+          <span class="tag-mini">Enter to send</span>
+        </div>
+      </div>
+
+      <aside class="tools" aria-label="Tools Agents panel">
+        <div class="tools-head">
+          <span>Tools › Agents</span>
+          <span class="tag-mini" id="toolsCount">2 active</span>
+        </div>
+        <div class="tools-body" id="toolsBody"></div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<p class="footer-note">
+  All controls are interactive: switch between <strong>Codex API</strong> (target) and <strong>Claude UI</strong> (sender), click <strong>Open thread</strong> links, toggle <strong>Phone 390px</strong> and <strong>Light</strong>, and test all four scenarios. Peer messages never grant permissions or answer cards (ADR-0004).
+</p>
+
+<script>
+const state = {
+  inStyle: 'A',
+  outStyle: '1',
+  scenario: 'active',
+  thread: 'target',
+  headerPill: true,
+  chipOpen: true,
+  replyOpen: true,
+};
+
+const SCENARIOS = {
+  active: {
+    targetStatus: 'working',
+    senderStatus: 'working',
+    headerText: 'From Claude UI · hop 1/6',
+    senderHeaderText: 'Waiting on Codex API',
+    incoming: {
+      from: 'Claude UI',
+      provider: 'Claude Code',
+      hop: 'hop 1/6',
+      text: 'Can you confirm the exact JSON shape for GET /v2/users? The table UI needs to know whether role is an enum or string array before I wire the filter.',
+      delivery: 'Started',
+    },
+    outgoing: {
+      to: 'Codex API',
+      provider: 'Codex',
+      state: 'working',
+      stateLabel: 'Working',
+      summary: 'Asked for GET /v2/users response shape · hop 1/6',
+      reply: null,
+    },
+    agentsPeer: [
+      { dir: '←', peer: 'Claude UI', provider: 'Claude Code', state: 'working', label: 'Working', meta: 'hop 1/6 · Auto-accept edits', targetTab: 'sender' },
+    ],
+    senderAgentsPeer: [
+      { dir: '→', peer: 'Codex API', provider: 'Codex', state: 'working', label: 'Working', meta: 'hop 1/6 · waiting for reply', targetTab: 'target' },
+    ],
+  },
+  queued: {
+    targetStatus: 'queued',
+    senderStatus: 'working',
+    headerText: '1 peer message queued',
+    senderHeaderText: 'Queued for Codex API',
+    incoming: {
+      from: 'Claude UI',
+      provider: 'Claude Code',
+      hop: 'hop 1/6',
+      text: 'Once your migration finishes, please share the new pagination cursor field name.',
+      delivery: 'Queued behind your running turn',
+    },
+    outgoing: {
+      to: 'Codex API',
+      provider: 'Codex',
+      state: 'queued',
+      stateLabel: 'Queued',
+      summary: 'Waiting for Codex API to finish its current user turn · hop 1/6',
+      reply: null,
+    },
+    agentsPeer: [
+      { dir: '←', peer: 'Claude UI', provider: 'Claude Code', state: 'queued', label: 'Queued', meta: 'Waits for your turn · hop 1/6', targetTab: 'sender' },
+    ],
+    senderAgentsPeer: [
+      { dir: '→', peer: 'Codex API', provider: 'Codex', state: 'queued', label: 'Queued', meta: 'Will start once idle · hop 1/6', targetTab: 'target' },
+    ],
+  },
+  answered: {
+    targetStatus: 'answered',
+    senderStatus: 'answered',
+    headerText: 'Replied to Claude UI',
+    senderHeaderText: 'Reply back from Codex API',
+    incoming: {
+      from: 'Claude UI',
+      provider: 'Claude Code',
+      hop: 'hop 1/6',
+      text: 'Can you confirm the exact JSON shape for GET /v2/users?',
+      delivery: 'Answered',
+    },
+    outgoing: {
+      to: 'Codex API',
+      provider: 'Codex',
+      state: 'answered',
+      stateLabel: 'Answered',
+      summary: 'Reply delivered to Claude UI as a private wake-up · hop 1/6',
+      reply: 'GET /v2/users returns { items: Array<{ id, email, roles: string[] }>, nextCursor: string | null }. Verified in src/api/users.ts.',
+    },
+    agentsPeer: [
+      { dir: '←', peer: 'Claude UI', provider: 'Claude Code', state: 'answered', label: 'Answered', meta: 'Replied 12s ago · hop 1/6', targetTab: 'sender' },
+    ],
+    senderAgentsPeer: [
+      { dir: '→', peer: 'Codex API', provider: 'Codex', state: 'answered', label: 'Answered', meta: 'Reply received · hop 1/6', targetTab: 'target' },
+    ],
+  },
+  refused: {
+    targetStatus: 'answered',
+    senderStatus: 'refused',
+    headerText: '',
+    senderHeaderText: 'Coordination refused',
+    incoming: {
+      from: 'Claude UI',
+      provider: 'Claude Code',
+      hop: 'hop 6/6',
+      text: 'Previous exchange completed at hop 6/6. Further automated sends require a direct message from you.',
+      delivery: 'Hop cap reached',
+    },
+    outgoing: {
+      to: 'Infra Deploy',
+      provider: 'Codex',
+      state: 'refused',
+      stateLabel: 'Refused',
+      summary: 'Target runs wider permissions (Full access > Auto-accept edits). Nothing was sent.',
+      reply: null,
+    },
+    agentsPeer: [
+      { dir: '←', peer: 'Claude UI', provider: 'Claude Code', state: 'refused', label: 'Hop limit (6/6)', meta: 'Send a message to reset', targetTab: 'sender' },
+    ],
+    senderAgentsPeer: [
+      { dir: '→', peer: 'Infra Deploy', provider: 'Codex', state: 'refused', label: 'Permission too wide', meta: 'Full access > Auto-accept edits', targetTab: 'target' },
+      { dir: '→', peer: 'Codex API', provider: 'Codex', state: 'answered', label: 'Answered', meta: 'hop 6/6 · cap reached', targetTab: 'target' },
+    ],
+  },
+};
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderIncoming(sc) {
+  const m = sc.incoming;
+  const openBtn = `<button class="link-btn" data-jump="sender" type="button">Open Claude UI →</button>`;
+  if (state.inStyle === 'A') {
+    return `
+      <div class="peer-in-A" role="article" aria-label="Message from parent thread ${esc(m.from)}">
+        <div class="peer-head">
+          <span class="dot ${sc.targetStatus}"></span>
+          <span>From parent thread <strong>${esc(m.from)}</strong></span>
+          <span class="tag-mini">${esc(m.provider)}</span>
+          <span class="tag-mini">${esc(m.hop)}</span>
+          ${openBtn}
+        </div>
+        <div class="peer-body">${esc(m.text)}</div>
+        <div class="peer-foot">${esc(m.delivery)} · Peer context only — does not approve permissions or answer cards.</div>
+      </div>`;
+  }
+  if (state.inStyle === 'B') {
+    return `
+      <details class="peer-in-B" open>
+        <summary>
+          <span class="dot ${sc.targetStatus}"></span>
+          <span>Message from <strong>${esc(m.from)}</strong> (${esc(m.provider)}, ${esc(m.hop)})</span>
+          <span class="tag-mini">${esc(m.delivery)}</span>
+          ${openBtn}
+        </summary>
+        <div class="peer-body">${esc(m.text)}</div>
+        <div class="peer-note">Peer context only — does not grant permissions.</div>
+      </details>`;
+  }
+  return `
+    <div class="peer-in-C" role="article" aria-label="Message from parent thread ${esc(m.from)}">
+      <div class="peer-top">
+        <strong>${esc(m.from)}</strong>
+        <span class="tag-mini">${esc(m.provider)}</span>
+        <span class="tag-mini">${esc(m.hop)}</span>
+        ${openBtn}
+      </div>
+      <div class="peer-body">${esc(m.text)}</div>
+      <div class="peer-note">${esc(m.delivery)} · From another parent thread, not you.</div>
+    </div>`;
+}
+
+function renderOutgoing(sc) {
+  const o = sc.outgoing;
+  if (state.outStyle === '3') {
+    return `<div class="step-line"><span class="dot ${o.state}"></span> <code>sotto_coordinate__send_to_thread</code> → ${esc(o.to)} (${esc(o.stateLabel)}) · <button class="link-btn" style="margin-left:0" data-jump="target" type="button">Open in Agents</button></div>`;
+  }
+  if (state.outStyle === '2') {
+    const detail = state.chipOpen ? `
+      <div class="ex-row" style="margin-top:4px">
+        <div class="ex-row-top">
+          <strong>${esc(o.to)}</strong>
+          <span class="tag-mini">${esc(o.provider)}</span>
+          <span class="ex-state ${o.state}">${esc(o.stateLabel)}</span>
+          <button class="link-btn" data-jump="target" type="button">Open thread →</button>
+        </div>
+        <div class="ex-sub">${esc(o.summary)}</div>
+        ${o.reply ? `<div class="ex-reply"><strong>${esc(o.to)}'s reply:</strong> ${esc(o.reply)}</div>` : ''}
+      </div>` : '';
+    return `
+      <div>
+        <div class="ex-chips">
+          <button class="ex-chip" id="toggleChip" aria-expanded="${state.chipOpen}">
+            <span class="dot ${o.state}"></span>
+            <span>→ ${esc(o.to)}</span>
+            <span class="ex-sub">${esc(o.stateLabel)}</span>
+          </button>
+        </div>
+        ${detail}
+      </div>`;
+  }
+  const replyToggle = o.reply
+    ? `<button class="link-btn" id="toggleReply" style="margin-left:0;align-self:flex-start" type="button">${state.replyOpen ? 'Hide reply' : 'Read reply'}</button>`
+      + (state.replyOpen ? `<div class="ex-reply"><strong>${esc(o.to)}'s reply (peer words):</strong> ${esc(o.reply)}</div>` : '')
+    : '';
+  return `
+    <div class="ex-row">
+      <div class="ex-row-top">
+        <span class="dot ${o.state}"></span>
+        <span>Sent to <strong>${esc(o.to)}</strong></span>
+        <span class="tag-mini">${esc(o.provider)}</span>
+        <span class="ex-state ${o.state}">${esc(o.stateLabel)}</span>
+        <button class="link-btn" data-jump="target" type="button">Open thread →</button>
+      </div>
+      <div class="ex-sub">${esc(o.summary)}</div>
+      ${replyToggle}
+    </div>`;
+}
+
+function render() {
+  const sc = SCENARIOS[state.scenario];
+  const isTarget = state.thread === 'target';
+
+  document.getElementById('dotTarget').className = `dot ${sc.targetStatus}`;
+  document.getElementById('dotSender').className = `dot ${sc.senderStatus}`;
+  document.getElementById('paneTitle').textContent = isTarget ? 'Codex API' : 'Claude UI';
+  document.getElementById('paneMeta').textContent = isTarget
+    ? 'Auto-accept edits · branch feat/users-v2'
+    : 'Auto-accept edits · branch feat/users-table';
+  document.getElementById('composerHint').textContent = isTarget ? 'Message Codex API…' : 'Message Claude UI…';
+
+  const pill = document.getElementById('headerPill');
+  const pillText = isTarget ? sc.headerText : sc.senderHeaderText;
+  pill.hidden = !state.headerPill || !pillText;
+  document.getElementById('headerPillText').textContent = pillText;
+  document.getElementById('headerPillDot').className = `dot ${isTarget ? sc.targetStatus : sc.senderStatus}`;
+
+  const transcript = document.getElementById('transcript');
+  if (isTarget) {
+    transcript.innerHTML = `
+      <div class="msg-user">Add the GET /v2/users endpoint with cursor pagination and keep tests green.</div>
+      <div class="msg-agent">
+        <p>Implemented <code>GET /v2/users</code> with cursor pagination in <code>src/api/users.ts</code> and verified all 18 route tests pass.</p>
+      </div>
+      ${renderIncoming(sc)}
+      ${state.scenario === 'queued'
+        ? `<div class="step-line"><span class="dot working"></span> Working on your earlier follow-up first — peer message stays queued until idle.</div>`
+        : state.scenario === 'answered'
+          ? `<div class="msg-agent"><p>Confirmed: <code>GET /v2/users</code> returns <code>{ items: Array&lt;{ id, email, roles: string[] }&gt;, nextCursor: string | null }</code>. Verified in <code>src/api/users.ts</code>.</p></div>`
+          : `<div class="step-line"><span class="dot working"></span> Reading <code>src/api/users.ts</code> to reply to Claude UI…</div>`
+      }
+    `;
+  } else {
+    transcript.innerHTML = `
+      <div class="msg-user">Wire the users table filter and check with the Codex API thread on the exact response shape.</div>
+      <div class="msg-agent">
+        <p>I checked the open parent threads in <code>sotto-web</code> and sent a quick question to <strong>Codex API</strong> so the table types match the backend contract.</p>
+      </div>
+      ${renderOutgoing(sc)}
+      ${state.scenario === 'answered'
+        ? `<div class="msg-agent"><p><strong>Codex API</strong> confirmed <code>roles: string[]</code> and <code>nextCursor: string | null</code>. I updated <code>UsersTable.tsx</code> to match and ran the component tests.</p></div>`
+        : state.scenario === 'refused'
+          ? `<div class="msg-agent"><p>Sotto refused sending to <strong>Infra Deploy</strong> because it runs with wider permissions (Full access). Please confirm if you want me to handle it or message that thread directly.</p></div>`
+          : `<div class="step-line"><span class="dot working"></span> Carrying on with filter UI layout while waiting for Codex API's reply wake-up…</div>`
+      }
+    `;
+  }
+
+  const peerRows = isTarget ? sc.agentsPeer : sc.senderAgentsPeer;
+  document.getElementById('toolsCount').textContent = `${peerRows.length} peer`;
+  document.getElementById('toolsBody').innerHTML = `
+    <div class="tools-sec">
+      <h4><span>Peer coordination</span><span>${peerRows.length}</span></h4>
+      ${peerRows.map(row => `
+        <div class="peer-list-item">
+          <div class="peer-list-top">
+            <span class="dot ${row.state}"></span>
+            <span>${row.dir}</span>
+            <strong>${esc(row.peer)}</strong>
+            <span class="ex-state ${row.state}" style="margin-left:auto">${esc(row.label)}</span>
+          </div>
+          <div class="peer-list-meta">
+            <span>${esc(row.provider)}</span>
+            <span>·</span>
+            <span>${esc(row.meta)}</span>
+          </div>
+          <div class="peer-list-actions">
+            <button type="button" data-jump="${row.targetTab}">Open thread</button>
+            <button type="button" data-jump="${row.targetTab}">Open beside</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="tools-sec">
+      <h4><span>Delegated threads</span><span>0</span></h4>
+      <div class="muted-box">No delegated child threads on this parent.</div>
+    </div>
+  `;
+
+  document.querySelectorAll('[data-jump]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.thread = btn.dataset.jump;
+      document.querySelectorAll('[data-thread]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.thread === state.thread)));
+      document.body.dataset.mobileView = 'thread';
+      document.querySelectorAll('[data-mv]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mv === 'thread')));
+      render();
+    });
+  });
+
+  const toggleChip = document.getElementById('toggleChip');
+  if (toggleChip) toggleChip.addEventListener('click', () => { state.chipOpen = !state.chipOpen; render(); });
+  const toggleReply = document.getElementById('toggleReply');
+  if (toggleReply) toggleReply.addEventListener('click', () => { state.replyOpen = !state.replyOpen; render(); });
+}
+
+document.querySelectorAll('[data-in]').forEach(b => b.addEventListener('click', () => {
+  state.inStyle = b.dataset.in;
+  document.querySelectorAll('[data-in]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  state.thread = 'target';
+  document.querySelectorAll('[data-thread]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.thread === 'target')));
+  render();
+}));
+document.querySelectorAll('[data-out]').forEach(b => b.addEventListener('click', () => {
+  state.outStyle = b.dataset.out;
+  document.querySelectorAll('[data-out]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  state.thread = 'sender';
+  document.querySelectorAll('[data-thread]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.thread === 'sender')));
+  render();
+}));
+document.querySelectorAll('[data-sc]').forEach(b => b.addEventListener('click', () => {
+  state.scenario = b.dataset.sc;
+  document.querySelectorAll('[data-sc]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+}));
+document.querySelectorAll('[data-thread]').forEach(b => b.addEventListener('click', () => {
+  state.thread = b.dataset.thread;
+  document.querySelectorAll('[data-thread]').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  render();
+}));
+document.querySelectorAll('[data-mv]').forEach(b => b.addEventListener('click', () => {
+  document.body.dataset.mobileView = b.dataset.mv;
+  document.querySelectorAll('[data-mv]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+}));
+document.getElementById('btnHeaderPill').addEventListener('click', e => {
+  state.headerPill = !state.headerPill;
+  e.currentTarget.setAttribute('aria-pressed', String(state.headerPill));
+  render();
+});
+document.getElementById('btnViewport').addEventListener('click', e => {
+  const phone = document.body.dataset.viewport !== 'phone';
+  document.body.dataset.viewport = phone ? 'phone' : 'auto';
+  e.currentTarget.setAttribute('aria-pressed', String(phone));
+});
+document.getElementById('btnTheme').addEventListener('click', e => {
+  const light = document.documentElement.dataset.theme !== 'light';
+  document.documentElement.dataset.theme = light ? 'light' : 'dark';
+  e.currentTarget.setAttribute('aria-pressed', String(light));
+});
+document.getElementById('headerPill').addEventListener('click', () => {
+  document.body.dataset.mobileView = 'agents';
+  document.querySelectorAll('[data-mv]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mv === 'agents')));
+});
+
+render();
+</script>
+</body>
+</html>

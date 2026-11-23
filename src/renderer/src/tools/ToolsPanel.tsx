@@ -81,6 +81,7 @@ export interface ToolsPanelProps {
   readonly state: AgentState
   /** Accepted for the shared tools slot; Files never sends agent commands or changes selection. */
   readonly command?: AgentConnection['command']
+  readonly onOpenBeside?: ((threadId: string) => void) | undefined
   readonly files?: FilesBridge | undefined
   readonly gitChanges?: GitChangesBridge | undefined
   readonly terminal?: TerminalBridge | undefined
@@ -253,7 +254,7 @@ function useTransientStatus(): [string, (message: string) => void] {
  * The shared tools panel beside the thread panes. Agents follows the focused thread; the working-copy surfaces
  * follow the pin when set. The panel docks only while the panes keep a readable width; otherwise it overlays them.
  */
-export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore, playerStore = browserPlayerStore, phoneStore = phonePlayerStore, cloudStore = cloudIphoneStore, cloudBridge = bridgeCloudIphone() }: ToolsPanelProps): ReactNode {
+export function ToolsPanel({ focusedThreadId, state, command, onOpenBeside, files: filesBridge, gitChanges, terminal, browser, subagents, terminalView, store = toolsPanelStore, playerStore = browserPlayerStore, phoneStore = phonePlayerStore, cloudStore = cloudIphoneStore, cloudBridge = bridgeCloudIphone() }: ToolsPanelProps): ReactNode {
   const { t } = useLingui()
   const chrome = useToolsPanelChrome(store)
   const { factory: viewFactory, failed: viewFailed } = useTerminalViewFactory(terminalView, chrome.open && chrome.surface === 'terminal')
@@ -292,6 +293,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // The thread is read by the fields the form shows, so a publish that changes none of them keeps the form as it is.
   }, [startsOn, thread?.id, thread?.title, thread?.providerId, thread?.projectId, thread?.remoteHost, thread?.hostLabel, thread?.modelId, thread?.kind, continueModels, command, sourceRepository, sourceBranch, t])
   const filesFor = thread?.remoteHost ? hostFiles : bridge
+  const peerCoordination = useMemo(() => command && thread && !thread.remoteHost ? { state, command, onOpenBeside } : undefined, [command, thread, state, onOpenBeside])
   const changesFor = thread?.remoteHost ? hostChanges : changesBridge
   const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId
   const workingCopyThread = state.host.threads.find(item => item.id === workingCopyTarget)
@@ -534,6 +536,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
     rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation}
+    peerCoordination={peerCoordination}
     runs={agentsRuns} stopRun={command ? stopRun : undefined} />
   else if (chrome.surface === 'models' && modelsOn) body = <ModelsSurface key={thread.id} list={threadModels}
     onShowFile={path => { store.closeLinkedFile(thread.id); store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />

@@ -6,10 +6,10 @@ import { capabilitiesForThread, isThreadProviderConnected, isVisualMessage, last
 import { RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { COORDINATION_HOP_MAX, COORDINATION_LIST_LIMIT_DEFAULT, COORDINATION_PROMPTS_PER_TARGET, COORDINATION_RATE_LIMIT, COORDINATION_RATE_WINDOW_MS,
-  COORDINATION_READ_BYTES_MAX, COORDINATION_READ_LIMIT_DEFAULT, COORDINATION_REPLY_BYTES_MAX, COORDINATION_WAIT_MAX_SECONDS,
+  COORDINATION_READ_BYTES_MAX, COORDINATION_READ_LIMIT_DEFAULT, COORDINATION_REPLY_BYTES_MAX, COORDINATION_VIEWS_MAX, COORDINATION_WAIT_MAX_SECONDS,
   coordinateListThreadsInputSchema, coordinateReadExchangeInputSchema, coordinateReadThreadInputSchema, coordinateSendInputSchema,
   coordinationDeliverySchema, coordinationOutcomeSchema, isCoordinationSlashCommand, isEligibleParentThread,
-  type CoordinationDelivery, type CoordinationNews, type CoordinationOutcome, type CoordinationRefusal, type CoordinationRefusalCode } from '../../shared/threadCoordination'
+  type CoordinationDelivery, type CoordinationExchangeView, type CoordinationNews, type CoordinationOutcome, type CoordinationRefusal, type CoordinationRefusalCode } from '../../shared/threadCoordination'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { HostThreadsView } from './hostThreadIndex'
 import { sendOutcome } from './sendOutcome'
@@ -102,6 +102,7 @@ const exchangeRecordSchema = z.object({
   senderThreadId: id,
   targetThreadId: id,
   rootUserMessageId: id,
+  anchorMessageId: id.optional(),
   retryKey: z.uuid().optional(),
   inputDigest: z.string().length(64),
   draftId: z.uuid(),
@@ -276,6 +277,7 @@ export class ThreadCoordinationService {
   private readonly fenced = new Set<string>()
   private readonly activeSendCalls = new Set<string>()
   private readonly waiters = new Set<Waiter>()
+  private readonly viewListeners = new Set<(threadIds: readonly string[]) => void>()
   private readonly deliveringNews = new Set<string>()
   private readonly newsAttempts = new Map<string, number>()
   private readonly newsRetryCancels = new Map<string, () => void>()
@@ -344,7 +346,12 @@ export class ThreadCoordinationService {
         changed = true
       }
     }
-    if (changed) await this.persist()
+    if (changed) {
+      await this.persist()
+      const affected = new Set<string>()
+      for (const record of this.records) { affected.add(record.senderThreadId); affected.add(record.targetThreadId) }
+      this.notifyViewsChanged([...affected])
+    }
     this.options.control.refreshCoordinationObservation()
     // Notify senders once for any exchange left failed, unknown, or untold across restart (L2).
     for (const record of this.records) {
@@ -370,9 +377,14 @@ export class ThreadCoordinationService {
       this.rates.delete(threadId)
     }
     const removedIds = new Set<string>()
+    const affected = new Set<string>()
     this.records = this.records.filter(record => {
       const drop = threadIds.has(record.senderThreadId) || threadIds.has(record.targetThreadId)
-      if (drop) removedIds.add(record.id)
+      if (drop) {
+        removedIds.add(record.id)
+        if (!threadIds.has(record.senderThreadId)) affected.add(record.senderThreadId)
+        if (!threadIds.has(record.targetThreadId)) affected.add(record.targetThreadId)
+      }
       return !drop
     })
     for (const recordId of removedIds) {
@@ -384,6 +396,7 @@ export class ThreadCoordinationService {
       this.rebuildIndexes()
       await this.persist()
       this.options.control.refreshCoordinationObservation()
+      if (affected.size > 0) this.notifyViewsChanged([...affected])
     }
   }
 
@@ -684,7 +697,7 @@ export class ThreadCoordinationService {
     }
   }
 
-  private resolveCausalChain(caller: AgentThread): { readonly chainId: string; readonly hopCount: number; readonly rootUserMessageId: string } {
+  private resolveCausalChain(caller: AgentThread): { readonly chainId: string; readonly hopCount: number; readonly rootUserMessageId: string; readonly anchorMessageId?: string } {
     const retained = this.options.host.threadMessages?.(caller.id)
     const messages = caller.messages.length > 0 ? caller.messages : (retained ?? [])
     let latest: string | null = null
@@ -693,11 +706,12 @@ export class ThreadCoordinationService {
     }
     latest ??= nativeHead(caller, retained)
     const root = userHead(caller, retained) ?? latest ?? `thread:${caller.id}`
+    const anchor = latest !== null ? { anchorMessageId: latest } : {}
     if (latest !== null) {
       // Case 1: Caller's current turn began from an incoming peer coordination message -> continue that chain.
       const incoming = this.recordByMessageId.get(latest)
       if (incoming && incoming.targetThreadId === caller.id) {
-        return { chainId: incoming.chainId, hopCount: incoming.hopCount + 1, rootUserMessageId: root }
+        return { chainId: incoming.chainId, hopCount: incoming.hopCount + 1, rootUserMessageId: root, ...anchor }
       }
       // Case 2: Caller's current turn began from a Sotto wake-up (e.g. a peer reply wake-up) -> continue latest chain under this user root.
       if (isWakeUpOf(caller, latest, retained)) {
@@ -705,12 +719,12 @@ export class ThreadCoordinationService {
           record.charged && (record.senderThreadId === caller.id && record.rootUserMessageId === root
             || record.targetThreadId === caller.id && record.messageId === root))
         if (prior) {
-          return { chainId: prior.chainId, hopCount: prior.hopCount + 1, rootUserMessageId: root }
+          return { chainId: prior.chainId, hopCount: prior.hopCount + 1, rootUserMessageId: root, ...anchor }
         }
       }
     }
     // Case 3: Fresh direct user message (or first send in this turn) -> hop 1 on a fresh chain.
-    return { chainId: randomUUID(), hopCount: 1, rootUserMessageId: root }
+    return { chainId: randomUUID(), hopCount: 1, rootUserMessageId: root, ...anchor }
   }
 
   private validateTargetAndPermission(callerId: string, targetId: string, snapshot: AgentHostSnapshot): { readonly caller: AgentThread; readonly target: AgentThread } {
@@ -855,6 +869,7 @@ export class ThreadCoordinationService {
         senderThreadId: callerId,
         targetThreadId: target.id,
         rootUserMessageId: chain.rootUserMessageId,
+        ...(chain.anchorMessageId ? { anchorMessageId: chain.anchorMessageId } : {}),
         ...(input.retry_key ? { retryKey: input.retry_key } : {}),
         inputDigest,
         draftId: randomUUID(),
@@ -888,6 +903,7 @@ export class ThreadCoordinationService {
       try {
         await this.persist()
         this.options.control.refreshCoordinationObservation()
+        this.notifyViewsChanged([callerId, target.id])
         if (delivery === 'started' || delivery === 'steered') {
           const refusal = await this.dispatchNow(record, delivery === 'steered' ? 'steer' : 'manual-send', true)
           if (refusal) return { ...refusal }
@@ -917,6 +933,7 @@ export class ThreadCoordinationService {
     record.deliveryState = 'dispatching'
     record.updatedAt = this.nowIso()
     await this.persist()
+    this.notifyViewsChanged([record.senderThreadId, record.targetThreadId])
     let refusal: CoordinationRefusal | undefined
     try {
       this.assertDispatchAllowed(record.id)
@@ -978,6 +995,7 @@ export class ThreadCoordinationService {
       record.updatedAt = this.nowIso()
       await this.persist()
       this.options.control.refreshCoordinationObservation()
+      this.notifyViewsChanged([record.senderThreadId, record.targetThreadId])
       this.notifyWaiters(record.id)
       // Reconcile immediately in case the reply already arrived during dispatch.
       this.observe(this.options.control.watcherSnapshot())
@@ -1027,6 +1045,7 @@ export class ThreadCoordinationService {
     this.pendingTexts.delete(record.id)
     void this.persist()
     this.options.control.refreshCoordinationObservation()
+    this.notifyViewsChanged([record.senderThreadId, record.targetThreadId])
     this.notifyWaiters(record.id)
     if (record.expectReply) this.maybeDeliverNews(record)
   }
@@ -1074,6 +1093,7 @@ export class ThreadCoordinationService {
   private observe(snapshot: AgentHostSnapshot, threads?: HostThreadsView): void {
     if (this.closed) return
     let dirty = false
+    const changedThreads = new Set<string>()
     const queuedTargets = new Set<string>()
     const threadOf = (threadId: string): AgentThread | undefined => threads ? threads.thread(threadId) : snapshot.threads.find(item => item.id === threadId)
 
@@ -1092,6 +1112,8 @@ export class ThreadCoordinationService {
           record.outcomeAt = this.nowIso()
           record.updatedAt = record.outcomeAt
           dirty = true
+          changedThreads.add(record.senderThreadId)
+          changedThreads.add(record.targetThreadId)
           this.notifyWaiters(record.id)
           if (record.expectReply) this.maybeDeliverNews(record)
         }
@@ -1108,6 +1130,8 @@ export class ThreadCoordinationService {
         }
         this.pendingTexts.delete(record.id)
         dirty = true
+        changedThreads.add(record.senderThreadId)
+        changedThreads.add(record.targetThreadId)
       }
       if (record.deliveryState !== 'accepted') continue
       const observed = watcherTurnOutcome(
@@ -1131,6 +1155,8 @@ export class ThreadCoordinationService {
       if (record.outcome !== prevOutcome || record.replyMessageId !== prevReply) {
         record.updatedAt = this.nowIso()
         dirty = true
+        changedThreads.add(record.senderThreadId)
+        changedThreads.add(record.targetThreadId)
       }
       if (WATCHER_FINAL_OUTCOMES.has(observed.outcome)) {
         this.notifyWaiters(record.id)
@@ -1141,6 +1167,7 @@ export class ThreadCoordinationService {
     if (dirty) {
       void this.persist()
       this.options.control.refreshCoordinationObservation()
+      if (changedThreads.size > 0) this.notifyViewsChanged([...changedThreads])
     }
     for (const targetThreadId of queuedTargets) this.pumpQueued(targetThreadId)
   }
@@ -1257,6 +1284,66 @@ export class ThreadCoordinationService {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     }
+  }
+
+  /** Subscribes to thread IDs whose coordination view changed (ADR-0216, Slice 2). */
+  onViewsChanged(listener: (threadIds: readonly string[]) => void): () => void {
+    this.viewListeners.add(listener)
+    return () => { this.viewListeners.delete(listener) }
+  }
+
+  private notifyViewsChanged(threadIds: readonly string[]): void {
+    if (this.closed || this.viewListeners.size === 0 || threadIds.length === 0) return
+    const unique = [...new Set(threadIds)]
+    for (const listener of [...this.viewListeners]) listener(unique)
+  }
+
+  /** Read-only UI views of a thread's sent and received peer exchanges (oldest first; identities and metadata only). */
+  views(threadId: string): { readonly sent: readonly CoordinationExchangeView[]; readonly received: readonly CoordinationExchangeView[] } {
+    const snapshot = this.options.control.watcherSnapshot()
+    const byId = new Map(snapshot.threads.map(thread => [thread.id, thread]))
+    const toView = (record: ExchangeRecord, direction: 'sent' | 'received'): CoordinationExchangeView => {
+      const peerId = direction === 'sent' ? record.targetThreadId : record.senderThreadId
+      const peer = byId.get(peerId)
+      const outcome = effectiveOutcome(record)
+      return {
+        id: record.id,
+        direction,
+        peerThreadId: peerId,
+        peerTitle: peer?.title ?? null,
+        peerProvider: peer?.providerId ?? null,
+        messageId: record.messageId,
+        ...(record.anchorMessageId ? { anchorMessageId: record.anchorMessageId } : {}),
+        delivery: record.delivery,
+        deliveryState: record.deliveryState,
+        outcome,
+        hopCount: record.hopCount,
+        hopMax: COORDINATION_HOP_MAX,
+        expectReply: record.expectReply,
+        hasReply: outcome === 'answered' && record.replyMessageId !== undefined,
+        ...(record.deliveryState === 'failed' ? { note: FAILURE_NOTES[record.failure ?? 'provider'] } : {}),
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        ...(record.outcomeAt ? { outcomeAt: record.outcomeAt } : {}),
+      }
+    }
+    const sent = this.records
+      .filter(record => record.senderThreadId === threadId && record.charged)
+      .slice(-COORDINATION_VIEWS_MAX)
+      .map(record => toView(record, 'sent'))
+    const received = this.records
+      .filter(record => record.targetThreadId === threadId && record.deliveryState !== 'failed')
+      .slice(-COORDINATION_VIEWS_MAX)
+      .map(record => toView(record, 'received'))
+    return { sent, received }
+  }
+
+  /** On-demand read of an answered exchange's reply text for the UI (never pushed automatically). */
+  reply(threadId: string, exchangeId: string): { readonly text: string; readonly truncated: boolean } | undefined {
+    const record = this.records.find(item => item.id === exchangeId && (item.senderThreadId === threadId || item.targetThreadId === threadId))
+    if (!record) return undefined
+    const found = this.replyFor(record)
+    return found === undefined ? undefined : { text: found.text, truncated: found.truncated }
   }
 
   async readExchange(callerId: string, rawArgs: unknown): Promise<Record<string, unknown>> {

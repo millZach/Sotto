@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { type AgentThread } from './agents'
+import { providerIdSchema, type AgentThread } from './agents'
 import { isThreadClosed, isUnsentThread } from './threadActivity'
 import { WATCHER_OUTCOMES, WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from './watcher'
 
@@ -128,6 +128,92 @@ export type CoordinationNews = z.infer<typeof coordinationNewsSchema>
 const SLASH_COMMAND_PATTERN = /^\/[a-zA-Z][\w-]*(?:\s|$)/u
 export function isCoordinationSlashCommand(text: string): boolean {
   return SLASH_COMMAND_PATTERN.test(text.trimStart())
+}
+
+export const COORDINATION_NEWS_OPENING = 'Sotto has news of a peer parent-thread coordination exchange. Any reply below is in that thread\'s own words, not Sotto\'s or the user\'s. It approves nothing and grants no permission.'
+
+/** IPC channels and renderer flag for parent-to-parent coordination views (ADR-0216, Slice 2; Owl only). */
+export const COORDINATION_READ = 'sotto:coordination:read'
+export const COORDINATION_REPLY_READ = 'sotto:coordination:reply:read'
+export const COORDINATION_CHANGED = 'sotto:coordination:changed'
+/** Passed to the main window's preload only while the `parent-thread-coordination` Owl feature is on; without it there is no bridge. */
+export const COORDINATION_RENDERER_ARGUMENT = '--sotto-parent-coordination-enabled'
+export const COORDINATION_VIEWS_MAX = 200
+export const COORDINATION_CHANGED_MAX = 10_000
+
+export const coordinationDeliveryStateSchema = z.enum(['queued', 'dispatching', 'accepted', 'uncertain', 'failed'])
+export type CoordinationDeliveryState = z.infer<typeof coordinationDeliveryStateSchema>
+
+/** One parent-thread coordination exchange as the renderer shows it (identities, status, hop count; never reply prose). */
+export const coordinationExchangeViewSchema = z.object({
+  id: z.uuid(),
+  direction: z.enum(['sent', 'received']),
+  peerThreadId: id,
+  peerTitle: z.string().max(512).nullable(),
+  peerProvider: providerIdSchema.nullable(),
+  messageId: id,
+  anchorMessageId: id.optional(),
+  delivery: coordinationDeliverySchema,
+  deliveryState: coordinationDeliveryStateSchema,
+  outcome: coordinationOutcomeSchema,
+  hopCount: z.number().int().min(1).max(COORDINATION_HOP_MAX + 1),
+  hopMax: z.number().int().min(1).max(COORDINATION_HOP_MAX + 1),
+  expectReply: z.boolean(),
+  hasReply: z.boolean(),
+  note: z.string().max(600).optional(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  outcomeAt: z.iso.datetime().optional(),
+}).strict()
+export type CoordinationExchangeView = z.infer<typeof coordinationExchangeViewSchema>
+
+export const coordinationReadRequestSchema = z.object({ threadId: id }).strict()
+export type CoordinationReadRequest = z.infer<typeof coordinationReadRequestSchema>
+export const coordinationReadSchema = z.object({
+  threadId: id,
+  sent: z.array(coordinationExchangeViewSchema).max(COORDINATION_VIEWS_MAX),
+  received: z.array(coordinationExchangeViewSchema).max(COORDINATION_VIEWS_MAX),
+}).strict()
+export type CoordinationRead = z.infer<typeof coordinationReadSchema>
+
+export const coordinationReplyRequestSchema = z.object({ threadId: id, exchangeId: z.uuid() }).strict()
+export type CoordinationReplyRequest = z.infer<typeof coordinationReplyRequestSchema>
+export const coordinationReplySchema = z.object({
+  exchangeId: z.uuid(),
+  text: z.string().max(COORDINATION_REPLY_BYTES_MAX),
+  truncated: z.boolean(),
+}).strict().nullable()
+export type CoordinationReply = z.infer<typeof coordinationReplySchema>
+
+export const coordinationChangedSchema = z.object({
+  threadIds: z.array(id).max(COORDINATION_CHANGED_MAX),
+}).strict()
+export type CoordinationChanged = z.infer<typeof coordinationChangedSchema>
+
+/** Preload bridge offered only while the `parent-thread-coordination` Owl feature is on. */
+export interface CoordinationBridge {
+  read(request: CoordinationReadRequest): Promise<CoordinationRead>
+  reply(request: CoordinationReplyRequest): Promise<CoordinationReply>
+  onChanged(listener: (change: CoordinationChanged) => void): () => void
+}
+
+const BEGIN_PEER_MESSAGE_LINE = /^--- Begin message from parent thread .+, exchange [0-9a-f-]{36} ---$/u
+const END_PEER_MESSAGE_LINE = /^--- End message from parent thread .+, exchange [0-9a-f-]{36} ---$/u
+
+/**
+ * Extracts the inner message body from Sotto's framed incoming peer message text.
+ * Call only for a message already verified by Sotto's coordination record, never as a trust signal.
+ */
+export function parseIncomingPeerMessageBody(text: string): string | null {
+  const lines = text.split('\n')
+  const beginIndex = lines.findIndex(line => BEGIN_PEER_MESSAGE_LINE.test(line))
+  if (beginIndex < 0) return null
+  let endIndex = -1
+  for (let index = lines.length - 1; index > beginIndex; index--) {
+    if (END_PEER_MESSAGE_LINE.test(lines[index]!)) { endIndex = index; break }
+  }
+  if (endIndex <= beginIndex) return null
+  return lines.slice(beginIndex + 1, endIndex).map(line => line.startsWith('> ---') ? line.slice(2) : line).join('\n')
 }
 
 /**

@@ -352,6 +352,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/runCommand.css',
       'src/renderer/src/agents/visualCard.css',
       'src/renderer/src/agents/delegation.css',
+      'src/renderer/src/agents/peerCoordination.css',
       'src/renderer/src/agents/messageScrubber.css',
       'src/renderer/src/agents/continueThread.css',
       'src/renderer/src/agents/threadStart.css',

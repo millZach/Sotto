@@ -1308,6 +1308,10 @@ msgstr ""
 msgid "Open Hosts in the main Sotto window."
 msgstr ""
 
+#: src/main/agents/threadCoordinationIpc.ts
+msgid "Open parent-thread coordination in the main Sotto window."
+msgstr ""
+
 #: src/main/phones/ipc.ts
 msgid "Open Phones in the main Sotto window."
 msgstr ""

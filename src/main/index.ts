@@ -9,6 +9,7 @@ import { BROWSER_EVENT } from '../shared/browser'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
+import { COORDINATION_RENDERER_ARGUMENT } from '../shared/threadCoordination'
 import { DYNAMIC_THREADS_RENDERER_ARGUMENT } from '../shared/dynamicThreads'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import { COUNCIL_RENDERER_ARGUMENT } from '../shared/council'
@@ -706,6 +707,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 const cleanupModelEnabled = owlFeatures['cleanup-model']
 const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const delegationEnabled = owlFeatures['thread-delegation']
+  const parentCoordinationEnabled = owlFeatures['parent-thread-coordination']
   // The Council (ADR-0177): stable builds no service, registers no bridge and shows no page. It runs on this computer's threads.
   const councilEnabled = owlFeatures.council
   const workerRolesEnabled = owlFeatures['worker-roles']
@@ -851,7 +853,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
       const featureArguments = [...(dictationTiming && (mainRenderer || widgetRenderer) ? [DICTATION_TIMING_ARGUMENT] : []), ...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
         ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
-        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
+        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(parentCoordinationEnabled ? [COORDINATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         // A Dynamic thread overseer's record and Give it to another model… (ADR-0191), only while its Owl feature is on.

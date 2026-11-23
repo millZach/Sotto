@@ -411,6 +411,8 @@ export interface SottoBridge {
   readonly productEvents?: import('./productEvents').ProductEventsBridge
   /** Delegation between threads (ADR-0081), present only while the Owl list turns it on. */
   readonly delegations?: import('./delegation').DelegationsBridge
+  /** Parent-to-parent thread coordination (ADR-0216), present only while its Owl feature is on. */
+  readonly coordination?: import('./threadCoordination').CoordinationBridge
   /** A Dynamic thread overseer's record (ADR-0191 decision 9), present only while the `dynamic-threads` Owl feature is on. */
   readonly dynamicRecord?: import('./dynamicRecord').DynamicRecordBridge
   /** Every machine's check queue (#1312), present only while Watcher and Work across machines are both on, as the machines line is. */

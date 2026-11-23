@@ -50,6 +50,8 @@ export interface ThreadToolsProps {
   readonly focusedThreadId: string | null
   readonly state: AgentState
   readonly command: Command
+  /** Opens a thread in a split pane beside the focused thread (used by Tools › Agents › Peer coordination). */
+  readonly onOpenBeside?: ((threadId: string) => void) | undefined
 }
 export type ThreadToolsSlot = (props: ThreadToolsProps) => ReactNode
 
@@ -418,7 +420,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
         {!paneIds.length ? <EmptyWorkspace state={state} command={command} error={error}
           onNewThread={() => openNewThread(state.activeProjectId ?? undefined)} onNewThreadWithDraft={draft => startNewThread(state.activeProjectId ?? undefined, draft)}
           onOpenThread={threadId => { focusPane(threadId); focusNewComposer() }} /> : null}
-        {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command })}</div> : null}
+        {tools ? <div className="thread-workspace__tools">{tools({ focusedThreadId: focusedId, state, command, onOpenBeside: openBeside })}</div> : null}
       </div>
     </section>
     <PageWindowControls />

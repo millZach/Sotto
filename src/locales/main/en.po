@@ -1309,6 +1309,10 @@ msgstr "Open delegations in the main Sotto window."
 msgid "Open Hosts in the main Sotto window."
 msgstr "Open Hosts in the main Sotto window."
 
+#: src/main/agents/threadCoordinationIpc.ts
+msgid "Open parent-thread coordination in the main Sotto window."
+msgstr "Open parent-thread coordination in the main Sotto window."
+
 #: src/main/phones/ipc.ts
 msgid "Open Phones in the main Sotto window."
 msgstr "Open Phones in the main Sotto window."
