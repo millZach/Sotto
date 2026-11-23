@@ -38,11 +38,50 @@ const ANTIGRAVITY_THINKING: AcpThinking = { idPrefix: ANTIGRAVITY_THINKING_ID_PR
 /** `agy`'s subagent tools, by the titles T3 Code recognises them by: shown as a subagent's row. */
 const SUBAGENT_TITLES = new Set(['Running start_subagent', 'Run start_subagent?', 'Running invoke_subagent', 'Run invoke_subagent?', 'Run invoke_subagent'])
 const NON_BACKGROUND_KINDS = new Set(['read', 'edit', 'delete', 'move', 'search', 'fetch', 'think'])
+const AGY_BACKGROUND_HEADER = /^Tool is running as a background task(?:\s+with task id:\s*([^\s,.;]+))?/imu
+const AGY_STILL_RUNNING_HEADER = /^Background command is still running after \d+s\b/imu
+const TEXT_TASK_ID_PATTERN = /\btask id:\s*([^\s,.;]+)/iu
 const RUNNING_TEXT_PATTERN = /\b(?:running in (?:the )?background|moved to (?:the )?background|continuing in (?:the )?background|still running in (?:the )?background|background (?:task|command|job)\b)/iu
 const FINISHED_TEXT_PATTERN = /\b(?:completed|exited|finished|done|failed|killed|cancelled)\b/iu
 const TASK_ID_KEYS = ['backgroundTaskId', 'background_task_id', 'commandId', 'command_id', 'taskId', 'task_id', 'scheduleId', 'schedule_id', 'workflowId', 'workflow_id', 'jobId', 'job_id'] as const
 const RUNNING_OUTPUT_STATUS = new Set(['running', 'background', 'backgrounded', 'in_progress', 'pending', 'async', 'started', 'waiting', 'scheduled', 'active'])
 const FINISHED_OUTPUT_STATUS = new Set(['completed', 'done', 'finished', 'failed', 'error', 'exited', 'cancelled', 'canceled', 'killed'])
+const SYSTEM_MESSAGE_ENVELOPE = /^(?:The following is a <SYSTEM_MESSAGE> not actually sent by the user\.[^\r\n]*\r?\n\s*)?<SYSTEM_MESSAGE>([\s\S]*)<\/SYSTEM_MESSAGE>$/u
+const WAKEUP_TASK_PATTERNS = [
+  /(?:^|[\s=])Task\s+id\s*(?::\s*|\s+)["']?([^\s"'`,.;]+)["']?\s+(?:finished|completed|failed|exited|killed|cancelled|canceled|done)\b/giu,
+  /\bBackground\s+(?:task|command|job|workflow)\s+(?:id\s*[:=]?\s*)?["']?([^\s"'`,.;]+)["']?\s+(?:finished|completed|failed|exited|killed|cancelled|canceled|done)\b/giu,
+  /\bsender=([^\s,;]+)\b(?=[^\r\n]*\b(?:finished|completed|failed|exited|killed|cancelled|canceled)\b)/giu,
+] as const
+
+export interface AntigravitySystemWakeup {
+  readonly isWakeup: boolean
+  readonly completedTaskIds: readonly string[]
+}
+
+/**
+ * Parses an incoming Antigravity `user_message_chunk` to distinguish a complete runtime `<SYSTEM_MESSAGE>` envelope
+ * from user-pasted text and extract any background task IDs reported finished in the envelope header.
+ */
+export function parseAntigravitySystemWakeup(text: string): AntigravitySystemWakeup {
+  const envelope = SYSTEM_MESSAGE_ENVELOPE.exec(text.trim())
+  if (!envelope) return { isWakeup: false, completedTaskIds: [] }
+  const body = envelope[1] ?? ''
+  const cut = body.search(/\r?\n(?:Command output:|Log output:)/iu)
+  const header = cut >= 0 ? body.slice(0, cut) : body
+  const ids = new Set<string>()
+  for (const pattern of WAKEUP_TASK_PATTERNS) {
+    for (const match of header.matchAll(pattern)) {
+      const id = match[1]?.trim()
+      if (id) ids.add(id)
+    }
+  }
+  return { isWakeup: true, completedTaskIds: [...ids] }
+}
+
+function backgroundHeaderText(outputText: string): string {
+  const cut = outputText.search(/\r?\n(?:Task logs are available at:|Log output:)/iu)
+  return cut >= 0 ? outputText.slice(0, cut) : outputText
+}
 
 const bounder = () => {
   let truncated = false
@@ -91,13 +130,17 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
   if (!['tool_call', 'tool_call_update'].includes(String(update.sessionUpdate)) || typeof update.toolCallId !== 'string') return undefined
   const fields = parseToolFields(update, old)
   const outputStatus = firstString(fields.output, ['status', 'state'])?.toLowerCase()
-  const nativeTaskId = firstString(fields.output, TASK_ID_KEYS) ?? firstString(fields.input, ['TaskId', 'taskId', 'CommandId', 'commandId'])
+  const headerText = fields.outputText ? backgroundHeaderText(fields.outputText) : undefined
+  const textTaskId = headerText
+    ? AGY_BACKGROUND_HEADER.exec(headerText)?.[1] ?? TEXT_TASK_ID_PATTERN.exec(headerText)?.[1]
+    : undefined
+  const nativeTaskId = firstString(fields.output, TASK_ID_KEYS) ?? firstString(fields.input, ['TaskId', 'taskId', 'CommandId', 'commandId']) ?? textTaskId
   const action = firstString(fields.input, ['Action', 'action'])?.toLowerCase()
   const lowerTitle = fields.title?.toLowerCase() ?? ''
   const trimmedTitle = lowerTitle.trim()
   const canBackground = !NON_BACKGROUND_KINDS.has(fields.nativeKind ?? '')
   const isKill = (action === 'kill' || action === 'cancel' || lowerTitle.includes('cancel_')) && nativeTaskId !== undefined
-  const isStatusTool = lowerTitle.includes('command_status') || (lowerTitle.includes('manage_task') && action === 'status')
+  const isStatusTool = lowerTitle.includes('command_status') || ((lowerTitle.includes('manage_task') || canBackground && nativeTaskId !== undefined) && action === 'status')
   const isControlTool = isKill || isStatusTool || /\bmanage_task\b/iu.test(lowerTitle)
   const isScheduleTool = canBackground && fields.input?.IsDaemon !== true
     && (fields.input?.DurationSeconds !== undefined || fields.input?.CronExpression !== undefined || /^(?:run(?:ning)?\s+)?schedule(?:\s*\?|\b(?!\.\w))/iu.test(trimmedTitle))
@@ -112,15 +155,18 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
     || fields.output?.running === true
     || fields.output?.async === true
   )
-  const outputSaysRunning = explicitOutputRunning || Boolean(
-    fields.outputText && RUNNING_TEXT_PATTERN.test(fields.outputText) && !FINISHED_TEXT_PATTERN.test(fields.outputText)
+  const explicitTextRunning = Boolean(
+    headerText && (AGY_BACKGROUND_HEADER.test(headerText) || AGY_STILL_RUNNING_HEADER.test(headerText))
+  )
+  const outputSaysRunning = explicitOutputRunning || explicitTextRunning || Boolean(
+    headerText && RUNNING_TEXT_PATTERN.test(headerText) && !FINISHED_TEXT_PATTERN.test(headerText)
   )
   const outputSaysFinished = Boolean(
     Number.isSafeInteger(fields.exitCode)
     || (outputStatus && FINISHED_OUTPUT_STATUS.has(outputStatus))
-    || (!explicitOutputRunning && fields.outputText && (
-      (isScheduleTool && /\b(?:cancelled|canceled|killed|not found|failed|error)\b/iu.test(fields.outputText))
-      || (isStatusTool && !outputSaysRunning && /\b(?:cancelled|canceled|killed|not found|no such (?:task|command|job)|already (?:finished|completed|exited))\b/iu.test(fields.outputText))
+    || (!explicitOutputRunning && !explicitTextRunning && headerText && (
+      (isScheduleTool && /\b(?:cancelled|canceled|killed|not found|failed|error)\b/iu.test(headerText))
+      || (isStatusTool && !outputSaysRunning && /\b(?:cancelled|canceled|killed|not found|no such (?:task|command|job)|already (?:finished|completed|exited))\b/iu.test(headerText))
     ))
   )
   const supportsBackgroundLaunch = isCommand || isWorkflowTool || isScheduleTool

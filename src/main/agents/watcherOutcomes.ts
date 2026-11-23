@@ -111,6 +111,20 @@ function turnOfReply(turns: readonly Turn[], position: number, message: AgentMes
   return turn
 }
 
+function unanchoredTurnReplies(messages: readonly AgentMessage[], turns: readonly Turn[], last: AgentThread['lastTurn']): AgentMessage[] {
+  if (!last || turns.some(turn => turn.turnId === last.id || turn.nativeTurnId === last.id)) return []
+  const matched: { readonly message: AgentMessage; readonly position: number }[] = []
+  for (let position = 0; position < messages.length; position++) {
+    const message = messages[position]!
+    if (message.role === 'assistant' && message.text.trim() !== '' && message.turnMessageId === last.id) {
+      matched.push({ message, position })
+    }
+  }
+  if (!matched.length) return []
+  if (messages.slice(matched.at(-1)!.position + 1).some(message => message.role === 'user')) return []
+  return matched.map(item => item.message)
+}
+
 /**
  * The reply the thread's newest turn gave, for its news (#1190): its last worker message that belongs to that turn by the
  * rule outcomes use, so a steer shown above an earlier turn's reply never takes it. Undefined when the newest turn cannot
@@ -120,7 +134,10 @@ export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | unde
   const messages = thread.messages.filter(message => !isVisualMessage(message))
   const turns = turnsOf(thread, messages), newest = turns.at(-1), last = thread.lastTurn
   // A newest turn Sotto cannot place is not the newest it placed: it has no reply to give, never an earlier turn's.
-  if (!newest || !last || newest.nativeTurnId !== last.id && newest.turnId !== last.id) return undefined
+  if (!last) return undefined
+  if (!newest || newest.nativeTurnId !== last.id && newest.turnId !== last.id) {
+    return unanchoredTurnReplies(messages, turns, last).at(-1)
+  }
   return messages.findLast((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest)
 }
 
@@ -132,7 +149,10 @@ export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | unde
 export function watcherNewestTurnSaidMore(thread: AgentThread): boolean {
   const messages = thread.messages.filter(message => !isVisualMessage(message))
   const turns = turnsOf(thread, messages), newest = turns.at(-1), last = thread.lastTurn
-  if (!newest || !last || newest.nativeTurnId !== last.id && newest.turnId !== last.id) return false
+  if (!last) return false
+  if (!newest || newest.nativeTurnId !== last.id && newest.turnId !== last.id) {
+    return unanchoredTurnReplies(messages, turns, last).length > 1
+  }
   return messages.filter((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest).length > 1
 }
 

@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import type { AgentThread } from '../../../src/shared/agents'
 import { EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'
 import { markTurnActivity } from '../../../src/main/agents/turnActivity'
-import { watcherLatestTurnMessageId, watcherTurnOutcome } from '../../../src/main/agents/watcherOutcomes'
+import { watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from '../../../src/main/agents/watcherOutcomes'
 
 const at = (seconds: number) => new Date(Date.UTC(2026, 9, 14, 10, 0, seconds)).toISOString()
 function thread(overrides: Partial<AgentThread> = {}): AgentThread {
@@ -115,4 +115,34 @@ it('keeps a brief seen in background there while work remains, even after anothe
   const seen = { ...brief, outcome: 'background' as const }
   expect(watcherTurnOutcome(seen, thread({ messages, activities, status: 'running', backgroundWork }), watcher)).toMatchObject({ outcome: 'background' })
   expect(watcherTurnOutcome(seen, thread({ messages, activities, status: 'running' }), watcher)).toMatchObject({ outcome: 'answered', replyMessageId: 'reply' })
+})
+
+it('reads reactive post-background wakeup replies when lastTurn has no user-message anchor', () => {
+  const baseActivities = markTurnActivity([], { provider: 'antigravity', turnId: 'brief', status: 'completed', at: Date.parse(at(1)) })
+  const wakeupActivities = markTurnActivity(baseActivities, { provider: 'antigravity', turnId: 'brief:wakeup:1', status: 'completed', at: Date.parse(at(5)) })
+  const messages: AgentThread['messages'] = [
+    { id: 'brief', role: 'user', text: 'Run GPU render', createdAt: at(0) },
+    { id: 'fg-reply', role: 'assistant', text: 'Started render in background.', createdAt: at(1), turnMessageId: 'brief' },
+    { id: 'bg-reply-1', role: 'assistant', text: 'Checking output...', createdAt: at(4), turnMessageId: 'brief:wakeup:1' },
+    { id: 'bg-reply-2', role: 'assistant', text: 'GPU DONE', createdAt: at(5), turnMessageId: 'brief:wakeup:1' },
+  ]
+  const woken = thread({ messages, activities: wakeupActivities, lastTurn: { id: 'brief:wakeup:1', status: 'completed' } })
+  expect(watcherNewestTurnReply(woken)?.text).toBe('GPU DONE')
+  expect(watcherNewestTurnSaidMore(woken)).toBe(true)
+
+  // Stays empty when no assistant reply matches lastTurn, or after a newer user turn started.
+  const unmatched = thread({
+    messages: [{ id: 'brief', role: 'user', text: 'Run', createdAt: at(0) }, { id: 'reply', role: 'assistant', text: 'Old', createdAt: at(1), turnMessageId: 'brief' }],
+    activities: wakeupActivities,
+    lastTurn: { id: 'brief:wakeup:1', status: 'completed' },
+  })
+  expect(watcherNewestTurnReply(unmatched)).toBeUndefined()
+  expect(watcherNewestTurnSaidMore(unmatched)).toBe(false)
+
+  const followedByUser = thread({
+    messages: [...messages, { id: 'u2', role: 'user', text: 'Next', createdAt: at(6) }],
+    activities: wakeupActivities,
+    lastTurn: { id: 'brief:wakeup:1', status: 'completed' },
+  })
+  expect(watcherNewestTurnReply(followedByUser)).toBeUndefined()
 })
