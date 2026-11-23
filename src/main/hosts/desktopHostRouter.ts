@@ -264,26 +264,31 @@ export class DesktopHostRouter {
           .filter(thread => !this.held.size || !this.dormantProviderIds.get(id)?.has(thread.id))
           .map(thread => ({ ...thread, connected: connected && thread.connected }))
       } } : {},
-      hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
-        hostId: host.hostId, name: host.name, ...host.clientId !== undefined ? { clientId: host.clientId } : {},
-        facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
-        origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined,
-        setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined,
-        gitInit: host.service.supportsProjectGitInit === true, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
-        workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
-        // The host keeps its own check queue, which a Watcher start marked as a check waits in (#1312).
-        checks: host.service.supportsWatcherCheckQueue === true,
-        swarms: host.service.supportsWorkerSwarms === true,
-        // Watcher's stop_thread takes a check out of that queue (#1637).
-        checkStop: host.service.supportsWatcherCheckStop === true,
-        // A new Watcher takes over the requests an older one made there (#1735).
-        newOwner: host.service.supportsWatcherNewOwner === true,
-        muse: host.service.supportsWatcherMuse === true, cursor: host.service.supportsWatcherCursor === true, antigravity: host.service.supportsWatcherAntigravity === true,
-        connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
-        // Read only when asked, and without a copy: Watcher lists hosts on every pass (#1023). The host's own stored default
-        // is not the user's: Settings keeps that on this computer (ADR-0074). What the host limits is whether this computer
-        // may answer there, and so give a thread a mode that acts without asking.
-        get permissionCeiling() { return (readView(host.service) as HostClientShell).clientCapabilities?.mayAnswer === true ? 'full-access' as const : 'approval-required' as const } })),
+      hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => {
+        const reconnectingSince = this.reconnecting.get(host.hostId)
+        return {
+          hostId: host.hostId, name: host.name, ...host.clientId !== undefined ? { clientId: host.clientId } : {},
+          facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
+          origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined,
+          setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined,
+          gitInit: host.service.supportsProjectGitInit === true, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
+          workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
+          // The host keeps its own check queue, which a Watcher start marked as a check waits in (#1312).
+          checks: host.service.supportsWatcherCheckQueue === true,
+          swarms: host.service.supportsWorkerSwarms === true,
+          // Watcher's stop_thread takes a check out of that queue (#1637).
+          checkStop: host.service.supportsWatcherCheckStop === true,
+          // A new Watcher takes over the requests an older one made there (#1735).
+          newOwner: host.service.supportsWatcherNewOwner === true,
+          muse: host.service.supportsWatcherMuse === true, cursor: host.service.supportsWatcherCursor === true, antigravity: host.service.supportsWatcherAntigravity === true,
+          connected: reconnectingSince === undefined && host.available?.() !== false,
+          ...reconnectingSince !== undefined ? { reconnecting: true, reconnectingSince } : {},
+          // Read only when asked, and without a copy: Watcher lists hosts on every pass (#1023). The host's own stored default
+          // is not the user's: Settings keeps that on this computer (ADR-0074). What the host limits is whether this computer
+          // may answer there, and so give a thread a mode that acts without asking.
+          get permissionCeiling() { return (readView(host.service) as HostClientShell).clientCapabilities?.mayAnswer === true ? 'full-access' as const : 'approval-required' as const },
+        }
+      }),
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
@@ -445,8 +450,8 @@ export class DesktopHostRouter {
    * thread list, in order: the next publication notes its list as made from this one's in place when it was (#925 step 6).
    */
   private windowList: { readonly host: AgentState['host']; readonly hosts: readonly { readonly hostId: string; readonly made: readonly AgentThread[] }[] } | undefined
-  /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
-  private readonly reconnecting = new Set<string>()
+  /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040), mapped to when reconnecting began. */
+  private readonly reconnecting = new Map<string, number>()
   /** Provider identity is immutable for a thread; classify its gated details when its shell arrives. */
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
@@ -507,7 +512,7 @@ export class DesktopHostRouter {
      * Told each state built to answer a command as it is built (#306): the main window's broadcaster numbers it against
      * its broadcasts then, before the microtasks that pass until it is encoded. Read and kept by reference, never copied.
      */
-    replyBuilt?: (state: AgentState) => void } = {}) {
+    replyBuilt?: (state: AgentState) => void; now?: () => number } = {}) {
     this.held = heldProvidersOption(options)
     this.cascadedSettles = options.cascadedSettles ?? new CascadedSettles()
   }
@@ -740,6 +745,9 @@ export class DesktopHostRouter {
     if (this.hosts.has(connection.hostId)) throw new Error(t`This host is already connected.`)
     const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
+    this.reconnecting.delete(connection.hostId)
+    this.watcherSnapshots.delete(connection.hostId)
+    this.watcherRoomInputs.delete(connection.hostId)
     // The answer it was told on connecting may have changed while it was still being set up, out of reach of a broadcast.
     if (connection.kind === 'remote') connection.service.tellProductEventAnswer?.()
     this.watcherChanged(connection.hostId)
@@ -777,8 +785,10 @@ export class DesktopHostRouter {
     entry.off.forEach(off => off())
     const off = this.watch(connection)
     this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
-    if (connection.kind === 'remote') connection.service.tellProductEventAnswer?.()
     this.reconnecting.delete(connection.hostId)
+    this.watcherSnapshots.delete(connection.hostId)
+    this.watcherRoomInputs.delete(connection.hostId)
+    if (connection.kind === 'remote') connection.service.tellProductEventAnswer?.()
     this.watcherChanged(connection.hostId)
     this.emit()
     this.connected(connection)
@@ -791,7 +801,7 @@ export class DesktopHostRouter {
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
     if (value === this.reconnecting.has(hostId) || !this.hosts.has(hostId)) return
-    if (value) this.reconnecting.add(hostId); else this.reconnecting.delete(hostId)
+    if (value) this.reconnecting.set(hostId, (this.options.now ?? Date.now)()); else this.reconnecting.delete(hostId)
     this.watcherChanged(hostId)
     this.emit()
     if (value) this.delegations.lostHost(hostId); else this.delegations.taken(hostId)
@@ -805,8 +815,8 @@ export class DesktopHostRouter {
     this.dormantProviderIds.delete(hostId)
     this.observedOn.delete(hostId)
     this.owedClientChecks.delete(hostId)
-    this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
+    this.watcherChanged(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
