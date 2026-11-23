@@ -103,6 +103,49 @@ export class SubagentsStore {
     }
   }
 
+  /**
+   * Refreshes the newest page for a paired host without discarding earlier pages the user loaded.
+   * Skips while another page load is already in flight so it never races an explicit "Load earlier agents".
+   */
+  async refresh(threadId: string): Promise<void> {
+    const current = this.thread(threadId)
+    if (current.loading || !this.bridge) return
+    const generation = this.generation
+    try {
+      const page = await this.bridge.page({ threadId })
+      if (generation !== this.generation) return
+      const latest = this.thread(threadId)
+      if (latest.revision > page.revision) return
+      const minSeq = page.rows.length ? Math.min(...page.rows.map(row => row.sequence)) : Infinity
+      const existing = new Map(latest.rows.map(row => [row.id, row]))
+      const held = new Map<string, SubagentRow>()
+      if (page.summary.total > 0) {
+        // Preserve already-loaded earlier pages below the newest page's sequence boundary.
+        for (const row of latest.rows) {
+          if (row.sequence < minSeq) held.set(row.id, row)
+        }
+      }
+      for (const row of page.rows) {
+        const previous = held.get(row.id) ?? existing.get(row.id)
+        held.set(row.id, previous && previous.revision >= row.revision ? previous : row)
+      }
+      const ordered = [...held.values()].sort((a, b) => a.sequence - b.sequence)
+      const kept = newestRows(ordered, this.capacities.get(threadId) ?? SUBAGENT_PAGE_SIZE)
+      const before = page.summary.total === 0 ? undefined : kept.before ?? latest.before ?? page.before
+      this.publish(threadId, {
+        rows: kept.rows,
+        resetVersion: latest.resetVersion,
+        revision: Math.max(page.revision, latest.revision),
+        summary: page.summary,
+        before,
+        loading: latest.loading,
+        error: null,
+      })
+    } catch {
+      // Quiet background refresh: keep current rows visible rather than clearing them on transient failure.
+    }
+  }
+
   private changed(change: SubagentChange): void {
     if (change.reset) {
       if (this.active !== change.threadId && !this.threads.has(change.threadId)) return

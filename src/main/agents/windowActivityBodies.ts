@@ -1,5 +1,5 @@
 import type { AgentActivity } from '../../shared/agentActivity'
-import { cutActivityBodies } from '../../shared/activityBodies'
+import { cutActivityBodies, stripAgentSteps } from '../../shared/activityBodies'
 import { agentActivitySignature, isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { AgentActivityDelta, AgentThreadDetail, AgentThreadDetailUpdate } from '../../shared/agents'
 import { sottoBrowserToolOfTitle } from '../../shared/sottoBrowserTools'
@@ -101,18 +101,18 @@ export class WindowActivityBodies {
   private record(threadId: string, record: AgentActivity, before: Map<string, KeptCut> | undefined, after: Map<string, KeptCut> | undefined): AgentActivity {
     const sent = this.sent(record, before, after)
     let held = this.held.get(threadId)
-    if (sent !== record) { if (!held) this.held.set(threadId, held = new Set()); held.add(record.id) }
+    if (sent.cut !== undefined) { if (!held) this.held.set(threadId, held = new Set()); held.add(record.id) }
     else if (held?.delete(record.id) && held.size === 0) this.held.delete(threadId)
     return sent
   }
 
   private sent(record: AgentActivity, before: Map<string, KeptCut> | undefined, after: Map<string, KeptCut> | undefined): AgentActivity {
-    if (keptWhole(record)) { after?.delete(record.id); return record }
+    if (keptWhole(record)) { after?.delete(record.id); return stripAgentSteps(record) }
     const signature = agentActivitySignature(record)
     const kept = before?.get(record.id)
     if (kept?.signature === signature) { after?.set(record.id, kept); return laid(record, kept) }
     const sent = cutActivityBodies(record)
-    if (sent === record) { after?.delete(record.id); return record }
+    if (sent.cut === undefined) { after?.delete(record.id); return sent }
     after?.set(record.id, keptCut(record, sent, signature))
     return sent
   }
@@ -149,7 +149,7 @@ function keptCut(record: AgentActivity, sent: AgentActivity, signature: string):
 /** `record` with the bodies its last cut left, which its unchanged signature says it still has. */
 function laid(record: AgentActivity, kept: KeptCut): AgentActivity {
   const diffs = kept.diffs
-  return { ...record,
+  return { ...stripAgentSteps(record),
     ...kept.output !== undefined ? { output: kept.output } : {},
     ...kept.text !== undefined ? { text: kept.text } : {},
     ...diffs && record.changes ? { changes: record.changes.map((change, index) => diffs.has(index) ? { ...change, diff: diffs.get(index)! } : change) } : {},
@@ -177,6 +177,9 @@ export function windowHistories(control: LocalThreadHistories): {
     detail: threadId => bodies.detail(control.threadDetail(threadId)),
     // The main window applies appends: a running command's output crosses as its new lines (ADR-0025, October 30 amendment).
     subscribeDetail: listener => control.subscribeThreadDetail(update => { const sent = bodies.update(update); if (sent !== null) listener(sent) }, { appends: true }),
-    activityBody: async (threadId, activityId) => control.threadActivity(threadId, activityId),
+    activityBody: async (threadId, activityId) => {
+      const record = control.threadActivity(threadId, activityId)
+      return record ? stripAgentSteps(record) : null
+    },
   }
 }

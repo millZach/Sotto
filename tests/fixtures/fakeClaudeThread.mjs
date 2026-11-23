@@ -220,6 +220,7 @@ const act = () => {
     writeFileSync(join(dir, `agent-${agentId}.jsonl`), [
       line({ type: 'user', uuid: randomUUID(), message: { role: 'user', content: action.task ?? 'Fixture subagent task' } }),
       line({ type: 'attachment', uuid: randomUUID(), attachment: { type: 'fixture' } }),
+      ...(Array.isArray(action.transcriptLines) ? action.transcriptLines.map(entry => line(entry)) : []),
       ...(action.model ? [line({ type: 'assistant', uuid: randomUUID(), message: { id: randomUUID(), model: action.model, role: 'assistant', content: [{ type: 'text', text: 'Fixture subagent reply' }] } })] : []),
     ].join('\n') + '\n')
     return

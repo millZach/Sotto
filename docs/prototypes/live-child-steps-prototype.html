@@ -1,0 +1,409 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Live child-agent steps in Tools › Agents across Antigravity (Gemini), Claude Code, and Codex.
+  How should a subagent's live transcript/tool steps appear in the Agents pane?
+
+  Three variants on ?variant=1..3 (bar, or Left/Right arrows):
+   1 Inline + row pulse  Collapsed row shows the active step one-liner while working and step count in meta;
+                         expanded row shows Task, inline Steps (newest 6, "Show N earlier"), and Latest update / Result.
+   2 Folded disclosure   Collapsed row stays quiet (only adds step count in meta); expanded row shows Task,
+                         a folded "Steps" disclosure (open while working, folded once finished), and Latest update / Result.
+   3 Drill-in page       Pressing an agent row opens a full subpage inside Agents ("← All agents", like Workflows)
+                         with Task, full live Steps list, and Latest update / Result.
+
+  Bar extras: Light, Simulate step (appends a live step to the running Antigravity child), Finished (settles running agents).
+
+  Picked: 1 (Variant A — Active step on the collapsed row, inline Steps list inside the expanded row), straight to stable (Zach, 2026-11-22).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Live child steps in Tools › Agents (3 variants)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-sidebar: oklch(0.135 0.008 265);
+  --tt-card: oklch(0.175 0.008 265);
+  --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-hover-strong: oklch(0.235 0.012 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 58%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border: oklch(0.36 0.022 265);
+  --tt-activity: oklch(0.714 0.104 183);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-error: oklch(0.72 0.17 22);
+  --tt-error-text: oklch(0.8 0.14 22);
+  --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265);
+  --tt-selected: oklch(0.28 0.035 183);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-font-mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-sidebar: oklch(0.968 0.004 85);
+  --tt-card: oklch(0.952 0.006 85);
+  --tt-surface-sunken: oklch(0.942 0.008 85);
+  --tt-hover: oklch(0.928 0.008 85);
+  --tt-hover-strong: oklch(0.905 0.01 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 58%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border: oklch(0.79 0.016 80);
+  --tt-activity: oklch(0.5 0.095 183);
+  --tt-accent-text: oklch(0.41 0.085 183);
+  --tt-error: oklch(0.52 0.18 25);
+  --tt-error-text: oklch(0.46 0.17 25);
+  --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85);
+  --tt-selected: oklch(0.88 0.04 183);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-activity); outline-offset: 2px; border-radius: 4px; }
+
+/* Prototype bar (intentionally loud so it never reads as Sotto UI) */
+.pbar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: #ffde59; color: #111; box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); font: 600 12.5px/1 system-ui, sans-serif; }
+.pbar button { border: 0; background: rgb(0 0 0 / 0.09); color: #111; border-radius: 999px; padding: 6px 10px; font: inherit; white-space: nowrap; }
+.pbar button[aria-pressed='true'] { background: #111; color: #ffde59; }
+.pbar .lab { min-width: 245px; text-align: center; }
+
+.win { display: grid; grid-template-columns: minmax(0, 1fr) 480px 64px; height: 100%; }
+.thread { padding: 20px 30px; overflow: auto; border-right: 1px solid var(--tt-hairline); }
+.thread h2 { font-size: 16px; margin: 0 0 18px; font-weight: 600; }
+.msg { background: var(--tt-message); border-radius: 12px; padding: 11px 15px; max-width: 520px; margin-left: auto; margin-bottom: 16px; }
+.reply { color: var(--tt-text-2); max-width: 560px; margin: 0 0 14px; line-height: 1.65; }
+.muted-note { color: var(--tt-text-muted); font-size: 13px; }
+
+.tools { background: var(--tt-sidebar); display: flex; flex-direction: column; min-height: 0; }
+.tools-chrome { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px; border-bottom: 1px solid var(--tt-hairline); flex: none; }
+.tools-chrome__title { font-size: 13.5px; font-weight: 600; color: var(--tt-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tools-chrome__detail { font-size: 12.5px; color: var(--tt-text-muted); margin-left: auto; white-space: nowrap; }
+.back-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--tt-text-2); padding: 4px 8px 4px 4px; border-radius: 6px; font-size: 13px; }
+.back-btn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.back-rule { width: 1px; height: 18px; background: var(--tt-hairline); flex: none; }
+
+.subagents-roster { flex: 1; min-height: 0; overflow: auto; padding: 10px 14px 84px; }
+.subagents-list { list-style: none; padding: 0; margin: 0; }
+.subagent-item + .subagent-item { border-top: 1px solid var(--tt-hairline); }
+
+.subagent-head { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; width: 100%; min-height: 86px; padding: 14px 6px 14px 4px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text); text-align: left; transition: background-color 120ms ease; }
+.subagent-head:hover { background: var(--tt-hover); }
+.subagent-dot { width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--tt-text-muted); }
+.subagent-dot[data-status='running'] { background: var(--tt-activity); }
+.subagent-dot[data-status='failed'] { background: var(--tt-error); }
+.subagent-main { min-width: 0; }
+.subagent-title { display: block; overflow: hidden; font-size: 14.5px; font-weight: 550; line-height: 20px; white-space: nowrap; text-overflow: ellipsis; }
+.subagent-description { display: block; overflow: hidden; margin-top: 4px; color: var(--tt-text-muted); font-size: 13px; line-height: 19px; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-live-step { display: flex; align-items: center; gap: 6px; margin-top: 5px; color: var(--tt-text-2); font-size: 12.5px; line-height: 18px; min-width: 0; }
+.subagent-live-step__tag { color: var(--tt-accent-text); font-weight: 500; flex: none; }
+.subagent-live-step__cmd { font-family: var(--tt-font-mono); font-size: 12px; color: var(--tt-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-meta { display: flex; align-items: center; gap: 7px; min-width: 0; margin-top: 6px; color: var(--tt-text-muted); font-size: 12px; line-height: 18px; }
+.subagent-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-top: 2px; color: var(--tt-text-muted); font-size: 12px; }
+.subagent-time { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.subagent-chev { display: inline-block; transition: transform 150ms ease; font-size: 11px; }
+.subagent-head[aria-expanded='true'] .subagent-chev { transform: rotate(90deg); }
+
+.subagent-details { margin: 0 5px 10px 22px; padding: 2px 0 12px; }
+.subagent-details h3 { margin: 12px 0 5px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.subagent-details h3 span.count { font-weight: 400; }
+.subagent-details p { margin: 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.subagent-result { border-left: 2px solid var(--tt-hairline); padding-left: 12px; }
+
+/* Steps list */
+.child-steps { list-style: none; margin: 6px 0 0; padding: 0; border-left: 1px solid var(--tt-hairline); margin-left: 3px; padding-left: 11px; display: flex; flex-direction: column; gap: 5px; }
+.child-step { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: baseline; column-gap: 8px; font-size: 12.5px; line-height: 18px; }
+.child-step__dot { width: 5px; height: 5px; border-radius: 50%; background: var(--tt-text-muted); align-self: center; }
+.child-step__dot[data-status='running'] { background: var(--tt-activity); animation: pulse 1.4s ease-in-out infinite alternate; }
+.child-step__dot[data-status='failed'] { background: var(--tt-error); }
+.child-step__body { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-2); }
+.child-step__verb { color: var(--tt-text); font-weight: 500; margin-right: 5px; }
+.child-step__target { font-family: var(--tt-font-mono); font-size: 11.5px; color: var(--tt-text-2); }
+.child-step__target--plain { font-family: var(--tt-font-ui); font-size: 12.5px; color: var(--tt-text-muted); }
+.child-step__meta { color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.child-step__meta[data-status='running'] { color: var(--tt-accent-text); }
+.child-step__meta[data-status='failed'] { color: var(--tt-error-text); }
+.child-step__err { grid-column: 2 / 4; color: var(--tt-error-text); font-size: 12px; margin-top: 2px; }
+
+.steps-more { border: 0; background: none; color: var(--tt-accent-text); padding: 4px 0 0 14px; font-size: 12px; }
+.steps-more:hover { text-decoration: underline; }
+
+/* Variant 2 disclosure */
+.steps-fold { margin-top: 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-sunken); padding: 7px 10px; }
+.steps-fold summary { list-style: none; display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; color: var(--tt-text-2); user-select: none; }
+.steps-fold summary::-webkit-details-marker { display: none; }
+.steps-fold summary .chev { font-size: 10px; color: var(--tt-text-muted); transition: transform 140ms ease; }
+.steps-fold[open] summary .chev { transform: rotate(90deg); }
+.steps-fold summary .fold-now { color: var(--tt-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: auto; font-family: var(--tt-font-mono); font-size: 11.5px; max-width: 200px; }
+.steps-fold .child-steps { margin-top: 8px; }
+
+/* Variant 3 drill-in page */
+.page-section { padding: 4px 4px 14px; }
+.page-facts { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0 0 12px; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.page-facts strong { color: var(--tt-text-2); font-weight: 500; }
+.page-details { margin: 0; padding: 0; }
+
+.rail { background: var(--tt-surface); border-left: 1px solid var(--tt-hairline); display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 14px; font-size: 10.5px; color: var(--tt-text-muted); }
+.rail .on { color: var(--tt-text); background: var(--tt-selected); border-radius: 8px; padding: 6px; }
+
+@keyframes pulse { to { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="win">
+  <main class="thread">
+    <h2>Live child steps across Antigravity, Claude Code &amp; Codex</h2>
+    <div class="msg">Audit how Antigravity, Claude Code, and Codex report child agent steps and verify the unit suites.</div>
+    <p class="reply">I launched subagents across the three areas. You can inspect each child's live tool and command steps in Tools › Agents while they work.</p>
+    <p class="muted-note">Switch variants with the yellow prototype bar below (or ← / → keys). Click any agent row to expand or drill in, and press “Add live step” to watch updates stream in.</p>
+  </main>
+  <aside class="tools" aria-label="Tools">
+    <div class="tools-chrome" id="chrome"></div>
+    <div class="subagents-roster" id="roster"></div>
+  </aside>
+  <nav class="rail" aria-hidden="true"><div>Browser</div><div>Terminal</div><div>Files</div><div>Changes</div><div>PR</div><div class="on">Agents</div></nav>
+</div>
+
+<div class="pbar" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="lab" id="lab"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <button id="addstep">+ Add live step</button>
+  <button id="ended" aria-pressed="false">Finished</button>
+  <button id="light" aria-pressed="false">Light</button>
+</div>
+
+<script>
+const VARIANTS = {
+  1: 'A — Inline steps + row current step',
+  2: 'B — Folded Steps disclosure',
+  3: 'C — Drill-in agent page',
+}
+const params = new URLSearchParams(location.search)
+let variant = Number(params.get('variant')) || 1
+let light = params.get('theme') === 'light'
+let ended = params.get('ended') === '1'
+let openIds = new Set(['agy-1'])
+let drillId = null
+let showAllIds = new Set()
+let extraCount = 0
+
+const EXTRA_STEPS = [
+  { verb: 'Edited', target: 'src/main/agents/antigravityChildren.ts', mono: true, status: 'completed', meta: '0.4s' },
+  { verb: 'Ran', target: 'npx vitest run tests/unit/main/antigravityChildren.test.ts', mono: true, status: 'running', meta: 'Running' },
+  { verb: 'Read', target: 'src/main/agents/antigravityActivity.ts', mono: true, status: 'completed', meta: '0.1s' },
+]
+
+const baseAgents = () => [
+  {
+    id: 'agy-1',
+    provider: 'Antigravity',
+    title: 'Transcript Reader Auditor',
+    description: 'Check bounded incremental reads of brain/<child>/.system_generated/logs/transcript.jsonl.',
+    task: 'Inspect brain/<child>/.system_generated/logs/transcript.jsonl parsing, verify realpath containment inside brain, and run the Antigravity children unit tests.',
+    model: 'gemini-4-neon-high',
+    status: ended ? 'completed' : 'running',
+    elapsed: ended ? '42s' : '28s',
+    result: ended ? 'Verified realpath containment and bounded incremental reads; all 14 unit tests pass.' : '',
+    steps: [
+      { verb: 'Read', target: 'src/main/agents/antigravityChildren.ts', mono: true, status: 'completed', meta: '0.2s' },
+      { verb: 'Read', target: 'docs/adr/0212-antigravity-is-a-thread-provider-run-as-t3-code-runs-it.md', mono: true, status: 'completed', meta: '0.2s' },
+      { verb: 'Thinking', target: 'Checking symlink guard and byte-offset resume on rewritten lines', mono: false, status: 'completed', meta: '1.8s' },
+      { verb: 'Read', target: 'tests/unit/main/antigravityChildren.test.ts', mono: true, status: 'completed', meta: '0.1s' },
+      { verb: 'Ran', target: 'npx vitest run tests/unit/main/antigravityChildren.test.ts', mono: true, status: ended ? 'completed' : 'running', meta: ended ? '3.4s' : 'Running' },
+    ],
+  },
+  {
+    id: 'claude-1',
+    provider: 'Claude Code',
+    title: 'Background transcript tailer',
+    description: 'Audit Claude subagent JSONL layout under subagents/agent-<id>.jsonl.',
+    task: 'Verify how Claude Code writes tool_use and tool_result blocks in background and workflow subagent transcripts.',
+    model: 'claude-sonnet-5',
+    status: ended ? 'completed' : 'running',
+    elapsed: ended ? '1m 14s' : '51s',
+    result: ended ? 'Both background agents and workflow agents emit tool_use/tool_result blocks in agent-<id>.jsonl.' : 'Checking workflow transcript layout…',
+    steps: [
+      { verb: 'Read', target: 'src/main/agents/providers/claude/claudeSubagentModels.ts', mono: true, status: 'completed', meta: '0.1s' },
+      { verb: 'Searched', target: 'subagents/workflows', mono: true, status: 'completed', meta: '0.3s' },
+      { verb: 'Read', target: 'src/main/agents/providers/claude/claudeActivity.ts', mono: true, status: 'completed', meta: '0.2s' },
+      { verb: 'Ran', target: 'npx vitest run tests/unit/main/claudeSubagentModels.test.ts', mono: true, status: 'failed', meta: 'Exit 1', error: 'Expected 2 targets, received 1 (settled agent skipped early)' },
+      { verb: 'Edited', target: 'src/main/agents/providers/claude/claudeSubagentModels.ts', mono: true, status: 'completed', meta: '0.2s' },
+      { verb: 'Ran', target: 'npx vitest run tests/unit/main/claudeSubagentModels.test.ts', mono: true, status: ended ? 'completed' : 'running', meta: ended ? '2.1s' : 'Running' },
+    ],
+  },
+  {
+    id: 'codex-1',
+    provider: 'Codex',
+    title: 'review_child_notifications',
+    description: 'Inspect codexActivity.ts childNotification item routing.',
+    task: 'Check which item/started and item/completed notifications Codex app-server emits for child threads.',
+    model: 'gpt-5.4-codex',
+    status: 'completed',
+    elapsed: '34s',
+    result: 'Confirmed codex.ts already routes all child thread notifications to childNotification(); filtering currently drops non-subagent items.',
+    steps: [
+      { verb: 'Read', target: 'src/main/agents/providers/codex/codex.ts', mono: true, status: 'completed', meta: '0.1s' },
+      { verb: 'Read', target: 'src/main/agents/providers/codex/codexActivity.ts', mono: true, status: 'completed', meta: '0.2s' },
+      { verb: 'Ran', target: 'npx vitest run tests/unit/main/codexActivity.test.ts', mono: true, status: 'completed', meta: '2.9s' },
+    ],
+  },
+]
+
+let liveAdded = []
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+const statusWord = s => ({ running: 'Working', completed: 'Finished', failed: 'Failed', interrupted: 'Interrupted', unknown: 'Last seen working' }[s] || s)
+
+function getAgents() {
+  const list = baseAgents()
+  if (liveAdded.length) {
+    const first = list[0]
+    first.steps = first.steps.map(s => s.status === 'running' ? { ...s, status: 'completed', meta: '2.8s' } : s)
+    for (let i = 0; i < liveAdded.length; i++) {
+      const isLast = i === liveAdded.length - 1
+      const s = liveAdded[i]
+      first.steps.push(ended || !isLast ? { ...s, status: 'completed', meta: s.meta === 'Running' ? '1.9s' : s.meta } : s)
+    }
+  }
+  return list
+}
+
+function renderSteps(agent, cap) {
+  const steps = agent.steps
+  const showAll = showAllIds.has(agent.id) || !cap || steps.length <= cap
+  const hidden = showAll ? 0 : steps.length - cap
+  const shown = showAll ? steps : steps.slice(-cap)
+  return (hidden ? `<button type="button" class="steps-more" data-more="${esc(agent.id)}">Show ${hidden} earlier ${hidden === 1 ? 'step' : 'steps'}</button>` : '') +
+    `<ol class="child-steps" aria-label="Steps">${shown.map(step => `<li class="child-step">
+      <span class="child-step__dot" data-status="${esc(step.status)}" aria-hidden="true"></span>
+      <span class="child-step__body" title="${esc(step.verb + ' ' + step.target)}"><span class="child-step__verb">${esc(step.verb)}</span><span class="${step.mono ? 'child-step__target' : 'child-step__target--plain'}">${esc(step.target)}</span></span>
+      <span class="child-step__meta" data-status="${esc(step.status)}">${esc(step.meta)}</span>
+      ${step.error ? `<span class="child-step__err">${esc(step.error)}</span>` : ''}
+    </li>`).join('')}</ol>`
+}
+
+function renderDetails(agent, isPage = false) {
+  const resHeading = agent.status === 'running' ? 'Latest update' : agent.status === 'failed' ? 'What happened' : 'Result'
+  const resBody = agent.result || (agent.status === 'running' ? 'No result reported yet.' : 'No result was reported.')
+  const latest = agent.steps[agent.steps.length - 1]
+  let stepsHtml = ''
+  if (variant === 1 || isPage) {
+    stepsHtml = `<h3>Steps <span class="count">· ${agent.steps.length}</span></h3>${renderSteps(agent, isPage ? 0 : 6)}`
+  } else if (variant === 2) {
+    const foldOpen = agent.status === 'running' ? 'open' : ''
+    stepsHtml = `<details class="steps-fold" ${foldOpen}>
+      <summary><span class="chev" aria-hidden="true">▸</span><span>Steps · ${agent.steps.length}</span>${latest ? `<span class="fold-now">${esc(latest.verb + ' ' + latest.target)}</span>` : ''}</summary>
+      ${renderSteps(agent, 6)}
+    </details>`
+  }
+  return `<div class="subagent-details ${isPage ? 'page-details' : ''}">
+    <h3>Task</h3><p>${esc(agent.task)}</p>
+    ${stepsHtml}
+    <h3>${resHeading}</h3><p class="subagent-result">${esc(resBody)}</p>
+  </div>`
+}
+
+function render() {
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  const agents = getAgents()
+  const working = agents.filter(a => a.status === 'running').length
+  const chrome = document.getElementById('chrome')
+  const roster = document.getElementById('roster')
+
+  if (variant === 3 && drillId) {
+    const agent = agents.find(a => a.id === drillId)
+    if (agent) {
+      chrome.innerHTML = `<button type="button" class="back-btn" id="back">← All agents</button><span class="back-rule" aria-hidden="true"></span><span class="tools-chrome__title">${esc(agent.title)}</span><span class="tools-chrome__detail">${esc(statusWord(agent.status))} · ${esc(agent.elapsed)}</span>`
+      roster.innerHTML = `<section class="page-section"><p class="page-facts"><strong>${esc(agent.model)}</strong><span>${esc(agent.provider)}</span><span>${agent.steps.length} steps</span></p>${renderDetails(agent, true)}</section>`
+      document.getElementById('back').onclick = () => { drillId = null; render() }
+      syncBar()
+      return
+    }
+    drillId = null
+  }
+
+  chrome.innerHTML = `<span class="tools-chrome__title">${agents.length} agents</span><span class="tools-chrome__detail">${working ? `${working} working` : 'None working'}</span>`
+  roster.innerHTML = `<ul class="subagents-list">${agents.map(agent => {
+    const isOpen = variant !== 3 && openIds.has(agent.id)
+    const activeStep = agent.status === 'running' ? agent.steps[agent.steps.length - 1] : null
+    const liveLine = variant === 1 && activeStep
+      ? `<span class="subagent-live-step"><span class="subagent-live-step__tag">${esc(activeStep.verb)}</span><span class="subagent-live-step__cmd">${esc(activeStep.target)}</span></span>`
+      : ''
+    const descLine = variant === 1 && activeStep ? '' : `<span class="subagent-description">${esc(agent.description)}</span>`
+    return `<li class="subagent-item">
+      <button type="button" class="subagent-head" data-agent="${esc(agent.id)}" aria-expanded="${variant === 3 ? 'false' : String(isOpen)}">
+        <span class="subagent-dot" data-status="${esc(agent.status)}" aria-hidden="true"></span>
+        <span class="subagent-main">
+          <span class="subagent-title">${esc(agent.title)}</span>
+          ${descLine}${liveLine}
+          <span class="subagent-meta"><span>${esc(agent.model)}</span><span>· ${agent.steps.length} steps</span><span>· ${esc(agent.provider)}</span></span>
+        </span>
+        <span class="subagent-right">
+          <span class="subagent-time"><span>${esc(agent.elapsed)}</span><span class="subagent-chev" aria-hidden="true">▸</span></span>
+          <span>${esc(statusWord(agent.status))}</span>
+        </span>
+      </button>
+      ${isOpen ? renderDetails(agent) : ''}
+    </li>`
+  }).join('')}</ul>`
+
+  roster.querySelectorAll('[data-agent]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.agent
+      if (variant === 3) { drillId = id }
+      else if (openIds.has(id)) openIds.delete(id)
+      else openIds.add(id)
+      render()
+    }
+  })
+  roster.querySelectorAll('[data-more]').forEach(btn => {
+    btn.onclick = () => { showAllIds.add(btn.dataset.more); render() }
+  })
+  syncBar()
+}
+
+function syncBar() {
+  document.getElementById('lab').textContent = VARIANTS[variant]
+  document.getElementById('light').setAttribute('aria-pressed', String(light))
+  document.getElementById('ended').setAttribute('aria-pressed', String(ended))
+  const url = new URL(location.href)
+  url.searchParams.set('variant', variant)
+  light ? url.searchParams.set('theme', 'light') : url.searchParams.delete('theme')
+  ended ? url.searchParams.set('ended', '1') : url.searchParams.delete('ended')
+  history.replaceState(null, '', url)
+}
+
+const stepVariant = d => { variant = ((variant - 1 + d + 3) % 3) + 1; drillId = variant === 3 ? 'agy-1' : null; render() }
+document.getElementById('prev').onclick = () => stepVariant(-1)
+document.getElementById('next').onclick = () => stepVariant(1)
+document.getElementById('light').onclick = () => { light = !light; render() }
+document.getElementById('ended').onclick = () => { ended = !ended; render() }
+document.getElementById('addstep').onclick = () => {
+  ended = false
+  liveAdded.push(EXTRA_STEPS[extraCount % EXTRA_STEPS.length])
+  extraCount++
+  render()
+}
+addEventListener('keydown', e => {
+  if (e.target.closest?.('input,textarea,[contenteditable]')) return
+  if (e.key === 'ArrowLeft') stepVariant(-1)
+  if (e.key === 'ArrowRight') stepVariant(1)
+  if (e.key === 'Escape' && variant === 3 && drillId) { drillId = null; render() }
+})
+render()
+</script>
+</body>
+</html>

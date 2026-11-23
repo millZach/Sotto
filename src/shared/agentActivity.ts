@@ -2,8 +2,29 @@ import { z } from 'zod'
 
 export const MAX_AGENT_ACTIVITIES = 2_000
 export const MAX_ACTIVITY_TEXT = 65_536
+export const MAX_SUBAGENT_STEPS = 200
+export const MAX_SUBAGENT_STEP_TEXT = 400
 const detail = z.string().max(MAX_ACTIVITY_TEXT)
 const count = z.number().int().nonnegative()
+export const subagentStepKindSchema = z.enum(['command', 'file-change', 'read', 'search', 'tool', 'reasoning', 'plan'])
+export type SubagentStepKind = z.infer<typeof subagentStepKindSchema>
+export const subagentStepStatusSchema = z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown'])
+export type SubagentStepStatus = z.infer<typeof subagentStepStatusSchema>
+/** One tool, command, file, search, reasoning or plan step taken by a provider-native subagent. */
+export const subagentStepSchema = z.object({
+  id: z.string().min(1).max(160),
+  kind: subagentStepKindSchema,
+  status: subagentStepStatusSchema,
+  title: z.string().max(160),
+  detail: z.string().max(MAX_SUBAGENT_STEP_TEXT).optional(),
+  mono: z.boolean().optional(),
+  error: z.string().max(MAX_SUBAGENT_STEP_TEXT).optional(),
+  exitCode: z.number().int().optional(),
+  startedAt: z.string().datetime().optional(),
+  completedAt: z.string().datetime().optional(),
+  durationMs: z.number().nonnegative().optional(),
+})
+export type SubagentStep = z.infer<typeof subagentStepSchema>
 /**
  * How far a workflow's agents have got, counted where the provider reports them. `total` includes the agents still
  * waiting for a place to start (`queued`); those have no row of their own until they start.
@@ -126,6 +147,8 @@ export const agentActivitySchema = z.object({
     startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
     observedAt: z.string().datetime().optional(),
     timingSource: z.enum(['provider', 'observed']).optional(), durationMs: z.number().nonnegative().optional(),
+    steps: z.array(subagentStepSchema).max(MAX_SUBAGENT_STEPS).optional(),
+    stepsTotal: count.optional(),
   })).max(200).optional(),
   /** Its native task ended or its identity was reassigned; retained history rejects later lifecycle events. */
   taskUpdatesExcluded: z.boolean().optional(),
@@ -229,6 +252,79 @@ export function isTerminalActivity(status: AgentActivity['status']): boolean {
 }
 
 /**
+ * Merges incoming child steps by id, preserving first-observed order and never reverting a terminal step back to
+ * running. Keeps the newest `MAX_SUBAGENT_STEPS` entries and tracks the total count observed.
+ */
+export function mergeSubagentSteps(
+  previous: readonly SubagentStep[] = [],
+  incoming: readonly SubagentStep[] = [],
+  previousTotal = previous.length,
+  incomingTotal?: number,
+): { readonly steps: SubagentStep[]; readonly total: number } {
+  if (!incoming.length) {
+    const kept = previous.length > MAX_SUBAGENT_STEPS ? previous.slice(-MAX_SUBAGENT_STEPS) : previous.slice()
+    return { steps: kept, total: Math.max(previousTotal, incomingTotal ?? 0, kept.length) }
+  }
+  const positions = new Map<string, number>()
+  const merged: SubagentStep[] = []
+  for (const step of previous) {
+    if (positions.has(step.id)) continue
+    positions.set(step.id, merged.length)
+    merged.push(step)
+  }
+  let added = 0
+  for (const step of incoming) {
+    const at = positions.get(step.id)
+    if (at === undefined) {
+      positions.set(step.id, merged.length)
+      merged.push(step)
+      added++
+      continue
+    }
+    const old = merged[at]!
+    if (isTerminalActivity(old.status) && !isTerminalActivity(step.status)) continue
+    merged[at] = {
+      ...old,
+      ...step,
+      ...(old.startedAt ? { startedAt: old.startedAt } : {}),
+      ...(old.completedAt && isTerminalActivity(old.status) ? { completedAt: old.completedAt } : {}),
+      ...(step.detail === undefined && old.detail !== undefined ? { detail: old.detail } : {}),
+      ...(step.mono === undefined && old.mono !== undefined ? { mono: old.mono } : {}),
+    }
+  }
+  const kept = merged.length > MAX_SUBAGENT_STEPS ? merged.slice(-MAX_SUBAGENT_STEPS) : merged
+  const total = Math.max(previousTotal + added, incomingTotal ?? 0, kept.length)
+  return { steps: kept, total }
+}
+
+/** Settles any still-running steps once their parent assignment ends or can no longer be confirmed. */
+export function settleSubagentSteps(
+  steps: readonly SubagentStep[] | undefined,
+  agentStatus: 'completed' | 'failed' | 'interrupted' | 'unknown',
+  completedAt?: string,
+): SubagentStep[] | undefined {
+  if (!steps?.length) return undefined
+  let changed = false
+  const lastRunning = agentStatus === 'failed' ? steps.findLastIndex(step => step.status === 'running') : -1
+  const next = steps.map((step, index) => {
+    if (step.status !== 'running') return step
+    changed = true
+    const status: SubagentStepStatus = agentStatus === 'completed' ? 'completed'
+      : agentStatus === 'unknown' ? 'unknown'
+        : agentStatus === 'failed' && index === lastRunning ? 'failed' : 'interrupted'
+    const end = status !== 'unknown' ? step.completedAt ?? completedAt : undefined
+    const durationMs = step.durationMs ?? (end && step.startedAt ? Math.max(0, Date.parse(end) - Date.parse(step.startedAt)) : undefined)
+    return {
+      ...step,
+      status,
+      ...(end ? { completedAt: end } : {}),
+      ...(durationMs !== undefined && Number.isFinite(durationMs) ? { durationMs } : {}),
+    }
+  })
+  return changed ? next : steps.slice()
+}
+
+/**
  * A file change known not to have gone through: the provider reported it failed, which is also what one the user denied
  * becomes. A turn's count of changed files leaves these out and nothing else (#2159): a change still running, one a
  * stopped turn cut short or one whose end Sotto never saw may be on disk, so the count keeps it. Watcher's own-change
@@ -251,7 +347,11 @@ function mergedActivity(old: AgentActivity, record: AgentActivity): AgentActivit
       const prior = old.agents?.find(candidate => candidate.id === agent.id)
       if (prior && prior.assignmentId === agent.assignmentId && terminalAgent(prior.status) && !terminalAgent(agent.status)) return prior
       // A new assignment of the same agent starts clean: the earlier one's result and times stay with it.
-      return prior && prior.assignmentId !== undefined && agent.assignmentId !== undefined && prior.assignmentId !== agent.assignmentId ? agent : { ...prior, ...agent }
+      if (prior && prior.assignmentId !== undefined && agent.assignmentId !== undefined && prior.assignmentId !== agent.assignmentId) return agent
+      const mergedSteps = prior?.steps?.length || agent.steps?.length
+        ? mergeSubagentSteps(prior?.steps, agent.steps, prior?.stepsTotal, agent.stepsTotal)
+        : undefined
+      return { ...prior, ...agent, ...(mergedSteps ? { steps: mergedSteps.steps, stepsTotal: mergedSteps.total } : {}) }
     }) } : {}),
   }
 }

@@ -17,7 +17,29 @@
 .subagent-description { display: block; overflow: hidden; margin-top: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .subagent-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 18px; }
 .subagent-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-step-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .subagent-run { white-space: nowrap; }
+.subagent-live-step { display: flex; align-items: baseline; gap: 6px; min-width: 0; margin-top: 6px; font-size: var(--tt-type-small); line-height: 20px; }
+.subagent-live-step__verb { flex: none; color: var(--tt-accent-text); font-weight: 500; }
+.subagent-live-step__detail { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
+.subagent-live-step__detail--mono { font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
+.subagent-steps__count { font-weight: 400; font-variant-numeric: tabular-nums; }
+.subagent-steps__more { margin-bottom: 6px; font-size: var(--tt-type-caption); }
+.subagent-steps__trimmed { margin: 0 0 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 16px; }
+.subagent-steps { list-style: none; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 0 3px; padding: 0 0 0 11px; border-left: 1px solid var(--tt-hairline); }
+.subagent-step { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: baseline; column-gap: 8px; font-size: var(--tt-type-small); line-height: 18px; }
+.subagent-step__dot { width: 5px; height: 5px; align-self: center; border-radius: 50%; background: var(--tt-text-muted); }
+.subagent-step__dot[data-status='running'] { background: var(--tt-activity); }
+.subagent-step__dot[data-status='failed'] { background: var(--tt-error); }
+.subagent-step__dot[data-status='interrupted'] { background: var(--tt-warning); }
+.subagent-step__body { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
+.subagent-step__verb { margin-right: 6px; color: var(--tt-text); font-weight: 500; }
+.subagent-step__detail { color: var(--tt-text-muted); }
+.subagent-step__detail--mono { font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); color: var(--tt-text-2); }
+.subagent-step__meta { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.subagent-step__meta[data-status='running'] { color: var(--tt-accent-text); }
+.subagent-step__meta[data-status='failed'] { color: var(--tt-error-text); }
+.subagent-step__error { grid-column: 2 / 4; margin-top: 2px; color: var(--tt-error-text); font-size: var(--tt-type-caption); line-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .subagent-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-top: 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .subagent-time { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .subagent-time svg { transition: transform 160ms ease; }
@@ -120,7 +142,8 @@
 .subagent-details p.delegated-row__source { margin-bottom: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .subagent-details:not(.subagent-workflow__details) { animation: subagent-reveal .14s ease-out; }
-  :root:not([data-reduced-motion='on']) .subagent-strip > i[data-status='running'] { animation: subagent-breathe 1.6s ease-in-out infinite alternate; }
+  :root:not([data-reduced-motion='on']) .subagent-strip > i[data-status='running'],
+  :root:not([data-reduced-motion='on']) .subagent-step__dot[data-status='running'] { animation: subagent-breathe 1.6s ease-in-out infinite alternate; }
 }
 @keyframes subagent-reveal { from { opacity: 0; transform: translateY(-3px); } }
 @keyframes subagent-breathe { to { opacity: .45; } }

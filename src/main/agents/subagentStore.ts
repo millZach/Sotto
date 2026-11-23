@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
-import type { AgentActivity, ObservedAgent } from '../../shared/agentActivity'
+import { mergeSubagentSteps, settleSubagentSteps, type AgentActivity, type ObservedAgent, type SubagentStep } from '../../shared/agentActivity'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, SUBAGENT_ASSIGNMENT_PAGE_SIZE, SUBAGENT_PAGE_SIZE, type SubagentAssignment, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentChange, type SubagentPage, type SubagentPageRequest, type SubagentRow, type SubagentSummary } from '../../shared/subagents'
 
 type Status = SubagentRow['status']
@@ -220,7 +220,7 @@ export class SubagentStore {
           if (db.prepare('SELECT 1 FROM subagent_redactions WHERE identity = ?').get(identity)) {
             // Completing or replaying an erased assignment cannot restore its old words.
             // Fresh assignment identities may retain text again after history is enabled.
-            observation = { ...observation, title: 'Agent task', description: undefined, prompt: undefined, message: undefined }
+            observation = { ...observation, title: 'Agent task', description: undefined, prompt: undefined, message: undefined, steps: undefined, stepsTotal: undefined }
           }
         }
         const record = db.prepare('SELECT value, fingerprint, observed_at FROM subagent_assignments WHERE thread_id = ? AND agent_id = ? AND assignment_id = ?').get(threadId, observation.id, assignmentId)
@@ -237,6 +237,17 @@ export class SubagentStore {
         if (prior?.status === 'unknown' && status === 'running' && (!observation.observedAt || observation.observedAt <= String(record!.observed_at))) continue
         const observedAt = observation.observedAt ?? new Date().toISOString()
         const title = (observation.title?.trim() || observation.description?.trim() || observation.prompt?.trim())?.split(/\r?\n/, 1)[0]?.slice(0, 240) || prior?.title || 'Agent task'
+        const hasSteps = Boolean(prior?.steps?.length || observation.steps?.length)
+        const mergedSteps = hasSteps
+          ? mergeSubagentSteps(prior?.steps, observation.steps, prior?.stepCount, observation.stepsTotal)
+          : undefined
+        const finalSteps = mergedSteps
+          ? status === 'running' ? mergedSteps.steps : settleSubagentSteps(mergedSteps.steps, status, observation.completedAt ?? observedAt)
+          : undefined
+        const stepCount = mergedSteps ? mergedSteps.total : prior?.stepCount
+        const currentStep: SubagentStep | undefined = status === 'running' && finalSteps?.length
+          ? (finalSteps.findLast(step => step.status === 'running') ?? finalSteps.at(-1))
+          : undefined
         const assignment: SubagentAssignment = {
           ...prior, id: assignmentId, sequence: prior?.sequence ?? (old?.assignmentCount ?? 0) + 1, title, status,
           ...(observation.prompt !== undefined ? { prompt: observation.prompt } : observation.description !== undefined && prior?.prompt === undefined ? { prompt: observation.description } : {}),
@@ -245,6 +256,8 @@ export class SubagentStore {
           ...(observation.startedAt ? { startedAt: observation.startedAt } : {}),
           ...(observation.completedAt ? { completedAt: observation.completedAt } : {}),
           ...(observation.durationMs !== undefined ? { durationMs: observation.durationMs } : {}),
+          ...(finalSteps?.length ? { steps: finalSteps } : {}),
+          ...(stepCount !== undefined && stepCount > 0 ? { stepCount } : {}),
         }
         this.saveAssignment(threadId, observation.id, assignment, hash, observedAt)
         // Late results stay on the older assignment instead of replacing the current task.
@@ -259,6 +272,8 @@ export class SubagentStore {
           ...(assignment.durationMs !== undefined ? { durationMs: assignment.durationMs } : {}),
           ...(observation.kind ?? old?.kind ? { kind: observation.kind ?? old?.kind } : {}),
           ...(observation.progress ?? old?.progress ? { progress: observation.progress ?? old?.progress } : {}),
+          ...(stepCount !== undefined && stepCount > 0 ? { stepCount } : {}),
+          ...(currentStep ? { currentStep } : {}),
         } : { ...old, revision: old.revision + 1 }
         if (old && counted(old)) { state.summary[counter(old.status)]--; state.summary.total-- }
         if (counted(row)) { state.summary[counter(row.status)]++; state.summary.total++ }
@@ -279,11 +294,14 @@ export class SubagentStore {
       const state = this.thread(threadId)
       const rows = records.map(record => {
         const row = JSON.parse(String(record.value)) as SubagentRow
-        const unknown: SubagentRow = { ...row, status: 'unknown', revision: row.revision + 1 }
+        const { currentStep: _dropped, ...restRow } = row
+        void _dropped
+        const unknown: SubagentRow = { ...restRow, status: 'unknown', revision: row.revision + 1 }
         this.saveRow(threadId, unknown); this.counts.indexedReads++
         const assignmentRecord = db.prepare('SELECT value, fingerprint, observed_at FROM subagent_assignments WHERE thread_id = ? AND agent_id = ? AND assignment_id = ?').get(threadId, row.id, row.assignmentId)!
         const value = JSON.parse(String(assignmentRecord.value)) as SubagentAssignment
-        this.saveAssignment(threadId, row.id, { ...value, status: 'unknown' }, String(assignmentRecord.fingerprint), String(assignmentRecord.observed_at))
+        const settledSteps = settleSubagentSteps(value.steps, 'unknown')
+        this.saveAssignment(threadId, row.id, { ...value, status: 'unknown', ...(settledSteps ? { steps: settledSteps } : {}) }, String(assignmentRecord.fingerprint), String(assignmentRecord.observed_at))
         return unknown
       })
       const agents = rows.filter(counted).length
