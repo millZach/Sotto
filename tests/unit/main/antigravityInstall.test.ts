@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -258,20 +258,65 @@ describe('Antigravity in the client update flow', () => {
     expect(await managedAntigravityExecutable(directory, 'linux', 'x64')).toBeUndefined()
   })
 
-  it('detects Google’s Windows standalone install folder and refuses manager-owned symlinks (#2842)', async () => {
+  it('detects Google’s Windows standalone install folder and refuses non-agy files, subfolders, and external symlinks (#2842)', async () => {
     const home = join(directory, 'win-home')
     const localAppData = join(home, 'AppData', 'Local')
     const winAgy = join(localAppData, 'agy', 'bin', 'agy.exe')
-    expect(await detectClientInstall('antigravity', winAgy, { USERPROFILE: home, LOCALAPPDATA: localAppData }, 'win32')).toEqual({ channel: 'self-update' })
-    expect(await detectClientInstall('antigravity', join(directory, 'custom', 'agy.exe'), { USERPROFILE: home, LOCALAPPDATA: localAppData }, 'win32')).toEqual({ channel: 'unknown' })
+    expect(await detectClientInstall('antigravity', winAgy, { USERPROFILE: home, LOCALAPPDATA: localAppData }, 'win32'))
+      .toEqual({ channel: 'self-update', antigravityCommand: 'agy' })
+    expect(await detectClientInstall('antigravity', join(localAppData, 'agy', 'bin', 'agy.cmd'), { USERPROFILE: home, LOCALAPPDATA: localAppData }, 'win32'))
+      .toEqual({ channel: 'unknown' })
+    expect(await detectClientInstall('antigravity', join(directory, 'custom', 'agy.exe'), { USERPROFILE: home, LOCALAPPDATA: localAppData }, 'win32'))
+      .toEqual({ channel: 'unknown' })
+
+    const posixHome = join(directory, 'posix-home')
+    const localBin = join(posixHome, '.local', 'bin')
+    await mkdir(join(localBin, 'sub'), { recursive: true })
+    // A non-agy file or nested subfolder inside ~/.local/bin must not be classified as self-update.
+    expect(await detectClientInstall('antigravity', join(localBin, 'agy-docker.sh'), { HOME: posixHome }, 'linux')).toEqual({ channel: 'unknown' })
+    expect(await detectClientInstall('antigravity', join(localBin, 'sub', 'agy'), { HOME: posixHome }, 'linux')).toEqual({ channel: 'unknown' })
+    // A standalone `antigravity` binary reports `antigravity update` as its command.
+    const standaloneAlt = join(localBin, 'antigravity')
+    await writeFile(standaloneAlt, 'fake\n')
+    const google = fakeGoogle()
+    google.publish('1.5.15', linuxUrl('1.5.15'), tarGz({ antigravity: program('1.5.15') }))
+    const clients = new ProviderClients({ fetchImpl: google.fetchImpl, platform: 'linux' })
+    expect(await clients.check('antigravity', '1.5.14', standaloneAlt, { HOME: posixHome }))
+      .toMatchObject({ behind: true, channel: 'self-update', command: 'antigravity update', byHand: ['antigravity update'], canInstall: true })
+
     if (process.platform !== 'win32') {
       const brewTarget = join(directory, 'homebrew', 'bin', 'agy')
-      const linkDir = join(home, '.local', 'bin')
       await mkdir(join(directory, 'homebrew', 'bin'), { recursive: true })
-      await mkdir(linkDir, { recursive: true })
       await writeFile(brewTarget, 'fake\n')
-      await symlink(brewTarget, join(linkDir, 'agy'))
-      expect(await detectClientInstall('antigravity', join(linkDir, 'agy'), { HOME: home }, 'linux')).toEqual({ channel: 'unknown' })
+      await symlink(brewTarget, join(localBin, 'agy'))
+      expect(await detectClientInstall('antigravity', join(localBin, 'agy'), { HOME: posixHome }, 'linux')).toEqual({ channel: 'unknown' })
+
+      // A symlink in ~/.local/bin pointing into Sotto's managed runtime must stay managed, never run `agy update` over it.
+      const managedGoogle = fakeGoogle()
+      const runtime = new AntigravityRuntime({ directory, fetchImpl: managedGoogle.fetchImpl, platform: 'linux', arch: 'x64', musl: async () => false, freeBytes: async () => undefined })
+      managedGoogle.publish('1.5.14', linuxUrl('1.5.14'), tarGz({ antigravity: program('1.5.14') }))
+      const first = await runtime.install()
+      if (!first.ok) throw new Error(first.detail)
+      managedGoogle.publish('1.5.15', linuxUrl('1.5.15'), tarGz({ antigravity: program('1.5.15') }))
+      const linkHome = join(directory, 'link-home')
+      const linkBin = join(linkHome, '.local', 'bin')
+      await mkdir(linkBin, { recursive: true })
+      const linkToManaged = join(linkBin, 'agy')
+      await symlink(first.executable, linkToManaged)
+      const ran: string[] = []
+      const managedClients = new ProviderClients({
+        fetchImpl: managedGoogle.fetchImpl, antigravity: runtime, platform: 'linux',
+        run: async executable => { ran.push(executable); return { ok: true } },
+      })
+      // Before install (live symlink into runtime.root) and after install (dangling symlink once 1.5.14 is pruned),
+      // detectClientInstall never misclassifies the symlink as a standalone self-update install.
+      expect(await detectClientInstall('antigravity', linkToManaged, { HOME: linkHome }, 'linux')).toEqual({ channel: 'unknown' })
+      const reading = await managedClients.check('antigravity', '1.5.14', linkToManaged, { HOME: linkHome })
+      expect(reading).toMatchObject({ behind: true, channel: 'self-update', steps: 1, canInstall: true })
+      expect(reading.command).toBeUndefined()
+      expect(await managedClients.install('antigravity', linkToManaged, { HOME: linkHome })).toEqual({ ok: true, detail: 'Antigravity is now 1.5.15.' })
+      expect(ran).toEqual([])
+      expect(await detectClientInstall('antigravity', linkToManaged, { HOME: linkHome }, 'linux')).toEqual({ channel: 'unknown' })
     }
   })
 
@@ -285,7 +330,13 @@ describe('Antigravity in the client update flow', () => {
     const hostUrl = `https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.15-4021/${folder}/cli_${os}_${cpu}.${ext}`
     const payload = process.platform === 'win32' ? program('1.5.15') : tarGz({ antigravity: program('1.5.15') })
     google.publish('1.5.15', hostUrl, payload)
-    const agy = join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'sotto-test-agy.exe' : 'sotto-test-agy')
+    const testHome = join(directory, 'standalone-home')
+    const binDir = process.platform === 'win32' ? join(testHome, 'AppData', 'Local', 'agy', 'bin') : join(testHome, '.local', 'bin')
+    await mkdir(binDir, { recursive: true })
+    const agy = join(binDir, process.platform === 'win32' ? 'agy.exe' : 'agy')
+    await writeFile(agy, 'fake\n')
+    if (process.platform === 'win32') vi.stubEnv('LOCALAPPDATA', join(testHome, 'AppData', 'Local'))
+    else vi.stubEnv('HOME', testHome)
     class AntigravityHost extends E2EAgentHost {
       installed = '1.5.14'
       onDisk = '1.5.14'
@@ -317,7 +368,7 @@ describe('Antigravity in the client update flow', () => {
       expect(queued.error).toBeNull()
       await vi.waitFor(() => { expect(control.get().clientUpdates).toEqual([expect.objectContaining({ id: 'antigravity', installed: '1.5.15', behind: false, state: 'updated' })]) })
       expect(ran).toEqual([[agy, 'update']])
-    } finally { control.dispose() }
+    } finally { control.dispose(); vi.unstubAllEnvs() }
   })
 
   it('keeps a version a paste-code sign-in command leases across removal until its release runs', async () => {

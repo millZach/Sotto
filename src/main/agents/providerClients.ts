@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, constants, open, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
+import { access, constants, lstat, open, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path'
@@ -130,6 +130,19 @@ function grokBin(environment: NodeJS.ProcessEnv): string {
 }
 const within = (path: string, directory: string): boolean =>
   path.toLowerCase().startsWith(`${directory.toLowerCase()}${sep}`)
+const sameFolder = (left: string, right: string, platform: NodeJS.Platform): boolean => {
+  const clean = (value: string): string => value.replace(/[\\/]+$/u, '')
+  return platform === 'win32' ? clean(left).toLowerCase() === clean(right).toLowerCase() : clean(left) === clean(right)
+}
+/** Standalone Antigravity binary name in Google's install folder (`agy` or `antigravity`, `.exe` on Windows). */
+function antigravityStandaloneCommand(executable: string, platform: NodeJS.Platform): 'agy' | 'antigravity' | undefined {
+  const name = basename(executable)
+  if (platform === 'win32') {
+    const lower = name.toLowerCase()
+    return lower === 'agy.exe' ? 'agy' : lower === 'antigravity.exe' ? 'antigravity' : undefined
+  }
+  return name === 'agy' || name === 'antigravity' ? name : undefined
+}
 
 /** The platform part of a client's platform package name: `darwin-arm64`, `linux-x64-musl`, `win32-x64`. */
 const PLATFORM_PACKAGE = /^(?:darwin|linux|win32)-(?:x64|arm64)(?:-[a-z0-9]+)?$/u
@@ -327,6 +340,8 @@ export interface ClientInstall {
   readonly channel: ClientChannel; readonly miseTool?: string; readonly muse?: MuseMakerInstall
   /** True when Sotto's own managed download owns this Antigravity install (`<dataDir>/antigravity/runtime/`). */
   readonly antigravityManaged?: boolean
+  /** The standalone Antigravity command name (`agy` or `antigravity`) for by-hand display. */
+  readonly antigravityCommand?: 'agy' | 'antigravity'
   /** For a copy another package manager owns, the command that manager updates it with, which Sotto shows and never runs. */
   readonly byHand?: readonly string[]
   /**
@@ -401,12 +416,19 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
   if (!executable || !isAbsolute(executable)) return { channel: 'unknown' }
   const lower = executable.toLowerCase()
   const packageName = CLIENT_PACKAGES[provider]
-  const inOwnHome = ownHome(provider, environment, platform).some(directory => within(executable, directory))
   if (provider === 'antigravity') {
-    const real = await realpath(executable).catch(() => executable)
+    const command = antigravityStandaloneCommand(executable, platform)
+    if (!command) return { channel: 'unknown' }
+    const folders = antigravityInstallFolders(environment, platform)
+    if (!folders.some(folder => sameFolder(dirname(executable), folder, platform))) return { channel: 'unknown' }
+    const real = await realpath(executable).catch(async () => (await lstat(executable).catch(() => undefined))?.isSymbolicLink() ? undefined : executable)
+    if (!real || !antigravityStandaloneCommand(real, platform)) return { channel: 'unknown' }
     if ([executable, real].some(path => MANAGED_ELSEWHERE.some(marker => path.toLowerCase().includes(marker)))) return { channel: 'unknown' }
-    return inOwnHome ? { channel: 'self-update' } : { channel: 'unknown' }
+    const resolvedFolders = await Promise.all(folders.map(folder => realpath(folder).catch(() => folder)))
+    if (![...folders, ...resolvedFolders].some(folder => sameFolder(dirname(real), folder, platform))) return { channel: 'unknown' }
+    return { channel: 'self-update', antigravityCommand: command }
   }
+  const inOwnHome = ownHome(provider, environment, platform).some(directory => within(executable, directory))
   if (!inOwnHome) {
     const miseTool = await miseToolOf(provider, executable, environment)
     if (miseTool) return { channel: 'mise', miseTool }
@@ -485,7 +507,7 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
       return [`npm install -g${prefix ? ` --prefix ${prefix}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
     }
     case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse)
-      : provider === 'antigravity' ? (install.antigravityManaged ? undefined : ['agy update'])
+      : provider === 'antigravity' ? (install.antigravityManaged ? undefined : [`${install.antigravityCommand ?? 'agy'} update`])
       : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
       : provider === 'opencode' ? ['opencode upgrade'] : provider === 'cursor' ? ['agent update'] : undefined
     case 'mise': {
@@ -733,7 +755,14 @@ export class ProviderClients {
   private async antigravityInstall(executable: string | undefined, environment: NodeJS.ProcessEnv): Promise<ClientInstall> {
     const runtime = this.antigravity
     if (!executable) return runtime ? { channel: 'self-update', antigravityManaged: true } : { channel: 'unknown' }
-    if (runtime && within(executable, runtime.root)) return { channel: 'self-update', antigravityManaged: true }
+    if (runtime) {
+      const real = await realpath(executable).catch(() => executable)
+      const root = runtime.root
+      const realRoot = await realpath(root).catch(() => root)
+      if ([executable, real].some(path => within(path, root) || within(path, realRoot))) {
+        return { channel: 'self-update', antigravityManaged: true }
+      }
+    }
     return detectClientInstall('antigravity', executable, environment, this.platform)
   }
 
