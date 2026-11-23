@@ -742,7 +742,7 @@ export class ProviderClients {
     this.cursorConfigDirectory = options.cursorConfigDirectory
     this.claudeManagedFolder = options.claudeManagedFolder ?? claudeManagedFolder()
     this.platform = options.platform ?? process.platform
-    this.antigravity = options.antigravity ?? (options.antigravityDirectory ? new AntigravityRuntime({ directory: options.antigravityDirectory, fetchImpl: this.fetchImpl }) : undefined)
+    this.antigravity = options.antigravity ?? (options.antigravityDirectory ? new AntigravityRuntime({ directory: options.antigravityDirectory, fetchImpl: this.fetchImpl, platform: this.platform }) : undefined)
   }
 
   /**
@@ -769,7 +769,7 @@ export class ProviderClients {
   private async publishedAntigravityVersion(afresh: boolean): Promise<string | undefined> {
     const key = 'antigravity:manifest', cached = this.cache.get(key)
     if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
-    const version = (await (this.antigravity ?? new AntigravityRuntime({ directory: '', fetchImpl: this.fetchImpl })).latest())?.version
+    const version = (await (this.antigravity ?? new AntigravityRuntime({ directory: '', fetchImpl: this.fetchImpl, platform: this.platform })).latest())?.version
     if (version) this.cache.set(key, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
     return version
   }

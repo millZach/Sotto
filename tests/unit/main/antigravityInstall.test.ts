@@ -280,7 +280,8 @@ describe('Antigravity in the client update flow', () => {
     await writeFile(standaloneAlt, 'fake\n')
     const google = fakeGoogle()
     google.publish('1.5.15', linuxUrl('1.5.15'), tarGz({ antigravity: program('1.5.15') }))
-    const clients = new ProviderClients({ fetchImpl: google.fetchImpl, platform: 'linux' })
+    const linuxStandaloneRuntime = new AntigravityRuntime({ directory, fetchImpl: google.fetchImpl, platform: 'linux', arch: 'x64', musl: async () => false, freeBytes: async () => undefined })
+    const clients = new ProviderClients({ fetchImpl: google.fetchImpl, antigravity: linuxStandaloneRuntime, platform: 'linux' })
     expect(await clients.check('antigravity', '1.5.14', standaloneAlt, { HOME: posixHome }))
       .toMatchObject({ behind: true, channel: 'self-update', command: 'antigravity update', byHand: ['antigravity update'], canInstall: true })
 
