@@ -18,7 +18,7 @@ import { findDeepSeekExecutable } from './deepseekRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
 import { findExecutable as findCodexExecutable } from './subscriptionCodex'
-import { findAntigravityExecutable } from './antigravityLookup'
+import { antigravityInstallFolders, findAntigravityExecutable } from './antigravityLookup'
 import { AntigravityRuntime, managedAntigravityExecutable } from './antigravityInstall'
 
 /** The package whose `latest` tag says what each client has published. Devin ships inside its own app. */
@@ -113,14 +113,16 @@ const OTHER_PACKAGE_MANAGERS = MANAGED_ELSEWHERE.filter(marker => marker !== 'ho
 const YARN_GLOBAL = [`${sep}yarn${sep}data${sep}global${sep}`, `${sep}yarn${sep}global${sep}`, `${sep}.yarn${sep}`]
 
 /** The client's own home, when its own installer owns the binary there: `~/.local/bin/claude.exe`. */
-function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv): readonly string[] {
+function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): readonly string[] {
   const home = homedir()
   if (provider === 'claude') return [join(home, '.local', 'bin'), join(home, '.claude')]
   if (provider === 'grok') return [grokBin(environment)]
   // OpenCode 2's install script (`opencode.ai/v2/install`) puts it here, and `opencode upgrade` updates it in place.
   if (provider === 'opencode') return [join(home, '.opencode', 'bin')]
   // Cursor's installer keeps each version in its own folder and `agent update` replaces them (ADR-0128).
-  if (provider === 'cursor') return [cursorInstallRoot(environment), ...(process.platform === 'win32' ? [] : [join(home, '.local', 'bin')])].filter((folder): folder is string => Boolean(folder))
+  if (provider === 'cursor') return [cursorInstallRoot(environment), ...(platform === 'win32' ? [] : [join(home, '.local', 'bin')])].filter((folder): folder is string => Boolean(folder))
+  // Google's Antigravity CLI installer puts `agy` here, and `agy update` updates it in place (ADR-0212).
+  if (provider === 'antigravity') return antigravityInstallFolders(environment, platform)
   return []
 }
 function grokBin(environment: NodeJS.ProcessEnv): string {
@@ -323,6 +325,8 @@ export async function miseToolOf(provider: ProviderId, executable: string, envir
 /** The channel that owns an install, and for mise the tool it is installed as. */
 export interface ClientInstall {
   readonly channel: ClientChannel; readonly miseTool?: string; readonly muse?: MuseMakerInstall
+  /** True when Sotto's own managed download owns this Antigravity install (`<dataDir>/antigravity/runtime/`). */
+  readonly antigravityManaged?: boolean
   /** For a copy another package manager owns, the command that manager updates it with, which Sotto shows and never runs. */
   readonly byHand?: readonly string[]
   /**
@@ -397,7 +401,12 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
   if (!executable || !isAbsolute(executable)) return { channel: 'unknown' }
   const lower = executable.toLowerCase()
   const packageName = CLIENT_PACKAGES[provider]
-  const inOwnHome = ownHome(provider, environment).some(directory => within(executable, directory))
+  const inOwnHome = ownHome(provider, environment, platform).some(directory => within(executable, directory))
+  if (provider === 'antigravity') {
+    const real = await realpath(executable).catch(() => executable)
+    if ([executable, real].some(path => MANAGED_ELSEWHERE.some(marker => path.toLowerCase().includes(marker)))) return { channel: 'unknown' }
+    return inOwnHome ? { channel: 'self-update' } : { channel: 'unknown' }
+  }
   if (!inOwnHome) {
     const miseTool = await miseToolOf(provider, executable, environment)
     if (miseTool) return { channel: 'mise', miseTool }
@@ -475,7 +484,9 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
       if (install.npmPrefix !== undefined && prefix === undefined) return undefined
       return [`npm install -g${prefix ? ` --prefix ${prefix}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
     }
-    case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
+    case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse)
+      : provider === 'antigravity' ? (install.antigravityManaged ? undefined : ['agy update'])
+      : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
       : provider === 'opencode' ? ['opencode upgrade'] : provider === 'cursor' ? ['agent update'] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
@@ -713,15 +724,17 @@ export class ProviderClients {
   }
 
   /**
-   * Only the copy Sotto downloaded is Sotto's to update. An `agy` the user installed or set a path to is theirs, as in T3,
-   * so it is named and never replaced. With no `agy` at all, Install downloads one.
+   * A copy Sotto downloaded (`antigravity/runtime/`) is updated by Sotto's verified download; a standalone copy in
+   * Google's default install folder (`~/.local/bin` on macOS/Linux, `%LOCALAPPDATA%\agy\bin` or `~/.local/bin` on
+   * Windows, not owned by another package manager) updates itself in place with `agy update` (ADR-0212). Any other copy,
+   * such as a custom binary path or a manager-owned install, is named and never replaced. With no `agy` at all, Install
+   * downloads one.
    */
-  private antigravityInstall(executable: string | undefined): ClientInstall {
+  private async antigravityInstall(executable: string | undefined, environment: NodeJS.ProcessEnv): Promise<ClientInstall> {
     const runtime = this.antigravity
-    if (!runtime) return { channel: 'unknown' }
-    if (!executable) return { channel: 'self-update' }
-    const folder = runtime.root
-    return within(executable, folder) ? { channel: 'self-update' } : { channel: 'unknown' }
+    if (!executable) return runtime ? { channel: 'self-update', antigravityManaged: true } : { channel: 'unknown' }
+    if (runtime && within(executable, runtime.root)) return { channel: 'self-update', antigravityManaged: true }
+    return detectClientInstall('antigravity', executable, environment, this.platform)
   }
 
   private async publishedAntigravityVersion(afresh: boolean): Promise<string | undefined> {
@@ -818,7 +831,7 @@ export class ProviderClients {
   async check(provider: ProviderId, installed: string, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean; readonly unanswered?: () => void } = {}): Promise<ProviderClientUpdate> {
     if (provider === 'hermes') return { id: provider, installed, behind: false, channel: 'unknown', canInstall: false, checkedAt: new Date(this.now()).toISOString(), state: 'idle' }
-    const install = provider === 'antigravity' ? this.antigravityInstall(executable) : await detectClientInstall(provider, executable, environment, this.platform)
+    const install = provider === 'antigravity' ? await this.antigravityInstall(executable, environment) : await detectClientInstall(provider, executable, environment, this.platform)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
     // A native Claude Code is compared with what its own updater can install, and an npm one with npm's `latest` (ADR-0165).
     const claudeChannel = provider === 'claude' && install.channel === 'self-update' ? await claudeReleaseChannel(environment, this.claudeManagedFolder) : undefined
@@ -837,7 +850,8 @@ export class ProviderClients {
     const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag, target)
     const byHand = action?.byHand ?? byHandFor(provider, install, process.platform, false, target)
     // Sotto's own `agy` is updated by Sotto's download, a step that is not a command (as Muse's maker update is not).
-    const makerUpdate = (provider === 'muse' && Boolean(install.muse)) || (provider === 'antigravity' && install.channel === 'self-update')
+    // A standalone `agy` in Google's default folder updates itself with `agy update` via `updateActionFor`.
+    const makerUpdate = (provider === 'muse' && Boolean(install.muse)) || (provider === 'antigravity' && install.antigravityManaged === true)
     return {
       id: provider, installed, ...(latest ? { published: latest } : {}), behind, channel: install.channel,
       ...(makerUpdate ? { steps: 1 } : action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: commandOf(install, byHand, target) } : {}),
@@ -853,8 +867,8 @@ export class ProviderClients {
    */
   async install(provider: ProviderId, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void, version?: string): Promise<InstallResult> {
-    const install = provider === 'antigravity' ? this.antigravityInstall(executable) : await detectClientInstall(provider, executable, environment, this.platform)
-    if (provider === 'antigravity' && install.channel === 'self-update' && this.antigravity) {
+    const install = provider === 'antigravity' ? await this.antigravityInstall(executable, environment) : await detectClientInstall(provider, executable, environment, this.platform)
+    if (provider === 'antigravity' && install.antigravityManaged && this.antigravity) {
       onStep?.(1)
       const installed = await this.antigravity.install()
       return installed.ok ? { ok: true, detail: `Antigravity is now ${installed.version}.` }
@@ -895,7 +909,11 @@ export class ProviderClients {
     const opencodeOwn = provider === 'opencode' && install.channel === 'self-update' && this.opencodeFolders
       ? { environment: opencodeEnvironment(withCliPath(environment, action.executable), this.opencodeFolders, opencodePassword()) }
       // Cursor's updater runs with Sotto's Cursor folder and the shared allow-list, never the user's own ~/.cursor (ADR-0128).
-      : provider === 'cursor' && this.cursorConfigDirectory ? { environment: cursorEnvironment(this.cursorConfigDirectory, withCliPath(environment, action.executable)) } : {}
+      : provider === 'cursor' && this.cursorConfigDirectory ? { environment: cursorEnvironment(this.cursorConfigDirectory, withCliPath(environment, action.executable)) }
+      // Strip AGY_CLI_DISABLE_AUTO_UPDATE if inherited so an explicit `agy update` is never suppressed.
+      : provider === 'antigravity' && install.channel === 'self-update' && Object.keys(environment).some(key => key.toUpperCase() === 'AGY_CLI_DISABLE_AUTO_UPDATE')
+        ? { environment: Object.fromEntries(Object.entries(withCliPath(environment, action.executable)).filter(([key]) => key.toUpperCase() !== 'AGY_CLI_DISABLE_AUTO_UPDATE')) }
+        : {}
     const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env || opencodeOwn.environment
       ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}), ...opencodeOwn } : undefined)
     if (!upgrade.ok) {

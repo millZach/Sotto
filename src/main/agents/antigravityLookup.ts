@@ -1,6 +1,6 @@
 import { realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 import type { ProviderId } from '../../shared/providerIds'
 import { executableFile, findCli, type CliLookupOptions } from './cliLookup'
 
@@ -38,6 +38,20 @@ export async function withAntigravityBinaryPath(installed: readonly ProviderId[]
   return await findAntigravityExecutable(environment, { binaryPath }) ? [...installed, 'antigravity'] : [...installed]
 }
 
+/**
+ * Folders where Google's own Antigravity CLI installer places `agy`: `~/.local/bin` on macOS and Linux, and
+ * `%LOCALAPPDATA%\agy\bin` (plus `~/.local/bin`) on Windows.
+ */
+export function antigravityInstallFolders(environment: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, home?: string): readonly string[] {
+  const userHome = home ?? (platform === 'win32'
+    ? (environment.USERPROFILE && isAbsolute(environment.USERPROFILE) ? environment.USERPROFILE : homedir())
+    : (environment.HOME && isAbsolute(environment.HOME) ? environment.HOME : homedir()))
+  const localAppData = environment.LOCALAPPDATA && isAbsolute(environment.LOCALAPPDATA) ? environment.LOCALAPPDATA : undefined
+  return platform === 'win32'
+    ? [...(localAppData ? [join(localAppData, 'agy', 'bin')] : []), join(userHome, '.local', 'bin')]
+    : [join(userHome, '.local', 'bin')]
+}
+
 export async function findAntigravityExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: AntigravityLookup = {}): Promise<string | undefined> {
   const home = lookup.home ?? homedir()
   const platform = lookup.platform ?? process.platform
@@ -48,7 +62,7 @@ export async function findAntigravityExecutable(environment: NodeJS.ProcessEnv =
   }
   const managed = await lookup.managed?.()
   if (managed) return managed
-  const first = [join(home, '.local', 'bin')]
+  const first = antigravityInstallFolders(environment, platform, home)
   for (const name of ['agy', 'antigravity']) {
     const found = await findCli({ name, first }, { ...lookup, environment })
     if (found) return found

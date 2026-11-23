@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,8 +12,13 @@ import {
 import {
   ANTIGRAVITY_CLI_FLOOR, ANTIGRAVITY_MANIFEST_BASE, antigravityTarget, compareAntigravityVersions, meetsAntigravityFloor, parseAntigravityRelease,
 } from '../../../src/main/agents/antigravityRelease'
-import { ProviderClients } from '../../../src/main/agents/providerClients'
+import { detectClientInstall, ProviderClients } from '../../../src/main/agents/providerClients'
 import { defaultSignInCommand } from '../../../src/host/providerSignIn'
+import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
+import type { AgentHostSnapshot, ProviderId } from '../../../src/shared/agents'
+import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
+import { testCredentials } from '../../fixtures/testCredentials'
 
 const sha512 = (bytes: Buffer): string => createHash('sha512').update(bytes).digest('hex')
 const windowsUrl = (version: string): string => `https://storage.googleapis.com/antigravity-public/antigravity-cli/${version}-4021/windows-x64/cli_windows_x64.exe`
@@ -227,6 +232,92 @@ describe('Antigravity in the client update flow', () => {
     expect(await clients.install('antigravity', first.executable, process.env, step => { steps.push(step) })).toEqual({ ok: true, detail: 'Antigravity is now 1.5.13.' })
     expect(steps).toEqual([1])
     expect(await managedAntigravityExecutable(directory, 'win32', 'x64')).toMatch(/1\.5\.13[\\/]agy\.exe$/u)
+  })
+
+  it('updates a standalone agy in Google’s default folder via `agy update`, without downloading a managed copy (#2842)', async () => {
+    const google = fakeGoogle()
+    google.publish('1.5.15', linuxUrl('1.5.15'), tarGz({ antigravity: program('1.5.15') }))
+    const runtime = new AntigravityRuntime({ directory, fetchImpl: google.fetchImpl, platform: 'linux', arch: 'x64', musl: async () => false, freeBytes: async () => undefined })
+    const home = join(directory, 'home')
+    const agy = join(home, '.local', 'bin', 'agy')
+    await mkdir(join(home, '.local', 'bin'), { recursive: true })
+    await writeFile(agy, 'fake\n')
+    const ran: { executable: string; args: readonly string[]; env: NodeJS.ProcessEnv | undefined }[] = []
+    const clients = new ProviderClients({
+      fetchImpl: google.fetchImpl, antigravity: runtime, platform: 'linux',
+      run: async (executable, args, _asNode, options) => { ran.push({ executable, args, env: options?.environment }); return { ok: true } },
+    })
+    const environment = { HOME: home, AGY_CLI_DISABLE_AUTO_UPDATE: '1', PATH: join(home, '.local', 'bin') }
+    const reading = await clients.check('antigravity', '1.5.14', agy, environment)
+    expect(reading).toMatchObject({ installed: '1.5.14', published: '1.5.15', behind: true, channel: 'self-update', command: 'agy update', byHand: ['agy update'], steps: 1, canInstall: true })
+    const steps: number[] = []
+    expect(await clients.install('antigravity', agy, environment, step => { steps.push(step) }, '1.5.15')).toEqual({ ok: true })
+    expect(steps).toEqual([1])
+    expect(ran).toEqual([{ executable: agy, args: ['update'], env: expect.objectContaining({ HOME: home }) }])
+    expect(ran[0]!.env).not.toHaveProperty('AGY_CLI_DISABLE_AUTO_UPDATE')
+    expect(await managedAntigravityExecutable(directory, 'linux', 'x64')).toBeUndefined()
+  })
+
+  it('detects Google’s Windows standalone install folder and refuses manager-owned symlinks (#2842)', async () => {
+    const home = join(directory, 'win-home')
+    const localAppData = join(home, 'AppData', 'Local')
+    const winAgy = join(localAppData, 'agy', 'bin', 'agy.exe')
+    expect(await detectClientInstall('antigravity', winAgy, { USERPROFILE: home, LOCALAPPDATA: localAppData }, 'win32')).toEqual({ channel: 'self-update' })
+    expect(await detectClientInstall('antigravity', join(directory, 'custom', 'agy.exe'), { USERPROFILE: home, LOCALAPPDATA: localAppData }, 'win32')).toEqual({ channel: 'unknown' })
+    if (process.platform !== 'win32') {
+      const brewTarget = join(directory, 'homebrew', 'bin', 'agy')
+      const linkDir = join(home, '.local', 'bin')
+      await mkdir(join(directory, 'homebrew', 'bin'), { recursive: true })
+      await mkdir(linkDir, { recursive: true })
+      await writeFile(brewTarget, 'fake\n')
+      await symlink(brewTarget, join(linkDir, 'agy'))
+      expect(await detectClientInstall('antigravity', join(linkDir, 'agy'), { HOME: home }, 'linux')).toEqual({ channel: 'unknown' })
+    }
+  })
+
+  it('queues and completes a standalone Antigravity update through AgentControl’s client update line (#2842)', async () => {
+    const google = fakeGoogle()
+    const runtime = new AntigravityRuntime({ directory, fetchImpl: google.fetchImpl, platform: process.platform, arch: process.arch, musl: async () => false, freeBytes: async () => undefined })
+    const os = process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux'
+    const folder = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch === 'arm64' ? 'arm' : 'x64'}`
+    const ext = process.platform === 'win32' ? 'exe' : 'tar.gz'
+    const cpu = process.arch === 'x64' ? 'x64' : 'arm64'
+    const hostUrl = `https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.15-4021/${folder}/cli_${os}_${cpu}.${ext}`
+    const payload = process.platform === 'win32' ? program('1.5.15') : tarGz({ antigravity: program('1.5.15') })
+    google.publish('1.5.15', hostUrl, payload)
+    const agy = join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'sotto-test-agy.exe' : 'sotto-test-agy')
+    class AntigravityHost extends E2EAgentHost {
+      installed = '1.5.14'
+      onDisk = '1.5.14'
+      private decorate(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+        return { ...snapshot, providers: [{ id: 'antigravity', name: 'Antigravity', connection: snapshot.connected ? 'connected' : 'disconnected', version: `${this.installed} / ACP 1`, capabilities: snapshot.capabilities }] }
+      }
+      override async connect(): Promise<AgentHostSnapshot> { return this.decorate(await super.connect()) }
+      override async snapshot(): Promise<AgentHostSnapshot> { return this.decorate(await super.snapshot()) }
+      async clientUpdated(provider: ProviderId): Promise<void> { if (provider === 'antigravity') this.installed = this.onDisk }
+    }
+    const host = new AntigravityHost()
+    const ran: (readonly string[])[] = []
+    const clients = new ProviderClients({
+      fetchImpl: google.fetchImpl, antigravity: runtime,
+      run: async (executable, args) => { ran.push([executable, ...args]); host.onDisk = '1.5.15'; return { ok: true } },
+    })
+    const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
+    const control = createAgentControl({
+      schedule: immediatePublishScheduler, directory, host, credentials, clients,
+      locateClient: async provider => provider === 'antigravity' ? agy : undefined,
+      reasoner: {},
+    })
+    await control.start()
+    try {
+      await control.command({ type: 'connect' })
+      await control.command({ type: 'check-client-updates' })
+      expect(control.get().clientUpdates).toEqual([expect.objectContaining({ id: 'antigravity', installed: '1.5.14', published: '1.5.15', behind: true, channel: 'self-update', command: 'agy update', canInstall: true })])
+      const queued = await control.command({ type: 'queue-client-updates', providers: ['antigravity'] })
+      expect(queued.error).toBeNull()
+      await vi.waitFor(() => { expect(control.get().clientUpdates).toEqual([expect.objectContaining({ id: 'antigravity', installed: '1.5.15', behind: false, state: 'updated' })]) })
+      expect(ran).toEqual([[agy, 'update']])
+    } finally { control.dispose() }
   })
 
   it('keeps a version a paste-code sign-in command leases across removal until its release runs', async () => {
