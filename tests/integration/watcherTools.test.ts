@@ -41,7 +41,7 @@ const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(history = true, { clock, ...options }: { clock?: ManualScheduler; compactAt?: () => number; settledLookAfterMs?: number; baseBranchChecks?: (url: string) => Promise<BaseBranchChecks> } = {}) {
+async function fixture(history = true, { clock, ...options }: { clock?: ManualScheduler; compactAt?: () => number; settledLookAfterMs?: number; baseBranchChecks?: (url: string) => Promise<BaseBranchChecks>; projectOrigins?: () => Promise<{ projects: { projectId: string; repository: { host: string; owner: string; name: string } | null }[] }> } = {}) {
   const workspace = await workspaceFixture(undefined, { history })
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
@@ -2606,6 +2606,9 @@ it('refuses a GO MERGE while another train pull request runs its checks or main 
   ready(first.target, 5, '5'.repeat(40), at(3_000))
   // #7 passed and joined the train, then took a push: its required checks run again on the new head.
   f.service.pullRequestObserved({ url: url(7), head: '6'.repeat(40), observedAt: at(2_000), availability: 'available', checks: 'passed', checkCount: 3, state: 'open', requiredPassed: true, pendingChecks: { required: 0, optional: 0 } })
+  // A non-READY green PR never holds itself out by checks alone, and GO MERGE on a PR outside the train is refused unless overridden.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('not in the merge train yet') })
   ready(second.target, 7, '6'.repeat(40), at(2_000))
   f.service.pullRequestObserved({ url: url(7), head: '7'.repeat(40), observedAt: at(1_000), availability: 'available', checks: 'pending', checkCount: 3, state: 'open', requiredPassed: false, pendingChecks: { required: 2, optional: 1 } })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
@@ -2615,6 +2618,7 @@ it('refuses a GO MERGE while another train pull request runs its checks or main 
   // Said without its mark, it never goes unchecked.
   expect(await send()).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('Mark it with goMerge') })
   expect(await send(undefined, 'Synthetic note.\nGO MERGE #5 once you are green.')).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  asked.length = 0
   const held = await send({ pullRequest: url(5) })
   expect(held).toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD' })
   if (held.status !== 'refused') throw new Error('sent')
@@ -2630,6 +2634,9 @@ it('refuses a GO MERGE while another train pull request runs its checks or main 
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
     .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on dddddddddddd, its newest commit whose checks have finished; eeeeeeeeeeee, after it, has none finished yet.') })
   base = { branch: base.branch, head: base.head, state: 'passed' }
+  // Stale READY TO MERGE (new head pushed after READY) holds #7 until refreshed or overridden.
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('READY TO MERGE was for 666666666666') })
   // The receipt names the commit it read (#2431): here #5's overridden send below says main passed on its newest commit.
   const reason = 'Zach asked for #5 before the release, and #7 merges main in after it anyway.'
   const retryKey = randomUUID(), call = { requestId: f.requestId, retryKey, target: first.target, delivery: 'now', text: 'GO MERGE #5', goMerge: { pullRequest: url(5), overrideReason: reason } }
@@ -2641,7 +2648,8 @@ it('refuses a GO MERGE while another train pull request runs its checks or main 
   expect(f.service.state().receiptOverrides).toEqual([{ operationId: sent.receipt.operationId, running: [{ number: 7, title: 'Synthetic worker' }], reason }])
   // The worker is sent the words alone: the mark is Sotto's.
   await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === 'GO MERGE #5')).toBe(true))
-  // Nothing holds #7's own turn once main is green: its own running checks are its own.
+  // Once #7 sends READY TO MERGE on its current head and main is green, nothing holds #7's own turn: its running checks are its own.
+  ready(second.target, 7, '7'.repeat(40), at(500))
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
     .toMatchObject({ status: 'ok', goMerge: { held: [] } })
   // A send that only mentions GO MERGE is no GO MERGE, and goes as it is.
@@ -3218,5 +3226,90 @@ it('auto-prunes permanently missing local watched threads from watching while ke
   expect(read.watching.some(row => row.target.hostId === remoteWatchTarget.hostId && row.target.threadId === remoteWatchTarget.threadId)).toBe(true)
   expect(f.control.watcherRecords.copy().requests.find(item => item.id === f.requestId)?.participants
     .find(item => item.target.threadId === missingParticipantTarget.threadId)?.automationStopped).toBe(true)
+})
+
+it('persists delivered READY TO MERGE in readyPullRequests across Watcher restarts', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  await f.finish(started.target.threadId)
+  const prUrl = 'https://github.com/synthetic/project/pull/812', head = '8'.repeat(40)
+  const links = [{ url: prUrl, number: 812, title: 'Persisted train PR', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
+  const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } }; touch(id: string): void }
+  host.state.snapshot.threads.find(thread => thread.id === started.target.threadId)!.pullRequests = structuredClone(links)
+  host.touch(started.target.threadId)
+  showLinks(f, started.target.threadId, links)
+  f.service.pullRequestObserved({ url: prUrl, head, observedAt: new Date().toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  await f.service.threadReady(started.target, { pullRequest: prUrl, head })
+  // Simulate the READY wake event already having been delivered and recorded in wakeEventIds before restart.
+  await f.control.watcherRecords.update(record => {
+    expect(record.readyPullRequests).toHaveLength(1)
+    record.wakeEventIds = [...record.wakeEventIds ?? []]
+  })
+  f.service.close()
+  const restarted = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: f.workspace.host, control: f.control, historyEnabled: () => true })
+  const restartedTools = new WatcherToolServer(restarted)
+  cleanups.push(async () => { restarted.close(); await restartedTools.close() })
+  await restarted.recover()
+  // Fresh GitHub observation clears staleness after restart without re-sending ready_to_merge.
+  restarted.pullRequestObserved({ url: prUrl, head, observedAt: new Date().toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  const read = watcherToolSchemas.read_state.output.parse((await restartedTools.call(f.id, 'read_state', {})).structuredContent)
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.mergeQueue.map(item => item.pullRequest.number)).toContain(812)
+})
+
+it('unparks on user re-watch, ignores Watcher’s own in-flight send when parking, and supports parking request-only watches', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  await f.finish(started.target.threadId)
+  // Watcher’s own send lands while parked: its recorded messageId must not auto-unpark on the next observe.
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: started.target, text: 'Run check' })
+  if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('send refused')
+  expect(watcherParkThreadOutputSchema.parse((await f.tools.call(f.id, WATCHER_PARK_TOOL, { target: started.target, parked: true })).structuredContent)).toMatchObject({ parked: true })
+  const session = f.workspace.adapters.codex.state.threads.find(item => item.id === f.workspace.registry.byThread(started.target.threadId)!.sessionId)!
+  const watcherMessageId = f.control.watcherRecords.copy().operations.find(item => item.id === sent.receipt.operationId)?.messageId ?? sent.receipt.messageId!
+  await f.control.watcherRecords.update(record => {
+    const watch = record.watches?.find(item => item.target.threadId === started.target.threadId)
+    if (watch) watch.lastUserMessageId = 'prior-user-head'
+  })
+  session.messages.push({ id: watcherMessageId, role: 'user', text: 'Run check', createdAt: new Date().toISOString() })
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === started.target.threadId)?.parked).toBe(true)
+  // User explicitly re-watching clears live.parked.
+  expect((await f.service.watchThread({ target: started.target })).status).toBe('ok')
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === started.target.threadId)?.parked).toBeUndefined()
+  // A thread watched only through an active participating request (no standing watch) can also be parked and unparked.
+  await f.finish(started.target.threadId)
+  await f.control.watcherRecords.update(record => { record.watches = [] })
+  expect(watcherParkThreadOutputSchema.parse((await f.tools.call(f.id, WATCHER_PARK_TOOL, { target: started.target, parked: true })).structuredContent)).toMatchObject({ parked: true })
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === started.target.threadId)?.parked).toBe(true)
+  expect(watcherParkThreadOutputSchema.parse((await f.tools.call(f.id, WATCHER_PARK_TOOL, { target: started.target, parked: false })).structuredContent)).toMatchObject({ parked: false })
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === started.target.threadId)?.parked).toBeUndefined()
+})
+
+it('does not negative-cache project repo slugs when projectOrigins throws transiently', async () => {
+  let fail = true
+  let projectId = ''
+  const f = await fixture(true, {
+    projectOrigins: async () => {
+      if (fail) throw new Error('temporary origin lookup error')
+      return { projects: [{ projectId, repository: { host: 'github.com', owner: 'millZach', name: 'TransientRecoveredRepo' } }] }
+    },
+  })
+  const dir = await mkdtemp(join(tmpdir(), 'transient-origin-'))
+  cleanups.push(() => rm(dir, { recursive: true, force: true }))
+  const added = await f.call('add_project', { requestId: f.requestId, retryKey: randomUUID(), path: dir, title: 'Local Folder Only' })
+  if (added.status !== 'ok' || !('project' in added) || !('target' in added.project)) throw new Error('add_project refused')
+  projectId = added.project.target.projectId
+  // Transient read failure on a plain folder must not poison the slug cache for 60s.
+  const first = await f.call('list_projects', { query: 'TransientRecoveredRepo' })
+  if (first.status !== 'ok' || !('projects' in first)) throw new Error('list_projects first refused')
+  expect(first.projects).toHaveLength(0)
+  fail = false
+  const recovered = await f.call('list_projects', { query: 'TransientRecoveredRepo' })
+  if (recovered.status !== 'ok' || !('projects' in recovered)) throw new Error('list_projects second refused')
+  expect(recovered.projects.map(item => item.repository)).toEqual(['millZach/TransientRecoveredRepo'])
 })
 

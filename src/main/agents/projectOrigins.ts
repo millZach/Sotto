@@ -21,23 +21,46 @@ export function parseRepoSlug(url: string): string | null {
   } catch { return null }
 }
 
+export interface ProjectRepoSlugRead { readonly ok: boolean; readonly slug: string | null }
+
+/** Whether a `git config --get remote.origin.url` failure indicates no origin / non-repo rather than a transient error. */
+function isAuthoritativeMissingOrigin(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  if (code === 'ENOENT' || code === 'ETIMEDOUT' || error?.constructor?.name === 'GitUnavailableError') return false
+  return code === 1 || /not a git repository|exit 1\b/iu.test(message)
+}
+
+/**
+ * Reads each project's `origin` `owner/repo` slug locally with bounded concurrency, distinguishing definitive absent
+ * origins from transient read errors so callers can avoid negative-caching failed reads.
+ */
+export async function readProjectRepoSlugReads(projects: readonly Pick<AgentProject, 'id' | 'path'>[], run: RunGitCommand = runGitStatusCommand): Promise<Map<string, ProjectRepoSlugRead>> {
+  const listed = projects.slice(0, PROJECT_ORIGINS_MAX), paths = [...new Set(listed.map(project => project.path))]
+  const read = new Map<string, ProjectRepoSlugRead>()
+  for (let at = 0; at < paths.length; at += READS_AT_ONCE) {
+    const batch = paths.slice(at, at + READS_AT_ONCE)
+    const slugs = await Promise.all(batch.map(async (path): Promise<ProjectRepoSlugRead> => {
+      if (!path.trim()) return { ok: true, slug: null }
+      try {
+        const url = await run(path, 'git', ['config', '--get', 'remote.origin.url'])
+        return { ok: true, slug: url.trim() ? parseRepoSlug(url) : null }
+      } catch (error) {
+        return { ok: isAuthoritativeMissingOrigin(error), slug: null }
+      }
+    }))
+    batch.forEach((path, index) => read.set(path, slugs[index]!))
+  }
+  return new Map(listed.map(project => [project.id, read.get(project.path) ?? { ok: true, slug: null }]))
+}
+
 /**
  * Reads each project's `origin` `owner/repo` slug locally with bounded concurrency, deduplicating shared folders and
  * returning null for folders without a readable `origin` remote.
  */
 export async function readProjectRepoSlugs(projects: readonly Pick<AgentProject, 'id' | 'path'>[], run: RunGitCommand = runGitStatusCommand): Promise<Map<string, string | null>> {
-  const listed = projects.slice(0, PROJECT_ORIGINS_MAX), paths = [...new Set(listed.map(project => project.path))]
-  const read = new Map<string, string | null>()
-  for (let at = 0; at < paths.length; at += READS_AT_ONCE) {
-    const batch = paths.slice(at, at + READS_AT_ONCE)
-    const slugs = await Promise.all(batch.map(async path => {
-      if (!path.trim()) return null
-      const url = await run(path, 'git', ['config', '--get', 'remote.origin.url']).catch(() => '')
-      return url.trim() ? parseRepoSlug(url) : null
-    }))
-    batch.forEach((path, index) => read.set(path, slugs[index]!))
-  }
-  return new Map(listed.map(project => [project.id, read.get(project.path) ?? null]))
+  const reads = await readProjectRepoSlugReads(projects, run)
+  return new Map([...reads].map(([id, entry]) => [id, entry.slug]))
 }
 
 /**

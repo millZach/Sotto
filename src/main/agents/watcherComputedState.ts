@@ -16,7 +16,11 @@ import { WATCHER_KEPT_LISTS, WATCHER_KEPT_UNTOUCHED_MS, type WatcherKeptState, t
  */
 export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSummary; readonly draft: boolean | undefined; readonly checksPassedAt?: string
   readonly url?: string; readonly head?: string; readonly pending?: { readonly required: number; readonly optional: number }
+  readonly previouslyPassed?: boolean
   readonly train?: { readonly since: string; readonly ready?: { readonly head: string; readonly at: string } } }
+
+/** Subset of a pull request's merge-train state needed to decide whether its running checks hold another GO MERGE. */
+export type WatcherMergeHoldCandidate = Pick<WatcherMergeQueueItem, 'target' | 'title' | 'pullRequest' | 'url' | 'requiredChecks' | 'checksRunning'>
 
 /**
  * Where a pull request's checks stand, as the train reads them: passed once every check passed, running while any check
@@ -67,19 +71,44 @@ export const BASE_BRANCH_COMMITS_READ = 10
 export interface BaseBranchChecks { readonly branch: string; readonly head: string; readonly state: 'passed' | 'failed' | 'pending' | 'unknown'; readonly newest?: string }
 
 /**
- * What holds a GO MERGE for `url` (#2229): the other pull requests of the same repository in the train whose checks,
- * required or not (#2432), are running, which the merge would land in the middle of, and the base branch when its newest
- * finished checks failed (AGENTS.md: a red run on main is fixed before anything else merges; #2431). Nothing holds it when both are clear; a
- * base branch GitHub could not be asked about holds nothing, and the GO MERGE says so.
+ * Open non-draft pull requests outside `mergeQueue` whose checks previously passed and are now re-running, so a concurrent
+ * GO MERGE waits rather than landing in the middle of their checks.
  */
-export function mergeTurnHolds(queue: readonly WatcherMergeQueueItem[], url: string, base: BaseBranchChecks | undefined): { readonly running: readonly WatcherMergeQueueItem[]; readonly baseFailed?: BaseBranchChecks } {
+export function watcherMergeHoldRunning(threads: readonly { readonly target: WatcherThreadTarget; readonly title: string; readonly open: readonly WatcherOpenPullRequest[] }[]): WatcherMergeHoldCandidate[] {
+  return threads.flatMap(thread => thread.open.flatMap(pr => {
+    if (pr.train?.ready !== undefined || !pr.previouslyPassed) return []
+    if (pr.summary.state !== 'open' || pr.summary.stale === true || pr.draft !== false) return []
+    const requiredChecks = mergeTrainChecksOf(pr)
+    const pendingCount = (pr.pending?.required ?? 0) + (pr.pending?.optional ?? 0)
+    if (requiredChecks !== 'running' && pendingCount === 0) return []
+    const url = pr.url ?? pr.summary.url
+    return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, requiredChecks,
+      ...pr.pending ? { checksRunning: pr.pending } : {} }]
+  }))
+}
+
+/**
+ * What holds a GO MERGE for `url` (#2229): the other pull requests of the same repository in the train whose checks,
+ * required or not (#2432), are running, non-READY pull requests whose checks passed earlier and are re-running, and the
+ * base branch when its newest finished checks failed (AGENTS.md: a red run on main is fixed before anything else merges;
+ * #2431). Nothing holds it when both are clear; a base branch GitHub could not be asked about holds nothing, and the GO MERGE says so.
+ */
+export function mergeTurnHolds(queue: readonly WatcherMergeQueueItem[], url: string, base: BaseBranchChecks | undefined, extraRunning: readonly WatcherMergeHoldCandidate[] = []): { readonly running: readonly WatcherMergeHoldCandidate[]; readonly baseFailed?: BaseBranchChecks } {
   const going = pullRequestAddress(url), goingKey = pullRequestKey(url)
-  const sameRepository = (item: WatcherMergeQueueItem) => {
+  const sameRepository = (item: WatcherMergeHoldCandidate) => {
     const address = item.url !== undefined ? pullRequestAddress(item.url) : null
     return going !== null && address !== null && address.owner.toLowerCase() === going.owner.toLowerCase() && address.name.toLowerCase() === going.name.toLowerCase()
   }
+  const seen = new Set<string>()
+  const running: WatcherMergeHoldCandidate[] = []
   // A check that failed early leaves the rest running: checks still running, required or not (#2432), hold the turn whatever else failed.
-  const running = queue.filter(item => (item.requiredChecks === 'running' || (item.checksRunning?.required ?? 0) + (item.checksRunning?.optional ?? 0) > 0) && sameRepository(item) && pullRequestKey(item.url!) !== goingKey)
+  for (const item of [...queue, ...extraRunning]) {
+    if ((item.requiredChecks !== 'running' && (item.checksRunning?.required ?? 0) + (item.checksRunning?.optional ?? 0) === 0) || !sameRepository(item)) continue
+    const itemKey = pullRequestKey(item.url!)
+    if (!itemKey || itemKey === goingKey || seen.has(itemKey)) continue
+    seen.add(itemKey)
+    running.push(item)
+  }
   return { running, ...base?.state === 'failed' ? { baseFailed: base } : {} }
 }
 

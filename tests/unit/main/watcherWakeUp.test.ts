@@ -2958,4 +2958,24 @@ describe('at-rest news: the idle clock (#2307, #1152)', () => {
     expect(f.wakes.resumingAfterAnswer(centerTarget)).toBe(false)
     undo()
   })
+
+  it('re-arms the 20-minute at-rest clock automatically after the 10s card-answer grace expires without another update', async () => {
+    const f = fixture()
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.wakes.answering(centerTarget, 'card-grace', 'user')
+    // Observe only once inside the 10s grace window, with no further host updates afterwards.
+    f.wakes.observe()
+    await f.advance(WATCHER_AT_REST_MS + 10_000 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(1)
+  })
+
+  it('suppresses 20-minute at-rest pings for a request-only active watch marked parked', async () => {
+    const f = fixture()
+    f.record.watches = []
+    f.record.requests[0]!.participants[0]!.parked = true
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    f.wakes.observe()
+    await f.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(f)).toHaveLength(0)
+  })
 })

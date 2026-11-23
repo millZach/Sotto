@@ -527,20 +527,35 @@ export class WatcherWakeUp {
     return (this.pass ? this.pass.reportsWork ??= read() : read())(hostId)
   }
   private isParked(target: WatcherThreadTarget, key: string): boolean {
-    const parked = this.pass
-      ? (this.pass.parked ??= new Set((this.record().watches ?? []).flatMap(watch => watch.parked === true && !watch.remoteOrigin ? [targetKey(watch.target)] : [])))
-      : undefined
-    if (parked) return parked.has(key)
-    return (this.record().watches ?? []).some(watch => watch.parked === true && !watch.remoteOrigin
+    if (this.pass) {
+      if (!this.pass.parked) {
+        const record = this.record(), keys = new Set<string>()
+        for (const watch of record.watches ?? []) if (watch.parked === true && !watch.remoteOrigin) keys.add(targetKey(watch.target))
+        for (const request of record.requests) if (request.state === 'active') for (const participant of request.participants) {
+          if (participant.state === 'participating' && !participant.automationStopped && participant.parked === true) keys.add(targetKey(participant.target))
+        }
+        this.pass.parked = keys
+      }
+      return this.pass.parked.has(key)
+    }
+    const record = this.record()
+    return (record.watches ?? []).some(watch => watch.parked === true && !watch.remoteOrigin
       && watch.target.hostId === target.hostId && watch.target.threadId === target.threadId)
+      || record.requests.some(request => request.state === 'active' && request.participants.some(participant =>
+        participant.state === 'participating' && !participant.automationStopped && participant.parked === true
+        && participant.target.hostId === target.hostId && participant.target.threadId === target.threadId))
+  }
+  /** Deadline in epoch ms while a user card answer grace window is still active for `target`, or undefined. */
+  private resumingAfterAnswerUntil(target: WatcherThreadTarget, key?: string): number | undefined {
+    if (this.answeredRecently.size === 0) return undefined
+    const k = key ?? targetKey(target), entry = this.answeredRecently.get(k)
+    if (!entry) return undefined
+    if (this.now() >= entry.until) { this.answeredRecently.delete(k); return undefined }
+    return entry.until
   }
   /** Whether the user recently answered a card on `target` and the worker is still inside its resume grace window. */
   resumingAfterAnswer(target: WatcherThreadTarget, key?: string): boolean {
-    if (this.answeredRecently.size === 0) return false
-    const entry = this.answeredRecently.get(key ?? targetKey(target))
-    if (!entry) return false
-    if (this.now() >= entry.until) { this.answeredRecently.delete(key ?? targetKey(target)); return false }
-    return true
+    return this.resumingAfterAnswerUntil(target, key) !== undefined
   }
   /**
    * Runs `read` as one synchronous pass that reads the merged snapshot, the Watcher record and which hosts report work at
@@ -1585,7 +1600,21 @@ export class WatcherWakeUp {
    */
   private restCheck(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget, key: string, progress: Progress, fired = false): void {
     progress.rest?.(); delete progress.rest
-    if (!this.atRest(snapshot, thread, target, key)) { delete progress.rested; return }
+    if (!this.atRest(snapshot, thread, target, key)) {
+      delete progress.rested
+      const graceUntil = !this.isParked(target, key) ? this.resumingAfterAnswerUntil(target, key) : undefined
+      if (graceUntil !== undefined) {
+        progress.rest = this.schedule(() => {
+          delete progress.rest
+          const current = this.options.snapshot(), live = this.lookUp(current, target)
+          if (!live || this.progress.get(key) !== progress) return
+          if ((this.options.progress?.(target, key) ?? watcherProgressFingerprint(live)) !== progress.fingerprint) return
+          this.restCheck(current, live, target, key, progress, false)
+          this.options.changed?.()
+        }, Math.max(1, graceUntil - this.now()))
+      }
+      return
+    }
     const from = Math.max(progress.progressAt, progress.connectedAt)
     // Counted from when Sotto saw the thread at rest: a pass follows its last progress at once, and a thread that comes back
     // to rest with no progress of its own, as a settled thread restored does, starts from then rather than an old stretch.

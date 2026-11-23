@@ -48,6 +48,15 @@ async function fixture() {
     ...text.includes('GO MERGE') ? { goMerge: { pullRequest: 'https://github.com/synthetic/project/pull/1' } } : {} })
   const settled = () => Boolean(f.control.watcherSnapshot().threads.find(item => item.id === target.threadId)!.workspaceSettledAt)
   await finish()
+  const prUrl = 'https://github.com/synthetic/project/pull/1', head = '1'.repeat(40)
+  const links = [{ url: prUrl, number: 1, title: 'Synthetic PR', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
+  const hostState = workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } }; touch(id: string): void }
+  hostState.state.snapshot.threads.find(item => item.id === target.threadId)!.pullRequests = structuredClone(links)
+  hostState.touch(target.threadId)
+  const inside = f.control as unknown as { state: { host: { threads: { id: string; pullRequests?: unknown[] }[] } } }
+  inside.state.host = { ...inside.state.host, threads: inside.state.host.threads.map(item => item.id === target.threadId ? { ...item, pullRequests: structuredClone(links) } : item) }
+  service.pullRequestObserved({ url: prUrl, head, observedAt: new Date().toISOString(), availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  await service.threadReady(target, { pullRequest: prUrl, head })
   // Settled after its first turn, as Settle finished threads or the user settles a thread that is done.
   expect((await f.control.commandShell({ type: 'settle-thread', threadId: target.threadId })).error).toBeNull()
   expect(settled()).toBe(true)

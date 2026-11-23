@@ -305,7 +305,7 @@ export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTarge
   pullRequest: watcherPullRequestSummarySchema, url: z.string().max(2_048).optional(), inTrainSince: time, checksPassedAt: time.optional(),
   requiredChecks: z.enum(['passed', 'running', 'failed', 'unknown']), head: z.string().max(64).optional(),
   checksRunning: z.object({ required: z.number().int().nonnegative(), optional: z.number().int().nonnegative() }).strict().optional(),
-  readyToMerge: z.object({ head: z.string().max(64), at: time, onHead: z.boolean().optional() }).strict().optional() }).strict()
+  readyToMerge: z.object({ head: z.string().max(64), at: time, onHead: z.boolean().optional() }).strict() }).strict()
 export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
 /**
  * One thing that waits on the user among the watched threads, worked out from live data at each read: an open question or
@@ -568,6 +568,7 @@ export const watcherIdentitySchema = z.object({ target: watcherThreadTargetSchem
   provider: watcherProviderSchema, creationOperationId: z.uuid(), createdAt: time }).strict()
 export const watcherParticipantSchema = participation.extend({ target: watcherThreadTargetSchema,
   lastUserMessageId: id.nullable().optional(),
+  parked: z.literal(true).optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 /** Text-free proof of the user's boundary in the exact native message Sotto sent. */
 export const watcherDisplayPromptSchema = z.object({ originalLength: counter,
@@ -610,9 +611,13 @@ export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid
   // another host: each host observes its own threads, and a paired desktop copies them from exact operation reads.
   outcome: watcherOutcomeSchema.optional(), outcomeAt: time.optional(), turnMessageId: id.optional(), nativeTurnId: id.optional(),
   replyMessageId: id.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
+export const watcherReadyPullRequestSchema = z.object({ target: watcherThreadTargetSchema, url: z.string().min(1).max(2_048),
+  head: z.string().min(1).max(128), at: time }).strict()
+export type WatcherReadyPullRequest = z.infer<typeof watcherReadyPullRequestSchema>
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
+  readyPullRequests: z.array(watcherReadyPullRequestSchema).max(200).optional(),
   watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: watcherWatchOriginSchema.optional() }).strict()).optional(),
   // The threads the user stopped watching and has not handed back. Watcher's own watch_thread needs a newer user message
   // to Watcher than `watcherHead`, the newest one when the user stopped it; Watch hands one back at once.

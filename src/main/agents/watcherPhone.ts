@@ -119,9 +119,9 @@ export class WatcherPhoneService {
     const detail = current ? this.control.threadDetail(current.id) : null
     // The coordinator's detail already shows Watcher's messages as typed: an older one's routing footer is off it.
     // A message's photos go as the detail marks them, with no bytes: the phone asks for each through `preview` below.
-    const messages = (detail?.messages ?? []).filter(message => !(message.role === 'assistant' && !message.attachments?.length && (message.text === '' || isWatcherSilentReply(message.text))))
-      .slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt,
-        ...(message.attachments?.length ? { attachments: message.attachments } : {}) }))
+    const visible = (detail?.messages ?? []).filter(message => !(message.role === 'assistant' && !message.attachments?.length && (message.text === '' || isWatcherSilentReply(message.text))))
+    const messages = visible.slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt,
+      ...(message.attachments?.length ? { attachments: message.attachments } : {}) }))
     const receiptGroups: WatcherPhoneState['receiptGroups'] = []
     const shown = this.phoneReceipts(room)
     for (const operation of shown.receipts) {
@@ -184,7 +184,7 @@ export class WatcherPhoneService {
       reasoningEffort: room.currentOptions.reasoningEffort, runtimeMode: room.currentOptions.runtimeMode,
       status: room.currentOptions.status, connected: room.currentOptions.connected, speed: room.currentOptions.speed ?? null,
       ...(steer ? { steers: current ? this.control.watcherPhoneTurn(current.id).steers : false } : {}) } : null,
-    conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || (detail?.messages.length ?? 0) > messages.length) },
+    conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || visible.length > messages.length) },
     // The deliveries alone, read without copying every thread: this runs for each phone on every update.
     draftDeliveries: this.control.watcherSendRecords().deliveries.filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
     runtimeMode: room.runtimeMode, ...(standing ? { standingWatches: room.standingWatches } : {}), ownChanges: room.ownChanges,

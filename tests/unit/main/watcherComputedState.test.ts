@@ -2,7 +2,7 @@
 // What read_state works out from live data at each read (#1274): the merge queue, what holds a pending settle, and the
 // kept notes that name something Sotto's records say is over.
 import { expect, it } from 'vitest'
-import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
+import { mergeTurnHolds, watcherMergeHoldRunning, watcherMergeQueue, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
 import { WatcherEvidenceStore } from '../../../src/main/agents/watcherEvidence'
 import type { WatcherKeptItem } from '../../../src/shared/watcher'
 import { toldEventsForLater } from '../../../src/main/agents/watcherNews'
@@ -207,4 +207,25 @@ it('holds READY TO MERGE news that would not fit for the next wake-up, after the
   expect(going.length).toBeGreaterThan(0)
   expect(later.size).toBeGreaterThan(0)
   expect(going.map(item => item.id)).toEqual(events.filter(item => item.kind === 'thread-ready').slice(0, going.length).map(item => item.id))
+})
+
+it('still holds concurrent GO MERGEs when a non-READY green PR pushes new commits whose checks re-run', () => {
+  const store = new WatcherEvidenceStore(), readyUrl = pr(10), greenReRunningUrl = pr(11)
+  const atReady = target('ready-worker'), atOther = target('other-worker')
+  store.pullRequest(atReady, { url: readyUrl, head: 'a'.repeat(40), observedAt: '2026-11-01T09:00:00.000Z', availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  store.noteReady(atReady, readyUrl, 'a'.repeat(40), '2026-11-01T09:01:00.000Z')
+  // PR #11 never sent READY TO MERGE, passed on an earlier commit, then pushed a new commit with pending checks.
+  store.pullRequest(atOther, { url: greenReRunningUrl, head: 'b'.repeat(40), observedAt: '2026-11-01T09:00:00.000Z', availability: 'available', checks: 'passed', checkCount: 1, state: 'open' })
+  expect(store.hasChecksEverPassed(atOther, greenReRunningUrl)).toBe(true)
+  store.pullRequest(atOther, { url: greenReRunningUrl, head: 'c'.repeat(40), observedAt: '2026-11-01T09:02:00.000Z', availability: 'available', checks: 'pending', checkCount: 2, state: 'open', pendingChecks: { required: 1, optional: 1 } })
+  expect(store.hasChecksEverPassed(atOther, greenReRunningUrl)).toBe(true)
+  const readyTrain = store.trainOf(atReady, readyUrl)
+  const threads = [
+    { target: atReady, title: 'Ready worker', open: [{ url: readyUrl, summary: { number: 10, state: 'open' as const, checks: 'passed' as const }, draft: false, head: 'a'.repeat(40), previouslyPassed: true, ...(readyTrain ? { train: readyTrain } : {}) }] },
+    { target: atOther, title: 'Green pusher', open: [{ url: greenReRunningUrl, summary: { number: 11, state: 'open' as const, checks: 'pending' as const }, draft: false, head: 'c'.repeat(40), pending: { required: 1, optional: 1 }, previouslyPassed: store.hasChecksEverPassed(atOther, greenReRunningUrl) }] },
+  ]
+  const queue = watcherMergeQueue(threads)
+  expect(queue.map(item => item.pullRequest.number)).toEqual([10])
+  const holds = mergeTurnHolds(queue, readyUrl, { branch: 'main', head: 'd'.repeat(40), state: 'passed' }, watcherMergeHoldRunning(threads))
+  expect(holds.running.map(item => item.pullRequest.number)).toEqual([11])
 })

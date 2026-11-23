@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { parseRepoSlug, readGitHubOrigin, readProjectOrigins, readProjectRepoSlugs } from '../../../src/main/agents/projectOrigins'
+import { parseRepoSlug, readGitHubOrigin, readProjectOrigins, readProjectRepoSlugReads, readProjectRepoSlugs } from '../../../src/main/agents/projectOrigins'
 import type { RunGitCommand } from '../../../src/main/agents/git/gitStatus'
 
 const origins: Record<string, string> = {
@@ -55,5 +55,13 @@ describe('project origins', () => {
     expect(slugs.get('a')).toBe('millZach/Sotto')
     expect(slugs.get('b')).toBe('someone/thing')
     expect(slugs.get('c')).toBeNull()
+    const transient: RunGitCommand = async cwd => {
+      if (cwd === '/work/timeout') throw Object.assign(new Error('git did not finish in time.'), { code: 'ETIMEDOUT' })
+      throw Object.assign(new Error('exit 1'), { code: 1 })
+    }
+    const outcomes = await readProjectRepoSlugReads([
+      { id: 'timeout', path: '/work/timeout' }, { id: 'missing', path: '/work/no-origin' }], transient)
+    expect(outcomes.get('timeout')).toEqual({ ok: false, slug: null })
+    expect(outcomes.get('missing')).toEqual({ ok: true, slug: null })
   })
 })

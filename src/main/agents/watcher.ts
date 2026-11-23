@@ -44,7 +44,7 @@ import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherRosterWork, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead, watcherThreadPullRequests } from './watcherSlimReads'
-import { BASE_BRANCH_COMMITS_READ, mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
+import { BASE_BRANCH_COMMITS_READ, mergeTurnHolds, watcherMergeHoldRunning, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { GitHubRateLimited, retryWords } from './git/github'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
@@ -60,7 +60,7 @@ import { watcherHandoverState, type WatcherCarried } from './watcherHandoverStat
 import type { WatcherEvent } from '../../shared/watcherNews'
 import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherPermissionCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherParkThreadInputSchema, watcherProjectTargetSchema, type WatcherParkThreadOutput, type WatcherProjectTarget } from '../../shared/watcher'
-import { readProjectRepoSlugs } from './projectOrigins'
+import { readProjectRepoSlugReads } from './projectOrigins'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
 import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
@@ -1317,6 +1317,14 @@ export class WatcherService implements WatcherControlHooks {
               }
             }
           }
+          if (next.readyPullRequests?.length) {
+            const kept = next.readyPullRequests.filter(item => !(item.target.hostId === localId && missingLocalParticipantIds.has(item.target.threadId)))
+            if (kept.length !== next.readyPullRequests.length) {
+              if (kept.length) next.readyPullRequests = kept
+              else delete next.readyPullRequests
+              changed = true
+            }
+          }
         })
         if (changed) this.publish()
       }
@@ -1517,6 +1525,19 @@ export class WatcherService implements WatcherControlHooks {
       const event = this.wakes.readyEvent(target, randomUUID(), ready)
       if (!event) return { status: 'refused', reason: 'no-watcher' }
       await this.toldSaved.add(event).catch(() => undefined)
+      const prKey = pullRequestKey(ready.pullRequest) ?? ready.pullRequest
+      await this.options.control.watcherRecords.update(record => {
+        const list = [...record.readyPullRequests ?? []]
+        const existing = list.findIndex(item => key(item.target) === key(target) && (pullRequestKey(item.url) ?? item.url) === prKey)
+        if (existing >= 0) {
+          if (Date.parse(list[existing]!.at) <= Date.parse(event.observedAt)) {
+            list[existing] = { target, url: ready.pullRequest, head: ready.head, at: event.observedAt }
+          }
+        } else {
+          list.push({ target, url: ready.pullRequest, head: ready.head, at: event.observedAt })
+        }
+        record.readyPullRequests = list.length > 200 ? list.slice(-200) : list
+      })
       this.wakes.evidence.noteReady(target, ready.pullRequest, ready.head, event.observedAt)
       this.wakes.tellSaved([event])
       this.publish()
@@ -1543,7 +1564,7 @@ export class WatcherService implements WatcherControlHooks {
     this.publish()
     return { status: 'ok', questionId: question.id, note: WATCHER_ASK_NOTE }
   }
-  /** Parks or unparks a standing watch to suppress 20-minute idle pings while keeping PR news, cards and user turns live. */
+  /** Parks or unparks a watched thread to suppress 20-minute idle pings while keeping PR news, cards and user turns live. */
   async parkThread(watcherThreadId: string, args: unknown): Promise<WatcherParkThreadOutput> {
     if (this.options.workerHost || !this.isCurrent(watcherThreadId)) {
       return watcherRefusal('NOT_CURRENT_WATCHER', 'Only the current Watcher can park a watched thread. Nothing was changed.')
@@ -1551,16 +1572,31 @@ export class WatcherService implements WatcherControlHooks {
     if (this.changing) return watcherRefusal('THREAD_BUSY', 'Wait for Watcher’s provider change before parking a thread.', true)
     const parsed = watcherParkThreadInputSchema.safeParse(args)
     if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Give a valid watched target to park or unpark.')
-    const { target, parked } = parsed.data
-    const current = this.view().watches?.find(watch => key(watch.target) === key(target))
-    if (!current) return watcherRefusal('REQUEST_NOT_ACTIVE', 'This thread is not watched. Watch it before parking or unparking it.')
+    const { target, parked } = parsed.data, view = this.view()
+    const currentWatch = view.watches?.find(watch => key(watch.target) === key(target))
+    const currentParticipating = view.requests.some(request => request.state === 'active'
+      && request.participants.some(item => key(item.target) === key(target) && item.state === 'participating' && !item.automationStopped))
+    if (!currentWatch && !currentParticipating) return watcherRefusal('REQUEST_NOT_ACTIVE', 'This thread is not watched. Watch it before parking or unparking it.')
+    const currentParked = Boolean(currentWatch?.parked || view.requests.some(request => request.state === 'active'
+      && request.participants.some(item => key(item.target) === key(target) && item.state === 'participating' && !item.automationStopped && item.parked === true)))
     let missing = false
-    if (Boolean(current.parked) !== parked) {
+    if (currentParked !== parked) {
       await this.options.control.watcherRecords.update(record => {
-        const live = record.watches?.find(watch => key(watch.target) === key(target))
-        if (!live) { missing = true; return }
-        if (parked) live.parked = true
-        else delete live.parked
+        const liveWatch = record.watches?.find(watch => key(watch.target) === key(target))
+        let foundParticipant = false
+        for (const request of record.requests) if (request.state === 'active') {
+          for (const participant of request.participants) {
+            if (key(participant.target) !== key(target) || participant.state !== 'participating' || participant.automationStopped) continue
+            foundParticipant = true
+            if (!liveWatch && parked) participant.parked = true
+            else delete participant.parked
+          }
+        }
+        if (!liveWatch && !foundParticipant) { missing = true; return }
+        if (liveWatch) {
+          if (parked) liveWatch.parked = true
+          else delete liveWatch.parked
+        }
       })
       if (missing) return watcherRefusal('REQUEST_NOT_ACTIVE', 'This thread is not watched. Watch it before parking or unparking it.')
       this.publish()
@@ -1724,7 +1760,8 @@ export class WatcherService implements WatcherControlHooks {
     const queued = this.options.control.restoredWatcherEvents().filter(carriesWords), saved = await this.toldSaved.load()
     const told = new Set(this.view().wakeEventIds ?? []), queuedIds = new Set(queued.map(event => event.id))
     this.toldToRetell = saved.filter(event => !queuedIds.has(event.id) && !told.has(event.id))
-    // A READY TO MERGE still owed puts its pull request back in the train (#2229).
+    // Persisted READY TO MERGE entries and queued/untold signals keep their PRs in the train across restarts (#2229, #2826).
+    for (const item of this.view().readyPullRequests ?? []) this.wakes.evidence.noteReady(item.target, item.url, item.head, item.at)
     for (const event of [...queued, ...this.toldToRetell]) if (event.kind === 'thread-ready' && event.ready) this.wakes.evidence.noteReady(event.target, event.ready.pullRequest, event.ready.head, event.observedAt)
     // READY TO MERGE opens no request, so only a thread's own messages and the user's answers are owed a turn here (#2482).
     const owed = [...queued, ...this.toldToRetell].filter(event => event.kind === 'thread-told' || event.kind === 'user-answered' && event.answered?.opened)
@@ -2610,11 +2647,12 @@ export class WatcherService implements WatcherControlHooks {
       watchedThreads: [...targets].map(([targetKey, target]) => {
         const watch = watchOf.get(targetKey)
         const participation = participations.get(targetKey) ?? []
+        const parked = Boolean(watch?.parked || participation.some(item => item.state === 'participating' && !item.automationStopped && item.parked === true && acting.has(item.requestId)))
         if (roomInputs?.has(target.hostId)) {
           const input = roomInputs.get(target.hostId)?.get(target.threadId)
           const observation = this.wakes.observations.get(targetKey)
           return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId),
-            ...(watch?.parked ? { parked: true } : {}),
+            ...(parked ? { parked: true } : {}),
             title: input?.title ?? 'Unavailable thread', status: input?.status ?? 'unavailable',
             connected: input?.connected ?? false, settled: input?.settled ?? false, backgroundWorkCount: input?.backgroundWorkCount ?? 0,
             evidence: this.wakes.evidence.read(target, input?.connected ?? false, undefined, targetKey),
@@ -2628,7 +2666,7 @@ export class WatcherService implements WatcherControlHooks {
           ? keys.hostless.get(thread.id) ?? keys.hostless.set(thread.id, JSON.stringify([null, thread.id])).get(thread.id)! : JSON.stringify([thread.hostId, thread.id])
         const observation = observationKey === undefined ? undefined : this.wakes.observations.get(observationKey)
         // One definition of watched for every surface: a standing watch, or taking part in an active request.
-        return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId), ...(watch?.parked ? { parked: true } : {}), title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
+        return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId), ...(parked ? { parked: true } : {}), title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
           settled: Boolean(thread && isWorkspaceThreadSettled(thread, owning.snapshot?.projects.find(item => item.id === thread.projectId))),
           backgroundWorkCount: thread === undefined ? 0 : watcherBackgroundWorkCount(thread),
           evidence: this.wakes.evidence.read(target, Boolean(thread && this.connected(thread)), undefined, targetKey),
@@ -2884,11 +2922,12 @@ export class WatcherService implements WatcherControlHooks {
       const since = (url: string | undefined) => url === undefined ? undefined : this.wakes.evidence.checksPassedSince(row.target, url)
       // What the merge train reads of each (#2229): its address, head, pending checks and place, each only when Sotto holds it.
       let pending: Map<string, { required: number; optional: number }> | undefined
-      const train = (url: string | undefined): Pick<WatcherOpenPullRequest, 'url' | 'head' | 'pending' | 'train'> => {
+      const train = (url: string | undefined): Pick<WatcherOpenPullRequest, 'url' | 'head' | 'pending' | 'previouslyPassed' | 'train'> => {
         if (url === undefined) return {}
         const head = this.wakes.evidence.headOf(row.target, url), place = this.wakes.evidence.trainOf(row.target, url)
         const counts = (pending ??= this.wakes.evidence.pendingChecks(row.target)).get(pullRequestKey(url) ?? url)
-        return { url, ...head ? { head } : {}, ...counts ? { pending: counts } : {}, ...place ? { train: place } : {} }
+        const previouslyPassed = this.wakes.evidence.hasChecksEverPassed(row.target, url)
+        return { url, ...head ? { head } : {}, ...counts ? { pending: counts } : {}, ...previouslyPassed ? { previouslyPassed: true } : {}, ...place ? { train: place } : {} }
       }
       const open: WatcherOpenPullRequest[] = thread
         ? watcherOpenPullRequests(watcherThreadPullRequests(thread), evidence).filter(item => item.summary.state === 'open')
@@ -3156,7 +3195,7 @@ export class WatcherService implements WatcherControlHooks {
           const live = record.watches?.find(watch => key(watch.target) === key(target))
           if (live && live.id !== created.id) refuse('TARGET_CHANGED', 'This watch changed while it was being saved. Refresh the thread.')
           if (by === 'watcher') this.checkHandedBack(record, target)
-          if (live) Object.assign(live, created)
+          if (live) { Object.assign(live, created); if (by === 'user') delete live.parked }
           else {
             (record.watches ??= []).push(created)
             if (target.hostId === this.hostId() && (record.localTakeovers?.some(item => key(item.target) === key(target))
@@ -3241,6 +3280,11 @@ export class WatcherService implements WatcherControlHooks {
     const watches = record.watches?.filter(item => key(item.target) === key(target)) ?? []
     if (fence) for (const watch of watches) if (!record.watchFences?.some(item => item.id === watch.id)) (record.watchFences ??= []).push({ id: watch.id, target: watch.target, ...(watch.remoteOrigin ? { remoteOrigin: watch.remoteOrigin } : {}) })
     record.watches = record.watches?.filter(item => key(item.target) !== key(target)) ?? []
+    if (record.readyPullRequests?.length) {
+      const next = record.readyPullRequests.filter(item => key(item.target) !== key(target))
+      if (next.length) record.readyPullRequests = next
+      else delete record.readyPullRequests
+    }
     for (const request of record.requests) {
       if (request.standingWatchId && watches.some(watch => watch.id === request.standingWatchId) && request.state === 'active') { request.state = 'stopped'; request.closedAt = now() }
       for (const participant of request.participants) if (key(participant.target) === key(target) && participant.state === 'participating') { participant.generation++; participant.automationStopped = true }
@@ -4107,6 +4151,7 @@ export class WatcherService implements WatcherControlHooks {
       watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn'
     }
     for (const request of record.requests) for (const participant of request.participants) if (key(participant.target) === key(target) && participant.state === 'participating') {
+      if (reason === 'user-send' || reason === 'native-user-send') delete participant.parked
       if (!watch) participant.generation++
       // Only a thread watched for a request alone, as on an older paired host, becomes the user's again, and so does a
       // participation Watcher had already stopped, which the user's own command reviews: its held queue goes on.
@@ -4412,7 +4457,7 @@ export class WatcherService implements WatcherControlHooks {
         // A send the user set aside with Continue with a new message no longer holds the watch (#1222).
         else if (!this.options.control.hasPendingThreadWork(thread.id, { setAsideIgnored: true })
           || machineHead() && !this.userWorkPending(thread.id, observed) && (paused === 'unobserved-user-turn' || paused === head)) paused = null
-        const unpark = Boolean(live.parked && (paused && !live.pausedByUserMessageId || head && live.lastUserMessageId !== undefined && head !== live.lastUserMessageId))
+        const unpark = Boolean(live.parked && (paused && !live.pausedByUserMessageId || head && live.lastUserMessageId !== undefined && head !== live.lastUserMessageId && !machineHead()))
         if (live.lastUserMessageId !== head || live.pausedByUserMessageId !== paused || unpark) changes.push(next => {
           const changed = next.watches!.find(item => item.id === watch.id)!
           changed.lastUserMessageId = head; changed.pausedByUserMessageId = paused
@@ -5348,6 +5393,9 @@ export class WatcherService implements WatcherControlHooks {
         if (send) {
           const activeWatch = next.watches?.find(watch => key(watch.target) === key(target))
           if (activeWatch?.parked) delete activeWatch.parked
+          for (const item of next.requests) if (item.state === 'active') for (const activeParticipant of item.participants) {
+            if (key(activeParticipant.target) === key(target) && activeParticipant.parked) delete activeParticipant.parked
+          }
         }
         if (start || send) participant.promptCount = this.promptCount(next, target, turn?.id, request.id) + 1
         next.operations.push(operation)
@@ -5716,18 +5764,27 @@ ${operation.draftId}`)
       } catch { baseNote = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
     }
     return () => {
-      const queue = this.liveState().mergeQueue, holds = mergeTurnHolds(queue, goMerge.pullRequest, base), wanted = pullRequestKey(goMerge.pullRequest)
-      const name = (item: WatcherMergeQueueItem) => `${item.pullRequest.number === undefined ? item.url ?? 'a pull request' : `#${item.pullRequest.number}`} in “${item.title.slice(0, 80)}”`
+      const live = this.liveState(), queue = live.mergeQueue, extraRunning = watcherMergeHoldRunning(live.threads)
+      const holds = mergeTurnHolds(queue, goMerge.pullRequest, base, extraRunning), wanted = pullRequestKey(goMerge.pullRequest)
+      const entry = queue.find(item => item.url !== undefined && pullRequestKey(item.url) === wanted)
+      const notReadyReason = !entry
+        ? 'This pull request is not in the merge train yet: its thread has not sent READY TO MERGE with ready_to_merge.'
+        : entry.readyToMerge.onHead === false
+          ? `This pull request’s READY TO MERGE was for ${entry.readyToMerge.head.slice(0, 12)}, not its current head${entry.head ? ` ${entry.head.slice(0, 12)}` : ''}.`
+          : undefined
+      const name = (item: Pick<WatcherMergeQueueItem, 'title' | 'pullRequest' | 'url'>) => `${item.pullRequest.number === undefined ? item.url ?? 'a pull request' : `#${item.pullRequest.number}`} in “${item.title.slice(0, 80)}”`
       const failed = holds.baseFailed
-      const held = [...failed ? [failed.newest === undefined ? `${failed.branch} is red: checks failed on its newest commit, ${failed.head.slice(0, 12)}.`
-        : `${failed.branch} is red: checks failed on ${failed.head.slice(0, 12)}, its newest commit whose checks have finished; ${failed.newest.slice(0, 12)}, after it, has none finished yet.`] : [],
+      const held = [...notReadyReason ? [notReadyReason] : [],
+        ...failed ? [failed.newest === undefined ? `${failed.branch} is red: checks failed on its newest commit, ${failed.head.slice(0, 12)}.`
+          : `${failed.branch} is red: checks failed on ${failed.head.slice(0, 12)}, its newest commit whose checks have finished; ${failed.newest.slice(0, 12)}, after it, has none finished yet.`] : [],
         ...holds.running.map(item => `${name(item)} has checks running.`)]
-      const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
-        : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'
-      const note = [baseNote, outside].filter(Boolean).join(' ') || undefined
+      const note = baseNote
       if (held.length && !goMerge.overrideReason) {
         const shown = held.slice(0, 8), more = held.length - shown.length
-        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
+        const landing = holds.running.length > 0 || holds.baseFailed !== undefined
+          ? ' A merge now would land in the middle of them, so nothing was sent.'
+          : ' Nothing was sent.'
+        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have checks running.` : ''}${landing}${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
       }
       const reason = held.length ? goMerge.overrideReason : undefined
       return { receipt: { held, ...reason ? { overrideReason: reason } : {}, ...note ? { note } : {} },
@@ -6763,7 +6820,7 @@ ${operation.draftId}`)
           pullRequests: (thread.pullRequests ?? []).map(item => ({ number: item.number, url: item.url, title: item.title ?? '', state: item.state, draft: item.draft ?? false })),
           evidence: this.wakes.evidence.read(target, this.connected(thread)), lastActivityAt: this.wakes.observations.get(JSON.stringify([thread.hostId ?? null, thread.id]))?.lastProgressAt ?? null, observedAt: row.observedAt ?? null, connected: this.connected(thread),
           freshness: row.freshness, userReadAt: null, watcherReadAt: record.reads.find(item => key(item.target) === key(target))?.readAt ?? null,
-          participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)).map(({ target: _target, promptCount: _count, lastUserMessageId: _head, ...participant }) => { void _target; void _count; void _head; return participant })).slice(-WATCHER_PARTICIPATION_HISTORY_MAX),
+          participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)).map(({ target: _target, promptCount: _count, lastUserMessageId: _head, parked: _parked, ...participant }) => { void _target; void _count; void _head; void _parked; return participant })).slice(-WATCHER_PARTICIPATION_HISTORY_MAX),
           protected: this.protectedThread(thread) } })
     const page = this.page(`threads:${digest([input.hostId, input.project, input.group, input.includeSettled, input.watchedOnly === true])}`, rows, input.cursor, input.limit)
     return { status: 'ok', rows: page.rows, snapshotRevision: page.revision, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [],
@@ -6782,15 +6839,18 @@ ${operation.draftId}`)
       }
       if (missing.length) {
         const read = new Map<string, string | null>()
+        let originsFailed = false
         if (hostId === localHostId) {
           if (this.options.projectOrigins) {
-            const origins = await this.options.projectOrigins().catch(() => undefined)
+            const origins = await this.options.projectOrigins().catch(() => { originsFailed = true; return undefined })
             for (const entry of origins?.projects ?? []) {
               if (entry.repository) read.set(entry.projectId, `${entry.repository.owner}/${entry.repository.name}`)
             }
           }
           const unresolved = missing.filter(project => !read.has(project.id))
-          if (unresolved.length) for (const [projectId, slug] of await readProjectRepoSlugs(unresolved)) read.set(projectId, slug)
+          if (unresolved.length) for (const [projectId, outcome] of await readProjectRepoSlugReads(unresolved)) {
+            if (outcome.ok && (!originsFailed || outcome.slug !== null)) read.set(projectId, outcome.slug)
+          }
         } else if (this.remote?.hosts().find(host => host.hostId === hostId)?.origins && this.remote.projectOrigins) {
           const origins = await this.remote.projectOrigins(hostId).catch(() => undefined)
           for (const entry of origins?.projects ?? []) {
@@ -6798,6 +6858,7 @@ ${operation.draftId}`)
           }
         }
         for (const project of missing) {
+          if (!read.has(project.id)) { slugs.set(project.id, null); continue }
           const slug = read.get(project.id) ?? null, cacheKey = `${hostId}\u0000${project.id}\u0000${project.path}`
           slugs.set(project.id, slug)
           this.projectSlugCache.delete(cacheKey)
