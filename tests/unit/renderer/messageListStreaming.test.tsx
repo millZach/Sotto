@@ -6,7 +6,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
 import type { AgentMessage, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
-import { HELD_WORK_REPLY_SETTLE_MS, MessageList, QUIET_REPLY_SETTLE_MS, ThreadTranscript, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
+import { clearSettledReplies, HELD_WORK_REPLY_SETTLE_MS, MessageList, QUIET_REPLY_SETTLE_MS, ThreadTranscript, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { ResponseStreamingProvider } from '../../../src/renderer/src/agents/responseStreaming'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
@@ -27,6 +27,7 @@ function mount(messages: AgentMessage[], { running = true, sending = false, notW
 
 afterEach(() => {
   cleanup()
+  clearSettledReplies()
   vi.useRealTimers()
 })
 
@@ -91,12 +92,14 @@ describe('finished replies while a turn stays open (#2840)', () => {
     messages: AgentMessage[]
     activities?: AgentActivity[]
     backgroundWork?: AgentBackgroundWork[]
+    providerId?: 'grok' | 'claude' | 'antigravity'
   }) {
     const command = vi.fn(async () => null)
     const store = new ThreadDraftStore(command)
-    const build = (patch: { messages: AgentMessage[]; activities?: AgentActivity[]; backgroundWork?: AgentBackgroundWork[]; status?: 'running' | 'idle' }) => {
+    const build = (patch: { messages: AgentMessage[]; activities?: AgentActivity[]; backgroundWork?: AgentBackgroundWork[]; status?: 'running' | 'idle'; providerId?: 'grok' | 'claude' | 'antigravity' }) => {
       const state: AgentState = threadsStateFixture()
       const target = state.host.threads.find(item => item.id === 'grok-previews')!
+      if (patch.providerId !== undefined) target.providerId = patch.providerId
       target.status = patch.status ?? 'running'
       target.requests = []
       target.messages = patch.messages
@@ -110,8 +113,13 @@ describe('finished replies while a turn stays open (#2840)', () => {
     }
     const view = render(build(initial))
     return {
-      update: (next: { messages: AgentMessage[]; activities?: AgentActivity[]; backgroundWork?: AgentBackgroundWork[]; status?: 'running' | 'idle' }) => {
+      update: (next: { messages: AgentMessage[]; activities?: AgentActivity[]; backgroundWork?: AgentBackgroundWork[]; status?: 'running' | 'idle'; providerId?: 'grok' | 'claude' | 'antigravity' }) => {
         view.rerender(build(next))
+      },
+      unmount: () => view.unmount(),
+      remount: (next: { messages: AgentMessage[]; activities?: AgentActivity[]; backgroundWork?: AgentBackgroundWork[]; status?: 'running' | 'idle'; providerId?: 'grok' | 'claude' | 'antigravity' }) => {
+        view.unmount()
+        return render(build(next))
       },
     }
   }
@@ -215,5 +223,92 @@ describe('finished replies while a turn stays open (#2840)', () => {
     // If the turn stays open silently for QUIET_REPLY_SETTLE_MS, the reply reveals rather than staying hidden forever.
     act(() => { vi.advanceTimersByTime(1_000) })
     expect(screen.getByText('Lighthouses began as fires.')).toBeInTheDocument()
+  })
+
+  it('returns an already-settled reply to writing when more text arrives for the same ID, without hiding shown text (L2)', () => {
+    vi.useFakeTimers()
+    const bg: AgentBackgroundWork[] = [{ id: 'bg-render', label: 'python render.py', type: 'command', startedAt: at }]
+    const activities: AgentActivity[] = [
+      { id: 'turn-u1', turnId: 'u-1', afterMessageId: 'u-1', sequence: 0, kind: 'turn', status: 'running', title: 'Turn', startedAt: at },
+    ]
+    const baseMessages: AgentMessage[] = [{ id: 'u-1', role: 'user', text: 'Start render.', createdAt: at }]
+    const view = mountTranscript({
+      messages: [...baseMessages, reply('a-1', 'Started in background.')],
+      activities,
+      backgroundWork: bg,
+      providerId: 'antigravity',
+    })
+
+    act(() => { vi.advanceTimersByTime(HELD_WORK_REPLY_SETTLE_MS) })
+    act(() => { vi.advanceTimersByTime(1_500) })
+    expect(screen.getByText('Started in background.')).toBeInTheDocument()
+    const settledArticle = document.querySelector('[data-message-id="a-1"]')!
+    expect(settledArticle.querySelector('.rich-message[data-streaming]')).toBeNull()
+    expect(settledArticle.querySelector('.thread-message__copy')).not.toBeNull()
+    expect(screen.getByTestId('thread-activity-live')).not.toHaveTextContent('Writing a reply')
+
+    // More text arrives for the same message ID: stays visible, returns to streaming with caret & no Copy, and restarts timer.
+    view.update({
+      messages: [...baseMessages, reply('a-1', 'Started in background. More arriving')],
+      activities,
+      backgroundWork: bg,
+      providerId: 'antigravity',
+    })
+    expect(screen.getByText('Started in background. More arriving')).toBeInTheDocument()
+    const growingArticle = document.querySelector('[data-message-id="a-1"]')!
+    expect(growingArticle.querySelector('.rich-message[data-streaming]')).not.toBeNull()
+    expect(growingArticle.querySelector('.thread-message__copy')).toBeNull()
+    act(() => { vi.advanceTimersByTime(1_500) })
+    expect(screen.getByTestId('thread-activity-live')).toHaveTextContent('Writing a reply')
+
+    // Once quiet again for HELD_WORK_REPLY_SETTLE_MS, it settles back cleanly.
+    act(() => { vi.advanceTimersByTime(HELD_WORK_REPLY_SETTLE_MS) })
+    const resettled = document.querySelector('[data-message-id="a-1"]')!
+    expect(resettled.querySelector('.rich-message[data-streaming]')).toBeNull()
+    expect(resettled.querySelector('.thread-message__copy')).not.toBeNull()
+  })
+
+  it('ignores detached runs and prior-turn background work on non-Antigravity turns so ordinary turns keep the 15s window (L3)', () => {
+    vi.useFakeTimers()
+    const earlier = '2026-09-15T10:10:00.000Z'
+    const detached: AgentBackgroundWork[] = [
+      { id: 'bg-detached', label: 'claude dev server', type: 'detached-run', startedAt: at, run: { client: 'Claude Code', command: 'npm run dev' } },
+      { id: 'bg-prior', label: 'earlier command', type: 'command', startedAt: earlier },
+    ]
+    const activities: AgentActivity[] = [
+      { id: 'turn-u1', turnId: 'u-1', afterMessageId: 'u-1', sequence: 0, kind: 'turn', status: 'running', title: 'Turn', startedAt: at },
+    ]
+    mountTranscript({
+      messages: [{ id: 'u-1', role: 'user', text: 'Write an essay.', createdAt: at }, reply('a-1', 'Lighthouses began')],
+      activities,
+      backgroundWork: detached,
+      providerId: 'claude',
+    })
+
+    // Detached run + prior-turn background work on Claude must NOT shorten the settle window to 2s.
+    act(() => { vi.advanceTimersByTime(HELD_WORK_REPLY_SETTLE_MS * 3) })
+    expect(screen.queryByText(/Lighthouses began/u)).not.toBeInTheDocument()
+
+    // Quiet backstop still reveals at QUIET_REPLY_SETTLE_MS.
+    act(() => { vi.advanceTimersByTime(QUIET_REPLY_SETTLE_MS - HELD_WORK_REPLY_SETTLE_MS * 3) })
+    expect(screen.getByText('Lighthouses began')).toBeInTheDocument()
+  })
+
+  it('keeps an already-revealed reply visible immediately after remounting the transcript (N1)', () => {
+    vi.useFakeTimers()
+    const activities: AgentActivity[] = [
+      { id: 'turn-u1', turnId: 'u-1', afterMessageId: 'u-1', sequence: 0, kind: 'turn', status: 'running', title: 'Turn', startedAt: at },
+    ]
+    const props: { messages: AgentMessage[]; activities: AgentActivity[] } = {
+      messages: [{ id: 'u-1', role: 'user', text: 'Write an essay.', createdAt: at }, reply('a-1', 'Already revealed.')],
+      activities,
+    }
+    const view = mountTranscript(props)
+    act(() => { vi.advanceTimersByTime(QUIET_REPLY_SETTLE_MS) })
+    expect(screen.getByText('Already revealed.')).toBeInTheDocument()
+
+    // Switching away and back remounts ThreadTranscript; the revealed reply must stay visible at t=0.
+    view.remount(props)
+    expect(screen.getByText('Already revealed.')).toBeInTheDocument()
   })
 })

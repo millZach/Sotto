@@ -282,8 +282,8 @@ class TurnPlaces {
 interface LiveTurn {
   readonly places: TurnPlaces
   readonly origin: Origin | undefined
-  /** Digests of every prompt Sotto sent in this turn (initial and steers) so `user_message_chunk` echoes are ignored. */
-  readonly originDigests: Set<string>
+  /** Pending echo counts for prompts Sotto sent in this turn (initial and steers) so each echo is consumed once. */
+  readonly originDigests: Map<string, number>
   taken: boolean
   ended: boolean
   prompts: number
@@ -946,7 +946,7 @@ export class AntigravityAcpHost implements ProviderHost {
     if (turn.reactiveMaxTimer) { clearTimeout(turn.reactiveMaxTimer); turn.reactiveMaxTimer = undefined }
   }
   private createTurn(placesKey: string, origin: Origin | undefined, outcome: AntigravityOutcomeWatcher, reactive: boolean, inheritedPlaces?: TurnPlaces): LiveTurn {
-    return { places: new TurnPlaces(placesKey, inheritedPlaces), origin, originDigests: new Set(origin ? [origin.digest] : []), taken: origin === undefined, ended: false, prompts: 0, wake: undefined, outcome,
+    return { places: new TurnPlaces(placesKey, inheritedPlaces), origin, originDigests: new Map(origin ? [[origin.digest, 1]] : []), taken: origin === undefined, ended: false, prompts: 0, wake: undefined, outcome,
       reactive, ranCommand: false, reactiveTools: new Set(), sawReactiveContent: false, reactiveRev: 0, reactiveTimer: undefined, reactiveMaxTimer: undefined }
   }
   private nextReactiveTurnId(id: string, turn: LiveTurn | undefined): string {
@@ -1198,11 +1198,22 @@ export class AntigravityAcpHost implements ProviderHost {
     if (kind === 'user_message_chunk') {
       if (words === undefined) return
       const turn = this.turns.get(id)
-      // `agy` may echo a prompt Sotto sent (initial or steered); Sotto already holds it. Anything else was typed elsewhere.
-      if (turn && !turn.ended && turn.originDigests.has(digest(words))) { this.taken(id); return }
+      // `agy` may echo a prompt Sotto sent (initial or steered); consume each pending digest once so later identical
+      // external text is never swallowed, and end an open pre-steer reply once `agy` confirms the steer (#2840).
+      const wordsDigest = digest(words)
+      const pendingEchoes = turn && !turn.ended ? (turn.originDigests.get(wordsDigest) ?? 0) : 0
+      if (pendingEchoes > 0) {
+        if (pendingEchoes === 1) turn!.originDigests.delete(wordsDigest)
+        else turn!.originDigests.set(wordsDigest, pendingEchoes - 1)
+        if (turn!.prompts > 1) turn!.places.user()
+        this.taken(id)
+        return
+      }
       // Out-of-turn background task completion notifications arrive from `agy`'s runtime, never from the user.
       const wakeup = parseAntigravitySystemWakeup(words)
       if (wakeup.isWakeup) {
+        // Break any open pre-job reply so the post-wakeup message opens a fresh reply instead of appending (#2840).
+        if (turn && !turn.ended) turn.places.user()
         let settled = false
         const tasks = this.backgroundTasks.get(id)
         if (tasks) for (const taskId of wakeup.completedTaskIds) if (tasks.settleNativeTask(taskId)) settled = true
@@ -1784,9 +1795,14 @@ export class AntigravityAcpHost implements ProviderHost {
     const serial = ++turn.prompts
     const superseded = (): boolean => generation !== this.generation || this.turns.get(id) !== turn || serial !== turn.prompts
     void connection.rpc.request('session/prompt', { sessionId: alias.antigravitySessionId, prompt: blocks }, async value => {
-      // A steered prompt's answer still carries the tokens its part of the turn spent.
+      // A steered prompt's answer still carries the tokens its part of the turn spent, and ending an earlier prompt
+      // confirms `agy` moved on to the steer, so any open pre-steer reply ends here (#2840).
       const counted = generation === this.generation && this.threads.has(id) && countAntigravityAnswer(this.thread(id), value, !superseded())
-      if (superseded()) { if (counted) this.emit(true); return }
+      if (superseded()) {
+        if (generation === this.generation && this.turns.get(id) === turn && !turn.ended) turn.places.user()
+        if (counted) this.emit(true)
+        return
+      }
       const stop = promptAnswerSchema.parse(value).stopReason
       const settled = await turn.outcome.check(stop).catch(() => classifyAntigravityTurnOutcome(stop))
       if (superseded() || turn.ended) return
@@ -1837,8 +1853,7 @@ export class AntigravityAcpHost implements ProviderHost {
     try { await this.persist() } catch (error) { index.remove(origin); throw error }
     this.assertGeneration(generation)
     this.log.add(id, { id: origin.messageId, role: 'user', text: command.text, commandId: origin.commandId, createdAt: origin.createdAt })
-    turn.places.user()
-    turn.originDigests.add(origin.digest)
+    turn.originDigests.set(origin.digest, (turn.originDigests.get(origin.digest) ?? 0) + 1)
     this.clearReactiveTimers(turn)
     turn.reactive = false
     turn.reactiveTools.clear()

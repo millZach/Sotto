@@ -377,6 +377,76 @@ rl.on('line', line => {
       write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
       return
     }
+    if (promptText.includes('agy-held-bg-wakeup-no-steer')) {
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'cmd-held-nosteer',
+        title: 'Running python render.py',
+        kind: 'execute',
+        status: 'in_progress',
+        rawInput: { CommandLine: 'python render.py', WaitMsBeforeAsync: 5000 },
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'cmd-held-nosteer',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text',
+          text: 'Tool is running as a background task with task id: conv-nosteer/task-1\\nTask logs are available at: /tmp/nosteer.log\\nLog output:\\nStarted' } }],
+      } } })
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Started the render in the background.' },
+      } } })
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: '<SYSTEM_MESSAGE>\\nBackground task conv-nosteer/task-1 completed with exit code 0.\\n</SYSTEM_MESSAGE>' },
+        } } })
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Render complete.' },
+        } } })
+        write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+      }, 60)
+      return
+    }
+    if (promptText.includes('agy-midstream-count')) {
+      openPrompts.push(msg.id)
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'Counting 1,' },
+      } } })
+      return
+    }
+    if (promptText.includes('Make it shorter')) {
+      openPrompts.push(msg.id)
+      // Still-in-flight tail of the pre-steer reply arrives before agy starts on the steer.
+      write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: ' 2, 3.' },
+      } } })
+      // Then agy echoes the steer, answers it, and later an external duplicate of the steer text arrives.
+      setTimeout(() => {
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: promptText },
+        } } })
+        write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Short.' },
+        } } })
+        setTimeout(() => {
+          write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+            sessionUpdate: 'user_message_chunk',
+            content: { type: 'text', text: promptText },
+          } } })
+          for (const id of openPrompts.splice(0)) {
+            write({ jsonrpc: '2.0', id, result: { stopReason: 'end_turn' } })
+          }
+        }, 30)
+      }, 30)
+      return
+    }
     if (promptText.includes('agy-held-bg-start')) {
       openPrompts.push(msg.id)
       write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
@@ -923,5 +993,49 @@ describe('Antigravity ACP background work, reactive continuations, worker questi
     }, { timeout: 3_000 }).toBe(true)
     const done = (await host.snapshot()).threads.find(item => item.id === 't-held')!
     expect(done.messages.at(-1)).toMatchObject({ role: 'assistant', text: 'Render complete.' })
+  })
+
+  it('opens a separate assistant reply after a held-turn SYSTEM_MESSAGE wakeup without any steer (L1)', async () => {
+    const { host } = await setup()
+    await host.execute({ type: 'create-thread', commandId: 'c-nosteer', projectId: 'proj-1', threadId: 't-nosteer', title: 'No Steer Wakeup', modelId: 'gemini-3.1-pro' })
+
+    await host.execute({ type: 'send', threadId: 't-nosteer', commandId: 's-nosteer-1', messageId: 'm-nosteer-1', text: 'agy-held-bg-wakeup-no-steer' })
+    await expect.poll(async () => (await host.snapshot()).threads.find(item => item.id === 't-nosteer')?.status, { timeout: 3_000 }).toBe('idle')
+
+    const done = (await host.snapshot()).threads.find(item => item.id === 't-nosteer')!
+    expect(done.messages.map(m => [m.role, m.text])).toEqual([
+      ['user', 'agy-held-bg-wakeup-no-steer'],
+      ['assistant', 'Started the render in the background.'],
+      ['assistant', 'Render complete.'],
+    ])
+    expect(done.backgroundWork ?? []).toEqual([])
+  })
+
+  it('keeps in-flight pre-steer chunks on the old reply until agy starts on the steer, and consumes steer echoes once (L4, N2)', async () => {
+    const { host } = await setup()
+    await host.execute({ type: 'create-thread', commandId: 'c-midstream', projectId: 'proj-1', threadId: 't-midstream', title: 'Midstream Steer', modelId: 'gemini-3.1-pro' })
+
+    await host.execute({ type: 'send', threadId: 't-midstream', commandId: 's-midstream-1', messageId: 'm-midstream-1', text: 'agy-midstream-count' })
+    await expect.poll(async () => {
+      const t = (await host.snapshot()).threads.find(item => item.id === 't-midstream')
+      return t?.status === 'running' && t.messages.some(m => m.role === 'assistant' && m.text === 'Counting 1,')
+    }, { timeout: 3_000 }).toBe(true)
+
+    const steered = await host.execute({ type: 'steer', threadId: 't-midstream', commandId: 's-midstream-2', messageId: 'm-midstream-2', text: 'Make it shorter' })
+    expect(steered).toEqual({ accepted: true })
+
+    await expect.poll(async () => {
+      const t = (await host.snapshot()).threads.find(item => item.id === 't-midstream')
+      return t?.messages.length === 5
+    }, { timeout: 3_000 }).toBe(true)
+
+    const done = (await host.snapshot()).threads.find(item => item.id === 't-midstream')!
+    expect(done.messages.map(m => [m.role, m.text])).toEqual([
+      ['user', 'agy-midstream-count'],
+      ['assistant', 'Counting 1, 2, 3.'],
+      ['user', 'Make it shorter'],
+      ['assistant', 'Short.'],
+      ['user', 'Make it shorter'],
+    ])
   })
 })

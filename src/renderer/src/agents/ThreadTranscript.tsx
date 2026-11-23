@@ -75,7 +75,7 @@ import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, 
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
 import { shownWords, type LaterWords } from './interfaceWords'
 import { shownCount } from '../state/interfaceNumbers'
-import { compactionOf, isStep, liveTurnId, newsWorkLabel, onlyAMoment, placeActivities, quietTurn, splitTurns, stepsLabel, turnChanges, workHeadline, workSummary, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
+import { compactionOf, isStep, isTurnRecord, liveTurnId, newsWorkLabel, onlyAMoment, placeActivities, quietTurn, splitTurns, stepsLabel, turnChanges, workHeadline, workSummary, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
 /** No message is left behind while no fork card is open. */
@@ -91,6 +91,28 @@ const FOLLOW_SLACK_PX = 48
  */
 export const HELD_WORK_REPLY_SETTLE_MS = 2_000
 export const QUIET_REPLY_SETTLE_MS = 15_000
+
+/**
+ * Live replies that stopped receiving tokens while their turn stayed open (#2840), remembered across thread switches
+ * (`ThreadTranscript` is keyed by `thread.id`) so an already-revealed reply never re-hides on remount. Stores the text
+ * length and short tail at settle so later growth on the same message ID marks it writing again without hiding text.
+ */
+interface SettledReplyStamp { readonly length: number; readonly tail: string }
+const SETTLED_REPLIES_MAX = 256
+const settledReplies = new Map<string, SettledReplyStamp>()
+const replyStamp = (text: string): SettledReplyStamp => ({ length: text.length, tail: text.slice(-32) })
+const matchesReplyStamp = (stamp: SettledReplyStamp, text: string): boolean => stamp.length === text.length && text.endsWith(stamp.tail)
+function rememberSettledReply(key: string, text: string): void {
+  if (settledReplies.has(key)) settledReplies.delete(key)
+  settledReplies.set(key, replyStamp(text))
+  while (settledReplies.size > SETTLED_REPLIES_MAX) {
+    const oldest = settledReplies.keys().next().value
+    if (oldest === undefined) break
+    settledReplies.delete(oldest)
+  }
+}
+/** Clears remembered settled live replies; for tests that reuse fixture thread and message IDs across cases. */
+export function clearSettledReplies(): void { settledReplies.clear() }
 
 const STATUS_LABELS: Record<SubmissionStatus, MessageDescriptor> = {
   queued: msg({ message: 'Queued', comment: 'A sent message\'s delivery status.' }),
@@ -451,13 +473,15 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, peerExchanges, receivedPeer, hideCoordinationWakeUps = false, backgroundWork, briefs, continuedIn, close }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, revealedId, writingBelow = null, placement, context, streamText, threadId, speaker, delegations, peerExchanges, receivedPeer, hideCoordinationWakeUps = false, backgroundWork, briefs, continuedIn, close }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
   /** Watcher's replies written within five minutes of the Watcher reply before them (`closeReplies`). */
   readonly close?: ReadonlySet<string> | undefined
   /** The thread is working on the newest turn drawn, so that turn, when `last`, keeps the live layout. */
   readonly running: boolean
   readonly writing: string | undefined
+  /** A live reply already revealed after settling that is receiving more text now: stays drawn with its caret (#2840). */
+  readonly revealedId?: string | undefined
   /** Where the reply being written stands instead, under the working line (`MessageList`'s `writingBelow`). */
   readonly writingBelow?: HTMLElement | null | undefined
   readonly speaker?: 'watcher' | undefined
@@ -492,7 +516,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     ? <VisualCard visual={message.visual} threadId={threadId} />
     : hideCoordinationWakeUps && isWakeUpMessage(message) && message.text.startsWith(COORDINATION_NEWS_OPENING)
       ? null
-      : drawn(message) && (streamText || message.id !== writing) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} threadId={threadId} speaker={speaker}
+      : drawn(message) && (streamText || message.id !== writing || message.id === revealedId) && (failureWords || message.providerError !== true) && <MessageArticle message={message} provider={provider} writing={message.id === writing} threadId={threadId} speaker={speaker}
       delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} peerExchange={receivedPeer?.messageId === message.id ? receivedPeer : undefined} forkable={message.id === forkableId} close={close?.has(message.id)}
       {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
@@ -668,7 +692,7 @@ function turnBefore(turns: readonly TranscriptTurn[], at: string): number {
   return found
 }
 
-export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, notWriting = false, writingBelow = null, placement, context, streamText = true, threadId, speaker, delegations, peerExchanges, receivedPeers, hideCoordinationWakeUps = false, backgroundWork, briefs, continuedIn, modelMoved }: {
+export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, notWriting = false, revealedId, writingBelow = null, placement, context, streamText = true, threadId, speaker, delegations, peerExchanges, receivedPeers, hideCoordinationWakeUps = false, backgroundWork, briefs, continuedIn, modelMoved }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   /** A prompt the user sent is drawn below these messages until the history carries it, so the newest reply here is not the one being written. */
   readonly sending?: boolean
@@ -678,6 +702,8 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
    * The reply then carries no caret.
    */
   readonly notWriting?: boolean
+  /** A live reply already revealed after settling that started growing again: stays visible while showing its caret (#2840). */
+  readonly revealedId?: string | undefined
   /**
    * Where the reply being written stands when the turn took steps before it: under the working line, which the transcript
    * draws after these messages. Null keeps it in its place here.
@@ -736,7 +762,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // With replies shown when finished, the reply being written has no row, so the transcript's place keeper is told which
   // it is, before its own effect runs, and holds a place read on it until it is whole.
   const rows = useContext(MessageRowsContext)
-  const heldBack = streamText ? undefined : writing
+  const heldBack = streamText || writing === revealedId ? undefined : writing
   useLayoutEffect(() => {
     if (rows === null) return
     rows.heldBack = heldBack
@@ -755,7 +781,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   {turns.map((turn, index) => <React.Fragment key={turn.key}>
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
-      last={index === turns.length - 1} writing={writing} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
+      last={index === turns.length - 1} writing={writing} revealedId={index === turns.length - 1 ? revealedId : undefined} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
       delegations={turn.user ? delegations?.get(turn.user.id) : undefined} peerExchanges={turn.user ? peerExchanges?.get(turn.user.id) : undefined} receivedPeer={turn.user ? receivedPeers?.get(turn.user.id) : undefined} hideCoordinationWakeUps={hideCoordinationWakeUps} backgroundWork={index === agentsAt ? shownAgents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
@@ -1058,12 +1084,34 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const liveTurn = liveTurnId(thread)
   const isSending = sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')
   const live = thread.status === 'running' && !(watcher && placement.newestTurnEnded === true)
-  const hasRunningStep = useMemo(() => {
-    if (liveTurn === null) return false
-    return (thread.activities ?? []).some(record =>
-      record.turnId === liveTurn && isStep(record) && record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning')
+  const liveTurnFacts = useMemo(() => {
+    if (liveTurn === null) return { hasRunningStep: false, startedAt: undefined as number | undefined }
+    let hasRunningStep = false
+    let startedAt: number | undefined
+    for (const record of thread.activities ?? []) {
+      if (record.turnId !== liveTurn) continue
+      if (isTurnRecord(record)) {
+        if (startedAt === undefined && record.startedAt) {
+          const parsed = Date.parse(record.startedAt)
+          if (Number.isFinite(parsed)) startedAt = parsed
+        }
+      } else if (isStep(record) && record.status === 'running' && record.kind !== 'plan' && record.kind !== 'reasoning') {
+        hasRunningStep = true
+      }
+    }
+    return { hasRunningStep, startedAt }
   }, [thread.activities, liveTurn])
-  const hasHeldWork = hasRunningStep || (thread.backgroundWork?.length ?? 0) > 0
+  // Detached runs outlive turns on every provider and never hold a prompt open; only non-detached background work
+  // started in the live turn (or any non-detached background work on Antigravity, whose session/prompt stays open)
+  // shortens the settle window (#2840).
+  const hasHeldBackgroundWork = (thread.backgroundWork ?? []).some(item => {
+    if (item.type === 'detached-run') return false
+    if (thread.providerId === 'antigravity') return true
+    if (liveTurnFacts.startedAt === undefined) return false
+    const started = item.startedAt ? Date.parse(item.startedAt) : Number.NaN
+    return Number.isFinite(started) && started >= liveTurnFacts.startedAt
+  })
+  const hasHeldWork = liveTurnFacts.hasRunningStep || hasHeldBackgroundWork
   // The newest reply is being written only while the provider writes it now: connected (the working line reads Working, not
   // Last seen working), with no request waiting on the user, in a turn not cut short. When a turn stays running after a reply
   // finishes — such as an Antigravity `session/prompt` held open by a background command (#2840) — genuine streaming chunks
@@ -1073,15 +1121,25 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const candidateReply = live && !isSending && !baseNotWriting && newestDrawn?.role === 'assistant' && !isVisualMessage(newestDrawn) && !placement.after.get(newestDrawn.id)?.length
   const replyKey = candidateReply ? `${thread.id}\n${newestDrawn.id}` : null
   const replyText = candidateReply ? newestDrawn.text : ''
-  const [settledReplyKey, setSettledReplyKey] = useState<string | null>(null)
+  const [, setSettledRevision] = useState(0)
+  const settledStamp = replyKey === null ? undefined : settledReplies.get(replyKey)
+  const replyRevealed = settledStamp !== undefined
+  const replySettled = settledStamp !== undefined && matchesReplyStamp(settledStamp, replyText)
   const replySettleMs = hasHeldWork ? HELD_WORK_REPLY_SETTLE_MS : QUIET_REPLY_SETTLE_MS
   useEffect(() => {
-    if (replyKey === null || settledReplyKey === replyKey) return
-    const timer = window.setTimeout(() => setSettledReplyKey(replyKey), replySettleMs)
+    if (replyKey === null || replySettled) return
+    const timer = window.setTimeout(() => {
+      rememberSettledReply(replyKey, replyText)
+      setSettledRevision(value => value + 1)
+    }, replySettleMs)
     return () => window.clearTimeout(timer)
-  }, [replyKey, settledReplyKey, replyText, replySettleMs])
-  const replySettled = replyKey !== null && settledReplyKey === replyKey
+  }, [replyKey, replySettled, replyText, replySettleMs])
+  useEffect(() => {
+    if (live || newestDrawn === undefined) return
+    settledReplies.delete(`${thread.id}\n${newestDrawn.id}`)
+  }, [live, thread.id, newestDrawn])
   const notWriting = baseNotWriting || replySettled
+  const revealedId = replyRevealed && !replySettled && candidateReply ? newestDrawn.id : undefined
   // Delegation (ADR-0081; Owl only): this thread's own delegations, read once as its pane opens and again when main
   // names it. What it delegated are rows of delegated work in the turn each call was made in; the briefs it was sent are the words of
   // the thread that delegated to it, not the user's.
@@ -1437,7 +1495,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     return stepped ? { startedAt } : null
   }, [thread.activities, liveTurn])
   const newest = thread.messages.at(-1)
-  const writingBelow = !replySettled && liveWork !== null && thread.requests.length === 0 && newest?.role === 'assistant'
+  const writingBelow = !replySettled && !replyRevealed && liveWork !== null && thread.requests.length === 0 && newest?.role === 'assistant'
     && !(liveWork.startedAt && Date.parse(newest.createdAt) < Date.parse(liveWork.startedAt)) ? writingPlace : null
 
   const showEarlier = (): void => {
@@ -1496,7 +1554,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><PeerCoordinationWorldProvider world={peerWorld}><DetachedRunStopContext.Provider value={stopDetachedRun}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} sending={isSending} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} revealedId={revealedId} sending={isSending} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} peerExchanges={peerExchanges.size ? peerExchanges : undefined} receivedPeers={receivedPeers} hideCoordinationWakeUps={coordinationOn} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DetachedRunStopContext.Provider></PeerCoordinationWorldProvider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
