@@ -126,6 +126,10 @@ msgstr ""
 msgid "{actions, plural, one {{actionCount} agent action} other {{actionCount} agent actions}}"
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "{activeCount, plural, other {# active}}"
+msgstr ""
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{added, plural, one {{lineCount} line added} other {{lineCount} lines added}}"
 msgstr ""
@@ -258,6 +262,14 @@ msgstr ""
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{count, plural, one {# model} other {# models}}"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "{count, plural, one {# peer active} other {# peers active}}"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "{count, plural, one {# peer queued} other {# peers queued}}"
 msgstr ""
 
 #: src/renderer/src/agents/threadDraftStore.ts
@@ -1430,6 +1442,10 @@ msgstr ""
 msgid "{tools, plural, one {used {toolCount} tool} other {used {toolCount} tools}}"
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "{total, plural, one {# exchange} other {# exchanges}}"
+msgstr ""
+
 #. How many delegated threads have an unknown outcome.
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{unknownCount} unknown"
@@ -1735,6 +1751,10 @@ msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "A new worktree starts from a branch that exists. Choose one, or create the branch after the first send."
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "a parent thread that is no longer listed"
 msgstr ""
 
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
@@ -2097,6 +2117,11 @@ msgstr ""
 msgid "Answer: "
 msgstr ""
 
+#. A peer parent thread replied to a coordination message.
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Answered"
+msgstr ""
+
 #. A delegated thread's outcome: it answered the brief.
 #: src/renderer/src/agents/delegationWords.ts
 msgctxt "delegation outcome"
@@ -2375,6 +2400,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Back to the list of model sources"
+msgstr ""
+
+#. A peer parent thread finished its turn with background work still running.
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Background"
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -4497,10 +4527,12 @@ msgstr ""
 msgid "Facing the front"
 msgstr ""
 
+#. A peer coordination message failed to deliver or its turn failed.
 #. An action or turn that failed.
 #. An action or turn that failed.
 #. An action or turn that failed.
 #. An action or turn that failed.
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Failed"
 msgstr ""
@@ -4762,6 +4794,12 @@ msgstr ""
 msgid "Free models. No sign-in needed."
 msgstr ""
 
+#. Direction of an incoming peer exchange in Tools › Agents.
+#. Precedes the title of the peer parent thread that sent this message.
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "From"
+msgstr ""
+
 #. {agent} names the agent; {source} is the title of the thread it came from.
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "From {agent} in {source}."
@@ -4974,6 +5012,10 @@ msgstr ""
 msgid "Hide model controls"
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Hide reply"
+msgstr ""
+
 #: src/renderer/src/agents/SoundLine.tsx
 msgid "Hide the details"
 msgstr ""
@@ -5011,6 +5053,17 @@ msgstr ""
 #. The home folder of the user's account on a computer.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Home"
+msgstr ""
+
+#. Anti-loop hop counter for a peer parent-thread coordination message.
+#. Anti-loop hop counter for a peer parent-thread coordination message.
+#. Anti-loop hop counter for a peer parent-thread coordination message.
+#. placeholder {0}: exchange.hopCount
+#. placeholder {0}: view.hopCount
+#. placeholder {1}: exchange.hopMax
+#. placeholder {1}: view.hopMax
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "hop {0}/{1}"
 msgstr ""
 
 #. The computer a new thread starts on.
@@ -5560,6 +5613,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Loading messages…"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Loading reply…"
 msgstr ""
 
 #: src/renderer/src/agents/SkillPicker.tsx
@@ -6632,6 +6689,7 @@ msgstr ""
 #. {title} is the title of the thread that holds this folder. Opens that thread.
 #: src/renderer/src/agents/checkoutHold.ts
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/PeerCoordination.tsx
 msgid "Open {title}"
 msgstr ""
 
@@ -6640,6 +6698,7 @@ msgstr ""
 msgid "Open {title} {where}"
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Open {title} beside"
 msgstr ""
@@ -6687,6 +6746,7 @@ msgstr ""
 msgid "Open all {0} pictures"
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
@@ -6766,6 +6826,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Open panes"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Open Peer coordination in Tools: {label}"
 msgstr ""
 
 #: src/renderer/src/agents/StepPictures.tsx
@@ -6865,7 +6929,12 @@ msgstr ""
 #. Opens the thread a popped Needs you card belongs to.
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/PeerCoordination.tsx
 msgid "Open thread"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Open thread {title}"
 msgstr ""
 
 #. The sidebar's open threads grouped by status, as a screen reader names the part.
@@ -7094,9 +7163,11 @@ msgstr ""
 msgid "Pause {shown}"
 msgstr ""
 
+#. A peer coordination message was paused because the user acted in that thread.
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
 #. The large figure in the speed card of a thread on the user’s own model server: no tokens have come for a moment.
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/ServerMark.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Paused"
@@ -7114,6 +7185,19 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Paused when last read"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Peer context only — does not approve permissions or answer cards."
+msgstr ""
+
+#. Heading over parent-to-parent coordination exchanges in Tools › Agents.
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Peer coordination"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Peer coordination exchanges"
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -7458,8 +7542,10 @@ msgstr ""
 msgid "Queue prompt"
 msgstr ""
 
+#. A peer coordination message waiting for the target parent thread to become idle.
 #. A queued message's state: waiting its turn.
 #. A sent message's delivery status.
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Queued"
@@ -7505,6 +7591,10 @@ msgstr ""
 
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "Read its reply"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Read reply"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -7838,6 +7928,18 @@ msgstr ""
 #. {keyName} is the kind of key, such as Gemini API key.
 #: src/renderer/src/agents/AntigravityConnection.tsx
 msgid "Replace the saved {keyName}"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Reply in {peerTitle}’s own words — approves nothing."
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Reply text is no longer retained locally. Open the thread to inspect it."
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Reply was cut short. Open the thread to read the rest."
 msgstr ""
 
 #. Where an action's time came from; {provider} is the provider's name.
@@ -8301,6 +8403,16 @@ msgstr ""
 msgid "Sent"
 msgstr ""
 
+#. Direction of an outgoing peer exchange in Tools › Agents.
+#. Precedes the target parent thread title on a peer coordination row.
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Sent to"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Sent to {title}, {stateWord}"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Set aside · Unconfirmed"
 msgstr ""
@@ -8510,6 +8622,10 @@ msgstr ""
 
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
 msgid "Show page"
+msgstr ""
+
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Show peer coordination in Tools › Agents"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -8979,6 +9095,10 @@ msgstr ""
 msgid "Sotto could not read saved answers."
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "Sotto could not read that reply right now. Open the thread to read it."
+msgstr ""
+
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Sotto could not read the changes. Open the folder to look."
 msgstr ""
@@ -9374,7 +9494,9 @@ msgstr ""
 msgid "Steer now"
 msgstr ""
 
+#. A peer message sent as a mid-turn steer.
 #. A turn the user redirected with a new message while it ran.
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Steered"
 msgstr ""
@@ -9483,9 +9605,11 @@ msgstr ""
 msgid "Stop turning"
 msgstr ""
 
+#. A peer parent thread was stopped before answering.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Stopped"
 msgstr ""
@@ -10410,6 +10534,10 @@ msgstr ""
 msgid "This thread’s project folder. Both threads change the same files."
 msgstr ""
 
+#: src/renderer/src/agents/PeerCoordination.tsx
+msgid "This thread’s reply to {peerTitle}."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "This thread’s worktree folder and everything installed in it is removed. Its commits are kept, and sending to this thread puts the folder back."
 msgstr ""
@@ -10765,6 +10893,8 @@ msgid "Undo: restore {title}"
 msgstr ""
 
 #. A background agent's status.
+#. A peer coordination exchange outcome cannot be proved.
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Unknown"
 msgstr ""
@@ -11339,6 +11469,7 @@ msgid "worked on the cloud iPhone"
 msgstr ""
 
 #. A detached run's state: it is running.
+#. A peer parent thread is working on a coordination message.
 #. A provider's background agent's state: it is running.
 #. A thread row's state: its agent is working.
 #. A thread row's state: its agent is working.
@@ -11348,6 +11479,7 @@ msgstr ""
 #. A turn that is running.
 #. The readout beside the creature: background work the turn started is running.
 #: src/renderer/src/agents/DelegatedWork.tsx
+#: src/renderer/src/agents/PeerCoordination.tsx
 #: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 #: src/renderer/src/agents/threadFacts.ts

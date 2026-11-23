@@ -16,6 +16,8 @@ import { useOwlFeature } from '../state/owlFeature'
 import { checkMachineName, useCheckRowHandover, useWaitingChecks, WaitingCheckRow } from './WaitingChecks'
 import { elapsedLabel } from './rosterTime'
 import { DetachedRunRow, DetachedRunStopContext } from '../agents/DelegatedWork'
+import { PeerCoordinationAgentsSection, type PeerCoordinationPanelSource } from '../agents/PeerCoordination'
+import { useCoordinationEnabled, useThreadCoordination } from '../agents/coordination'
 import type { AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import './agentsSurface.css'
 
@@ -350,7 +352,7 @@ function MachineAway({ group }: { readonly group: RosterMachineGroup }): ReactNo
  * threads, each with Stop through `stopRun` (Zach's pick on November 20, 2026: variant 2, Own section, of
  * docs/prototypes/detached-runs-in-agents-prototype.html). The pane is as it was for a thread with none.
  */
-export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuation, delegation, runs, stopRun }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined; readonly rosterSignal?: string | undefined
+export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuation, delegation, peerCoordination, runs, stopRun }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined; readonly rosterSignal?: string | undefined
   /** The thread's detached runs, above its agents; none or undefined leaves the pane as it was. */
   readonly runs?: readonly AgentBackgroundWork[] | undefined
   /** Stops one of them by its ID; resolves to why it did not, or null once it did. Absent, the rows have no Stop. */
@@ -358,9 +360,14 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   /** Continue as a thread on each finished agent (#1028), where the feature is on and the thread's provider reports agents. */
   readonly continuation?: AgentContinueOptions | undefined
   /** The thread's delegated threads, listed with its agents (ADR-0081), where the Owl list turns delegation on. */
-  readonly delegation?: DelegatedRosterSource | undefined }): ReactNode {
+  readonly delegation?: DelegatedRosterSource | undefined
+  /** Parent-to-parent coordination exchanges for this thread (ADR-0216, Slice 2; Owl only). */
+  readonly peerCoordination?: PeerCoordinationPanelSource | undefined }): ReactNode {
   const { t } = useLingui()
   const state = useThreadSubagents(store, threadId)
+  const coordinationOn = useCoordinationEnabled() && peerCoordination !== undefined
+  const peerViews = useThreadCoordination(coordinationOn ? threadId : undefined)
+  const peerExchangeCount = peerViews.sent.length + peerViews.received.length
   const { families, reads } = useDelegatedRoster(threadId, delegation)
   const delegatedRows = useMemo(() => families.flat(), [families])
   // Grouped under a heading per machine where Work across machines is on and a machine other than this computer is in it
@@ -475,10 +482,11 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
           <h3 className="subagents-section__head" id={`${headingId}-runs`}>{t({ message: 'Detached runs', comment: 'Heading over the agent runs a thread started and left running, which Sotto found.' })}</h3>
           <DetachedRunStopContext.Provider value={stopRun ?? null}><ul className="delegated-work">{runs!.map(work => <DetachedRunRow key={work.id} work={work} />)}</ul></DetachedRunStopContext.Provider>
         </section> : null}
-        {runCount && rosterShown ? <h3 className="subagents-section__head">{t({ message: 'Agents and delegated threads', comment: 'Heading over a thread’s agents and delegated threads, under its detached runs.' })}</h3> : null}
+        <PeerCoordinationAgentsSection threadId={threadId} source={peerCoordination} />
+        {(runCount > 0 || peerExchangeCount > 0) && rosterShown ? <h3 className="subagents-section__head">{t({ message: 'Agents and delegated threads', comment: 'Heading over a thread’s agents and delegated threads, under its detached runs.' })}</h3> : null}
         {waitingChecks.length && onOpenThread ? <ul className="subagents-list" data-mixed="" aria-label={t`Checks waiting their turn`}>{waitingChecks.map(waiting => <WaitingCheckRow
           key={`check:${waiting.check.id}`} waiting={waiting} machine={checkMachineName(delegation?.state, waiting, t`This computer`, t`Remote host`)} threadOf={threadOf} onLeave={checkRowLeft} />)}</ul> : null}
-        {!roster.length && !blocks && !state.error && !waitingChecks.length && (!runCount || state.loading) ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
+        {!roster.length && !blocks && !state.error && !waitingChecks.length && peerExchangeCount === 0 && (!runCount || state.loading) ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
         {grouped && onOpenThread
           // A heading per machine with its count, and that machine's delegated threads under it (#1310, variant B).
           ? <>

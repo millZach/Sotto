@@ -42,6 +42,7 @@ import { registerAntigravityAccountIpc } from '../agents/antigravityAccountIpc'
 import { registerDelegationIpc } from '../agents/delegationIpc'
 import { DelegationToolServer } from '../agents/delegationTools'
 import { CoordinationToolServer } from '../agents/threadCoordinationTools'
+import { registerThreadCoordinationIpc } from '../agents/threadCoordinationIpc'
 import { DevinAcpHost } from '../agents/devin'
 import { DynamicRecord } from '../agents/dynamicRecord'
 import { registerDynamicRecordIpc } from '../agents/dynamicRecordIpc'
@@ -1171,6 +1172,8 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   }, senders, usageEnabled)
   const cleanupDelegations = registerDelegationIpc(ipc, delegationService, senders, () => agentControl.hostId(),
     (channel, payload) => { shellBridge.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled, owlFeatures['dynamic-threads'])
+  const cleanupCoordination = registerThreadCoordinationIpc(ipc, threadCoordinationService, senders, () => agentControl.hostId(),
+    (channel, payload) => { shellBridge.sendToMain(channel, payload) })
   const dynamicRecord = 'dynamicRecord' in localRuntime && localRuntime.dynamicRecord ? localRuntime.dynamicRecord : owlFeatures['dynamic-threads'] ? new DynamicRecord(userDataPath) : undefined
   const cleanupDynamicRecord = registerDynamicRecordIpc(ipc, owlFeatures['dynamic-threads'], dynamicRecord, senders)
   const cleanupCheckQueues = registerCheckQueueIpc(ipc, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
@@ -1420,6 +1423,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     cleanupUsage()
     cleanupProductEvents()
     cleanupDelegations()
+    cleanupCoordination()
     cleanupDynamicRecord()
     cleanupCheckQueues()
     cleanupContinue()

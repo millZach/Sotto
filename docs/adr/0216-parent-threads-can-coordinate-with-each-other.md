@@ -41,8 +41,8 @@ Eligible parent threads are open top-level project threads (`kind === 'project'`
 
 **6. Owl-only gating and phased slices.**
 - Controlled by `parent-thread-coordination` (`sentToStable: false`) in `src/shared/owlFeatures.ts`, read once at startup in the desktop engine and headless host. When off, `sotto_coordinate` is not constructed or offered, no peer wake-ups are dispatched, and any saved `thread-coordination.json` stays dormant and intact.
-- **Slice 1 (this change):** Local `ThreadCoordinationService`, `sotto_coordinate` MCP server, ADR-0004 guardrails, and fake-provider integration tests on desktop and headless host.
-- **Slice 2 (held until Slice 1 lands):** HTML prototype + Zach's pick, then attributed incoming peer messages in transcripts, outgoing coordination rows, and `Tools › Agents` **Coordinated threads** section with Pause control.
+- **Slice 1 (merged in #2835):** Local `ThreadCoordinationService`, `sotto_coordinate` MCP server, ADR-0004 guardrails, and fake-provider integration tests on desktop and headless host.
+- **Slice 2 (Zach's picks on November 23, 2026, from `docs/prototypes/parent-thread-coordination-prototype.html`):** Quiet left-aligned attributed card (Option A) for incoming peer messages in target threads with explicit ADR-0004 note and Open thread link, quiet exchange row under the turn (Option 1) in sender threads with status, hop count, and on-demand expandable reply (hiding raw coordination reply wake-ups from the bubble stream), plus a **Peer coordination** section in `Tools › Agents` (with **Open thread** and **Open beside**) and a quiet header indicator shown only while a peer exchange is active or queued.
 - **Slice 3:** Cross-machine coordination via optional host-v1 `thread-coordination` desktop relay (ADR-0105).
 
 ## Consequences
