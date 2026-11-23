@@ -4,30 +4,96 @@ import { permissionValue, QUESTION_SKIPPED, questionValues, skippedQuestion, ski
 import { commandCard, otherRequestCard, readableFields } from './requestInput'
 
 const objectSchema = z.record(z.string(), z.unknown())
+const metaSchema = z.record(z.string(), z.unknown())
 
 const idSchema = z.string().min(1).max(256)
 const permissionSchema = z.object({
   sessionId: idSchema, toolCall: z.object({ toolCallId: idSchema }),
   options: z.array(z.object({ optionId: idSchema, name: z.string().min(1).max(2_000), kind: z.enum(['allow_once', 'allow_always', 'reject_once', 'reject_always']) })).min(1).max(20),
 })
-const fieldSchema = z.object({
+const optionSchema = z.object({ const: z.string(), title: z.string(), description: z.string().optional() }).strict()
+const stringFieldSchema = z.object({
   type: z.literal('string'), title: z.string().optional(), description: z.string().optional(), default: z.string().optional(),
   enum: z.array(z.string()).min(1).max(100).optional(), enumNames: z.array(z.string()).max(100).optional(),
-  oneOf: z.array(z.object({ const: z.string(), title: z.string() }).strict()).min(1).max(100).optional(),
+  oneOf: z.array(optionSchema).min(1).max(100).optional(),
+  anyOf: z.array(optionSchema).min(1).max(100).optional(),
   minLength: z.number().int().min(0).max(100_000).optional(), maxLength: z.number().int().min(0).max(100_000).optional(),
-}).strict().refine(field => !(field.enum && field.oneOf) && (!field.enumNames || field.enum?.length === field.enumNames.length)
+  _meta: metaSchema.optional(),
+}).strict().refine(field => [field.enum, field.oneOf, field.anyOf].filter(Boolean).length <= 1
+  && (!field.enumNames || field.enum?.length === field.enumNames.length)
   && (field.minLength ?? 0) <= (field.maxLength ?? 100_000))
+const arrayItemsSchema = z.object({
+  type: z.literal('string').optional(),
+  enum: z.array(z.string()).min(1).max(100).optional(), enumNames: z.array(z.string()).max(100).optional(),
+  oneOf: z.array(optionSchema).min(1).max(100).optional(),
+  anyOf: z.array(optionSchema).min(1).max(100).optional(),
+}).strict().refine(items => [items.enum, items.oneOf, items.anyOf].filter(Boolean).length === 1
+  && (!items.enumNames || items.enum?.length === items.enumNames.length))
+const arrayFieldSchema = z.object({
+  type: z.literal('array'), title: z.string().optional(), description: z.string().optional(), default: z.array(z.string()).max(100).optional(),
+  items: arrayItemsSchema, minItems: z.number().int().min(0).max(100).optional(), maxItems: z.number().int().min(0).max(100).optional(),
+  uniqueItems: z.boolean().optional(), _meta: metaSchema.optional(),
+}).strict().refine(field => (field.minItems ?? 0) <= (field.maxItems ?? 100))
+const fieldSchema = z.discriminatedUnion('type', [stringFieldSchema, arrayFieldSchema])
 const formSchema = z.object({
+  $schema: z.string().optional(),
   type: z.literal('object'), title: z.string().optional(), description: z.string().optional(),
   properties: z.record(z.string().min(1).max(256), fieldSchema),
-  required: z.array(idSchema).max(100).optional(), additionalProperties: z.literal(false).optional(),
+  required: z.array(idSchema).max(100).optional(), additionalProperties: z.boolean().optional(),
+  _meta: metaSchema.optional(),
 }).strict().refine(form => {
   const keys = Object.keys(form.properties)
   return keys.length > 0 && keys.length <= 100 && (form.required ?? []).every(key => Object.hasOwn(form.properties, key))
 })
-const questionSchema = z.object({ sessionId: idSchema.optional(), mode: z.literal('form'), message: z.string().optional(), requestedSchema: formSchema })
+const questionSchema = z.object({
+  sessionId: idSchema.optional(), requestId: idSchema.optional(), elicitationId: idSchema.optional(), toolCallId: idSchema.optional(),
+  mode: z.literal('form').optional(), message: z.string().optional(), requestedSchema: formSchema, _meta: metaSchema.optional(),
+}).strict()
+
+/** Whether an ACP JSON-RPC method is a Devin user-input elicitation request. */
+export function isDevinElicitationMethod(method: string): boolean {
+  return method === 'elicitation/create' || method === 'session/elicitation'
+}
 type Permission = z.infer<typeof permissionSchema>
 type Question = z.infer<typeof questionSchema>
+type Field = z.infer<typeof fieldSchema>
+type ChoiceOption = { const: string; title: string; description?: string | undefined }
+type ChoiceSource = { enum?: string[] | undefined; enumNames?: string[] | undefined; oneOf?: ChoiceOption[] | undefined; anyOf?: ChoiceOption[] | undefined }
+type QuestionOption = NonNullable<NonNullable<AgentRequest['questions']>[number]['options']>[number]
+
+function fieldAllowOther(field: Field, formMeta?: Record<string, unknown>, requestMeta?: Record<string, unknown>): { allowOther: boolean; otherValue?: string } {
+  const meta = field._meta ?? formMeta ?? requestMeta
+  const otherValue = typeof meta?.['cognition.ai/otherOptionValue'] === 'string' ? meta['cognition.ai/otherOptionValue'] : undefined
+  return { allowOther: meta?.['cognition.ai/allowOther'] === true || otherValue !== undefined, ...(otherValue !== undefined ? { otherValue } : {}) }
+}
+
+function fieldOptions(source: ChoiceSource, otherValue?: string): QuestionOption[] {
+  const rich = source.oneOf ?? source.anyOf
+  const all = rich
+    ? rich.map(option => ({ id: option.const, label: option.title, ...(option.description ? { description: option.description } : {}) }))
+    : source.enum?.map((value, index) => ({ id: value, label: source.enumNames?.[index] ?? value })) ?? []
+  return otherValue === undefined ? all : all.filter(option => option.id !== otherValue)
+}
+
+function offeredValues(field: Field): Set<string> | undefined {
+  const source = field.type === 'array' ? field.items : field
+  if (source.oneOf) return new Set(source.oneOf.map(option => option.const))
+  if (source.anyOf) return new Set(source.anyOf.map(option => option.const))
+  if (source.enum) return new Set(source.enum)
+  return undefined
+}
+const noneAllowed = (field: Field): boolean => field.type === 'array' && (field.minItems ?? 0) === 0
+function arrayLimitsHint(field: Extract<Field, { type: 'array' }>): string | undefined {
+  const { minItems, maxItems } = field
+  if (minItems !== undefined && minItems > 0 && maxItems !== undefined) {
+    return minItems === maxItems
+      ? `Choose ${minItems} ${minItems === 1 ? 'option' : 'options'}.`
+      : `Choose ${minItems} to ${maxItems} options.`
+  }
+  if (minItems !== undefined && minItems > 0) return `Choose at least ${minItems} ${minItems === 1 ? 'option' : 'options'}.`
+  if (maxItems !== undefined) return `Choose at most ${maxItems} ${maxItems === 1 ? 'option' : 'options'}.`
+  return undefined
+}
 export type DevinPending = { wireId: string | number; threadId: string; toolCallId?: string; request: AgentRequest; actionDetails?: string
   /** What the answer allows (`devinActionScope`), checked again before the answer goes. */
   scope?: string; permission?: Permission; question?: Question; answering?: boolean }
@@ -106,15 +172,21 @@ export function devinPending(wireId: string | number, method: string, value: unk
       context: { toolCallId: permission.toolCall.toolCallId, ...(command ? commandCard(command, input).context : file ? otherRequestCard(input).context : { details: readableFields(input) }) },
     } }
   }
-  if (method === 'elicitation/create') {
+  if (isDevinElicitationMethod(method)) {
     const question = parse(questionSchema, value)
     const questions: NonNullable<AgentRequest['questions']> = Object.entries(question.requestedSchema.properties).map(([id, field]) => {
-      const required = question.requestedSchema.required?.includes(id) ?? false, words = !field.enum && !field.oneOf
-      // A field may be skipped on its own when it can be left out, or when it takes words the skip sentence fits.
-      const skippable = !required || words && skipSentenceFits(field.minLength, field.maxLength)
-      return { id, question: field.description ?? field.title ?? id, ...(field.title ? { header: field.title } : {}),
-        options: field.oneOf?.map(option => ({ id: option.const, label: option.title })) ?? field.enum?.map((value, index) => ({ id: value, label: field.enumNames?.[index] ?? value })) ?? [],
-        multiSelect: false, allowFreeText: words, required, ...(skippable ? { skippable: true as const } : {}) }
+      const required = question.requestedSchema.required?.includes(id) ?? false
+      const needed = required && !noneAllowed(field)
+      const { allowOther, otherValue } = fieldAllowOther(field, question.requestedSchema._meta, question._meta)
+      const options = field.type === 'array' ? fieldOptions(field.items, otherValue) : fieldOptions(field, otherValue)
+      const words = field.type === 'string' && !field.enum && !field.oneOf && !field.anyOf
+      const allowFreeText = words || allowOther
+      // A field may be skipped on its own when it can be left out or when it takes plain free-form words the skip sentence fits.
+      const skippable = !needed
+        || (words && skipSentenceFits(field.minLength, field.maxLength))
+      const hint = field.type === 'array' ? arrayLimitsHint(field) : undefined
+      return { id, question: (field.description ?? field.title ?? id) + (hint ? `\n${hint}` : ''), ...(field.title ? { header: field.title } : {}),
+        options, multiSelect: field.type === 'array', allowFreeText, required: needed, ...(skippable ? { skippable: true as const } : {}) }
     })
     return { wireId, threadId, question, request: { id, kind: 'question', text: question.message ?? 'Devin needs your input.', questions, options: questions.length === 1 ? questions[0]!.options : [], skippable: true } }
   }
@@ -136,26 +208,56 @@ export function devinAnswer(pending: DevinPending, answer: string, approved?: bo
   if (approved === false || skipped) return devinDecline(pending)
   const form = pending.question!.requestedSchema
   let content: Record<string, unknown>
+  const freeTextUsed = new Set<string>()
   if (questionAnswers) {
     const answers = questionValues(pending.request, questionAnswers)
-    // A skipped field is left out when it may be, and otherwise carries the skip sentence as its words.
-    content = Object.fromEntries(Object.keys(answers).flatMap(key => skippedQuestion(questionAnswers, key)
-      ? form.required?.includes(key) ? [[key, QUESTION_SKIPPED]] : []
-      : [[key, questionAnswers[key]!.optionIds[0] ?? questionAnswers[key]!.text]]))
+    // A skipped field is left out when it may be, and otherwise carries the skip sentence (or empty list for a zero-minimum array).
+    content = Object.fromEntries(Object.keys(answers).flatMap((key): [string, unknown][] => {
+      const field = form.properties[key]!
+      if (skippedQuestion(questionAnswers, key)) {
+        if (!form.required?.includes(key)) return []
+        return [[key, field.type === 'array' ? [] : QUESTION_SKIPPED]]
+      }
+      const entry = questionAnswers[key]!
+      if (field.type === 'array') {
+        const text = entry.text?.trim()
+        if (text) freeTextUsed.add(key)
+        return [[key, [...entry.optionIds, ...(text ? [text] : [])]]]
+      }
+      if (!entry.optionIds.length && entry.text !== undefined) freeTextUsed.add(key)
+      return [[key, entry.optionIds[0] ?? entry.text]]
+    }))
   } else {
     try { content = parse(objectSchema, JSON.parse(answer)) }
     catch {
       const keys = Object.keys(form.properties)
       if (keys.length !== 1 || answer.trim().startsWith('{')) throw new Error('Answer every field in this question.')
-      content = { [keys[0]!]: answer }
+      const only = keys[0]!
+      const field = form.properties[only]!
+      content = { [only]: field.type === 'array' ? [answer] : answer }
     }
   }
-  if ((form.required ?? []).some(key => !Object.hasOwn(content, key))) throw new Error('Answer every required field.')
+  for (const key of form.required ?? []) {
+    if (!Object.hasOwn(content, key) && noneAllowed(form.properties[key]!)) content[key] = []
+    if (!Object.hasOwn(content, key)) throw new Error('Answer every required field.')
+  }
   for (const [key, value] of Object.entries(content)) {
     const field = form.properties[key]
-    if (!Object.hasOwn(form.properties, key) || !field || typeof value !== 'string') throw new Error('Answer only the fields Devin requested.')
+    if (!Object.hasOwn(form.properties, key) || !field) throw new Error('Answer only the fields Devin requested.')
+    const { allowOther } = fieldAllowOther(field, form._meta, pending.question!._meta)
+    const allowed = offeredValues(field)
+    if (field.type === 'array') {
+      if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error('Answer only the fields Devin requested.')
+      const minItems = field.minItems ?? 0, maxItems = field.maxItems ?? 100
+      if (value.length < minItems) throw new Error(`Choose at least ${minItems} ${minItems === 1 ? 'option' : 'options'}.`)
+      if (value.length > maxItems) throw new Error(`Choose at most ${maxItems} ${maxItems === 1 ? 'option' : 'options'}.`)
+      if (field.uniqueItems === true && new Set(value).size !== value.length) throw new Error('Choose each option at most once.')
+      if (allowed && !allowOther && value.some(item => !allowed.has(item))) throw new Error('Choose an offered question option.')
+      continue
+    }
+    if (typeof value !== 'string') throw new Error('Answer only the fields Devin requested.')
     if (value.length < (field.minLength ?? 0) || value.length > (field.maxLength ?? 100_000)) throw new Error('The answer does not fit this field’s length limits.')
-    if (field.enum && !field.enum.includes(value) || field.oneOf && !field.oneOf.some(option => option.const === value)) throw new Error('Choose an offered question option.')
+    if (allowed && !allowed.has(value) && !(allowOther && (!questionAnswers || freeTextUsed.has(key)))) throw new Error('Choose an offered question option.')
   }
   return { action: 'accept', content }
 }

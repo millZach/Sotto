@@ -2,7 +2,7 @@
 import type { AgentHost } from '../../src/main/agents/host';
 import type { ActiveProviderId, ProviderId } from '../../src/shared/agents';
 
-export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown> }
+export interface RecordedRpc { id?: string | number; method?: string; params?: Record<string, unknown>; result?: Record<string, unknown>; error?: { code?: number; message?: string } }
 
 /** Short reaper settings so a test can watch a session be stopped instead of waiting out a real hour. */
 export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?: number }

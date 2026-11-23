@@ -177,6 +177,11 @@ function validateReply(frame) {
    ? Object.keys(outcome).join() === 'outcome'
    : outcome?.outcome === 'selected' && Object.keys(outcome).sort().join() === 'optionId,outcome' && ['allow-once', 'deny-once'].includes(outcome.optionId))
   if (request.cancelled && outcome?.optionId === 'allow-once') valid = false
+ } else if (request.kind === 'elicitation') {
+  valid = value?.action === 'decline' && Object.keys(value).join() === 'action'
+   || !request.cancelled && value?.action === 'accept' && Object.keys(value).sort().join() === 'action,content'
+    && typeof value.content === 'object' && value.content !== null && !Array.isArray(value.content)
+    && Object.keys(value.content).every(k => request.keys.includes(k))
  } else {
   valid = value?.action === 'decline' && Object.keys(value).join() === 'action'
    || !request.cancelled && value?.action === 'accept' && Object.keys(value).sort().join() === 'action,content'
@@ -331,6 +336,11 @@ const control = setInterval(() => {
    send({ id, method: 'session/request_permission', params: { sessionId, toolCall: { toolCallId: id }, options: [
     { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }, { optionId: 'allow-server', name: 'Allow all tools on this server', kind: 'allow_always' },
     { optionId: 'deny-once', name: 'Deny', kind: 'reject_once' }] } })
+  }
+  if (command.type === 'elicitation') {
+   const id = command.frameId ?? `${processToken}-${++serial}`
+   pending.set(id, { kind: 'elicitation', sessionId, keys: Object.keys(command.params?.requestedSchema?.properties ?? {}) })
+   send({ id, method: command.method ?? 'session/elicitation', params: command.params })
   }
   if (command.type === 'permission' || command.type === 'question') {
    const id = `${processToken}-${++serial}`
