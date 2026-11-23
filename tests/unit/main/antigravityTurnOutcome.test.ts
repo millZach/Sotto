@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, rename, rm, symlink } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, rename, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -141,6 +141,45 @@ describe('Antigravity turn outcome checker', () => {
       const watcher = await watchAntigravityTurnOutcome(realAppData, SESSION)
       await rename(original, join(dir, 'archived.db'))
       writeSteps(original, [{ idx: 1, type: 17, payload: 'Error 500, Message: swapped, Status: INTERNAL' }])
+      expect(await watcher.check('end_turn')).toEqual({ status: 'completed' })
+    } finally {
+      await rm(realAppData, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    }
+  })
+
+  it('distinguishes replaced files whose 64-bit NTFS ino values collide when converted to float64', async () => {
+    const realAppData = await mkdtemp(join(tmpdir(), 'sotto-agy-bigint-ino-'))
+    try {
+      const dir = join(realAppData, 'conversations')
+      await mkdir(dir, { recursive: true })
+      const original = join(dir, `${SESSION}.db`)
+      writeSteps(original, [{ idx: 0, type: 15 }])
+
+      const firstIno = 0x0040_0000_0000_0001n
+      const secondIno = 0x0040_0000_0000_0002n
+      expect(Number(firstIno)).toBe(Number(secondIno))
+
+      let currentIno = firstIno
+      const fakeLstat = async (path: string) => {
+        const stats = await lstat(path, { bigint: true })
+        return path.endsWith('.db') ? {
+          isDirectory: () => stats.isDirectory(),
+          isFile: () => stats.isFile(),
+          isSymbolicLink: () => stats.isSymbolicLink(),
+          dev: stats.dev,
+          ino: currentIno,
+          birthtimeNs: stats.birthtimeNs,
+        } : stats
+      }
+
+      const watcher = await watchAntigravityTurnOutcome(realAppData, SESSION, fakeLstat)
+      writeSteps(original, [{ idx: 1, type: 17, payload: 'Error 500, Message: same-file, Status: INTERNAL' }])
+      expect(await watcher.check('end_turn')).toEqual({
+        status: 'failed',
+        error: 'Antigravity ran into a service error and stopped this turn. Your thread is kept. Send again to retry.',
+      })
+
+      currentIno = secondIno
       expect(await watcher.check('end_turn')).toEqual({ status: 'completed' })
     } finally {
       await rm(realAppData, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

@@ -1,3 +1,4 @@
+import type { BigIntStats } from 'node:fs'
 import { lstat, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -36,10 +37,13 @@ export interface AntigravityOutcomeWatcher {
   check(stopReason: string): Promise<AntigravityTurnOutcome>
 }
 
+type BigIntLstat = (path: string) => Promise<Pick<BigIntStats, 'isDirectory' | 'isFile' | 'isSymbolicLink' | 'dev' | 'ino' | 'birthtimeNs'>>
+const readBigIntLstat: BigIntLstat = path => lstat(path, { bigint: true })
+
 type ResolvedPath =
   | { readonly kind: 'missing-dir'; readonly appDataReal: string }
   | { readonly kind: 'missing-db'; readonly appDataReal: string; readonly dbPath: string }
-  | { readonly kind: 'file'; readonly appDataReal: string; readonly dbPath: string; readonly dev: number | bigint; readonly ino: number | bigint }
+  | { readonly kind: 'file'; readonly appDataReal: string; readonly dbPath: string; readonly dev: bigint; readonly ino: bigint; readonly birthtimeNs: bigint }
   | { readonly kind: 'unsafe' }
 
 const isWithin = (parent: string, child: string): boolean => {
@@ -47,13 +51,13 @@ const isWithin = (parent: string, child: string): boolean => {
   return Boolean(diff) && !diff.startsWith('..') && !isAbsolute(diff)
 }
 
-async function resolveUnlinked(appData: string, sessionId: string): Promise<ResolvedPath> {
+async function resolveUnlinked(appData: string, sessionId: string, readLstat: BigIntLstat = readBigIntLstat): Promise<ResolvedPath> {
   if (!SESSION_ID.test(sessionId)) return { kind: 'unsafe' }
   try {
     const appDataReal = await realpath(appData)
     const conversationsDir = join(appDataReal, 'conversations')
     let convStat
-    try { convStat = await lstat(conversationsDir) } catch (error) {
+    try { convStat = await readLstat(conversationsDir) } catch (error) {
       return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { kind: 'missing-dir', appDataReal } : { kind: 'unsafe' }
     }
     if (!convStat.isDirectory() || convStat.isSymbolicLink()) return { kind: 'unsafe' }
@@ -62,13 +66,13 @@ async function resolveUnlinked(appData: string, sessionId: string): Promise<Reso
 
     const dbPath = join(conversationsReal, `${sessionId}.db`)
     let dbStat
-    try { dbStat = await lstat(dbPath) } catch (error) {
+    try { dbStat = await readLstat(dbPath) } catch (error) {
       return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { kind: 'missing-db', appDataReal, dbPath } : { kind: 'unsafe' }
     }
     if (!dbStat.isFile() || dbStat.isSymbolicLink()) return { kind: 'unsafe' }
     const dbReal = await realpath(dbPath)
     if (!isWithin(conversationsReal, dbReal)) return { kind: 'unsafe' }
-    return { kind: 'file', appDataReal, dbPath: dbReal, dev: dbStat.dev, ino: dbStat.ino }
+    return { kind: 'file', appDataReal, dbPath: dbReal, dev: dbStat.dev, ino: dbStat.ino, birthtimeNs: dbStat.birthtimeNs }
   } catch {
     return { kind: 'unsafe' }
   }
@@ -144,27 +148,27 @@ const typedOnlyWatcher: AntigravityOutcomeWatcher = {
 }
 
 /** Snapshots the session log's tail before sending `session/prompt`, then checks only new steps when it finishes. */
-export async function watchAntigravityTurnOutcome(appData: string, sessionId: string | undefined): Promise<AntigravityOutcomeWatcher> {
+export async function watchAntigravityTurnOutcome(appData: string, sessionId: string | undefined, readLstat: BigIntLstat = readBigIntLstat): Promise<AntigravityOutcomeWatcher> {
   if (!sessionId || !SESSION_ID.test(sessionId)) return typedOnlyWatcher
-  const before = await resolveUnlinked(appData, sessionId)
+  const before = await resolveUnlinked(appData, sessionId, readLstat)
   if (before.kind === 'unsafe') return typedOnlyWatcher
 
   let startIndex = -1
-  let beforeIdentity: { readonly dev: number | bigint; readonly ino: number | bigint } | undefined
+  let beforeIdentity: { readonly dev: bigint; readonly ino: bigint; readonly birthtimeNs: bigint } | undefined
   if (before.kind === 'file') {
     const readIndex = readSteps(before.dbPath, lastStepIndex)
     if (readIndex === undefined) return typedOnlyWatcher
     startIndex = readIndex
-    beforeIdentity = { dev: before.dev, ino: before.ino }
+    beforeIdentity = { dev: before.dev, ino: before.ino, birthtimeNs: before.birthtimeNs }
   }
 
   return {
     async check(stopReason: string): Promise<AntigravityTurnOutcome> {
       if (stopReason === 'cancelled') return { status: 'interrupted' }
-      const after = await resolveUnlinked(appData, sessionId)
+      const after = await resolveUnlinked(appData, sessionId, readLstat)
       const sameFile = after.kind === 'file'
         && after.appDataReal === before.appDataReal
-        && (beforeIdentity === undefined || (after.dev === beforeIdentity.dev && after.ino === beforeIdentity.ino))
+        && (beforeIdentity === undefined || (after.dev === beforeIdentity.dev && after.ino === beforeIdentity.ino && after.birthtimeNs === beforeIdentity.birthtimeNs))
       const step = sameFile ? readSteps(after.dbPath, lastStepAfter(startIndex)) : undefined
       return classifyAntigravityTurnOutcome(stopReason, step)
     },
