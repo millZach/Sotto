@@ -360,6 +360,10 @@ const workspaceSchema = z.object({
   creations: z.array(z.object({ threadId: z.string(), projectId: z.string(), commandId: z.string(), phase: z.enum(['unstarted', 'starting', 'retryable', 'started']) })),
   /** The Sotto thread IDs of cleared threads (ADR-0140 decision 6): IDs alone, never a title or a word. */
   clearedThreadIds: z.array(z.string().min(1).max(512)).default([]),
+  unlinkedPullRequests: z.array(z.object({
+    threadId: z.string().min(1).max(512),
+    keys: z.array(z.string().min(1).max(512)).max(GIT_PULL_REQUEST_LINKS_MAX),
+  }).strict()).max(10_000).optional(),
 })
 type Workspace = z.infer<typeof workspaceSchema>
 
@@ -527,6 +531,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Disabled records are carried through saves exactly as read, outside the active projection. */
   private readonly preservedDormantThreads = new Map<string, AgentThread>()
   private readonly retainedWatcherIds = new Set<string>()
+  /** Pull request keys explicitly unlinked per thread in this process so branch switches do not re-promote them (#2063). */
+  private readonly unlinkedPullRequests = new Map<string, Set<string>>()
   private visible(thread: AgentThread): boolean {
     return (this.councilEnabled || !thread.councilJudge) && (this.owletsEnabled || thread.owlet === undefined) && (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
       && heldProviderOfThreadRecord(thread, this.held) === undefined
@@ -1662,14 +1668,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const service = this.gitPullRequests
     if (!service) return
     const turn = endedTurn(thread.activities)
-    // Opened during the turn is the test for both signals: a command that ran gh pr create may print another pull request too.
-    if (turn.startedAt === undefined) return
     const created = createdPullRequestUrls(turn.records)
     void (async () => {
       await Promise.resolve()
+      const replyWindow = this.turnReplyWindow(threadId)
+      const startedAt = turn.startedAt ?? replyWindow.startedAt
+      // Opened during the turn is the test for both signals: a command that ran gh pr create may print another pull request too.
+      if (startedAt === undefined) return
       const linked = new Set((this.threadById(threadId)?.pullRequests ?? []).map(link => pullRequestKey(link.url)))
-      const wanted = [...new Set([...created, ...pullRequestUrlsIn(this.turnReply(threadId))])]
-        .filter(url => !linked.has(pullRequestKey(url))).slice(0, OPENED_PULL_REQUESTS_MAX)
+      const wanted = [...new Set([...created, ...pullRequestUrlsIn(replyWindow.replyText)])]
+        .filter(url => {
+          const key = pullRequestKey(url)
+          return key !== null && !linked.has(key) && !this.isPullRequestUnlinked(threadId, url)
+        }).slice(0, OPENED_PULL_REQUESTS_MAX)
       if (!wanted.length) return
       let folder: string
       try { folder = this.threadRepositoryFolder(threadId, 'pull requests') } catch { return }
@@ -1679,24 +1690,33 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         let view: GitPullRequestView
         try { view = await service.view(folder, url) } catch { continue }
         this.observePullRequest(view)
-        if (openedDuringTurn(view.createdAt, turn.startedAt)) found.push(view)
+        if (openedDuringTurn(view.createdAt, startedAt)) found.push(view)
       }
       if (!found.length || this.stopping) return
+      let linkedViews: GitPullRequestView[] = []
       await this.onLane(threadId, async () => {
         let changed = false
-        for (const view of found) changed = this.linkPullRequestRecord(threadId, view, 'created') !== null || changed
+        const eligible = found.filter(view => !this.isPullRequestUnlinked(threadId, view.url))
+        for (const view of eligible) changed = this.linkPullRequestRecord(threadId, view, 'created') !== null || changed
+        linkedViews = eligible
         if (!changed) return
         await this.saveLinks()
         this.publish()
       })
       // Told again now they are linked: Watcher takes a read only for a pull request a thread already has (#2430).
-      for (const view of found) this.observePullRequest(view)
+      for (const view of linkedViews) this.observePullRequest(view)
     })().catch(() => undefined)
   }
-  /** The words of a thread's newest turn's replies, read from its last turn alone. */
-  private turnReply(threadId: string): string {
+  /** The newest turn's assistant reply text and earliest message timestamp when activity timing is absent. */
+  private turnReplyWindow(threadId: string): { replyText: string; startedAt: number | undefined } {
     const messages = this.readWindow(threadId, 1)?.messages ?? []
-    return messages.filter(message => message.role === 'assistant').map(message => message.text).join('\n')
+    const replyText = messages.filter(message => message.role === 'assistant').map(message => message.text).join('\n')
+    let startedAt: number | undefined
+    for (const message of messages) {
+      const time = Date.parse(message.createdAt)
+      if (Number.isFinite(time) && (startedAt === undefined || time < startedAt)) startedAt = time
+    }
+    return { replyText, startedAt }
   }
   /**
    * The step that shows what a turn wrote: placed with the turn's first record when it has one, else after the message
@@ -1968,10 +1988,42 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const branch = branchPullRequestUrl(thread)
     return (branch !== undefined && pullRequestKey(branch) === key) || (thread.pullRequests ?? []).some(link => pullRequestKey(link.url) === key)
   }
+  private isPullRequestUnlinked(threadId: string, url: string): boolean {
+    const key = pullRequestKey(url)
+    return key !== null && (this.unlinkedPullRequests.get(threadId)?.has(key) ?? false)
+  }
+  private syncUnlinkedPullRequestsState(): void {
+    const entries: { threadId: string; keys: string[] }[] = []
+    for (const [threadId, set] of this.unlinkedPullRequests) {
+      if (set.size) entries.push({ threadId, keys: [...set].slice(-GIT_PULL_REQUEST_LINKS_MAX) })
+    }
+    if (entries.length) this.state.unlinkedPullRequests = entries.slice(-10_000)
+    else delete this.state.unlinkedPullRequests
+  }
+  private rememberUnlinkedPullRequest(threadId: string, url: string): void {
+    const key = pullRequestKey(url)
+    if (!key) return
+    let set = this.unlinkedPullRequests.get(threadId)
+    if (!set) { set = new Set(); this.unlinkedPullRequests.set(threadId, set) }
+    const had = set.has(key)
+    set.delete(key); set.add(key)
+    while (set.size > GIT_PULL_REQUEST_LINKS_MAX) set.delete(set.values().next().value!)
+    this.syncUnlinkedPullRequestsState()
+    if (!had) this.dirty = true
+  }
+  private clearUnlinkedPullRequest(threadId: string, url: string): void {
+    const key = pullRequestKey(url)
+    if (!key) return
+    const set = this.unlinkedPullRequests.get(threadId)
+    if (!set?.delete(key)) return
+    if (!set.size) this.unlinkedPullRequests.delete(threadId)
+    this.syncUnlinkedPullRequestsState()
+    this.dirty = true
+  }
   /**
    * Adds a pull request to the thread's links, or brings a link it has up to date with what GitHub said. A link
-   * keeps how it was first made. The oldest goes when the list is full. Callers hold the thread's lane, or run
-   * where nothing else changes the record; the caller saves.
+   * keeps how it was first made. Settled links are evicted before open ones when full. Callers hold the thread's lane,
+   * or run where nothing else changes the record; the caller saves.
    */
   private linkPullRequestRecord(threadId: string, pullRequest: Pick<GitPullRequestLink, 'number' | 'url' | 'title' | 'state' | 'draft'>, source: GitPullRequestLinkSource): GitPullRequestLink | null {
     const thread = this.threadById(threadId)
@@ -1987,9 +2039,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (isDeepStrictEqual(existing, link)) return existing
       links[index] = link
     } else {
+      while (links.length >= GIT_PULL_REQUEST_LINKS_MAX) {
+        const settledIndex = links.findIndex(item => item.state !== 'open')
+        links.splice(settledIndex >= 0 ? settledIndex : 0, 1)
+      }
       link = { ...snapshot, source, linkedAt: new Date().toISOString() }
       links.push(link)
-      while (links.length > GIT_PULL_REQUEST_LINKS_MAX) links.shift()
     }
     this.touched(thread).pullRequests = links
     this.dirty = true
@@ -2098,7 +2153,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Sotto holds it in the merge train and its pull request news reaches Watcher even when neither the thread's branch nor
    * its turns named it: one opened from another branch, by a subagent, or in another repository. The worker named it as
    * its own; GitHub only confirms it exists. One already linked is brought up to what GitHub says, such as a draft made
-   * ready since, and keeps how it was first made; the branch's own is left to its Git read. GitHub's answer is told after
+   * ready since, and keeps how it was first made; one not yet in the thread's durable links is added as `'linked'` so
+   * switching branches retains it too. GitHub's answer is told after
    * the link, since Watcher takes a read only for a pull request a thread already has. Never rejects.
    */
   async linkReadyPullRequest(threadId: string, url: string): Promise<void> {
@@ -2111,7 +2167,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const current = this.threadById(threadId)
         if (!current) return
         const link = current.pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(view.url))
-        if (!link && (view.state !== 'open' || this.knowsPullRequest(current, view.url))) return
+        if (!link && view.state !== 'open') return
+        this.clearUnlinkedPullRequest(threadId, view.url)
         if (!this.linkPullRequestRecord(threadId, view, link?.source ?? 'linked')) return
         await this.saveLinks()
         this.publish()
@@ -2126,6 +2183,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const service = this.pullRequestsOrRefuse()
       if (!parsePullRequestReference(reference)) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
       const view = await service.view(this.threadRepositoryFolder(threadId, 'pull requests'), reference)
+      this.clearUnlinkedPullRequest(threadId, view.url)
       const link = this.linkPullRequestRecord(threadId, view, 'linked')
       if (!link) throw new GitPullRequestRefusal('Sotto links pull requests from GitHub only.')
       await this.saveLinks()
@@ -2138,6 +2196,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.initialize()
       const thread = this.thread(threadId)
       const key = pullRequestKey(url)
+      this.rememberUnlinkedPullRequest(threadId, url)
       const links = (thread.pullRequests ?? []).filter(link => pullRequestKey(link.url) !== key)
       if (links.length !== (thread.pullRequests ?? []).length) {
         if (links.length) this.touched(thread).pullRequests = links; else delete this.touched(thread).pullRequests
@@ -2305,8 +2364,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const current = this.threadById(threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
-    if (status.pullRequest?.state === 'merged' && current.worktree.git?.pullRequest?.state !== 'merged') this.pullRequestMerged(status.pullRequest.url)
+    const previousPr = current.worktree.git?.pullRequest
+    const previousBranch = current.worktree.git?.branch
+    const switchedBranch = Boolean(previousBranch && status.branch && previousBranch !== status.branch)
+    if (status.pullRequest?.state === 'merged' && previousPr?.state !== 'merged') this.pullRequestMerged(status.pullRequest.url)
     this.touched(current).worktree = { ...current.worktree, git: status }
+    // Switching branches inside an owned worktree keeps earlier open PRs in durable links (#2063).
+    if (current.worktree.mode === 'independent' && switchedBranch && previousPr?.state === 'open'
+      && pullRequestKey(previousPr.url) !== (status.pullRequest ? pullRequestKey(status.pullRequest.url) : null)
+      && !this.isPullRequestUnlinked(threadId, previousPr.url)
+      && !current.pullRequests?.some(link => pullRequestKey(link.url) === pullRequestKey(previousPr.url))) {
+      this.linkPullRequestRecord(threadId, previousPr, 'linked')
+    }
     // The branch's own pull request, as this read found it, brings the thread's link to it up to date (#1147).
     if (status.pullRequest) this.followPullRequestState(threadId, status.pullRequest.url, status.pullRequest.state)
     this.dirty = true
@@ -2591,7 +2660,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.babysitRecords.delete(threadId); this.wakeUpRecords.delete(threadId); this.hiddenWakeUpRecords.delete(threadId); this.wakeUpAskRecords.delete(threadId)
     this.privateLegacyMessages.delete(threadId); this.storedActivity.delete(threadId); this.storedInputs.delete(threadId); this.heldForInput.delete(threadId); this.letReadGo(threadId)
     this.activityInputs.delete(threadId); this.known.delete(threadId); this.watched.delete(threadId); this.hidden.delete(threadId)
-    this.storedAnchors.delete(threadId); this.inspectionsQueued.delete(threadId); this.fullCheckDue.delete(threadId)
+    this.storedAnchors.delete(threadId); this.inspectionsQueued.delete(threadId); this.fullCheckDue.delete(threadId); this.unlinkedPullRequests.delete(threadId)
+    this.syncUnlinkedPullRequestsState()
     this.subagentSummaries.delete(threadId); this.subagentInputs.delete(threadId); this.subagentChanges.delete(threadId); this.subagentLiveSince.delete(threadId)
   }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
@@ -2873,8 +2943,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   openPullRequestUrls(threadId: string): string[] {
     const thread = this.threadVisible(threadId) ? this.threadById(threadId) : undefined
     if (!thread) return []
+    const urls: string[] = [], seen = new Set<string>()
+    const add = (url: string | undefined): void => {
+      const key = url ? pullRequestKey(url) : null
+      if (!key || seen.has(key)) return
+      seen.add(key); urls.push(url!)
+    }
     const branch = thread.worktree?.git?.pullRequest
-    return [...branch?.state === 'open' ? [branch.url] : [], ...(thread.pullRequests ?? []).flatMap(link => link.state === 'open' ? [link.url] : [])]
+    if (branch?.state === 'open') add(branch.url)
+    for (const link of thread.pullRequests ?? []) if (link.state === 'open') add(link.url)
+    return urls
   }
   /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0060). */
   visual(threadId: string, visualId: string): AgentVisual | undefined {
@@ -3130,6 +3208,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.clearedIds.size && this.state.snapshot.threads.some(thread => this.clearedIds.has(thread.id))) {
         this.state.snapshot.threads = this.state.snapshot.threads.filter(thread => !this.clearedIds.has(thread.id))
       }
+      for (const entry of this.state.unlinkedPullRequests ?? []) {
+        if (this.clearedIds.has(entry.threadId)) continue
+        const set = new Set(entry.keys.slice(-GIT_PULL_REQUEST_LINKS_MAX))
+        if (set.size) this.unlinkedPullRequests.set(entry.threadId, set)
+      }
+      this.syncUnlinkedPullRequestsState()
       try { this.threadStore.open({ ephemeral: !this.historyEnabled() }) }
       catch { this.storeUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
       try { this.subagentStore.open({ ephemeral: !this.historyEnabled() }) }
