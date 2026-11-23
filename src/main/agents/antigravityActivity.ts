@@ -1,5 +1,6 @@
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { antigravityCommand } from './antigravityRequests'
+import { shownCommand, splitCommandLine } from './detachedRunScan'
 import { object } from './providers/claude/claudeProtocol'
 import { acpToolMedia, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
@@ -18,9 +19,12 @@ export interface AntigravityToolSignal {
   readonly isCommand: boolean
   readonly label?: string | undefined
   readonly status: 'running' | 'completed' | 'failed' | 'interrupted' | 'unknown'
+  readonly pending: boolean
+  readonly isControlTool: boolean
   readonly isSubagent: boolean
   readonly backgroundLaunch: boolean
   readonly heuristic: boolean
+  readonly durationSeconds?: number | undefined
   readonly nativeTaskId?: string | undefined
   readonly killTaskId?: string | undefined
   readonly statusQueryRunning?: boolean | undefined
@@ -33,6 +37,7 @@ const MOVES_ON = new Set(['agent_message_chunk', 'tool_call', 'plan'])
 const ANTIGRAVITY_THINKING: AcpThinking = { idPrefix: ANTIGRAVITY_THINKING_ID_PREFIX, settles: update => MOVES_ON.has(String(update.sessionUpdate)) ? 'completed' : undefined }
 /** `agy`'s subagent tools, by the titles T3 Code recognises them by: shown as a subagent's row. */
 const SUBAGENT_TITLES = new Set(['Running start_subagent', 'Run start_subagent?', 'Running invoke_subagent', 'Run invoke_subagent?', 'Run invoke_subagent'])
+const NON_BACKGROUND_KINDS = new Set(['read', 'edit', 'delete', 'move', 'search', 'fetch', 'think'])
 const RUNNING_TEXT_PATTERN = /\b(?:running in (?:the )?background|moved to (?:the )?background|continuing in (?:the )?background|still running in (?:the )?background|background (?:task|command|job)\b)/iu
 const FINISHED_TEXT_PATTERN = /\b(?:completed|exited|finished|done|failed|killed|cancelled)\b/iu
 const TASK_ID_KEYS = ['backgroundTaskId', 'background_task_id', 'commandId', 'command_id', 'taskId', 'task_id', 'scheduleId', 'schedule_id', 'workflowId', 'workflow_id', 'jobId', 'job_id'] as const
@@ -89,31 +94,47 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
   const nativeTaskId = firstString(fields.output, TASK_ID_KEYS) ?? firstString(fields.input, ['TaskId', 'taskId', 'CommandId', 'commandId'])
   const action = firstString(fields.input, ['Action', 'action'])?.toLowerCase()
   const lowerTitle = fields.title?.toLowerCase() ?? ''
+  const trimmedTitle = lowerTitle.trim()
+  const canBackground = !NON_BACKGROUND_KINDS.has(fields.nativeKind ?? '')
   const isKill = (action === 'kill' || action === 'cancel' || lowerTitle.includes('cancel_')) && nativeTaskId !== undefined
   const isStatusTool = lowerTitle.includes('command_status') || (lowerTitle.includes('manage_task') && action === 'status')
-  const isScheduleTool = (fields.input?.DurationSeconds !== undefined || fields.input?.CronExpression !== undefined || /\bschedule\b/u.test(lowerTitle)) && fields.input?.IsDaemon !== true
-  const isWorkflowTool = /\brun_workflow\b/u.test(lowerTitle) || Boolean(fields.input?.ScriptPath || fields.input?.Script)
-  const isCommand = fields.nativeKind === 'execute' || fields.command !== undefined || /\b(?:run_command|command_status|shell|terminal|bash)\b/iu.test(lowerTitle)
+  const isControlTool = isKill || isStatusTool || /\bmanage_task\b/iu.test(lowerTitle)
+  const isScheduleTool = canBackground && fields.input?.IsDaemon !== true
+    && (fields.input?.DurationSeconds !== undefined || fields.input?.CronExpression !== undefined || /^(?:run(?:ning)?\s+)?schedule(?:\s*\?|\b(?!\.\w))/iu.test(trimmedTitle))
+  const isWorkflowTool = canBackground && (/^(?:run(?:ning)?\s+)?run_workflow\b/iu.test(trimmedTitle) || Boolean(fields.input?.ScriptPath || fields.input?.Script))
+  const isCommand = fields.nativeKind === 'execute'
+    || (canBackground && (fields.command !== undefined || /^(?:run(?:ning)?\s+)?(?:run_command|command_status|shell|terminal|bash)\b/iu.test(trimmedTitle)))
   const type: 'command' | 'subagent' | 'workflow' = fields.subagent ? 'subagent' : isWorkflowTool || isScheduleTool ? 'workflow' : 'command'
 
-  const outputSaysRunning = Boolean(
+  const explicitOutputRunning = Boolean(
     (outputStatus && RUNNING_OUTPUT_STATUS.has(outputStatus))
     || fields.output?.background === true
     || fields.output?.running === true
     || fields.output?.async === true
-    || (fields.outputText && RUNNING_TEXT_PATTERN.test(fields.outputText) && !FINISHED_TEXT_PATTERN.test(fields.outputText))
+  )
+  const outputSaysRunning = explicitOutputRunning || Boolean(
+    fields.outputText && RUNNING_TEXT_PATTERN.test(fields.outputText) && !FINISHED_TEXT_PATTERN.test(fields.outputText)
   )
   const outputSaysFinished = Boolean(
     Number.isSafeInteger(fields.exitCode)
     || (outputStatus && FINISHED_OUTPUT_STATUS.has(outputStatus))
-    || (fields.outputText && /\b(?:cancelled|canceled|killed|not found|failed|error)\b/iu.test(fields.outputText) && (isScheduleTool || isStatusTool))
+    || (!explicitOutputRunning && fields.outputText && (
+      (isScheduleTool && /\b(?:cancelled|canceled|killed|not found|failed|error)\b/iu.test(fields.outputText))
+      || (isStatusTool && !outputSaysRunning && /\b(?:cancelled|canceled|killed|not found|no such (?:task|command|job)|already (?:finished|completed|exited))\b/iu.test(fields.outputText))
+    ))
   )
+  const supportsBackgroundLaunch = isCommand || isWorkflowTool || isScheduleTool
   const inputBackground = fields.input?.IsBackground === true || fields.input?.isBackground === true || fields.input?.background === true
-  const backgroundLaunch = !fields.subagent && fields.status === 'completed' && !outputSaysFinished && !isStatusTool && !isKill && Boolean(
+  const backgroundLaunch = !fields.subagent && supportsBackgroundLaunch && fields.status === 'completed' && !outputSaysFinished && !isStatusTool && !isKill && Boolean(
     inputBackground || outputSaysRunning || isScheduleTool || (isWorkflowTool && (inputBackground || outputSaysRunning))
   )
   const heuristic = backgroundLaunch || (fields.status === 'running' && inputBackground)
-  const label = fields.command ?? firstString(fields.input, ['Description', 'description']) ?? fields.title
+  const redactedCommand = fields.command ? shownCommand(splitCommandLine(fields.command)) || undefined : undefined
+  const label = redactedCommand ?? firstString(fields.input, ['Description', 'description']) ?? fields.title
+  const rawDuration = fields.input?.DurationSeconds
+  const durationSeconds = isScheduleTool && fields.input?.CronExpression === undefined
+    && typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 ? rawDuration : undefined
+  const killSucceeded = isKill && fields.status === 'completed' && outputStatus !== 'failed' && outputStatus !== 'error'
 
   return {
     toolCallId: update.toolCallId,
@@ -122,11 +143,14 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
     isCommand,
     label,
     status: fields.status,
+    pending: update.status === 'pending',
+    isControlTool,
     isSubagent: fields.subagent,
     backgroundLaunch,
     heuristic,
+    ...(durationSeconds !== undefined ? { durationSeconds } : {}),
     ...(nativeTaskId ? { nativeTaskId } : {}),
-    ...(isKill ? { killTaskId: nativeTaskId } : {}),
+    ...(killSucceeded ? { killTaskId: nativeTaskId } : {}),
     ...(isStatusTool && nativeTaskId ? { statusQueryRunning: outputSaysRunning && !outputSaysFinished, statusQueryFinished: outputSaysFinished } : {}),
   }
 }

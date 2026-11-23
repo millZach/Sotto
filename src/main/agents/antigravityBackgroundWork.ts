@@ -2,18 +2,20 @@ import { randomUUID } from 'node:crypto'
 import { BACKGROUND_WORK_LABELS, MAX_BACKGROUND_WORK, MAX_MONITOR_LABEL, type AgentBackgroundWork } from '../../shared/agentMonitoring'
 import type { AntigravityToolSignal } from './antigravityActivity'
 import type { AntigravityStdioServer } from './antigravityUserServers'
-import type { ChildProcessRow } from './detachedRunScan'
+import { shownCommand, splitCommandLine, type ChildProcessRow } from './detachedRunScan'
 
 interface TrackedTask {
   readonly id: string
   readonly activityId: string
   readonly toolCallId: string
   type: 'command' | 'subagent' | 'workflow'
+  isCommand: boolean
   label: string
   startedAt: string
   turnKey: string
   touchedAtTurn: string
   nativeTaskId?: string
+  expiresAt?: number
   inFlight: boolean
   heuristic: boolean
   outlived: boolean
@@ -21,6 +23,9 @@ interface TrackedTask {
 }
 
 const SHELL_NAMES = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'fish', 'cmd', 'pwsh', 'powershell'])
+const INTERPRETER_NAMES = new Set(['node', 'nodejs', 'python', 'python3', 'py', 'bun', 'deno', 'ruby', 'perl', 'env', 'tsx', 'ts-node', 'uv', 'uvx', 'npx', 'npm', 'pnpm', 'yarn', 'bunx'])
+const LAUNCHER_NAMES = new Set(['npx', 'uvx', 'pnpm', 'yarn', 'npm', 'bunx'])
+const SYSTEM_HELPER_NAMES = new Set(['conhost', 'openconsole', 'werfault'])
 
 const normalizeProgram = (value: string): string => value.replace(/\\/gu, '/').split('/').pop()?.replace(/\.(?:exe|cmd|bat)$/iu, '').toLowerCase() ?? ''
 const programLabel = (executable: string | undefined): string | undefined => executable ? executable.replace(/\\/gu, '/').split('/').pop()?.replace(/\.exe$/iu, '') : undefined
@@ -31,9 +36,9 @@ export function sanitizeAntigravityWorkLabel(value: unknown): string | undefined
 }
 
 /**
- * Formats an OS child command line started by Antigravity into a concise label, unwrapping shell `-c` / `-Command` / `/c`
- * invocations when the script itself is passed as one argument, and returning only the program name once expanded so
- * secrets in child arguments never reach logs or UI state.
+ * Formats an OS child command line started by Antigravity into a concise label, redacting credentials in inline shell
+ * scripts (`-c` / `-lc` / `-lic` / `-Command` / `/c`) through `shownCommand` and returning only the program basename for
+ * direct execs so secrets in child arguments never reach logs or UI state.
  */
 export function antigravityCommandWords(argv: readonly string[]): string {
   if (!argv.length) return BACKGROUND_WORK_LABELS.command
@@ -42,35 +47,90 @@ export function antigravityCommandWords(argv: readonly string[]): string {
     for (let index = 1; index < argv.length - 1; index++) {
       const flag = argv[index]!.toLowerCase()
       if ((flag === '-c' || flag === '-lc' || flag === '-lic' || flag === '/c' || flag === '-command') && argv[index + 1]) {
-        return sanitizeAntigravityWorkLabel(argv[index + 1]) ?? BACKGROUND_WORK_LABELS.command
+        const redacted = shownCommand(splitCommandLine(argv[index + 1]!))
+        return sanitizeAntigravityWorkLabel(redacted) ?? BACKGROUND_WORK_LABELS.command
       }
     }
   }
   return sanitizeAntigravityWorkLabel(programLabel(argv[0])) ?? BACKGROUND_WORK_LABELS.command
 }
 
+function expandShellTokens(argv: readonly string[]): readonly string[] {
+  const rowProgram = normalizeProgram(argv[0] ?? '')
+  if (!SHELL_NAMES.has(rowProgram)) return argv
+  for (let index = 1; index < argv.length - 1; index++) {
+    const flag = argv[index]!.toLowerCase()
+    if ((flag === '-c' || flag === '-lc' || flag === '-lic' || flag === '/c' || flag === '-command') && argv[index + 1]) {
+      const split = splitCommandLine(argv[index + 1]!)
+      return [...argv.slice(0, index + 1), ...split, ...argv.slice(index + 2)]
+    }
+  }
+  return argv
+}
+
+function matchesServerProgram(token: string, serverCommand: string, serverProgram: string): boolean {
+  const normalized = normalizeProgram(token)
+  if (normalized === serverProgram || token === serverCommand) return true
+  if (serverProgram === 'npx' && /^npx(?:-cli)?(?:\.[cm]?js)?$/iu.test(normalized)) return true
+  if (serverProgram === 'npm' && /^npm(?:-cli)?(?:\.[cm]?js)?$/iu.test(normalized)) return true
+  return false
+}
+
 /**
  * Whether an OS child process matches one of the thread's configured local stdio MCP servers (`antigravityUserServers.ts`),
- * which live alongside the session rather than as background shell commands.
+ * including interpreter- or shell-wrapped invocations (`node /usr/local/bin/npx -y ...`, `bash -c ...`), which live
+ * alongside the session rather than as background shell commands.
  */
 export function isAntigravityStdioServerChild(row: ChildProcessRow, servers: readonly AntigravityStdioServer[]): boolean {
   if (!row.argv.length || !servers.length) return false
+  const tokens = expandShellTokens(row.argv)
   const rowProgram = normalizeProgram(row.argv[0] ?? '')
   if (!rowProgram) return false
   return servers.some(server => {
     const serverProgram = normalizeProgram(server.command)
     if (!serverProgram) return false
     const matchesDirect = rowProgram === serverProgram
-    const matchesWrapped = SHELL_NAMES.has(rowProgram) && row.argv.some(arg => normalizeProgram(arg) === serverProgram || arg === server.command)
-    if (!matchesDirect && !matchesWrapped) return false
-    return server.args.every(arg => row.argv.includes(arg))
+    const wrapper = SHELL_NAMES.has(rowProgram) || INTERPRETER_NAMES.has(rowProgram)
+    const matchesWrapped = wrapper && tokens.some(tok => matchesServerProgram(tok, server.command, serverProgram))
+    if (matchesDirect || matchesWrapped) {
+      return server.args.every(arg => {
+        const normalizedArg = arg.replace(/\\/gu, '/')
+        return tokens.includes(arg) || tokens.some(tok => tok.replace(/\\/gu, '/') === normalizedArg)
+      })
+    }
+    if (INTERPRETER_NAMES.has(rowProgram) && LAUNCHER_NAMES.has(serverProgram)) {
+      const packageArgs = server.args.filter(arg => arg.length > 0 && !arg.startsWith('-'))
+      if (packageArgs.length > 0) {
+        return packageArgs.every(pkg => {
+          const normalizedPkg = pkg.replace(/\\/gu, '/').toLowerCase()
+          return tokens.some(tok => {
+            const normalizedTok = tok.replace(/\\/gu, '/').toLowerCase()
+            return normalizedTok === normalizedPkg
+              || normalizedTok.includes(`/${normalizedPkg}/`)
+              || normalizedTok.endsWith(`/${normalizedPkg}`)
+          })
+        })
+      }
+    }
+    return false
   })
 }
 
-/** Returns the background-command label for a child of `agy`, or `undefined` if it is a known stdio MCP server. */
+/** Returns the background-command label for a child of `agy`, or `undefined` if it is a known stdio MCP server or OS console helper. */
 export function antigravityBackgroundCommand(servers: readonly AntigravityStdioServer[], row: ChildProcessRow): string | undefined {
-  if (!row.argv.length || isAntigravityStdioServerChild(row, servers)) return undefined
+  if (!row.argv.length) return undefined
+  if (SYSTEM_HELPER_NAMES.has(normalizeProgram(row.argv[0] ?? ''))) return undefined
+  if (isAntigravityStdioServerChild(row, servers)) return undefined
   return antigravityCommandWords(row.argv)
+}
+
+function commandLabelOverlap(taskLabel: string, liveLabel: string): boolean {
+  const a = taskLabel.toLowerCase().trim(), b = liveLabel.toLowerCase().trim()
+  if (!a || !b) return false
+  if (a === b || a.includes(b) || b.includes(a)) return true
+  const firstWordA = a.split(/\s+/u)[0]?.replace(/\.(?:exe|cmd|bat)$/iu, '')
+  const firstWordB = b.split(/\s+/u)[0]?.replace(/\.(?:exe|cmd|bat)$/iu, '')
+  return Boolean(firstWordA && firstWordB && firstWordA === firstWordB)
 }
 
 /**
@@ -81,6 +141,8 @@ export function antigravityBackgroundCommand(servers: readonly AntigravityStdioS
 export class AntigravityBackgroundTasks {
   private readonly tasks = new Map<string, TrackedTask>()
 
+  constructor(private readonly now: () => number = Date.now) {}
+
   get hasAny(): boolean { return this.tasks.size > 0 }
 
   isToolActive(activityId: string): boolean {
@@ -90,17 +152,21 @@ export class AntigravityBackgroundTasks {
     return false
   }
 
+  isOutlived(toolCallId: string): boolean { return this.tasks.get(toolCallId)?.outlived === true }
+
   observe(signal: AntigravityToolSignal, turnKey: string): boolean {
     let changed = false
-    if (signal.killTaskId) {
+    if (signal.killTaskId && signal.status === 'completed') {
       if (this.deleteByNativeTaskId(signal.killTaskId)) changed = true
     }
-    if (signal.statusQueryFinished && signal.nativeTaskId) {
+    if (signal.statusQueryFinished && signal.nativeTaskId && signal.status === 'completed') {
       if (this.deleteByNativeTaskId(signal.nativeTaskId)) changed = true
     }
 
     const existing = this.tasks.get(signal.toolCallId)
     if (signal.status === 'running') {
+      if (signal.isControlTool) return changed
+      if (signal.pending && !signal.heuristic && !existing) return changed
       const label = sanitizeAntigravityWorkLabel(signal.label) ?? existing?.label ?? BACKGROUND_WORK_LABELS[signal.type]
       if (!existing) {
         if (this.tasks.size >= MAX_BACKGROUND_WORK) return changed
@@ -109,27 +175,32 @@ export class AntigravityBackgroundTasks {
           activityId: signal.activityId,
           toolCallId: signal.toolCallId,
           type: signal.type,
+          isCommand: signal.isCommand,
           label,
-          startedAt: new Date().toISOString(),
+          startedAt: new Date(this.now()).toISOString(),
           turnKey,
           touchedAtTurn: turnKey,
           ...(signal.nativeTaskId ? { nativeTaskId: signal.nativeTaskId } : {}),
+          ...(signal.durationSeconds !== undefined ? { expiresAt: this.now() + signal.durationSeconds * 1_000 } : {}),
           inFlight: true,
-          heuristic: false,
+          heuristic: signal.heuristic,
           outlived: false,
           sawProcess: false,
         })
         return true
       }
-      if (existing.type !== signal.type || existing.label !== label || !existing.inFlight || existing.nativeTaskId !== (signal.nativeTaskId ?? existing.nativeTaskId)) {
+      if (existing.type !== signal.type || existing.isCommand !== signal.isCommand || existing.label !== label
+        || !existing.inFlight || existing.heuristic !== signal.heuristic || existing.nativeTaskId !== (signal.nativeTaskId ?? existing.nativeTaskId)) {
         changed = true
       }
       existing.type = signal.type
+      existing.isCommand = signal.isCommand
       existing.label = label
       existing.inFlight = true
-      existing.heuristic = false
+      existing.heuristic = signal.heuristic
       existing.touchedAtTurn = turnKey
       if (signal.nativeTaskId) existing.nativeTaskId = signal.nativeTaskId
+      if (signal.durationSeconds !== undefined) existing.expiresAt = this.now() + signal.durationSeconds * 1_000
       return changed
     }
 
@@ -140,13 +211,14 @@ export class AntigravityBackgroundTasks {
 
     if (signal.status === 'failed' || signal.status === 'interrupted') {
       if (existing && this.tasks.delete(signal.toolCallId)) changed = true
-      if (signal.nativeTaskId && this.deleteByNativeTaskId(signal.nativeTaskId)) changed = true
+      if (signal.nativeTaskId && !signal.isControlTool && this.deleteByNativeTaskId(signal.nativeTaskId)) changed = true
       return changed
     }
 
     if (signal.status === 'completed') {
       if (signal.backgroundLaunch) {
         const label = sanitizeAntigravityWorkLabel(signal.label) ?? existing?.label ?? BACKGROUND_WORK_LABELS[signal.type]
+        const expiresAt = signal.durationSeconds !== undefined ? this.now() + signal.durationSeconds * 1_000 : existing?.expiresAt
         if (!existing) {
           if (this.tasks.size >= MAX_BACKGROUND_WORK) return changed
           this.tasks.set(signal.toolCallId, {
@@ -154,11 +226,13 @@ export class AntigravityBackgroundTasks {
             activityId: signal.activityId,
             toolCallId: signal.toolCallId,
             type: signal.type,
+            isCommand: signal.isCommand,
             label,
-            startedAt: new Date().toISOString(),
+            startedAt: new Date(this.now()).toISOString(),
             turnKey,
             touchedAtTurn: turnKey,
             ...(signal.nativeTaskId ? { nativeTaskId: signal.nativeTaskId } : {}),
+            ...(expiresAt !== undefined ? { expiresAt } : {}),
             inFlight: false,
             heuristic: signal.heuristic,
             outlived: true,
@@ -166,14 +240,17 @@ export class AntigravityBackgroundTasks {
           })
           return true
         }
-        if (existing.inFlight || !existing.outlived || !existing.heuristic !== !signal.heuristic || existing.label !== label || existing.type !== signal.type) changed = true
+        if (existing.inFlight || !existing.outlived || existing.heuristic !== signal.heuristic || existing.label !== label
+          || existing.type !== signal.type || existing.isCommand !== signal.isCommand) changed = true
         existing.inFlight = false
         existing.heuristic = signal.heuristic
         existing.outlived = true
         existing.label = label
         existing.type = signal.type
+        existing.isCommand = signal.isCommand
         existing.touchedAtTurn = turnKey
         if (signal.nativeTaskId) existing.nativeTaskId = signal.nativeTaskId
+        if (expiresAt !== undefined) existing.expiresAt = expiresAt
         return changed
       }
       if (existing && this.tasks.delete(signal.toolCallId)) changed = true
@@ -186,15 +263,16 @@ export class AntigravityBackgroundTasks {
     return changed
   }
 
-  /** Reconciles tracked tasks when a turn ends, marking still-running calls outlived and pruning resolved heuristic commands. */
+  /** Reconciles tracked tasks when a turn ends, marking still-running calls outlived and pruning resolved heuristic commands and expired one-shot timers. */
   turnEnded(turnKey: string, reactive: boolean, liveProcessCommands: boolean): boolean {
     let changed = false
-    for (const [toolCallId, task] of this.tasks) {
+    const now = this.now()
+    for (const [toolCallId, task] of [...this.tasks]) {
       if (task.inFlight && !task.outlived) {
         task.outlived = true
         changed = true
       }
-      if (task.type === 'command' && task.heuristic) {
+      if (task.isCommand) {
         if (liveProcessCommands) {
           task.sawProcess = true
         } else if (task.sawProcess) {
@@ -203,7 +281,13 @@ export class AntigravityBackgroundTasks {
           continue
         }
       }
-      if (reactive && !task.inFlight && task.heuristic && task.turnKey !== turnKey && task.touchedAtTurn !== turnKey) {
+      if (!task.inFlight && task.isCommand && task.heuristic && !liveProcessCommands && task.turnKey !== turnKey && task.touchedAtTurn !== turnKey) {
+        this.tasks.delete(toolCallId)
+        changed = true
+        continue
+      }
+      if (reactive && !task.inFlight && task.type === 'workflow' && task.expiresAt !== undefined && now >= task.expiresAt
+        && task.turnKey !== turnKey && task.touchedAtTurn !== turnKey) {
         this.tasks.delete(toolCallId)
         changed = true
       }
@@ -218,21 +302,54 @@ export class AntigravityBackgroundTasks {
   }
 
   /** Returns active background work items, suppressing foreground in-flight calls and duplicate OS-tracked commands. */
-  working(activeSubagentToolCalls: ReadonlySet<string>, liveProcessCommands: boolean, turnRunning: boolean): AgentBackgroundWork[] {
-    const items: AgentBackgroundWork[] = []
-    for (const [toolCallId, task] of [...this.tasks]) {
-      if (activeSubagentToolCalls.has(toolCallId)) continue
-      if (turnRunning && !task.outlived) continue
-      if (task.type === 'command' && task.heuristic) {
-        if (liveProcessCommands) {
+  working(activeSubagentToolCalls: ReadonlySet<string>, liveProcessCommands: boolean | readonly AgentBackgroundWork[], turnRunning: boolean): AgentBackgroundWork[] {
+    const liveBoolean = typeof liveProcessCommands === 'boolean'
+    const liveCount = liveBoolean ? (liveProcessCommands ? Number.POSITIVE_INFINITY : 0) : liveProcessCommands.length
+    const suppressedIds = new Set<string>()
+
+    // Prune command tasks whose live OS process has exited.
+    if (liveCount === 0) {
+      for (const [toolCallId, task] of [...this.tasks]) {
+        if (task.isCommand && task.sawProcess) this.tasks.delete(toolCallId)
+      }
+    } else {
+      const candidates = [...this.tasks.values()].filter(task =>
+        !activeSubagentToolCalls.has(task.toolCallId) && !(turnRunning && !task.outlived) && task.isCommand
+      )
+      if (liveBoolean) {
+        for (const task of candidates) {
           task.sawProcess = true
-          continue
+          suppressedIds.add(task.toolCallId)
         }
-        if (task.sawProcess) {
-          this.tasks.delete(toolCallId)
-          continue
+      } else {
+        const availableSlots = liveProcessCommands.map((entry, index) => ({ index, label: entry.label, used: false }))
+        // Match explicit label overlaps first so an unrelated second command isn't swallowed by a different live process.
+        for (const task of candidates) {
+          const slot = availableSlots.find(s => !s.used && commandLabelOverlap(task.label, s.label))
+          if (slot) {
+            slot.used = true
+            task.sawProcess = true
+            suppressedIds.add(task.toolCallId)
+          }
+        }
+        // Then match any remaining live process slots against unmatched command tasks (heuristic first).
+        const remainingTasks = candidates.filter(t => !suppressedIds.has(t.toolCallId))
+          .sort((a, b) => Number(b.heuristic) - Number(a.heuristic))
+        for (const task of remainingTasks) {
+          const slot = availableSlots.find(s => !s.used)
+          if (!slot) break
+          slot.used = true
+          task.sawProcess = true
+          suppressedIds.add(task.toolCallId)
         }
       }
+    }
+
+    const items: AgentBackgroundWork[] = []
+    for (const [toolCallId, task] of this.tasks) {
+      if (activeSubagentToolCalls.has(toolCallId)) continue
+      if (turnRunning && !task.outlived) continue
+      if (suppressedIds.has(toolCallId)) continue
       items.push({ id: task.id, label: task.label, type: task.type, startedAt: task.startedAt })
     }
     return items
