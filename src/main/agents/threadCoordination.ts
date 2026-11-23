@@ -45,7 +45,7 @@ export interface CoordinationCoordinator {
   useCoordination(hooks: CoordinationControlHooks): () => void
   commandFromCoordination(command: CoordinationCommand, guard: () => void): Promise<AgentState>
   hasUserDraft(threadId: string): boolean
-  pendingThreadWorkReason?(threadId: string): string | null
+  pendingThreadWorkReason?(threadId: string, options?: { readonly ignoreDraftId?: string }): string | null
   delegationMessage?(messageId: string): boolean
   refreshCoordinationObservation(): void
   deliverWakeUp(threadId: string, news: CoordinationNews, options: { readonly tool: boolean }): Promise<void>
@@ -53,6 +53,7 @@ export interface CoordinationCoordinator {
 
 export interface CoordinationHost {
   admitDelegationCommands?(): void
+  recordSottoMessage?(threadId: string, messageId: string): Promise<void>
   threadMessage(threadId: string, messageId: string): { readonly id: string; readonly role: string; readonly text: string } | undefined
   threadMessages?(threadId: string): readonly AgentMessage[]
 }
@@ -68,8 +69,10 @@ export interface ThreadCoordinationServiceOptions {
 
 const id = z.string().min(1).max(512)
 const RECORDS_MAX = 500
+const OWNED_PER_TARGET_MAX = 200
 const RATE_TIMESTAMPS_MAX = 64
 const NEWS_ATTEMPTS_MAX = 5
+const NEWS_RETRY_BASE_MS = 1_000
 
 const failureSchema = z.enum(['target-changed', 'paused', 'stopped', 'permission-changed', 'provider', 'restarted'])
 type Failure = z.infer<typeof failureSchema>
@@ -115,6 +118,7 @@ const exchangeRecordSchema = z.object({
   replyMessageId: id.optional(),
   told: coordinationOutcomeSchema.optional(),
   charged: z.boolean(),
+  unknownBecause: z.enum(['restarted', 'unconfirmed', 'gone']).optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 }).strict()
@@ -125,10 +129,16 @@ const rateEntrySchema = z.object({
   timestamps: z.array(z.number().int().nonnegative()).max(RATE_TIMESTAMPS_MAX),
 }).strict()
 
+const ownedByTargetSchema = z.object({
+  targetThreadId: id,
+  messageIds: z.array(id).max(OWNED_PER_TARGET_MAX),
+}).strict()
+
 const coordinationFileSchema = z.object({
   version: z.literal(1),
   exchanges: z.array(exchangeRecordSchema).max(RECORDS_MAX * 2),
   rates: z.array(rateEntrySchema).max(RECORDS_MAX).optional(),
+  ownedByTarget: z.array(ownedByTargetSchema).max(RECORDS_MAX).optional(),
 }).strict()
 type CoordinationFile = z.infer<typeof coordinationFileSchema>
 
@@ -217,10 +227,25 @@ function effectiveOutcome(record: ExchangeRecord): CoordinationOutcome {
   return record.outcome ?? 'working'
 }
 
+function failureForRefusalCode(code: CoordinationRefusalCode): Failure {
+  if (code === 'PERMISSION_TOO_WIDE' || code === 'PERMISSION_NOT_COMPARABLE') return 'permission-changed'
+  if (code === 'TARGET_CHANGED') return 'target-changed'
+  if (code === 'THREAD_CLOSED' || code === 'STOPPING') return 'stopped'
+  if (code === 'UNKNOWN_THREAD' || code === 'INELIGIBLE_TARGET' || code === 'PROVIDER_UNAVAILABLE') return 'provider'
+  return 'paused'
+}
+
 function isOpenRecord(record: ExchangeRecord): boolean {
   if (record.deliveryState === 'failed') return false
-  if (record.deliveryState !== 'accepted') return record.outcome !== 'unknown'
+  if (record.deliveryState === 'queued' || record.deliveryState === 'dispatching') return true
+  // Uncertain sends stay open so observe() promotes them to accepted once their messageId echoes (L1).
+  if (record.deliveryState === 'uncertain') return record.unknownBecause !== 'gone'
   return record.outcome === undefined || !WATCHER_FINAL_OUTCOMES.has(record.outcome)
+}
+
+/** Whether a restarted accepted exchange can still reconcile to a definitive turn outcome if its target finishes. */
+function isReconcilableAfterRestart(record: ExchangeRecord): boolean {
+  return record.deliveryState === 'accepted' && record.outcome === 'unknown' && record.unknownBecause === 'restarted'
 }
 
 interface Waiter {
@@ -240,6 +265,8 @@ export class ThreadCoordinationService {
   private readonly unhook: () => void
   private records: ExchangeRecord[] = []
   private readonly rates = new Map<string, number[]>()
+  /** Durable per-target peer message IDs (IDs only) so provenance survives sender deletion and record trims (L6). */
+  private readonly ownedByTarget = new Map<string, string[]>()
   /** In-memory formatted text of queued peer messages waiting for a busy target to become idle; never written to disk. */
   private readonly pendingTexts = new Map<string, string>()
   private readonly ownedMessages = new Set<string>()
@@ -251,6 +278,7 @@ export class ThreadCoordinationService {
   private readonly waiters = new Set<Waiter>()
   private readonly deliveringNews = new Set<string>()
   private readonly newsAttempts = new Map<string, number>()
+  private readonly newsRetryCancels = new Map<string, () => void>()
   private messagesVersion = 0
   private closed = false
   private persistTail: Promise<void> = Promise.resolve()
@@ -282,13 +310,18 @@ export class ThreadCoordinationService {
 
   private nowIso(): string { return new Date(this.nowMs()).toISOString() }
 
-  /** Reads persisted coordination metadata on startup and marks pre-restart in-flight exchanges unresolved without replay. */
+  /** Reads persisted coordination metadata on startup, marks pre-restart in-flight exchanges unresolved without replay, and notifies senders (L1, L2, L6). */
   async recover(): Promise<void> {
     if (!this.options.historyEnabled()) return
     const saved = await this.store.read()
     this.records = [...saved.exchanges]
     this.rates.clear()
     for (const entry of saved.rates ?? []) this.rates.set(entry.senderThreadId, [...entry.timestamps])
+    this.ownedByTarget.clear()
+    for (const entry of saved.ownedByTarget ?? []) {
+      this.ownedByTarget.set(entry.targetThreadId, entry.messageIds.slice(-OWNED_PER_TARGET_MAX))
+    }
+    for (const record of this.records) this.rememberOwnedMessage(record.targetThreadId, record.messageId)
     this.rebuildIndexes()
     let changed = false
     const stamp = this.nowIso()
@@ -297,6 +330,7 @@ export class ThreadCoordinationService {
         record.deliveryState = 'failed'
         record.failure = 'restarted'
         record.outcome = 'unknown'
+        record.unknownBecause = 'restarted'
         record.outcomeAt = stamp
         record.updatedAt = stamp
         changed = true
@@ -304,6 +338,7 @@ export class ThreadCoordinationService {
         || record.deliveryState === 'accepted' && (record.outcome === undefined || !WATCHER_FINAL_OUTCOMES.has(record.outcome))) {
         if (record.deliveryState === 'dispatching') record.deliveryState = 'uncertain'
         record.outcome = 'unknown'
+        record.unknownBecause = 'restarted'
         record.outcomeAt = stamp
         record.updatedAt = stamp
         changed = true
@@ -311,18 +346,41 @@ export class ThreadCoordinationService {
     }
     if (changed) await this.persist()
     this.options.control.refreshCoordinationObservation()
+    // Notify senders once for any exchange left failed, unknown, or untold across restart (L2).
+    for (const record of this.records) {
+      if (record.expectReply && WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record)) && record.told !== effectiveOutcome(record)) {
+        this.maybeDeliverNews(record)
+      }
+    }
   }
 
-  /** Removes records belonging to deleted threads. */
+  /** Removes records belonging to deleted threads while keeping per-target message provenance for live targets (L6). */
   async forgetThreads(threadIds: ReadonlySet<string>): Promise<void> {
     if (!threadIds.size) return
     const before = this.records.length
-    this.records = this.records.filter(record => !threadIds.has(record.senderThreadId) && !threadIds.has(record.targetThreadId))
-    for (const threadId of threadIds) this.rates.delete(threadId)
-    for (const recordId of [...this.pendingTexts.keys()]) {
-      if (!this.records.some(record => record.id === recordId)) this.pendingTexts.delete(recordId)
+    let ownedChanged = false
+    for (const record of this.records) {
+      if (threadIds.has(record.senderThreadId) && !threadIds.has(record.targetThreadId)) {
+        this.rememberOwnedMessage(record.targetThreadId, record.messageId)
+        ownedChanged = true
+      }
     }
-    if (this.records.length !== before) {
+    for (const threadId of threadIds) {
+      if (this.ownedByTarget.delete(threadId)) ownedChanged = true
+      this.rates.delete(threadId)
+    }
+    const removedIds = new Set<string>()
+    this.records = this.records.filter(record => {
+      const drop = threadIds.has(record.senderThreadId) || threadIds.has(record.targetThreadId)
+      if (drop) removedIds.add(record.id)
+      return !drop
+    })
+    for (const recordId of removedIds) {
+      this.pendingTexts.delete(recordId)
+      this.newsRetryCancels.get(recordId)?.()
+      this.newsRetryCancels.delete(recordId)
+    }
+    if (this.records.length !== before || ownedChanged) {
       this.rebuildIndexes()
       await this.persist()
       this.options.control.refreshCoordinationObservation()
@@ -333,6 +391,8 @@ export class ThreadCoordinationService {
     if (this.closed) return
     this.closed = true
     this.pendingTexts.clear()
+    for (const cancel of this.newsRetryCancels.values()) cancel()
+    this.newsRetryCancels.clear()
     for (const waiter of [...this.waiters]) {
       this.waiters.delete(waiter)
       waiter.resolve()
@@ -358,10 +418,25 @@ export class ThreadCoordinationService {
     return thread.hostId === undefined || localHostId === undefined || thread.hostId === localHostId
   }
 
+  private rememberOwnedMessage(targetThreadId: string, messageId: string): void {
+    const existing = this.ownedByTarget.get(targetThreadId) ?? []
+    if (existing.includes(messageId)) return
+    const next = [...existing, messageId].slice(-OWNED_PER_TARGET_MAX)
+    this.ownedByTarget.set(targetThreadId, next)
+    // Keep target count bounded while preserving the newest target entries.
+    if (this.ownedByTarget.size > RECORDS_MAX) {
+      const oldestKey = this.ownedByTarget.keys().next().value
+      if (oldestKey !== undefined && oldestKey !== targetThreadId) this.ownedByTarget.delete(oldestKey)
+    }
+  }
+
   private rebuildIndexes(): void {
     this.ownedMessages.clear()
     this.recordByMessageId.clear()
     this.recordByDraftId.clear()
+    for (const ids of this.ownedByTarget.values()) {
+      for (const messageId of ids) this.ownedMessages.add(messageId)
+    }
     for (const record of this.records) {
       this.ownedMessages.add(record.messageId)
       this.recordByMessageId.set(record.messageId, record)
@@ -373,14 +448,23 @@ export class ThreadCoordinationService {
   private trimRecords(): void {
     if (this.records.length <= RECORDS_MAX) return
     const open = this.records.filter(isOpenRecord)
-    const finished = this.records.filter(record => !isOpenRecord(record)).slice(-(Math.max(0, RECORDS_MAX - open.length)))
+    const finishedCap = Math.max(0, RECORDS_MAX - open.length)
+    // Avoid Array.prototype.slice(-0), which returns the entire array (N3).
+    const finished = finishedCap > 0
+      ? this.records.filter(record => !isOpenRecord(record)).slice(-finishedCap)
+      : []
+    const kept = new Set([...finished, ...open])
+    for (const record of this.records) {
+      if (!kept.has(record)) this.rememberOwnedMessage(record.targetThreadId, record.messageId)
+    }
     this.records = [...finished, ...open].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     this.rebuildIndexes()
   }
 
   private persist(): Promise<void> {
-    if (!this.options.historyEnabled()) return Promise.resolve()
+    // Trim even when history is off so in-memory records stay bounded (N3).
     this.trimRecords()
+    if (!this.options.historyEnabled()) return Promise.resolve()
     const cutoff = this.nowMs() - COORDINATION_RATE_WINDOW_MS
     const rates = [...this.rates.entries()]
       .map(([senderThreadId, timestamps]) => ({
@@ -388,7 +472,11 @@ export class ThreadCoordinationService {
         timestamps: timestamps.filter(ts => ts > cutoff).slice(-RATE_TIMESTAMPS_MAX),
       }))
       .filter(entry => entry.timestamps.length > 0)
-    const payload: CoordinationFile = { version: 1, exchanges: this.records, rates }
+    const ownedByTarget = [...this.ownedByTarget.entries()]
+      .map(([targetThreadId, messageIds]) => ({ targetThreadId, messageIds: messageIds.slice(-OWNED_PER_TARGET_MAX) }))
+      .filter(entry => entry.messageIds.length > 0)
+      .slice(-RECORDS_MAX)
+    const payload: CoordinationFile = { version: 1, exchanges: this.records, rates, ownedByTarget }
     const write = this.persistTail.catch(() => undefined).then(() => this.store.write(payload)).catch(() => undefined)
     this.persistTail = write
     return write
@@ -397,7 +485,9 @@ export class ThreadCoordinationService {
   private observedThreadIds(): readonly string[] {
     const ids = new Set<string>()
     for (const record of this.records) {
-      if (isOpenRecord(record) || this.pendingTexts.has(record.id)) ids.add(record.targetThreadId)
+      if (isOpenRecord(record) || isReconcilableAfterRestart(record) || this.pendingTexts.has(record.id)) {
+        ids.add(record.targetThreadId)
+      }
     }
     return [...ids]
   }
@@ -492,6 +582,9 @@ export class ThreadCoordinationService {
       if (!this.admits(callerId)) refuse('NOT_ADMITTED', COORDINATION_NOT_ADMITTED)
       const input = parsed.data
       if (input.threadId === callerId) refuse('SELF_TARGET', 'You cannot read your own thread through sotto_coordinate.')
+      if (input.beforePosition !== undefined && input.afterPosition !== undefined) {
+        refuse('INVALID_INPUT', 'Pass either beforePosition or afterPosition, not both.')
+      }
 
       const snapshot = this.options.control.watcherSnapshot()
       const target = snapshot.threads.find(item => item.id === input.threadId)
@@ -657,8 +750,14 @@ export class ThreadCoordinationService {
     }
   }
 
-  private hasQueuedForTarget(targetThreadId: string): boolean {
-    return this.records.some(record => record.targetThreadId === targetThreadId && record.deliveryState === 'queued')
+  private hasTargetUserWork(targetThreadId: string, ignoreDraftId?: string): boolean {
+    return this.options.control.pendingThreadWorkReason?.(targetThreadId, ignoreDraftId ? { ignoreDraftId } : undefined) === 'pending-work'
+  }
+
+  private hasInFlightOrQueuedForTarget(targetThreadId: string): boolean {
+    return this.records.some(record =>
+      record.targetThreadId === targetThreadId
+      && (record.deliveryState === 'queued' || record.deliveryState === 'dispatching'))
   }
 
   private guardForDraft(draftId: string): (() => void) | undefined {
@@ -676,6 +775,9 @@ export class ThreadCoordinationService {
     const snapshot = this.options.control.watcherSnapshot()
     const { target } = this.validateTargetAndPermission(record.senderThreadId, record.targetThreadId, snapshot)
     this.checkDirectUserWork(target)
+    if (this.hasTargetUserWork(target.id, record.draftId)) {
+      throw new CoordinationRefusalError({ status: 'refused', code: 'QUEUE_HELD', message: 'That parent thread has queued or in-flight user work ahead of this peer message. Nothing was sent.' })
+    }
     const head = userHead(target, this.options.host.threadMessages?.(target.id))
     if (head !== record.expectedLastUserMessageId && head !== record.messageId && (head === null || !this.ownedMessages.has(head))) {
       throw new CoordinationRefusalError({ status: 'refused', code: 'TARGET_CHANGED', message: 'The user sent a new message in that parent thread before this coordination message went. Nothing was sent.' })
@@ -694,13 +796,11 @@ export class ThreadCoordinationService {
       }
       if (input.threadId === callerId) refuse('SELF_TARGET', 'A parent thread cannot send a coordination message to itself. Nothing was sent.')
 
-      const snapshot = this.options.control.watcherSnapshot()
-      const { caller, target } = this.validateTargetAndPermission(callerId, input.threadId, snapshot)
       const expectReply = input.expect_reply !== false
       const requestedDelivery = input.delivery ?? 'queue'
       const inputDigest = digestOf({ targetThreadId: input.threadId, message: input.message, delivery: requestedDelivery, expectReply })
 
-      // Idempotent retry check before consuming budgets.
+      // Idempotent retry_key lookup runs BEFORE target validation so retries against a later-archived/settled target return the original receipt (L3).
       if (input.retry_key !== undefined) {
         const existing = this.records.find(record => record.senderThreadId === callerId && record.retryKey === input.retry_key)
         if (existing) {
@@ -708,13 +808,15 @@ export class ThreadCoordinationService {
             refuse('RETRY_KEY_CONFLICT', 'That retry_key was already used for a different coordination message. Use a new UUID for a different message. Nothing was sent.')
           }
           const waitMs = Math.min(COORDINATION_WAIT_MAX_SECONDS, input.wait_seconds ?? 0) * 1000
-          if (existing.expectReply && waitMs > 0 && isOpenRecord(existing)) {
+          if (existing.expectReply && waitMs > 0 && !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(existing))) {
             await this.waitForOutcome(existing.id, waitMs, context.signal)
           }
           return this.receiptOf(existing, true)
         }
       }
 
+      const snapshot = this.options.control.watcherSnapshot()
+      const { caller, target } = this.validateTargetAndPermission(callerId, input.threadId, snapshot)
       this.checkDirectUserWork(target, true)
 
       // Anti-loop & budgets.
@@ -735,8 +837,10 @@ export class ThreadCoordinationService {
       }
 
       const targetRunning = isThreadTurnRunning(target)
+      const targetHasUserWork = this.hasTargetUserWork(target.id)
       const canSteer = capabilitiesForThread(snapshot, target).steer === true
-      const delivery: CoordinationDelivery = !targetRunning && !this.sending.has(target.id) && !this.hasQueuedForTarget(target.id)
+      // Never start ahead of queued/in-flight user work (L4) or another concurrent peer send to the same target (N5).
+      const delivery: CoordinationDelivery = !targetRunning && !targetHasUserWork && !this.sending.has(target.id) && !this.hasInFlightOrQueuedForTarget(target.id)
         ? 'started'
         : targetRunning && requestedDelivery === 'steer' && canSteer
           ? 'steered'
@@ -776,6 +880,7 @@ export class ThreadCoordinationService {
       })
 
       this.records.push(record)
+      this.rememberOwnedMessage(target.id, record.messageId)
       this.rates.set(callerId, [...recent, now])
       this.pendingTexts.set(record.id, formatted)
       this.rebuildIndexes()
@@ -792,7 +897,7 @@ export class ThreadCoordinationService {
         }
 
         const waitMs = Math.min(COORDINATION_WAIT_MAX_SECONDS, input.wait_seconds ?? 0) * 1000
-        if (expectReply && waitMs > 0 && isOpenRecord(record)) {
+        if (expectReply && waitMs > 0 && !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record))) {
           await this.waitForOutcome(record.id, waitMs, context.signal)
         }
         return this.receiptOf(record, true)
@@ -814,18 +919,17 @@ export class ThreadCoordinationService {
     await this.persist()
     let refusal: CoordinationRefusal | undefined
     try {
+      this.assertDispatchAllowed(record.id)
+      // Mark provenance on the target thread's own record before the provider hears it so it survives sender deletion, history-off, or Owl-off (L6).
+      await this.options.host.recordSottoMessage?.(record.targetThreadId, record.messageId).catch(() => undefined)
       const command: CoordinationCommand = { type: commandType, threadId: record.targetThreadId, draftId: record.draftId, text }
       const result = await this.options.control.commandFromCoordination(command, () => this.assertDispatchAllowed(record.id))
       const status = sendOutcome(result, record.targetThreadId, record.draftId).status
       if (status === 'accepted') {
         record.deliveryState = 'accepted'
+        delete record.unknownBecause
         this.pendingTexts.delete(record.id)
-      } else if (status === 'uncertain') {
-        record.deliveryState = 'uncertain'
-        record.outcome = 'unknown'
-        record.outcomeAt = this.nowIso()
-        this.pendingTexts.delete(record.id)
-      } else {
+      } else if (status === 'failed') {
         // Steer failed because turn ended before taking it -> fall back cleanly to queued send on next idle observation.
         if (commandType === 'steer' && !this.fenced.has(record.id) && this.pendingTexts.has(record.id)) {
           record.delivery = 'queued'
@@ -839,17 +943,18 @@ export class ThreadCoordinationService {
         record.outcome = FAILURE_OUTCOMES[record.failure]
         record.outcomeAt = this.nowIso()
         this.pendingTexts.delete(record.id)
+      } else {
+        // 'uncertain', 'queued', or 'unconfirmed' must never falsely claim "Nothing was sent" (N1).
+        record.deliveryState = 'uncertain'
+        record.outcome = 'unknown'
+        record.unknownBecause = 'unconfirmed'
+        record.outcomeAt = this.nowIso()
+        this.pendingTexts.delete(record.id)
       }
     } catch (error) {
       if (error instanceof CoordinationRefusalError) {
         record.deliveryState = 'failed'
-        record.failure = error.refusal.code === 'PERMISSION_TOO_WIDE' || error.refusal.code === 'PERMISSION_NOT_COMPARABLE'
-          ? 'permission-changed'
-          : error.refusal.code === 'TARGET_CHANGED'
-            ? 'target-changed'
-            : error.refusal.code === 'STOPPING'
-              ? 'stopped'
-              : 'paused'
+        record.failure = failureForRefusalCode(error.refusal.code)
         record.outcome = FAILURE_OUTCOMES[record.failure]
         record.outcomeAt = this.nowIso()
         record.charged = false
@@ -898,20 +1003,14 @@ export class ThreadCoordinationService {
       this.failQueued(next, 'provider')
       return
     }
-    if (isThreadTurnRunning(target)) return
+    // Hold peer sends queued while the target has a running turn OR queued/in-flight user work (L4).
+    if (isThreadTurnRunning(target) || this.hasTargetUserWork(target.id, next.draftId)) return
     // Check live guard before starting dispatch so a permission widening or user message fails cleanly.
     try {
       this.assertDispatchAllowed(next.id)
     } catch (error) {
       if (error instanceof CoordinationRefusalError) {
-        const failure: Failure = error.refusal.code === 'PERMISSION_TOO_WIDE' || error.refusal.code === 'PERMISSION_NOT_COMPARABLE'
-          ? 'permission-changed'
-          : error.refusal.code === 'TARGET_CHANGED'
-            ? 'target-changed'
-            : error.refusal.code === 'THREAD_CLOSED' || error.refusal.code === 'STOPPING'
-              ? 'stopped'
-              : 'paused'
-        this.failQueued(next, failure)
+        this.failQueued(next, failureForRefusalCode(error.refusal.code))
       }
       return
     }
@@ -934,7 +1033,7 @@ export class ThreadCoordinationService {
 
   private waitForOutcome(exchangeId: string, waitMs: number, signal?: AbortSignal): Promise<void> {
     const record = this.records.find(item => item.id === exchangeId)
-    if (!record || !isOpenRecord(record) || signal?.aborted || this.closed) return Promise.resolve()
+    if (!record || WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record)) || signal?.aborted || this.closed) return Promise.resolve()
     return new Promise<void>(resolve => {
       let done = false
       const finish = (): void => {
@@ -954,7 +1053,7 @@ export class ThreadCoordinationService {
 
   private notifyWaiters(exchangeId: string): void {
     const record = this.records.find(item => item.id === exchangeId)
-    if (!record || isOpenRecord(record)) return
+    if (!record || !WATCHER_FINAL_OUTCOMES.has(effectiveOutcome(record))) return
     for (const waiter of [...this.waiters]) {
       if (waiter.exchangeId === exchangeId) waiter.resolve()
     }
@@ -983,11 +1082,13 @@ export class ThreadCoordinationService {
         queuedTargets.add(record.targetThreadId)
         continue
       }
-      if (!isOpenRecord(record)) continue
+      const reconcilable = isReconcilableAfterRestart(record)
+      if (!isOpenRecord(record) && !reconcilable) continue
       const target = threadOf(record.targetThreadId)
       if (!target) {
-        if (record.deliveryState === 'accepted') {
+        if (record.deliveryState === 'accepted' || record.deliveryState === 'uncertain') {
           record.outcome = 'unknown'
+          record.unknownBecause = 'gone'
           record.outcomeAt = this.nowIso()
           record.updatedAt = record.outcomeAt
           dirty = true
@@ -996,9 +1097,15 @@ export class ThreadCoordinationService {
         }
         continue
       }
+      // Promote dispatching/uncertain sends as soon as their messageId echoes into the target thread (L1).
       if ((record.deliveryState === 'dispatching' || record.deliveryState === 'uncertain')
         && target.messages.some(message => message.role === 'user' && message.id === record.messageId)) {
         record.deliveryState = 'accepted'
+        if (record.outcome === 'unknown') {
+          delete record.outcome
+          delete record.outcomeAt
+          delete record.unknownBecause
+        }
         this.pendingTexts.delete(record.id)
         dirty = true
       }
@@ -1009,12 +1116,15 @@ export class ThreadCoordinationService {
         messageId => this.ownedMessages.has(messageId) || this.options.control.delegationMessage?.(messageId) === true,
       )
       if (!observed) continue
+      // For restarted accepted turns, keep 'unknown' until a definitive non-unknown outcome is observed.
+      if (reconcilable && (!WATCHER_FINAL_OUTCOMES.has(observed.outcome) || observed.outcome === 'unknown')) continue
       const prevOutcome = record.outcome
       const prevReply = record.replyMessageId
       if (observed.turnMessageId) record.turnMessageId = observed.turnMessageId
       if (observed.nativeTurnId) record.nativeTurnId = observed.nativeTurnId
       if (observed.replyMessageId) record.replyMessageId = observed.replyMessageId
       record.outcome = observed.outcome
+      if (observed.outcome !== 'unknown') delete record.unknownBecause
       if (WATCHER_FINAL_OUTCOMES.has(observed.outcome) && record.outcomeAt === undefined) {
         record.outcomeAt = this.nowIso()
       }
@@ -1046,8 +1156,11 @@ export class ThreadCoordinationService {
     if (this.deliveringNews.has(record.id)) return
     const attempts = this.newsAttempts.get(record.id) ?? 0
     if (attempts >= NEWS_ATTEMPTS_MAX) return
+    this.newsRetryCancels.get(record.id)?.()
+    this.newsRetryCancels.delete(record.id)
     this.deliveringNews.add(record.id)
-    this.newsAttempts.set(record.id, attempts + 1)
+    const nextAttempt = attempts + 1
+    this.newsAttempts.set(record.id, nextAttempt)
     const news: CoordinationNews = {
       source: 'coordination',
       items: [{
@@ -1058,11 +1171,20 @@ export class ThreadCoordinationService {
       }],
     }
     void this.options.control.deliverWakeUp(record.senderThreadId, news, { tool: false }).then(() => {
+      this.deliveringNews.delete(record.id)
       record.told = outcome
       record.updatedAt = this.nowIso()
       void this.persist()
-    }, () => undefined).finally(() => {
+    }, () => {
       this.deliveringNews.delete(record.id)
+      // Transient delivery refusal (e.g. sender moving or temporarily unavailable): retry with backoff up to NEWS_ATTEMPTS_MAX (L2).
+      if (!this.closed && nextAttempt < NEWS_ATTEMPTS_MAX && record.told !== outcome) {
+        const cancel = this.scheduleFn(() => {
+          this.newsRetryCancels.delete(record.id)
+          this.maybeDeliverNews(record)
+        }, NEWS_RETRY_BASE_MS * nextAttempt)
+        this.newsRetryCancels.set(record.id, cancel)
+      }
     })
   }
 

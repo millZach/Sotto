@@ -24,6 +24,7 @@ afterEach(async () => {
 interface CoordinationFixtureOptions {
   readonly history?: boolean
   readonly now?: () => number
+  readonly schedule?: (callback: () => void, delayMs: number) => () => void
 }
 
 async function coordinationFixture(options: CoordinationFixtureOptions = {}) {
@@ -69,6 +70,7 @@ async function coordinationFixture(options: CoordinationFixtureOptions = {}) {
     host: workspace.host,
     historyEnabled: () => history,
     ...(options.now ? { now: options.now } : {}),
+    ...(options.schedule ? { schedule: options.schedule } : {}),
   })
   let service = makeService()
   let tools = new CoordinationToolServer(service)
@@ -437,12 +439,165 @@ describe('ThreadCoordinationService over fake desktop providers (ADR-0216)', () 
     const afterWindow = await f.service.sendToThread(threadC, { threadId: threadE, message: 'After rate window', expect_reply: true })
     expect(afterWindow).toMatchObject({ status: 'ok', delivery: 'started' })
 
-    // Restart mid-turn marks open exchange as unknown without replaying it.
+    // Restart mid-turn marks open exchange as unknown without replaying it and notifies sender once (L2).
     const sendsBeforeRestart = f.workspace.adapters.codex.commands.filter(cmd => cmd.type === 'send').length
     await f.restartAll()
+    await vi.waitFor(() => {
+      const wake = f.native(threadC).messages.find(message => message.role === 'user' && message.text.includes(afterWindow.exchangeId as string))
+      expect(wake).toBeDefined()
+      expect(wake!.text).toContain('cannot be proved either way')
+    })
     const afterRestart = await f.service.readExchange(threadC, { exchangeId: afterWindow.exchangeId })
     expect(afterRestart).toMatchObject({ status: 'ok', outcome: 'unknown' })
     expect(f.workspace.adapters.codex.commands.filter(cmd => cmd.type === 'send').length).toBe(sendsBeforeRestart)
+  })
+
+  it('promotes uncertain sends once echoed (L1), retries failed wake-ups (L2), and returns retry_key receipt after target archive (L3)', async () => {
+    const scheduled: Array<() => void> = []
+    const f = await coordinationFixture({
+      schedule: callback => {
+        scheduled.push(callback)
+        return () => undefined
+      },
+    })
+    const projectId = await f.createProject('Regression Project')
+    const sender = await f.createParent('claude', { projectId, title: 'Sender' })
+    const target = await f.createParent('codex', { projectId, title: 'Target' })
+
+    // L1: simulate an unconfirmed send whose message echoes on a subsequent snapshot.
+    const origCommandFromCoord = f.control.commandFromCoordination.bind(f.control)
+    let savedMessageText = ''
+    let savedMessageId = ''
+    f.control.commandFromCoordination = async (command, guard) => {
+      guard()
+      savedMessageText = command.text
+      const draftId = command.draftId!
+      savedMessageId = (f.service as unknown as { recordByDraftId: Map<string, { messageId: string }> }).recordByDraftId.get(draftId)!.messageId
+      return {
+        ...f.control.shell(),
+        deliveries: [{ threadId: command.threadId, draftId, status: 'uncertain', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+      }
+    }
+    const uncertain = await f.service.sendToThread(sender, { threadId: target, message: 'Uncertain payload', wait_seconds: 0 })
+    f.control.commandFromCoordination = origCommandFromCoord
+    expect(uncertain).toMatchObject({ status: 'ok', outcome: 'unknown' })
+
+    // Target echoes the message and answers -> L1 promotes uncertain -> accepted -> answered and wakes sender.
+    // L2: fail the first wake-up attempt transiently and confirm scheduled retry delivers it.
+    const origDeliverWakeUp = f.control.deliverWakeUp.bind(f.control)
+    let wakeAttempts = 0
+    f.control.deliverWakeUp = async (threadId, news, opts) => {
+      wakeAttempts += 1
+      if (wakeAttempts === 1) throw new Error('Transient move fence')
+      return origDeliverWakeUp(threadId, news, opts)
+    }
+    f.native(target).messages.push({ id: savedMessageId, role: 'user', text: savedMessageText, createdAt: new Date().toISOString() })
+    f.native(target).status = 'running'
+    await f.emit(target)
+    await f.endTurn(target, 'Late answer after uncertain send')
+    await vi.waitFor(() => expect(wakeAttempts).toBe(1))
+    expect(scheduled.length).toBeGreaterThanOrEqual(1)
+    while (scheduled.length > 0) scheduled.shift()!()
+    await vi.waitFor(() => {
+      expect(wakeAttempts).toBe(2)
+      const wake = f.native(sender).messages.find(message => message.role === 'user' && message.text.includes('Late answer after uncertain send'))
+      expect(wake).toBeDefined()
+    })
+    const promoted = await f.service.readExchange(sender, { exchangeId: uncertain.exchangeId })
+    expect(promoted).toMatchObject({ status: 'ok', outcome: 'answered' })
+    expect((promoted.reply as { text: string }).text).toContain('Late answer after uncertain send')
+
+    // L3: retry_key after target is archived must return original receipt, not refuse with "Nothing was sent".
+    const key = randomUUID()
+    const first = await f.service.sendToThread(sender, { threadId: target, message: 'Before archive', retry_key: key, expect_reply: false })
+    expect(first).toMatchObject({ status: 'ok', delivery: 'started' })
+    await f.endTurn(target, 'Done before archive')
+    f.native(target).archivedAt = new Date().toISOString()
+    await f.emit(target)
+    const retried = await f.service.sendToThread(sender, { threadId: target, message: 'Before archive', retry_key: key, expect_reply: false })
+    expect(retried).toMatchObject({ status: 'ok', exchangeId: first.exchangeId, outcome: 'answered' })
+
+    // N4: read_thread refuses simultaneous beforePosition and afterPosition.
+    const freshTarget = await f.createParent('codex', { projectId, title: 'Fresh Read Target' })
+    expect(await f.service.readThread(sender, { threadId: freshTarget, beforePosition: 1, afterPosition: 0 }))
+      .toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  })
+
+  it('respects target queued user work (L4), cancels queued peer sends on Watcher/Council Stop (L5), and preserves peer provenance after sender deletion (L6)', async () => {
+    const f = await coordinationFixture()
+    const projectId = await f.createProject('Guardrails Project')
+    const sender = await f.createParent('claude', { projectId, title: 'Sender' })
+    const target = await f.createParent('codex', { projectId, title: 'Target', finishFirstTurn: false })
+
+    // L4: user already has a queued follow-up on the busy target -> peer send queues and NEVER jumps ahead of user's follow-up.
+    expect((await f.control.commandShell({
+      type: 'queue-followup',
+      threadId: target,
+      draftId: randomUUID(),
+      text: 'User queued instruction first',
+    })).error).toBeNull()
+    const peerQueued = await f.service.sendToThread(sender, { threadId: target, message: 'Peer must not jump ahead', wait_seconds: 0 })
+    expect(peerQueued).toMatchObject({ status: 'ok', delivery: 'queued' })
+    // Finish the first turn -> user's queued follow-up dispatches cleanly without failing or being jumped by peer.
+    await f.endTurn(target, 'Turn 1 done')
+    await vi.waitFor(() => {
+      expect(f.native(target).messages.some(message => message.text === 'User queued instruction first')).toBe(true)
+    })
+    expect(f.native(target).messages.some(message => message.text.includes('Peer must not jump ahead'))).toBe(false)
+    await f.endTurn(target, 'User follow-up done')
+
+    // L5: Stop from Council / Watcher origin must cancel queued peer sends targeting that thread.
+    const stopTarget = await f.createParent('codex', { projectId, title: 'Stop Target', finishFirstTurn: false })
+    const queuedBeforeStop = await f.service.sendToThread(sender, { threadId: stopTarget, message: 'Should cancel on Council stop', wait_seconds: 0 })
+    expect(queuedBeforeStop).toMatchObject({ status: 'ok', delivery: 'queued' })
+    const unhookCouncil = f.control.useCouncil({
+      observe: () => undefined,
+      observedThreadIds: () => [],
+      messageIdFor: () => undefined,
+      ownsMessage: () => false,
+      guardFor: () => undefined,
+      madeThread: () => false,
+    })
+    try {
+      await f.control.commandFromCouncil({ type: 'interrupt', threadId: stopTarget }, () => undefined)
+    } finally {
+      unhookCouncil()
+    }
+    const afterStop = await f.service.readExchange(sender, { exchangeId: queuedBeforeStop.exchangeId })
+    expect(afterStop).toMatchObject({ status: 'ok', outcome: 'stopped' })
+    await f.endTurn(stopTarget, 'Interrupted', 'interrupted')
+    expect(f.native(stopTarget).messages.some(message => message.text.includes('Should cancel on Council stop'))).toBe(false)
+
+    // L6: Deleting the sender thread preserves peer provenance on the live target (both ownsMessage and wakeUpMessageIds).
+    const liveTarget = await f.createParent('codex', { projectId, title: 'Live Target' })
+    const tempSender = await f.createParent('claude', { projectId, title: 'Temp Sender' })
+    const sent = await f.service.sendToThread(tempSender, { threadId: liveTarget, message: 'Message whose sender will be deleted', expect_reply: false })
+    expect(sent).toMatchObject({ status: 'ok', delivery: 'started' })
+    await f.endTurn(liveTarget, 'Ack')
+    const peerMsg = f.native(liveTarget).messages.find(message => message.role === 'user' && message.text.includes('Message whose sender will be deleted'))!
+    expect(peerMsg).toBeDefined()
+    expect(f.control.delegationMessage(peerMsg.id)).toBe(true)
+    await f.service.forgetThreads(new Set([tempSender]))
+    expect(f.control.delegationMessage(peerMsg.id)).toBe(true)
+    const readAfterDelete = await f.service.readThread(sender, { threadId: liveTarget })
+    const readMessages = readAfterDelete.messages as Array<{ id: string; provenance: string }>
+    expect(readMessages.find(item => item.id === peerMsg.id)?.provenance).toBe('peer-coordination')
+    // Target's own record also marks it as Sotto's (survives history-off / Owl-off).
+    const targetRecord = f.control.shell().host.threads.find(item => item.id === liveTarget)!
+    expect(targetRecord.wakeUpMessageIds).toContain(peerMsg.id)
+
+    // N5: Concurrent sends to an idle target serialize cleanly (first starts, second queues).
+    const concurrentTarget = await f.createParent('codex', { projectId, title: 'Concurrent Target' })
+    const [firstConcurrent, secondConcurrent] = await Promise.all([
+      f.service.sendToThread(sender, { threadId: concurrentTarget, message: 'Concurrent 1', expect_reply: false }),
+      f.service.sendToThread(sender, { threadId: concurrentTarget, message: 'Concurrent 2', expect_reply: false }),
+    ])
+    expect(firstConcurrent).toMatchObject({ status: 'ok', delivery: 'started' })
+    expect(secondConcurrent).toMatchObject({ status: 'ok', delivery: 'queued' })
+    await f.endTurn(concurrentTarget, 'Reply concurrent 1')
+    await vi.waitFor(() => {
+      expect(f.native(concurrentTarget).messages.some(message => message.text.includes('Concurrent 2'))).toBe(true)
+    })
   })
 })
 

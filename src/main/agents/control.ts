@@ -1678,16 +1678,16 @@ export class AgentControl {
       && (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.status === 'uncertain' && item.setAside !== true)
   }
   /** The existing pending-work guard's reason, so a refusal offers the recovery this work actually needs. */
-  pendingThreadWorkReason(threadId: string, { setAsideIgnored = false }: { readonly setAsideIgnored?: boolean } = {}): CheckoutPendingWork | null {
+  pendingThreadWorkReason(threadId: string, { setAsideIgnored = false, ignoreDraftId }: { readonly setAsideIgnored?: boolean; readonly ignoreDraftId?: string } = {}): CheckoutPendingWork | null {
     const released = (item: { readonly setAside?: boolean | undefined; readonly updatesResumed?: boolean | undefined }): boolean => item.setAside === true && (setAsideIgnored || item.updatesResumed === true)
     // A wake-up still waiting is Sotto's news, not the user's work: it holds nothing back until it starts to send.
     const items = this.followupStore.peek().items.filter(item => item.threadId === threadId && !isWaitingWakeUp(item))
-    const deliveries = (this.state.deliveries ?? []).filter(item => item.threadId === threadId && !released(item))
+    const deliveries = (this.state.deliveries ?? []).filter(item => item.threadId === threadId && item.draftId !== ignoreDraftId && !released(item))
     if (items.some(item => item.status === 'uncertain') || deliveries.some(item => item.status === 'uncertain')) return 'uncertain-send'
     if (items.some(item => item.status === 'failed')) return 'failed-followups'
     if (items.some(item => item.status === 'paused')) return 'paused-followups'
     // A model or effort change with no result holds nothing back, so another change the user asks for may follow it (#1192).
-    if (items.length || this.outbox.some(item => item.threadId === threadId && !released(item) && !holdsNothingBack(item))
+    if (items.length || this.outbox.some(item => item.threadId === threadId && item.draftId !== ignoreDraftId && !released(item) && !holdsNothingBack(item))
       || deliveries.some(item => ['queued', 'submitting'].includes(item.status) || setAsideUpdatesHeld(item))) return 'pending-work'
     return null
   }
@@ -3716,7 +3716,7 @@ export class AgentControl {
     if (!this.watcherOrigins.has(command) || command.type === 'interrupt' && !this.delegationOrigins.has(command)) {
       try { this.delegationHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion) } catch { /* The next snapshot reconciles it. */ }
     }
-    if (!this.watcherOrigins.has(command)) {
+    if (!this.watcherOrigins.has(command) || command.type === 'interrupt' || command.type === 'settle-thread') {
       try { this.coordinationHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined) } catch { /* The next snapshot reconciles it. */ }
     }
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
@@ -4182,17 +4182,11 @@ export class AgentControl {
       const held = (item: Readonly<QueuedFollowup>): boolean => recovering && isWaitingWakeUp(item) && !isAutoNewsOnly(item)
         || !this.delegationHooks && (item.news ?? []).some(isDelegationNews)
         || !this.coordinationHooks && (item.news ?? []).some(isCoordinationNews)
-      if (items.some(item => item.threadId === threadId && isWaitingWakeUp(item)
-        && item.news?.some(isDelegationNews) && item.news.some(news => !isDelegationNews(news)))) {
+      const mixedKind = [isDelegationNews, isCoordinationNews].find(kind =>
+        items.some(item => item.threadId === threadId && isWaitingWakeUp(item) && item.news?.some(kind) && item.news.some(news => !kind(news))))
+      if (mixedKind) {
         const word = (kept: readonly WakeUpNews[]) => queuedWakeUpText(kept, { tool: this.wakeUpGuard?.tool(threadId) ?? false })
-        this.runFollowup(threadId, () => this.followupStore.separateWakeUps(threadId, isDelegationNews, word),
-          { failure: 'Could not save the follow-up queue.' })
-        continue
-      }
-      if (items.some(item => item.threadId === threadId && isWaitingWakeUp(item)
-        && item.news?.some(isCoordinationNews) && item.news.some(news => !isCoordinationNews(news)))) {
-        const word = (kept: readonly WakeUpNews[]) => queuedWakeUpText(kept, { tool: this.wakeUpGuard?.tool(threadId) ?? false })
-        this.runFollowup(threadId, () => this.followupStore.separateWakeUps(threadId, isCoordinationNews, word),
+        this.runFollowup(threadId, () => this.followupStore.separateWakeUps(threadId, mixedKind, word),
           { failure: 'Could not save the follow-up queue.' })
         continue
       }
