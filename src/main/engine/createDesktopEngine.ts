@@ -41,6 +41,7 @@ import { registerCursorSignInIpc } from '../agents/cursorSignInIpc'
 import { registerAntigravityAccountIpc } from '../agents/antigravityAccountIpc'
 import { registerDelegationIpc } from '../agents/delegationIpc'
 import { DelegationToolServer } from '../agents/delegationTools'
+import { CoordinationToolServer } from '../agents/threadCoordinationTools'
 import { DevinAcpHost } from '../agents/devin'
 import { DynamicRecord } from '../agents/dynamicRecord'
 import { registerDynamicRecordIpc } from '../agents/dynamicRecordIpc'
@@ -206,6 +207,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const usageEnabled = owlFeatures.usage
   const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationEnabled = owlFeatures['thread-delegation']
+  const parentCoordinationEnabled = owlFeatures['parent-thread-coordination']
   const councilEnabled = owlFeatures.council
   const localAppsEnabled = owlFeatures['local-apps']
   const pluginsEnabled = owlFeatures.plugins
@@ -357,6 +359,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     restartStoppedThreads: owlFeatures['restart-stopped-threads'],
     streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled,
+    parentCoordinationEnabled,
     workerRolesEnabled,
     workerSwarmsEnabled: owlFeatures['worker-swarms'],
     continueEnabled,
@@ -863,6 +866,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     watcherEnabled,
   })
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
+  const threadCoordinationService = 'threadCoordination' in localRuntime ? localRuntime.threadCoordination : undefined
   const councilService = councilEnabled && startupSettings.localHostEnabled ? new CouncilService({
     directory: userDataPath,
     control: agentControl,
@@ -876,6 +880,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   if (councilService) await councilService.recover()
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { dynamic: owlFeatures['dynamic-threads'], roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
+  const coordinationTools = threadCoordinationService ? new CoordinationToolServer(threadCoordinationService) : undefined
   const tellTools = localWatcher ? tellWatcherTools(agentHost, localWatcher, async (threadId, words, userMessage) => {
     const hostId = agentControl.hostId()
     return hostId ? await localWatcher.threadTold({ hostId, threadId }, { words, ...userMessage ? { userMessage } : {} }) : { status: 'refused', reason: 'no-watcher' }
@@ -907,6 +912,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ...(pluginTools ? [pluginTools] : []),
     ...(pullRequestTools ? [pullRequestTools] : []),
     ...(delegationTools ? [delegationTools] : []),
+    ...(coordinationTools ? [coordinationTools] : []),
     ...(tellTools ? [tellTools] : []),
     ...(councilTools ? [councilTools] : []),
   ])
@@ -1478,6 +1484,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       pluginTools?.close(),
       pullRequestTools?.close(),
       delegationTools?.close(),
+      coordinationTools?.close(),
       tellTools?.close(),
       councilTools?.close(),
       pictureMaker?.close(),

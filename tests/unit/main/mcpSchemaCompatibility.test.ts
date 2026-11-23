@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { COUNCIL_TOOL_DEFINITIONS } from '../../../src/main/agents/councilTools'
+import { COORDINATION_TOOL_DEFINITIONS } from '../../../src/main/agents/threadCoordinationTools'
 import {
   delegationToolDefinitions,
   type DelegationPlace,
@@ -240,6 +241,7 @@ function collectAllMcpTools(): ToolEntry[] {
   }
 
   push('sotto_council', 'default', COUNCIL_TOOL_DEFINITIONS)
+  push('sotto_coordinate', 'default', COORDINATION_TOOL_DEFINITIONS)
   push('sotto_media', 'default', [showInThreadDefinition])
   push('sotto_pull_requests', 'default', pullRequestToolDefinitions)
   push('sotto_watcher', 'default', [

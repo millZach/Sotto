@@ -56,6 +56,7 @@ import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer, type WatcherTeamTools } from './watcherTools'
 import { DelegationService } from './delegation'
+import { ThreadCoordinationService } from './threadCoordination'
 import { DynamicRecord, threadTokensOf } from './dynamicRecord'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
@@ -150,6 +151,8 @@ export interface AgentRuntimeOptions {
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
   delegationEnabled?: boolean
+  /** The Owl list's answer for parent-to-parent thread coordination (ADR-0216), read once by the process owner. Absent fails closed. */
+  parentCoordinationEnabled?: boolean
   /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
   workerRolesEnabled?: boolean
   workerSwarmsEnabled?: boolean
@@ -722,6 +725,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     const record = delegation
     agentControl.onThreadsDeleted(threadIds => { void record.forgetThreads(new Set(threadIds)) })
   }
+  // Parent-to-parent thread coordination (ADR-0216): local top-level parent threads discover, read, and message each other
+  // through `sotto_coordinate`, on both desktop and headless host when the Owl feature is on.
+  const threadCoordination = options.parentCoordinationEnabled === true
+    ? new ThreadCoordinationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled })
+    : undefined
+  if (threadCoordination) {
+    const coordination = threadCoordination
+    agentControl.onThreadsDeleted(threadIds => { void coordination.forgetThreads(new Set(threadIds)) })
+  }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
@@ -858,6 +870,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     idleCompaction.stop()
     watcher?.close()
     delegation?.close()
+    threadCoordination?.close()
     delegationRelay?.close()
     delegationRemote?.close()
     continuation?.close()
@@ -919,7 +932,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       toolReads.dispose()
       // Checks that were waiting let go of the branches they would have started from (#1312), alongside the providers'
       // drain rather than ahead of it, and before the store closes.
-      try { await stopProviders(); await preparingForShutdown } finally { await delegation?.drained(); await watcher?.drained(); usage?.close(); await agentHost.close() }
+      try { await stopProviders(); await preparingForShutdown } finally { await delegation?.drained(); await threadCoordination?.drained(); await watcher?.drained(); usage?.close(); await agentHost.close() }
     })()
     return closing
   }
@@ -944,6 +957,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     moveKeeps?.settleFences()
     await watcher?.recover()
     await delegation?.recover()
+    await threadCoordination?.recover()
   } catch (error) {
     // One failed closer must neither skip the other resources nor replace the startup error.
     await Promise.allSettled([
@@ -963,6 +977,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...Object.values(providers).map(provider => async () => provider.closed?.()),
       async () => closingWatcherTools,
       async () => delegation?.drained(),
+      async () => threadCoordination?.drained(),
       async () => watcher?.drained(),
     ].map(stop => stop()))
     await Promise.allSettled([async () => agentHost.dispose(), async () => usage?.close()].map(stop => stop()))
@@ -1078,5 +1093,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   idleCompaction.start()
   const useHostFactsAccelerator = (accelerator: Parameters<HostFactsSource['useAccelerator']>[0]): void => { facts.useAccelerator(accelerator) }
   const useToolReadsAccelerator = (accelerator: Parameters<typeof toolReads.useAccelerator>[0]): void => { toolReads.useAccelerator(accelerator) }
-  return { antigravityAccount, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, detachedRuns, useHostFactsAccelerator, useToolReadsAccelerator, prepareForShutdown, close }
+  return { antigravityAccount, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, threadCoordination, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, detachedRuns, useHostFactsAccelerator, useToolReadsAccelerator, prepareForShutdown, close }
 }
