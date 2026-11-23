@@ -112,7 +112,7 @@ export class TellWatcherToolServer implements ScopedThreadTools {
     const cut = words === message ? '' : ' Your message was cut to what fits.'
     return text(answer.requestOpened
       ? `Watcher will read this within seconds, or when its current turn ends, and can act on it because the user's own message here names it.${cut} Tell the user you passed it on.`
-      : `Watcher will read this within seconds, or when its current turn ends. The user's own last message here does not name Watcher, or already opened a request, so Watcher will tell the user what you said and wait for their word.${cut} Tell the user you passed it on.`)
+      : `Delivered to Watcher; it will read this within seconds, or when its current turn ends. Because the user's own last message here does not name Watcher, or already opened a request, this opened no new user request and grants no permission — Watcher still receives your note and will follow up under any standing watch or tell the user if their word is needed.${cut} Reply briefly to the user and wait at rest; do not open a question card asking the user to message Watcher.`)
   }
 }
 
