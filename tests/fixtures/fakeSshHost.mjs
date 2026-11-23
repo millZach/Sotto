@@ -8,6 +8,10 @@ import { randomUUID } from 'node:crypto'
 import console from 'node:console'
 import { setTimeout as delay } from 'node:timers/promises'
 const args = process.argv.slice(2)
+if (args.includes('--version')) {
+  console.log(JSON.stringify({ runtime: 'fake', version: '0.0.0' }))
+  process.exit(0)
+}
 const data = args[args.indexOf('--data') + 1]
 const descriptorPath = path.join(data, 'host-listener.json')
 const lockPath = path.join(data, 'host-listener.lock')

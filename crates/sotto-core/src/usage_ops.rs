@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration as ChronoDuration, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -557,6 +558,169 @@ fn is_valid_usage_source(source: &str) -> bool {
     matches!(source, "sotto" | "outside")
 }
 
+#[derive(Clone)]
+struct CachedPromptRow {
+    provider: String,
+    served_model_raw: String,
+    thread_id: String,
+    source: String,
+    client: String,
+    at_dt: DateTime<Utc>,
+    kind: String,
+    input_kind: String,
+}
+
+#[derive(Clone)]
+struct PromptServedCache {
+    revision: i64,
+    generation: i64,
+    rows: Vec<CachedPromptRow>,
+}
+
+const PROMPT_CACHE_MAX_DBS: usize = 8;
+
+fn prompt_served_cache() -> &'static Mutex<HashMap<PathBuf, PromptServedCache>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, PromptServedCache>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn utc_day_bounds(from: Option<&str>, to: Option<&str>) -> (Option<DateTime<Utc>>, Option<DateTime<Utc>>) {
+    // Every IANA timezone offset lies within [-14h, +14h], so padding `from` by -1 day
+    // and `to` by +2 days (exclusive) is a lossless UTC prefilter for any time zone.
+    let lower = from
+        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|ndt| Utc.from_utc_datetime(&ndt) - ChronoDuration::days(1));
+    let upper = to
+        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
+        .map(|ndt| Utc.from_utc_datetime(&ndt) + ChronoDuration::days(2));
+    (lower, upper)
+}
+
+fn table_exists_checked(conn: &Connection, table: &str) -> Result<bool, rusqlite::Error> {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1",
+        [table],
+        |_| Ok(true),
+    )
+    .optional()
+    .map(|opt| opt.unwrap_or(false))
+}
+
+fn load_cached_prompts(
+    tx: &rusqlite::Transaction<'_>,
+    db_path: &Path,
+    revision: i64,
+    generation: i64,
+    has_token_rows: bool,
+) -> Result<Vec<CachedPromptRow>, rusqlite::Error> {
+    if let Ok(guard) = prompt_served_cache().lock() {
+        if let Some(entry) = guard.get(db_path) {
+            if entry.revision == revision && entry.generation == generation {
+                return Ok(entry.rows.clone());
+            }
+        }
+    }
+
+    let prompt_has_source = table_has_column(tx, "prompt_rows", "source");
+    let token_has_sub_agent = has_token_rows && table_has_column(tx, "token_rows", "sub_agent");
+    let source_cols = if prompt_has_source {
+        "source, client"
+    } else {
+        "'sotto' AS source, 'sotto' AS client"
+    };
+    let served_expr = if has_token_rows {
+        let sub_clause = if token_has_sub_agent {
+            "AND t.sub_agent = 0"
+        } else {
+            ""
+        };
+        format!(
+            "COALESCE((
+                SELECT t.model_id
+                FROM token_rows t
+                WHERE t.provider = p.provider
+                  AND t.thread_id = p.thread_id
+                  {sub_clause}
+                  AND t.at >= p.at
+                  AND (p.next_at IS NULL OR t.at < p.next_at)
+                ORDER BY t.at ASC
+                LIMIT 1
+            ), p.model_id)"
+        )
+    } else {
+        "p.model_id".to_string()
+    };
+    let prompt_sql = format!(
+        "SELECT p.provider, {served_expr} AS served_model_id,
+                p.thread_id, p.source, p.client, p.at, p.kind, p.input_kind
+         FROM (
+             SELECT provider, thread_id, message_id, model_id, at, kind, input_kind, {source_cols},
+                    LEAD(at) OVER (PARTITION BY provider, thread_id ORDER BY at, message_id) AS next_at
+             FROM prompt_rows
+         ) p
+         ORDER BY p.at ASC"
+    );
+
+    let mut out = Vec::new();
+    let mut stmt = tx.prepare(&prompt_sql)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let provider: String = row.get(0)?;
+        let served_model_raw: String = row.get(1)?;
+        let thread_id: String = row.get(2)?;
+        let source: String = row.get(3)?;
+        let client: String = row.get(4)?;
+        let at: String = row.get(5)?;
+        let kind: String = row.get(6)?;
+        let input_kind: String = row.get(7)?;
+        if !USAGE_PROVIDERS.contains(&provider.as_str())
+            || !is_valid_usage_source(&source)
+            || !is_valid_usage_client(&client)
+        {
+            continue;
+        }
+        let Some(at_dt) = parse_utc_instant(&at) else {
+            continue;
+        };
+        out.push(CachedPromptRow {
+            provider,
+            served_model_raw,
+            thread_id,
+            source,
+            client,
+            at_dt,
+            kind,
+            input_kind,
+        });
+    }
+    out.sort_by_key(|r| r.at_dt);
+
+    if let Ok(mut guard) = prompt_served_cache().lock() {
+        if guard.len() >= PROMPT_CACHE_MAX_DBS && !guard.contains_key(db_path) {
+            guard.clear();
+        }
+        guard.insert(
+            db_path.to_path_buf(),
+            PromptServedCache {
+                revision,
+                generation,
+                rows: out.clone(),
+            },
+        );
+    }
+    Ok(out)
+}
+
+fn usage_error_read(quotas: Vec<Value>) -> Value {
+    json!({
+        "status": "error",
+        "quotas": quotas,
+        "persistence": "failed",
+    })
+}
+
 /// Reads real usage dashboard rollups from `usage.sqlite` matching `usageLocalHostReadSchema`
 /// (`src/shared/usageDashboard.ts`) and `UsageStore.query` (`src/main/agents/usageStore.ts`).
 pub fn usage_read(
@@ -569,23 +733,40 @@ pub fn usage_read(
     let quotas = build_usage_quotas(query.provider_ids.as_deref(), connected_providers);
     let db_path = data_directory.join("usage.sqlite");
 
-    let conn = if db_path.is_file() {
-        Connection::open_with_flags(
-            &db_path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .ok()
-    } else {
-        None
-    };
-
-    let Some(conn) = conn else {
+    // Only a genuinely missing database reads as a fresh empty store; an existing file that
+    // cannot be opened or whose schema/pages are corrupt must surface as `status: "error"`.
+    if !db_path.exists() {
         return empty_usage_ready(&tz_name, query.include_daily, quotas);
-    };
+    }
+
+    match usage_read_existing(&db_path, &tz_name, tz, query, quotas.clone()) {
+        Ok(val) => val,
+        Err(_) => usage_error_read(quotas),
+    }
+}
+
+fn usage_read_existing(
+    db_path: &Path,
+    tz_name: &str,
+    tz: Tz,
+    query: &UsageReadQuery,
+    quotas: Vec<Value>,
+) -> Result<Value, rusqlite::Error> {
+    let mut conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
     let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
 
-    let Some((_, _, _, metadata)) = read_metadata_json(&conn) else {
-        return empty_usage_ready(&tz_name, query.include_daily, quotas);
+    // Keep metadata, token buckets/rows, and prompt reads inside one consistent SQLite read transaction
+    // so a concurrent `usage-clear` can never split tokens, prompts, and metadata across revisions.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+
+    if !table_exists_checked(&tx, "usage_meta")? {
+        return Ok(empty_usage_ready(tz_name, query.include_daily, quotas));
+    }
+    let Some((revision, generation, _, metadata)) = read_metadata_json(&tx) else {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
     };
 
     let provider_filter: Option<HashSet<&str>> = query
@@ -604,6 +785,7 @@ pub fn usage_read(
     let since_iso = since_dt.map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
     let from = query.from.as_deref();
     let to = query.to.as_deref();
+    let (range_lower_utc, range_upper_utc) = utc_day_bounds(from, to);
 
     let mut totals = AggBuilder::default();
     let mut by_provider: BTreeMap<String, AggBuilder> = BTreeMap::new();
@@ -612,9 +794,9 @@ pub fn usage_read(
     let mut by_client: HashMap<(String, String, bool), AggBuilder> = HashMap::new();
     let mut by_hour: BTreeMap<(u32, u32), PromptTotals> = BTreeMap::new();
 
-    // 1. Read token buckets (or fallback to token_rows for v0 databases).
-    let has_buckets = table_exists(&conn, "token_buckets");
-    let has_token_rows = table_exists(&conn, "token_rows");
+    // 1. Read token buckets (or fallback to token_rows for v0 databases) with SQL time-range prefiltering.
+    let has_buckets = table_exists_checked(&tx, "token_buckets")?;
+    let has_token_rows = table_exists_checked(&tx, "token_rows")?;
     if has_buckets {
         let splits_bucket = since_dt.is_some_and(|dt| dt.timestamp_millis().rem_euclid(BUCKET_MS) != 0);
         let since_bucket = since_dt.map(|dt| {
@@ -624,122 +806,117 @@ pub fn usage_read(
                 .format("%Y-%m-%dT%H:%M")
                 .to_string()
         });
-        let bucket_sql = match (&since_bucket, splits_bucket) {
-            (Some(_), true) => {
-                "SELECT provider, thread_id, model_id, source, client, sub_agent, bucket,
-                        records, partial_records,
-                        input_value, input_known, output_value, output_known,
-                        cached_value, cached_known, cache_write_value, cache_write_known,
-                        cache_write_5m_value, cache_write_5m_known,
-                        cache_write_1h_value, cache_write_1h_known,
-                        token_total_value, token_total_known
-                 FROM token_buckets
-                 WHERE bucket > ?1"
-            }
-            (Some(_), false) => {
-                "SELECT provider, thread_id, model_id, source, client, sub_agent, bucket,
-                        records, partial_records,
-                        input_value, input_known, output_value, output_known,
-                        cached_value, cached_known, cache_write_value, cache_write_known,
-                        cache_write_5m_value, cache_write_5m_known,
-                        cache_write_1h_value, cache_write_1h_known,
-                        token_total_value, token_total_known
-                 FROM token_buckets
-                 WHERE bucket >= ?1"
-            }
-            (None, _) => {
-                "SELECT provider, thread_id, model_id, source, client, sub_agent, bucket,
-                        records, partial_records,
-                        input_value, input_known, output_value, output_known,
-                        cached_value, cached_known, cache_write_value, cache_write_known,
-                        cache_write_5m_value, cache_write_5m_known,
-                        cache_write_1h_value, cache_write_1h_known,
-                        token_total_value, token_total_known
-                 FROM token_buckets"
-            }
+        let range_lower_bucket = range_lower_utc.map(|dt| dt.format("%Y-%m-%dT%H:%M").to_string());
+        let range_upper_bucket = range_upper_utc.map(|dt| dt.format("%Y-%m-%dT%H:%M").to_string());
+
+        let mut where_parts: Vec<String> = Vec::new();
+        let mut params_vec: Vec<String> = Vec::new();
+        if let Some(ref sb) = since_bucket {
+            params_vec.push(sb.clone());
+            where_parts.push(if splits_bucket {
+                format!("bucket > ?{}", params_vec.len())
+            } else {
+                format!("bucket >= ?{}", params_vec.len())
+            });
+        }
+        if let Some(ref lb) = range_lower_bucket {
+            params_vec.push(lb.clone());
+            where_parts.push(format!("bucket >= ?{}", params_vec.len()));
+        }
+        if let Some(ref ub) = range_upper_bucket {
+            params_vec.push(ub.clone());
+            where_parts.push(format!("bucket < ?{}", params_vec.len()));
+        }
+        let where_clause = if where_parts.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", where_parts.join(" AND "))
         };
-        if let Ok(mut stmt) = conn.prepare(bucket_sql) {
-            let mut consume_bucket_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<()> {
-                let provider: String = row.get(0)?;
-                let thread_id: String = row.get(1)?;
-                let model_raw: String = row.get(2)?;
-                let source: String = row.get(3)?;
-                let client: String = row.get(4)?;
-                let sub_agent: bool = row.get::<_, i64>(5)? != 0;
-                let bucket: String = row.get(6)?;
-                if !USAGE_PROVIDERS.contains(&provider.as_str())
-                    || !is_valid_usage_source(&source)
-                    || !is_valid_usage_client(&client)
-                {
-                    return Ok(());
-                }
-                if let Some(ref pf) = provider_filter {
-                    if !pf.contains(provider.as_str()) {
-                        return Ok(());
-                    }
-                }
-                if let Some(ref sf) = source_filter {
-                    if !sf.contains(source.as_str()) {
-                        return Ok(());
-                    }
-                }
-                let local_day = parse_bucket_utc(&bucket).map(|dt| local_day_of(dt, tz));
-                if !day_in_range(local_day.as_deref(), from, to) {
-                    return Ok(());
-                }
-                let model = canonical_model_id(&provider, &model_raw);
-                if let Some(ref mf) = model_filter {
-                    if !mf.contains(model.as_str()) {
-                        return Ok(());
-                    }
-                }
-                let chunk = TokenChunk {
-                    provider: provider.clone(),
-                    thread_id,
-                    day: local_day.clone(),
-                    records: row.get::<_, i64>(7)?.max(0) as u64,
-                    partial_records: row.get::<_, i64>(8)?.max(0) as u64,
-                    input_value: row.get::<_, i64>(9)?.max(0) as u64,
-                    input_known: row.get::<_, i64>(10)?.max(0) as u64,
-                    output_value: row.get::<_, i64>(11)?.max(0) as u64,
-                    output_known: row.get::<_, i64>(12)?.max(0) as u64,
-                    cached_value: row.get::<_, i64>(13)?.max(0) as u64,
-                    cached_known: row.get::<_, i64>(14)?.max(0) as u64,
-                    cache_write_value: row.get::<_, i64>(15)?.max(0) as u64,
-                    cache_write_known: row.get::<_, i64>(16)?.max(0) as u64,
-                    cache_write_5m_value: row.get::<_, i64>(17)?.max(0) as u64,
-                    cache_write_5m_known: row.get::<_, i64>(18)?.max(0) as u64,
-                    cache_write_1h_value: row.get::<_, i64>(19)?.max(0) as u64,
-                    cache_write_1h_known: row.get::<_, i64>(20)?.max(0) as u64,
-                    total_value: row.get::<_, i64>(21)?.max(0) as u64,
-                    total_known: row.get::<_, i64>(22)?.max(0) as u64,
-                };
-                totals.add_tokens(&chunk);
-                by_provider.entry(provider.clone()).or_default().add_tokens(&chunk);
-                by_model
-                    .entry((provider, model))
-                    .or_default()
-                    .add_tokens(&chunk);
-                if let Some(day) = local_day {
-                    by_day.entry(day).or_default().add_tokens(&chunk);
-                }
-                by_client
-                    .entry((source, client, sub_agent))
-                    .or_default()
-                    .add_tokens(&chunk);
-                Ok(())
-            };
-            if let Some(ref sb) = since_bucket {
-                if let Ok(mut rows) = stmt.query([sb.as_str()]) {
-                    while let Ok(Some(row)) = rows.next() {
-                        let _ = consume_bucket_row(row);
-                    }
-                }
-            } else if let Ok(mut rows) = stmt.query([]) {
-                while let Ok(Some(row)) = rows.next() {
-                    let _ = consume_bucket_row(row);
+        let bucket_sql = format!(
+            "SELECT provider, thread_id, model_id, source, client, sub_agent, bucket,
+                    records, partial_records,
+                    input_value, input_known, output_value, output_known,
+                    cached_value, cached_known, cache_write_value, cache_write_known,
+                    cache_write_5m_value, cache_write_5m_known,
+                    cache_write_1h_value, cache_write_1h_known,
+                    token_total_value, token_total_known
+             FROM token_buckets
+             {where_clause}"
+        );
+        let mut stmt = tx.prepare(&bucket_sql)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        let mut rows = stmt.query(param_refs.as_slice())?;
+        while let Some(row) = rows.next()? {
+            let provider: String = row.get(0)?;
+            let thread_id: String = row.get(1)?;
+            let model_raw: String = row.get(2)?;
+            let source: String = row.get(3)?;
+            let client: String = row.get(4)?;
+            let sub_agent: bool = row.get::<_, i64>(5)? != 0;
+            let bucket: String = row.get(6)?;
+            if !USAGE_PROVIDERS.contains(&provider.as_str())
+                || !is_valid_usage_source(&source)
+                || !is_valid_usage_client(&client)
+            {
+                continue;
+            }
+            if let Some(ref pf) = provider_filter {
+                if !pf.contains(provider.as_str()) {
+                    continue;
                 }
             }
+            if let Some(ref sf) = source_filter {
+                if !sf.contains(source.as_str()) {
+                    continue;
+                }
+            }
+            let local_day = parse_bucket_utc(&bucket).map(|dt| local_day_of(dt, tz));
+            if !day_in_range(local_day.as_deref(), from, to) {
+                continue;
+            }
+            let model = canonical_model_id(&provider, &model_raw);
+            if let Some(ref mf) = model_filter {
+                if !mf.contains(model.as_str()) {
+                    continue;
+                }
+            }
+            let chunk = TokenChunk {
+                provider: provider.clone(),
+                thread_id,
+                day: local_day.clone(),
+                records: row.get::<_, i64>(7)?.max(0) as u64,
+                partial_records: row.get::<_, i64>(8)?.max(0) as u64,
+                input_value: row.get::<_, i64>(9)?.max(0) as u64,
+                input_known: row.get::<_, i64>(10)?.max(0) as u64,
+                output_value: row.get::<_, i64>(11)?.max(0) as u64,
+                output_known: row.get::<_, i64>(12)?.max(0) as u64,
+                cached_value: row.get::<_, i64>(13)?.max(0) as u64,
+                cached_known: row.get::<_, i64>(14)?.max(0) as u64,
+                cache_write_value: row.get::<_, i64>(15)?.max(0) as u64,
+                cache_write_known: row.get::<_, i64>(16)?.max(0) as u64,
+                cache_write_5m_value: row.get::<_, i64>(17)?.max(0) as u64,
+                cache_write_5m_known: row.get::<_, i64>(18)?.max(0) as u64,
+                cache_write_1h_value: row.get::<_, i64>(19)?.max(0) as u64,
+                cache_write_1h_known: row.get::<_, i64>(20)?.max(0) as u64,
+                total_value: row.get::<_, i64>(21)?.max(0) as u64,
+                total_known: row.get::<_, i64>(22)?.max(0) as u64,
+            };
+            totals.add_tokens(&chunk);
+            by_provider.entry(provider.clone()).or_default().add_tokens(&chunk);
+            by_model
+                .entry((provider, model))
+                .or_default()
+                .add_tokens(&chunk);
+            if let Some(day) = local_day {
+                by_day.entry(day).or_default().add_tokens(&chunk);
+            }
+            by_client
+                .entry((source, client, sub_agent))
+                .or_default()
+                .add_tokens(&chunk);
         }
 
         // Exact rows for the single 15-minute bucket split by `since`.
@@ -751,7 +928,7 @@ pub fn usage_read(
                     .unwrap_or(dt)
                     .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
                 ingest_token_rows(
-                    &conn,
+                    &tx,
                     Some((since_str.as_str(), Some(bucket_end_iso.as_str()))),
                     tz,
                     from,
@@ -764,12 +941,12 @@ pub fn usage_read(
                     &mut by_model,
                     &mut by_day,
                     &mut by_client,
-                );
+                )?;
             }
         }
     } else if has_token_rows {
         ingest_token_rows(
-            &conn,
+            &tx,
             since_iso.as_deref().map(|s| (s, None)),
             tz,
             from,
@@ -782,122 +959,82 @@ pub fn usage_read(
             &mut by_model,
             &mut by_day,
             &mut by_client,
-        );
+        )?;
     }
 
-    // 2. Read prompt rows with served-model attribution (matching `UsageStore.servedModels`).
-    if table_exists(&conn, "prompt_rows") {
-        let prompt_has_source = table_has_column(&conn, "prompt_rows", "source");
-        let token_has_sub_agent = has_token_rows && table_has_column(&conn, "token_rows", "sub_agent");
-        let source_cols = if prompt_has_source {
-            "source, client"
-        } else {
-            "'sotto' AS source, 'sotto' AS client"
+    // 2. Read prompt rows with revision-cached served-model attribution (matching `UsageStore.servedModels`)
+    // and binary-searched UTC range slicing so small-range queries do not scan full history.
+    if table_exists_checked(&tx, "prompt_rows")? {
+        let prompts = load_cached_prompts(&tx, db_path, revision, generation, has_token_rows)?;
+        let lower_bound = match (since_dt, range_lower_utc) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
         };
-        let served_expr = if has_token_rows {
-            let sub_clause = if token_has_sub_agent {
-                "AND t.sub_agent = 0"
-            } else {
-                ""
-            };
-            format!(
-                "COALESCE((
-                    SELECT t.model_id
-                    FROM token_rows t
-                    WHERE t.provider = p.provider
-                      AND t.thread_id = p.thread_id
-                      {sub_clause}
-                      AND t.at >= p.at
-                      AND (p.next_at IS NULL OR t.at < p.next_at)
-                    ORDER BY t.at ASC
-                    LIMIT 1
-                ), p.model_id)"
-            )
+        let start_idx = lower_bound
+            .map(|lb| prompts.partition_point(|r| r.at_dt < lb))
+            .unwrap_or(0);
+        let end_idx = range_upper_utc
+            .map(|ub| prompts.partition_point(|r| r.at_dt < ub))
+            .unwrap_or(prompts.len());
+        let slice = if start_idx <= end_idx {
+            &prompts[start_idx..end_idx]
         } else {
-            "p.model_id".to_string()
+            &[]
         };
-        let prompt_sql = format!(
-            "SELECT p.provider, {served_expr} AS served_model_id,
-                    p.thread_id, p.source, p.client, p.at, p.kind, p.input_kind
-             FROM (
-                 SELECT provider, thread_id, message_id, model_id, at, kind, input_kind, {source_cols},
-                        LEAD(at) OVER (PARTITION BY provider, thread_id ORDER BY at, message_id) AS next_at
-                 FROM prompt_rows
-             ) p"
-        );
-        if let Ok(mut stmt) = conn.prepare(&prompt_sql) {
-            if let Ok(mut rows) = stmt.query([]) {
-                while let Ok(Some(row)) = rows.next() {
-                    let Ok(provider) = row.get::<_, String>(0) else { continue };
-                    let Ok(served_model_raw) = row.get::<_, String>(1) else { continue };
-                    let Ok(thread_id) = row.get::<_, String>(2) else { continue };
-                    let Ok(source) = row.get::<_, String>(3) else { continue };
-                    let Ok(client) = row.get::<_, String>(4) else { continue };
-                    let Ok(at_raw) = row.get::<_, String>(5) else { continue };
-                    let Ok(kind) = row.get::<_, String>(6) else { continue };
-                    let Ok(input_kind) = row.get::<_, String>(7) else { continue };
 
-                    if !USAGE_PROVIDERS.contains(&provider.as_str())
-                        || !is_valid_usage_source(&source)
-                        || !is_valid_usage_client(&client)
-                    {
-                        continue;
-                    }
-                    if let Some(ref pf) = provider_filter {
-                        if !pf.contains(provider.as_str()) {
-                            continue;
-                        }
-                    }
-                    if let Some(ref sf) = source_filter {
-                        if !sf.contains(source.as_str()) {
-                            continue;
-                        }
-                    }
-                    let Some(dt) = parse_utc_instant(&at_raw) else {
-                        continue;
-                    };
-                    if let Some(sdt) = since_dt {
-                        if dt < sdt {
-                            continue;
-                        }
-                    }
-                    let local = dt.with_timezone(&tz);
-                    let day = format!("{:04}-{:02}-{:02}", local.year(), local.month(), local.day());
-                    if !day_in_range(Some(&day), from, to) {
-                        continue;
-                    }
-                    let model = canonical_model_id(&provider, &served_model_raw);
-                    if let Some(ref mf) = model_filter {
-                        if !mf.contains(model.as_str()) {
-                            continue;
-                        }
-                    }
-                    let weekday = local.weekday().num_days_from_monday();
-                    let hour = local.hour();
-
-                    totals.add_prompt(&provider, &thread_id, &day, &kind, &input_kind);
-                    by_provider
-                        .entry(provider.clone())
-                        .or_default()
-                        .add_prompt(&provider, &thread_id, &day, &kind, &input_kind);
-                    by_model
-                        .entry((provider.clone(), model))
-                        .or_default()
-                        .add_prompt(&provider, &thread_id, &day, &kind, &input_kind);
-                    by_day
-                        .entry(day.clone())
-                        .or_default()
-                        .add_prompt(&provider, &thread_id, &day, &kind, &input_kind);
-                    by_client
-                        .entry((source, client, false))
-                        .or_default()
-                        .add_prompt(&provider, &thread_id, &day, &kind, &input_kind);
-                    by_hour
-                        .entry((weekday, hour))
-                        .or_default()
-                        .add(&kind, &input_kind);
+        for row in slice {
+            if let Some(ref pf) = provider_filter {
+                if !pf.contains(row.provider.as_str()) {
+                    continue;
                 }
             }
+            if let Some(ref sf) = source_filter {
+                if !sf.contains(row.source.as_str()) {
+                    continue;
+                }
+            }
+            if let Some(sdt) = since_dt {
+                if row.at_dt < sdt {
+                    continue;
+                }
+            }
+            let local = row.at_dt.with_timezone(&tz);
+            let day = format!("{:04}-{:02}-{:02}", local.year(), local.month(), local.day());
+            if !day_in_range(Some(&day), from, to) {
+                continue;
+            }
+            let model = canonical_model_id(&row.provider, &row.served_model_raw);
+            if let Some(ref mf) = model_filter {
+                if !mf.contains(model.as_str()) {
+                    continue;
+                }
+            }
+            let weekday = local.weekday().num_days_from_monday();
+            let hour = local.hour();
+
+            totals.add_prompt(&row.provider, &row.thread_id, &day, &row.kind, &row.input_kind);
+            by_provider
+                .entry(row.provider.clone())
+                .or_default()
+                .add_prompt(&row.provider, &row.thread_id, &day, &row.kind, &row.input_kind);
+            by_model
+                .entry((row.provider.clone(), model))
+                .or_default()
+                .add_prompt(&row.provider, &row.thread_id, &day, &row.kind, &row.input_kind);
+            by_day
+                .entry(day.clone())
+                .or_default()
+                .add_prompt(&row.provider, &row.thread_id, &day, &row.kind, &row.input_kind);
+            by_client
+                .entry((row.source.clone(), row.client.clone(), false))
+                .or_default()
+                .add_prompt(&row.provider, &row.thread_id, &day, &row.kind, &row.input_kind);
+            by_hour
+                .entry((weekday, hour))
+                .or_default()
+                .add(&row.kind, &row.input_kind);
         }
     }
 
@@ -989,7 +1126,7 @@ pub fn usage_read(
         })
         .collect();
 
-    json!({
+    Ok(json!({
         "status": "ready",
         "activity": {
             "metadata": metadata,
@@ -1006,7 +1143,7 @@ pub fn usage_read(
         },
         "quotas": quotas,
         "persistence": "saved",
-    })
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1024,7 +1161,7 @@ fn ingest_token_rows(
     by_model: &mut HashMap<(String, String), AggBuilder>,
     by_day: &mut BTreeMap<String, AggBuilder>,
     by_client: &mut HashMap<(String, String, bool), AggBuilder>,
-) {
+) -> Result<(), rusqlite::Error> {
     let has_source = table_has_column(conn, "token_rows", "source");
     let extra_cols = if has_source {
         "source, client, sub_agent"
@@ -1042,9 +1179,7 @@ fn ingest_token_rows(
          FROM token_rows
          {where_clause}"
     );
-    let Ok(mut stmt) = conn.prepare(&sql) else {
-        return;
-    };
+    let mut stmt = conn.prepare(&sql)?;
     let mut handle_row = |row: &rusqlite::Row<'_>| -> rusqlite::Result<()> {
         let provider: String = row.get(0)?;
         let thread_id: String = row.get(1)?;
@@ -1135,27 +1270,25 @@ fn ingest_token_rows(
     };
     match at_bounds {
         Some((lo, Some(hi))) => {
-            if let Ok(mut rows) = stmt.query([lo, hi]) {
-                while let Ok(Some(row)) = rows.next() {
-                    let _ = handle_row(row);
-                }
+            let mut rows = stmt.query([lo, hi])?;
+            while let Some(row) = rows.next()? {
+                handle_row(row)?;
             }
         }
         Some((lo, None)) => {
-            if let Ok(mut rows) = stmt.query([lo]) {
-                while let Ok(Some(row)) = rows.next() {
-                    let _ = handle_row(row);
-                }
+            let mut rows = stmt.query([lo])?;
+            while let Some(row) = rows.next()? {
+                handle_row(row)?;
             }
         }
         None => {
-            if let Ok(mut rows) = stmt.query([]) {
-                while let Ok(Some(row)) = rows.next() {
-                    let _ = handle_row(row);
-                }
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                handle_row(row)?;
             }
         }
     }
+    Ok(())
 }
 
 fn empty_usage_ready(tz_name: &str, include_daily: Option<bool>, quotas: Vec<Value>) -> Value {
@@ -1191,12 +1324,13 @@ fn empty_usage_ready(tz_name: &str, include_daily: Option<bool>, quotas: Vec<Val
 }
 
 /// Computes the exact SHA-256 exclusion digest used by Node's `UsageStore.clear`
-/// (`exclusion()` in `src/main/agents/usageStore.ts`).
+/// (`exclusion()` in `src/main/agents/usageStore.ts`), using JS UTF-16 code unit lengths
+/// (`part.encode_utf16().count()`) so non-ASCII thread/message IDs match identically across hosts.
 pub fn usage_exclusion_hash(kind: &str, parts: &[&str]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(format!("sotto-usage-{kind}:").as_bytes());
     for part in parts {
-        hasher.update(format!("{}:", part.len()).as_bytes());
+        hasher.update(format!("{}:", part.encode_utf16().count()).as_bytes());
         hasher.update(part.as_bytes());
     }
     let digest = hasher.finalize();
@@ -1595,5 +1729,15 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM exclusions", [], |r| r.get(0))
             .unwrap();
         assert_eq!(excl_count, 3); // row + group + prompt
+    }
+
+    #[test]
+    fn corrupt_usage_sqlite_returns_error_instead_of_empty_ready() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("usage.sqlite"), b"not a valid sqlite database").unwrap();
+        let res = usage_read(dir.path(), &UsageReadQuery::default(), &[]);
+        assert_eq!(res["status"], "error");
+        assert_eq!(res["persistence"], "failed");
+        assert!(res.get("activity").is_none());
     }
 }

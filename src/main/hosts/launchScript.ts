@@ -280,6 +280,17 @@ const running = async () => {
   const holder = await lockHolder();
   return holder === null ? null : awaitHolder(holder);
 };
+const stopTimedOutChild = async child => {
+  if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGTERM'); } catch {} }
+  const stopDeadline = Date.now() + 2000;
+  while (Date.now() < stopDeadline) {
+    if ((child.exitCode !== null || child.signalCode !== null) && (await lockHolder()) === null) return;
+    await pause(50);
+  }
+  if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGKILL'); } catch {} }
+  const killDeadline = Date.now() + 1000;
+  while (Date.now() < killDeadline && (await lockHolder()) !== null) await pause(50);
+};
 const spawnDetachedHost = async (command, args, env, deadline) => {
   const child = spawn(command, args, { detached: true, stdio: 'ignore', env });
   child.unref();
@@ -294,8 +305,8 @@ const spawnDetachedHost = async (command, args, env, deadline) => {
     }
     await pause(100);
   }
-  if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGTERM'); } catch {} }
-  throw new Error('host-timeout');
+  await stopTimedOutChild(child);
+  return { timedOut: true };
 };
 // Finds the running host, or starts the one the installation folder names as a detached process, and answers once it listens.
 const startDetached = async () => {
@@ -311,25 +322,24 @@ const startDetached = async () => {
     throw new Error('archive-missing');
   }
   await say({ type: 'starting' });
-  const deadline = Date.now() + cfg.readyTimeoutMs;
   if (rustBin) {
     const rustOutcome = await spawnDetachedHost(
       rustBin,
       ['--data', data, '--port', String(cfg.remotePort)],
       { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script', SOTTO_HOST_ENABLE_PROVIDERS: '1' },
-      deadline,
+      Date.now() + cfg.readyTimeoutMs,
     );
     if (rustOutcome.ready) return rustOutcome.ready;
-    if (!hasNode) throw new Error('host-start-failed');
+    if (!hasNode) throw new Error(rustOutcome.timedOut ? 'host-timeout' : 'host-start-failed');
   }
   const nodeOutcome = await spawnDetachedHost(
     process.execPath,
     [nodeEntry, '--data', data, '--port', String(cfg.remotePort)],
     { ...process.env, SOTTO_HOST_STARTED_BY: 'launch-script' },
-    deadline,
+    Date.now() + cfg.readyTimeoutMs,
   );
   if (nodeOutcome.ready) return nodeOutcome.ready;
-  throw new Error('host-start-failed');
+  throw new Error(nodeOutcome.timedOut ? 'host-timeout' : 'host-start-failed');
 };
 // Start at boot (ADR-0054): the account's systemd user unit, and the script in the installation folder that it runs.
 const UNIT = 'sotto-host';
@@ -370,7 +380,7 @@ const bootScriptText = (useRust = false) => ['#!/bin/sh',
   'version=$("$node" -e ' + shellQuote("try { const v=require('fs').readFileSync(require('path').join(process.argv[1],'current'),'utf8').trim(); if (/^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-owl\\.[1-9]\\d{7}\\.[1-9]\\d*)?$/.test(v)) process.stdout.write(v); } catch {}") + ' "$install")',
   ...(useRust ? [
     'if [ -n "$version" ]; then rust_entry="$install/versions/$version/host/' + rustBinName + '"; else rust_entry="$install/host/' + rustBinName + '"; fi',
-    'if [ -x "$rust_entry" ]; then SOTTO_HOST_ENABLE_PROVIDERS=1; export SOTTO_HOST_ENABLE_PROVIDERS; exec "$rust_entry" --data "$data" --port "$port"; fi',
+    'if [ -x "$rust_entry" ] && "$rust_entry" --version >/dev/null 2>&1; then SOTTO_HOST_ENABLE_PROVIDERS=1; export SOTTO_HOST_ENABLE_PROVIDERS; exec "$rust_entry" --data "$data" --port "$port"; fi',
   ] : []),
   'if [ -n "$version" ] && [ -f "$install/versions/$version/host/index.js" ]; then entry="$install/versions/$version/host/index.js"; fi',
   'exec "$node" "$entry" --data "$data" --port "$port"', ''].join('\n');

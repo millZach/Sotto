@@ -513,6 +513,8 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
     const seedUsage = new UsageStore(join(dataDir, 'usage.sqlite'))
     seedUsage.open()
     const recordHash = createHash('sha256').update('rust-usage-parity-1').digest('hex')
+    const unicodeThreadId = 'thread-café-🚀'
+    const unicodeRecordKey = createHash('sha256').update('rust-usage-parity-unicode').digest('hex')
     seedUsage.observeTokens({
       providerId: 'codex',
       threadId,
@@ -520,6 +522,16 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
       modelId: 'native:codex:model:gpt-5.2-2026-01-15',
       tokens: { input: 420, output: 80, cached: 100 },
       at: '2026-11-22T12:15:00.000Z',
+      phase: 'live',
+      partial: false,
+    })
+    seedUsage.observeTokens({
+      providerId: 'codex',
+      threadId: unicodeThreadId,
+      recordKey: unicodeRecordKey,
+      modelId: 'native:codex:model:gpt-5.2-2026-01-15',
+      tokens: { input: 10, output: 5 },
+      at: '2026-11-22T12:16:00.000Z',
       phase: 'live',
       partial: false,
     })
@@ -710,9 +722,9 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         // Usage dashboard real v1 ops (`usage-read`, `usage-refresh`, `usage-clear`) reading TS-seeded `usage.sqlite`.
         const uRead = usageLocalHostReadSchema.parse((await rpc({ op: 'usage-read', query: { timeZone: 'UTC' } })).result)
         expect(uRead.status).toBe('ready')
-        expect(uRead.activity?.totals.tokens.input.value).toBe(420)
-        expect(uRead.activity?.totals.tokens.output.value).toBe(80)
-        expect(uRead.activity?.totals.tokens.total.value).toBe(500)
+        expect(uRead.activity?.totals.tokens.input.value).toBe(430)
+        expect(uRead.activity?.totals.tokens.output.value).toBe(85)
+        expect(uRead.activity?.totals.tokens.total.value).toBe(515)
         expect(uRead.activity?.totals.prompts.user).toBe(1)
         expect(uRead.activity?.models[0]).toMatchObject({ providerId: 'codex', modelId: 'gpt-5.2' })
         expect(uRead.activity?.daily).toHaveLength(1)
@@ -769,6 +781,18 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         partial: false,
       })
       expect(reingest.status).toBe('suppressed')
+      // Non-ASCII / surrogate-pair IDs must hash identically (UTF-16 code-unit prefix) across Rust and TS.
+      const reingestUnicode = verifyUsage.observeTokens({
+        providerId: 'codex',
+        threadId: unicodeThreadId,
+        recordKey: unicodeRecordKey,
+        modelId: 'native:codex:model:gpt-5.2-2026-01-15',
+        tokens: { input: 10, output: 5 },
+        at: '2026-11-22T12:16:00.000Z',
+        phase: 'replay',
+        partial: false,
+      })
+      expect(reingestUnicode.status).toBe('suppressed')
     } finally {
       verifyUsage.close()
     }

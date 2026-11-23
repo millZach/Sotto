@@ -1116,11 +1116,21 @@ pub fn read_subagent_page(data_directory: &Path, thread_id: &str, before: Option
         .and_then(|v| v.get("revision"))
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let summary = thread_state
+    let mut summary = thread_state
         .as_ref()
         .and_then(|v| v.get("summary"))
         .cloned()
         .unwrap_or(empty_summary);
+    // Rust host does not write live subagents to `subagents.sqlite`; any persisted `working` count
+    // belongs to a stopped Node host and must surface as `unknown` (matching Node after restart).
+    if let Some(obj) = summary.as_object_mut() {
+        let working = obj.get("working").and_then(Value::as_u64).unwrap_or(0);
+        if working > 0 {
+            let unknown = obj.get("unknown").and_then(Value::as_u64).unwrap_or(0);
+            obj.insert("working".into(), json!(0));
+            obj.insert("unknown".into(), json!(unknown.saturating_add(working)));
+        }
+    }
 
     let cutoff = before.unwrap_or(i64::MAX);
     let fetch = (SUBAGENT_PAGE_SIZE + 1) as i64;
@@ -1190,6 +1200,13 @@ pub fn read_subagent_page(data_directory: &Path, thread_id: &str, before: Option
         }
     }
     combined.extend(rows);
+    for row in &mut combined {
+        if let Some(obj) = row.as_object_mut() {
+            if obj.get("status").and_then(Value::as_str) == Some("running") {
+                obj.insert("status".into(), json!("unknown"));
+            }
+        }
+    }
     combined.sort_by_key(|r| r.get("sequence").and_then(Value::as_i64).unwrap_or(0));
 
     let mut out = json!({
@@ -1476,13 +1493,18 @@ mod tests {
         let page1 = read_subagent_page(dir.path(), "t-sub", None);
         assert_eq!(page1["revision"], 7);
         assert_eq!(page1["summary"]["total"], 2);
+        // Stored `running` rows from a stopped Node host map to `unknown` on the read-only Rust host.
+        assert_eq!(page1["summary"]["working"], 0);
+        assert_eq!(page1["summary"]["unknown"], 1);
         assert_eq!(page1["before"], 3);
         let rows = page1["rows"].as_array().unwrap();
         // 50 rows (seq 3..=52) + workflow parent (seq 1) brought along, sorted ascending by sequence.
         assert_eq!(rows.len(), 51);
         assert_eq!(rows[0]["id"], "wf-1");
+        assert_eq!(rows[0]["status"], "unknown");
         assert_eq!(rows[1]["sequence"], 3);
         assert_eq!(rows.last().unwrap()["sequence"], 52);
+        assert_eq!(rows.last().unwrap()["status"], "unknown");
 
         let page2 = read_subagent_page(dir.path(), "t-sub", Some(3));
         assert!(page2.get("before").is_none());

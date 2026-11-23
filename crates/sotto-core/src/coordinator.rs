@@ -1928,12 +1928,12 @@ impl CoordinatorActor {
         }
 
         // Mirror `scheduleProviderReconnects()` in `src/main/agents/control.ts`: when a user
-        // re-enables a provider in Settings, connect any newly-enabled disconnected adapter
-        // without requiring a host restart.
+        // newly re-enables a provider in Settings, reconnect it off the global lane so slow or
+        // failing connects never stall `configure` or queued global commands, and surface errors.
         let mut to_connect: Vec<String> = Vec::new();
         if patch.contains_key("disconnectedProviders") || patch.contains_key("enabledProviders") {
             for id in &self.configuration.enabled_providers {
-                if to_disconnect.contains(id) {
+                if before_enabled.contains(id) || to_disconnect.contains(id) {
                     continue;
                 }
                 let is_disconnected = self
@@ -1957,7 +1957,34 @@ impl CoordinatorActor {
             .collect();
 
         self.save_workspace();
-        if disconnect_targets.is_empty() && connect_targets.is_empty() {
+        let spawn_detached_connects = |targets: Vec<(String, Arc<dyn ProviderAdapter>)>,
+                                       events_tx: mpsc::UnboundedSender<ProviderEvent>| {
+            for (provider_id, adapter) in targets {
+                let tx = events_tx.clone();
+                tokio::spawn(async move {
+                    let status = match adapter.connect(tx.clone()).await {
+                        Ok(()) => adapter.status(),
+                        Err(err) => {
+                            let mut st = adapter.status();
+                            st.connection = "error".into();
+                            st.error = Some(err);
+                            st
+                        }
+                    };
+                    let _ = tx.send(ProviderEvent::StatusChanged {
+                        provider_id,
+                        status,
+                        models: adapter.models(),
+                        client_update: adapter.client_update(),
+                    });
+                });
+            }
+        };
+
+        if disconnect_targets.is_empty() {
+            if !connect_targets.is_empty() {
+                spawn_detached_connects(connect_targets, self.provider_events_tx.clone());
+            }
             self.rebuild_catalog();
             self.finish_sync_command(lane, &client, Ok(()), reply);
             return;
@@ -1966,35 +1993,21 @@ impl CoordinatorActor {
         let events_tx = self.provider_events_tx.clone();
         let self_tx = self.self_tx.clone();
         tokio::spawn(async move {
-            let mut provider_ids = Vec::with_capacity(disconnect_targets.len() + connect_targets.len());
-            if !disconnect_targets.is_empty() {
-                let mut disc_set = tokio::task::JoinSet::new();
-                for (provider_id, adapter) in disconnect_targets {
-                    disc_set.spawn(async move {
-                        let _ = adapter.disconnect().await;
-                        provider_id
-                    });
-                }
-                while let Some(joined) = disc_set.join_next().await {
-                    if let Ok(provider_id) = joined {
-                        provider_ids.push(provider_id);
-                    }
+            let mut provider_ids = Vec::with_capacity(disconnect_targets.len());
+            let mut disc_set = tokio::task::JoinSet::new();
+            for (provider_id, adapter) in disconnect_targets {
+                disc_set.spawn(async move {
+                    let _ = adapter.disconnect().await;
+                    provider_id
+                });
+            }
+            while let Some(joined) = disc_set.join_next().await {
+                if let Ok(provider_id) = joined {
+                    provider_ids.push(provider_id);
                 }
             }
             if !connect_targets.is_empty() {
-                let mut conn_set = tokio::task::JoinSet::new();
-                for (provider_id, adapter) in connect_targets {
-                    let tx = events_tx.clone();
-                    conn_set.spawn(async move {
-                        let _ = adapter.connect(tx).await;
-                        provider_id
-                    });
-                }
-                while let Some(joined) = conn_set.join_next().await {
-                    if let Ok(provider_id) = joined {
-                        provider_ids.push(provider_id);
-                    }
-                }
+                spawn_detached_connects(connect_targets, events_tx);
             }
             let _ = self_tx.send(ActorMessage::AsyncCommandDone {
                 lane,
@@ -3891,8 +3904,9 @@ mod tests {
             .unwrap();
         assert_eq!(claude_after_off["connection"], "disconnected");
 
-        // Re-enabling claude via `configure` reconnects it immediately without a restart.
-        let after_reenable = coord
+        // Re-enabling claude via `configure` answers without blocking the global lane and
+        // reconnects the adapter in the background without requiring a restart.
+        let _ = coord
             .run_command(
                 client.clone(),
                 json!({ "type": "configure", "patch": { "enabledProviders": ["codex", "claude"] } })
@@ -3902,13 +3916,22 @@ mod tests {
             )
             .await
             .unwrap();
-        let claude_after_on = after_reenable["host"]["providers"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|p| p["id"] == "claude")
-            .unwrap();
-        assert_eq!(claude_after_on["connection"], "connected");
+        let mut reconnected = false;
+        for _ in 0..40 {
+            let shell = coord.shell(true).await.unwrap();
+            let claude_status = shell["host"]["providers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["id"] == "claude")
+                .unwrap();
+            if claude_status["connection"] == "connected" {
+                reconnected = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert!(reconnected);
 
         // Disconnect single provider & disconnect-all emit exact Node notice wording.
         let after_single = coord
