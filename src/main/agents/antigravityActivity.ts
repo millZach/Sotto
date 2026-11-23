@@ -46,6 +46,37 @@ const FINISHED_TEXT_PATTERN = /\b(?:completed|exited|finished|done|failed|killed
 const TASK_ID_KEYS = ['backgroundTaskId', 'background_task_id', 'commandId', 'command_id', 'taskId', 'task_id', 'scheduleId', 'schedule_id', 'workflowId', 'workflow_id', 'jobId', 'job_id'] as const
 const RUNNING_OUTPUT_STATUS = new Set(['running', 'background', 'backgrounded', 'in_progress', 'pending', 'async', 'started', 'waiting', 'scheduled', 'active'])
 const FINISHED_OUTPUT_STATUS = new Set(['completed', 'done', 'finished', 'failed', 'error', 'exited', 'cancelled', 'canceled', 'killed'])
+const SYSTEM_MESSAGE_ENVELOPE = /^(?:The following is a <SYSTEM_MESSAGE> not actually sent by the user\.[^\r\n]*\r?\n\s*)?<SYSTEM_MESSAGE>([\s\S]*)<\/SYSTEM_MESSAGE>$/u
+const WAKEUP_TASK_PATTERNS = [
+  /(?:^|[\s=])Task\s+id\s*(?::\s*|\s+)["']?([^\s"'`,.;]+)["']?\s+(?:finished|completed|failed|exited|killed|cancelled|canceled|done)\b/giu,
+  /\bBackground\s+(?:task|command|job|workflow)\s+(?:id\s*[:=]?\s*)?["']?([^\s"'`,.;]+)["']?\s+(?:finished|completed|failed|exited|killed|cancelled|canceled|done)\b/giu,
+  /\bsender=([^\s,;]+)\b(?=[^\r\n]*\b(?:finished|completed|failed|exited|killed|cancelled|canceled)\b)/giu,
+] as const
+
+export interface AntigravitySystemWakeup {
+  readonly isWakeup: boolean
+  readonly completedTaskIds: readonly string[]
+}
+
+/**
+ * Parses an incoming Antigravity `user_message_chunk` to distinguish a complete runtime `<SYSTEM_MESSAGE>` envelope
+ * from user-pasted text and extract any background task IDs reported finished in the envelope header.
+ */
+export function parseAntigravitySystemWakeup(text: string): AntigravitySystemWakeup {
+  const envelope = SYSTEM_MESSAGE_ENVELOPE.exec(text.trim())
+  if (!envelope) return { isWakeup: false, completedTaskIds: [] }
+  const body = envelope[1] ?? ''
+  const cut = body.search(/\r?\n(?:Command output:|Log output:)/iu)
+  const header = cut >= 0 ? body.slice(0, cut) : body
+  const ids = new Set<string>()
+  for (const pattern of WAKEUP_TASK_PATTERNS) {
+    for (const match of header.matchAll(pattern)) {
+      const id = match[1]?.trim()
+      if (id) ids.add(id)
+    }
+  }
+  return { isWakeup: true, completedTaskIds: [...ids] }
+}
 
 function backgroundHeaderText(outputText: string): string {
   const cut = outputText.search(/\r?\n(?:Task logs are available at:|Log output:)/iu)
@@ -99,8 +130,9 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
   if (!['tool_call', 'tool_call_update'].includes(String(update.sessionUpdate)) || typeof update.toolCallId !== 'string') return undefined
   const fields = parseToolFields(update, old)
   const outputStatus = firstString(fields.output, ['status', 'state'])?.toLowerCase()
-  const textTaskId = fields.outputText
-    ? AGY_BACKGROUND_HEADER.exec(fields.outputText)?.[1] ?? TEXT_TASK_ID_PATTERN.exec(fields.outputText)?.[1]
+  const headerText = fields.outputText ? backgroundHeaderText(fields.outputText) : undefined
+  const textTaskId = headerText
+    ? AGY_BACKGROUND_HEADER.exec(headerText)?.[1] ?? TEXT_TASK_ID_PATTERN.exec(headerText)?.[1]
     : undefined
   const nativeTaskId = firstString(fields.output, TASK_ID_KEYS) ?? firstString(fields.input, ['TaskId', 'taskId', 'CommandId', 'commandId']) ?? textTaskId
   const action = firstString(fields.input, ['Action', 'action'])?.toLowerCase()
@@ -124,9 +156,8 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
     || fields.output?.async === true
   )
   const explicitTextRunning = Boolean(
-    fields.outputText && (AGY_BACKGROUND_HEADER.test(fields.outputText) || AGY_STILL_RUNNING_HEADER.test(fields.outputText))
+    headerText && (AGY_BACKGROUND_HEADER.test(headerText) || AGY_STILL_RUNNING_HEADER.test(headerText))
   )
-  const headerText = fields.outputText ? backgroundHeaderText(fields.outputText) : undefined
   const outputSaysRunning = explicitOutputRunning || explicitTextRunning || Boolean(
     headerText && RUNNING_TEXT_PATTERN.test(headerText) && !FINISHED_TEXT_PATTERN.test(headerText)
   )

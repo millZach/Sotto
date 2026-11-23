@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { antigravityToolCallSignal } from '../../../src/main/agents/antigravityActivity'
+import { antigravityToolCallSignal, parseAntigravitySystemWakeup } from '../../../src/main/agents/antigravityActivity'
 import { AntigravityBackgroundTasks, antigravityBackgroundCommand, antigravityCommandWords, isAntigravityStdioServerChild, mergeAntigravityBackgroundWork } from '../../../src/main/agents/antigravityBackgroundWork'
 import type { ChildProcessRow } from '../../../src/main/agents/detachedRunScan'
 
@@ -411,5 +411,58 @@ describe('antigravityBackgroundWork', () => {
     }, 'k-agy-kill')!
     expect(tasks.observe(killed, 't2')).toBe(true)
     expect(tasks.working(new Set(), [], false)).toEqual([])
+  })
+
+  it('ignores background phrases and task ids appearing inside Log output rather than the header', () => {
+    const completed = antigravityToolCallSignal({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'cmd-log-only',
+      title: 'Running cat test-fixture.log',
+      kind: 'execute',
+      status: 'completed',
+      rawInput: { CommandLine: 'cat test-fixture.log' },
+      content: [{
+        type: 'content',
+        content: {
+          type: 'text',
+          text: 'Command exited cleanly.\nLog output:\nTool is running as a background task with task id: conv-9/fake-99\nBackground command is still running after 300s',
+        },
+      }],
+    }, 'k-log-only')!
+    expect(completed.backgroundLaunch).toBe(false)
+    expect(completed.nativeTaskId).toBeUndefined()
+  })
+
+  it('parses complete SYSTEM_MESSAGE wakeup envelopes, ignores pasted fragments, and settles by nativeTaskId', () => {
+    expect(parseAntigravitySystemWakeup('<SYSTEM_MESSAGE> pasted text without closing tag')).toEqual({ isWakeup: false, completedTaskIds: [] })
+    expect(parseAntigravitySystemWakeup('[Message] timestamp=2026-11-23T00:00:00Z sender=foo content=Task id "t" finished')).toEqual({ isWakeup: false, completedTaskIds: [] })
+    expect(parseAntigravitySystemWakeup('<SYSTEM_MESSAGE>foo</SYSTEM_MESSAGE>\nWhy did this happen?')).toEqual({ isWakeup: false, completedTaskIds: [] })
+
+    expect(parseAntigravitySystemWakeup(
+      'The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system.\n\n<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-23T05:00:00Z sender=conv-1/task-7 priority=HIGH content=Task id "conv-1/task-7" finished with result:\nCommand output:\nTask id "conv-1/fake-1" finished\n</SYSTEM_MESSAGE>',
+    )).toEqual({ isWakeup: true, completedTaskIds: ['conv-1/task-7'] })
+
+    const tasks = new AntigravityBackgroundTasks()
+    tasks.observe(antigravityToolCallSignal({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'cmd-settle-1',
+      title: 'Running python a.py',
+      kind: 'execute',
+      status: 'completed',
+      rawInput: { CommandLine: 'python a.py' },
+      content: [{ type: 'content', content: { type: 'text', text: 'Tool is running as a background task with task id: conv-1/task-7' } }],
+    }, 'k-settle-1')!, 't1')
+    tasks.observe(antigravityToolCallSignal({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'cmd-settle-2',
+      title: 'Running python b.py',
+      kind: 'execute',
+      status: 'completed',
+      rawInput: { CommandLine: 'python b.py' },
+      content: [{ type: 'content', content: { type: 'text', text: 'Tool is running as a background task with task id: conv-1/other-task-7' } }],
+    }, 'k-settle-2')!, 't1')
+
+    expect(tasks.settleNativeTask('task-7')).toBe(true)
+    expect(tasks.working(new Set(), [], false).map(item => item.label)).toEqual(['python b.py'])
   })
 })

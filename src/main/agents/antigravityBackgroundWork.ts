@@ -355,10 +355,24 @@ export class AntigravityBackgroundTasks {
     return items
   }
 
+  /** Settles tracked background work matching a runtime wakeup's task ID (exact or `/<id>` suffix). */
+  settleNativeTask(nativeTaskId: string): boolean {
+    return this.removeMatchingNativeTask(nativeTaskId, true)
+  }
+
   private deleteByNativeTaskId(nativeTaskId: string): boolean {
+    return this.removeMatchingNativeTask(nativeTaskId, false)
+  }
+
+  private removeMatchingNativeTask(nativeTaskId: string, allowSegmentSuffix: boolean): boolean {
+    const trimmed = nativeTaskId.trim()
+    if (!trimmed) return false
     let removed = false
     for (const [key, task] of this.tasks) {
-      if (task.nativeTaskId === nativeTaskId) {
+      if (!task.nativeTaskId) continue
+      const matches = task.nativeTaskId === trimmed
+        || (allowSegmentSuffix && (task.nativeTaskId.endsWith(`/${trimmed}`) || trimmed.endsWith(`/${task.nativeTaskId}`)))
+      if (matches) {
         this.tasks.delete(key)
         removed = true
       }

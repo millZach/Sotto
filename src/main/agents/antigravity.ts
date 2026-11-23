@@ -11,7 +11,7 @@ import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
-import { antigravityActivities, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX } from './antigravityActivity'
+import { antigravityActivities, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX, parseAntigravitySystemWakeup } from './antigravityActivity'
 import { AntigravityBackgroundTasks, antigravityBackgroundCommand, mergeAntigravityBackgroundWork, sanitizeAntigravityWorkLabel } from './antigravityBackgroundWork'
 import { antigravityEdits, placeAntigravityEdits, type AntigravityEdit } from './antigravityEditLines'
 import { antigravityChildReading, CHILD_PASS_FILES, readAntigravityChild, type AntigravityChild, type AntigravityChildReading } from './antigravityChildren'
@@ -233,7 +233,6 @@ const REACTIVE_TURN_WAIT_MS = 30_000
 const REACTIVE_TURN_MAX_MS = 120_000
 const MAX_INHERITED_TOOL_KEYS = 256
 const ANTIGRAVITY_QUESTIONS = questionInstructions('ask_question', false)
-const ANTIGRAVITY_SYSTEM_WAKEUP = /^(?:The following is a <SYSTEM_MESSAGE> not actually sent by the user\.|<SYSTEM_MESSAGE>|\[Message\]\s+timestamp=)/u
 
 /**
  * Where each update of one turn belongs. Replies are counted by segment: a reply runs on until a tool or a thought breaks
@@ -1193,7 +1192,14 @@ export class AntigravityAcpHost implements ProviderHost {
       // `agy` may echo a prompt Sotto sent; Sotto already holds it. Anything else was typed into the session elsewhere.
       if (turn?.origin && !turn.ended && digest(words) === turn.origin.digest) { this.taken(id); return }
       // Out-of-turn background task completion notifications arrive from `agy`'s runtime, never from the user.
-      if (ANTIGRAVITY_SYSTEM_WAKEUP.test(words.trimStart())) return
+      const wakeup = parseAntigravitySystemWakeup(words)
+      if (wakeup.isWakeup) {
+        let settled = false
+        const tasks = this.backgroundTasks.get(id)
+        if (tasks) for (const taskId of wakeup.completedTaskIds) if (tasks.settleNativeTask(taskId)) settled = true
+        if (settled && this.syncBackgroundWork(id)) this.emit()
+        return
+      }
       if (turn) this.clearReactiveTimers(turn)
       const index = alias.turns; alias.turns++
       void this.persist().catch(() => undefined)
