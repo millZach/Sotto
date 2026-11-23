@@ -505,6 +505,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   useThreadWordsAccelerator(accelerator: ((query: string) => Promise<AgentThreadWords | undefined>) | undefined): void {
     this.threadWordsAccelerator = accelerator
   }
+  private gitRefsAccelerator: ((folder: string, options: Omit<GitRefsRequest, 'threadId'>) => Promise<GitRefsPage | undefined>) | undefined
+  private gitRefsAcceleratedAtChange = -1
+  useGitRefsAccelerator(accelerator: ((folder: string, options: Omit<GitRefsRequest, 'threadId'>) => Promise<GitRefsPage | undefined>) | undefined): void {
+    this.gitRefsAccelerator = accelerator
+    this.gitRefsAcceleratedAtChange = -1
+  }
   private observePullRequest(view: GitPullRequestView): void {
     if (view.state === 'merged') this.pullRequestMerged(view.url)
     if (!this.watcherPrObserver) return
@@ -1287,6 +1293,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const folder = this.threadRepositoryFolder(request.threadId, 'branches')
     const options = { ...request } as Partial<GitRefsRequest>
     delete options.threadId
+    if (this.gitRefsAccelerator) {
+      const changeEpoch = this.gitChanges
+      const forceRefresh = options.refresh === true || this.gitRefsAcceleratedAtChange !== changeEpoch
+      const accelerated = await this.gitRefsAccelerator(folder, forceRefresh ? { ...options, refresh: true } : options).catch(() => undefined)
+      if (accelerated !== undefined) {
+        this.gitRefsAcceleratedAtChange = changeEpoch
+        return accelerated
+      }
+    }
     return this.gitStatus.listRefs(folder, options)
   }
   /** The changed files of the folder a thread works in, for the commit dialog; a draft's folder answers too, as it does for branches. */

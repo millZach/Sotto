@@ -1076,5 +1076,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     },
   } : undefined
   idleCompaction.start()
-  return { antigravityAccount, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, detachedRuns, prepareForShutdown, close }
+  const useHostFactsAccelerator = (accelerator: Parameters<HostFactsSource['useAccelerator']>[0]): void => { facts.useAccelerator(accelerator) }
+  const useToolReadsAccelerator = (accelerator: Parameters<typeof toolReads.useAccelerator>[0]): void => { toolReads.useAccelerator(accelerator) }
+  return { antigravityAccount, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, detachedRuns, useHostFactsAccelerator, useToolReadsAccelerator, prepareForShutdown, close }
 }

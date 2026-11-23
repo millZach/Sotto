@@ -1,8 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -10,6 +12,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::git_review::{
+    detect_raster_image, parse_name_status_z, parse_numstat_z, section_is_binary, section_path,
+    split_patch,
+};
+pub use crate::host_facts::{
+    global_host_facts_sampler, host_facts_report, prime_host_facts_load, HostFactsSampler,
+};
 use crate::stores::{SubagentStore, UsageStore};
 use crate::workspace::now_iso;
 
@@ -148,7 +157,185 @@ pub fn is_valid_relative_path(path: &str) -> bool {
     true
 }
 
-/// Lists branches for a thread's working copy matching `gitRefsPageSchema` (`src/shared/gitRefs.ts`).
+const REFS_FRESH_MS: u64 = 120_000;
+
+#[derive(Clone)]
+struct CachedLocalRef {
+    name: String,
+    date: i64,
+    worktree_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct CachedRemoteRef {
+    name: String,
+    remote: String,
+    date: i64,
+}
+
+#[derive(Clone)]
+struct RefsSnapshot {
+    at: Instant,
+    locals: Vec<CachedLocalRef>,
+    remotes: Vec<CachedRemoteRef>,
+    default_branch: Option<String>,
+    has_remote: bool,
+}
+
+fn refs_cache() -> &'static Mutex<HashMap<String, RefsSnapshot>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, RefsSnapshot>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn same_path_str(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let pa = fs::canonicalize(a).unwrap_or_else(|_| PathBuf::from(a));
+    let pb = fs::canonicalize(b).unwrap_or_else(|_| PathBuf::from(b));
+    if cfg!(windows) {
+        pa.to_string_lossy().eq_ignore_ascii_case(&pb.to_string_lossy())
+    } else {
+        pa == pb
+    }
+}
+
+fn load_refs_snapshot(folder: &str, common: &str, refresh: bool) -> RefsSnapshot {
+    if !refresh {
+        if let Ok(guard) = refs_cache().lock() {
+            if let Some(cached) = guard.get(common) {
+                if cached.at.elapsed() < Duration::from_millis(REFS_FRESH_MS) {
+                    return cached.clone();
+                }
+            }
+        }
+    }
+
+    let listing = run_git(
+        folder,
+        &[
+            "for-each-ref",
+            "--format=%(refname)%09%(committerdate:unix)%09%(symref)",
+            "refs/heads",
+            "refs/remotes",
+        ],
+    )
+    .unwrap_or_default();
+    let remotes_list: Vec<String> = run_git(folder, &["remote"])
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(ToString::to_string)
+        .collect();
+    let origin_head = run_git(
+        folder,
+        &["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"],
+    )
+    .ok()
+    .map(|s| s.trim().to_string())
+    .unwrap_or_default();
+    let mut default_branch = origin_head
+        .strip_prefix("origin/")
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string);
+
+    let mut worktrees: HashMap<String, String> = HashMap::new();
+    let wt_raw = run_git(folder, &["worktree", "list", "--porcelain", "-z"]).unwrap_or_default();
+    for record in wt_raw.split("\0\0") {
+        let fields: Vec<&str> = record.split('\0').collect();
+        let prunable = fields
+            .iter()
+            .any(|f| *f == "prunable" || f.starts_with("prunable "));
+        if prunable {
+            continue;
+        }
+        let path = fields
+            .iter()
+            .find_map(|f| f.strip_prefix("worktree "))
+            .map(ToString::to_string);
+        let branch = fields
+            .iter()
+            .find_map(|f| f.strip_prefix("branch refs/heads/"))
+            .map(ToString::to_string);
+        if let (Some(p), Some(b)) = (path, branch) {
+            worktrees.insert(b, p);
+        }
+    }
+
+    let mut locals = Vec::new();
+    let mut remotes = Vec::new();
+    for line in listing.lines() {
+        let mut parts = line.split('\t');
+        let Some(refname) = parts.next().filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let date = parts
+            .next()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
+        let symref = parts.next().unwrap_or("");
+        if !symref.is_empty() {
+            continue;
+        }
+        if let Some(name) = refname.strip_prefix("refs/heads/") {
+            locals.push(CachedLocalRef {
+                name: name.to_string(),
+                date,
+                worktree_path: worktrees.get(name).cloned(),
+            });
+        } else if let Some(full) = refname.strip_prefix("refs/remotes/") {
+            let mut matching: Vec<&str> = remotes_list
+                .iter()
+                .map(String::as_str)
+                .filter(|cand| full.starts_with(&format!("{cand}/")))
+                .collect();
+            matching.sort_by_key(|cand| std::cmp::Reverse(cand.len()));
+            if let Some(&remote) = matching.first() {
+                remotes.push(CachedRemoteRef {
+                    name: full.to_string(),
+                    remote: remote.to_string(),
+                    date,
+                });
+            }
+        }
+    }
+
+    if default_branch.is_none() {
+        default_branch = ["main", "master"]
+            .into_iter()
+            .find(|&cand| locals.iter().any(|l| l.name == cand))
+            .map(ToString::to_string);
+    }
+
+    locals.sort_by(|a, b| {
+        b.date
+            .cmp(&a.date)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    remotes.sort_by(|a, b| {
+        b.date
+            .cmp(&a.date)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    let snapshot = RefsSnapshot {
+        at: Instant::now(),
+        locals,
+        remotes,
+        default_branch,
+        has_remote: remotes_list.iter().any(|r| r == "origin"),
+    };
+    if let Ok(mut guard) = refs_cache().lock() {
+        guard.insert(common.to_string(), snapshot.clone());
+    }
+    snapshot
+}
+
+/// Lists branches for a thread's working copy matching `gitRefsPageSchema` (`src/shared/gitRefs.ts`)
+/// and `GitStatusService.listRefs` (`src/main/agents/git/gitStatus.ts`).
 pub fn git_refs(
     folder: &str,
     query: Option<&str>,
@@ -156,109 +343,127 @@ pub fn git_refs(
     limit: Option<usize>,
     include_matching_remote: bool,
 ) -> Result<Value, String> {
-    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
-        .map(|s| s.trim() == "true")
-        .unwrap_or(false);
-    if !is_repo {
-        return Ok(json!({
-            "refs": [],
-            "isRepository": false,
-            "hasRemote": false,
-            "nextCursor": null,
-            "total": 0,
-        }));
-    }
+    git_refs_with_refresh(folder, query, cursor, limit, include_matching_remote, false)
+}
 
-    let current_branch = run_git(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && s != "HEAD");
-    let remotes_raw = run_git(folder, &["remote"]).unwrap_or_default();
-    let has_remote = remotes_raw.lines().any(|l| !l.trim().is_empty());
-    let origin_head = run_git(folder, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .and_then(|s| s.strip_prefix("origin/").map(ToString::to_string));
-
-    let local_raw = run_git(folder, &["branch", "--format=%(refname:short)"]).unwrap_or_default();
-    let mut local_names = Vec::new();
-    let mut local_set = std::collections::HashSet::new();
-    for line in local_raw.lines() {
-        let name = line.trim();
-        if !name.is_empty() {
-            local_names.push(name.to_string());
-            local_set.insert(name.to_string());
-        }
-    }
-
-    let default_branch = origin_head
-        .or_else(|| {
-            if local_set.contains("main") {
-                Some("main".into())
-            } else if local_set.contains("master") {
-                Some("master".into())
-            } else {
-                None
-            }
-        });
-
-    let mut all_refs = Vec::new();
-    for name in &local_names {
-        let is_current = current_branch.as_deref() == Some(name.as_str());
-        let is_default = default_branch.as_deref() == Some(name.as_str());
-        all_refs.push(json!({
-            "name": name,
-            "current": is_current,
-            "isDefault": is_default,
-            "worktreePath": null,
-        }));
-    }
-
-    if has_remote {
-        let remote_raw =
-            run_git(folder, &["branch", "-r", "--format=%(refname:short)"]).unwrap_or_default();
-        for line in remote_raw.lines() {
-            let name = line.trim();
-            if name.is_empty() || name.ends_with("/HEAD") {
-                continue;
-            }
-            let Some((remote, branch_name)) = name.split_once('/') else {
-                continue;
-            };
-            if !include_matching_remote && local_set.contains(branch_name) {
-                continue;
-            }
-            all_refs.push(json!({
-                "name": name,
-                "remote": remote,
-                "current": false,
-                "isDefault": false,
-                "worktreePath": null,
+pub fn git_refs_with_refresh(
+    folder: &str,
+    query: Option<&str>,
+    cursor: Option<usize>,
+    limit: Option<usize>,
+    include_matching_remote: bool,
+    refresh: bool,
+) -> Result<Value, String> {
+    let common = match run_git(
+        folder,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    ) {
+        Ok(out) if !out.trim().is_empty() => out.trim().to_string(),
+        _ => {
+            return Ok(json!({
+                "refs": [],
+                "isRepository": false,
+                "hasRemote": false,
+                "nextCursor": null,
+                "total": 0,
             }));
         }
+    };
+
+    let snapshot = load_refs_snapshot(folder, &common, refresh);
+    let current = run_git(folder, &["branch", "--show-current"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let here = run_git(folder, &["rev-parse", "--show-toplevel"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let local_names: HashSet<&str> = snapshot.locals.iter().map(|l| l.name.as_str()).collect();
+    let needle = query
+        .map(|q| q.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+
+    let mut all_refs: Vec<(u8, u8, usize, Value)> = Vec::new();
+    let mut seq = 0usize;
+    for local in &snapshot.locals {
+        if !needle.is_empty() && !local.name.to_ascii_lowercase().contains(&needle) {
+            continue;
+        }
+        let is_current = current.as_deref() == Some(local.name.as_str());
+        let is_default = snapshot.default_branch.as_deref() == Some(local.name.as_str());
+        let wt_path = local
+            .worktree_path
+            .as_deref()
+            .filter(|p| here.is_empty() || !same_path_str(p, &here));
+        let rank = if is_current {
+            0
+        } else if is_default {
+            1
+        } else {
+            2
+        };
+        all_refs.push((
+            rank,
+            0,
+            seq,
+            json!({
+                "name": local.name,
+                "current": is_current,
+                "isDefault": is_default,
+                "worktreePath": wt_path,
+            }),
+        ));
+        seq += 1;
     }
 
-    if let Some(q) = query.map(str::trim).filter(|q| !q.is_empty()) {
-        let needle = q.to_ascii_lowercase();
-        all_refs.retain(|r| {
-            r.get("name")
-                .and_then(Value::as_str)
-                .map(|n| n.to_ascii_lowercase().contains(&needle))
-                .unwrap_or(false)
-        });
+    for remote in &snapshot.remotes {
+        let short = remote
+            .name
+            .get(remote.remote.len() + 1..)
+            .unwrap_or("");
+        if !include_matching_remote && remote.remote == "origin" && local_names.contains(short) {
+            continue;
+        }
+        if !needle.is_empty() && !remote.name.to_ascii_lowercase().contains(&needle) {
+            continue;
+        }
+        let is_default =
+            remote.remote == "origin" && snapshot.default_branch.as_deref() == Some(short);
+        let rank = if is_default { 1 } else { 2 };
+        all_refs.push((
+            rank,
+            1,
+            seq,
+            json!({
+                "name": remote.name,
+                "remote": remote.remote,
+                "current": false,
+                "isDefault": is_default,
+                "worktreePath": null,
+            }),
+        ));
+        seq += 1;
     }
+
+    all_refs.sort_by_key(|(rank, is_remote, order, _)| (*rank, *is_remote, *order));
 
     let total = all_refs.len();
     let start = cursor.unwrap_or(0).min(total);
-    let page_limit = limit.unwrap_or(GIT_REFS_MAX_LIMIT).clamp(1, GIT_REFS_MAX_LIMIT);
+    let page_limit = limit.unwrap_or(100).clamp(1, GIT_REFS_MAX_LIMIT);
     let end = (start + page_limit).min(total);
     let next_cursor = if end < total { Some(end) } else { None };
-    let page: Vec<Value> = all_refs.into_iter().skip(start).take(page_limit).collect();
+    let page: Vec<Value> = all_refs
+        .into_iter()
+        .skip(start)
+        .take(page_limit)
+        .map(|(_, _, _, v)| v)
+        .collect();
 
     Ok(json!({
         "refs": page,
         "isRepository": true,
-        "hasRemote": has_remote,
+        "hasRemote": snapshot.has_remote,
         "nextCursor": next_cursor,
         "total": total,
     }))
@@ -348,73 +553,346 @@ fn porcelain_status(code: &str) -> &'static str {
     }
 }
 
-/// Returns git working-tree changes wrapped in `ToolsResult<GitChangeListing>` (`src/shared/gitChanges.ts`).
-pub fn thread_changes(workspace: &ThreadWorkspace) -> Value {
-    let folder = &workspace.working_directory;
-    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
-        .map(|s| s.trim() == "true")
-        .unwrap_or(false);
-    if !is_repo {
-        return tools_err("not-repository", "This folder is not a Git repository.");
+const TOO_LARGE_FILE_DIFF_MSG: &str =
+    "This file is past the 512 KiB diff preview limit. Copy its path or open it.";
+const TOO_LARGE_REVIEW_DIFF_MSG: &str =
+    "This comparison is past the 2 MiB preview limit, so this file is not shown. Copy its path or open it.";
+const BINARY_DIFF_MSG: &str = "Binary file: no text diff.";
+
+struct TempDirGuard(PathBuf);
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
     }
-    let branch = run_git(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && s != "HEAD");
-    let head = run_git(folder, &["rev-parse", "HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
-    let Ok(raw) = run_git(folder, &["status", "--porcelain=v1"]) else {
-        return tools_err("unavailable", "Could not read Git status for this folder.");
+}
+
+struct SafeGitPathInfo {
+    stamp: String,
+    size: u64,
+    regular: bool,
+}
+
+fn safe_git_path(root_canon: &Path, rel_path: &str) -> Result<SafeGitPathInfo, ()> {
+    let target = root_canon.join(rel_path);
+    if !target.starts_with(root_canon) {
+        return Err(());
+    }
+    let mut candidate = target.clone();
+    loop {
+        match fs::symlink_metadata(&candidate) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    return Err(());
+                }
+                let canon = fs::canonicalize(&candidate).map_err(|_| ())?;
+                if !canon.starts_with(root_canon) {
+                    return Err(());
+                }
+                let mtime_ms = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0);
+                let size = meta.len();
+                let is_exact = candidate == target;
+                return Ok(SafeGitPathInfo {
+                    stamp: format!("{size}:{mtime_ms}"),
+                    size: if is_exact { size } else { 0 },
+                    regular: is_exact && meta.is_file(),
+                });
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                if candidate == root_canon {
+                    return Err(());
+                }
+                let Some(parent) = candidate.parent() else {
+                    return Err(());
+                };
+                candidate = parent.to_path_buf();
+            }
+            Err(_) => return Err(()),
+        }
+    }
+}
+
+fn sha256_hex(input: &str) -> String {
+    let digest = Sha256::digest(input.as_bytes());
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(&mut out, "{b:02x}");
+    }
+    out
+}
+
+struct GitChangeEntry {
+    path: String,
+    original_path: Option<String>,
+    status: &'static str,
+}
+
+struct GitListingInternal {
+    branch: Option<String>,
+    revision: String,
+    files: Vec<GitChangeEntry>,
+    truncated: bool,
+}
+
+fn collect_git_listing(workspace: &ThreadWorkspace) -> Result<GitListingInternal, Value> {
+    let folder = &workspace.working_directory;
+    let Ok(canon_root) = fs::canonicalize(folder) else {
+        return Err(tools_err(
+            "workspace-unavailable",
+            "The thread working directory is unavailable.",
+        ));
     };
-    let mut files = Vec::new();
+    let prefix = match run_git_clean(folder, &["rev-parse", "--show-prefix"], &[], None, None) {
+        Ok(out) => out.stdout.trim_end().to_string(),
+        Err(GitRunError::MaxBuffer(_)) => {
+            return Err(tools_err(
+                "too-large",
+                "The Git change list exceeds the safe preview limit. Open the working directory externally.",
+            ));
+        }
+        Err(_) => {
+            return Err(tools_err(
+                "not-repository",
+                "Git is unavailable or this thread working directory is not a Git repository.",
+            ));
+        }
+    };
+    let raw = match run_git_clean(
+        folder,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."],
+        &[],
+        None,
+        Some(MAX_GIT_REVIEW_BYTES),
+    ) {
+        Ok(out) => out.stdout,
+        Err(GitRunError::MaxBuffer(_)) => {
+            return Err(tools_err(
+                "too-large",
+                "The Git change list exceeds the safe preview limit. Open the working directory externally.",
+            ));
+        }
+        Err(_) => {
+            return Err(tools_err(
+                "not-repository",
+                "Git is unavailable or this thread working directory is not a Git repository.",
+            ));
+        }
+    };
+    let head = run_git_clean(folder, &["rev-parse", "--verify", "HEAD"], &[], None, None)
+        .ok()
+        .map(|o| o.stdout.trim().to_string())
+        .unwrap_or_default();
+    let branch = run_git_clean(
+        folder,
+        &["symbolic-ref", "--short", "-q", "HEAD"],
+        &[],
+        None,
+        None,
+    )
+    .ok()
+    .map(|o| o.stdout.trim().to_string())
+    .filter(|s| !s.is_empty());
+
+    let records: Vec<&str> = raw.split('\0').collect();
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut files: Vec<GitChangeEntry> = Vec::new();
+    let mut stamps: Vec<String> = Vec::new();
     let mut truncated = false;
-    for line in raw.lines() {
-        if line.len() < 4 {
+
+    let mut index = 0usize;
+    while index < records.len() {
+        let record = records[index];
+        index += 1;
+        if record.len() < 4 {
             continue;
         }
-        if files.len() >= MAX_GIT_FILES {
+        let xy = &record[..2];
+        let repo_path = &record[3..];
+        let original = if xy.contains('R') || xy.contains('C') {
+            let orig = records.get(index).copied();
+            index += 1;
+            orig
+        } else {
+            None
+        };
+        let Some(rel_after_prefix) = repo_path.strip_prefix(&prefix) else {
+            continue;
+        };
+        let path = rel_after_prefix.replace('\\', "/");
+        if path.is_empty() || !is_valid_relative_path(&path) {
+            truncated = true;
+            continue;
+        }
+        if !seen.contains_key(&path) && files.len() >= MAX_GIT_FILES {
             truncated = true;
             break;
         }
-        let code = &line[..2];
-        let raw_path = line[3..].trim();
-        let (path, original_path) = if let Some((orig, new_p)) = raw_path.split_once(" -> ") {
-            (
-                new_p.trim_matches('"').replace('\\', "/"),
-                Some(orig.trim_matches('"').replace('\\', "/")),
-            )
-        } else {
-            (raw_path.trim_matches('"').replace('\\', "/"), None)
+        let status = porcelain_status(xy);
+        let original_path = original
+            .and_then(|o| o.strip_prefix(&prefix))
+            .map(|o| o.replace('\\', "/"))
+            .filter(|o| !o.is_empty() && is_valid_relative_path(o));
+
+        let stamp = match safe_git_path(&canon_root, &path) {
+            Ok(info) => format!("{path}:{}", info.stamp),
+            Err(()) => format!("{path}:unavailable"),
         };
-        if !is_valid_relative_path(&path) {
+        stamps.push(stamp);
+
+        let entry = GitChangeEntry {
+            path: path.clone(),
+            original_path,
+            status,
+        };
+        if let Some(&pos) = seen.get(&path) {
+            files[pos] = entry;
+        } else {
+            seen.insert(path, files.len());
+            files.push(entry);
+        }
+    }
+
+    let index_state = run_git_clean(folder, &["ls-files", "--stage", "-z"], &[], None, None)
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+    let branch_str = branch.as_deref().unwrap_or("null");
+    let revision = sha256_hex(&format!(
+        "{branch_str}\0{head}\0{raw}\0{index_state}\0{}",
+        stamps.join("\0")
+    ));
+
+    Ok(GitListingInternal {
+        branch,
+        revision,
+        files,
+        truncated,
+    })
+}
+
+fn automatic_branch_base(cwd: &str, branch: &str) -> Option<String> {
+    let ref_exists = |r: &str| -> bool {
+        run_git_clean(cwd, &["show-ref", "--verify", "--quiet", r], &[], None, None).is_ok()
+    };
+    let merge_base_key = format!("branch.{branch}.gh-merge-base");
+    let configured = run_git_clean(cwd, &["config", "--get", &merge_base_key], &[], None, None)
+        .ok()
+        .map(|o| o.stdout.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let remotes: Vec<String> = run_git_clean(cwd, &["remote"], &[], None, None)
+        .ok()
+        .map(|o| {
+            o.stdout
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let primary: Option<&str> = if remotes.iter().any(|r| r == "origin") {
+        Some("origin")
+    } else {
+        remotes.first().map(String::as_str)
+    };
+    let head = primary
+        .and_then(|p| {
+            let sym = format!("refs/remotes/{p}/HEAD");
+            run_git_clean(cwd, &["symbolic-ref", "--short", "-q", &sym], &[], None, None)
+                .ok()
+                .map(|o| o.stdout.trim().to_string())
+        })
+        .unwrap_or_default();
+    let default_branch = primary
+        .and_then(|p| head.strip_prefix(&format!("{p}/")))
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string);
+
+    let candidates = [
+        configured,
+        default_branch,
+        Some("main".to_string()),
+        Some("master".to_string()),
+    ];
+    for cand in candidates.into_iter().flatten() {
+        let name = if let Some(s) = cand.strip_prefix("origin/") {
+            s
+        } else if let Some(p) = primary {
+            cand.strip_prefix(&format!("{p}/")).unwrap_or(&cand)
+        } else {
+            &cand
+        };
+        if name.is_empty() || name == branch || name.starts_with('-') {
             continue;
         }
-        let mut entry = json!({
-            "path": path,
-            "status": porcelain_status(code),
-        });
-        if let Some(orig) = original_path.filter(|p| is_valid_relative_path(p)) {
-            entry["originalPath"] = json!(orig);
+        if let Some(p) = primary {
+            let remote_ref = format!("refs/remotes/{p}/{name}");
+            if ref_exists(&remote_ref) {
+                return Some(format!("{p}/{name}"));
+            }
         }
-        files.push(entry);
+        let local_ref = format!("refs/heads/{name}");
+        if ref_exists(&local_ref) {
+            return Some(name.to_string());
+        }
     }
-    let revision = compute_workspace_id(&head, &raw, folder);
+    None
+}
+
+/// Returns git working-tree changes wrapped in `ToolsResult<GitChangeListing>` (`src/shared/gitChanges.ts`).
+pub fn thread_changes(workspace: &ThreadWorkspace) -> Value {
+    let listing = match collect_git_listing(workspace) {
+        Ok(l) => l,
+        Err(err_val) => return err_val,
+    };
+    let files: Vec<Value> = listing
+        .files
+        .into_iter()
+        .map(|f| {
+            let mut obj = json!({
+                "path": f.path,
+                "status": f.status,
+            });
+            if let Some(orig) = f.original_path {
+                obj["originalPath"] = json!(orig);
+            }
+            obj
+        })
+        .collect();
     tools_ok(json!({
         "workspace": workspace,
-        "branch": branch,
-        "revision": revision,
+        "branch": listing.branch,
+        "revision": listing.revision,
         "files": files,
-        "truncated": truncated,
+        "truncated": listing.truncated,
     }))
 }
 
-/// Returns a bounded Git comparison wrapped in `ToolsResult<GitReview>` (`src/shared/gitChanges.ts`).
+/// Returns a bounded Git comparison wrapped in `ToolsResult<GitReview>` (`src/shared/gitChanges.ts`),
+/// matching `GitChangesService.readReview` (`src/main/tools/gitChanges.ts`).
 pub fn thread_changes_review(
     workspace: &ThreadWorkspace,
     scope: &Value,
     ignore_whitespace: bool,
+) -> Value {
+    thread_changes_review_inner(workspace, scope, ignore_whitespace, true)
+}
+
+fn thread_changes_review_inner(
+    workspace: &ThreadWorkspace,
+    scope: &Value,
+    ignore_whitespace: bool,
+    retry: bool,
 ) -> Value {
     let scope_kind = scope
         .get("kind")
@@ -431,143 +909,426 @@ pub fn thread_changes_review(
             Some(Value::Null) | None => None,
             Some(_) => return tools_err("invalid-request", "Use a valid branch name."),
         }
+    } else if scope_kind == "working" {
+        None
+    } else {
+        return tools_err("invalid-request", "Invalid comparison scope.");
+    };
+
+    let listing = match collect_git_listing(workspace) {
+        Ok(l) => l,
+        Err(err_val) => return err_val,
+    };
+    let folder = &workspace.working_directory;
+    let Ok(canon_root) = fs::canonicalize(folder) else {
+        return tools_err(
+            "workspace-unavailable",
+            "The thread working directory is unavailable.",
+        );
+    };
+    let has_head = run_git_clean(folder, &["rev-parse", "--verify", "-q", "HEAD"], &[], None, None)
+        .is_ok();
+
+    let mut extra_files: Vec<Value> = Vec::new();
+    let mut _temp_guard: Option<TempDirGuard> = None;
+    let mut extra_env: Vec<(String, String)> = Vec::new();
+
+    let (resolved_scope, range) = if scope_kind == "working" {
+        let range = if has_head {
+            "HEAD".to_string()
+        } else {
+            match run_git_clean(
+                folder,
+                &["hash-object", "-t", "tree", "--stdin"],
+                &[],
+                Some(b""),
+                None,
+            ) {
+                Ok(out) => out.stdout.trim().to_string(),
+                Err(_) => {
+                    return tools_err("unavailable", "Could not read Git comparison.");
+                }
+            }
+        };
+
+        let mut untracked_to_add: Vec<String> = Vec::new();
+        for f in listing.files.iter().filter(|f| f.status == "untracked") {
+            match safe_git_path(&canon_root, &f.path) {
+                Ok(info) if info.regular => {
+                    if info.size > MAX_GIT_PATCH_BYTES as u64 {
+                        extra_files.push(json!({
+                            "path": f.path,
+                            "status": "untracked",
+                            "additions": null,
+                            "deletions": null,
+                            "content": { "kind": "too-large", "message": TOO_LARGE_FILE_DIFF_MSG },
+                        }));
+                    } else {
+                        untracked_to_add.push(f.path.clone());
+                    }
+                }
+                _ => {
+                    extra_files.push(json!({
+                        "path": f.path,
+                        "status": "untracked",
+                        "additions": null,
+                        "deletions": null,
+                        "content": { "kind": "unavailable", "message": "This path is not an available regular file." },
+                    }));
+                }
+            }
+        }
+
+        if !untracked_to_add.is_empty() {
+            let temp_dir = std::env::temp_dir()
+                .join(format!("sotto-changes-{}", uuid::Uuid::new_v4()));
+            if fs::create_dir_all(&temp_dir).is_err() {
+                return tools_err("unavailable", "Could not prepare temporary Git index.");
+            }
+            let temp_index = temp_dir.join("index");
+            _temp_guard = Some(TempDirGuard(temp_dir));
+            let temp_index_str = temp_index.to_string_lossy().into_owned();
+            extra_env.push(("GIT_INDEX_FILE".into(), temp_index_str));
+
+            let real_index_rel = run_git_clean(
+                folder,
+                &["rev-parse", "--git-path", "index"],
+                &[],
+                None,
+                None,
+            )
+            .map(|o| o.stdout.trim().to_string())
+            .unwrap_or_default();
+            let real_index = Path::new(folder).join(&real_index_rel);
+            if real_index.exists() {
+                if fs::copy(&real_index, &temp_index).is_err() {
+                    return tools_err("unavailable", "Could not copy Git index.");
+                }
+            } else if run_git_clean(folder, &["read-tree", "--empty"], &extra_env, None, None)
+                .is_err()
+            {
+                return tools_err("unavailable", "Could not initialize temporary Git index.");
+            }
+            let _ = run_git_clean(
+                folder,
+                &["-c", "core.splitIndex=false", "update-index", "--no-split-index"],
+                &extra_env,
+                None,
+                None,
+            );
+            let mut pathspec = Vec::new();
+            for p in &untracked_to_add {
+                pathspec.extend_from_slice(p.as_bytes());
+                pathspec.push(0);
+            }
+            if run_git_clean(
+                folder,
+                &[
+                    "-c",
+                    "core.splitIndex=false",
+                    "add",
+                    "--intent-to-add",
+                    "--pathspec-from-file=-",
+                    "--pathspec-file-nul",
+                ],
+                &extra_env,
+                Some(&pathspec),
+                None,
+            )
+            .is_err()
+            {
+                return tools_err("unavailable", "Could not read untracked files for diff.");
+            }
+        }
+
+        (json!({ "kind": "working" }), range)
+    } else {
+        if !has_head {
+            return tools_err(
+                "blocked",
+                "This branch has no commits yet, so there are no branch changes to compare.",
+            );
+        }
+        let Some(ref branch) = listing.branch else {
+            return tools_err(
+                "blocked",
+                "Branch changes compare a branch with its base. This working copy is on a detached HEAD.",
+            );
+        };
+        let automatic = requested_base.is_none();
+        let base = requested_base.or_else(|| automatic_branch_base(folder, branch));
+        let Some(base) = base else {
+            return tools_ok(json!({
+                "workspace": workspace,
+                "revision": listing.revision,
+                "scope": {
+                    "kind": "branch",
+                    "base": null,
+                    "automatic": automatic,
+                    "head": branch,
+                },
+                "files": [],
+                "truncated": false,
+            }));
+        };
+        let commit_spec = format!("{base}^{{commit}}");
+        let known = run_git_clean(
+            folder,
+            &["rev-parse", "--verify", "-q", "--end-of-options", &commit_spec],
+            &[],
+            None,
+            None,
+        )
+        .is_ok();
+        if !known {
+            return tools_err(
+                "path-unavailable",
+                &format!("{base} is not a branch in this repository. Choose another base."),
+            );
+        }
+        (
+            json!({
+                "kind": "branch",
+                "base": base,
+                "automatic": automatic,
+                "head": branch,
+            }),
+            format!("{base}...HEAD"),
+        )
+    };
+
+    let mut diff_base: Vec<&str> = vec![
+        "-c",
+        "core.bigFileThreshold=512k",
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--find-renames",
+        "--relative",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+    ];
+    if ignore_whitespace {
+        diff_base.push("--ignore-all-space");
+    }
+
+    let mut name_status_args = diff_base.clone();
+    name_status_args.extend(["--name-status", "-z", range.as_str(), "--"]);
+    let name_status_raw = match run_git_clean(
+        folder,
+        &name_status_args,
+        &extra_env,
+        None,
+        Some(MAX_GIT_REVIEW_BYTES),
+    ) {
+        Ok(o) => o.stdout,
+        Err(GitRunError::MaxBuffer(_)) => {
+            return tools_err(
+                "too-large",
+                "This comparison is too large to list. Review it with Git directly.",
+            );
+        }
+        Err(_) => return tools_err("unavailable", "Could not read Git comparison."),
+    };
+    let name_status = parse_name_status_z(&name_status_raw);
+
+    let mut numstat_args = diff_base.clone();
+    numstat_args.extend(["--numstat", "-z", range.as_str(), "--"]);
+    let numstat_raw = match run_git_clean(
+        folder,
+        &numstat_args,
+        &extra_env,
+        None,
+        Some(MAX_GIT_REVIEW_BYTES),
+    ) {
+        Ok(o) => o.stdout,
+        Err(GitRunError::MaxBuffer(_)) => {
+            return tools_err(
+                "too-large",
+                "This comparison is too large to list. Review it with Git directly.",
+            );
+        }
+        Err(_) => return tools_err("unavailable", "Could not read Git comparison."),
+    };
+    let numstat_entries = parse_numstat_z(&numstat_raw);
+    let numstat_map: HashMap<String, (Option<u64>, Option<u64>)> = numstat_entries
+        .iter()
+        .map(|e| (e.path.clone(), (e.additions, e.deletions)))
+        .collect();
+
+    let hidden_whitespace = if ignore_whitespace {
+        let mut all_args: Vec<&str> = diff_base
+            .iter()
+            .copied()
+            .filter(|&f| f != "--ignore-all-space")
+            .collect();
+        all_args.extend(["--numstat", "-z", range.as_str(), "--"]);
+        let all_raw = run_git_clean(
+            folder,
+            &all_args,
+            &extra_env,
+            None,
+            Some(MAX_GIT_REVIEW_BYTES),
+        )
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+        let all_entries = parse_numstat_z(&all_raw);
+        let (mut all_add, mut all_del) = (0u64, 0u64);
+        for e in &all_entries {
+            all_add = all_add.saturating_add(e.additions.unwrap_or(0));
+            all_del = all_del.saturating_add(e.deletions.unwrap_or(0));
+        }
+        let (mut shown_add, mut shown_del) = (0u64, 0u64);
+        for e in &numstat_entries {
+            shown_add = shown_add.saturating_add(e.additions.unwrap_or(0));
+            shown_del = shown_del.saturating_add(e.deletions.unwrap_or(0));
+        }
+        Some(json!({
+            "additions": all_add.saturating_sub(shown_add),
+            "deletions": all_del.saturating_sub(shown_del),
+        }))
     } else {
         None
     };
 
-    let folder = &workspace.working_directory;
-    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
-        .map(|s| s.trim() == "true")
-        .unwrap_or(false);
-    if !is_repo {
-        return tools_err("not-repository", "This folder is not a Git repository.");
-    }
-    let head_branch = run_git(folder, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty() && s != "HEAD");
-    let head_sha = run_git(folder, &["rev-parse", "HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
-
-    let (resolved_scope, diff_range) = if scope_kind == "branch" {
-        let automatic = requested_base.is_none();
-        let base = requested_base.or_else(|| {
-            run_git(folder, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| is_valid_git_base_ref(s))
-        });
-        let verified_base = base.filter(|b| {
-            let commit_spec = format!("{b}^{{commit}}");
-            run_git(folder, &["rev-parse", "--verify", "--end-of-options", &commit_spec]).is_ok()
-        });
-        let range = verified_base.as_ref().map(|b| format!("{b}...HEAD"));
-        (
-            json!({
-                "kind": "branch",
-                "base": verified_base,
-                "automatic": automatic,
-                "head": head_branch,
-            }),
-            range,
-        )
-    } else {
-        (json!({ "kind": "working" }), None)
+    let mut patch_args = diff_base;
+    patch_args.extend(["--patch", range.as_str(), "--"]);
+    let (patch, overflowed) = match run_git_clean(
+        folder,
+        &patch_args,
+        &extra_env,
+        None,
+        Some(MAX_GIT_REVIEW_BYTES),
+    ) {
+        Ok(o) => (o.stdout, false),
+        Err(GitRunError::MaxBuffer(partial)) => (partial, true),
+        Err(_) => return tools_err("unavailable", "Could not read Git comparison."),
     };
 
-    if scope_kind == "branch" && diff_range.is_none() {
-        let revision = compute_workspace_id(&head_sha, "branch:none", folder);
-        return tools_ok(json!({
-            "workspace": workspace,
-            "revision": revision,
-            "scope": resolved_scope,
-            "files": [],
-            "truncated": false,
-        }));
-    }
-
-    let mut numstat_args = vec!["diff", "--numstat"];
-    if ignore_whitespace {
-        numstat_args.push("-w");
-    }
-    let range_str;
-    if let Some(ref r) = diff_range {
-        range_str = r.clone();
-        numstat_args.push(&range_str);
-    } else if !head_sha.is_empty() {
-        numstat_args.push("HEAD");
-    }
-
-    let numstat = run_git(folder, &numstat_args).unwrap_or_default();
-    let mut files = Vec::new();
-    let mut total_patch_bytes = 0usize;
-    let mut truncated = false;
-
-    for line in numstat.lines() {
-        if files.len() >= MAX_GIT_FILES {
-            truncated = true;
-            break;
+    let sections = split_patch(&patch);
+    let incomplete_idx = if overflowed && !sections.is_empty() {
+        Some(sections.len() - 1)
+    } else {
+        None
+    };
+    let mut by_path: HashMap<String, (usize, &str)> = HashMap::new();
+    for (idx, sec) in sections.iter().enumerate() {
+        if let Some(p) = section_path(sec) {
+            by_path.entry(p).or_insert((idx, *sec));
         }
-        let mut parts = line.split('\t');
-        let Some(ins_raw) = parts.next() else { continue };
-        let Some(del_raw) = parts.next() else { continue };
-        let Some(path_raw) = parts.next() else { continue };
-        let path = path_raw.replace('\\', "/");
-        if !is_valid_relative_path(&path) {
+    }
+
+    let untracked_paths: HashSet<&str> = listing
+        .files
+        .iter()
+        .filter(|f| f.status == "untracked")
+        .map(|f| f.path.as_str())
+        .collect();
+
+    let mut files: Vec<(String, Value)> = extra_files
+        .into_iter()
+        .map(|v| {
+            let p = v["path"].as_str().unwrap_or("").to_string();
+            (p, v)
+        })
+        .collect();
+
+    for entry in name_status {
+        if !is_valid_relative_path(&entry.path)
+            || entry
+                .original_path
+                .as_deref()
+                .is_some_and(|o| !is_valid_relative_path(o))
+        {
             continue;
         }
-        let is_binary = ins_raw == "-" || del_raw == "-";
-        let additions = ins_raw.parse::<u64>().ok();
-        let deletions = del_raw.parse::<u64>().ok();
-
-        let content = if is_binary {
-            json!({ "kind": "binary", "message": "Binary file changes are not shown as text." })
-        } else if total_patch_bytes >= MAX_GIT_REVIEW_BYTES {
-            truncated = true;
-            json!({ "kind": "too-large", "message": "The comparison reached the 2 MiB patch limit." })
-        } else {
-            let mut p_args = vec!["diff"];
-            if ignore_whitespace {
-                p_args.push("-w");
-            }
-            if let Some(ref r) = diff_range {
-                p_args.push(r.as_str());
-            } else if !head_sha.is_empty() {
-                p_args.push("HEAD");
-            }
-            p_args.push("--");
-            p_args.push(path.as_str());
-            match run_git(folder, &p_args) {
-                Ok(patch) if patch.len() > MAX_GIT_PATCH_BYTES => {
-                    json!({ "kind": "too-large", "message": "This patch is larger than 512 KiB." })
+        let counts = numstat_map.get(&entry.path).copied();
+        if ignore_whitespace && counts.is_none() {
+            continue;
+        }
+        let content = match by_path.get(&entry.path) {
+            None => {
+                if overflowed {
+                    json!({ "kind": "too-large", "message": TOO_LARGE_REVIEW_DIFF_MSG })
+                } else {
+                    json!({ "kind": "unavailable", "message": "Git gave no text diff for this file." })
                 }
-                Ok(patch) => {
-                    total_patch_bytes = total_patch_bytes.saturating_add(patch.len());
-                    json!({ "kind": "text", "patch": patch })
-                }
-                Err(_) => json!({ "kind": "unavailable", "message": "Could not read this file's patch." }),
             }
+            Some(&(idx, _)) if Some(idx) == incomplete_idx => {
+                json!({ "kind": "too-large", "message": TOO_LARGE_REVIEW_DIFF_MSG })
+            }
+            Some(&(_, sec)) if section_is_binary(sec) => {
+                let size = if scope_kind == "working" && entry.status != "deleted" {
+                    safe_git_path(&canon_root, &entry.path)
+                        .map(|info| info.size)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                if size > MAX_GIT_PATCH_BYTES as u64 {
+                    json!({ "kind": "too-large", "message": TOO_LARGE_FILE_DIFF_MSG })
+                } else {
+                    json!({ "kind": "binary", "message": BINARY_DIFF_MSG })
+                }
+            }
+            Some(&(_, sec)) if sec.len() > MAX_GIT_PATCH_BYTES => {
+                json!({ "kind": "too-large", "message": TOO_LARGE_FILE_DIFF_MSG })
+            }
+            Some(&(_, sec)) => json!({ "kind": "text", "patch": sec }),
         };
 
-        files.push(json!({
-            "path": path,
-            "status": "modified",
+        let status = if scope_kind == "working"
+            && entry.status == "added"
+            && untracked_paths.contains(entry.path.as_str())
+        {
+            "untracked"
+        } else {
+            entry.status
+        };
+        let (additions, deletions) = counts.unwrap_or((None, None));
+        let mut file_val = json!({
+            "path": entry.path,
+            "status": status,
             "additions": additions,
             "deletions": deletions,
             "content": content,
-        }));
+        });
+        if let Some(orig) = entry.original_path {
+            file_val["originalPath"] = json!(orig);
+        }
+        files.push((entry.path, file_val));
     }
 
-    let revision = compute_workspace_id(&head_sha, &numstat, folder);
-    tools_ok(json!({
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let truncated =
+        files.len() > MAX_GIT_FILES || (scope_kind == "working" && listing.truncated);
+
+    if scope_kind == "working" && retry {
+        if let Ok(current) = collect_git_listing(workspace) {
+            if current.revision != listing.revision {
+                drop(_temp_guard);
+                return thread_changes_review_inner(workspace, scope, ignore_whitespace, false);
+            }
+        }
+    }
+
+    let capped_files: Vec<Value> = files
+        .into_iter()
+        .take(MAX_GIT_FILES)
+        .map(|(_, v)| v)
+        .collect();
+    let mut out = json!({
         "workspace": workspace,
-        "revision": revision,
+        "revision": listing.revision,
         "scope": resolved_scope,
-        "files": files,
+        "files": capped_files,
         "truncated": truncated,
-    }))
+    });
+    if let Some(hw) = hidden_whitespace {
+        out["hiddenWhitespace"] = hw;
+    }
+    tools_ok(out)
 }
 
 /// Lists directories inside a requested host folder matching `hostFoldersResultSchema` (`src/shared/hostFolders.ts`).
@@ -692,7 +1453,7 @@ fn build_folder_crumbs(path: &Path) -> Vec<Value> {
 }
 
 /// Safely lists files and subdirectories inside `workspace.working_directory/rel_path`,
-/// returning `ToolsResult<FileListing>` (`src/shared/files.ts`).
+/// returning `ToolsResult<FileListing>` (`src/shared/files.ts`) matching `FilesService.list`.
 pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
     if !is_valid_relative_path(rel_path) {
         return tools_err("invalid-request", "Use a relative workspace path.");
@@ -701,56 +1462,82 @@ pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
     let Ok(canon_root) = fs::canonicalize(root) else {
         return tools_err("workspace-unavailable", "This thread's folder is unavailable.");
     };
-    let Ok(target) = resolve_contained(&canon_root, rel_path) else {
-        return tools_err("path-unavailable", "That path is outside this thread's folder.");
+    let target = match resolve_contained_checked(&canon_root, rel_path) {
+        Ok(p) => p,
+        Err(ContainedError::Outside) => {
+            return tools_err(
+                "path-outside-workspace",
+                "This path points outside the thread working directory.",
+            );
+        }
+        Err(ContainedError::Unavailable) => {
+            return tools_err(
+                "path-unavailable",
+                "This path is unavailable or changed. Refresh Files and try again.",
+            );
+        }
     };
+    let Ok(target_meta) = fs::metadata(&target) else {
+        return tools_err(
+            "path-unavailable",
+            "This path is unavailable or changed. Refresh Files and try again.",
+        );
+    };
+    if !target_meta.is_dir() {
+        return tools_err("not-directory", "Select a directory to browse.");
+    }
     let Ok(rd) = fs::read_dir(&target) else {
         return tools_err("path-unavailable", "Could not read that folder.");
     };
     let mut entries = Vec::new();
     let mut truncated = false;
     for entry in rd.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name == ".git" || name == "node_modules" || name == "target" {
-            continue;
-        }
         if entries.len() >= MAX_FILE_ENTRIES {
             truncated = true;
             break;
         }
+        let name = entry.file_name().to_string_lossy().into_owned();
         let rel = if rel_path.is_empty() {
             name.clone()
         } else {
             format!("{rel_path}/{name}")
         };
         if !is_valid_relative_path(&rel) {
-            entries.push(json!({
-                "name": name,
-                "path": rel,
-                "kind": "unavailable",
-            }));
+            if rel.len() <= 4_096 {
+                entries.push(json!({
+                    "name": name,
+                    "path": rel,
+                    "kind": "unavailable",
+                }));
+            } else {
+                truncated = true;
+            }
             continue;
         }
-        let Ok(meta) = entry.metadata() else {
-            entries.push(json!({
-                "name": name,
-                "path": rel,
-                "kind": "unavailable",
-            }));
-            continue;
+        // Broken or escaping symlinks are visible as `unavailable`, never followed into previews.
+        let kind = match resolve_contained_checked(&canon_root, &rel)
+            .ok()
+            .and_then(|child| fs::metadata(child).ok())
+        {
+            Some(meta) if meta.is_dir() => "directory",
+            Some(meta) if meta.is_file() => "file",
+            _ => "unavailable",
         };
         entries.push(json!({
             "name": name,
             "path": rel,
-            "kind": if meta.is_dir() { "directory" } else { "file" },
+            "kind": kind,
         }));
     }
     entries.sort_by(|a, b| {
         let dir_a = a["kind"] != "directory";
         let dir_b = b["kind"] != "directory";
+        let na = a["name"].as_str().unwrap_or("");
+        let nb = b["name"].as_str().unwrap_or("");
         dir_a
             .cmp(&dir_b)
-            .then_with(|| a["name"].as_str().cmp(&b["name"].as_str()))
+            .then_with(|| na.to_lowercase().cmp(&nb.to_lowercase()))
+            .then_with(|| na.cmp(nb))
     });
     tools_ok(json!({
         "workspace": workspace,
@@ -760,9 +1547,43 @@ pub fn thread_files(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
     }))
 }
 
+fn open_preview_file(path: &Path) -> std::io::Result<fs::File> {
+    let mut opts = fs::OpenOptions::new();
+    opts.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Avoid hanging on a FIFO or following a last-component symlink exchange.
+        #[cfg(target_os = "linux")]
+        const FLAGS: i32 = 0o400000 | 0o4000; // O_NOFOLLOW | O_NONBLOCK
+        #[cfg(target_os = "macos")]
+        const FLAGS: i32 = 0x0100 | 0x0004; // O_NOFOLLOW | O_NONBLOCK
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        const FLAGS: i32 = 0;
+        if FLAGS != 0 {
+            opts.custom_flags(FLAGS);
+        }
+    }
+    opts.open(path)
+}
+
+fn same_file_revision(a: &fs::Metadata, b: &fs::Metadata) -> bool {
+    if a.len() != b.len() || a.modified().ok() != b.modified().ok() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if a.dev() != b.dev() || a.ino() != b.ino() || a.ctime_nsec() != b.ctime_nsec() {
+            return false;
+        }
+    }
+    true
+}
+
 /// Reads a bounded preview strictly contained within `workspace.working_directory`,
-/// checking file metadata size before reading and bounding every read with `Read::take`,
-/// returning `ToolsResult<FilePreview>` (`src/shared/files.ts`).
+/// matching `FilesService.preview` (`src/main/files/service.ts`): magic-byte raster image detection
+/// (never filename MIME inference), strict UTF-8 & control-byte checks, and bounded reads.
 pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value {
     if rel_path.is_empty() || !is_valid_relative_path(rel_path) {
         return tools_err("invalid-request", "Use a relative workspace file path.");
@@ -771,40 +1592,87 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
     let Ok(canon_root) = fs::canonicalize(root) else {
         return tools_err("workspace-unavailable", "This thread's folder is unavailable.");
     };
-    let Ok(target) = resolve_contained(&canon_root, rel_path) else {
-        return tools_err("path-unavailable", "That path is outside this thread's folder.");
+    let target = match resolve_contained_checked(&canon_root, rel_path) {
+        Ok(p) => p,
+        Err(ContainedError::Outside) => {
+            return tools_err(
+                "path-outside-workspace",
+                "This path points outside the thread working directory.",
+            );
+        }
+        Err(ContainedError::Unavailable) => {
+            return tools_err(
+                "path-unavailable",
+                "This path is unavailable or changed. Refresh Files and try again.",
+            );
+        }
     };
     let Ok(meta) = fs::metadata(&target) else {
         return tools_err("path-unavailable", "File not found.");
     };
     if !meta.is_file() {
-        return tools_err("path-unavailable", "Path is not a file.");
+        return tools_err("not-file", "Select a regular file to preview.");
     }
-    let name = target
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| rel_path.to_string());
-    let ext = target
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let image_mime = match ext.as_str() {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "webp" => Some("image/webp"),
-        "gif" => Some("image/gif"),
-        _ => None,
-    };
+    if meta.len() > MAX_IMAGE_PREVIEW_BYTES as u64 {
+        return tools_err("too-large", "This file exceeds the 8 MiB preview limit.");
+    }
 
-    if let Some(mime) = image_mime {
-        if meta.len() > MAX_IMAGE_PREVIEW_BYTES as u64 {
-            return tools_err("too-large", "Image is larger than the 8 MiB preview limit.");
+    let Ok(file) = open_preview_file(&target) else {
+        return tools_err(
+            "path-unavailable",
+            "This path is unavailable or changed. Refresh Files and try again.",
+        );
+    };
+    let Ok(before) = file.metadata() else {
+        return tools_err(
+            "path-unavailable",
+            "This file changed. Refresh Files and try again.",
+        );
+    };
+    if !before.is_file() || !same_file_revision(&before, &meta) {
+        return tools_err(
+            "path-unavailable",
+            "This file changed. Refresh Files and try again.",
+        );
+    }
+
+    let mut bytes = Vec::new();
+    let max_read = (MAX_IMAGE_PREVIEW_BYTES as u64).saturating_add(1);
+    if file.take(max_read).read_to_end(&mut bytes).is_err() {
+        return tools_err(
+            "path-unavailable",
+            "This file changed while it was being read. Refresh Files and try again.",
+        );
+    }
+    if bytes.len() > MAX_IMAGE_PREVIEW_BYTES {
+        return tools_err("too-large", "This file exceeds the 8 MiB preview limit.");
+    }
+    if let Ok(after_meta) = fs::metadata(&target) {
+        if !same_file_revision(&before, &after_meta) || bytes.len() as u64 != before.len() {
+            return tools_err(
+                "path-unavailable",
+                "This file changed while it was being read. Refresh Files and try again.",
+            );
         }
-        let Ok(bytes) = read_bounded(&target, MAX_IMAGE_PREVIEW_BYTES) else {
-            return tools_err("too-large", "Image is larger than the 8 MiB preview limit.");
-        };
-        let data_url = format!("data:{mime};base64,{}", STANDARD.encode(&bytes));
+    }
+
+    let name = rel_path
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(rel_path);
+
+    if let Some(image) = detect_raster_image(&bytes) {
+        let pixels = (image.width as u64).saturating_mul(image.height as u64);
+        if image.width == 0
+            || image.height == 0
+            || image.width > 16_384
+            || image.height > 16_384
+            || pixels > 40_000_000
+        {
+            return tools_err("too-large", "This image exceeds the preview dimensions limit.");
+        }
+        let data_url = format!("data:{};base64,{}", image.mime, STANDARD.encode(&bytes));
         return tools_ok(json!({
             "workspace": workspace,
             "path": rel_path,
@@ -812,19 +1680,32 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
             "size": bytes.len(),
             "content": {
                 "kind": "image",
-                "mime": mime,
+                "mime": image.mime,
                 "dataUrl": data_url,
             },
         }));
     }
 
-    if meta.len() > MAX_TEXT_PREVIEW_BYTES as u64 {
-        return tools_err("too-large", "File is larger than the 512 KiB preview limit.");
+    if bytes.len() > MAX_TEXT_PREVIEW_BYTES {
+        return tools_err("too-large", "Text previews are limited to 512 KiB.");
     }
-    let Ok(bytes) = read_bounded(&target, MAX_TEXT_PREVIEW_BYTES) else {
-        return tools_err("too-large", "File is larger than the 512 KiB preview limit.");
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return tools_err(
+            "binary",
+            "This file is not supported UTF-8 text or a raster image.",
+        );
     };
-    let text = String::from_utf8_lossy(&bytes).into_owned();
+    if text
+        .bytes()
+        .any(|b| matches!(b, 0x00..=0x08 | 0x0b | 0x0e..=0x1f | 0x7f))
+    {
+        return tools_err("binary", "Binary files cannot be previewed as text.");
+    }
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     let content_kind = if matches!(ext.as_str(), "md" | "markdown" | "mdown") {
         "markdown"
     } else {
@@ -842,55 +1723,9 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
     }))
 }
 
-fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
-    let file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut buf = Vec::new();
-    file.take((limit as u64).saturating_add(1))
-        .read_to_end(&mut buf)
-        .map_err(|e| e.to_string())?;
-    if buf.len() > limit {
-        return Err("File exceeds preview limit.".into());
-    }
-    Ok(buf)
-}
-
 /// Reports machine facts matching `hostMachineReportSchema` (`src/shared/hostFacts.ts`).
 pub fn host_facts(running_threads: usize) -> Value {
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
-    let family = match std::env::consts::OS {
-        "windows" => Some("windows"),
-        "macos" => Some("macos"),
-        "linux" => Some("linux"),
-        _ => None,
-    };
-    let os_name = match std::env::consts::OS {
-        "windows" => Some("Windows"),
-        "macos" => Some("macOS"),
-        "linux" => Some("Linux"),
-        _ => None,
-    };
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x64",
-        "aarch64" => "arm64",
-        other => other,
-    };
-    json!({
-        "facts": {
-            "observedAt": now_iso(),
-            "os": {
-                "family": family,
-                "name": os_name,
-                "version": null,
-            },
-            "architecture": arch,
-            "totalMemoryBytes": null,
-            "freeMemoryBytes": null,
-            "logicalCpuCount": cpus,
-        },
-        "runningThreads": running_threads,
-    })
+    host_facts_report(running_threads, false)
 }
 
 /// Searches thread messages for a query string matching `agentThreadWordsSchema`
@@ -1185,40 +2020,125 @@ pub fn usage_clear(data_directory: &Path, expected_revision: i64) -> Value {
     })
 }
 
-fn resolve_contained(canon_root: &Path, rel: &str) -> Result<PathBuf, String> {
+enum ContainedError {
+    Outside,
+    Unavailable,
+}
+
+fn resolve_contained_checked(canon_root: &Path, rel: &str) -> Result<PathBuf, ContainedError> {
     let trimmed = rel.trim_start_matches(['/', '\\']);
     let candidate = if trimmed.is_empty() {
         canon_root.to_path_buf()
     } else {
         canon_root.join(trimmed)
     };
-    let canon_target = fs::canonicalize(&candidate).map_err(|e| e.to_string())?;
+    let canon_target = fs::canonicalize(&candidate).map_err(|_| ContainedError::Unavailable)?;
     if !canon_target.starts_with(canon_root) {
-        return Err("Path escapes thread working directory.".into());
+        return Err(ContainedError::Outside);
     }
     Ok(canon_target)
 }
 
-fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
-    run_cmd("git", folder, args)
+struct GitRunOutput {
+    stdout: String,
 }
 
-fn run_cmd(program: &str, folder: &str, args: &[&str]) -> Result<String, String> {
-    let mut cmd = Command::new(program);
-    cmd.args(args).current_dir(folder);
+enum GitRunError {
+    MaxBuffer(String),
+    Failed(String),
+}
+
+fn run_git_clean(
+    folder: &str,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    stdin_bytes: Option<&[u8]>,
+    max_buffer: Option<usize>,
+) -> Result<GitRunOutput, GitRunError> {
+    let mut cmd = Command::new("git");
+    cmd.args([
+        "--no-optional-locks",
+        "--literal-pathspecs",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.quotePath=false",
+        "-c",
+        "diff.external=",
+    ])
+    .args(args)
+    .current_dir(folder)
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null());
+    if stdin_bytes.is_some() {
+        cmd.stdin(Stdio::piped());
+    } else {
+        cmd.stdin(Stdio::null());
+    }
+    for (k, _) in std::env::vars() {
+        if k.to_ascii_uppercase().starts_with("GIT_") {
+            cmd.env_remove(&k);
+        }
+    }
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.env("GIT_OPTIONAL_LOCKS", "0");
+    for (k, v) in extra_env {
+        cmd.env(k, v);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let out = cmd
-        .output()
-        .map_err(|e| format!("Could not run {program}: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("{program} exited with status {}", out.status));
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| GitRunError::Failed(format!("Could not run git: {e}")))?;
+
+    if let Some(input) = stdin_bytes {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(input);
+        }
     }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+
+    let mut buf = Vec::new();
+    let mut overflowed = false;
+    if let Some(mut stdout) = child.stdout.take() {
+        if let Some(limit) = max_buffer {
+            let mut limited = stdout.take((limit as u64).saturating_add(1));
+            let _ = limited.read_to_end(&mut buf);
+            if buf.len() > limit {
+                buf.truncate(limit);
+                overflowed = true;
+                let _ = child.kill();
+            }
+        } else {
+            let _ = stdout.read_to_end(&mut buf);
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|e| GitRunError::Failed(format!("Could not wait for git: {e}")))?;
+    let stdout_str = String::from_utf8_lossy(&buf).into_owned();
+    if overflowed {
+        return Err(GitRunError::MaxBuffer(stdout_str));
+    }
+    if !status.success() {
+        return Err(GitRunError::Failed(format!(
+            "git exited with status {status}"
+        )));
+    }
+    Ok(GitRunOutput { stdout: stdout_str })
+}
+
+fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
+    run_git_clean(folder, args, &[], None, None)
+        .map(|o| o.stdout)
+        .map_err(|e| match e {
+            GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
+            GitRunError::Failed(msg) => msg,
+        })
 }
 
 #[cfg(test)]

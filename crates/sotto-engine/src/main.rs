@@ -507,9 +507,18 @@ async fn handle_accelerator_rpc(
                 .first()
                 .and_then(Value::as_u64)
                 .unwrap_or(0) as usize;
-            let val = tokio::task::spawn_blocking(move || sotto_core::ops::host_facts(running))
-                .await
-                .map_err(|_| err_invalid("hostFacts task failed."))?;
+            let live = args
+                .get(1)
+                .and_then(|v| {
+                    v.as_bool()
+                        .or_else(|| v.as_object().and_then(|o| o.get("live")).and_then(Value::as_bool))
+                })
+                .unwrap_or(false);
+            let val = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::host_facts_report(running, live)
+            })
+            .await
+            .map_err(|_| err_invalid("hostFacts task failed."))?;
             Ok(val)
         }
         "ops.threadWords" => {
@@ -555,13 +564,18 @@ async fn handle_accelerator_rpc(
                 })
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+            let refresh = opts
+                .and_then(|o| o.get("refresh"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let val = tokio::task::spawn_blocking(move || {
-                sotto_core::ops::git_refs(
+                sotto_core::ops::git_refs_with_refresh(
                     &folder,
                     query.as_deref(),
                     cursor,
                     limit,
                     include_matching_remote,
+                    refresh,
                 )
             })
             .await
@@ -573,6 +587,72 @@ async fn handle_accelerator_rpc(
             })?;
             Ok(val)
         }
+        "ops.threadFiles" => {
+            let ws_val = args
+                .first()
+                .ok_or_else(|| err_invalid("workspace is required."))?;
+            let ws: sotto_core::ops::ThreadWorkspace = serde_json::from_value(ws_val.clone())
+                .map_err(|_| err_invalid("workspace must match FileWorkspace."))?;
+            let rel = args
+                .get(1)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let val = tokio::task::spawn_blocking(move || sotto_core::ops::thread_files(&ws, &rel))
+                .await
+                .map_err(|_| err_invalid("threadFiles task failed."))?;
+            Ok(val)
+        }
+        "ops.threadFilePreview" => {
+            let ws_val = args
+                .first()
+                .ok_or_else(|| err_invalid("workspace is required."))?;
+            let ws: sotto_core::ops::ThreadWorkspace = serde_json::from_value(ws_val.clone())
+                .map_err(|_| err_invalid("workspace must match FileWorkspace."))?;
+            let rel = args
+                .get(1)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let val = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::thread_file_preview(&ws, &rel)
+            })
+            .await
+            .map_err(|_| err_invalid("threadFilePreview task failed."))?;
+            Ok(val)
+        }
+        "ops.threadChanges" => {
+            let ws_val = args
+                .first()
+                .ok_or_else(|| err_invalid("workspace is required."))?;
+            let ws: sotto_core::ops::ThreadWorkspace = serde_json::from_value(ws_val.clone())
+                .map_err(|_| err_invalid("workspace must match FileWorkspace."))?;
+            let val = tokio::task::spawn_blocking(move || sotto_core::ops::thread_changes(&ws))
+                .await
+                .map_err(|_| err_invalid("threadChanges task failed."))?;
+            Ok(val)
+        }
+        "ops.threadChangesReview" => {
+            let ws_val = args
+                .first()
+                .ok_or_else(|| err_invalid("workspace is required."))?;
+            let ws: sotto_core::ops::ThreadWorkspace = serde_json::from_value(ws_val.clone())
+                .map_err(|_| err_invalid("workspace must match FileWorkspace."))?;
+            let scope = args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| json!({ "kind": "working" }));
+            let ignore_whitespace = args
+                .get(2)
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let val = tokio::task::spawn_blocking(move || {
+                sotto_core::ops::thread_changes_review(&ws, &scope, ignore_whitespace)
+            })
+            .await
+            .map_err(|_| err_invalid("threadChangesReview task failed."))?;
+            Ok(val)
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -582,6 +662,10 @@ async fn handle_accelerator_rpc(
 }
 
 async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
+    // Prime the initial CPU/memory load sample on a blocking worker without starting any timer,
+    // matching `HostFactsSource.primeLoad` so the first live `ops.hostFacts` query has a window.
+    tokio::task::spawn_blocking(sotto_core::ops::prime_host_facts_load);
+
     let stream = match connect_engine_stream(&parsed.endpoint).await {
         Ok(s) => s,
         Err(err) => {
