@@ -924,20 +924,28 @@ describe('a host restarting for an update (ADR-0040)', () => {
       })
     })
     router.setReconnecting(REMOTE, true)
-    expect(remoteHosts.hosts()).toEqual([expect.objectContaining({ hostId: REMOTE, connected: false, reconnecting: true })])
+    const firstHosts = remoteHosts.hosts()
+    expect(firstHosts).toEqual([expect.objectContaining({ hostId: REMOTE, connected: false, reconnecting: true })])
+    const since = firstHosts[0]!.reconnectingSince
+    expect(typeof since).toBe('number')
+    router.setReconnecting(REMOTE, true)
+    expect(remoteHosts.hosts()[0]!.reconnectingSince).toBe(since)
 
     // Replacing clears reconnecting and invalidates stale snapshots before subscribers read hosts() or snapshot().
     const replacement = fixture(REMOTE, 'remote')
     router.replace(replacement.connection)
     expect(observed.at(-1)).toEqual({ connected: true, reconnecting: undefined, snapshotConnected: true })
     expect(remoteHosts.hosts()[0]!.reconnecting).toBeUndefined()
+    expect(remoteHosts.hosts()[0]!.reconnectingSince).toBeUndefined()
 
     // Removing also clears reconnecting before notifying subscribers, so a subsequent add sees clean state.
     router.setReconnecting(REMOTE, true)
+    expect(typeof remoteHosts.hosts()[0]!.reconnectingSince).toBe('number')
     router.remove(REMOTE)
     expect(observed.at(-1)).toEqual({ snapshotConnected: undefined })
     router.add(fixture(REMOTE, 'remote').connection)
     expect(observed.at(-1)).toEqual({ connected: true, reconnecting: undefined, snapshotConnected: true })
+    expect(remoteHosts.hosts()[0]!.reconnectingSince).toBeUndefined()
     router.dispose()
   })
   it('passes a host’s client updates to the window only when the host offers them, so an older host shows nothing new (#480)', () => {

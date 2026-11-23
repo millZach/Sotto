@@ -59,6 +59,7 @@ async function setup(transientReadyWaitMs = 1_000) {
   const remoteWorkerId = 'remote-worker'
   let remoteConnected = false
   let remoteReconnecting = true
+  let remoteReconnectingSince: number | undefined
 
   const remoteSnapshot = (): AgentHostSnapshot => ({
     ...baseSnapshot,
@@ -82,13 +83,15 @@ async function setup(transientReadyWaitMs = 1_000) {
   const hostsList = (): ReturnType<WatcherRemoteHosts['hosts']> => [{
     hostId: remoteHostId,
     connected: remoteConnected,
-    ...(remoteReconnecting ? { reconnecting: true } : {}),
+    ...(remoteReconnecting ? { reconnecting: true, ...(remoteReconnectingSince !== undefined ? { reconnectingSince: remoteReconnectingSince } : {}) } : {}),
     reads: true,
     control: true,
     standingWatch: true,
     newOwner: true,
     permissionCeiling: 'approval-required',
   }]
+
+  const readMock = vi.fn<WatcherRemoteHosts['read']>(async () => structuredClone(projection()))
 
   const controlMock = vi.fn<WatcherRemoteHosts['control']>(async (_hostId, request) => {
     const operation = request.operation
@@ -107,11 +110,17 @@ async function setup(transientReadyWaitMs = 1_000) {
     }
   })
 
+  const addProjectMock = vi.fn<NonNullable<WatcherRemoteHosts['addProject']>>(async (_hostId, command) => [
+    ...baseSnapshot.projects,
+    { id: 'remote-proj-1', hostId: remoteHostId, title: command.title, path: command.path ?? '/remote/repo' },
+  ])
+
   const remote: WatcherRemoteHosts = {
     hosts: hostsList,
     snapshot: id => (id === remoteHostId ? remoteSnapshot() : undefined),
-    read: vi.fn<WatcherRemoteHosts['read']>(async () => structuredClone(projection())),
+    read: readMock,
     control: controlMock,
+    addProject: addProjectMock,
     subscribe: listener => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -132,9 +141,10 @@ async function setup(transientReadyWaitMs = 1_000) {
     })
   })
 
-  const setRemoteState = (connected: boolean, reconnecting: boolean) => {
+  const setRemoteState = (connected: boolean, reconnecting: boolean, reconnectingSince?: number) => {
     remoteConnected = connected
     remoteReconnecting = reconnecting
+    remoteReconnectingSince = reconnectingSince
     for (const listener of listeners) listener(remoteHostId, true)
   }
 
@@ -146,7 +156,10 @@ async function setup(transientReadyWaitMs = 1_000) {
     localHostId,
     remoteHostId,
     remoteWorkerId,
+    projection,
+    readMock,
     controlMock,
+    addProjectMock,
     setRemoteState,
     unusedRecord: record,
   }
@@ -271,6 +284,121 @@ describe('WatcherService transient reconnect readiness wait on send_to_thread', 
       delivery: 'now',
     }))
     expect(refused).toMatchObject({ status: 'refused', code: 'HOST_DISCONNECTED' })
+    expect(Date.now() - start).toBeLessThan(500)
+  })
+
+  it('waits out a remote host reconnecting transition on add_project, while failing immediately if disconnected', async () => {
+    const s = await setup(1_000)
+    setTimeout(() => s.setRemoteState(true, false), 35)
+    const ok = watcherToolSchemas.add_project.output.parse(await s.watcher.invoke(s.watcherId, 'add_project', {
+      requestId: s.requestId,
+      retryKey: randomUUID(),
+      hostId: s.remoteHostId,
+      path: '/remote/added-project',
+    }))
+    expect(ok).toMatchObject({ status: 'ok', project: { target: { hostId: s.remoteHostId, projectId: 'remote-proj-1' } } })
+    expect(s.addProjectMock).toHaveBeenCalledTimes(1)
+
+    s.setRemoteState(false, false)
+    const start = Date.now()
+    const refused = watcherToolSchemas.add_project.output.parse(await s.watcher.invoke(s.watcherId, 'add_project', {
+      requestId: s.requestId,
+      retryKey: randomUUID(),
+      hostId: s.remoteHostId,
+      path: '/remote/other-project',
+    }))
+    expect(refused).toMatchObject({ status: 'refused', code: 'HOST_DISCONNECTED' })
+    expect(Date.now() - start).toBeLessThan(500)
+  })
+
+  it('refuses immediately with HOST_DISCONNECTED when reconnecting stays true past the initial drop window', async () => {
+    const s = await setup(2_500)
+    s.setRemoteState(false, true, Date.now() - 10_000)
+    const start = Date.now()
+    const refused = watcherToolSchemas.send_to_thread.output.parse(await s.watcher.invoke(s.watcherId, 'send_to_thread', {
+      requestId: s.requestId,
+      retryKey: randomUUID(),
+      target: { hostId: s.remoteHostId, threadId: s.remoteWorkerId },
+      text: 'Offline host should refuse immediately even while reconnecting remains true',
+      delivery: 'now',
+    }))
+    expect(refused).toMatchObject({ status: 'refused', code: 'HOST_DISCONNECTED' })
+    expect(Date.now() - start).toBeLessThan(200)
+  })
+
+  it('waits for remote reconnect before reconcileRemote on standing-watch executeRemote when the host re-drops', async () => {
+    const s = await setup(1_000)
+    const watchId = randomUUID()
+    await s.f.control.watcherRecords.update(next => {
+      next.watches = [{
+        id: watchId,
+        target: { hostId: s.remoteHostId, threadId: s.remoteWorkerId },
+        createdAt: new Date().toISOString(),
+        generation: 0,
+        lastUserMessageId: null,
+        pausedByUserMessageId: null,
+      }]
+    })
+    s.setRemoteState(true, false)
+
+    const events: string[] = []
+    s.readMock.mockImplementation(async () => {
+      events.push(events.includes('dropped') ? 'read-executeRemote' : 'read-initial')
+      return structuredClone(s.projection())
+    })
+    const origUpdate = s.f.control.watcherRecords.update.bind(s.f.control.watcherRecords)
+    vi.spyOn(s.f.control.watcherRecords, 'update').mockImplementationOnce(async fn => {
+      const res = await origUpdate(fn)
+      events.push('dropped')
+      s.setRemoteState(false, true, Date.now())
+      setTimeout(() => {
+        events.push('reconnected')
+        s.setRemoteState(true, false)
+      }, 35)
+      return res
+    })
+    s.controlMock.mockImplementation(async (_hostId, request) => {
+      events.push('control')
+      return {
+        status: 'ok',
+        receipt: {
+          operationId: request.operation.id,
+          requestId: request.operation.requestId,
+          target: request.operation.target,
+          deliveryState: 'accepted',
+          receiptId: request.operation.receiptId,
+          cardId: request.operation.cardId,
+        },
+        limits: { promptCount: 1, promptLimit: 4 },
+        delivery: 'now',
+      }
+    })
+
+    const result = watcherToolSchemas.send_to_thread.output.parse(await s.watcher.invoke(s.watcherId, 'send_to_thread', {
+      requestId: watchId,
+      retryKey: randomUUID(),
+      target: { hostId: s.remoteHostId, threadId: s.remoteWorkerId },
+      text: 'Continue under standing watch after re-drop',
+      delivery: 'now',
+    }))
+    expect(result).toMatchObject({ status: 'ok', delivery: 'now' })
+    expect(events.slice(0, 5)).toEqual(['read-initial', 'dropped', 'reconnected', 'read-executeRemote', 'control'])
+  })
+
+  it('settles in-flight readiness waiters immediately when watcher.close() runs', async () => {
+    const s = await setup(5_000)
+    s.setRemoteState(false, true, Date.now())
+    const start = Date.now()
+    const pending = s.watcher.invoke(s.watcherId, 'send_to_thread', {
+      requestId: s.requestId,
+      retryKey: randomUUID(),
+      target: { hostId: s.remoteHostId, threadId: s.remoteWorkerId },
+      text: 'Closing should settle wait promptly',
+      delivery: 'now',
+    })
+    setTimeout(() => s.watcher.close(), 25)
+    const settled = await pending
+    expect(settled).toMatchObject({ status: 'refused' })
     expect(Date.now() - start).toBeLessThan(500)
   })
 })
