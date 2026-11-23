@@ -10,8 +10,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::stores::{SubagentStore, UsageStore};
 use crate::workspace::now_iso;
+pub use crate::usage_ops::{
+    canonical_model_id, filter_usage_read_for_peer, parse_usage_time_zone, usage_clear,
+    usage_exclusion_hash, usage_read, usage_refresh, UsageReadQuery, USAGE_LIMIT_PROVIDERS,
+    USAGE_PROVIDERS,
+};
 
 pub const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
 pub const MAX_IMAGE_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
@@ -1063,126 +1067,230 @@ fn build_word_quote(text: &str, needle_lower: &str) -> String {
     format!("{prefix}{}{suffix}", slice.trim())
 }
 
-/// Reads subagent page matching `subagentPageSchema` (`src/shared/subagents.ts`).
-pub fn read_subagent_page(data_directory: &Path, thread_id: &str) -> Value {
+pub const SUBAGENT_PAGE_SIZE: usize = 50;
+pub const SUBAGENT_ASSIGNMENT_PAGE_SIZE: usize = 10;
+
+/// Reads subagent page from `subagents.sqlite` matching `subagentPageSchema` (`src/shared/subagents.ts`)
+/// and `SubagentStore.page` (`src/main/agents/subagentStore.ts`), including parent rows split across pages.
+pub fn read_subagent_page(data_directory: &Path, thread_id: &str, before: Option<i64>) -> Value {
+    let empty_summary = json!({
+        "total": 0,
+        "working": 0,
+        "completed": 0,
+        "failed": 0,
+        "interrupted": 0,
+        "unknown": 0,
+    });
     let db = data_directory.join("subagents.sqlite");
-    let count = SubagentStore::open(&db)
-        .and_then(|s| s.row_count(thread_id))
-        .unwrap_or(0)
-        .max(0) as u64;
-    json!({
-        "threadId": thread_id,
-        "revision": 0,
-        "rows": [],
-        "summary": {
-            "total": count,
-            "working": 0,
-            "completed": 0,
-            "failed": 0,
-            "interrupted": 0,
-            "unknown": count,
-        },
-    })
-}
-
-/// Reads subagent assignments page matching `subagentAssignmentsPageSchema` (`src/shared/subagents.ts`).
-pub fn read_subagent_assignments(thread_id: &str, agent_id: &str) -> Value {
-    json!({
-        "threadId": thread_id,
-        "agentId": agent_id,
-        "assignments": [],
-    })
-}
-
-/// Reads usage dashboard data matching `usageLocalHostReadSchema` (`src/shared/usageDashboard.ts`).
-pub fn usage_read(data_directory: &Path, time_zone: Option<&str>) -> Value {
-    let tz = time_zone
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or("UTC");
-    let db = data_directory.join("usage.sqlite");
-    let meta_opt = UsageStore::open(&db).and_then(|s| s.read_meta()).ok().flatten();
-    let started_at = meta_opt
-        .as_ref()
-        .map(|m| m.started_at.clone())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(now_iso);
-    let revision = meta_opt.as_ref().map(|m| m.revision.max(0)).unwrap_or(0);
-    let generation = meta_opt.as_ref().map(|m| m.generation.max(0)).unwrap_or(0);
-    let empty_field = json!({ "knownRows": 0, "rows": 0, "partial": false });
-    let empty_agg = json!({
-        "tokens": {
-            "input": empty_field,
-            "output": empty_field,
-            "cached": empty_field,
-            "cacheWrite": empty_field,
-            "cacheWrite5m": empty_field,
-            "cacheWrite1h": empty_field,
-            "total": empty_field,
-        },
-        "prompts": { "user": 0, "watcher": 0, "wakeUp": 0, "total": 0, "steered": 0 },
-        "tokenRecords": 0,
-        "partialTokenRecords": 0,
-        "undatedTokenRecords": 0,
-        "activeThreads": 0,
-        "activeDays": 0,
-    });
-    let metadata = json!({
-        "startedAt": started_at,
-        "revision": revision,
-        "generation": generation,
-        "legacySeedCompleted": meta_opt.map(|m| m.seed_completed).unwrap_or(false),
-    });
-    json!({
-        "status": "ready",
-        "activity": {
-            "metadata": metadata,
-            "totals": empty_agg,
-            "timeZone": tz,
-            "providers": [],
-            "models": [],
-            "modelCount": 0,
-            "modelsTruncated": false,
-            "daily": [],
-            "dailyCoverage": "not-requested",
-            "hourly": [],
-        },
-        "quotas": [],
-    })
-}
-
-/// Clears usage dashboard data matching `usageLocalClearResultSchema` (`src/shared/usageDashboard.ts`).
-pub fn usage_clear(data_directory: &Path, expected_revision: i64) -> Value {
-    let db = data_directory.join("usage.sqlite");
-    let meta_opt = UsageStore::open(&db).and_then(|s| s.read_meta()).ok().flatten();
-    let current_rev = meta_opt.as_ref().map(|m| m.revision).unwrap_or(0);
-    let current_gen = meta_opt.as_ref().map(|m| m.generation).unwrap_or(0);
-    let started_at = meta_opt
-        .as_ref()
-        .map(|m| m.started_at.clone())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(now_iso);
-    if current_rev != expected_revision {
+    if !db.is_file() {
         return json!({
-            "status": "stale",
-            "metadata": {
-                "startedAt": started_at,
-                "revision": current_rev.max(0),
-                "generation": current_gen.max(0),
-                "legacySeedCompleted": false,
-            },
+            "threadId": thread_id,
+            "revision": 0,
+            "rows": [],
+            "summary": empty_summary,
         });
     }
-    let cleared_at = now_iso();
-    json!({
-        "status": "cleared",
-        "metadata": {
-            "startedAt": started_at,
-            "revision": current_rev.max(0) + 1,
-            "generation": current_gen.max(0) + 1,
-            "clearedAt": cleared_at,
-            "legacySeedCompleted": false,
-        },
-    })
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return json!({
+            "threadId": thread_id,
+            "revision": 0,
+            "rows": [],
+            "summary": empty_summary,
+        });
+    };
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+
+    let thread_state: Option<Value> = conn
+        .query_row(
+            "SELECT value FROM subagent_threads WHERE thread_id = ?1",
+            [thread_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok());
+    let revision = thread_state
+        .as_ref()
+        .and_then(|v| v.get("revision"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let mut summary = thread_state
+        .as_ref()
+        .and_then(|v| v.get("summary"))
+        .cloned()
+        .unwrap_or(empty_summary);
+    // Rust host does not write live subagents to `subagents.sqlite`; any persisted `working` count
+    // belongs to a stopped Node host and must surface as `unknown` (matching Node after restart).
+    if let Some(obj) = summary.as_object_mut() {
+        let working = obj.get("working").and_then(Value::as_u64).unwrap_or(0);
+        if working > 0 {
+            let unknown = obj.get("unknown").and_then(Value::as_u64).unwrap_or(0);
+            obj.insert("working".into(), json!(0));
+            obj.insert("unknown".into(), json!(unknown.saturating_add(working)));
+        }
+    }
+
+    let cutoff = before.unwrap_or(i64::MAX);
+    let fetch = (SUBAGENT_PAGE_SIZE + 1) as i64;
+    let raw_rows: Vec<String> = conn
+        .prepare(
+            "SELECT value FROM subagent_rows
+             WHERE thread_id = ?1 AND sequence < ?2
+             ORDER BY sequence DESC
+             LIMIT ?3",
+        )
+        .and_then(|mut stmt| {
+            let mapped = stmt.query_map(rusqlite::params![thread_id, cutoff, fetch], |r| {
+                r.get::<_, String>(0)
+            })?;
+            Ok(mapped.flatten().collect())
+        })
+        .unwrap_or_default();
+
+    let has_more = raw_rows.len() > SUBAGENT_PAGE_SIZE;
+    let mut rows: Vec<Value> = raw_rows
+        .into_iter()
+        .take(SUBAGENT_PAGE_SIZE)
+        .filter_map(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .collect();
+    rows.reverse();
+
+    let next_before = if has_more {
+        rows.first()
+            .and_then(|r| r.get("sequence"))
+            .and_then(Value::as_i64)
+    } else {
+        None
+    };
+
+    // Bring missing parent rows along so workflow agents are never orphaned by a page split.
+    let present_ids: std::collections::HashSet<String> = rows
+        .iter()
+        .filter_map(|r| r.get("id").and_then(Value::as_str).map(ToString::to_string))
+        .collect();
+    let mut missing_parents: Vec<String> = Vec::new();
+    let mut seen_missing: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for row in &rows {
+        if let Some(pid) = row.get("parentId").and_then(Value::as_str) {
+            if !present_ids.contains(pid) && seen_missing.insert(pid.to_string()) {
+                missing_parents.push(pid.to_string());
+                if missing_parents.len() >= SUBAGENT_PAGE_SIZE {
+                    break;
+                }
+            }
+        }
+    }
+    let mut combined: Vec<Value> = Vec::with_capacity(missing_parents.len() + rows.len());
+    if !missing_parents.is_empty() {
+        if let Ok(mut parent_stmt) =
+            conn.prepare("SELECT value FROM subagent_rows WHERE thread_id = ?1 AND agent_id = ?2")
+        {
+            for pid in &missing_parents {
+                if let Ok(raw) = parent_stmt.query_row(
+                    rusqlite::params![thread_id, pid.as_str()],
+                    |r| r.get::<_, String>(0),
+                ) {
+                    if let Ok(val) = serde_json::from_str::<Value>(&raw) {
+                        combined.push(val);
+                    }
+                }
+            }
+        }
+    }
+    combined.extend(rows);
+    for row in &mut combined {
+        if let Some(obj) = row.as_object_mut() {
+            if obj.get("status").and_then(Value::as_str) == Some("running") {
+                obj.insert("status".into(), json!("unknown"));
+            }
+        }
+    }
+    combined.sort_by_key(|r| r.get("sequence").and_then(Value::as_i64).unwrap_or(0));
+
+    let mut out = json!({
+        "threadId": thread_id,
+        "revision": revision,
+        "rows": combined,
+        "summary": summary,
+    });
+    if let Some(cursor) = next_before.filter(|&n| n > 0) {
+        out["before"] = json!(cursor);
+    }
+    out
+}
+
+/// Reads subagent assignments page from `subagents.sqlite` matching `subagentAssignmentsPageSchema`
+/// (`src/shared/subagents.ts`) and `SubagentStore.assignments` (`src/main/agents/subagentStore.ts`).
+pub fn read_subagent_assignments(
+    data_directory: &Path,
+    thread_id: &str,
+    agent_id: &str,
+    before: Option<i64>,
+) -> Value {
+    let db = data_directory.join("subagents.sqlite");
+    if !db.is_file() {
+        return json!({
+            "threadId": thread_id,
+            "agentId": agent_id,
+            "assignments": [],
+        });
+    }
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return json!({
+            "threadId": thread_id,
+            "agentId": agent_id,
+            "assignments": [],
+        });
+    };
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+
+    let cutoff = before.unwrap_or(i64::MAX);
+    let fetch = (SUBAGENT_ASSIGNMENT_PAGE_SIZE + 1) as i64;
+    let raw_rows: Vec<String> = conn
+        .prepare(
+            "SELECT value FROM subagent_assignments
+             WHERE thread_id = ?1 AND agent_id = ?2 AND sequence < ?3
+             ORDER BY sequence DESC
+             LIMIT ?4",
+        )
+        .and_then(|mut stmt| {
+            let mapped = stmt.query_map(
+                rusqlite::params![thread_id, agent_id, cutoff, fetch],
+                |r| r.get::<_, String>(0),
+            )?;
+            Ok(mapped.flatten().collect())
+        })
+        .unwrap_or_default();
+
+    let has_more = raw_rows.len() > SUBAGENT_ASSIGNMENT_PAGE_SIZE;
+    let assignments: Vec<Value> = raw_rows
+        .into_iter()
+        .take(SUBAGENT_ASSIGNMENT_PAGE_SIZE)
+        .filter_map(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .collect();
+    let next_before = if has_more {
+        assignments
+            .last()
+            .and_then(|a| a.get("sequence"))
+            .and_then(Value::as_i64)
+    } else {
+        None
+    };
+
+    let mut out = json!({
+        "threadId": thread_id,
+        "agentId": agent_id,
+        "assignments": assignments,
+    });
+    if let Some(cursor) = next_before.filter(|&n| n > 0) {
+        out["before"] = json!(cursor);
+    }
+    out
 }
 
 fn resolve_contained(canon_root: &Path, rel: &str) -> Result<PathBuf, String> {
@@ -1289,5 +1397,134 @@ mod tests {
         let quote = build_word_quote(&text, "target");
         assert!(quote.contains("target word here"));
         assert!(quote.encode_utf16().count() <= 182);
+    }
+
+    #[test]
+    fn reads_real_subagent_pages_with_parent_inclusion_and_assignments_pagination() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("subagents.sqlite");
+        let _store = crate::stores::SubagentStore::open(&db_path).unwrap();
+        let conn = crate::stores::open_sqlite(&db_path).unwrap();
+
+        let summary = json!({
+            "total": 2,
+            "working": 1,
+            "completed": 1,
+            "failed": 0,
+            "interrupted": 0,
+            "unknown": 0,
+        });
+        conn.execute(
+            "INSERT INTO subagent_threads (thread_id, value) VALUES (?1, ?2)",
+            rusqlite::params![
+                "t-sub",
+                json!({ "revision": 7, "sequence": 52, "summary": summary }).to_string()
+            ],
+        )
+        .unwrap();
+
+        // Sequence 1 is a workflow parent; sequences 2..=52 are children (51 children -> page size 50 splits parent off!).
+        let parent_row = json!({
+            "id": "wf-1",
+            "sequence": 1,
+            "revision": 1,
+            "assignmentId": "wf-1:initial",
+            "assignmentCount": 1,
+            "title": "Workflow",
+            "description": "Parent workflow",
+            "status": "running",
+            "lastObservedAt": "2026-11-22T00:00:00.000Z",
+            "kind": "workflow",
+        });
+        conn.execute(
+            "INSERT INTO subagent_rows (thread_id, agent_id, sequence, status, value) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["t-sub", "wf-1", 1i64, "running", parent_row.to_string()],
+        )
+        .unwrap();
+        for seq in 2..=52i64 {
+            let aid = format!("agent-{seq}");
+            let row = json!({
+                "id": aid,
+                "parentId": "wf-1",
+                "sequence": seq,
+                "revision": 1,
+                "assignmentId": format!("{aid}:a1"),
+                "assignmentCount": 1,
+                "title": format!("Agent {seq}"),
+                "description": "Worker task",
+                "status": if seq == 52 { "running" } else { "completed" },
+                "lastObservedAt": "2026-11-22T00:01:00.000Z",
+            });
+            conn.execute(
+                "INSERT INTO subagent_rows (thread_id, agent_id, sequence, status, value) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params!["t-sub", aid, seq, row["status"].as_str().unwrap(), row.to_string()],
+            )
+            .unwrap();
+        }
+
+        // Insert 12 assignments for agent-52 to test newest-first paging (page size 10).
+        for seq in 1..=12i64 {
+            let asgn_id = format!("asgn-{seq}");
+            let asgn = json!({
+                "id": asgn_id,
+                "sequence": seq,
+                "title": format!("Task {seq}"),
+                "status": "completed",
+                "prompt": format!("Prompt {seq}"),
+                "result": format!("Result {seq}"),
+            });
+            conn.execute(
+                "INSERT INTO subagent_assignments (thread_id, agent_id, assignment_id, sequence, value, fingerprint, observed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    "t-sub",
+                    "agent-52",
+                    asgn_id,
+                    seq,
+                    asgn.to_string(),
+                    "fp",
+                    "2026-11-22T00:01:00.000Z",
+                ],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        let page1 = read_subagent_page(dir.path(), "t-sub", None);
+        assert_eq!(page1["revision"], 7);
+        assert_eq!(page1["summary"]["total"], 2);
+        // Stored `running` rows from a stopped Node host map to `unknown` on the read-only Rust host.
+        assert_eq!(page1["summary"]["working"], 0);
+        assert_eq!(page1["summary"]["unknown"], 1);
+        assert_eq!(page1["before"], 3);
+        let rows = page1["rows"].as_array().unwrap();
+        // 50 rows (seq 3..=52) + workflow parent (seq 1) brought along, sorted ascending by sequence.
+        assert_eq!(rows.len(), 51);
+        assert_eq!(rows[0]["id"], "wf-1");
+        assert_eq!(rows[0]["status"], "unknown");
+        assert_eq!(rows[1]["sequence"], 3);
+        assert_eq!(rows.last().unwrap()["sequence"], 52);
+        assert_eq!(rows.last().unwrap()["status"], "unknown");
+
+        let page2 = read_subagent_page(dir.path(), "t-sub", Some(3));
+        assert!(page2.get("before").is_none());
+        let rows2 = page2["rows"].as_array().unwrap();
+        assert_eq!(rows2.len(), 2);
+        assert_eq!(rows2[0]["sequence"], 1);
+        assert_eq!(rows2[1]["sequence"], 2);
+
+        let asgn_page1 = read_subagent_assignments(dir.path(), "t-sub", "agent-52", None);
+        let a1 = asgn_page1["assignments"].as_array().unwrap();
+        assert_eq!(a1.len(), 10);
+        assert_eq!(a1[0]["sequence"], 12);
+        assert_eq!(a1[9]["sequence"], 3);
+        assert_eq!(asgn_page1["before"], 3);
+
+        let asgn_page2 = read_subagent_assignments(dir.path(), "t-sub", "agent-52", Some(3));
+        let a2 = asgn_page2["assignments"].as_array().unwrap();
+        assert_eq!(a2.len(), 2);
+        assert_eq!(a2[0]["sequence"], 2);
+        assert_eq!(a2[1]["sequence"], 1);
+        assert!(asgn_page2.get("before").is_none());
     }
 }
