@@ -19,6 +19,7 @@ pub mod provider;
 pub mod providers;
 pub mod remote_commands;
 pub mod stores;
+pub mod watcher;
 pub mod workspace;
 
 pub use checkpoints::{
@@ -122,6 +123,27 @@ pub use stores::{
     open_sqlite, remote_answer_scope, MemoryStore, PolicyRecord, StoreError, StoredActivity,
     StoredMessage, StoredThreadEvent, SubagentStore, ThreadEvent, ThreadEventAttribution,
     ThreadStore, UsageMeta, UsageStore,
+};
+pub use watcher::{
+    answered_request_root, apply_keep, build_told_user_message, cut_to_bytes, followup_digest,
+    is_valid_commit_sha, is_valid_github_pr_url, kept_as_shown, kept_changes, kept_counts,
+    names_watcher, open_kept, plain_words, prune_prompt_turns, pull_request_key, read_kept_record,
+    read_watcher_readonly, rebuild_reservations, told_request_id, told_request_root,
+    validate_watcher_record, watcher_record_for_disk, watcher_waits_on, FollowupReceipt,
+    FollowupStore, HandoverCounts, HandoverOffer, LimitRestartRecord, LimitRestartStore,
+    QueuedFollowup, ReadyToMerge, ScheduledRestart, ToldUserMessage, WatcherAnsweredPayload,
+    WatcherAskInput, WatcherCreation, WatcherEvent, WatcherHold, WatcherHoldState, WatcherIdentity,
+    WatcherKeepAddItem, WatcherKeepCloseItem, WatcherKeepEditItem, WatcherKeepRefusal,
+    WatcherKeepStateInput, WatcherKeptChange, WatcherKeptCounts, WatcherKeptItem, WatcherKeptList,
+    WatcherKeptListCount, WatcherKeptRecord, WatcherKeptState, WatcherMaster, WatcherOperation,
+    WatcherParticipant, WatcherPromptTurn, WatcherQuestion, WatcherQuestionOption,
+    WatcherQuestionsStore, WatcherReadyPullRequest, WatcherRecord, WatcherRecordStore,
+    WatcherRequest, WatcherReservation, WatcherRoomBroadcast, WatcherRoomListChange,
+    WatcherRoomPatch, WatcherRoomUpdate, WatcherStandingWatch, WatcherStateChanges,
+    WatcherStateStore, WatcherTakeover, WatcherThreadTarget, WatcherToldNewsStore,
+    WatcherToldPayload, WatcherUserUnwatch, WatcherWatchOrigin, FOLLOWUPS_FILE,
+    LIMIT_RESTARTS_FILE, WATCHER_QUESTIONS_FILE, WATCHER_RECORD_FILE, WATCHER_STATE_FILE,
+    WATCHER_TOLD_FILE,
 };
 pub use workspace::{
     diff_thread_detail, now_iso, parse_public_provider_entity_id, provider_label,
