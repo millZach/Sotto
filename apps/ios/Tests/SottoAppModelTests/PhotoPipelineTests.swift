@@ -89,16 +89,20 @@ final class PhotoPipelineTests: XCTestCase {
         // Touch d1 so d2 becomes the least-recently-used entry.
         let hit1 = await cache.read(digest: d1, edge: 640)
         XCTAssertEqual(hit1, p1)
-        XCTAssertNil(await cache.read(digest: d1, edge: 320), "Different edges stay distinct in the cache")
+        let miss320 = await cache.read(digest: d1, edge: 320)
+        XCTAssertNil(miss320, "Different edges stay distinct in the cache")
 
         // Writing p3 exceeds byteLimit (600 > 500), so LRU entry d2 is evicted while touched d1 survives.
         clock.advance(10)
         await cache.write(p3, digest: d3, edge: 640)
         let statsAfterBytePrune = await cache.stats()
         XCTAssertLessThanOrEqual(statsAfterBytePrune.bytes, 500)
-        XCTAssertEqual(await cache.read(digest: d1, edge: 640), p1, "Recently read entry survives byte-limit eviction")
-        XCTAssertNil(await cache.read(digest: d2, edge: 640), "Least-recently-used entry is evicted")
-        XCTAssertEqual(await cache.read(digest: d3, edge: 640), p3)
+        let kept1 = await cache.read(digest: d1, edge: 640)
+        XCTAssertEqual(kept1, p1, "Recently read entry survives byte-limit eviction")
+        let evicted2 = await cache.read(digest: d2, edge: 640)
+        XCTAssertNil(evicted2, "Least-recently-used entry is evicted")
+        let kept3 = await cache.read(digest: d3, edge: 640)
+        XCTAssertEqual(kept3, p3)
 
         // Writing a different edge for d1 stays separate, and countLimit (3) is also enforced.
         clock.advance(10)
@@ -134,8 +138,10 @@ final class PhotoPipelineTests: XCTestCase {
                                           provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent))
         let largePNG = try encoded([noisy], as: .png)
         XCTAssertGreaterThan(largePNG.count, ThumbnailDiskCache.directWriteBytes)
-        let compacted = try XCTUnwrap(await PhotoPipeline.thumbnailData(largePNG, edge: PhotoPipeline.thumbnailEdge))
+        let compactedData = await PhotoPipeline.thumbnailData(largePNG, edge: PhotoPipeline.thumbnailEdge)
+        let compacted = try XCTUnwrap(compactedData)
         XCTAssertLessThan(compacted.count, largePNG.count / 4, "Oversized full-res images are compacted before caching on disk")
-        XCTAssertNotNil(await PhotoPipeline.image(compacted, edge: PhotoPipeline.thumbnailEdge))
+        let decodedCompacted = await PhotoPipeline.image(compacted, edge: PhotoPipeline.thumbnailEdge)
+        XCTAssertNotNil(decodedCompacted)
     }
 }
