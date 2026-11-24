@@ -26,6 +26,10 @@ export const WATCHER_PHONE_STEER_FEATURE = 'watcher-phone-steer' as const
  * when the user opens a machine's numbers or Watcher has placed work. Offered only where Work across machines is on.
  */
 export const WATCHER_PHONE_MACHINES_FEATURE = 'watcher-phone-machines' as const
+/** Compact `watcher-phone-read` (`machines: true`) answer returning only `{ status: 'ok', machines }`. */
+export const WATCHER_PHONE_MACHINES_READ_FEATURE = 'watcher-phone-machines-read' as const
+/** Delta-encoded `receiptGroupsDelta` inside `watcher-phone-parts` shell pushes. */
+export const WATCHER_PHONE_RECEIPT_DELTAS_FEATURE = 'watcher-phone-receipt-deltas' as const
 /** How many working threads a machine's panel on the phone names; the rest are counted. */
 export const WATCHER_PHONE_MACHINE_THREADS_MAX = 6
 /**
@@ -148,6 +152,9 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
   nextTurnOptions: watcherNextTurnOptionsSchema.optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
+/** Compact answer to `watcher-phone-read` (`machines: true`) when the phone accepted `watcher-phone-machines-read`. */
+export const watcherPhoneMachinesResultSchema = z.union([z.object({ status: z.literal('ok'), machines: watcherPhoneMachinesSchema }).strict(), watcherRefusalSchema])
+export type WatcherPhoneMachinesResult = z.infer<typeof watcherPhoneMachinesResultSchema>
 export const watcherPhoneManageOutcomeSchema = z.union([z.object({ status: z.literal('ok') }).strict(), watcherRefusalSchema])
 export type WatcherPhoneManageOutcome = z.infer<typeof watcherPhoneManageOutcomeSchema>
 export const watcherPhoneSendResultSchema = z.union([z.object({ status: z.literal('ok'), draftId: z.uuid(), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])

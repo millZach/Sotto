@@ -10,7 +10,7 @@ import { UsageService } from '../../src/main/agents/usageService'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
-import { watcherPhoneResultSchema, watcherPhoneSendResultSchema, watcherPhoneStateSchema, type WatcherPhoneState } from '../../src/shared/watcherPhone'
+import { watcherPhoneMachinesResultSchema, watcherPhoneResultSchema, watcherPhoneSendResultSchema, watcherPhoneStateSchema, type WatcherPhoneState } from '../../src/shared/watcherPhone'
 import { withWatcherPhonePartsPutBack, type WatcherPhoneWireParts } from '../../src/shared/keptParts'
 import { hostReceiptSchema } from '../../src/shared/hostProtocol'
 import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../src/shared/watcherRoom'
@@ -1257,7 +1257,7 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
       return shells().map(push => {
         if (push.state.kept?.includes('watcher')) return held ?? undefined
         if (!push.state.watcher) { held = null; return undefined }
-        const restored = withWatcherPhonePartsPutBack(push.state.watcher, held)
+        const restored: WatcherPhoneState | undefined = withWatcherPhonePartsPutBack(push.state.watcher, held)
         expect(restored).toBeDefined()
         held = restored!
         return held
@@ -1438,6 +1438,131 @@ describe('a phone\'s Watcher page between pushes (#2755)', () => {
     const state = f.phone.state(false)
     expect(state.conversation.messages.some(item => item.text === 'NO_REPLY')).toBe(false)
     expect(state.conversation.earlierAvailable).toBe(false)
+  })
+
+  it('sends receiptGroupsDelta and compact watcher-phone-read (machines: true) to updated phones while keeping legacy phones whole', async () => {
+    const f = await fixture(true, false, true, true)
+    const updatedAccepts = iphoneAccepts()
+    const legacyAccepts = updatedAccepts.filter(feature => feature !== 'watcher-phone-receipt-deltas' && feature !== 'watcher-phone-machines-read')
+    const updated = await f.pair(updatedAccepts)
+    const legacy = await f.pair(legacyAccepts)
+
+    expect((updated.hello.result as { features: string[] }).features).toEqual(expect.arrayContaining(['watcher-phone-receipt-deltas', 'watcher-phone-machines-read']))
+    await updated.call('send', f.send(updated.paired.clientId))
+
+    // Seed 200 messages + 25 in-window receipt groups so receiptGroups is substantial (~12+ KB), plus 100 orphaned receipts
+    // older than the 200-message window that must be pruned before reaching either phone.
+    const native = f.native(f.target.threadId)
+    const baseMs = Date.parse('2026-11-20T00:00:00.000Z')
+    const iso = (sec: number): string => new Date(baseMs + sec * 1_000).toISOString()
+    native.messages = Array.from({ length: 220 }, (_, i) => ({
+      id: `m-${i}`,
+      role: i % 2 === 0 ? 'user' as const : 'assistant' as const,
+      text: 'Synthetic Watcher message text. '.repeat(14) + i,
+      createdAt: iso(i * 10),
+    }))
+    const worker = await f.start()
+    const firstVisibleUser = 20 // 220 - 200 = 20 -> window keeps m-20..m-219
+    await f.control.watcherRecords.update(record => {
+      for (const req of record.requests) { req.state = 'closed'; req.closedAt = iso(0); req.createdAt = iso(0) }
+      for (const op of record.operations) { op.createdAt = iso(0); op.updatedAt = iso(0) }
+      // 100 orphaned closed requests strictly older than m-20 (t < 200s)
+      for (let i = 0; i < 100; i++) {
+        const reqId = `10000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`
+        record.requests.push({ id: reqId, watcher: f.target, rootUserMessageId: `orphan-${i}`, state: 'closed', createdAt: iso(i), closedAt: iso(i), participants: [] })
+        record.operations.push({
+          id: `20000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`,
+          requestId: reqId, retryKey: `30000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`,
+          digest: 'a'.repeat(64), action: 'send', target: worker, generation: 1, deliveryState: 'accepted',
+          createdAt: iso(i), updatedAt: iso(i), receiptId: `or-${i}`, cardId: `oc-${i}`,
+        })
+      }
+      // 25 in-window requests attached to visible user/assistant turns
+      for (let i = 0; i < 25; i++) {
+        const userIdx = firstVisibleUser + i * 4
+        const reqId = `40000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`
+        const at = iso(userIdx * 10 + 5)
+        record.requests.push({ id: reqId, watcher: f.target, rootUserMessageId: `m-${userIdx}`, state: 'active', createdAt: at, closedAt: null, participants: [] })
+        record.operations.push({
+          id: `50000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`,
+          requestId: reqId, retryKey: `60000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`,
+          digest: 'b'.repeat(64), action: 'send', target: worker, generation: 1, deliveryState: 'accepted',
+          createdAt: at, updatedAt: at, receiptId: `ir-${i}`, cardId: `ic-${i}`,
+        })
+      }
+    })
+    f.workspace.adapters.codex.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+
+    const updatedShells = () => (updated.messages as unknown as Pushed[]).filter(m => m.event === 'shell')
+    const legacyShells = () => (legacy.messages as unknown as Pushed[]).filter(m => m.event === 'shell')
+    const reassemble = (list: Pushed[]): WatcherPhoneState | null => {
+      let held: WatcherPhoneState | null = null
+      for (const push of list) {
+        if (push.state.kept?.includes('watcher')) continue
+        if (!push.state.watcher) { held = null; continue }
+        const restored: WatcherPhoneState | undefined = withWatcherPhonePartsPutBack(push.state.watcher, held)
+        expect(restored).toBeDefined()
+        held = restored!
+      }
+      return held
+    }
+
+    await expect.poll(() => reassemble(updatedShells())?.receiptGroups.length).toBe(25)
+    await expect.poll(() => reassemble(legacyShells())?.receiptGroups.length).toBe(25)
+    await updated.call('settle-1', { op: 'events', afterSeq: 0, threadId: f.target.threadId })
+    await legacy.call('settle-2', { op: 'events', afterSeq: 0, threadId: f.target.threadId })
+
+    // 1. Mutate one receipt group's outcome (index 3) and publish: updated phone gets receiptGroupsDelta, legacy phone gets whole receiptGroups.
+    const uBefore = updatedShells().length, lBefore = legacyShells().length
+    await f.control.watcherRecords.update(record => {
+      const targetOp = record.operations.find(op => op.id === `50000000-0000-4000-8000-${(4).toString(16).padStart(12, '0')}`)!
+      targetOp.outcome = 'answered'
+      targetOp.updatedAt = iso(5_000)
+    })
+    f.workspace.adapters.codex.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    await expect.poll(() => updatedShells().length).toBeGreaterThan(uBefore)
+    await expect.poll(() => legacyShells().length).toBeGreaterThan(lBefore)
+
+    const updatedPush = updatedShells().at(-1)!
+    const legacyPush = legacyShells().at(-1)!
+    const updatedPushBytes = Buffer.byteLength(JSON.stringify(updatedPush))
+    const legacyPushBytes = Buffer.byteLength(JSON.stringify(legacyPush))
+
+    expect(updatedPush.state.watcher?.receiptGroups).toBeUndefined()
+    expect(updatedPush.state.watcher?.receiptGroupsDelta).toMatchObject({ dropHead: 0, keep: 25, tail: [] })
+    expect(updatedPush.state.watcher?.receiptGroupsDelta?.replaced).toHaveLength(1)
+    expect(updatedPush.state.watcher?.receiptGroupsDelta?.replaced?.[0]?.index).toBe(3)
+    expect(legacyPush.state.watcher?.receiptGroupsDelta).toBeUndefined()
+    expect(legacyPush.state.watcher?.receiptGroups).toHaveLength(25)
+    expect(reassemble(updatedShells())?.receiptGroups).toEqual(reassemble(legacyShells())?.receiptGroups)
+    expect(updatedPushBytes).toBeLessThan(legacyPushBytes / 4)
+
+    // 2. Compare `watcher-phone-read` (`machines: true`): compact `{ status: 'ok', machines }` vs full `{ status: 'ok', state }`.
+    const compactRaw = await updated.call('machines-compact', { op: 'watcher-phone-read', machines: true })
+    const legacyRaw = await legacy.call('machines-legacy', { op: 'watcher-phone-read', machines: true })
+    const compactBytes = Buffer.byteLength(JSON.stringify(compactRaw))
+    const legacyBytes = Buffer.byteLength(JSON.stringify(legacyRaw))
+    const parsedCompact = watcherPhoneMachinesResultSchema.parse((compactRaw as { result: unknown }).result)
+    const parsedLegacy = watcherPhoneResultSchema.parse((legacyRaw as { result: unknown }).result)
+    expect(parsedCompact.status).toBe('ok')
+    expect(parsedLegacy.status).toBe('ok')
+    if (parsedCompact.status === 'ok' && parsedLegacy.status === 'ok') {
+      expect(parsedCompact.machines.rows).toHaveLength(parsedLegacy.state.machines!.rows.length)
+      expect(parsedCompact.machines.readAt).toEqual(expect.any(String))
+    }
+    expect(compactBytes).toBeLessThan(2_500)
+    expect(compactBytes).toBeLessThan(legacyBytes / 20)
+
+    if (process.env.SOTTO_PUSH_SIZES === '1') {
+      console.log('WATCHER-COMPACT-METRICS ' + JSON.stringify({
+        receiptPushLegacyBytes: legacyPushBytes,
+        receiptPushDeltaBytes: updatedPushBytes,
+        machinesReadLegacyBytes: legacyBytes,
+        machinesReadCompactBytes: compactBytes,
+      }))
+    }
   })
 })
 

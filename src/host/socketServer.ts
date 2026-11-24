@@ -163,7 +163,7 @@ const READ_AHEAD_LIMIT = 16
 function sentDigest(detail: AgentThreadDetail): string {
   return createHash('sha256').update(JSON.stringify({ ...detail, revision: 0 })).digest('base64')
 }
-interface Peer { owlets?: boolean | undefined; browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; coordinationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; coordinationRelay?: CoordinationRelayDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherPhoneParts: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { owlets?: boolean | undefined; browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; coordinationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; coordinationRelay?: CoordinationRelayDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneMachinesRead: boolean; watcherPhoneComposer: boolean; watcherPhoneParts: boolean; watcherPhoneReceiptDeltas: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -459,7 +459,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
-    && (feature !== 'watcher-phone-machines' || service.watcherPhone?.offersMachines === true)
+    && (feature !== 'watcher-phone-machines' && feature !== 'watcher-phone-machines-read' || service.watcherPhone?.offersMachines === true)
     // Photos for Watcher need the host to stage them and to answer for them (October 23, 2026).
     && (feature !== 'watcher-phone-photos' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined)
     // Files for Watcher ride on its photos, where the host keeps files at all (ADR-0131, October 28 amendment).
@@ -1256,7 +1256,12 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (!keeps || !keptBase) return state()
       const compact = withKeptParts(state(), keptBase, SOCKET_HOST_SENT)
       if (peer.watcherPhoneParts && compact.watcher && keptBase.top.watcher) {
-        return { ...compact, watcher: withWatcherPhoneParts(compact.watcher as WatcherPhoneState, keptBase.top.watcher as WatcherPhoneState) } as KeptPartsShell<HostWireShell>
+        return {
+          ...compact,
+          watcher: withWatcherPhoneParts(compact.watcher as WatcherPhoneState, keptBase.top.watcher as WatcherPhoneState, {
+            receiptDeltas: peer.watcherPhoneReceiptDeltas,
+          }),
+        } as KeptPartsShell<HostWireShell>
       }
       return compact
     }
@@ -1887,6 +1892,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (request.machines === true) {
             if (!peer.watcherPhoneMachines || !offers(peer, 'watcher-phone-machines')) throw new Refusal('invalid_request')
             await phone.readMachines()
+            // A phone that negotiated `watcher-phone-machines-read` receives only the refreshed machines snapshot
+            // instead of resending the full uncompacted Watcher conversation and receipt history.
+            if (peer.watcherPhoneMachinesRead) return { status: 'ok' as const, machines: phone.machines() }
           }
           await observe(); return phone.get(mayAnswer(), standing, steer)
         }
@@ -2026,10 +2034,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.watcherPhoneManage = peer.watcherPhone && (request.accepts?.includes('watcher-phone-manage') ?? false) && offers(peer, 'watcher-phone-manage')
         peer.watcherPhoneSteer = peer.watcherPhone && (request.accepts?.includes('watcher-phone-steer') ?? false) && offers(peer, 'watcher-phone-steer')
         peer.watcherPhoneMachines = peer.watcherPhone && (request.accepts?.includes('watcher-phone-machines') ?? false) && offers(peer, 'watcher-phone-machines')
+        peer.watcherPhoneMachinesRead = peer.watcherPhoneMachines && (request.accepts?.includes('watcher-phone-machines-read') ?? false) && offers(peer, 'watcher-phone-machines-read')
         // Watcher's box keeps its changes' outcomes under management's receipts, so it rides with management.
         peer.watcherPhoneComposer = peer.watcherPhoneManage && (request.accepts?.includes('watcher-phone-composer') ?? false) && offers(peer, 'watcher-phone-composer')
         // Watcher kept sub-parts and conversation deltas ride on kept-parts's thread-record revision chain.
         peer.watcherPhoneParts = peer.watcherPhone && peer.keptParts && (request.accepts?.includes('watcher-phone-parts') ?? false) && offers(peer, 'watcher-phone-parts')
+        peer.watcherPhoneReceiptDeltas = peer.watcherPhoneParts && (request.accepts?.includes('watcher-phone-receipt-deltas') ?? false) && offers(peer, 'watcher-phone-receipt-deltas')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         // A hello starts what progress pushes are measured from afresh: the next projection goes whole.
         peer.watcherProgress = peer.watcherReads && (request.accepts?.includes('watcher-progress') ?? false) && offers(peer, 'watcher-progress'); watcherWritten.delete(peer)
@@ -2921,7 +2931,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, coordinationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, usageAntigravity: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherPhoneParts: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), readHeld: false, readAhead: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, coordinationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, usageAntigravity: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneMachinesRead: false, watcherPhoneComposer: false, watcherPhoneParts: false, watcherPhoneReceiptDeltas: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), readHeld: false, readAhead: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); followRunsElsewhere(); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (peer.coordinationRelay) options.coordinationRelay?.desktopGone(peer.coordinationRelay); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

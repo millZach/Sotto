@@ -65,28 +65,49 @@ export interface WatcherConversationDelta {
   readonly earlierAvailable: boolean
   readonly revision: number
 }
-/** A Watcher phone page with unchanged sub-parts left out (`kept`) and/or `conversation` replaced by `conversationDelta`. */
-export type WatcherPhoneWireParts<Page extends { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } } = { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } }> =
-  Partial<Page> & { readonly kept?: string[] | undefined; readonly conversationDelta?: WatcherConversationDelta | undefined }
+/** One receipt group's stable key fields for `watcher-phone-receipt-deltas` diffing. */
+export interface WatcherReceiptGroupLike {
+  readonly requestId: string
+  readonly replyMessageId?: string | null | undefined
+}
+/**
+ * What changed in Watcher's `receiptGroups` since the last shell push (`watcher-phone-receipt-deltas`): drop `dropHead`
+ * oldest groups, keep the next `keep` groups (patching any sparse `replaced` indices in place), and append `tail`.
+ */
+export interface WatcherReceiptGroupsDelta<Group = unknown> {
+  readonly dropHead: number
+  readonly keep: number
+  readonly replaced?: readonly { readonly index: number; readonly group: Group }[] | undefined
+  readonly tail: readonly Group[]
+}
+/** A Watcher phone page with unchanged sub-parts left out (`kept`), `conversationDelta`, and/or `receiptGroupsDelta`. */
+export type WatcherPhoneWireParts<
+  Page extends { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } } = { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } },
+> = Partial<Page> & {
+  readonly kept?: string[] | undefined
+  readonly conversationDelta?: WatcherConversationDelta | undefined
+  readonly receiptGroupsDelta?: WatcherReceiptGroupsDelta<Page extends { readonly receiptGroups: readonly (infer Group)[] } ? Group : unknown> | undefined
+}
 
 /**
  * Reconstructs a complete Watcher phone page from a compact `watcher-phone-parts` wire object and the previous pushed
- * page `held`. Returns `undefined` if any kept field is missing from `held` or if `conversationDelta` is out of bounds or
- * conflicts with `conversation` / `kept`.
+ * page `held`. Returns `undefined` if any kept field is missing from `held` or if `conversationDelta` /
+ * `receiptGroupsDelta` is out of bounds or conflicts with the whole field or `kept`.
  */
 export function withWatcherPhonePartsPutBack<
   Page extends { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } },
 >(wire: WatcherPhoneWireParts<Page>, held: Page | null): Page | undefined {
   const kept = Array.isArray(wire.kept) ? wire.kept : []
   const delta = wire.conversationDelta
-  if (!kept.length && delta === undefined) return wire as Page
+  const receiptDelta = wire.receiptGroupsDelta
+  if (!kept.length && delta === undefined && receiptDelta === undefined) return wire as Page
   if (held === null) return undefined
   const heldRecord = held as unknown as Readonly<Record<string, unknown>>
   const wireRecord = wire as unknown as Readonly<Record<string, unknown>>
-  if (!kept.every(key => typeof key === 'string' && key !== 'kept' && key !== 'conversationDelta' && Object.hasOwn(heldRecord, key))) return undefined
+  if (!kept.every(key => typeof key === 'string' && key !== 'kept' && key !== 'conversationDelta' && key !== 'receiptGroupsDelta' && Object.hasOwn(heldRecord, key))) return undefined
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(wireRecord)) {
-    if (key === 'kept' || key === 'conversationDelta') continue
+    if (key === 'kept' || key === 'conversationDelta' || key === 'receiptGroupsDelta') continue
     out[key] = value
   }
   for (const key of kept) if (!Object.hasOwn(out, key)) out[key] = heldRecord[key]
@@ -102,6 +123,22 @@ export function withWatcherPhonePartsPutBack<
     }
     messages.push(...delta.tail)
     out.conversation = { messages, earlierAvailable: delta.earlierAvailable, revision: delta.revision }
+  }
+  if (receiptDelta !== undefined) {
+    if (Object.hasOwn(wireRecord, 'receiptGroups') || kept.includes('receiptGroups')) return undefined
+    const prev = heldRecord.receiptGroups
+    if (!Array.isArray(prev) || !Array.isArray(receiptDelta.tail)) return undefined
+    if (!Number.isSafeInteger(receiptDelta.dropHead) || !Number.isSafeInteger(receiptDelta.keep) || receiptDelta.dropHead < 0 || receiptDelta.keep < 0 || receiptDelta.dropHead > prev.length || receiptDelta.keep > prev.length - receiptDelta.dropHead) return undefined
+    const groups = prev.slice(receiptDelta.dropHead, receiptDelta.dropHead + receiptDelta.keep)
+    if (receiptDelta.replaced !== undefined) {
+      if (!Array.isArray(receiptDelta.replaced)) return undefined
+      for (const patch of receiptDelta.replaced) {
+        if (!patch || typeof patch !== 'object' || !Number.isSafeInteger(patch.index) || patch.index < 0 || patch.index >= groups.length) return undefined
+        groups[patch.index] = patch.group
+      }
+    }
+    groups.push(...receiptDelta.tail)
+    out.receiptGroups = groups
   }
   return out as unknown as Page
 }

@@ -183,5 +183,6 @@ public enum MachineLine {
 /// opens a machine's numbers or Watcher places work. Nothing reads on a timer.
 public extension WatcherWire {
     static let machinesFeature = "watcher-phone-machines"
+    static let machinesReadFeature = "watcher-phone-machines-read"
     static let readMachines: [String: JSONValue] = ["op": .string("watcher-phone-read"), "machines": .bool(true)]
 }

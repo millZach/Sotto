@@ -113,8 +113,10 @@ export class WatcherPhoneService {
    */
   state(mayAnswer: boolean, standing = true, steer = false): WatcherPhoneState {
     const room = this.watcher.state(), snapshot = this.watcher.phoneSnapshot(), starts = this.watcher.startsInFlight()
-    const thread = (target: { hostId: string; threadId: string }): AgentThread | undefined => snapshot.threads.find(row =>
-      (row.hostId ?? snapshot.hostId) === target.hostId && row.id === target.threadId)
+    const threadsByTarget = new Map<string, AgentThread>()
+    for (const row of snapshot.threads) threadsByTarget.set(`${row.hostId ?? snapshot.hostId}\n${row.id}`, row)
+    const thread = (target: { hostId: string; threadId: string }): AgentThread | undefined =>
+      threadsByTarget.get(`${target.hostId}\n${target.threadId}`)
     const current = room.current && thread(room.current.target)
     const detail = current ? this.control.threadDetail(current.id) : null
     // The coordinator's detail already shows Watcher's messages as typed: an older one's routing footer is off it.
@@ -122,14 +124,31 @@ export class WatcherPhoneService {
     const visible = (detail?.messages ?? []).filter(message => !(message.role === 'assistant' && !message.attachments?.length && (message.text === '' || isWatcherSilentReply(message.text))))
     const messages = visible.slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt,
       ...(message.attachments?.length ? { attachments: message.attachments } : {}) }))
+    const earlierAvailable = Boolean(detail?.earlierAvailable || visible.length > messages.length)
+    const messageIndex = new Map<string, number>()
+    let oldestMessageAt = Number.POSITIVE_INFINITY
+    for (let index = 0; index < messages.length; index++) {
+      const message = messages[index]!
+      messageIndex.set(message.id, index)
+      const parsed = Date.parse(message.createdAt)
+      if (Number.isFinite(parsed) && parsed < oldestMessageAt) oldestMessageAt = parsed
+    }
     const receiptGroups: WatcherPhoneState['receiptGroups'] = []
+    const receiptGroupIndex = new Map<string, WatcherPhoneState['receiptGroups'][number]>()
     const shown = this.phoneReceipts(room)
     for (const operation of shown.receipts) {
       const request = shown.request(operation.requestId)
       if (!request || request.watcher.threadId !== room.current?.target.threadId) continue
       // Use the retained conversation's actual assistant message at this operation's time. Missing history
       // stays an unattached receipt; a root user-message reference is never presented as an assistant reply.
-      const rootIndex = messages.findIndex(message => message.id === request.rootUserMessageId)
+      const rootIndex = messageIndex.get(request.rootUserMessageId) ?? -1
+      // Prune orphaned receipts from before the 200-message conversation window so the phone neither downloads
+      // nor renders hundreds of stale unattached receipt cards above the oldest visible message.
+      if (messages.length > 0 && rootIndex < 0) {
+        const opTime = Date.parse(operation.createdAt)
+        if (Number.isFinite(oldestMessageAt) && Number.isFinite(opTime) && opTime < oldestMessageAt) continue
+        if (earlierAvailable && !request.rootUserMessageId.startsWith('standing:') && request.state !== 'active') continue
+      }
       const tail = rootIndex < 0 ? [] : messages.slice(rootIndex + 1)
       const nextUser = tail.findIndex(message => message.role === 'user' && message.createdAt > operation.createdAt)
       const window = nextUser < 0 ? tail : tail.slice(0, nextUser)
@@ -138,8 +157,13 @@ export class WatcherPhoneService {
       const reply = replies.findLast(message => message.createdAt <= operation.createdAt)
         ?? replies.find(message => message.createdAt >= operation.createdAt)
       const replyMessageId = reply?.id ?? null
-      let group = receiptGroups.find(row => row.requestId === request.id && row.replyMessageId === replyMessageId)
-      if (!group) { group = { requestId: request.id, replyMessageId, rows: [] }; receiptGroups.push(group) }
+      const groupKey = `${request.id}\0${replyMessageId ?? ''}`
+      let group = receiptGroupIndex.get(groupKey)
+      if (!group) {
+        group = { requestId: request.id, replyMessageId, rows: [] }
+        receiptGroups.push(group)
+        receiptGroupIndex.set(groupKey, group)
+      }
       const worker = thread(operation.target)
       const previousRow = group.rows.findIndex(row => row.target.hostId === operation.target.hostId && row.target.threadId === operation.target.threadId)
       if (previousRow >= 0) group.rows.splice(previousRow, 1)
@@ -184,7 +208,7 @@ export class WatcherPhoneService {
       reasoningEffort: room.currentOptions.reasoningEffort, runtimeMode: room.currentOptions.runtimeMode,
       status: room.currentOptions.status, connected: room.currentOptions.connected, speed: room.currentOptions.speed ?? null,
       ...(steer ? { steers: current ? this.control.watcherPhoneTurn(current.id).steers : false } : {}) } : null,
-    conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || visible.length > messages.length) },
+    conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable },
     // The deliveries alone, read without copying every thread: this runs for each phone on every update.
     draftDeliveries: this.control.watcherSendRecords().deliveries.filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
     runtimeMode: room.runtimeMode, ...(standing ? { standingWatches: room.standingWatches } : {}), ownChanges: room.ownChanges,
