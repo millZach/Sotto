@@ -4,7 +4,7 @@ import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
   isUsageProviderId, USAGE_LIMIT_PROVIDERS,
-  type UsageLimitProviderId, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
+  type UsageLimitProviderId, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageLocalRead,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
   type UsageMetadata, type UsagePromptIdentity, type UsageProviderId,
 } from '../../shared/usageDashboard'
@@ -90,6 +90,12 @@ export class UsageService implements UsagePromptRecorder {
   private seedPending = false
   private seedMarked = false
   private closed = false
+  private queryAccelerator: ((query: UsageLocalQuery) => Promise<UsageLocalRead | undefined>) | undefined
+
+  /** Registers an optional read-only SQLite query accelerator (such as the Rust local engine, ADR-0215) invoked only after pending flushes commit, with automatic TypeScript fallback. */
+  useQueryAccelerator(accelerator: ((query: UsageLocalQuery) => Promise<UsageLocalRead | undefined>) | undefined): void {
+    this.queryAccelerator = accelerator
+  }
 
   constructor(private readonly options: {
     directory: string; host: AgentHost; store?: Store
@@ -233,7 +239,10 @@ export class UsageService implements UsagePromptRecorder {
     try {
       await flushed
       if (!this.opened) throw new Error('Usage store is unavailable')
-      activity = await this.client.request({ kind: 'query', query })
+      const accelerated = !this.failed && !this.unsaved && this.queryAccelerator
+        ? await this.queryAccelerator(query).catch(() => undefined)
+        : undefined
+      activity = accelerated ?? await this.client.request({ kind: 'query', query })
     } catch {
       this.failed = true
       this.schedule(RETRY_MS)

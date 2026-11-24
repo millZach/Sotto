@@ -511,6 +511,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.gitRefsAccelerator = accelerator
     this.gitRefsAcceleratedAtChange.clear()
   }
+  private gitChangedFilesAccelerator: ((folder: string) => Promise<GitChangedFiles | undefined>) | undefined
+  useGitChangedFilesAccelerator(accelerator: ((folder: string) => Promise<GitChangedFiles | undefined>) | undefined): void {
+    this.gitChangedFilesAccelerator = accelerator
+  }
   private observePullRequest(view: GitPullRequestView): void {
     if (view.state === 'merged') this.pullRequestMerged(view.url)
     if (!this.watcherPrObserver) return
@@ -1308,7 +1312,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async listThreadChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
     await this.initialize()
     if (!this.gitStatus?.listChangedFiles) throw new Error('Changed files are unavailable on this host.')
-    return this.gitStatus.listChangedFiles(this.threadRepositoryFolder(request.threadId, 'changed files'))
+    const folder = this.threadRepositoryFolder(request.threadId, 'changed files')
+    if (this.gitChangedFilesAccelerator) {
+      const accelerated = await this.gitChangedFilesAccelerator(folder).catch(() => undefined)
+      if (accelerated !== undefined) return accelerated
+    }
+    return this.gitStatus.listChangedFiles(folder)
   }
   /** The folder a thread's repository reads come from: its ready worktree, the worktree a draft points at, or its project's folder. */
   private threadRepositoryFolder(threadId: string, what: string): string {

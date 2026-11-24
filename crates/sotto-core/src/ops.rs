@@ -20,9 +20,9 @@ pub use crate::host_facts::{
     global_host_facts_sampler, host_facts_report, prime_host_facts_load, HostFactsSampler,
 };
 pub use crate::usage_ops::{
-    canonical_model_id, filter_usage_read_for_peer, parse_usage_time_zone, usage_clear,
-    usage_exclusion_hash, usage_read, usage_refresh, UsageReadQuery, USAGE_LIMIT_PROVIDERS,
-    USAGE_PROVIDERS,
+    canonical_model_id, filter_usage_read_for_peer, parse_usage_read_query, parse_usage_time_zone,
+    usage_clear, usage_exclusion_hash, usage_query_activity, usage_read, usage_refresh,
+    UsageReadQuery, USAGE_LIMIT_PROVIDERS, USAGE_PROVIDERS,
 };
 
 pub const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
@@ -476,11 +476,181 @@ pub fn git_refs_with_refresh(
     }))
 }
 
-/// Lists changed files in a git working tree matching `gitChangedFilesSchema` (`src/shared/gitChangedFiles.ts`).
+const UNTRACKED_COUNT_MAX_FILES: usize = 200;
+const UNTRACKED_COUNT_MAX_BYTES: u64 = 1_000_000;
+
+fn count_untracked_lines(path: &Path) -> Option<(u64, u64)> {
+    let mut file = fs::File::open(path).ok()?;
+    let size = file.metadata().ok()?.len();
+    if size > UNTRACKED_COUNT_MAX_BYTES {
+        return None;
+    }
+    let mut buf = Vec::with_capacity(size as usize);
+    file.read_to_end(&mut buf).ok()?;
+    let check_len = buf.len().min(8_000);
+    if buf[..check_len].contains(&0) {
+        return None;
+    }
+    if buf.is_empty() {
+        return Some((0, 0));
+    }
+    let mut lines = buf.iter().filter(|&&b| b == b'\n').count() as u64;
+    if buf.last() != Some(&b'\n') {
+        lines += 1;
+    }
+    Some((lines, 0))
+}
+
+struct ChangedFileRecord {
+    path: String,
+    original_path: Option<String>,
+    status: &'static str,
+}
+
+fn parse_porcelain_v2_changed(output: &str) -> (bool, Vec<ChangedFileRecord>) {
+    let records: Vec<&str> = output.split('\0').collect();
+    let mut unborn = false;
+    let mut result = Vec::new();
+    let status_of = |xy: &str| -> &'static str {
+        if xy.contains('D') {
+            "deleted"
+        } else if xy.contains('A') {
+            "added"
+        } else if xy.contains('T') {
+            "type-changed"
+        } else {
+            "modified"
+        }
+    };
+    let mut index = 0usize;
+    while index < records.len() {
+        let record = records[index];
+        index += 1;
+        if record.is_empty() {
+            continue;
+        }
+        if let Some(header) = record.strip_prefix("# ") {
+            if header == "branch.oid (initial)" {
+                unborn = true;
+            }
+            continue;
+        }
+        let mut bytes = record.bytes();
+        let Some(kind) = bytes.next() else {
+            continue;
+        };
+        if kind == b'?' {
+            if record.len() > 2 {
+                result.push(ChangedFileRecord {
+                    path: record[2..].to_string(),
+                    original_path: None,
+                    status: "untracked",
+                });
+            }
+            continue;
+        }
+        if kind == b'!' {
+            continue;
+        }
+        let fields: Vec<&str> = record.split(' ').collect();
+        if kind == b'1' && fields.len() >= 9 {
+            result.push(ChangedFileRecord {
+                path: fields[8..].join(" "),
+                original_path: None,
+                status: status_of(fields[1]),
+            });
+        } else if kind == b'u' && fields.len() >= 11 {
+            result.push(ChangedFileRecord {
+                path: fields[10..].join(" "),
+                original_path: None,
+                status: "conflicted",
+            });
+        } else if kind == b'2' && fields.len() >= 10 {
+            let path = fields[9..].join(" ");
+            let original_path = records
+                .get(index)
+                .copied()
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string);
+            index += 1;
+            let status = if fields[1].contains('C') {
+                "added"
+            } else {
+                "renamed"
+            };
+            result.push(ChangedFileRecord {
+                path,
+                original_path,
+                status,
+            });
+        }
+    }
+    (unborn, result)
+}
+
+fn parse_numstat_z_outputs(outputs: &[String]) -> HashMap<String, Option<(u64, u64)>> {
+    let mut counts: HashMap<String, Option<(u64, u64)>> = HashMap::new();
+    for output in outputs {
+        let records: Vec<&str> = output.split('\0').collect();
+        let mut index = 0usize;
+        while index < records.len() {
+            let record = records[index];
+            index += 1;
+            if record.is_empty() {
+                continue;
+            }
+            let mut parts = record.splitn(3, '\t');
+            let added = parts.next().unwrap_or("");
+            let removed = parts.next().unwrap_or("");
+            let inline = parts.next().unwrap_or("");
+            let path = if inline.is_empty() {
+                // Rename: old path record, then new path record.
+                index += 1;
+                let next_path = records.get(index).copied().unwrap_or("");
+                index += 1;
+                next_path
+            } else {
+                inline
+            };
+            if path.is_empty() {
+                continue;
+            }
+            let value = if added == "-" || removed == "-" {
+                None
+            } else {
+                Some((
+                    added.parse::<u64>().unwrap_or(0),
+                    removed.parse::<u64>().unwrap_or(0),
+                ))
+            };
+            let entry = counts.entry(path.to_string());
+            match entry {
+                std::collections::hash_map::Entry::Occupied(mut occ) => {
+                    let prev = *occ.get();
+                    let next = match (prev, value) {
+                        (Some((pi, pd)), Some((vi, vd))) => Some((pi + vi, pd + vd)),
+                        (None, _) => None,
+                        (Some(_), None) => None,
+                    };
+                    occ.insert(next);
+                }
+                std::collections::hash_map::Entry::Vacant(vac) => {
+                    vac.insert(value);
+                }
+            }
+        }
+    }
+    counts
+}
+
+/// Lists changed files in a git working tree matching `gitChangedFilesSchema` (`src/shared/gitChangedFiles.ts`)
+/// and `GitStatusService.listChangedFiles` (`src/main/agents/git/gitStatus.ts`).
 pub fn git_changed_files(folder: &str) -> Result<Value, String> {
-    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
-        .map(|s| s.trim() == "true")
-        .unwrap_or(false);
+    let is_repo = match run_git_clean(folder, &["rev-parse", "--is-inside-work-tree"], &[], None, None) {
+        Ok(out) => out.stdout.trim() == "true",
+        Err(GitRunError::Unavailable(msg)) => return Err(msg),
+        Err(_) => false,
+    };
     if !is_repo {
         return Ok(json!({
             "isRepository": false,
@@ -488,51 +658,65 @@ pub fn git_changed_files(folder: &str) -> Result<Value, String> {
             "truncated": false,
         }));
     }
-    let raw = run_git(folder, &["status", "--porcelain=v1"])?;
-    let numstat = run_git(folder, &["diff", "HEAD", "--numstat"]).unwrap_or_default();
-    let mut stats: HashMap<String, (Option<u64>, Option<u64>)> = HashMap::new();
-    for line in numstat.lines() {
-        let mut parts = line.split('\t');
-        let ins = parts.next().and_then(|s| s.parse::<u64>().ok());
-        let del = parts.next().and_then(|s| s.parse::<u64>().ok());
-        if let Some(p) = parts.next() {
-            stats.insert(p.replace('\\', "/"), (ins, del));
-        }
-    }
+    let toplevel = run_git(folder, &["rev-parse", "--show-toplevel"])?;
+    let cwd = toplevel.trim();
+    let porcelain = run_git(
+        cwd,
+        &[
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "--untracked-files=all",
+            "-z",
+        ],
+    )?;
+    let (unborn, records) = parse_porcelain_v2_changed(&porcelain);
+    let numstat_outputs = if unborn {
+        vec![
+            run_git(cwd, &["diff", "--numstat", "-z"]).unwrap_or_default(),
+            run_git(cwd, &["diff", "--cached", "--numstat", "-z"]).unwrap_or_default(),
+        ]
+    } else {
+        vec![run_git(cwd, &["diff", "--numstat", "-z", "HEAD", "--"]).unwrap_or_default()]
+    };
+    let counts = parse_numstat_z_outputs(&numstat_outputs);
+    let truncated = records.len() > MAX_GIT_FILES;
+    let cwd_path = Path::new(cwd);
+    let mut untracked_read = 0usize;
+    let mut entries: Vec<(String, Value)> = Vec::with_capacity(records.len().min(MAX_GIT_FILES));
 
-    let mut files = Vec::new();
-    let mut truncated = false;
-    for line in raw.lines() {
-        if line.len() < 4 {
-            continue;
+    for record in records.into_iter().take(MAX_GIT_FILES) {
+        let mut count = counts
+            .get(&record.path)
+            .copied()
+            .or_else(|| {
+                record
+                    .original_path
+                    .as_ref()
+                    .and_then(|orig| counts.get(orig).copied())
+            })
+            .flatten();
+        if record.status == "untracked" && count.is_none() && untracked_read < UNTRACKED_COUNT_MAX_FILES {
+            untracked_read += 1;
+            count = count_untracked_lines(&cwd_path.join(&record.path));
         }
-        if files.len() >= MAX_GIT_FILES {
-            truncated = true;
-            break;
-        }
-        let code = &line[..2];
-        let raw_path = line[3..].trim();
-        let (path, original_path) = if let Some((orig, new_p)) = raw_path.split_once(" -> ") {
-            (
-                new_p.trim_matches('"').replace('\\', "/"),
-                Some(orig.trim_matches('"').replace('\\', "/")),
-            )
-        } else {
-            (raw_path.trim_matches('"').replace('\\', "/"), None)
+        let (ins, del) = match count {
+            Some((i, d)) => (Some(i), Some(d)),
+            None => (None, None),
         };
-        let status = porcelain_status(code);
-        let (ins, del) = stats.get(&path).copied().unwrap_or((None, None));
         let mut entry = json!({
-            "path": path,
-            "status": status,
+            "path": record.path,
+            "status": record.status,
             "insertions": ins,
             "deletions": del,
         });
-        if let Some(orig) = original_path {
+        if let Some(orig) = record.original_path {
             entry["originalPath"] = json!(orig);
         }
-        files.push(entry);
+        entries.push((record.path, entry));
     }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let files: Vec<Value> = entries.into_iter().map(|(_, v)| v).collect();
 
     Ok(json!({
         "isRepository": true,
@@ -2663,5 +2847,59 @@ mod tests {
         assert_eq!(a2[0]["sequence"], 2);
         assert_eq!(a2[1]["sequence"], 1);
         assert!(asgn_page2.get("before").is_none());
+    }
+
+    #[test]
+    fn git_changed_files_matches_porcelain_v2_sorting_and_untracked_line_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .env("GIT_AUTHOR_NAME", "Test")
+                .env("GIT_AUTHOR_EMAIL", "test@example.com")
+                .env("GIT_COMMITTER_NAME", "Test")
+                .env("GIT_COMMITTER_EMAIL", "test@example.com")
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed");
+        };
+
+        // Non-repo returns isRepository: false.
+        let non_repo = git_changed_files(&root.to_string_lossy()).unwrap();
+        assert_eq!(non_repo["isRepository"], false);
+
+        git(&["init", "-b", "main"]);
+        fs::write(root.join("z.txt"), "one\ntwo\n").unwrap();
+        fs::write(root.join("old.txt"), "alpha\nbeta\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "init"]);
+
+        // Modify z.txt, rename old.txt -> m.txt, add untracked a.txt (3 lines) and binary b.bin.
+        fs::write(root.join("z.txt"), "one\ntwo\nthree\n").unwrap();
+        git(&["mv", "old.txt", "m.txt"]);
+        fs::write(root.join("a.txt"), "l1\nl2\nl3").unwrap();
+        fs::write(root.join("b.bin"), [0u8, 1, 2, 3]).unwrap();
+
+        let res = git_changed_files(&root.to_string_lossy()).unwrap();
+        assert_eq!(res["isRepository"], true);
+        assert_eq!(res["truncated"], false);
+        let files = res["files"].as_array().unwrap();
+        let paths: Vec<&str> = files
+            .iter()
+            .map(|f| f["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths, vec!["a.txt", "b.bin", "m.txt", "z.txt"]);
+        assert_eq!(files[0]["status"], "untracked");
+        assert_eq!(files[0]["insertions"], 3);
+        assert_eq!(files[0]["deletions"], 0);
+        assert_eq!(files[1]["status"], "untracked");
+        assert!(files[1]["insertions"].is_null());
+        assert_eq!(files[2]["status"], "renamed");
+        assert_eq!(files[2]["originalPath"], "old.txt");
+        assert_eq!(files[3]["status"], "modified");
+        assert_eq!(files[3]["insertions"], 1);
+        assert_eq!(files[3]["deletions"], 0);
     }
 }

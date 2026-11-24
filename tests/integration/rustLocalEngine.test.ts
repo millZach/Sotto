@@ -9,7 +9,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { HostFactsSource } from '../../src/main/agents/hostFacts'
+import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
 import { ThreadStore } from '../../src/main/agents/threadStore'
+import { UsageService } from '../../src/main/agents/usageService'
+import { UsageStore } from '../../src/main/agents/usageStore'
+import type { AgentHost } from '../../src/main/agents/host'
 import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
 import { FilesService } from '../../src/main/files/service'
 import { GitChangesService } from '../../src/main/tools/gitChanges'
@@ -469,6 +473,230 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       }
       gitChanges.dispose()
     } finally {
+      await client?.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('supports Phase 2 full-duplex EngineTransport reverse-RPC, binary boxing, credentials sync, and engine:close', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-duplex-'))
+    const endpoint = createEngineEndpoint('sed')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+
+    const child = spawn(binary, ['--data', dataDir, '--endpoint', endpoint], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+      env: { ...process.env, SOTTO_ENGINE_TOKEN: token },
+    })
+    const exited = new Promise<number | null>(resolveExit => child.once('exit', code => resolveExit(code)))
+
+    try {
+      const conn = await server.waitForClient(15_000)
+      const pushes: { event: string; payload: unknown }[] = []
+      const reverseCalls: { method: string; args: readonly unknown[] }[] = []
+      conn.onPush((event, payload) => { pushes.push({ event, payload }) })
+      conn.onRequest((method, args) => {
+        reverseCalls.push({ method, args })
+        switch (method) {
+          case 'shell:readWritingSettings':
+            return { historyEnabled: true, formatting: 'auto' }
+          case 'shell:clipboardWrite':
+            return true
+          case 'shell:openExternal':
+            return true
+          case 'shell:credentialsSet': {
+            const [slot, value] = args as [string, string]
+            return {
+              available: true,
+              plaintext: { [slot]: value },
+              sealed: { [slot]: `sealed:${value}` },
+              unreadable: {},
+            }
+          }
+          case 'shell:redrawPhoto': {
+            const [raw, kind] = args as [Uint8Array, string]
+            expect(raw).toBeInstanceOf(Uint8Array)
+            return { bytes: new Uint8Array([...raw, 0x99]), kind }
+          }
+          default:
+            throw new Error(`UNEXPECTED_SHELL_METHOD: ${method}`)
+        }
+      })
+
+      // 1. Phase 2 engine:init registers ShellBridgeClient and emits shell:log push.
+      const initResult = await conn.request<{ metadata: { localHostId: string }; channels: unknown[]; hasWatcherBridge: boolean }>('engine:init', [{
+        options: { userDataPath: dataDir },
+        credentials: { available: false, plaintext: {}, sealed: { existing: 'enc' }, unreadable: {} },
+        downloadsFolder: dataDir,
+        browserToolDefinitions: [],
+        hasNotify: true,
+        hasMediaThumbnail: false,
+        hasRedrawPhoto: true,
+      }])
+      expect(typeof initResult.metadata.localHostId).toBe('string')
+      expect(initResult.metadata.localHostId.length).toBeGreaterThan(0)
+      expect(initResult.hasWatcherBridge).toBe(false)
+
+      // Wait briefly for shell:log push emitted during init.
+      const logDeadline = Date.now() + 5_000
+      while (Date.now() < logDeadline && !pushes.some(p => p.event === 'shell:log' && p.payload === 'rust-engine-initialized')) {
+        await new Promise(r => setTimeout(r, 15))
+      }
+      expect(pushes.some(p => p.event === 'shell:log' && p.payload === 'rust-engine-initialized')).toBe(true)
+
+      // 2. Shell -> Engine push updates window focus and credentials cache.
+      conn.sendPush('engine:setWindowFocus', { focused: true, showing: true, blurredAt: 0 })
+      let focus: { focused: boolean; showing: boolean } | undefined
+      const focusDeadline = Date.now() + 5_000
+      while (Date.now() < focusDeadline) {
+        focus = await conn.request<{ focused: boolean; showing: boolean }>('engine:windowFocus')
+        if (focus.focused && focus.showing) break
+        await new Promise(r => setTimeout(r, 15))
+      }
+      expect(focus).toMatchObject({ focused: true, showing: true })
+
+      conn.sendPush('shell:credentialsSync', {
+        available: true,
+        plaintext: { synced: 'val' },
+        sealed: { synced: 'enc-val' },
+        unreadable: {},
+      })
+      const credsDeadline = Date.now() + 5_000
+      let hasSynced = { available: false, has: false }
+      while (Date.now() < credsDeadline) {
+        hasSynced = await conn.request<{ available: boolean; has: boolean }>('engine:credentialsHas', ['synced'])
+        if (hasSynced.available && hasSynced.has) break
+        await new Promise(r => setTimeout(r, 15))
+      }
+      expect(hasSynced).toEqual({ available: true, has: true })
+
+      // 3. Engine -> Shell reverse-RPC calls (including boxed Uint8Array photo round-trip).
+      const writing = await conn.request<{ historyEnabled: boolean; formatting: string }>('engine:readWritingSettings')
+      expect(writing).toEqual({ historyEnabled: true, formatting: 'auto' })
+      await conn.request('engine:clipboardWrite', ['copied text'])
+      await conn.request('engine:openExternal', ['https://example.com'])
+      await conn.request('engine:credentialsSet', ['plugin:p1', 'secret-1'])
+      expect(await conn.request('engine:credentialsHas', ['plugin:p1'])).toEqual({ available: true, has: true })
+
+      const redrawn = await conn.request<{ bytes: Uint8Array; kind: string }>('engine:redrawPhoto', [
+        new Uint8Array([1, 2, 3]),
+        'image/png',
+      ])
+      expect(redrawn.kind).toBe('image/png')
+      expect(redrawn.bytes).toBeInstanceOf(Uint8Array)
+      expect(Array.from(redrawn.bytes)).toEqual([1, 2, 3, 0x99])
+      expect(reverseCalls.map(c => c.method)).toEqual([
+        'shell:readWritingSettings',
+        'shell:clipboardWrite',
+        'shell:openExternal',
+        'shell:credentialsSet',
+        'shell:redrawPhoto',
+      ])
+
+      // 4. Phase 2 engine:perfReading & engine:close.
+      const perf = await conn.request<{ blockedShare: number; freezesOver100ms: number }>('engine:perfReading')
+      expect(perf.blockedShare).toBe(0)
+      expect(perf.freezesOver100ms).toBe(0)
+
+      const closed = await conn.request<boolean>('engine:close')
+      expect(closed).toBe(true)
+      expect(await exited).toBe(0)
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGTERM')
+        await exited.catch(() => undefined)
+      }
+      await server.close()
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 30_000)
+
+  it('offloads usageQuery and gitChangedFiles with exact TypeScript parity and transparent fallback', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-usage-git-data-'))
+    const repoDir = await mkdtemp(join(tmpdir(), 'sotto-rust-usage-git-repo-'))
+    const git = (args: string[]) => execFileSync('git', args, {
+      cwd: repoDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test',
+        GIT_AUTHOR_EMAIL: 'test@example.com',
+        GIT_COMMITTER_NAME: 'Test',
+        GIT_COMMITTER_EMAIL: 'test@example.com',
+      },
+    })
+
+    // Seed git repo with modified, renamed, untracked text, and untracked binary files.
+    git(['init', '-b', 'main'])
+    await writeFile(join(repoDir, 'z.txt'), 'line1\nline2\n', 'utf8')
+    await writeFile(join(repoDir, 'orig.txt'), 'hello\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'init'])
+    await writeFile(join(repoDir, 'z.txt'), 'line1\nline2\nline3\n', 'utf8')
+    git(['mv', 'orig.txt', 'renamed.txt'])
+    await writeFile(join(repoDir, 'a-new.txt'), 'one\ntwo\n', 'utf8')
+    await writeFile(join(repoDir, 'bin.dat'), Buffer.from([0x00, 0x01, 0x02]))
+
+    // Seed usage.sqlite using the real TypeScript UsageStore.
+    const store = new UsageStore(join(dataDir, 'usage.sqlite'))
+    const usageService = new UsageService({
+      directory: dataDir,
+      host: { subscribe: () => () => undefined } as unknown as AgentHost,
+      store,
+    })
+    usageService.start()
+    usageService.submitPrompt({
+      providerId: 'claude',
+      threadId: 'thread-usage-1',
+      messageId: 'msg-u1',
+      modelId: 'claude-opus-4-6-20261101',
+      at: '2026-11-21T02:05:00.000Z',
+      kind: 'user',
+      inputKind: 'send',
+    })
+    usageService.acceptPrompt('thread-usage-1', 'msg-u1')
+
+    const client = await startRustLocalEngine({
+      userDataPath: dataDir,
+      isPackaged: false,
+      binaryPath: binary,
+    })
+
+    try {
+      expect(client).toBeDefined()
+
+      // 1. Compare TS UsageService read vs Rust accelerated read.
+      const tsRead = await usageService.read({ timeZone: 'America/Los_Angeles' })
+      expect(tsRead.status).toBe('ready')
+
+      let rustUsageCalls = 0
+      usageService.useQueryAccelerator(async query => {
+        rustUsageCalls++
+        return client!.usageQuery(query)
+      })
+      const rustRead = await usageService.read({ timeZone: 'America/Los_Angeles' })
+      expect(rustUsageCalls).toBe(1)
+      expect(rustRead.status).toBe('ready')
+      expect(rustRead.activity).toEqual(tsRead.activity)
+
+      // 2. Compare TS GitStatusReader.listChangedFiles vs Rust client.gitChangedFiles.
+      const gitStatus = new GitStatusReader({ fetchIntervalMs: () => 60_000 })
+      const tsChanged = await gitStatus.listChangedFiles(repoDir)
+      const rustChanged = await client!.gitChangedFiles(repoDir)
+      expect(rustChanged).toEqual(tsChanged)
+
+      // 3. After closing Rust client, UsageService transparently falls back to TypeScript.
+      await client!.close()
+      const afterCloseRead = await usageService.read({ timeZone: 'America/Los_Angeles' })
+      expect(afterCloseRead.status).toBe('ready')
+      expect(afterCloseRead.activity).toEqual(tsRead.activity)
+      expect(await client!.gitChangedFiles(repoDir)).toBeUndefined()
+    } finally {
+      usageService.close()
       await client?.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)

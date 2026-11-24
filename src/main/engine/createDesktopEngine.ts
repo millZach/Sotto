@@ -543,8 +543,10 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   if (rustLocalEngine) {
     agentHost.useThreadWordsAccelerator?.(query => agentHistoryEnabled ? rustLocalEngine.searchThreadWords(query) : Promise.resolve(undefined))
     agentHost.useGitRefsAccelerator?.((folder, options) => rustLocalEngine.gitRefs(folder, options))
+    agentHost.useGitChangedFilesAccelerator?.(folder => rustLocalEngine.gitChangedFiles(folder))
     localRuntime.useHostFactsAccelerator?.(live => rustLocalEngine.hostFacts(0, live))
     localRuntime.useToolReadsAccelerator?.({ files: rustFilesAccelerator, gitChanges: rustGitChangesAccelerator })
+    localRuntime.useUsageQueryAccelerator?.(query => rustLocalEngine.usageQuery(query))
   }
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,

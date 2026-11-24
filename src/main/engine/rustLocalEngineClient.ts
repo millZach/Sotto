@@ -17,10 +17,12 @@ import {
   type GitReview,
   type GitReviewScope,
 } from '../../shared/gitChanges'
+import { gitChangedFilesSchema, type GitChangedFiles } from '../../shared/gitChangedFiles'
 import { gitRefsPageSchema, type GitRefsPage } from '../../shared/gitRefs'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { agentThreadWordsSchema, type AgentThreadWords } from '../../shared/threadWords'
 import { toolsResultSchema, type ToolsResult } from '../../shared/tools'
+import { usageLocalReadSchema, type UsageLocalQuery, type UsageLocalRead } from '../../shared/usageDashboard'
 import {
   createEngineEndpoint,
   generateEngineToken,
@@ -36,6 +38,7 @@ const RPC_TIMEOUT_MS = 5_000
 const THREAD_WORDS_RPC_TIMEOUT_MS = 2_500
 const LIVE_HOST_FACTS_TIMEOUT_MS = 6_000
 const GIT_REVIEW_RPC_TIMEOUT_MS = 10_000
+const USAGE_QUERY_RPC_TIMEOUT_MS = 10_000
 const SHUTDOWN_TIMEOUT_MS = 5_000
 
 // Hoist composite schemas to module scope so RPC calls never recompile zod parsers (AGENTS.md).
@@ -65,6 +68,8 @@ export interface RustLocalEngineClient {
   hostFacts(runningThreads?: number, live?: boolean): Promise<HostMachineReport | undefined>
   searchThreadWords(query: string): Promise<AgentThreadWords | undefined>
   gitRefs(folder: string, options?: RustLocalEngineGitRefsOptions): Promise<GitRefsPage | undefined>
+  gitChangedFiles(folder: string): Promise<GitChangedFiles | undefined>
+  usageQuery(query: UsageLocalQuery): Promise<UsageLocalRead | undefined>
   threadFiles(workspace: FileWorkspace, path: string): Promise<FilesResult<FileListing> | undefined>
   threadFilePreview(workspace: FileWorkspace, path: string): Promise<FilesResult<FilePreview> | undefined>
   threadChanges(workspace: FileWorkspace): Promise<ToolsResult<GitChangeListing> | undefined>
@@ -209,6 +214,26 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
         try {
           const raw = await activeConnection.request('ops.gitRefsByFolder', refOptions ? [folder, refOptions] : [folder], RPC_TIMEOUT_MS)
           const parsed = gitRefsPageSchema.safeParse(raw)
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      },
+      async gitChangedFiles(folder: string): Promise<GitChangedFiles | undefined> {
+        if (closed || activeConnection.isClosed) return undefined
+        try {
+          const raw = await activeConnection.request('ops.gitChangedFiles', [folder], RPC_TIMEOUT_MS)
+          const parsed = gitChangedFilesSchema.safeParse(raw)
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      },
+      async usageQuery(query: UsageLocalQuery): Promise<UsageLocalRead | undefined> {
+        if (closed || activeConnection.isClosed) return undefined
+        try {
+          const raw = await activeConnection.request('ops.usageQuery', [query], USAGE_QUERY_RPC_TIMEOUT_MS)
+          const parsed = usageLocalReadSchema.safeParse(raw)
           return parsed.success ? parsed.data : undefined
         } catch {
           return undefined
