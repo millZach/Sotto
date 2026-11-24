@@ -20,9 +20,9 @@ pub use crate::host_facts::{
     global_host_facts_sampler, host_facts_report, prime_host_facts_load, HostFactsSampler,
 };
 pub use crate::usage_ops::{
-    canonical_model_id, filter_usage_read_for_peer, parse_usage_time_zone, usage_clear,
-    usage_exclusion_hash, usage_read, usage_refresh, UsageReadQuery, USAGE_LIMIT_PROVIDERS,
-    USAGE_PROVIDERS,
+    canonical_model_id, filter_usage_read_for_peer, parse_usage_read_query, parse_usage_time_zone,
+    usage_clear, usage_exclusion_hash, usage_query_activity, usage_read, usage_refresh,
+    UsageReadQuery, USAGE_LIMIT_PROVIDERS, USAGE_PROVIDERS,
 };
 
 pub const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
@@ -476,11 +476,232 @@ pub fn git_refs_with_refresh(
     }))
 }
 
-/// Lists changed files in a git working tree matching `gitChangedFilesSchema` (`src/shared/gitChangedFiles.ts`).
+const UNTRACKED_COUNT_MAX_FILES: usize = 200;
+const UNTRACKED_COUNT_MAX_BYTES: u64 = 1_000_000;
+const DEFAULT_GIT_CHANGED_FILES_BUDGET: Duration = Duration::from_secs(10);
+
+/// Repo-redirecting Git variables stripped by `GitStatusReader` (`src/main/agents/git/gitStatus.ts`).
+/// Keeps `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_COUNT`/`KEY_*`/`VALUE_*`, and
+/// transport settings so user excludes and `safe.directory` match TypeScript.
+const REDIRECTING_GIT_VARIABLES: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_PREFIX",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_EDITOR",
+    "GIT_SEQUENCE_EDITOR",
+    "GIT_PAGER",
+];
+
+fn count_untracked_lines(path: &Path) -> Option<(u64, u64)> {
+    // Reject symlinks, FIFOs, devices, sockets, and directories BEFORE opening so an untracked
+    // symlink to `/dev/zero` or a named pipe can never OOM or block.
+    let sym_meta = fs::symlink_metadata(path).ok()?;
+    if !sym_meta.file_type().is_file() || sym_meta.len() > UNTRACKED_COUNT_MAX_BYTES {
+        return None;
+    }
+    let file = fs::File::open(path).ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > UNTRACKED_COUNT_MAX_BYTES {
+        return None;
+    }
+    let size = meta.len();
+    let mut buf = Vec::with_capacity(size as usize);
+    // Strictly bound read to `UNTRACKED_COUNT_MAX_BYTES + 1` even if the file grows mid-read.
+    file.take(UNTRACKED_COUNT_MAX_BYTES.saturating_add(1))
+        .read_to_end(&mut buf)
+        .ok()?;
+    if buf.len() as u64 > UNTRACKED_COUNT_MAX_BYTES {
+        return None;
+    }
+    let check_len = buf.len().min(8_000);
+    if buf[..check_len].contains(&0) {
+        return None;
+    }
+    if buf.is_empty() {
+        return Some((0, 0));
+    }
+    let mut lines = buf.iter().filter(|&&b| b == b'\n').count() as u64;
+    if buf.last() != Some(&b'\n') {
+        lines += 1;
+    }
+    Some((lines, 0))
+}
+
+struct ChangedFileRecord {
+    path: String,
+    original_path: Option<String>,
+    status: &'static str,
+}
+
+fn parse_porcelain_v2_changed(output: &str) -> (bool, Vec<ChangedFileRecord>) {
+    let records: Vec<&str> = output.split('\0').collect();
+    let mut unborn = false;
+    let mut result = Vec::new();
+    let status_of = |xy: &str| -> &'static str {
+        if xy.contains('D') {
+            "deleted"
+        } else if xy.contains('A') {
+            "added"
+        } else if xy.contains('T') {
+            "type-changed"
+        } else {
+            "modified"
+        }
+    };
+    let mut index = 0usize;
+    while index < records.len() {
+        let record = records[index];
+        index += 1;
+        if record.is_empty() {
+            continue;
+        }
+        if let Some(header) = record.strip_prefix("# ") {
+            if header == "branch.oid (initial)" {
+                unborn = true;
+            }
+            continue;
+        }
+        let mut bytes = record.bytes();
+        let Some(kind) = bytes.next() else {
+            continue;
+        };
+        if kind == b'?' {
+            if record.len() > 2 {
+                result.push(ChangedFileRecord {
+                    path: record[2..].to_string(),
+                    original_path: None,
+                    status: "untracked",
+                });
+            }
+            continue;
+        }
+        if kind == b'!' {
+            continue;
+        }
+        let fields: Vec<&str> = record.split(' ').collect();
+        if kind == b'1' && fields.len() >= 9 {
+            result.push(ChangedFileRecord {
+                path: fields[8..].join(" "),
+                original_path: None,
+                status: status_of(fields[1]),
+            });
+        } else if kind == b'u' && fields.len() >= 11 {
+            result.push(ChangedFileRecord {
+                path: fields[10..].join(" "),
+                original_path: None,
+                status: "conflicted",
+            });
+        } else if kind == b'2' && fields.len() >= 10 {
+            let path = fields[9..].join(" ");
+            let original_path = records
+                .get(index)
+                .copied()
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string);
+            index += 1;
+            let status = if fields[1].contains('C') {
+                "added"
+            } else {
+                "renamed"
+            };
+            result.push(ChangedFileRecord {
+                path,
+                original_path,
+                status,
+            });
+        }
+    }
+    (unborn, result)
+}
+
+fn parse_numstat_z_outputs(outputs: &[String]) -> HashMap<String, Option<(u64, u64)>> {
+    let mut counts: HashMap<String, Option<(u64, u64)>> = HashMap::new();
+    for output in outputs {
+        let records: Vec<&str> = output.split('\0').collect();
+        let mut index = 0usize;
+        while index < records.len() {
+            let record = records[index];
+            index += 1;
+            if record.is_empty() {
+                continue;
+            }
+            let mut parts = record.splitn(3, '\t');
+            let added = parts.next().unwrap_or("");
+            let removed = parts.next().unwrap_or("");
+            let inline = parts.next().unwrap_or("");
+            let path = if inline.is_empty() {
+                // Rename: old path record, then new path record.
+                index += 1;
+                let next_path = records.get(index).copied().unwrap_or("");
+                index += 1;
+                next_path
+            } else {
+                inline
+            };
+            if path.is_empty() {
+                continue;
+            }
+            let value = if added == "-" || removed == "-" {
+                None
+            } else {
+                Some((
+                    added.parse::<u64>().unwrap_or(0),
+                    removed.parse::<u64>().unwrap_or(0),
+                ))
+            };
+            let entry = counts.entry(path.to_string());
+            match entry {
+                std::collections::hash_map::Entry::Occupied(mut occ) => {
+                    let prev = *occ.get();
+                    let next = match (prev, value) {
+                        (Some((pi, pd)), Some((vi, vd))) => Some((pi + vi, pd + vd)),
+                        (None, _) => None,
+                        (Some(_), None) => None,
+                    };
+                    occ.insert(next);
+                }
+                std::collections::hash_map::Entry::Vacant(vac) => {
+                    vac.insert(value);
+                }
+            }
+        }
+    }
+    counts
+}
+
+/// Lists changed files in a git working tree matching `gitChangedFilesSchema` (`src/shared/gitChangedFiles.ts`)
+/// and `GitStatusReader.listChangedFiles` (`src/main/agents/git/gitStatus.ts`).
 pub fn git_changed_files(folder: &str) -> Result<Value, String> {
-    let is_repo = run_git(folder, &["rev-parse", "--is-inside-work-tree"])
-        .map(|s| s.trim() == "true")
-        .unwrap_or(false);
+    git_changed_files_with_budget(folder, DEFAULT_GIT_CHANGED_FILES_BUDGET)
+}
+
+/// Bounded variant of [`git_changed_files`] enforcing a single total wall-clock `budget` across
+/// all serial Git subprocesses and untracked-file reads so timed-out callers never leave orphan
+/// Git work holding accelerator permits.
+pub fn git_changed_files_with_budget(folder: &str, budget: Duration) -> Result<Value, String> {
+    let deadline = Instant::now() + budget;
+    let is_repo = match run_git_status_cmd_with_deadline(
+        folder,
+        &["rev-parse", "--is-inside-work-tree"],
+        deadline,
+    ) {
+        Ok(out) => out.stdout.trim() == "true",
+        Err(GitRunError::Unavailable(msg)) => return Err(msg),
+        Err(GitRunError::Failed(msg))
+            if msg.to_ascii_lowercase().contains("not a git repository") =>
+        {
+            false
+        }
+        Err(GitRunError::Failed(msg)) => return Err(msg),
+        Err(GitRunError::MaxBuffer(_)) => return Err("git output exceeded buffer limit".into()),
+    };
     if !is_repo {
         return Ok(json!({
             "isRepository": false,
@@ -488,51 +709,81 @@ pub fn git_changed_files(folder: &str) -> Result<Value, String> {
             "truncated": false,
         }));
     }
-    let raw = run_git(folder, &["status", "--porcelain=v1"])?;
-    let numstat = run_git(folder, &["diff", "HEAD", "--numstat"]).unwrap_or_default();
-    let mut stats: HashMap<String, (Option<u64>, Option<u64>)> = HashMap::new();
-    for line in numstat.lines() {
-        let mut parts = line.split('\t');
-        let ins = parts.next().and_then(|s| s.parse::<u64>().ok());
-        let del = parts.next().and_then(|s| s.parse::<u64>().ok());
-        if let Some(p) = parts.next() {
-            stats.insert(p.replace('\\', "/"), (ins, del));
-        }
+    let toplevel = run_git_status_with_deadline(folder, &["rev-parse", "--show-toplevel"], deadline)?;
+    let cwd = toplevel.trim();
+    let porcelain = run_git_status_with_deadline(
+        cwd,
+        &[
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "--untracked-files=all",
+            "-z",
+        ],
+        deadline,
+    )?;
+    let (unborn, records) = parse_porcelain_v2_changed(&porcelain);
+    if Instant::now() >= deadline {
+        return Err("git timed out".into());
     }
+    let numstat_outputs = if unborn {
+        let a = run_git_status_with_deadline(cwd, &["diff", "--numstat", "-z"], deadline)
+            .unwrap_or_default();
+        if Instant::now() >= deadline {
+            return Err("git timed out".into());
+        }
+        let b = run_git_status_with_deadline(cwd, &["diff", "--cached", "--numstat", "-z"], deadline)
+            .unwrap_or_default();
+        vec![a, b]
+    } else {
+        vec![run_git_status_with_deadline(cwd, &["diff", "--numstat", "-z", "HEAD", "--"], deadline)
+            .unwrap_or_default()]
+    };
+    if Instant::now() >= deadline {
+        return Err("git timed out".into());
+    }
+    let counts = parse_numstat_z_outputs(&numstat_outputs);
+    let truncated = records.len() > MAX_GIT_FILES;
+    let cwd_path = Path::new(cwd);
+    let mut untracked_read = 0usize;
+    let mut entries: Vec<(String, Value)> = Vec::with_capacity(records.len().min(MAX_GIT_FILES));
 
-    let mut files = Vec::new();
-    let mut truncated = false;
-    for line in raw.lines() {
-        if line.len() < 4 {
-            continue;
+    for record in records.into_iter().take(MAX_GIT_FILES) {
+        let mut count = counts
+            .get(&record.path)
+            .copied()
+            .or_else(|| {
+                record
+                    .original_path
+                    .as_ref()
+                    .and_then(|orig| counts.get(orig).copied())
+            })
+            .flatten();
+        if record.status == "untracked" && count.is_none() && untracked_read < UNTRACKED_COUNT_MAX_FILES {
+            if Instant::now() >= deadline {
+                return Err("git timed out".into());
+            }
+            untracked_read += 1;
+            count = count_untracked_lines(&cwd_path.join(&record.path));
         }
-        if files.len() >= MAX_GIT_FILES {
-            truncated = true;
-            break;
-        }
-        let code = &line[..2];
-        let raw_path = line[3..].trim();
-        let (path, original_path) = if let Some((orig, new_p)) = raw_path.split_once(" -> ") {
-            (
-                new_p.trim_matches('"').replace('\\', "/"),
-                Some(orig.trim_matches('"').replace('\\', "/")),
-            )
-        } else {
-            (raw_path.trim_matches('"').replace('\\', "/"), None)
+        let (ins, del) = match count {
+            Some((i, d)) => (Some(i), Some(d)),
+            None => (None, None),
         };
-        let status = porcelain_status(code);
-        let (ins, del) = stats.get(&path).copied().unwrap_or((None, None));
         let mut entry = json!({
-            "path": path,
-            "status": status,
+            "path": record.path,
+            "status": record.status,
             "insertions": ins,
             "deletions": del,
         });
-        if let Some(orig) = original_path {
+        if let Some(orig) = record.original_path {
             entry["originalPath"] = json!(orig);
         }
-        files.push(entry);
+        entries.push((record.path, entry));
     }
+    // Sort by UTF-16 code units to match JS `left.path < right.path` string ordering.
+    entries.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+    let files: Vec<Value> = entries.into_iter().map(|(_, v)| v).collect();
 
     Ok(json!({
         "isRepository": true,
@@ -2343,6 +2594,51 @@ fn run_git_clean(
     stdin_bytes: Option<&[u8]>,
     max_buffer: Option<usize>,
 ) -> Result<GitRunOutput, GitRunError> {
+    run_git_impl(
+        folder,
+        args,
+        extra_env,
+        stdin_bytes,
+        max_buffer,
+        true,
+        Instant::now() + Duration::from_secs(10),
+    )
+}
+
+fn run_git_status_cmd_with_deadline(
+    folder: &str,
+    args: &[&str],
+    deadline: Instant,
+) -> Result<GitRunOutput, GitRunError> {
+    run_git_impl(folder, args, &[], None, None, false, deadline)
+}
+
+fn run_git_status_with_deadline(
+    folder: &str,
+    args: &[&str],
+    deadline: Instant,
+) -> Result<String, String> {
+    run_git_status_cmd_with_deadline(folder, args, deadline)
+        .map(|o| o.stdout)
+        .map_err(|e| match e {
+            GitRunError::Unavailable(msg) => msg,
+            GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
+            GitRunError::Failed(msg) => msg,
+        })
+}
+
+fn run_git_impl(
+    folder: &str,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    stdin_bytes: Option<&[u8]>,
+    max_buffer: Option<usize>,
+    strip_all_git_env: bool,
+    deadline: Instant,
+) -> Result<GitRunOutput, GitRunError> {
+    if Instant::now() >= deadline {
+        return Err(GitRunError::Failed("git timed out".into()));
+    }
     let mut cmd = Command::new("git");
     cmd.args([
         "--no-optional-locks",
@@ -2357,16 +2653,26 @@ fn run_git_clean(
     .args(args)
     .current_dir(folder)
     .stdout(Stdio::piped())
-    .stderr(Stdio::null());
+    .stderr(Stdio::piped());
     if stdin_bytes.is_some() {
         cmd.stdin(Stdio::piped());
     } else {
         cmd.stdin(Stdio::null());
     }
     for (k, _) in std::env::vars() {
-        if k.to_ascii_uppercase().starts_with("GIT_") {
+        let upper = k.to_ascii_uppercase();
+        if strip_all_git_env {
+            if upper.starts_with("GIT_") {
+                cmd.env_remove(&k);
+            }
+        } else if REDIRECTING_GIT_VARIABLES.contains(&upper.as_str()) {
             cmd.env_remove(&k);
         }
+    }
+    if !strip_all_git_env {
+        cmd.env("LC_ALL", "C");
+        cmd.env("GH_PROMPT_DISABLED", "1");
+        cmd.env("GCM_INTERACTIVE", "never");
     }
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     cmd.env("GIT_OPTIONAL_LOCKS", "0");
@@ -2394,11 +2700,10 @@ fn run_git_clean(
         }
     }
 
-    // Drain stdout on a dedicated reader thread while enforcing a 10-second wall-clock
-    // timeout (matching TS `GitChangesService`'s `timeout: 10_000`) so a stalled git clean
-    // filter or hook is always terminated instead of wedging a blocking worker indefinitely.
-    const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+    // Drain stdout and bounded stderr on dedicated reader threads while enforcing `deadline`
+    // so a stalled git clean filter or hook is always terminated instead of wedging a worker.
     let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
     let reader = std::thread::spawn(move || -> (Vec<u8>, bool) {
         let mut buf = Vec::new();
         let mut overflowed = false;
@@ -2416,8 +2721,14 @@ fn run_git_clean(
         }
         (buf, overflowed)
     });
+    let stderr_reader = std::thread::spawn(move || -> Vec<u8> {
+        let mut buf = Vec::new();
+        if let Some(stderr) = stderr_pipe {
+            let _ = stderr.take(16 * 1024).read_to_end(&mut buf);
+        }
+        buf
+    });
 
-    let deadline = Instant::now() + GIT_COMMAND_TIMEOUT;
     let mut timed_out = false;
     let status = loop {
         match child.try_wait() {
@@ -2439,6 +2750,7 @@ fn run_git_clean(
         }
     };
     let (buf, overflowed) = reader.join().unwrap_or_default();
+    let stderr_buf = stderr_reader.join().unwrap_or_default();
     if timed_out {
         return Err(GitRunError::Failed("git timed out".into()));
     }
@@ -2449,9 +2761,13 @@ fn run_git_clean(
         return Err(GitRunError::MaxBuffer(stdout_str));
     }
     if !status.success() {
-        return Err(GitRunError::Failed(format!(
-            "git exited with status {status}"
-        )));
+        let stderr_str = String::from_utf8_lossy(&stderr_buf).trim().to_string();
+        let msg = if stderr_str.is_empty() {
+            format!("git exited with status {status}")
+        } else {
+            stderr_str
+        };
+        return Err(GitRunError::Failed(msg));
     }
     Ok(GitRunOutput { stdout: stdout_str })
 }
@@ -2663,5 +2979,124 @@ mod tests {
         assert_eq!(a2[0]["sequence"], 2);
         assert_eq!(a2[1]["sequence"], 1);
         assert!(asgn_page2.get("before").is_none());
+    }
+
+    #[test]
+    fn git_changed_files_matches_porcelain_v2_sorting_and_untracked_line_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .env("GIT_AUTHOR_NAME", "Test")
+                .env("GIT_AUTHOR_EMAIL", "test@example.com")
+                .env("GIT_COMMITTER_NAME", "Test")
+                .env("GIT_COMMITTER_EMAIL", "test@example.com")
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed");
+        };
+
+        // Non-repo returns isRepository: false.
+        let non_repo = git_changed_files(&root.to_string_lossy()).unwrap();
+        assert_eq!(non_repo["isRepository"], false);
+
+        git(&["init", "-b", "main"]);
+        fs::write(root.join("z.txt"), "one\ntwo\n").unwrap();
+        fs::write(root.join("old.txt"), "alpha\nbeta\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "init"]);
+
+        // Modify z.txt, rename old.txt -> m.txt, add untracked a.txt (3 lines) and binary b.bin.
+        fs::write(root.join("z.txt"), "one\ntwo\nthree\n").unwrap();
+        git(&["mv", "old.txt", "m.txt"]);
+        fs::write(root.join("a.txt"), "l1\nl2\nl3").unwrap();
+        fs::write(root.join("b.bin"), [0u8, 1, 2, 3]).unwrap();
+
+        let res = git_changed_files(&root.to_string_lossy()).unwrap();
+        assert_eq!(res["isRepository"], true);
+        assert_eq!(res["truncated"], false);
+        let files = res["files"].as_array().unwrap();
+        let paths: Vec<&str> = files
+            .iter()
+            .map(|f| f["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths, vec!["a.txt", "b.bin", "m.txt", "z.txt"]);
+        assert_eq!(files[0]["status"], "untracked");
+        assert_eq!(files[0]["insertions"], 3);
+        assert_eq!(files[0]["deletions"], 0);
+        assert_eq!(files[1]["status"], "untracked");
+        assert!(files[1]["insertions"].is_null());
+        assert_eq!(files[2]["status"], "renamed");
+        assert_eq!(files[2]["originalPath"], "old.txt");
+        assert_eq!(files[3]["status"], "modified");
+        assert_eq!(files[3]["insertions"], 1);
+        assert_eq!(files[3]["deletions"], 0);
+    }
+
+    #[test]
+    fn git_changed_files_handles_untracked_symlinks_utf16_sort_and_budget_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .env("GIT_AUTHOR_NAME", "Test")
+                .env("GIT_AUTHOR_EMAIL", "test@example.com")
+                .env("GIT_COMMITTER_NAME", "Test")
+                .env("GIT_COMMITTER_EMAIL", "test@example.com")
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed");
+        };
+
+        git(&["init", "-b", "main"]);
+        fs::write(root.join("init.txt"), "ok\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "init"]);
+
+        // L1: Untracked symlink to /dev/zero must never OOM or read unbounded bytes.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/dev/zero", root.join("zero-link")).unwrap();
+        }
+        // N5: Astral character (UTF-16 surrogate 0xD83D) sorts BEFORE U+FF21 in JS `<`/`>`
+        // (and U+FF21 is an assigned Unicode code point accepted by macOS APFS, unlike U+FF00).
+        let astral_name = "\u{1F600}.txt";
+        let high_bmp_name = "\u{FF21}.txt";
+        fs::write(root.join(astral_name), "a\n").unwrap();
+        fs::write(root.join(high_bmp_name), "b\n").unwrap();
+
+        let res = git_changed_files(&root.to_string_lossy()).unwrap();
+        assert_eq!(res["isRepository"], true);
+        let files = res["files"].as_array().unwrap();
+        #[cfg(unix)]
+        {
+            let link_entry = files
+                .iter()
+                .find(|f| f["path"] == "zero-link")
+                .expect("expected untracked symlink entry");
+            assert!(link_entry["insertions"].is_null());
+            assert!(link_entry["deletions"].is_null());
+        }
+        let astral_idx = files
+            .iter()
+            .position(|f| f["path"] == astral_name)
+            .expect("expected astral filename");
+        let high_bmp_idx = files
+            .iter()
+            .position(|f| f["path"] == high_bmp_name)
+            .expect("expected high BMP filename");
+        assert!(
+            astral_idx < high_bmp_idx,
+            "UTF-16 sort must place U+1F600 before U+FF21 matching JS"
+        );
+
+        // L3: Zero budget aborts immediately with timeout error.
+        let timed = git_changed_files_with_budget(&root.to_string_lossy(), Duration::from_millis(0));
+        assert!(timed.is_err());
+        assert!(timed.unwrap_err().contains("timed out"));
     }
 }

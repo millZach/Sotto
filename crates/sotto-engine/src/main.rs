@@ -1,3 +1,4 @@
+mod shell_bridge;
 mod transport;
 
 use std::collections::BTreeMap;
@@ -6,19 +7,20 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::sync::{broadcast, mpsc, Semaphore};
+use tokio::sync::{broadcast, Semaphore};
 
 use sotto_core::{
     acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, AcpAdapter,
     AcpAdapterConfig, AcpFlavor, ClaudeAdapter, ClaudeAdapterConfig, ClientContext, CodexAdapter,
     CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, HostLease,
-    MockProviderAdapter, MuseAdapter, MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig,
-    ProviderAdapter,
+    MemoryStore, MockProviderAdapter, MuseAdapter, MuseAdapterConfig, OpenCodeAdapter,
+    OpenCodeAdapterConfig, ProviderAdapter,
 };
 
+use crate::shell_bridge::{CredentialSnapshot, EngineWindowFocus, ShellBridgeClient};
 use crate::transport::{
-    connect_engine_stream, err_response_frame, hello_frame, ok_response_frame, push_frame,
-    read_engine_frame, write_engine_frame, IncomingEngineMessage, SerializedEngineError,
+    box_binary, connect_engine_stream, err_response_frame, ok_response_frame, push_frame,
+    unbox_binary, EngineDuplex, IncomingEngineEvent, SerializedEngineError,
 };
 
 const ENGINE_VERSION: &str = match option_env!("SOTTO_HOST_VERSION") {
@@ -245,6 +247,8 @@ fn coord_err(err: CoordinatorError) -> SerializedEngineError {
 
 async fn handle_rpc(
     coordinator: &CoordinatorHandle,
+    shell_bridge: &ShellBridgeClient,
+    host_id: &str,
     data_directory: &Path,
     method: &str,
     args: &[Value],
@@ -262,6 +266,90 @@ async fn handle_rpc(
             "version": ENGINE_VERSION,
             "pid": std::process::id(),
         })),
+        "engine:init" => {
+            if let Some(payload) = args.first() {
+                shell_bridge.apply_init(payload);
+            }
+            shell_bridge.log("rust-engine-initialized");
+            Ok(json!({
+                "metadata": {
+                    "localHostId": host_id,
+                    "hasOwnServers": false,
+                    "hasOwnServerCleanup": false,
+                    "hasCouncil": false,
+                    "hasWatcher": false,
+                    "keepMainCurrentEnabled": false,
+                },
+                "channels": [],
+                "hasWatcherBridge": false,
+            }))
+        }
+        "engine:perfReading" => Ok(json!({
+            "blockedShare": 0,
+            "longestFreezeMs": 0,
+            "freezesOver100ms": 0,
+            "bars": [],
+        })),
+        "engine:windowFocus" => {
+            serde_json::to_value(shell_bridge.window_focus())
+                .map_err(|_| err_invalid("Could not serialize window focus."))
+        }
+        "engine:readWritingSettings" => shell_bridge.read_writing_settings().await,
+        "engine:openExternal" => {
+            let url = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("url is required."))?;
+            shell_bridge.open_external(url).await?;
+            Ok(json!(true))
+        }
+        "engine:clipboardWrite" => {
+            let text = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("text is required."))?;
+            shell_bridge.clipboard_write(text).await?;
+            Ok(json!(true))
+        }
+        "engine:credentialsSet" => {
+            let slot = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("slot is required."))?;
+            let value = args
+                .get(1)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("value is required."))?;
+            shell_bridge.credentials().set(slot, value).await?;
+            Ok(json!({ "ok": true }))
+        }
+        "engine:credentialsHas" => {
+            let slot = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("slot is required."))?;
+            Ok(json!({
+                "available": shell_bridge.credentials().available(),
+                "has": shell_bridge.credentials().has(slot),
+            }))
+        }
+        "engine:redrawPhoto" => {
+            let bytes = args
+                .first()
+                .and_then(unbox_binary)
+                .ok_or_else(|| err_invalid("Boxed binary photo bytes are required."))?;
+            let kind = args
+                .get(1)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("kind is required."))?;
+            match shell_bridge.redraw_photo(&bytes, kind).await? {
+                Some((out_bytes, out_kind)) => Ok(json!({
+                    "bytes": box_binary(&out_bytes),
+                    "kind": out_kind,
+                })),
+                None => Ok(Value::Null),
+            }
+        }
         "agent.snapshot" | "agent.shell" => {
             let shell = coordinator.shell(true).await.map_err(coord_err)?;
             Ok(shell)
@@ -475,12 +563,138 @@ async fn handle_rpc(
             .unwrap_or_else(|_| json!({ "found": [] }));
             Ok(val)
         }
+        "ops.usageQuery" => {
+            let query = sotto_core::ops::parse_usage_read_query(args.first())
+                .map_err(|e| err_invalid(&e))?;
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || sotto_core::ops::usage_query_activity(&dir, &query))
+                .await
+                .map_err(|_| err_invalid("usageQuery task failed."))?
+                .map_err(|e| SerializedEngineError {
+                    name: "Error".into(),
+                    message: e,
+                    code: Some("unavailable".into()),
+                })
+        }
+        "ops.gitChangedFiles" => {
+            let tid = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?;
+            let Some(ws) = coordinator
+                .thread_workspace(tid.to_string())
+                .await
+                .ok()
+                .flatten()
+            else {
+                return Err(SerializedEngineError {
+                    name: "Error".into(),
+                    message: "This thread is unavailable.".into(),
+                    code: Some("unavailable".into()),
+                });
+            };
+            let budget = parse_timeout_budget(args.get(1), 9_000);
+            let folder = ws.working_directory;
+            tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_changed_files_with_budget(&folder, budget)
+            })
+            .await
+            .map_err(|_| err_invalid("gitChangedFiles task failed."))?
+            .map_err(|e| SerializedEngineError {
+                name: "Error".into(),
+                message: e,
+                code: Some("unavailable".into()),
+            })
+        }
+        "ops.threadChanges" => {
+            let tid = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?;
+            let Some(ws) = coordinator
+                .thread_workspace(tid.to_string())
+                .await
+                .ok()
+                .flatten()
+            else {
+                return Ok(sotto_core::ops::tools_err(
+                    "thread-unavailable",
+                    "This thread is unavailable.",
+                ));
+            };
+            tokio::task::spawn_blocking(move || sotto_core::ops::thread_changes(&ws))
+                .await
+                .map_err(|_| err_invalid("threadChanges task failed."))
+        }
+        "ops.threadChangesReview" => {
+            let tid = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?;
+            let Some(ws) = coordinator
+                .thread_workspace(tid.to_string())
+                .await
+                .ok()
+                .flatten()
+            else {
+                return Ok(sotto_core::ops::tools_err(
+                    "thread-unavailable",
+                    "This thread is unavailable.",
+                ));
+            };
+            let scope = args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| json!({ "kind": "working" }));
+            let ignore_whitespace = args
+                .get(2)
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            tokio::task::spawn_blocking(move || {
+                sotto_core::ops::thread_changes_review(&ws, &scope, ignore_whitespace)
+            })
+            .await
+            .map_err(|_| err_invalid("threadChangesReview task failed."))
+        }
+        "ops.memoryMayGrantRemote" => {
+            let client_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("clientId is required."))?
+                .to_string();
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_memory_may_grant_remote(&dir, &client_id))
+                .await
+                .map_err(|_| err_invalid("memoryMayGrantRemote task failed."))?
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
             code: Some("METHOD_NOT_FOUND".into()),
         }),
     }
+}
+
+fn parse_timeout_budget(arg: Option<&Value>, default_ms: u64) -> std::time::Duration {
+    let raw = arg.and_then(|v| {
+        v.as_u64()
+            .or_else(|| v.as_object().and_then(|o| o.get("timeoutMs")).and_then(Value::as_u64))
+    });
+    let ms = raw.unwrap_or(default_ms).clamp(50, 30_000);
+    std::time::Duration::from_millis(ms)
+}
+
+fn read_memory_may_grant_remote(data_directory: &Path, client_id: &str) -> Result<Value, String> {
+    let db_path = data_directory.join("memory.sqlite");
+    if !db_path.exists() {
+        return Ok(json!({ "allowed": false }));
+    }
+    let store = MemoryStore::open_read_only(&db_path).map_err(|e| e.to_string())?;
+    let allowed = store
+        .may_grant_remote(client_id)
+        .map_err(|e| e.to_string())?;
+    Ok(json!({ "allowed": allowed }))
 }
 
 async fn handle_accelerator_rpc(
@@ -653,6 +867,50 @@ async fn handle_accelerator_rpc(
             .map_err(|_| err_invalid("threadChangesReview task failed."))?;
             Ok(val)
         }
+        "ops.usageQuery" => {
+            let query = sotto_core::ops::parse_usage_read_query(args.first())
+                .map_err(|e| err_invalid(&e))?;
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || sotto_core::ops::usage_query_activity(&dir, &query))
+                .await
+                .map_err(|_| err_invalid("usageQuery task failed."))?
+                .map_err(|e| SerializedEngineError {
+                    name: "Error".into(),
+                    message: e,
+                    code: Some("unavailable".into()),
+                })
+        }
+        "ops.gitChangedFiles" => {
+            let folder = args
+                .first()
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| err_invalid("folder is required."))?
+                .to_string();
+            let budget = parse_timeout_budget(args.get(1), 9_000);
+            tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_changed_files_with_budget(&folder, budget)
+            })
+            .await
+            .map_err(|_| err_invalid("gitChangedFiles task failed."))?
+            .map_err(|e| SerializedEngineError {
+                name: "Error".into(),
+                message: e,
+                code: Some("unavailable".into()),
+            })
+        }
+        "ops.memoryMayGrantRemote" => {
+            let client_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("clientId is required."))?
+                .to_string();
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_memory_may_grant_remote(&dir, &client_id))
+                .await
+                .map_err(|_| err_invalid("memoryMayGrantRemote task failed."))?
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -674,32 +932,22 @@ async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
         }
     };
 
-    let (mut read_half, mut write_half) = tokio::io::split(stream);
-    if let Err(err) = write_engine_frame(&mut write_half, &hello_frame(&parsed.token)).await {
-        eprintln!("Could not send engine hello frame: {err}");
-        return ExitCode::from(1);
-    }
-
-    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Value>();
-    let writer_task = tokio::spawn(async move {
-        while let Some(frame) = out_rx.recv().await {
-            if write_engine_frame(&mut write_half, &frame).await.is_err() {
-                break;
-            }
+    let parts = match EngineDuplex::connect_stream(stream, Some(&parsed.token)).await {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("Could not send engine hello frame: {err}");
+            return ExitCode::from(1);
         }
-    });
-
-    let (in_tx, mut in_rx) = mpsc::channel(64);
-    let reader_task = tokio::spawn(async move {
-        while let Ok(Some(msg)) = read_engine_frame(&mut read_half).await {
-            if in_tx.send(msg).await.is_err() {
-                break;
-            }
-        }
-    });
+    };
+    let crate::transport::EngineDuplexParts {
+        duplex,
+        mut incoming_rx,
+        reader_task,
+        mut writer_task,
+    } = parts;
 
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
-    // Cap concurrent heavy Git/Files offloads so burst refreshes cannot starve `ops.hostFacts`
+    // Cap concurrent heavy Git/Files/Usage offloads so burst refreshes cannot starve `ops.hostFacts`
     // or `ops.threadWords`.
     let io_limiter = Arc::new(Semaphore::new(8));
     let mut shutdown_req_id: Option<u64> = None;
@@ -711,56 +959,62 @@ async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
             _ = &mut shutdown_signal => {
                 break;
             }
-            maybe_msg = in_rx.recv() => {
+            maybe_msg = incoming_rx.recv() => {
                 let Some(msg) = maybe_msg else {
                     break;
                 };
                 while rpc_tasks.try_join_next().is_some() {}
-                if let IncomingEngineMessage::Req { id, method, args } = msg {
+                if let IncomingEngineEvent::Req { id, method, args } = msg {
                     if method == "engine.shutdown" {
                         shutdown_req_id = Some(id);
                         break;
                     }
                     let data_dir = parsed.data_directory.clone();
-                    let out = out_tx.clone();
+                    let out = duplex.clone();
                     let limiter = Arc::clone(&io_limiter);
                     rpc_tasks.spawn(async move {
                         let needs_permit = matches!(
                             method.as_str(),
                             "ops.gitRefsByFolder"
+                                | "ops.gitChangedFiles"
                                 | "ops.threadFiles"
                                 | "ops.threadFilePreview"
                                 | "ops.threadChanges"
                                 | "ops.threadChangesReview"
+                                | "ops.usageQuery"
                         );
                         let _permit = if needs_permit {
                             limiter.acquire_owned().await.ok()
                         } else {
                             None
                         };
-                        let frame = match handle_accelerator_rpc(&data_dir, &method, &args).await {
-                            Ok(val) => ok_response_frame(id, val),
-                            Err(err) => err_response_frame(id, err),
-                        };
-                        let _ = out.send(frame);
+                        match handle_accelerator_rpc(&data_dir, &method, &args).await {
+                            Ok(val) => {
+                                let _ = out.send_ok(id, val);
+                            }
+                            Err(err) => {
+                                let _ = out.send_err(id, err);
+                            }
+                        }
                     });
                 }
             }
         }
     }
 
-    reader_task.abort();
+    // Drain in-flight RPCs before aborting `reader_task` so any active work completes cleanly.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while rpc_tasks.join_next().await.is_some() {}
     })
     .await;
+    reader_task.abort();
+    duplex.fail_pending("Engine shutting down.");
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
     if let Some(id) = shutdown_req_id {
-        let _ = out_tx.send(ok_response_frame(id, json!({ "ok": true })));
+        let _ = duplex.send_ok(id, json!({ "ok": true }));
     }
-    drop(out_tx);
-    let mut writer_task = writer_task;
+    drop(duplex);
     if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer_task)
         .await
         .is_err()
@@ -861,7 +1115,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
 
     let coordinator = match CoordinatorHandle::spawn(
         parsed.data_directory.clone(),
-        host_id,
+        host_id.clone(),
         true,
         providers,
     ) {
@@ -883,36 +1137,26 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         }
     };
 
-    let (mut read_half, mut write_half) = tokio::io::split(stream);
-    if let Err(err) = write_engine_frame(&mut write_half, &hello_frame(&parsed.token)).await {
-        eprintln!("Could not send engine hello frame: {err}");
-        coordinator.shutdown().await;
-        let _ = release_host_lock(&lock_path, &lease);
-        return ExitCode::from(1);
-    }
-
-    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Value>();
-    let writer_task = tokio::spawn(async move {
-        while let Some(frame) = out_rx.recv().await {
-            if write_engine_frame(&mut write_half, &frame).await.is_err() {
-                break;
-            }
+    let parts = match EngineDuplex::connect_stream(stream, Some(&parsed.token)).await {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("Could not send engine hello frame: {err}");
+            coordinator.shutdown().await;
+            let _ = release_host_lock(&lock_path, &lease);
+            return ExitCode::from(1);
         }
-    });
-
-    // Dedicated cancel-safe reader task.
-    let (in_tx, mut in_rx) = mpsc::channel(64);
-    let reader_task = tokio::spawn(async move {
-        while let Ok(Some(msg)) = read_engine_frame(&mut read_half).await {
-            if in_tx.send(msg).await.is_err() {
-                break;
-            }
-        }
-    });
+    };
+    let crate::transport::EngineDuplexParts {
+        duplex,
+        mut incoming_rx,
+        reader_task,
+        mut writer_task,
+    } = parts;
+    let shell_bridge = ShellBridgeClient::new(duplex.clone());
 
     let mut bcast_rx = coordinator.subscribe();
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
-    let mut shutdown_req_id: Option<u64> = None;
+    let mut shutdown_req: Option<(u64, bool)> = None;
     let shutdown_signal = shutdown_future();
     tokio::pin!(shutdown_signal);
 
@@ -924,101 +1168,129 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
             bcast = bcast_rx.recv() => {
                 match bcast {
                     Ok(CoordinatorBroadcast::Shell(shell)) => {
-                        if out_tx.send(push_frame("shell", shell)).is_err() {
+                        if !duplex.send_frame(push_frame("shell", shell)) {
                             break;
                         }
                     }
                     Ok(CoordinatorBroadcast::Detail(detail)) => {
                         if let Ok(val) = serde_json::to_value(&detail) {
-                            if out_tx.send(push_frame("detail", val)).is_err() {
+                            if !duplex.send_frame(push_frame("detail", val)) {
                                 break;
                             }
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {
                         if let Ok(shell) = coordinator.shell(true).await {
-                            let _ = out_tx.send(push_frame("shell", shell));
+                            let _ = duplex.send_frame(push_frame("shell", shell));
                         }
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
-            maybe_msg = in_rx.recv() => {
+            maybe_msg = incoming_rx.recv() => {
                 let Some(msg) = maybe_msg else {
                     break;
                 };
                 while rpc_tasks.try_join_next().is_some() {}
-                if let IncomingEngineMessage::Req { id, method, args } = msg {
-                    if method == "engine.shutdown" {
-                        shutdown_req_id = Some(id);
-                        break;
-                    }
-                    if method == "agent.command" {
-                        // Enqueue coordinator commands synchronously in strict arrival order before
-                        // awaiting completion asynchronously, preventing multi-thread reordering.
-                        let Some(cmd) = args.first().and_then(Value::as_object) else {
-                            let _ = out_tx.send(err_response_frame(
-                                id,
-                                SerializedEngineError {
-                                    name: "Error".into(),
-                                    message: "Command object is required.".into(),
-                                    code: Some("invalid_request".into()),
-                                },
-                            ));
-                            continue;
-                        };
-                        let local_client = ClientContext {
-                            client_id: "local-desktop".into(),
-                            user: "Local Desktop".into(),
-                            may_answer: true,
-                        };
-                        match coordinator.enqueue_command(local_client, cmd.clone()) {
-                            Ok(reply_rx) => {
-                                let out = out_tx.clone();
-                                rpc_tasks.spawn(async move {
-                                    let frame = match reply_rx.await {
-                                        Ok(Ok(shell)) => ok_response_frame(id, shell),
-                                        Ok(Err(err)) => err_response_frame(id, coord_err(err)),
-                                        Err(_) => err_response_frame(
-                                            id,
-                                            SerializedEngineError {
-                                                name: "Error".into(),
-                                                message: "Host coordinator stopped.".into(),
-                                                code: Some("unavailable".into()),
-                                            },
-                                        ),
-                                    };
-                                    let _ = out.send(frame);
-                                });
-                            }
-                            Err(err) => {
-                                let _ = out_tx.send(err_response_frame(id, coord_err(err)));
+                match msg {
+                    IncomingEngineEvent::Push { event, payload } => match event.as_str() {
+                        "shell:credentialsSync" => {
+                            if let Ok(snap) = serde_json::from_value::<CredentialSnapshot>(payload) {
+                                shell_bridge.credentials().apply_snapshot(snap);
                             }
                         }
-                        continue;
+                        "engine:setWindowFocus" => {
+                            if let Ok(focus) = serde_json::from_value::<EngineWindowFocus>(payload) {
+                                shell_bridge.set_window_focus(focus);
+                            }
+                        }
+                        _ => {}
+                    },
+                    IncomingEngineEvent::Req { id, method, args } => {
+                        if method == "engine.shutdown" || method == "engine:close" {
+                            shutdown_req = Some((id, method == "engine:close"));
+                            break;
+                        }
+                        if method == "agent.command" {
+                            // Enqueue coordinator commands synchronously in strict arrival order before
+                            // awaiting completion asynchronously, preventing multi-thread reordering.
+                            let Some(cmd) = args.first().and_then(Value::as_object) else {
+                                let _ = duplex.send_err(
+                                    id,
+                                    SerializedEngineError {
+                                        name: "Error".into(),
+                                        message: "Command object is required.".into(),
+                                        code: Some("invalid_request".into()),
+                                    },
+                                );
+                                continue;
+                            };
+                            let local_client = ClientContext {
+                                client_id: "local-desktop".into(),
+                                user: "Local Desktop".into(),
+                                may_answer: true,
+                            };
+                            match coordinator.enqueue_command(local_client, cmd.clone()) {
+                                Ok(reply_rx) => {
+                                    let out = duplex.clone();
+                                    rpc_tasks.spawn(async move {
+                                        match reply_rx.await {
+                                            Ok(Ok(shell)) => {
+                                                let _ = out.send_ok(id, shell);
+                                            }
+                                            Ok(Err(err)) => {
+                                                let _ = out.send_err(id, coord_err(err));
+                                            }
+                                            Err(_) => {
+                                                let _ = out.send_err(
+                                                    id,
+                                                    SerializedEngineError {
+                                                        name: "Error".into(),
+                                                        message: "Host coordinator stopped.".into(),
+                                                        code: Some("unavailable".into()),
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    });
+                                }
+                                Err(err) => {
+                                    let _ = duplex.send_err(id, coord_err(err));
+                                }
+                            }
+                            continue;
+                        }
+                        let coord = coordinator.clone();
+                        let bridge = shell_bridge.clone();
+                        let hid = host_id.clone();
+                        let data_dir = parsed.data_directory.clone();
+                        let out = duplex.clone();
+                        rpc_tasks.spawn(async move {
+                            match handle_rpc(&coord, &bridge, &hid, &data_dir, &method, &args)
+                                .await
+                            {
+                                Ok(val) => {
+                                    let _ = out.send_ok(id, val);
+                                }
+                                Err(err) => {
+                                    let _ = out.send_err(id, err);
+                                }
+                            }
+                        });
                     }
-                    let coord = coordinator.clone();
-                    let data_dir = parsed.data_directory.clone();
-                    let out = out_tx.clone();
-                    rpc_tasks.spawn(async move {
-                        let frame = match handle_rpc(&coord, &data_dir, &method, &args).await {
-                            Ok(val) => ok_response_frame(id, val),
-                            Err(err) => err_response_frame(id, err),
-                        };
-                        let _ = out.send(frame);
-                    });
                 }
             }
         }
     }
 
-    reader_task.abort();
-    // Drain in-flight RPCs up to a bounded deadline before aborting stragglers, then flush
-    // coordinator state before sending the `engine.shutdown` acknowledgement.
+    // Drain in-flight RPCs BEFORE aborting `reader_task` so in-flight reverse-RPC calls to the
+    // shell can still receive their replies during shutdown; then fail any remaining waiters.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while rpc_tasks.join_next().await.is_some() {}
     })
     .await;
+    reader_task.abort();
+    duplex.fail_pending("Engine shutting down.");
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
     let shutdown_completed = tokio::time::timeout(
@@ -1027,9 +1299,16 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     )
     .await
     .is_ok();
-    if let Some(id) = shutdown_req_id {
+    if let Some((id, is_phase2_close)) = shutdown_req {
         let frame = if shutdown_completed {
-            ok_response_frame(id, json!({ "ok": true }))
+            ok_response_frame(
+                id,
+                if is_phase2_close {
+                    json!(true)
+                } else {
+                    json!({ "ok": true })
+                },
+            )
         } else {
             err_response_frame(
                 id,
@@ -1041,10 +1320,10 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                 },
             )
         };
-        let _ = out_tx.send(frame);
+        let _ = duplex.send_frame(frame);
     }
-    drop(out_tx);
-    let mut writer_task = writer_task;
+    drop(shell_bridge);
+    drop(duplex);
     if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer_task)
         .await
         .is_err()

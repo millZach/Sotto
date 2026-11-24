@@ -1000,6 +1000,17 @@ impl MemoryStore {
         Ok(Self { conn })
     }
 
+    /// Opens an existing `memory.sqlite` in strictly read-only mode without running migrations
+    /// or taking a `BEGIN IMMEDIATE` write lock (safe for concurrent read-only queries).
+    pub fn open_read_only(path: &Path) -> Result<Self, StoreError> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        Ok(Self { conn })
+    }
+
     pub fn quick_check(&self) -> Result<String, StoreError> {
         let status: String = self.conn.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
         Ok(status)
@@ -1074,6 +1085,18 @@ impl MemoryStore {
     /// Evaluates whether a paired remote client may answer permission/question cards (ADR-0004).
     /// Reads only `policies`: never `memories` or `memories_fts`.
     pub fn may_grant_remote(&self, client_id: &str) -> Result<bool, StoreError> {
+        let has_policies: bool = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'policies' LIMIT 1",
+                [],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        if !has_policies {
+            return Ok(false);
+        }
         let scope = remote_answer_scope(client_id);
         let mut stmt = self.conn.prepare(
             "SELECT id, action, resource, scope, effect, source, note, grantedAt, expiresAt, revokedAt

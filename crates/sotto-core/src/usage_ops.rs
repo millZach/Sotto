@@ -49,6 +49,64 @@ pub struct UsageReadQuery {
     pub since: Option<String>,
 }
 
+/// Parses a `UsageLocalQuery` JSON object (`src/shared/usageDashboard.ts`) into `UsageReadQuery`.
+pub fn parse_usage_read_query(raw: Option<&Value>) -> Result<UsageReadQuery, String> {
+    let Some(val) = raw else {
+        return Ok(UsageReadQuery::default());
+    };
+    if val.is_null() {
+        return Ok(UsageReadQuery::default());
+    }
+    let Some(obj) = val.as_object() else {
+        return Err("Usage query must be an object.".into());
+    };
+    let opt_str = |key: &str| -> Option<String> {
+        obj.get(key)
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+    };
+    let opt_str_vec = |key: &str| -> Option<Vec<String>> {
+        obj.get(key).and_then(Value::as_array).map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string))
+                .collect()
+        })
+    };
+    let time_zone = opt_str("timeZone");
+    if let Some(ref tz) = time_zone {
+        parse_usage_time_zone(Some(tz))?;
+    }
+    let from = opt_str("from");
+    let to = opt_str("to");
+    if let (Some(ref f), Some(ref t)) = (&from, &to) {
+        if f > t {
+            return Err("Date range ends before it begins.".into());
+        }
+    }
+    Ok(UsageReadQuery {
+        from,
+        to,
+        time_zone,
+        provider_ids: opt_str_vec("providerIds"),
+        model_ids: opt_str_vec("modelIds"),
+        include_daily: obj.get("includeDaily").and_then(Value::as_bool),
+        sources: opt_str_vec("sources"),
+        since: opt_str("since"),
+    })
+}
+
+/// Reads the `UsageLocalRead` activity payload directly from `usage.sqlite` (matching `UsageStore.query`),
+/// returning `Err` if the database file cannot be opened or is corrupt so callers fall back or surface failure.
+pub fn usage_query_activity(data_directory: &Path, query: &UsageReadQuery) -> Result<Value, String> {
+    let read = usage_read(data_directory, query, &[]);
+    if read.get("status").and_then(Value::as_str) != Some("ready") {
+        return Err("Usage store is unavailable.".into());
+    }
+    read.get("activity")
+        .cloned()
+        .ok_or_else(|| "Usage activity missing from read.".into())
+}
+
 /// Validates an IANA time zone name matching `usageTimeZoneSchema`.
 pub fn parse_usage_time_zone(raw: Option<&str>) -> Result<(String, Tz), String> {
     let name = raw
