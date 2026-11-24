@@ -4,12 +4,13 @@
 // Windows named pipe / Unix domain socket, verifying token authentication, RPC round-trips,
 // live Codex turn execution & push broadcasts, ops, and clean shutdown (ADR-0210, ADR-0215).
 import { execFileSync, spawn } from 'node:child_process'
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { HostFactsSource } from '../../src/main/agents/hostFacts'
 import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
+import { PairedClients } from '../../src/main/agents/pairing'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { UsageService } from '../../src/main/agents/usageService'
 import { UsageStore } from '../../src/main/agents/usageStore'
@@ -29,6 +30,7 @@ import {
 import { publicProviderEntityId } from '../../src/shared/agents'
 import { fileListingSchema, filePreviewSchema } from '../../src/shared/files'
 import { hostMachineReportSchema } from '../../src/shared/hostFacts'
+import { phonesStateSchema } from '../../src/shared/phones'
 import { agentThreadWordsSchema } from '../../src/shared/threadWords'
 import { toolsResultSchema } from '../../src/shared/tools'
 import { drive, prepareFake } from '../referee/providers'
@@ -1027,6 +1029,130 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('runs PhoneAccess and LocalApps natively in sotto-engine with TypeScript on-disk, HTTP, and policy parity', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-phones-'))
+
+    // Pre-seed a phone paired by TypeScript `PairedClients` + `PolicyStore` in `memory.sqlite`.
+    const tsPairing = new PairedClients(dataDir)
+    await tsPairing.load()
+    const tsCode = tsPairing.issuePairingCode()
+    const tsPaired = await tsPairing.redeem(tsCode.code, 'TS Seeded iPhone')
+    const memStore = new MemoryStore(join(dataDir, 'memory.sqlite'))
+    memStore.open()
+    const tsPolicy = new PolicyStore(memStore)
+    tsPolicy.ensureRemoteAnswers(tsPaired.clientId, 'Seeded by TS test')
+    memStore.close()
+
+    const endpoint = createEngineEndpoint('seph')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+    const child = spawn(binary, ['--data', dataDir, '--endpoint', endpoint], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+      env: { ...process.env, SOTTO_ENGINE_TOKEN: token },
+    })
+    const exited = new Promise<number | null>(resolveExit => child.once('exit', code => resolveExit(code)))
+
+    try {
+      const conn = await server.waitForClient(15_000)
+
+      // 1. `phones:get` validates against `phonesStateSchema` and reads TS-seeded phone & policy.
+      const rawPhones = await conn.request('phones:get', [])
+      const parsedPhones = phonesStateSchema.parse(rawPhones)
+      expect(parsedPhones.enabled).toBe(false)
+      expect(parsedPhones.phase).toBe('off')
+      expect(parsedPhones.phones).toHaveLength(1)
+      expect(parsedPhones.phones[0]).toMatchObject({
+        clientId: tsPaired.clientId,
+        name: 'TS Seeded iPhone',
+        canAnswer: true,
+      })
+      expect(await conn.request('engine:phoneAccessPagePort', [])).toBeNull()
+
+      // 2. `phones:command({ type: 'remove' })` revokes both `paired-clients.json` and `memory.sqlite`.
+      const afterRemove = phonesStateSchema.parse(
+        await conn.request('phones:command', [{ type: 'remove', clientId: tsPaired.clientId }]),
+      )
+      expect(afterRemove.phones).toHaveLength(0)
+
+      const tsPairingCheck = new PairedClients(dataDir)
+      await tsPairingCheck.load()
+      expect(tsPairingCheck.list()).toHaveLength(0)
+      const memCheck1 = new MemoryStore(join(dataDir, 'memory.sqlite'))
+      memCheck1.open()
+      const polCheck1 = new PolicyStore(memCheck1)
+      expect(polCheck1.mayGrant({ clientId: tsPaired.clientId, user: '', transport: 'socket' }).allowed).toBe(false)
+      memCheck1.close()
+
+      // 3. `local-apps:settingsChanged({ localApps: true })` opens loopback listener, writes `local-apps.json`
+      // + `local-apps/paired-clients.json`, grants remote-answer policy, and serves protocol v1 HTTP.
+      const laOn = await conn.request<{ phase: string; localHostRunning: boolean }>(
+        'local-apps:settingsChanged',
+        [{ localApps: true }],
+      )
+      expect(laOn).toEqual({ phase: 'on', localHostRunning: true })
+
+      const laFile = JSON.parse(await readFile(join(dataDir, 'local-apps.json'), 'utf8')) as {
+        version: number; port: number; token: string; clientId: string
+      }
+      expect(laFile.version).toBe(1)
+      expect(laFile.port).toBeGreaterThan(0)
+
+      // TypeScript PairedClients + PolicyStore agree with Rust's written files.
+      const tsLaPairing = new PairedClients(join(dataDir, 'local-apps'))
+      await tsLaPairing.load()
+      expect(tsLaPairing.verifyToken(laFile.token)).toBe(laFile.clientId)
+      const memCheck2 = new MemoryStore(join(dataDir, 'memory.sqlite'))
+      memCheck2.open()
+      expect(new PolicyStore(memCheck2).mayGrant({ clientId: laFile.clientId, user: '', transport: 'socket' }).allowed).toBe(true)
+      memCheck2.close()
+
+      // Live protocol v1 HTTP round-trip (`/v1/health`, `/v1/session`, `/v1/state`) against Rust listener.
+      const healthRes = await fetch(`http://127.0.0.1:${laFile.port}/v1/health`)
+      expect(healthRes.status).toBe(200)
+      const health = await healthRes.json() as { ok: boolean; protocolVersion: number; pairing: boolean }
+      expect(health.ok).toBe(true)
+      expect(health.protocolVersion).toBe(1)
+      expect(health.pairing).toBe(false)
+
+      const sessRes = await fetch(`http://127.0.0.1:${laFile.port}/v1/session`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${laFile.token}` },
+      })
+      expect(sessRes.status).toBe(200)
+      const sess = await sessRes.json() as { session: string; clientId: string }
+      expect(sess.clientId).toBe(laFile.clientId)
+
+      const stateRes = await fetch(`http://127.0.0.1:${laFile.port}/v1/state`, {
+        headers: { Authorization: `Bearer ${sess.session}` },
+      })
+      expect(stateRes.status).toBe(200)
+      const stateJson = await stateRes.json() as { host?: { hostId?: string } }
+      expect(typeof stateJson.host?.hostId).toBe('string')
+
+      // 4. Turning LocalApps off revokes policy and deletes `local-apps.json`.
+      const laOff = await conn.request<{ phase: string; localHostRunning: boolean }>(
+        'local-apps:settingsChanged',
+        [{ localApps: false }],
+      )
+      expect(laOff).toEqual({ phase: 'off', localHostRunning: true })
+      await expect(access(join(dataDir, 'local-apps.json'))).rejects.toThrow()
+      const memCheck3 = new MemoryStore(join(dataDir, 'memory.sqlite'))
+      memCheck3.open()
+      expect(new PolicyStore(memCheck3).mayGrant({ clientId: laFile.clientId, user: '', transport: 'socket' }).allowed).toBe(false)
+      memCheck3.close()
+
+      await conn.request('engine:close', [])
+      expect(await exited).toBe(0)
+      conn.close()
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await server.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 45_000)
 })

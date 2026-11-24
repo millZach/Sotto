@@ -10,12 +10,14 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, Mutex, Semaphore};
 
 use sotto_core::{
-    acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, read_boot_id,
-    read_checkpoints_readonly, release_host_lock, AcpAdapter, AcpAdapterConfig, AcpFlavor,
-    CheckpointBlobPair, CheckpointManager, CheckpointThreadInfo, ClaudeAdapter,
-    ClaudeAdapterConfig, ClientContext, CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast,
-    CoordinatorError, CoordinatorHandle, HostLease, MemoryStore, MockProviderAdapter, MuseAdapter,
-    MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig, ProviderAdapter,
+    acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, probe_tailscale_status,
+    read_boot_id, read_checkpoints_readonly, read_phone_access_readonly, release_host_lock,
+    AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair, CheckpointManager,
+    CheckpointThreadInfo, ClaudeAdapter, ClaudeAdapterConfig, ClientContext, CodexAdapter,
+    CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, HostLease,
+    LocalAppsManager, MemoryStore, MockProviderAdapter, MuseAdapter, MuseAdapterConfig,
+    OpenCodeAdapter, OpenCodeAdapterConfig, PhoneAccessManager, PhoneAccessSettings,
+    PhonesCommand, ProviderAdapter, SystemTailscaleCli,
 };
 
 use crate::shell_bridge::{CredentialSnapshot, EngineWindowFocus, ShellBridgeClient};
@@ -246,10 +248,13 @@ fn coord_err(err: CoordinatorError) -> SerializedEngineError {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_rpc(
     coordinator: &CoordinatorHandle,
     shell_bridge: &ShellBridgeClient,
     checkpoints: &Arc<Mutex<CheckpointManager>>,
+    phone_access: &Arc<Mutex<PhoneAccessManager>>,
+    local_apps: &Arc<Mutex<LocalAppsManager>>,
     host_id: &str,
     data_directory: &Path,
     method: &str,
@@ -878,6 +883,87 @@ async fn handle_rpc(
                 .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
             Ok(json!({ "ok": true }))
         }
+        "ops.tailscaleStatus" => {
+            let st = probe_tailscale_status().await;
+            serde_json::to_value(st).map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "ops.phoneAccessReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_phone_access_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("phoneAccessReadOnly task failed."))
+        }
+        "phones:get" => {
+            let mut guard = phone_access.lock().await;
+            let state = guard.get();
+            serde_json::to_value(state)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "phones:settingsChanged" => {
+            let settings: PhoneAccessSettings = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("PhoneAccessSettings object is required."))?;
+            let state = {
+                let mut guard = phone_access.lock().await;
+                guard.settings_changed(settings).await
+            };
+            let val = serde_json::to_value(&state)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+            shell_bridge.send_to_main("phones:changed", val.clone());
+            Ok(val)
+        }
+        "phones:command" => {
+            let cmd: PhonesCommand = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("PhonesCommand object is required."))?;
+            let outcome = {
+                let mut guard = phone_access.lock().await;
+                guard
+                    .command(cmd)
+                    .await
+                    .map_err(|e| SerializedEngineError::new(e, Some("invalid_request")))?
+            };
+            if let Some(url) = outcome.open_external_url {
+                shell_bridge.open_external(&url).await?;
+            }
+            let val = serde_json::to_value(&outcome.state)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+            shell_bridge.send_to_main("phones:changed", val.clone());
+            Ok(val)
+        }
+        "engine:phoneAccessPagePort" => {
+            let guard = phone_access.lock().await;
+            Ok(json!(guard.page_port()))
+        }
+        "local-apps:get" => {
+            let guard = local_apps.lock().await;
+            serde_json::to_value(guard.get())
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "local-apps:settingsChanged" => {
+            let enabled = args
+                .first()
+                .and_then(|v| {
+                    v.as_bool().or_else(|| {
+                        v.as_object()
+                            .and_then(|o| o.get("localApps"))
+                            .and_then(Value::as_bool)
+                    })
+                })
+                .ok_or_else(|| err_invalid("localApps boolean is required."))?;
+            let state = {
+                let mut guard = local_apps.lock().await;
+                guard.settings_changed(enabled).await
+            };
+            let val = serde_json::to_value(&state)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+            shell_bridge.send_to_main("local-apps:changed", val.clone());
+            Ok(val)
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -1169,6 +1255,17 @@ async fn handle_accelerator_rpc(
         "ops.checkpointsReadOnly" => {
             handle_checkpoints_readonly_rpc(data_directory, args, err_invalid).await
         }
+        "ops.tailscaleStatus" => {
+            let st = probe_tailscale_status().await;
+            serde_json::to_value(st)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "ops.phoneAccessReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_phone_access_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("phoneAccessReadOnly task failed."))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -1415,6 +1512,24 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     let checkpoints = Arc::new(Mutex::new(CheckpointManager::new(
         parsed.data_directory.join("checkpoints"),
     )));
+    let phone_access = Arc::new(Mutex::new(PhoneAccessManager::new(
+        parsed.data_directory.clone(),
+        host_id.clone(),
+        true,
+        Some(coordinator.clone()),
+        Arc::new(SystemTailscaleCli::new()),
+    )));
+    phone_access
+        .lock()
+        .await
+        .start(PhoneAccessSettings::default())
+        .await;
+    let local_apps = Arc::new(Mutex::new(LocalAppsManager::new(
+        parsed.data_directory.clone(),
+        host_id.clone(),
+        true,
+        Some(coordinator.clone()),
+    )));
 
     let mut bcast_rx = coordinator.subscribe();
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
@@ -1525,12 +1640,15 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                         let coord = coordinator.clone();
                         let bridge = shell_bridge.clone();
                         let cp_mgr = Arc::clone(&checkpoints);
+                        let phone_mgr = Arc::clone(&phone_access);
+                        let la_mgr = Arc::clone(&local_apps);
                         let hid = host_id.clone();
                         let data_dir = parsed.data_directory.clone();
                         let out = duplex.clone();
                         rpc_tasks.spawn(async move {
                             match handle_rpc(
-                                &coord, &bridge, &cp_mgr, &hid, &data_dir, &method, &args,
+                                &coord, &bridge, &cp_mgr, &phone_mgr, &la_mgr, &hid, &data_dir,
+                                &method, &args,
                             )
                             .await
                             {
@@ -1558,6 +1676,11 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     duplex.fail_pending("Engine shutting down.");
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(8), async {
+        phone_access.lock().await.close().await;
+        local_apps.lock().await.close().await;
+    })
+    .await;
     let shutdown_completed = tokio::time::timeout(
         std::time::Duration::from_secs(35),
         coordinator.shutdown(),
