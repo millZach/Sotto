@@ -117,7 +117,9 @@ interface LiveHost { via: HostVia; launcher?: SshHostLauncher; ssh?: SshHostConn
   /** Presses running over this connect's SSH connection now. A move to the tailnet closes that connection only once none is. */
   presses?: number
   /** Set when a move to the tailnet left this connect while a press still ran on its SSH connection, which closes after it. */
-  closeWhenIdle?: boolean }
+  closeWhenIdle?: boolean
+  /** Prior client ID superseded by re-pairing; revoked only after the new client ID is recorded in desktop-clients.json (#2863). */
+  replacedClientId?: string }
 /** Where a socket opens: the address, and the host that must answer there. A tailnet connection's health check is shorter. */
 interface SocketTarget {
   readonly url: string; readonly expectedHostId: string; readonly healthTimeoutMs?: number
@@ -1538,8 +1540,9 @@ export class DesktopHosts {
     rememberPreviousClientId(host, pairing.clientId)
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
     if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
-    // Clean up any superseded pairing record on the host (best effort; already-revoked records return false).
-    if (previousClientId && previousClientId !== pairing.clientId) await ssh.revokeClient(previousClientId).catch(() => false)
+    // Defer revoking the superseded client until openSocket records the new clientId in desktop-clients.json;
+    // revoking the last recorded desktop earlier turns off the host's tailnet Serve (#2863).
+    if (previousClientId && previousClientId !== pairing.clientId) active.replacedClientId = previousClientId
   }
   /**
    * Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version.
@@ -1625,11 +1628,22 @@ export class DesktopHosts {
     // desktop that may already answer, only that record is at stake, and the next SSH connect writes
     // it again, so a failed step never ends a connection that used to skip it.
     const localHostId = this.desktopHostId()
+    let recordedDesktop = false
     if (active.ssh) {
-      if (hello.capabilities.mayAnswer) await active.ssh.ensureDesktopAnswers(hello.clientId, localHostId).catch(() => undefined)
-      else await active.ssh.ensureDesktopAnswers(hello.clientId, localHostId)
+      if (hello.capabilities.mayAnswer) {
+        recordedDesktop = await active.ssh.ensureDesktopAnswers(hello.clientId, localHostId).then(() => true, () => false)
+      } else {
+        await active.ssh.ensureDesktopAnswers(hello.clientId, localHostId)
+        recordedDesktop = true
+      }
     }
     if (this.live.get(host.id) !== active) { await socket.close(); return }
+    const replacedClientId = active.replacedClientId
+    if (recordedDesktop && active.ssh && replacedClientId && replacedClientId !== hello.clientId) {
+      delete active.replacedClientId
+      await active.ssh.revokeClient(replacedClientId).catch(() => false)
+      if (this.live.get(host.id) !== active) { await socket.close(); return }
+    }
     // On a tailnet connection the grant waits for the next SSH or admin connection; nothing opens SSH for it.
     if (!active.ssh) { if (hello.capabilities.mayAnswer) this.grantPending.delete(host.id); else this.grantPending.add(host.id) }
     this.update(host.id, { version: hello.sottoVersion })
