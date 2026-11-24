@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { checkpointInspectionSchema, checkpointRequestSchema, checkpointRevertSchema, type Checkpoint } from '../../shared/checkpoints'
+import { checkpointInspectionSchema, checkpointRequestSchema, checkpointRevertSchema, type Checkpoint, type CheckpointPatch } from '../../shared/checkpoints'
 import type { FileWorkspace } from '../../shared/files'
 import { toolListRequestSchema } from '../../shared/tools'
 import { ToolOperations, fail, parse, workspace } from './common'
@@ -427,11 +427,27 @@ export class CheckpointService extends ToolOperations {
   }
   inspectCheckpoint(payload: unknown) { return this.run(async () => {
     const { record, thread } = await this.requested(payload)
-    const patches = []
-    for (const { path } of this.changes(record)) {
-      const before = await this.blob(record.before.files[path]?.hash), after = await this.blob(record.after?.files[path]?.hash)
-      const binary = [before, after].some(bytes => bytes && (bytes.includes(0) || bytes.length > 256 * 1024))
-      patches.push({ path, before: binary || !before ? null : before.toString('utf8'), after: binary || !after ? null : after.toString('utf8'), binary })
+    const changed = this.changes(record)
+    let patches: CheckpointPatch[] | undefined
+    if (changed.length > 0 && this.dependencies.inspectAccelerator) {
+      const pairs = changed.map(({ path }) => ({
+        path,
+        beforeHash: record.before.files[path]?.hash ?? null,
+        afterHash: record.after?.files[path]?.hash ?? null,
+      }))
+      const accelerated = await this.dependencies.inspectAccelerator(join(this.dependencies.directory, 'blobs'), pairs).catch(() => undefined)
+      if (accelerated) {
+        if (accelerated.ok && accelerated.value.length === changed.length) patches = accelerated.value
+        else if (!accelerated.ok && accelerated.error.code === 'blocked') return fail('blocked', t`A checkpoint file backup failed its integrity check.`)
+      }
+    }
+    if (!patches) {
+      patches = []
+      for (const { path } of changed) {
+        const before = await this.blob(record.before.files[path]?.hash), after = await this.blob(record.after?.files[path]?.hash)
+        const binary = [before, after].some(bytes => bytes && (bytes.includes(0) || bytes.length > 256 * 1024))
+        patches.push({ path, before: binary || !before ? null : before.toString('utf8'), after: binary || !after ? null : after.toString('utf8'), binary })
+      }
     }
     return checkpointInspectionSchema.parse({ checkpoint: this.public(record, thread), patches })
   }) }

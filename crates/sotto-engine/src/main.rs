@@ -7,14 +7,15 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::sync::{broadcast, Semaphore};
+use tokio::sync::{broadcast, Mutex, Semaphore};
 
 use sotto_core::{
-    acquire_host_lock, load_host_identity, read_boot_id, release_host_lock, AcpAdapter,
-    AcpAdapterConfig, AcpFlavor, ClaudeAdapter, ClaudeAdapterConfig, ClientContext, CodexAdapter,
-    CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, HostLease,
-    MemoryStore, MockProviderAdapter, MuseAdapter, MuseAdapterConfig, OpenCodeAdapter,
-    OpenCodeAdapterConfig, ProviderAdapter,
+    acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, read_boot_id,
+    read_checkpoints_readonly, release_host_lock, AcpAdapter, AcpAdapterConfig, AcpFlavor,
+    CheckpointBlobPair, CheckpointManager, CheckpointThreadInfo, ClaudeAdapter,
+    ClaudeAdapterConfig, ClientContext, CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast,
+    CoordinatorError, CoordinatorHandle, HostLease, MemoryStore, MockProviderAdapter, MuseAdapter,
+    MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig, ProviderAdapter,
 };
 
 use crate::shell_bridge::{CredentialSnapshot, EngineWindowFocus, ShellBridgeClient};
@@ -248,6 +249,7 @@ fn coord_err(err: CoordinatorError) -> SerializedEngineError {
 async fn handle_rpc(
     coordinator: &CoordinatorHandle,
     shell_bridge: &ShellBridgeClient,
+    checkpoints: &Arc<Mutex<CheckpointManager>>,
     host_id: &str,
     data_directory: &Path,
     method: &str,
@@ -668,6 +670,214 @@ async fn handle_rpc(
                 .map_err(|_| err_invalid("memoryMayGrantRemote task failed."))?
                 .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))
         }
+        "ops.checkpointInspectBlobs" => {
+            handle_checkpoint_inspect_blobs_rpc(args, err_invalid).await
+        }
+        "ops.checkpointsReadOnly" => {
+            handle_checkpoints_readonly_rpc(data_directory, args, err_invalid).await
+        }
+        "checkpoints.list" => {
+            let thread_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?
+                .to_string();
+            let workspace_id = args
+                .get(1)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("workspaceId is required."))?
+                .to_string();
+            let thread_info: Option<CheckpointThreadInfo> = match args.get(2) {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(
+                    serde_json::from_value(v.clone())
+                        .map_err(|_| err_invalid("threadInfo is invalid."))?,
+                ),
+            };
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            tokio::task::spawn_blocking(move || {
+                guard.list(&thread_id, &workspace_id, thread_info.as_ref())
+            })
+            .await
+            .map_err(|_| err_invalid("checkpoints.list task failed."))
+        }
+        "checkpoints.inspect" => {
+            let thread_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?
+                .to_string();
+            let workspace_id = args
+                .get(1)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("workspaceId is required."))?
+                .to_string();
+            let checkpoint_id = args
+                .get(2)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("checkpointId is required."))?
+                .to_string();
+            let thread_info: CheckpointThreadInfo = args
+                .get(3)
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("threadInfo is required."))?;
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            tokio::task::spawn_blocking(move || {
+                guard.inspect(&thread_id, &workspace_id, &checkpoint_id, &thread_info)
+            })
+            .await
+            .map_err(|_| err_invalid("checkpoints.inspect task failed."))
+        }
+        "checkpoints.beforeTurn" => {
+            let thread_info: CheckpointThreadInfo = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("threadInfo is required."))?;
+            let workspace_id = args
+                .get(1)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("workspaceId is required."))?
+                .to_string();
+            let cwd = args
+                .get(2)
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| err_invalid("workingDirectory is required."))?;
+            let cwd_path = PathBuf::from(cwd);
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            let res = tokio::task::spawn_blocking(move || {
+                guard.before_turn(&thread_info, &workspace_id, &cwd_path)
+            })
+            .await
+            .map_err(|_| err_invalid("checkpoints.beforeTurn task failed."))?;
+            match res {
+                Ok(rec) => Ok(sotto_core::ops::tools_ok(json!({ "record": rec }))),
+                Err(err) => Ok(err.to_tools_err()),
+            }
+        }
+        "checkpoints.afterTurn" => {
+            let thread_info: CheckpointThreadInfo = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("threadInfo is required."))?;
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            let res = tokio::task::spawn_blocking(move || guard.after_turn(&thread_info))
+                .await
+                .map_err(|_| err_invalid("checkpoints.afterTurn task failed."))?;
+            match res {
+                Ok(rec) => Ok(sotto_core::ops::tools_ok(json!({ "record": rec }))),
+                Err(err) => Ok(err.to_tools_err()),
+            }
+        }
+        "checkpoints.checkFiles" => {
+            let checkpoint_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("checkpointId is required."))?
+                .to_string();
+            let recovery = args.get(1).and_then(Value::as_bool).unwrap_or(false);
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            let res = tokio::task::spawn_blocking(move || {
+                guard
+                    .ensure_loaded()
+                    .map_err(|e| sotto_core::CheckpointError::new("unavailable", e))?;
+                let Some(record) = guard
+                    .records()
+                    .iter()
+                    .find(|r| r.id == checkpoint_id)
+                    .cloned()
+                else {
+                    return Err(sotto_core::CheckpointError::new(
+                        "workspace-changed",
+                        "This checkpoint no longer exists.",
+                    ));
+                };
+                guard.check_files(&record, recovery)
+            })
+            .await
+            .map_err(|_| err_invalid("checkpoints.checkFiles task failed."))?;
+            match res {
+                Ok(()) => Ok(sotto_core::ops::tools_ok(json!({ "ok": true }))),
+                Err(err) => Ok(err.to_tools_err()),
+            }
+        }
+        "checkpoints.restore" => {
+            let checkpoint_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("checkpointId is required."))?
+                .to_string();
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            let res =
+                tokio::task::spawn_blocking(move || guard.restore_checkpoint_files(&checkpoint_id))
+                    .await
+                    .map_err(|_| err_invalid("checkpoints.restore task failed."))?;
+            match res {
+                Ok(rec) => Ok(sotto_core::ops::tools_ok(json!({ "record": rec }))),
+                Err(err) => Ok(err.to_tools_err()),
+            }
+        }
+        "checkpoints.forgetThread" => {
+            let thread_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?
+                .to_string();
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            tokio::task::spawn_blocking(move || guard.forget_thread(&thread_id))
+                .await
+                .map_err(|_| err_invalid("checkpoints.forgetThread task failed."))?
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true }))
+        }
+        "checkpoints.isBlocked" => {
+            let thread_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?
+                .to_string();
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            let blocked = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+                guard.ensure_loaded()?;
+                Ok(guard.is_blocked(&thread_id))
+            })
+            .await
+            .map_err(|_| err_invalid("checkpoints.isBlocked task failed."))?
+            .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "blocked": blocked }))
+        }
+        "checkpoints.isWorkspaceBlocked" => {
+            let thread_id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?
+                .to_string();
+            let folder = args
+                .get(1)
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .map(PathBuf::from);
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            let blocked = tokio::task::spawn_blocking(move || {
+                guard.is_workspace_blocked(&thread_id, folder.as_deref())
+            })
+            .await
+            .map_err(|_| err_invalid("checkpoints.isWorkspaceBlocked task failed."))?
+            .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "blocked": blocked }))
+        }
+        "checkpoints.privacyChanged" => {
+            let enabled = args.first().and_then(Value::as_bool).unwrap_or(true);
+            let mut guard = Arc::clone(checkpoints).lock_owned().await;
+            tokio::task::spawn_blocking(move || guard.set_history_enabled(enabled))
+                .await
+                .map_err(|_| err_invalid("checkpoints.privacyChanged task failed."))?
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true }))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -695,6 +905,48 @@ fn read_memory_may_grant_remote(data_directory: &Path, client_id: &str) -> Resul
         .may_grant_remote(client_id)
         .map_err(|e| e.to_string())?;
     Ok(json!({ "allowed": allowed }))
+}
+
+async fn handle_checkpoint_inspect_blobs_rpc(
+    args: &[Value],
+    err_invalid: impl Fn(&str) -> SerializedEngineError,
+) -> Result<Value, SerializedEngineError> {
+    let blobs_dir = args
+        .first()
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| err_invalid("blobsDir is required."))?;
+    let pairs_val = args
+        .get(1)
+        .ok_or_else(|| err_invalid("pairs array is required."))?;
+    let pairs: Vec<CheckpointBlobPair> = serde_json::from_value(pairs_val.clone())
+        .map_err(|_| err_invalid("pairs must be an array of { path, beforeHash, afterHash }."))?;
+    let blobs_path = PathBuf::from(blobs_dir);
+    let res = tokio::task::spawn_blocking(move || inspect_checkpoint_blobs(&blobs_path, &pairs))
+        .await
+        .map_err(|_| err_invalid("checkpointInspectBlobs task failed."))?;
+    match res {
+        Ok(patches) => Ok(sotto_core::ops::tools_ok(json!(patches))),
+        Err(err) => Ok(err.to_tools_err()),
+    }
+}
+
+async fn handle_checkpoints_readonly_rpc(
+    data_directory: &Path,
+    args: &[Value],
+    err_invalid: impl Fn(&str) -> SerializedEngineError,
+) -> Result<Value, SerializedEngineError> {
+    let dir = args
+        .first()
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_directory.join("checkpoints"));
+    let records = tokio::task::spawn_blocking(move || read_checkpoints_readonly(&dir))
+        .await
+        .map_err(|_| err_invalid("checkpointsReadOnly task failed."))?
+        .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+    Ok(json!({ "records": records }))
 }
 
 async fn handle_accelerator_rpc(
@@ -911,6 +1163,12 @@ async fn handle_accelerator_rpc(
                 .map_err(|_| err_invalid("memoryMayGrantRemote task failed."))?
                 .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))
         }
+        "ops.checkpointInspectBlobs" => {
+            handle_checkpoint_inspect_blobs_rpc(args, err_invalid).await
+        }
+        "ops.checkpointsReadOnly" => {
+            handle_checkpoints_readonly_rpc(data_directory, args, err_invalid).await
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -982,6 +1240,7 @@ async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
                                 | "ops.threadChanges"
                                 | "ops.threadChangesReview"
                                 | "ops.usageQuery"
+                                | "ops.checkpointInspectBlobs"
                         );
                         let _permit = if needs_permit {
                             limiter.acquire_owned().await.ok()
@@ -1153,6 +1412,9 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         mut writer_task,
     } = parts;
     let shell_bridge = ShellBridgeClient::new(duplex.clone());
+    let checkpoints = Arc::new(Mutex::new(CheckpointManager::new(
+        parsed.data_directory.join("checkpoints"),
+    )));
 
     let mut bcast_rx = coordinator.subscribe();
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
@@ -1262,12 +1524,15 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                         }
                         let coord = coordinator.clone();
                         let bridge = shell_bridge.clone();
+                        let cp_mgr = Arc::clone(&checkpoints);
                         let hid = host_id.clone();
                         let data_dir = parsed.data_directory.clone();
                         let out = duplex.clone();
                         rpc_tasks.spawn(async move {
-                            match handle_rpc(&coord, &bridge, &hid, &data_dir, &method, &args)
-                                .await
+                            match handle_rpc(
+                                &coord, &bridge, &cp_mgr, &hid, &data_dir, &method, &args,
+                            )
+                            .await
                             {
                                 Ok(val) => {
                                     let _ = out.send_ok(id, val);

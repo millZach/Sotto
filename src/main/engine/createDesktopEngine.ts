@@ -1130,6 +1130,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     control: agentControl,
     registry: threadRegistry,
     report: () => { log('checkpoint-unavailable') },
+    ...(rustLocalEngine ? { inspectAccelerator: (blobsDir, pairs) => rustLocalEngine.checkpointInspectBlobs(blobsDir, pairs) } : {}),
   })
   agentHost.setMutationGuard(checkpointIntegration.canMutate)
 

@@ -11,8 +11,10 @@ export const checkpointSchema = z.object({
   supported: z.boolean(), reason: z.string().optional(),
 }).strict()
 export const checkpointListingSchema = z.object({ checkpoints: z.array(checkpointSchema), supported: z.boolean(), reason: z.string().optional() }).strict()
-export const checkpointInspectionSchema = z.object({ checkpoint: checkpointSchema, patches: z.array(z.object({ path: fileRelativePathSchema, before: z.string().nullable(), after: z.string().nullable(), binary: z.boolean() }).strict()) }).strict()
+export const checkpointPatchSchema = z.object({ path: fileRelativePathSchema, before: z.string().nullable(), after: z.string().nullable(), binary: z.boolean() }).strict()
+export const checkpointInspectionSchema = z.object({ checkpoint: checkpointSchema, patches: z.array(checkpointPatchSchema) }).strict()
 export type Checkpoint = z.infer<typeof checkpointSchema>
+export type CheckpointPatch = z.infer<typeof checkpointPatchSchema>
 export interface CheckpointBridge {
   checkpoints?(request: z.infer<typeof toolListRequestSchema>): Promise<ToolsResult<z.infer<typeof checkpointListingSchema>>>
   inspectCheckpoint?(request: z.infer<typeof checkpointRequestSchema>): Promise<ToolsResult<z.infer<typeof checkpointInspectionSchema>>>

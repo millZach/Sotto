@@ -6,9 +6,10 @@ import type { WorkspaceHost } from '../agents/workspace'
 import type { ThreadRegistry } from '../agents/threads'
 import type { FilesService } from '../files/service'
 import { CheckpointService } from './checkpoints'
+import type { CheckpointInspectAccelerator } from './checkpointTypes'
 import { threadsInCheckout } from '../agents/checkoutCandidates'
 
-export function connectCheckpoints(options: { files: FilesService; directory: string; host: Pick<WorkspaceHost, 'workspaceSnapshot' | 'dormantThreadIds' | 'preservesDormantThread' | 'rollbackCapability' | 'isCheckoutMutating' | 'acquireCheckoutRead' | 'acquireCheckoutMutation' | 'rollbackThread' | 'refreshThread' | 'setCheckpointHooks'>; control: Pick<AgentControl, 'hasPendingThreadWork' | 'watcherObservationsEnabled' | 'checkpointObserved' | 'restoreCheckpoint' | 'subscribe'>; registry: ThreadRegistry | null; historyEnabled?: () => boolean; report: (message: string) => void }) {
+export function connectCheckpoints(options: { files: FilesService; directory: string; host: Pick<WorkspaceHost, 'workspaceSnapshot' | 'dormantThreadIds' | 'preservesDormantThread' | 'rollbackCapability' | 'isCheckoutMutating' | 'acquireCheckoutRead' | 'acquireCheckoutMutation' | 'rollbackThread' | 'refreshThread' | 'setCheckpointHooks'>; control: Pick<AgentControl, 'hasPendingThreadWork' | 'watcherObservationsEnabled' | 'checkpointObserved' | 'restoreCheckpoint' | 'subscribe'>; registry: ThreadRegistry | null; historyEnabled?: () => boolean; report: (message: string) => void; inspectAccelerator?: CheckpointInspectAccelerator | undefined }) {
   const { host, control } = options
   const sharedThreads = async (threadId: string, destinationFolder?: string) => {
     const snapshot = host.workspaceSnapshot()
@@ -23,7 +24,7 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
   const observed: import('./checkpointTypes').CheckpointDependencies['observed'] = control.watcherObservationsEnabled?.()
     ? read => control.checkpointObserved(read) : undefined
   const restore: import('./checkpointTypes').CheckpointDependencies['restore'] = observed ? read => control.restoreCheckpoint?.(read) : undefined
-  const checkpoints = new CheckpointService({ ...(observed && restore ? { observed, restore } : {}), report: options.report, ...(preserveThread ? { preserveThread } : {}), ...(options.historyEnabled ? { historyEnabled: options.historyEnabled } : {}), files: options.files, directory: join(options.directory, 'checkpoints'),
+  const checkpoints = new CheckpointService({ ...(observed && restore ? { observed, restore } : {}), report: options.report, ...(preserveThread ? { preserveThread } : {}), ...(options.historyEnabled ? { historyEnabled: options.historyEnabled } : {}), ...(options.inspectAccelerator ? { inspectAccelerator: options.inspectAccelerator } : {}), files: options.files, directory: join(options.directory, 'checkpoints'),
     resolveThread: async (threadId, held) => {
       const snapshot = host.workspaceSnapshot(), thread = snapshot.threads.find(item => item.id === threadId)
       if (!thread?.providerId) return null
