@@ -228,8 +228,6 @@ describe('remote command allow-list', () => {
       // Whether a desktop that accepted next-prompts wants them now (ADR-0173): the user's switch, which only decides whether
       // the host asks its providers for suggestions. It answers nothing and grants nothing.
       'next-prompts-wanted',
-      // A desktop's answer for the host's product events (ADR-0179), which only decides whether the host sends its own.
-      'product-events-answer',
       // Sotto's browser for the host's own threads (ADR-0198), only for a desktop whose hello accepted `browser`. Driving,
       // sharing and Stop are the user's own acts there; answering a waiting request and the setting need a recorded desktop
       // whose remote-answer policy lets it answer, checked in the socket server.

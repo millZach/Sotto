@@ -194,7 +194,6 @@ describe('typed preload bridge', () => {
         'phones',
         'platform',
         'plugins',
-        'productEvents',
         'providerSignIn',
         'polishTranscript',
         'publishWidgetState',

@@ -282,8 +282,6 @@ export interface HostService {
   /** The host's threads reach this desktop's Watcher (`watcher-tell`): each message they send it, and the answer that says it got through. */
   subscribeWatcherTell?(listener: (askId: string, ask: WatcherTellPush) => void): () => void
   answerWatcherTell?(askId: string, answer: TellWatcherAnswer): Promise<void>
-  /** Tells a remote host this desktop's latest answer for its product events (ADR-0179), and keeps trying until it has it. */
-  tellProductEventAnswer?(): void
   /**
    * The host's threads delegate to other machines through this desktop (`delegation-relay`, #1316), on a desktop's
    * connection to a host whose hello it accepted: `subscribeDelegationRelay` hears each ask the host pushes,

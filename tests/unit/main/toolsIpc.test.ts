@@ -68,24 +68,6 @@ describe('tools IPC and preload boundary', () => {
     expect(local).toHaveBeenCalledTimes(2)
     expect(openExternally).toHaveBeenCalledOnce()
   })
-  it('counts the terminal as used when a shell starts, and on no other call or refusal', async () => {
-    const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
-    const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, operation]), ['dispose', vi.fn()]])
-    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']), browser: make(['list', 'create']), gitChanges: make([]), featureUsed: vi.fn() } as never as Parameters<typeof registerToolsIpc>[1]
-    const registry = ipcRegistry()
-    const { url, webContents: sender } = registry.main
-    registerToolsIpc(registry.ipc, services, () => [{ role: 'main', url, webContents: sender }])
-    const call = (name: string) => registry.handlers.get(`sotto:terminal:${name}`)!({ sender, senderFrame: sender.mainFrame }, {})
-    for (const name of ['list', 'read', 'write', 'resize']) await call(name)
-    expect(services.featureUsed).not.toHaveBeenCalled()
-    operation.mockResolvedValueOnce({ ok: false, error: { code: 'busy', message: 'Full.' } })
-    await call('create'); await Promise.resolve()
-    expect(services.featureUsed).not.toHaveBeenCalled()
-    await call('create'); await Promise.resolve()
-    expect(services.featureUsed).toHaveBeenCalledExactlyOnceWith('terminal')
-    await call('reopen'); await Promise.resolve()
-    expect(services.featureUsed).toHaveBeenCalledTimes(2)
-  })
   it('rejects invalid browser grants and actions before crossing the bridge', async () => {
     const invoke = vi.fn()
     const { browser } = createToolsBridges({ invoke, on: vi.fn(), removeListener: vi.fn() })

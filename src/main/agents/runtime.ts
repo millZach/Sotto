@@ -92,7 +92,6 @@ import { RestartResume } from './restartResume'
 import { LimitRestart } from './limitRestart'
 import type { ProviderHost } from './host'
 import { UsageService } from './usageService'
-import type { ProductEventRecorder } from '../productEvents/threadEvents'
 import { mayGrantLocally } from './authority'
 import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
 import type { HostMachineReport } from '../../shared/hostFacts'
@@ -138,8 +137,6 @@ export interface AgentRuntimeOptions {
   heldProviders?: HeldProviders
   /** Immutable Owl feature answer; absent fails closed and leaves saved usage untouched. */
   usageEnabled?: boolean
-  /** Where this process's product events go (ADR-0179). Absent in tests and tools that send none. */
-  productEvents?: ProductEventRecorder
   /** The Owl list's answer for resuming threads after a restart (ADR-0076), read once by the process owner. Absent fails closed. */
   resumeAfterRestart?: boolean
   /**
@@ -532,7 +529,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, modelRouterEnabled: options.modelRouterEnabled === true, owletsEnabled: options.owletsEnabled === true, modelRouter: () => options.settings().modelRouter, ...(options.modelRouterLog ? { modelRouterLog: options.modelRouterLog } : {}), watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
-    ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
     ...(options.threadStartsEnabled === true ? { threadStartsEnabled: true } : {}),
     ...(options.clearThreadsEnabled === true ? { clearThreadsEnabled: true } : {}),

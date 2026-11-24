@@ -40,8 +40,6 @@ import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
 import { MoveThreadsSheetHost } from './watcher/MoveThreads'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
-import { ProductEventsNotice } from './features/productEvents/ProductEventsNotice'
-import { useProductEventsNotice } from './features/productEvents/useProductEventsNotice'
 import { UpdateAllCard } from './features/updates/UpdateAllCard'
 import { PageSidebar } from './agents/PageSidebar'
 import { useRegionCycle } from './components/regionCycle'
@@ -182,7 +180,6 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
   const [journalQuery, setJournalQuery] = useState('')
   // Set up Sotto, in Help, starts first-run setup's walk again for a profile that has finished it (ADR-0200).
   const [setupAgain, setSetupAgain] = useState(false)
-  const productEventsNotice = useProductEventsNotice(app.settings, app.actions.updateSettings)
   const [journalSearchRequest, setJournalSearchRequest] = useState(0)
   const systemDark = useSystemPrefersDark()
   // Glass turns solid at once when the system asks for less transparency (ADR-0150); held, nothing listens.
@@ -371,7 +368,7 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
         />
         break
       case 'help':
-        view = <HelpView onSetUp={() => setSetupAgain(true)} productEventsEnabled={app.settings.productEventsEnabled} shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
+        view = <HelpView onSetUp={() => setSetupAgain(true)} shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
         break
       default:
         view = threadsPage ? threadWorkspace : <DictateRoom
@@ -468,7 +465,6 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
         <ToastRegion messages={[
           ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice)),
           ...(themeNotice === null ? [] : [themeNotice]),
-          ...(!productEventsNotice.turnedOff ? [] : [{ id: 'product-events-off', message: t`Product events are off. Sotto sends nothing.`, onDismiss: productEventsNotice.clearTurnedOff }]),
           ...(notificationNotice === null ? [] : [{
             id: 'notification-open',
             message: <>{notificationNotice} <button type="button" className="tt-toast__link tt-focusable" onClick={() => setNotificationNotice(null)}><Trans>Dismiss</Trans></button></>,
@@ -508,11 +504,9 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
         {management ? content : strip(content)}
         </WatcherRoomProvider>
         {/* No card speaks before first-run setup ends, or over its walk; on Owl, Update all takes the corner and speaks for clients too
-            (ADR-0077). The product events notice has the corner first, after the walk, until it is answered or put off (ADR-0179). */}
+            (ADR-0077). */}
         {settled && !setupAgain
-          ? productEventsNotice.open
-            ? <ProductEventsNotice onAnswer={productEventsNotice.answer} onPutOff={productEventsNotice.putOff} />
-            : updateAll ? <UpdateAllCard /> : <ClientUpdateCard />
+          ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard />
           : null}
       </StartingScreenGate>
       {/* A saved host reconnecting on its own can need an answer from SSH over setup, the starting screen or any page, and setup can

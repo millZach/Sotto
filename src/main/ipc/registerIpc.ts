@@ -184,8 +184,6 @@ const settingKeys = [
   'clearSettledThreadsAfterDays',
   'proactivePanels',
   'commitMessages',
-  'productEventsEnabled',
-  'productEventsNoticeAnswered',
   'pullRequestText',
   'autoUpdateCheck',
   'mainFreezeNotice',

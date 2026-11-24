@@ -26,7 +26,7 @@ import { pullRequestReadFailureOf } from '../main/agents/git/gitPullRequests'
 import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
 import { threadWordsQuery, type AgentThreadWords } from '../shared/threadWords'
-import { type ProductEventPermission, shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, isLargeVideoPart, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
+import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, isLargeVideoPart, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostSettledThreadsPage, type HostWireShell } from '../shared/hostProtocol'
 import { HOST_CANNOT_STAGE_VIDEOS, hostCatalogKey, isImageAttachment, type AgentCommand, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
 import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
@@ -163,7 +163,7 @@ const READ_AHEAD_LIMIT = 16
 function sentDigest(detail: AgentThreadDetail): string {
   return createHash('sha256').update(JSON.stringify({ ...detail, revision: 0 })).digest('base64')
 }
-interface Peer { owlets?: boolean | undefined; browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; coordinationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; coordinationRelay?: CoordinationRelayDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneMachinesRead: boolean; watcherPhoneComposer: boolean; watcherPhoneParts: boolean; watcherPhoneReceiptDeltas: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { owlets?: boolean | undefined; browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; coordinationViews: boolean; checkQueueViews?: boolean; runsElsewhere?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; coordinationRelay?: CoordinationRelayDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; usageAntigravity: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneMachinesRead: boolean; watcherPhoneComposer: boolean; watcherPhoneParts: boolean; watcherPhoneReceiptDeltas: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; readHeld: boolean; readAhead: Map<string, ReadAhead>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -301,8 +301,6 @@ export interface SocketServerOptions {
   phoneAccess?: () => HostPhoneAccessSummary | undefined
   /** Told once a client was revoked here, by the administrative route or by itself, after its sockets close. */
   onRevoked?: (clientId: string) => void
-  /** Told when a desktop's answer for product events changes or it leaves (ADR-0179). Without it the feature is not listed. */
-  onProductEventAnswer?: () => void
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
   sottoVersion?: string
   /** Tests set the monotonic clock a phone's Watcher window is timed on (`WATCHER_WRITING_WINDOW_MS`), to tell held from sent. */
@@ -488,7 +486,6 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-check-stop' || watcherChecks)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'next-prompts' || service.supportsNextPrompts === true)
-    && (feature !== 'product-events' || options.onProductEventAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
@@ -2063,10 +2060,6 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.elevenLabsSounds = peer.elevenLabsSoundsAsked && offers(peer, 'plugin-elevenlabs-sounds')
         // Only a phone reads a USDZ: a desktop that accepts this as well is not a phone for it (Sol on ticket 7).
         peer.meshyPhone = (request.accepts?.includes('plugin-meshy-phone') ?? false) && offers(peer, 'plugin-meshy-phone') && isPhonePeer(peer)
-        const answeredBefore = peer.productEvents?.answer
-        peer.productEvents = (request.accepts?.includes('product-events') ?? false) && offers(peer, 'product-events') ? { answer: answeredBefore ?? null } : undefined
-        // A second hello that no longer accepts it takes this desktop's answer back, so the host looks again.
-        if (answeredBefore && !peer.productEvents) options.onProductEventAnswer?.()
         // Accepted here; pushed only once the desktop says it wants them, so a desktop with its switch off costs no side call.
         peer.nextPrompts = (request.accepts?.includes('next-prompts') ?? false) && offers(peer, 'next-prompts') ? { wanted: peer.nextPrompts?.wanted ?? false } : undefined
         // A desktop that shows this host's browser pages (ADR-0198). A hello again that still accepts it keeps the pages it
@@ -2364,13 +2357,6 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!peer.nextPrompts) throw new Refusal('invalid_request')
         peer.nextPrompts.wanted = request.wanted
         return { wanted: request.wanted }
-      }
-      case 'product-events-answer': {
-        // The desktop's own answer (ADR-0179): this host's product events follow it. Settings, never a grant of anything else.
-        if (!peer.productEvents) throw new Refusal('invalid_request')
-        peer.productEvents.answer = request.permission
-        options.onProductEventAnswer?.()
-        return { permission: request.permission }
       }
       case 'desktop-defaults': {
         // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
@@ -2934,7 +2920,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, coordinationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, usageAntigravity: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneMachinesRead: false, watcherPhoneComposer: false, watcherPhoneParts: false, watcherPhoneReceiptDeltas: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), readHeld: false, readAhead: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); followRunsElsewhere(); options.onProductEventAnswer?.(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (peer.coordinationRelay) options.coordinationRelay?.desktopGone(peer.coordinationRelay); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { options.phoneSends?.ended(peer); peer.gone.abort(); peer.answerWatches.clear(); endWatches(peer); peers.delete(peer); followRunsElsewhere(); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.tellWatcher) options.tellWatcher?.desktopGone(peer.tellWatcher); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (peer.coordinationRelay) options.coordinationRelay?.desktopGone(peer.coordinationRelay); if (!connected(peer.client.clientId)) uploads.leave(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }
@@ -2992,8 +2978,6 @@ export async function startSocketServer(options: SocketServerOptions) {
     peers: (): number => peers.size,
     /** Whether a connected desktop wants this host's next prompts now (ADR-0173): until one does, no provider is asked for them. */
     nextPromptsWanted: (): boolean => [...peers].some(peer => peer.ready && peer.nextPrompts?.wanted === true && !peer.frames.isClosed),
-    /** What each connected desktop has answered for this host's product events (ADR-0179). */
-    productEventAnswers: (): ProductEventPermission[] => [...peers].flatMap(peer => peer.ready && peer.productEvents?.answer && !peer.frames.isClosed && options.pairing.isPaired(peer.client.clientId) ? [peer.productEvents.answer] : []),
     /** The paired clients holding an open socket now, each once. */
     connectedClients: (): string[] => [...new Set([...peers].map(peer => peer.client.clientId))],
     /**

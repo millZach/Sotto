@@ -11,7 +11,6 @@ import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { routerBusyThreads } from '../../src/main/hosts/busyHost'
-import type { ProductEventRecorder } from '../../src/main/productEvents/threadEvents'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { HostUpdates } from '../../src/main/hosts/hostUpdate'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
@@ -28,9 +27,6 @@ function records(prefix: string, count: number): AgentActivity[] {
     sequence: position, kind: 'command', status: 'completed', title: `Synthetic command ${position}`, output: `${prefix}:${position}:`.padEnd(400, 'o') }))
 }
 
-/** Main always hands the coordinator a sender, so the budgets count what watching for product events costs an update. */
-export const QUIET_PRODUCT_EVENTS: ProductEventRecorder = { record: () => undefined, featureUsed: () => undefined }
-
 export interface CopyBudgetPipeline {
   readonly workspace: WorkspaceHost
   readonly adapter: StreamingAdapter
@@ -41,8 +37,6 @@ export interface CopyBudgetPipeline {
   /** Updates the coordinator broadcast since the last reset. */
   broadcasts(): number
   resetCounts(): void
-  /** Waits for adapter changes to reach the coordinator, then drains their scheduled event attribution. */
-  drainProductEvents(): Promise<void>
   /**
    * Holds the workspace's saves until the returned call, which makes the one save they came to. The workspace saves at
    * most once a 250 ms window while anything changes, so how many saves fall inside a stream depends on how long the
@@ -59,7 +53,7 @@ export interface CopyBudgetPipeline {
  * on an older Sotto. `threads` in all, one of them streaming; `owl` turns on Watcher, Muse and the cheaper publish
  * windows, as an Owl build does. Every payload is generated.
  */
-export async function copyBudgetPipeline(root: string, threads: number, owl: boolean, productEvents: ProductEventRecorder | null = QUIET_PRODUCT_EVENTS, options: { controlProductEvents?: boolean } = {}): Promise<CopyBudgetPipeline> {
+export async function copyBudgetPipeline(root: string, threads: number, owl: boolean): Promise<CopyBudgetPipeline> {
   const registry = new ThreadRegistry(root)
   await registry.load()
   const at = '2026-10-15T12:00:00.000Z'
@@ -82,8 +76,7 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const workspace = new WorkspaceHost(native, root, { historyEnabled: () => true, watcherEnabled: owl, heldProviders: heldProvidersOf({ muse: owl }), streamingPublishCostEnabled: owl })
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
-  const eventWork: (() => void)[] = []
-  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: heldProvidersOf({ muse: owl }), streamingPublishCost: owl, ...(productEvents ? { productEvents } : {}), ...(options.controlProductEvents ? { productEventLater: (work: () => void) => { eventWork.push(work) } } : {}) })
+  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: heldProvidersOf({ muse: owl }), streamingPublishCost: owl })
   await control.start()
   await control.command({ type: 'connect' })
   const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
@@ -143,14 +136,6 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
     adapter, control, streamIds, parentId,
     broadcasts: () => broadcasts,
     resetCounts: () => { broadcasts = 0 },
-    drainProductEvents: async () => {
-      if (!options.controlProductEvents) throw new Error('This fixture does not control product-event scheduling.')
-      await new Promise<void>(resolve => {
-        const off = workspace.subscribe(() => { off(); resolve() })
-        adapter.publish(false)
-      })
-      while (eventWork.length) eventWork.shift()!()
-    },
     holdSaves: () => {
       const saving = workspace as unknown as { writeSoon(): void; flush(): Promise<void> }
       if (typeof saving.writeSoon !== 'function' || typeof saving.flush !== 'function') throw new Error('The workspace no longer saves through writeSoon and flush; hold its saves another way.')

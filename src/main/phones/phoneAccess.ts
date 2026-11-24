@@ -1,4 +1,3 @@
-import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { createServer, type Server } from 'node:net'
 import { hostname as osHostname } from 'node:os'
 import { join } from 'node:path'
@@ -76,8 +75,6 @@ export interface PhoneAccessPolicy {
 type Listener = Awaited<ReturnType<typeof startSocketServer>>
 
 export interface PhoneAccessOptions {
-  /** That the user asked for a code to add a phone (ADR-0179). */
-  readonly featureUsed?: (feature: 'add-phone') => void
   /** The desktop's user data folder: `paired-clients.json` and `phone-access.json` live here. */
   readonly directory: string
   /** The local host's service, or nothing when the local host is off. */
@@ -113,7 +110,7 @@ export interface PhoneAccessOptions {
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
    * On any phone listener, `compressPhones: false` stops it compressing for phones, which it does otherwise (#2394).
    */
-  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves' | 'compressPhones' | 'phoneModels' | 'phoneSends'>
+  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves' | 'compressPhones' | 'phoneModels' | 'phoneSends'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
@@ -292,7 +289,6 @@ export class PhoneAccess {
         if (this.phase !== 'on' || !this.phonesWanted() || this.listenerStopped || !this.pairingReady) throw new Error('Turn on Let phones connect first, then show a pairing code.')
         this.cancelCode()
         const code = this.pairing.issuePairingCode()
-        this.options.featureUsed?.('add-phone')
         this.code = code
         this.codeTimer = setTimeout(() => { if (this.code === code) { this.code = null; this.publish() } }, Math.max(0, Date.parse(code.expiresAt) - Date.now()))
         this.codeTimer.unref?.()
@@ -405,8 +401,6 @@ export class PhoneAccess {
   peers(): number { return this.listenerStopped ? 0 : this.listener?.peers() ?? 0 }
   /** Whether a desktop on the tailnet listener wants the host's next prompts now (ADR-0173). */
   nextPromptsWanted(): boolean { return !this.listenerStopped && (this.listener?.nextPromptsWanted() ?? false) }
-  /** What each desktop on the tailnet listener has answered for this host's product events (ADR-0179). */
-  productEventAnswers(): ProductEventPermission[] { return this.listenerStopped ? [] : this.listener?.productEventAnswers() ?? [] }
 
   private async reconcile(): Promise<void> {
     // Pending cleanup of a setting the listener is wanted on again is taken up rather than removed first: turnOn reuses a

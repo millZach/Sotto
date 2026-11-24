@@ -970,10 +970,6 @@ artifacts/macos-dock-icon-padding/*
 !artifacts/macos-dock-icon-padding/sidebar-before.png
 !artifacts/macos-dock-icon-padding/sidebar-after.png
 
-# Wrangler, for the product event Worker
-.wrangler/
-.dev.vars
-
 # Council Climb CI screenshots and geometry receipts
 artifacts/council-climb/
 
