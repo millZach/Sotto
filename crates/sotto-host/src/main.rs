@@ -591,17 +591,47 @@ mod tests {
         assert_eq!(status, 200);
         assert_eq!(revoked["revoked"], true);
 
-        let mut close_hdr = [0u8; 2];
-        let read_res = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            ws_stream.read_exact(&mut close_hdr),
-        )
+        // Wait for Close frame (0x8) or EOF, draining any in-flight coordinator text/ping pushes
+        // that may already have been queued on the socket before revoke took effect (#2850).
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let mut hdr = [0u8; 2];
+                match ws_stream.read_exact(&mut hdr).await {
+                    Err(err) => {
+                        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+                        break;
+                    }
+                    Ok(_) => {
+                        let opcode = hdr[0] & 0x0f;
+                        if opcode == 0x8 {
+                            break;
+                        }
+                        let len_b = hdr[1] & 0x7f;
+                        let payload_len = if len_b == 126 {
+                            let mut ext = [0u8; 2];
+                            if ws_stream.read_exact(&mut ext).await.is_err() {
+                                break;
+                            }
+                            u16::from_be_bytes(ext) as usize
+                        } else if len_b == 127 {
+                            let mut ext = [0u8; 8];
+                            if ws_stream.read_exact(&mut ext).await.is_err() {
+                                break;
+                            }
+                            u64::from_be_bytes(ext) as usize
+                        } else {
+                            len_b as usize
+                        };
+                        let mut discard = vec![0u8; payload_len];
+                        if ws_stream.read_exact(&mut discard).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
         .await
-        .unwrap();
-        match read_res {
-            Ok(_) => assert_eq!(close_hdr[0] & 0x0f, 0x8),
-            Err(err) => assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof),
-        }
+        .expect("WebSocket should close promptly after client revocation");
 
         // Oversized HTTP header line is rejected without unbounded buffering.
         let mut big = TcpStream::connect(("127.0.0.1", port)).await.unwrap();

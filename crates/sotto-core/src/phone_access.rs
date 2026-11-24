@@ -2282,6 +2282,10 @@ pub async fn probe_tailscale_status() -> TailscaleStatus {
 mod tests {
     use super::*;
 
+    /// Serializes loopback port-binding tests in this module so a concurrent test binding
+    /// `127.0.0.1:0` on macOS cannot steal an ephemeral port between `close()` and restart (#2850).
+    static LOOPBACK_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     struct MockTailscale {
         state: StdMutex<MockTailscaleState>,
     }
@@ -2438,6 +2442,7 @@ mod tests {
 
     #[tokio::test]
     async fn phone_access_lifecycle_falls_back_to_10000_pairs_grants_policy_and_removes() {
+        let _guard = LOOPBACK_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let ts = MockTailscale::running("forge.tail.ts.net", "forge");
         // Occupy 8443 with another app so PhoneAccess must pick 10000.
@@ -2520,6 +2525,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_apps_pairs_reuses_token_on_restart_repairs_on_self_revoke_and_cleans_on_off() {
+        let _guard = LOOPBACK_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let mut mgr = LocalAppsManager::new(dir.path().to_path_buf(), "host-la".into(), true, None);
         let st = mgr.start(true).await;

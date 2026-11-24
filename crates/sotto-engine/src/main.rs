@@ -12,16 +12,18 @@ use tokio::sync::{broadcast, Mutex, Semaphore};
 use sotto_core::{
     acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, mail_grants_shown,
     plugin_account_slot, probe_tailscale_status, read_boot_id, read_checkpoints_readonly,
-    read_councils_readonly, read_github_sign_in, read_phone_access_readonly, read_plugins_readonly,
-    release_host_lock, AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair,
+    read_councils_readonly, read_desktop_hosts_readonly, read_github_sign_in,
+    read_phone_access_readonly, read_plugins_readonly, release_host_lock,
+    remote_host_credential_slot, AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair,
     CheckpointManager, CheckpointThreadInfo, ClaudeAdapter, ClaudeAdapterConfig, ClientContext,
     CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle,
     CouncilCommand, CouncilCommandContext, CouncilManager, CouncilModelInfo,
-    CouncilOriginThreadInfo, CouncilThreadViewContext, HostLease, LocalAppsManager,
-    LocalPluginsManager, MemoryStore, MockProviderAdapter, MuseAdapter, MuseAdapterConfig,
-    OpenCodeAdapter, OpenCodeAdapterConfig, PhoneAccessManager, PhoneAccessSettings, PhonesCommand,
-    PluginAccountResult, PluginAccountUpdate, PluginUseReport, ProviderAdapter, SystemTailscaleCli,
-    COUNCIL_VIEWS_MAX,
+    CouncilOriginThreadInfo, CouncilThreadViewContext, DesktopHostRouter, DesktopHostsManager,
+    HostConnectionPreference, HostLease, LocalAppsManager, LocalPluginsManager, MemoryStore,
+    MockProviderAdapter, MuseAdapter, MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig,
+    PhoneAccessManager, PhoneAccessSettings, PhonesCommand, PluginAccountResult,
+    PluginAccountUpdate, PluginUseReport, ProviderAdapter, RemoteHostClient, RetainedDraft,
+    SavedHost, SshTerminalHostEntry, SystemTailscaleCli, COUNCIL_VIEWS_MAX,
 };
 
 use crate::shell_bridge::{CredentialSnapshot, EngineWindowFocus, ShellBridgeClient};
@@ -261,6 +263,8 @@ async fn handle_rpc(
     local_apps: &Arc<Mutex<LocalAppsManager>>,
     plugins: &Arc<Mutex<LocalPluginsManager>>,
     council: &Arc<Mutex<CouncilManager>>,
+    desktop_hosts: &Arc<Mutex<DesktopHostsManager>>,
+    host_router: &Arc<Mutex<DesktopHostRouter>>,
     host_id: &str,
     data_directory: &Path,
     method: &str,
@@ -1361,6 +1365,324 @@ async fn handle_rpc(
                 .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
             Ok(json!({ "ok": true }))
         }
+        "ops.desktopHostsReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_desktop_hosts_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("desktopHostsReadOnly task failed."))
+        }
+        "hosts:get" => {
+            let guard = desktop_hosts.lock().await;
+            serde_json::to_value(guard.state())
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "hosts:command" => {
+            let cmd = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("Hosts command object is required."))?;
+            let kind = cmd
+                .get("type")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("Hosts command type is required."))?;
+            match kind {
+                "save" => {
+                    let host_val = cmd
+                        .get("host")
+                        .cloned()
+                        .ok_or_else(|| err_invalid("host object is required."))?;
+                    let saved: SavedHost = serde_json::from_value(host_val)
+                        .map_err(|e| err_invalid(&format!("Invalid host: {e}")))?;
+                    let prefer = cmd
+                        .get("prefer")
+                        .cloned()
+                        .and_then(|v| serde_json::from_value::<HostConnectionPreference>(v).ok());
+                    let id = saved.id.clone();
+                    let mut guard = desktop_hosts.lock().await;
+                    guard
+                        .saved
+                        .upsert(saved)
+                        .map_err(|e| SerializedEngineError::new(e, Some("invalid_request")))?;
+                    if let Some(p) = prefer {
+                        guard
+                            .tailnet
+                            .set_preference(&id, p, None, None, None)
+                            .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+                    }
+                    let state = guard.state();
+                    drop(guard);
+                    let val = serde_json::to_value(&state)
+                        .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+                    shell_bridge.send_to_main("hosts:changed", val.clone());
+                    Ok(val)
+                }
+                "rename" => {
+                    let id = cmd
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| err_invalid("id is required."))?;
+                    let name = cmd
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| err_invalid("name is required."))?;
+                    let mut guard = desktop_hosts.lock().await;
+                    guard
+                        .saved
+                        .rename(id, name)
+                        .map_err(|e| SerializedEngineError::new(e, Some("invalid_request")))?;
+                    let state = guard.state();
+                    drop(guard);
+                    let val = serde_json::to_value(&state)
+                        .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+                    shell_bridge.send_to_main("hosts:changed", val.clone());
+                    Ok(val)
+                }
+                "set-enabled" => {
+                    let id = cmd
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| err_invalid("id is required."))?;
+                    let enabled = cmd
+                        .get("enabled")
+                        .and_then(Value::as_bool)
+                        .ok_or_else(|| err_invalid("enabled is required."))?;
+                    let mut guard = desktop_hosts.lock().await;
+                    guard
+                        .saved
+                        .set_enabled(id, enabled)
+                        .map_err(|e| SerializedEngineError::new(e, Some("invalid_request")))?;
+                    if !enabled {
+                        guard.set_live_phase(id, "disconnected", None, None);
+                    }
+                    let state = guard.state();
+                    drop(guard);
+                    if !enabled {
+                        host_router.lock().await.detach_by_saved_id(id);
+                    }
+                    let val = serde_json::to_value(&state)
+                        .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+                    shell_bridge.send_to_main("hosts:changed", val.clone());
+                    Ok(val)
+                }
+                "set-connection" => {
+                    let id = cmd
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| err_invalid("id is required."))?;
+                    let prefer: HostConnectionPreference = cmd
+                        .get("prefer")
+                        .cloned()
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .ok_or_else(|| err_invalid("prefer must be ssh or tailnet."))?;
+                    let mut guard = desktop_hosts.lock().await;
+                    guard
+                        .tailnet
+                        .set_preference(id, prefer, None, None, None)
+                        .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+                    let state = guard.state();
+                    drop(guard);
+                    let val = serde_json::to_value(&state)
+                        .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+                    shell_bridge.send_to_main("hosts:changed", val.clone());
+                    Ok(val)
+                }
+                "select" => {
+                    let hid = cmd
+                        .get("hostId")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| err_invalid("hostId is required."))?;
+                    let mut guard = desktop_hosts.lock().await;
+                    guard.select_host(hid.to_string());
+                    let state = guard.state();
+                    drop(guard);
+                    let val = serde_json::to_value(&state)
+                        .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+                    shell_bridge.send_to_main("hosts:changed", val.clone());
+                    Ok(val)
+                }
+                "disconnect" => {
+                    let id = cmd
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| err_invalid("id is required."))?;
+                    host_router.lock().await.detach_by_saved_id(id);
+                    let mut guard = desktop_hosts.lock().await;
+                    guard.set_live_phase(id, "disconnected", None, None);
+                    let state = guard.state();
+                    drop(guard);
+                    let val = serde_json::to_value(&state)
+                        .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+                    shell_bridge.send_to_main("hosts:changed", val.clone());
+                    Ok(val)
+                }
+                "forget" => {
+                    let id = cmd
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| err_invalid("id is required."))?;
+                    host_router.lock().await.detach_by_saved_id(id);
+                    let mut guard = desktop_hosts.lock().await;
+                    guard
+                        .forget_host(id)
+                        .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+                    let state = guard.state();
+                    drop(guard);
+                    let slot = remote_host_credential_slot(id);
+                    let _ = shell_bridge.credentials().set(&slot, "").await;
+                    let val = serde_json::to_value(&state)
+                        .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))?;
+                    shell_bridge.send_to_main("hosts:changed", val.clone());
+                    Ok(val)
+                }
+                other => Err(err_invalid(&format!(
+                    "Unsupported hosts:command type: {other}"
+                ))),
+            }
+        }
+        "hosts.putRetainedDraft" => {
+            let draft: RetainedDraft = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("RetainedDraft object is required."))?;
+            let mut guard = desktop_hosts.lock().await;
+            guard
+                .drafts
+                .put(draft)
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true }))
+        }
+        "hosts.keepCascadedSettle" => {
+            let obj = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("CascadedSettle object is required."))?;
+            let parent = obj
+                .get("parent")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("parent is required."))?;
+            let read_list = |k: &str| -> Vec<String> {
+                obj.get(k)
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let mut guard = desktop_hosts.lock().await;
+            guard
+                .settles
+                .keep(
+                    parent,
+                    read_list("settled"),
+                    read_list("left"),
+                    read_list("uncertain"),
+                )
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true }))
+        }
+        "router.attachRemote" => {
+            let obj = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("attachRemote config object is required."))?;
+            let saved_id = obj
+                .get("savedId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("savedId is required."))?
+                .to_string();
+            let name = obj
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("Remote")
+                .to_string();
+            let url = obj
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("url is required."))?;
+            let token = obj
+                .get("token")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("token is required."))?;
+            let expected_host_id = obj.get("expectedHostId").and_then(Value::as_str);
+            let ssh_terminal: Option<SshTerminalHostEntry> = obj
+                .get("sshTerminal")
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok());
+
+            let client = RemoteHostClient::connect(url, token, expected_host_id, name.clone())
+                .await
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            let info = client.info().clone();
+            let remote_hid = {
+                let mut router = host_router.lock().await;
+                router.attach_remote(saved_id.clone(), name, client, ssh_terminal)
+            };
+            {
+                let mut guard = desktop_hosts.lock().await;
+                let _ = guard.saved.set_identity(
+                    &saved_id,
+                    Some(remote_hid.clone()),
+                    Some(info.client_id.clone()),
+                );
+                guard.drafts.allow_host(&remote_hid, Some(saved_id.clone()));
+                guard.set_live_phase(
+                    &saved_id,
+                    "connected",
+                    Some(info.sotto_version.clone()),
+                    Some(HostConnectionPreference::Ssh),
+                );
+            }
+            Ok(json!({
+                "ok": true,
+                "hostId": remote_hid,
+                "clientId": info.client_id,
+                "version": info.sotto_version,
+                "mayAnswer": info.may_answer,
+                "features": info.features,
+            }))
+        }
+        "router.shell" => {
+            let mut router = host_router.lock().await;
+            router
+                .combined_shell()
+                .await
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))
+        }
+        "router.command" => {
+            let cmd = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("Command object is required."))?
+                .clone();
+            let mut router = host_router.lock().await;
+            router
+                .route_command(cmd)
+                .await
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))
+        }
+        "router.detail" => {
+            let key = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?;
+            let router = host_router.lock().await;
+            router
+                .route_detail(key)
+                .await
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))
+        }
+        "router.filesBindings" => {
+            let mut router = host_router.lock().await;
+            let delta = router.sync_files_bindings().await;
+            let snap = router.files_bindings_snapshot();
+            Ok(json!({
+                "delta": delta,
+                "snapshot": snap,
+            }))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -1819,6 +2141,12 @@ async fn handle_accelerator_rpc(
                 .await
                 .map_err(|_| err_invalid("councilsReadOnly task failed."))
         }
+        "ops.desktopHostsReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_desktop_hosts_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("desktopHostsReadOnly task failed."))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -2040,6 +2368,16 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     let _ = plugins.lock().await.sounds.settle_unfinished();
     let council = Arc::new(Mutex::new(CouncilManager::new(&parsed.data_directory)));
     let _ = council.lock().await.recover();
+    let desktop_hosts = Arc::new(Mutex::new(DesktopHostsManager::new(
+        &parsed.data_directory,
+        host_id.clone(),
+    )));
+    let _ = desktop_hosts.lock().await.load();
+    let host_router = Arc::new(Mutex::new(DesktopHostRouter::new(
+        host_id.clone(),
+        "This computer",
+        coordinator.clone(),
+    )));
 
     let stream = match connect_engine_stream(&parsed.endpoint).await {
         Ok(s) => s,
@@ -2202,6 +2540,8 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                         let la_mgr = Arc::clone(&local_apps);
                         let plugins_mgr = Arc::clone(&plugins);
                         let council_mgr = Arc::clone(&council);
+                        let hosts_mgr = Arc::clone(&desktop_hosts);
+                        let router_mgr = Arc::clone(&host_router);
                         let hid = host_id.clone();
                         let data_dir = parsed.data_directory.clone();
                         let out = duplex.clone();
@@ -2214,6 +2554,8 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                                 &la_mgr,
                                 &plugins_mgr,
                                 &council_mgr,
+                                &hosts_mgr,
+                                &router_mgr,
                                 &hid,
                                 &data_dir,
                                 &method,
@@ -2250,6 +2592,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         local_apps.lock().await.close().await;
         plugins.lock().await.pending_changes.close();
         council.lock().await.close();
+        host_router.lock().await.close();
     })
     .await;
     let shutdown_completed = tokio::time::timeout(
