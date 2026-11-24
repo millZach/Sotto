@@ -127,6 +127,8 @@ impl ClientWireState {
                             self.last_models_revision = Some(rev);
                         }
                     }
+                } else {
+                    host.remove("modelsRevision");
                 }
             }
         }
@@ -179,7 +181,7 @@ impl ClientWireState {
                 if let Some(obj) = shell.as_object_mut() {
                     obj.insert("threadRecords".into(), wire_threads);
                     if let Some(host) = obj.get_mut("host").and_then(Value::as_object_mut) {
-                        host.remove("threads");
+                        host.insert("threads".into(), Value::Array(Vec::new()));
                     }
                 }
             }
@@ -218,7 +220,7 @@ impl ClientWireState {
 
         let mut wire_state = filtered.clone();
         if let Some(host) = wire_state.get_mut("host").and_then(Value::as_object_mut) {
-            host.remove("threads");
+            host.insert("threads".into(), Value::Array(Vec::new()));
         }
 
         // Apply `kept-parts` elision when we have a matching baseline from `prev_rev`.
@@ -472,7 +474,14 @@ fn elide_kept_parts(
         let mut host = Map::new();
         let mut kept_host = Vec::new();
         for (k, v) in host_obj {
-            if prev_host.get(k) == Some(v) {
+            // Matching `SOCKET_HOST_SENT` in `src/host/socketServer.ts`: threads and catalog fields
+            // are always carried directly rather than elided into `host.kept`.
+            if matches!(
+                k.as_str(),
+                "threads" | "models" | "modelsRevision" | "providerModeLists"
+            ) {
+                host.insert(k.clone(), v.clone());
+            } else if prev_host.get(k) == Some(v) {
                 kept_host.push(Value::String(k.clone()));
             } else {
                 host.insert(k.clone(), v.clone());

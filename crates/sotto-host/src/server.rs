@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,11 +17,13 @@ use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::{
-    ClientContext, CoordinatorBroadcast, CoordinatorHandle, DesktopClients, HostCredentials,
-    HostDescriptor, HostErrorCode, HostRequestEnvelope, HostResponseEnvelope, MemoryStore,
-    PairedClients, PairingError, ProviderAdapter, SubagentStore, HOST_PROTOCOL_VERSION,
+    BoxFuture, ClientContext, CoordinatorBroadcast, CoordinatorHandle, DesktopClients,
+    HostCredentials, HostDescriptor, HostErrorCode, HostRequestEnvelope, HostResponseEnvelope,
+    MemoryStore, PairedClients, PairingError, PhoneAccessListener, PhoneAccessListenerSpawn,
+    ProviderAdapter, SubagentStore, TailscaleBackend, HOST_PROTOCOL_VERSION,
 };
 
+use crate::phones::{phones_off_message, HostAdminPhonesCommand, HostPhoneAccess};
 use crate::wire_codec::ClientWireState;
 use crate::ws::{
     deflate_offered, is_valid_websocket_key, read_ws_message, websocket_accept, write_ws_close,
@@ -84,29 +87,243 @@ pub struct HostState {
     pub features: Vec<String>,
     pub admin_token: String,
     pub started_by: Option<String>,
-    pub pairing: Mutex<PairedClients>,
-    pub desktops: Mutex<DesktopClients>,
+    pub pairing: Arc<Mutex<PairedClients>>,
+    pub desktops: Arc<Mutex<DesktopClients>>,
     pub memory: Mutex<MemoryStore>,
     pub subagents: Mutex<SubagentStore>,
     pub credentials: Mutex<HostCredentials>,
     pub coordinator: CoordinatorHandle,
+    pub phones: Arc<HostPhoneAccess>,
     pub revoked_tx: broadcast::Sender<String>,
 }
 
 impl HostState {
     pub fn descriptor(&self) -> HostDescriptor {
+        self.descriptor_for_port(self.port)
+    }
+
+    pub fn descriptor_for_port(&self, port: u16) -> HostDescriptor {
         HostDescriptor {
             v: HOST_PROTOCOL_VERSION,
             host_id: self.host_id.clone(),
-            port: self.port,
+            port,
             pid: std::process::id(),
             sotto_version: self.sotto_version.clone(),
             features: self.features.clone(),
             admin_token: Some(self.admin_token.clone()),
             started_by: self.started_by.clone(),
-            tailnet_address: None,
+            tailnet_address: self.phones.address(),
         }
     }
+}
+
+pub struct TailnetListenerControl {
+    serving: AtomicBool,
+    allow_phones: AtomicBool,
+    computer_name: Mutex<String>,
+    connected: Arc<Mutex<HashMap<String, usize>>>,
+    drop_tx: broadcast::Sender<()>,
+    on_paired: Arc<dyn Fn(String) + Send + Sync>,
+    on_peers_changed: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl TailnetListenerControl {
+    fn computer_name(&self) -> String {
+        self.computer_name
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+}
+
+#[derive(Clone)]
+pub enum ListenerMode {
+    Admin,
+    Tailnet(Arc<TailnetListenerControl>),
+}
+
+struct ConnectedPeerGuard {
+    ctrl: Arc<TailnetListenerControl>,
+    client_id: String,
+}
+
+impl ConnectedPeerGuard {
+    fn new(ctrl: Arc<TailnetListenerControl>, client_id: String) -> Self {
+        if let Ok(mut map) = ctrl.connected.lock() {
+            *map.entry(client_id.clone()).or_insert(0) += 1;
+        }
+        (ctrl.on_peers_changed)();
+        Self { ctrl, client_id }
+    }
+}
+
+impl Drop for ConnectedPeerGuard {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.ctrl.connected.lock() {
+            if let Some(count) = map.get_mut(&self.client_id) {
+                if *count <= 1 {
+                    map.remove(&self.client_id);
+                } else {
+                    *count -= 1;
+                }
+            }
+        }
+        (self.ctrl.on_peers_changed)();
+    }
+}
+
+struct HostTailnetListener {
+    port: u16,
+    ctrl: Arc<TailnetListenerControl>,
+    shutdown_tx: watch::Sender<bool>,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl PhoneAccessListener for HostTailnetListener {
+    fn port(&self) -> u16 {
+        self.port
+    }
+
+    fn set_computer_name(&self, name: String) {
+        if let Ok(mut g) = self.ctrl.computer_name.lock() {
+            *g = name;
+        }
+    }
+
+    fn set_allow_pairing(&self, allow: bool) {
+        self.ctrl.allow_phones.store(allow, Ordering::SeqCst);
+    }
+
+    fn stop_serving(&self) {
+        self.ctrl.serving.store(false, Ordering::SeqCst);
+        let _ = self.ctrl.drop_tx.send(());
+    }
+
+    fn is_serving(&self) -> bool {
+        self.ctrl.serving.load(Ordering::SeqCst)
+    }
+
+    fn connected_clients(&self) -> Vec<String> {
+        self.ctrl
+            .connected
+            .lock()
+            .map(|map| {
+                map.iter()
+                    .filter(|&(_, &v)| v > 0)
+                    .map(|(k, _)| k.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn drop_revoked(&self) {
+        let _ = self.ctrl.drop_tx.send(());
+    }
+
+    fn close(&mut self) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            self.stop_serving();
+            let _ = self.shutdown_tx.send(true);
+            if let Some(task) = self.task.take() {
+                let _ = task.await;
+            }
+        })
+    }
+}
+
+impl Drop for HostTailnetListener {
+    fn drop(&mut self) {
+        self.stop_serving();
+        let _ = self.shutdown_tx.send(true);
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+/// Starts the full protocol v1 HTTP+WebSocket tailnet loopback listener (`admin: false`, ADR-0053)
+/// that Tailscale Serve proxies `:8443` / `:10000` to.
+pub async fn start_tailnet_listener(
+    spawn_cfg: PhoneAccessListenerSpawn,
+    state: Arc<HostState>,
+    connected: Arc<Mutex<HashMap<String, usize>>>,
+    mut host_shutdown_rx: watch::Receiver<bool>,
+) -> std::io::Result<Box<dyn PhoneAccessListener>> {
+    let listener = match spawn_cfg.preferred_port {
+        Some(p) if p > 0 => match TcpListener::bind(("127.0.0.1", p)).await {
+            Ok(l) => l,
+            Err(_) => TcpListener::bind(("127.0.0.1", 0)).await?,
+        },
+        _ => TcpListener::bind(("127.0.0.1", 0)).await?,
+    };
+    let bound_port = listener.local_addr()?.port();
+    let (drop_tx, _) = broadcast::channel(32);
+    let ctrl = Arc::new(TailnetListenerControl {
+        serving: AtomicBool::new(true),
+        allow_phones: AtomicBool::new(spawn_cfg.allow_pairing),
+        computer_name: Mutex::new(spawn_cfg.computer_name),
+        connected,
+        drop_tx,
+        on_paired: spawn_cfg.on_paired,
+        on_peers_changed: spawn_cfg.on_peers_changed,
+    });
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    let task_ctrl = Arc::clone(&ctrl);
+    let conn_limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
+    let task = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = shutdown_rx.changed() => {
+                    if *shutdown_rx.borrow() {
+                        break;
+                    }
+                }
+                _ = host_shutdown_rx.changed() => {
+                    if *host_shutdown_rx.borrow() {
+                        break;
+                    }
+                }
+                accepted = listener.accept() => {
+                    match accepted {
+                        Ok((stream, _addr)) => {
+                            if !task_ctrl.serving.load(Ordering::SeqCst) {
+                                drop(stream);
+                                continue;
+                            }
+                            let Ok(permit) = Arc::clone(&conn_limit).try_acquire_owned() else {
+                                drop(stream);
+                                continue;
+                            };
+                            let peer_state = Arc::clone(&state);
+                            let peer_mode = ListenerMode::Tailnet(Arc::clone(&task_ctrl));
+                            let peer_shutdown = shutdown_rx.clone();
+                            tokio::spawn(async move {
+                                let _permit = permit;
+                                let _ = handle_connection(
+                                    stream,
+                                    bound_port,
+                                    peer_state,
+                                    peer_mode,
+                                    peer_shutdown,
+                                )
+                                .await;
+                            });
+                        }
+                        Err(_) => {
+                            tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(Box::new(HostTailnetListener {
+        port: bound_port,
+        ctrl,
+        shutdown_tx,
+        task: Some(task),
+    }))
 }
 
 pub fn generate_admin_token() -> String {
@@ -160,20 +377,27 @@ pub struct ServerConfig {
     pub started_by: Option<String>,
     pub credentials: HostCredentials,
     pub providers: BTreeMap<String, Arc<dyn ProviderAdapter>>,
+    pub tailscale: Option<Arc<dyn TailscaleBackend>>,
+    pub phone_retry_interval: Option<Duration>,
 }
 
 pub struct RunningServer {
     pub state: Arc<HostState>,
+    descriptor_stop_tx: watch::Sender<bool>,
+    descriptor_task: tokio::task::JoinHandle<()>,
     shutdown_tx: watch::Sender<bool>,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl RunningServer {
     pub async fn start(config: ServerConfig) -> std::io::Result<Self> {
-        let pairing = PairedClients::load(&config.data_directory)
-            .map_err(|err| std::io::Error::other(err.to_string()))?;
-        let mut desktops = DesktopClients::new(&config.data_directory);
-        desktops.refresh();
+        let pairing = Arc::new(Mutex::new(
+            PairedClients::load(&config.data_directory)
+                .map_err(|err| std::io::Error::other(err.to_string()))?,
+        ));
+        let mut desktops_inner = DesktopClients::new(&config.data_directory);
+        desktops_inner.refresh();
+        let desktops = Arc::new(Mutex::new(desktops_inner));
         let memory = MemoryStore::open(&config.data_directory.join("memory.sqlite"))
             .map_err(|err| std::io::Error::other(err.to_string()))?;
         let subagents = SubagentStore::open(&config.data_directory.join("subagents.sqlite"))
@@ -191,6 +415,16 @@ impl RunningServer {
         let bound_port = listener.local_addr()?.port();
         let admin_token = generate_admin_token();
         let (revoked_tx, _) = broadcast::channel(64);
+        let phones = HostPhoneAccess::new(
+            config.data_directory.clone(),
+            config.host_id.clone(),
+            Arc::clone(&pairing),
+            Arc::clone(&desktops),
+            coordinator.clone(),
+            revoked_tx.clone(),
+            config.tailscale,
+            config.phone_retry_interval,
+        );
 
         let state = Arc::new(HostState {
             data_directory: config.data_directory.clone(),
@@ -200,18 +434,54 @@ impl RunningServer {
             features: advertised_features(),
             admin_token,
             started_by: config.started_by,
-            pairing: Mutex::new(pairing),
-            desktops: Mutex::new(desktops),
+            pairing,
+            desktops,
             memory: Mutex::new(memory),
             subagents: Mutex::new(subagents),
             credentials: Mutex::new(config.credentials),
             coordinator,
+            phones: Arc::clone(&phones),
             revoked_tx,
         });
 
-        write_descriptor(&config.data_directory, &state.descriptor())?;
+        let initial_descriptor = state.descriptor();
+        let mut last_recorded_address = initial_descriptor.tailnet_address.clone();
+        write_descriptor(&config.data_directory, &initial_descriptor)?;
 
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let (descriptor_stop_tx, mut descriptor_stop_rx) = watch::channel(false);
+        let mut phones_rx = state.phones.subscribe();
+        let desc_state = Arc::clone(&state);
+        let descriptor_task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = descriptor_stop_rx.changed() => {
+                        if *descriptor_stop_rx.borrow() {
+                            break;
+                        }
+                    }
+                    changed = phones_rx.changed() => {
+                        if changed.is_err() || *descriptor_stop_rx.borrow() {
+                            break;
+                        }
+                        let next_addr = desc_state.phones.address();
+                        if next_addr != last_recorded_address {
+                            let descriptor = desc_state.descriptor();
+                            if write_descriptor(&desc_state.data_directory, &descriptor).is_ok() {
+                                last_recorded_address = descriptor.tailnet_address;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Start Tailscale Serve / phone access alongside the main listener so slow Tailscale
+        // checks never hold up startup readiness (matching `src/host/index.ts:432-464`).
+        state
+            .phones
+            .start_background(Arc::downgrade(&state), shutdown_rx.clone());
+
         let server_state = Arc::clone(&state);
         let conn_limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
         let task = tokio::spawn(async move {
@@ -233,7 +503,14 @@ impl RunningServer {
                                 let peer_shutdown = shutdown_rx.clone();
                                 tokio::spawn(async move {
                                     let _permit = permit;
-                                    let _ = handle_connection(stream, peer_state, peer_shutdown).await;
+                                    let _ = handle_connection(
+                                        stream,
+                                        bound_port,
+                                        peer_state,
+                                        ListenerMode::Admin,
+                                        peer_shutdown,
+                                    )
+                                    .await;
                                 });
                             }
                             Err(_) => {
@@ -247,12 +524,19 @@ impl RunningServer {
 
         Ok(Self {
             state,
+            descriptor_stop_tx,
+            descriptor_task,
             shutdown_tx,
             task,
         })
     }
 
     pub async fn close(self) {
+        // Close phone access first so Tailscale Serve removes its mapping before the host stops
+        // and no descriptor rewrite races with `cleanup_descriptor` (matching `src/host/index.ts:488-503`).
+        self.state.phones.close().await;
+        let _ = self.descriptor_stop_tx.send(true);
+        let _ = self.descriptor_task.await;
         let _ = self.shutdown_tx.send(true);
         let _ = self.task.await;
         self.state.coordinator.shutdown().await;
@@ -273,6 +557,23 @@ struct PairBody {
 struct ClientIdBody {
     #[serde(rename = "clientId")]
     client_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmptyBody {}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PhonesCommandBody {
+    command: HostAdminPhonesCommand,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TailnetBody {
+    #[serde(default)]
+    enabled: Option<bool>,
 }
 
 enum HeaderReadError {
@@ -316,9 +617,16 @@ async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
 
 async fn handle_connection(
     stream: TcpStream,
+    listener_port: u16,
     state: Arc<HostState>,
+    mode: ListenerMode,
     shutdown: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
+    if let ListenerMode::Tailnet(ref ctrl) = mode {
+        if !ctrl.serving.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+    }
     let _ = stream.set_nodelay(true);
     let mut reader = BufReader::new(stream);
     let mut remaining_header_bytes = MAX_HTTP_HEADER_BYTES;
@@ -377,7 +685,8 @@ async fn handle_connection(
             .map(|v| v.eq_ignore_ascii_case("websocket"))
             .unwrap_or(false)
     {
-        return handle_websocket_upgrade(reader.into_inner(), &headers, state, shutdown).await;
+        return handle_websocket_upgrade(reader.into_inner(), &headers, state, mode, shutdown)
+            .await;
     }
 
     let content_length = headers
@@ -402,7 +711,16 @@ async fn handle_connection(
     let bearer = extract_bearer(&headers);
 
     if method == "GET" && path == "/v1/health" {
-        let payload = state.descriptor().public_health();
+        let mut payload = state.descriptor_for_port(listener_port).public_health();
+        if let ListenerMode::Tailnet(ref ctrl) = mode {
+            let name = ctrl.computer_name();
+            let trimmed = name.trim();
+            if !trimmed.is_empty() {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert("name".into(), Value::String(trimmed.to_string()));
+                }
+            }
+        }
         send_http_json(&mut stream, 200, &payload).await?;
         return Ok(());
     }
@@ -413,6 +731,10 @@ async fn handle_connection(
     }
 
     if path.starts_with("/v1/admin/") {
+        if matches!(mode, ListenerMode::Tailnet(_)) {
+            send_http_error(&mut stream, HostErrorCode::InvalidRequest, None).await?;
+            return Ok(());
+        }
         if !constant_time_eq(bearer.as_bytes(), state.admin_token.as_bytes()) {
             send_http_error(&mut stream, HostErrorCode::Unauthenticated, None).await?;
             return Ok(());
@@ -428,6 +750,81 @@ async fn handle_connection(
             send_http_json(&mut stream, 200, &payload).await?;
             return Ok(());
         }
+        if path == "/v1/admin/phones" {
+            let parsed = if body.is_empty() {
+                Ok(EmptyBody {})
+            } else {
+                serde_json::from_slice::<EmptyBody>(&body)
+            };
+            if parsed.is_err() {
+                send_http_error(&mut stream, HostErrorCode::InvalidRequest, None).await?;
+                return Ok(());
+            }
+            let phones_state = state.phones.get_state();
+            send_http_json(
+                &mut stream,
+                200,
+                &json!({
+                    "v": HOST_PROTOCOL_VERSION,
+                    "hostId": state.host_id,
+                    "state": phones_state,
+                }),
+            )
+            .await?;
+            return Ok(());
+        }
+        if path == "/v1/admin/phones-command" {
+            let parsed: PhonesCommandBody = match serde_json::from_slice::<PhonesCommandBody>(&body) {
+                Ok(v) if v.command.validate() => v,
+                _ => {
+                    send_http_error(&mut stream, HostErrorCode::InvalidRequest, None).await?;
+                    return Ok(());
+                }
+            };
+            let answer = state.phones.command(parsed.command).await;
+            let mut payload = json!({
+                "v": HOST_PROTOCOL_VERSION,
+                "hostId": state.host_id,
+                "state": answer.state,
+            });
+            if let Some(obj) = payload.as_object_mut() {
+                if let Some(url) = answer.url {
+                    obj.insert("url".into(), Value::String(url));
+                }
+                if let Some(error) = answer.error {
+                    obj.insert("error".into(), Value::String(error));
+                }
+            }
+            send_http_json(&mut stream, 200, &payload).await?;
+            return Ok(());
+        }
+        if path == "/v1/admin/tailnet" {
+            let parsed: TailnetBody = if body.is_empty() {
+                TailnetBody { enabled: None }
+            } else {
+                match serde_json::from_slice(&body) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        send_http_error(&mut stream, HostErrorCode::InvalidRequest, None).await?;
+                        return Ok(());
+                    }
+                }
+            };
+            let answer = state.phones.tailnet(parsed.enabled).await;
+            let mut payload = json!({
+                "v": HOST_PROTOCOL_VERSION,
+                "hostId": state.host_id,
+                "enabled": answer.enabled,
+                "state": answer.state,
+            });
+            if let Some(obj) = payload.as_object_mut() {
+                if let Some(error) = answer.error {
+                    obj.insert("error".into(), Value::String(error));
+                }
+            }
+            send_http_json(&mut stream, 200, &payload).await?;
+            return Ok(());
+        }
         if path == "/v1/admin/revoke-client" {
             let parsed: ClientIdBody = match serde_json::from_slice(&body) {
                 Ok(v) => v,
@@ -439,10 +836,7 @@ async fn handle_connection(
             let revoke_result = state.pairing.lock().unwrap().revoke(&parsed.client_id);
             match revoke_result {
                 Ok(revoked) => {
-                    state.desktops.lock().unwrap().remove(&parsed.client_id);
-                    if revoked {
-                        let _ = state.revoked_tx.send(parsed.client_id);
-                    }
+                    state.phones.handle_client_revoked(parsed.client_id);
                     send_http_json(
                         &mut stream,
                         200,
@@ -470,6 +864,15 @@ async fn handle_connection(
                 return Ok(());
             }
             let allowed = path.ends_with("/allow-answers");
+            if !allowed && state.phones.is_phone(&parsed.client_id) {
+                send_http_error(
+                    &mut stream,
+                    HostErrorCode::InvalidRequest,
+                    Some("Remove a phone to stop it answering."),
+                )
+                .await?;
+                return Ok(());
+            }
             let write_res = state.memory.lock().unwrap().set_remote_answers(
                 &parsed.client_id,
                 allowed,
@@ -495,6 +898,13 @@ async fn handle_connection(
     }
 
     if path == "/v1/pair" {
+        if let ListenerMode::Tailnet(ref ctrl) = mode {
+            if !ctrl.allow_phones.load(Ordering::SeqCst) {
+                let msg = phones_off_message(Some(&ctrl.computer_name()));
+                send_http_error(&mut stream, HostErrorCode::Forbidden, Some(&msg)).await?;
+                return Ok(());
+            }
+        }
         let parsed: PairBody = match serde_json::from_slice::<PairBody>(&body) {
             Ok(v) if v.v == HOST_PROTOCOL_VERSION => v,
             _ => {
@@ -509,6 +919,9 @@ async fn handle_connection(
             .redeem_pairing_code(&parsed.code, &parsed.name);
         match result {
             Ok(paired) => {
+                if let ListenerMode::Tailnet(ref ctrl) = mode {
+                    (ctrl.on_paired)(paired.client_id.clone());
+                }
                 send_http_json(
                     &mut stream,
                     200,
@@ -542,6 +955,20 @@ async fn handle_connection(
             send_http_error(&mut stream, HostErrorCode::Unauthenticated, None).await?;
             return Ok(());
         };
+        if let ListenerMode::Tailnet(ref ctrl) = mode {
+            if !ctrl.allow_phones.load(Ordering::SeqCst) {
+                let is_desktop = {
+                    let mut desktops = state.desktops.lock().unwrap();
+                    desktops.refresh();
+                    desktops.has(&client_id)
+                };
+                if !is_desktop {
+                    let msg = phones_off_message(Some(&ctrl.computer_name()));
+                    send_http_error(&mut stream, HostErrorCode::Forbidden, Some(&msg)).await?;
+                    return Ok(());
+                }
+            }
+        }
         let issued = state.pairing.lock().unwrap().issue_session(&client_id);
         let Some(session) = issued else {
             send_http_error(&mut stream, HostErrorCode::Unauthenticated, None).await?;
@@ -571,9 +998,9 @@ async fn handle_connection(
         let revoke_result = state.pairing.lock().unwrap().revoke(&client_id);
         match revoke_result {
             Ok(revoked) => {
-                state.desktops.lock().unwrap().remove(&client_id);
-                if revoked {
-                    let _ = state.revoked_tx.send(client_id);
+                state.phones.handle_client_revoked(client_id);
+                if let ListenerMode::Tailnet(ref ctrl) = mode {
+                    (ctrl.on_peers_changed)();
                 }
                 send_http_json(
                     &mut stream,
@@ -603,6 +1030,7 @@ async fn handle_websocket_upgrade(
     mut stream: TcpStream,
     headers: &HashMap<String, String>,
     state: Arc<HostState>,
+    mode: ListenerMode,
     mut shutdown: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
     let session = extract_bearer(headers).to_string();
@@ -628,6 +1056,26 @@ async fn handle_websocket_upgrade(
             .await?;
         return Ok(());
     };
+    if let ListenerMode::Tailnet(ref ctrl) = mode {
+        if !ctrl.serving.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let admitted = ctrl.allow_phones.load(Ordering::SeqCst)
+            || state.desktops.lock().unwrap().has(&client_id)
+            || {
+                let mut desktops = state.desktops.lock().unwrap();
+                desktops.refresh();
+                desktops.has(&client_id)
+            };
+        if !admitted {
+            stream
+                .write_all(
+                    b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+                )
+                .await?;
+            return Ok(());
+        }
+    }
     let key = headers.get("sec-websocket-key").map(String::as_str);
     let version = headers.get("sec-websocket-version").map(String::as_str);
 
@@ -655,6 +1103,13 @@ async fn handle_websocket_upgrade(
     response.push_str("\r\n");
     stream.write_all(response.as_bytes()).await?;
     stream.flush().await?;
+
+    let _connected_guard = match mode {
+        ListenerMode::Tailnet(ref ctrl) => {
+            Some(ConnectedPeerGuard::new(Arc::clone(ctrl), client_id.clone()))
+        }
+        ListenerMode::Admin => None,
+    };
 
     let (mut read_half, mut write_half) = tokio::io::split(stream);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<OutboundFrame>();
@@ -691,6 +1146,10 @@ async fn handle_websocket_upgrade(
 
     let mut wire = ClientWireState::default();
     let mut revoked_rx = state.revoked_tx.subscribe();
+    let mut drop_rx = match mode {
+        ListenerMode::Tailnet(ref ctrl) => Some(ctrl.drop_tx.subscribe()),
+        ListenerMode::Admin => None,
+    };
     let mut coord_rx = state.coordinator.subscribe();
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -710,6 +1169,28 @@ async fn handle_websocket_upgrade(
                 if matches!(revoked_id, Ok(ref id) if id == &client_id)
                     || state.pairing.lock().unwrap().verify_session(&session).as_deref() != Some(client_id.as_str())
                 {
+                    let _ = out_tx.send(OutboundFrame::Close);
+                    break;
+                }
+            }
+            _ = async {
+                match drop_rx.as_mut() {
+                    Some(rx) => {
+                        let _ = rx.recv().await;
+                    }
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                let keep = if let ListenerMode::Tailnet(ref ctrl) = mode {
+                    ctrl.serving.load(Ordering::SeqCst)
+                        && state.pairing.lock().unwrap().verify_session(&session).as_deref()
+                            == Some(client_id.as_str())
+                        && (ctrl.allow_phones.load(Ordering::SeqCst)
+                            || state.desktops.lock().unwrap().has(&client_id))
+                } else {
+                    true
+                };
+                if !keep {
                     let _ = out_tx.send(OutboundFrame::Close);
                     break;
                 }
@@ -785,6 +1266,7 @@ async fn handle_websocket_upgrade(
                         }
                         let reply = handle_ws_request(
                             &state,
+                            &mode,
                             &client_id,
                             &client_name,
                             &session,
@@ -819,8 +1301,10 @@ async fn handle_websocket_upgrade(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_ws_request(
     state: &HostState,
+    mode: &ListenerMode,
     client_id: &str,
     client_name: &str,
     upgrade_session: &str,
@@ -921,26 +1405,47 @@ async fn handle_ws_request(
                 .unwrap_or(false);
             let credentials_secure = state.credentials.lock().unwrap().is_secure();
 
-            HostResponseEnvelope::ok(
-                req.id,
-                json!({
-                    "hostId": state.host_id,
-                    "clientId": client_id,
-                    "sottoVersion": state.sotto_version,
-                    "features": state.features,
-                    "capabilities": { "mayAnswer": may_answer },
-                    "events": events,
-                    "hasMore": has_more,
-                    "latestSeq": latest_seq.max(after_seq),
-                    "phoneAccess": { "phones": 0, "status": "off" },
-                    "shell": shell,
-                    "stores": {
-                        "memorySchemaVersion": memory_version,
-                        "subagentsOk": subagents_ok,
-                        "credentialsSecure": credentials_secure,
-                    },
-                }),
-            )
+            let is_desktop = match mode {
+                ListenerMode::Admin => true,
+                ListenerMode::Tailnet(_) => {
+                    let mut desktops = state.desktops.lock().unwrap();
+                    desktops.refresh();
+                    desktops.has(client_id)
+                }
+            };
+            let mut result = json!({
+                "hostId": state.host_id,
+                "clientId": client_id,
+                "sottoVersion": state.sotto_version,
+                "features": state.features,
+                "capabilities": { "mayAnswer": may_answer },
+                "events": events,
+                "hasMore": has_more,
+                "latestSeq": latest_seq.max(after_seq),
+                "shell": shell,
+                "stores": {
+                    "memorySchemaVersion": memory_version,
+                    "subagentsOk": subagents_ok,
+                    "credentialsSecure": credentials_secure,
+                },
+            });
+            if let Some(obj) = result.as_object_mut() {
+                if let Some(ref started_by) = state.started_by {
+                    obj.insert("startedBy".into(), Value::String(started_by.clone()));
+                }
+                if let Some(tailnet_address) = state.phones.address() {
+                    obj.insert("tailnetAddress".into(), Value::String(tailnet_address));
+                }
+                if is_desktop {
+                    let summary = state.phones.summary();
+                    obj.insert(
+                        "phoneAccess".into(),
+                        serde_json::to_value(summary)
+                            .unwrap_or_else(|_| json!({ "status": "off", "phones": 0 })),
+                    );
+                }
+            }
+            HostResponseEnvelope::ok(req.id, result)
         }
         "ping" => HostResponseEnvelope::ok(req.id, json!({ "pong": true })),
         "shell" | "state" => match state.coordinator.shell(may_answer).await {

@@ -1,3 +1,4 @@
+mod phones;
 mod server;
 mod wire_codec;
 mod ws;
@@ -366,6 +367,8 @@ async fn run_host(parsed: HostCliArgs) -> ExitCode {
         started_by: parsed.started_by,
         credentials,
         providers,
+        tailscale: None,
+        phone_retry_interval: None,
     })
     .await
     {
@@ -462,6 +465,8 @@ mod tests {
             started_by: None,
             credentials,
             providers,
+            tailscale: None,
+            phone_retry_interval: None,
         })
         .await
         .unwrap();
@@ -576,7 +581,10 @@ mod tests {
         assert_eq!(parsed["result"]["hostId"], host_id);
         assert_eq!(parsed["result"]["clientId"], client_id);
         assert_eq!(parsed["result"]["capabilities"]["mayAnswer"], true);
+        assert_eq!(parsed["result"]["shell"]["hostId"], host_id);
         assert_eq!(parsed["result"]["shell"]["host"]["hostId"], host_id);
+        assert_eq!(parsed["result"]["phoneAccess"]["status"], "off");
+        assert_eq!(parsed["result"]["phoneAccess"]["phones"], 0);
 
         // Revoking the paired client immediately closes the already-open WebSocket.
         let revoke_body = serde_json::json!({ "clientId": client_id }).to_string();
@@ -646,6 +654,421 @@ mod tests {
         assert!(status_line.starts_with("HTTP/1.1 413"));
 
         srv.close().await;
+        assert!(!dir.path().join("host-listener.json").exists());
+    }
+
+    struct MockTailscaleState {
+        serve_config: sotto_core::ServeConfig,
+        serve_calls: Vec<(u16, u16)>,
+        unserve_calls: Vec<u16>,
+    }
+
+    struct MockTailscale {
+        dns_name: String,
+        host_name: String,
+        state: std::sync::Mutex<MockTailscaleState>,
+    }
+
+    impl MockTailscale {
+        fn running(dns_name: &str, host_name: &str) -> Arc<Self> {
+            Arc::new(Self {
+                dns_name: dns_name.into(),
+                host_name: host_name.into(),
+                state: std::sync::Mutex::new(MockTailscaleState {
+                    serve_config: sotto_core::ServeConfig::default(),
+                    serve_calls: Vec::new(),
+                    unserve_calls: Vec::new(),
+                }),
+            })
+        }
+    }
+
+    impl sotto_core::TailscaleBackend for MockTailscale {
+        fn status(&self) -> sotto_core::TailscaleStatus {
+            sotto_core::TailscaleStatus::Running {
+                dns_name: self.dns_name.clone(),
+                host_name: self.host_name.clone(),
+                others: Vec::new(),
+            }
+        }
+
+        fn serve_status(&self) -> Result<sotto_core::ServeConfig, sotto_core::ServeStatusError> {
+            Ok(self.state.lock().unwrap().serve_config.clone())
+        }
+
+        fn serve(&self, port: u16, loopback_port: u16) -> sotto_core::ServeResult {
+            let mut st = self.state.lock().unwrap();
+            st.serve_calls.push((port, loopback_port));
+            let mut tcp = st.serve_config.tcp.take().unwrap_or_default();
+            tcp.insert(
+                port.to_string(),
+                Some(sotto_core::phone_access::ServeTcpEntry {
+                    https: Some(true),
+                    ..Default::default()
+                }),
+            );
+            st.serve_config.tcp = Some(tcp);
+            let mut web = st.serve_config.web.take().unwrap_or_default();
+            let mut handlers = BTreeMap::new();
+            handlers.insert(
+                "/".to_string(),
+                Some(sotto_core::phone_access::ServeHandler {
+                    proxy: Some(sotto_core::serve_target(loopback_port)),
+                    ..Default::default()
+                }),
+            );
+            web.insert(
+                format!("{}:{port}", self.dns_name),
+                Some(sotto_core::phone_access::ServeWebEntry {
+                    handlers: Some(handlers),
+                }),
+            );
+            st.serve_config.web = Some(web);
+            sotto_core::ServeResult::Ok
+        }
+
+        fn unserve(&self, port: u16) -> bool {
+            let mut st = self.state.lock().unwrap();
+            st.unserve_calls.push(port);
+            if let Some(ref mut tcp) = st.serve_config.tcp {
+                tcp.remove(&port.to_string());
+            }
+            if let Some(ref mut web) = st.serve_config.web {
+                let suffix = format!(":{port}");
+                web.retain(|k, _| !k.ends_with(&suffix));
+            }
+            true
+        }
+    }
+
+    async fn ws_connect_and_hello(port: u16, session: &str) -> (TcpStream, serde_json::Value) {
+        let mut ws = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let key = "dGhlIHNhbXBsZSBub25jZQ==";
+        let upgrade = format!(
+            "GET /v1/socket HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nAuthorization: Bearer {session}\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        );
+        ws.write_all(upgrade.as_bytes()).await.unwrap();
+        let mut ws_reader = BufReader::new(ws);
+        let mut resp_line = String::new();
+        ws_reader.read_line(&mut resp_line).await.unwrap();
+        assert!(resp_line.starts_with("HTTP/1.1 101"), "unexpected: {resp_line}");
+        loop {
+            let mut h = String::new();
+            ws_reader.read_line(&mut h).await.unwrap();
+            if h == "\r\n" || h == "\n" {
+                break;
+            }
+        }
+        let mut ws_stream = ws_reader.into_inner();
+        let hello = r#"{"v":1,"id":"h1","op":"hello","accepts":["changed-thread-records","kept-parts","model-catalog-revision"]}"#;
+        let mask = [0x12u8, 0x34, 0x56, 0x78];
+        let mut frame = vec![0x81, 0x80 | (hello.len() as u8)];
+        frame.extend_from_slice(&mask);
+        for (idx, b) in hello.as_bytes().iter().enumerate() {
+            frame.push(b ^ mask[idx & 3]);
+        }
+        ws_stream.write_all(&frame).await.unwrap();
+        ws_stream.flush().await.unwrap();
+
+        let mut hdr = [0u8; 2];
+        ws_stream.read_exact(&mut hdr).await.unwrap();
+        assert_eq!(hdr[0] & 0x0f, 0x1);
+        let len_b = hdr[1] & 0x7f;
+        let len = if len_b == 126 {
+            let mut ext = [0u8; 2];
+            ws_stream.read_exact(&mut ext).await.unwrap();
+            u16::from_be_bytes(ext) as usize
+        } else {
+            len_b as usize
+        };
+        let mut resp_payload = vec![0u8; len];
+        ws_stream.read_exact(&mut resp_payload).await.unwrap();
+        (ws_stream, serde_json::from_slice(&resp_payload).unwrap())
+    }
+
+    #[tokio::test]
+    async fn tailnet_phone_access_admin_routes_descriptor_and_shutdown_parity() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("settings.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "version": 1,
+                "tailnetConnections": true,
+                "phoneAccess": false,
+                "phoneAccessName": "Forge Box",
+                "otherSetting": "keep-me"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let host_id = load_host_identity(dir.path()).unwrap();
+        let credentials = HostCredentials::open(dir.path(), None).unwrap();
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+        let ts = MockTailscale::running("forge.tail123.ts.net", "forge");
+
+        let srv = RunningServer::start(ServerConfig {
+            data_directory: dir.path().to_path_buf(),
+            host_id: host_id.clone(),
+            port: 0,
+            sotto_version: "0.1.44-owl.20261124.1".into(),
+            started_by: Some("launch-script".into()),
+            credentials,
+            providers,
+            tailscale: Some(ts.clone()),
+            phone_retry_interval: Some(std::time::Duration::from_secs(60)),
+        })
+        .await
+        .unwrap();
+
+        // Wait for background PhoneAccessManager startup to finish Serve :8443 setup.
+        srv.state.phones.wait_started().await;
+        let port = srv.state.port;
+        let admin_token = srv.state.admin_token.clone();
+
+        // host-listener.json should be updated with tailnetAddress once Serve comes up.
+        let expected_addr = "https://forge.tail123.ts.net:8443";
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if let Ok(text) = std::fs::read_to_string(dir.path().join("host-listener.json")) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if val.get("tailnetAddress").and_then(serde_json::Value::as_str)
+                            == Some(expected_addr)
+                        {
+                            break;
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("host-listener.json should record tailnetAddress");
+
+        let (status, health) = http_request(port, "GET", "/v1/health", None, None).await;
+        assert_eq!(status, 200);
+        assert_eq!(health["tailnetAddress"], expected_addr);
+        assert_eq!(health["startedBy"], "launch-script");
+
+        let tailnet_port = ts.state.lock().unwrap().serve_calls[0].1;
+        assert_eq!(ts.state.lock().unwrap().serve_calls[0].0, 8443);
+
+        // Tailnet listener exposes computer name on /v1/health and refuses /v1/admin/*.
+        let (status, t_health) = http_request(tailnet_port, "GET", "/v1/health", None, None).await;
+        assert_eq!(status, 200);
+        assert_eq!(t_health["name"], "Forge Box");
+        assert_eq!(t_health["tailnetAddress"], expected_addr);
+
+        let (status, _) = http_request(
+            tailnet_port,
+            "POST",
+            "/v1/admin/phones",
+            Some(&admin_token),
+            Some("{}"),
+        )
+        .await;
+        assert_eq!(status, 400);
+
+        // While phoneAccess is false, /v1/pair on the tailnet listener returns 403 forbidden.
+        let (status, pair_refused) = http_request(
+            tailnet_port,
+            "POST",
+            "/v1/pair",
+            None,
+            Some(r#"{"v":1,"code":"ABCDEFGH","name":"Phone"}"#),
+        )
+        .await;
+        assert_eq!(status, 403);
+        assert_eq!(pair_refused["error"]["code"], "forbidden");
+
+        // Pair a desktop over the admin listener and record it in desktop-clients.json.
+        let (_, code_res) = http_request(
+            port,
+            "POST",
+            "/v1/admin/pairing-code",
+            Some(&admin_token),
+            None,
+        )
+        .await;
+        let desktop_pair_body = serde_json::json!({
+            "v": 1,
+            "code": code_res["code"],
+            "name": "Zach Laptop",
+        })
+        .to_string();
+        let (status, desktop_paired) =
+            http_request(port, "POST", "/v1/pair", None, Some(&desktop_pair_body)).await;
+        assert_eq!(status, 200);
+        let desktop_id = desktop_paired["clientId"].as_str().unwrap().to_string();
+        let desktop_token = desktop_paired["token"].as_str().unwrap().to_string();
+        std::fs::write(
+            dir.path().join("desktop-clients.json"),
+            serde_json::to_string(&vec![&desktop_id]).unwrap(),
+        )
+        .unwrap();
+
+        // Recorded desktop can connect over the tailnet listener even with phoneAccess off.
+        let (status, t_sess) =
+            http_request(tailnet_port, "POST", "/v1/session", Some(&desktop_token), None).await;
+        assert_eq!(status, 200);
+        let (desktop_ws, desktop_hello) =
+            ws_connect_and_hello(tailnet_port, t_sess["session"].as_str().unwrap()).await;
+        assert_eq!(desktop_hello["result"]["tailnetAddress"], expected_addr);
+        assert_eq!(desktop_hello["result"]["startedBy"], "launch-script");
+        assert_eq!(desktop_hello["result"]["phoneAccess"]["status"], "off");
+        assert_eq!(desktop_hello["result"]["phoneAccess"]["phones"], 0);
+        assert_eq!(desktop_hello["result"]["shell"]["hostId"], host_id);
+        drop(desktop_ws);
+
+        // Turn phoneAccess on via /v1/admin/phones-command.
+        let (status, enabled_res) = http_request(
+            port,
+            "POST",
+            "/v1/admin/phones-command",
+            Some(&admin_token),
+            Some(r#"{"command":{"type":"set-enabled","enabled":true}}"#),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(enabled_res["state"]["enabled"], true);
+        assert_eq!(enabled_res["state"]["phase"], "on");
+        let saved_settings: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved_settings["phoneAccess"], true);
+        assert_eq!(saved_settings["otherSetting"], "keep-me");
+
+        // Show pairing code and pair a phone through the tailnet listener.
+        let (status, show_res) = http_request(
+            port,
+            "POST",
+            "/v1/admin/phones-command",
+            Some(&admin_token),
+            Some(r#"{"command":{"type":"show-code"}}"#),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let phone_code = show_res["state"]["code"]["code"].as_str().unwrap();
+        let phone_pair_body = serde_json::json!({
+            "v": 1,
+            "code": phone_code,
+            "name": "Zach iPhone",
+        })
+        .to_string();
+        let (status, phone_paired) =
+            http_request(tailnet_port, "POST", "/v1/pair", None, Some(&phone_pair_body)).await;
+        assert_eq!(status, 200);
+        let phone_id = phone_paired["clientId"].as_str().unwrap().to_string();
+        let phone_token = phone_paired["token"].as_str().unwrap().to_string();
+
+        // Phone opens WebSocket on tailnet listener; admin /v1/admin/phones sees connected == true
+        // and only lists the phone (never the desktop).
+        let (status, p_sess) =
+            http_request(tailnet_port, "POST", "/v1/session", Some(&phone_token), None).await;
+        assert_eq!(status, 200);
+        let (_phone_ws, phone_hello) =
+            ws_connect_and_hello(tailnet_port, p_sess["session"].as_str().unwrap()).await;
+        assert_eq!(phone_hello["result"]["capabilities"]["mayAnswer"], true);
+        assert_eq!(phone_hello["result"]["shell"]["hostId"], host_id);
+        assert!(phone_hello["result"].get("phoneAccess").is_none());
+
+        let (status, phones_read) =
+            http_request(port, "POST", "/v1/admin/phones", Some(&admin_token), Some("{}")).await;
+        assert_eq!(status, 200);
+        assert_eq!(phones_read["state"]["phones"].as_array().unwrap().len(), 1);
+        assert_eq!(phones_read["state"]["phones"][0]["clientId"], phone_id);
+        assert_eq!(phones_read["state"]["phones"][0]["connected"], true);
+        assert_eq!(phones_read["state"]["phones"][0]["canAnswer"], true);
+
+        // Desktop hello reports phoneAccess: { status: "on", phones: 1 }.
+        let (status, d_sess2) =
+            http_request(port, "POST", "/v1/session", Some(&desktop_token), None).await;
+        assert_eq!(status, 200);
+        let (_d_ws2, d_hello2) =
+            ws_connect_and_hello(port, d_sess2["session"].as_str().unwrap()).await;
+        assert_eq!(d_hello2["result"]["phoneAccess"]["status"], "on");
+        assert_eq!(d_hello2["result"]["phoneAccess"]["phones"], 1);
+
+        // deny-answers refuses a paired phone; remove refuses a paired desktop.
+        let deny_phone = serde_json::json!({ "clientId": phone_id }).to_string();
+        let (status, _) = http_request(
+            port,
+            "POST",
+            "/v1/admin/deny-answers",
+            Some(&admin_token),
+            Some(&deny_phone),
+        )
+        .await;
+        assert_eq!(status, 400);
+
+        let remove_desktop = serde_json::json!({
+            "command": { "type": "remove", "clientId": desktop_id }
+        })
+        .to_string();
+        let (status, rem_d_res) = http_request(
+            port,
+            "POST",
+            "/v1/admin/phones-command",
+            Some(&admin_token),
+            Some(&remove_desktop),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(rem_d_res["error"].as_str().is_some());
+
+        // Turn phoneAccess off while tailnetConnections stays true; Serve stays up.
+        let (status, _) = http_request(
+            port,
+            "POST",
+            "/v1/admin/phones-command",
+            Some(&admin_token),
+            Some(r#"{"command":{"type":"set-enabled","enabled":false}}"#),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(srv.state.phones.address().as_deref(), Some(expected_addr));
+
+        // Revoking the last desktop automatically turns tailnetConnections off and removes Serve.
+        let revoke_desktop = serde_json::json!({ "clientId": desktop_id }).to_string();
+        let (status, _) = http_request(
+            port,
+            "POST",
+            "/v1/admin/revoke-client",
+            Some(&admin_token),
+            Some(&revoke_desktop),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let (status, tailnet_after) =
+            http_request(port, "POST", "/v1/admin/tailnet", Some(&admin_token), Some("{}")).await;
+        assert_eq!(status, 200);
+        assert_eq!(tailnet_after["enabled"], false);
+        assert_eq!(tailnet_after["state"]["phase"], "off");
+        assert!(ts.state.lock().unwrap().unserve_calls.contains(&8443));
+
+        // Re-enabling tailnetConnections via /v1/admin/tailnet brings Serve :8443 back,
+        // and closing the server unserves :8443 cleanly.
+        let (status, tailnet_on) = http_request(
+            port,
+            "POST",
+            "/v1/admin/tailnet",
+            Some(&admin_token),
+            Some(r#"{"enabled":true}"#),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(tailnet_on["enabled"], true);
+        assert_eq!(tailnet_on["state"]["phase"], "on");
+        assert_eq!(tailnet_on["state"]["address"], expected_addr);
+
+        let unserve_before_close = ts.state.lock().unwrap().unserve_calls.len();
+        srv.close().await;
+        assert_eq!(
+            ts.state.lock().unwrap().unserve_calls.len(),
+            unserve_before_close + 1
+        );
         assert!(!dir.path().join("host-listener.json").exists());
     }
 }

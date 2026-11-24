@@ -2639,6 +2639,7 @@ impl CoordinatorActor {
             "followups": [],
             "globalLaneBusy": self.global_lane_busy,
             "historyEnabled": true,
+            "hostId": self.host_id,
             "host": {
                 "capabilities": capabilities,
                 "connected": connected,
@@ -2655,6 +2656,7 @@ impl CoordinatorActor {
             "notice": self.notice,
             "pendingRequest": "",
             "queue": [],
+            "reasoningAccounts": [],
             "speech": { "id": 0, "text": "" },
             "voice": { "action": "none", "error": null, "revision": 0, "status": "off" },
         })

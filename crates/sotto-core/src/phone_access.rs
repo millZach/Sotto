@@ -23,12 +23,16 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::coordinator::CoordinatorHandle;
-use crate::pairing::{PairedClients, PairingCode, PairingError};
+use crate::pairing::{PairedClient, PairedClients, PairingCode, PairingError};
 use crate::protocol::HOST_PROTOCOL_VERSION;
+use crate::provider::BoxFuture;
 use crate::stores::MemoryStore;
 
 pub const PHONE_ACCESS_SERVE_PORTS: [u16; 2] = [8443, 10000];
 pub const LOCAL_APPS_CLIENT_NAME: &str = "Apps on this computer";
+pub const PHONE_CLIENTS_FILE: &str = "phone-clients.json";
+const MAX_PHONE_CLIENTS: usize = 1000;
+const MAX_CLIENT_ID_LEN: usize = 512;
 
 const PHONE_ANSWERS_NOTE: &str =
     "The user paired this phone with a code from the Phones page, which lets it answer.";
@@ -763,6 +767,71 @@ impl LoopbackPhoneListener {
     }
 }
 
+/// Abstract loopback listener managed by `PhoneAccessManager`.
+/// Defaults to `LoopbackPhoneListener`; `sotto-host` plugs in its full protocol v1 HTTP+WebSocket
+/// tailnet listener (`admin: false`) so both paired desktops and phones work over Tailscale Serve.
+pub trait PhoneAccessListener: Send + Sync {
+    fn port(&self) -> u16;
+    fn set_computer_name(&self, name: String);
+    fn set_allow_pairing(&self, allow: bool);
+    fn stop_serving(&self);
+    fn is_serving(&self) -> bool;
+    fn connected_clients(&self) -> Vec<String>;
+    fn drop_revoked(&self);
+    fn close(&mut self) -> BoxFuture<'_, ()>;
+}
+
+pub struct PhoneAccessListenerSpawn {
+    pub preferred_port: Option<u16>,
+    pub host_id: String,
+    pub computer_name: String,
+    pub allow_pairing: bool,
+    pub pairing: Arc<StdMutex<PairedClients>>,
+    pub coordinator: Option<CoordinatorHandle>,
+    pub memory_db_path: PathBuf,
+    pub on_paired: Arc<dyn Fn(String) + Send + Sync>,
+    pub on_peers_changed: Arc<dyn Fn() + Send + Sync>,
+    pub on_revoked: Option<Arc<dyn Fn(String) + Send + Sync>>,
+}
+
+pub type PhoneAccessListenerFactory = Arc<
+    dyn Fn(PhoneAccessListenerSpawn) -> BoxFuture<'static, std::io::Result<Box<dyn PhoneAccessListener>>>
+        + Send
+        + Sync,
+>;
+
+impl PhoneAccessListener for LoopbackPhoneListener {
+    fn port(&self) -> u16 {
+        self.port
+    }
+
+    fn set_computer_name(&self, name: String) {
+        LoopbackPhoneListener::set_computer_name(self, name);
+    }
+
+    fn set_allow_pairing(&self, allow: bool) {
+        LoopbackPhoneListener::set_allow_pairing(self, allow);
+    }
+
+    fn stop_serving(&self) {
+        LoopbackPhoneListener::stop_serving(self);
+    }
+
+    fn is_serving(&self) -> bool {
+        LoopbackPhoneListener::is_serving(self)
+    }
+
+    fn connected_clients(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn drop_revoked(&self) {}
+
+    fn close(&mut self) -> BoxFuture<'_, ()> {
+        Box::pin(LoopbackPhoneListener::close(self))
+    }
+}
+
 impl Drop for LoopbackPhoneListener {
     fn drop(&mut self) {
         self.stop_serving();
@@ -1145,6 +1214,45 @@ pub struct PhoneAccessBrief {
     pub phones: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostPhoneAccessSummary {
+    pub status: String,
+    pub phones: usize,
+}
+
+/// Converts a phone access brief into the summary `hello` sends to desktops (`src/host/phones.ts`).
+pub fn phone_access_summary(brief: &PhoneAccessBrief) -> HostPhoneAccessSummary {
+    let status = if !brief.enabled {
+        "off"
+    } else if brief.phase == "failed" || brief.phase == "cleanup-failed" {
+        "needs-you"
+    } else if brief.phase == "starting" {
+        "starting"
+    } else if brief.phase == "on" {
+        "on"
+    } else {
+        "off"
+    };
+    HostPhoneAccessSummary {
+        status: status.to_string(),
+        phones: brief.phones,
+    }
+}
+
+/// Returns the tailnet Serve address when Serve is actively carrying the tailnet listener (`phase == "on"`).
+pub fn tailnet_address_of(brief: &PhoneAccessBrief) -> Option<String> {
+    if brief.phase == "on" {
+        brief
+            .address
+            .as_ref()
+            .filter(|addr| !addr.is_empty())
+            .cloned()
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PhoneAccessSettings {
@@ -1152,6 +1260,8 @@ pub struct PhoneAccessSettings {
     pub phone_access: bool,
     #[serde(default)]
     pub phone_access_name: String,
+    #[serde(default)]
+    pub tailnet_connections: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1172,6 +1282,31 @@ pub struct PhoneAccessCommandOutcome {
     pub open_external_url: Option<String>,
 }
 
+type PhoneAccessChangeCallback = Arc<dyn Fn(PhoneAccessBrief, PhonesState) + Send + Sync>;
+
+fn read_phone_clients(path: &Path) -> HashSet<String> {
+    let Ok(text) = fs::read_to_string(path) else {
+        return HashSet::new();
+    };
+    let Ok(ids) = serde_json::from_str::<Vec<String>>(&text) else {
+        return HashSet::new();
+    };
+    if ids.len() > MAX_PHONE_CLIENTS
+        || ids
+            .iter()
+            .any(|id| id.is_empty() || id.len() > MAX_CLIENT_ID_LEN)
+    {
+        return HashSet::new();
+    }
+    ids.into_iter().collect()
+}
+
+fn write_phone_clients(path: &Path, ids: &HashSet<String>) {
+    let mut list: Vec<&String> = ids.iter().collect();
+    list.sort();
+    let _ = write_atomic_private_json(path, &list);
+}
+
 pub struct PhoneAccessManager {
     directory: PathBuf,
     record_path: PathBuf,
@@ -1183,10 +1318,19 @@ pub struct PhoneAccessManager {
     hostname: String,
     settings: PhoneAccessSettings,
     pairing: Option<Arc<StdMutex<PairedClients>>>,
+    shared_pairing: bool,
+    phone_clients_path: Option<PathBuf>,
+    phone_ids: Option<Arc<StdMutex<HashSet<String>>>>,
+    tailnet_desktops: bool,
+    listener_factory: Option<PhoneAccessListenerFactory>,
+    on_change: Option<PhoneAccessChangeCallback>,
+    on_revoked: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    started_at: Option<Instant>,
+    start_retry_window: Option<Duration>,
     record: PhoneAccessRecord,
     record_uncertain: bool,
     former_ports: HashSet<u16>,
-    listener: Option<LoopbackPhoneListener>,
+    listener: Option<Box<dyn PhoneAccessListener>>,
     reserved_listener: Option<TcpListener>,
     listener_stopped: bool,
     phase: String,
@@ -1220,6 +1364,15 @@ impl PhoneAccessManager {
             hostname: system_hostname(),
             settings: PhoneAccessSettings::default(),
             pairing: None,
+            shared_pairing: false,
+            phone_clients_path: None,
+            phone_ids: None,
+            tailnet_desktops: false,
+            listener_factory: None,
+            on_change: None,
+            on_revoked: None,
+            started_at: None,
+            start_retry_window: None,
             record: PhoneAccessRecord::default(),
             record_uncertain: false,
             former_ports: HashSet::new(),
@@ -1242,7 +1395,93 @@ impl PhoneAccessManager {
         self
     }
 
+    /// Shares an already-loaded `PairedClients` store with the host's main listener (ADR-0050),
+    /// tracking which clients paired as phones in `phone-clients.json` so desktops are never
+    /// listed or removed as phones.
+    pub fn with_shared_pairing(mut self, pairing: Arc<StdMutex<PairedClients>>) -> Self {
+        let path = self.directory.join(PHONE_CLIENTS_FILE);
+        let initial = read_phone_clients(&path);
+        self.pairing = Some(pairing);
+        self.shared_pairing = true;
+        self.phone_clients_path = Some(path);
+        self.phone_ids = Some(Arc::new(StdMutex::new(initial)));
+        self
+    }
+
+    /// Enables headless-host tailnet desktop mode (ADR-0053), allowing `tailnet_connections`
+    /// to keep the tailnet listener and Tailscale Serve up even when `phone_access` is off.
+    pub fn with_tailnet_desktops(mut self, enabled: bool) -> Self {
+        self.tailnet_desktops = enabled;
+        self
+    }
+
+    /// Plugs in a custom loopback listener factory (used by `sotto-host` to expose the full
+    /// protocol v1 HTTP+WebSocket server on the tailnet listener with `admin: false`).
+    pub fn with_listener_factory(mut self, factory: PhoneAccessListenerFactory) -> Self {
+        self.listener_factory = Some(factory);
+        self
+    }
+
+    /// Registers a state-change observer notified on every phone access state transition.
+    pub fn with_on_change(mut self, callback: PhoneAccessChangeCallback) -> Self {
+        self.on_change = Some(callback);
+        self
+    }
+
+    /// Registers a revocation callback forwarded to the tailnet listener's `/v1/revoke` route.
+    pub fn with_on_revoked(mut self, callback: Arc<dyn Fn(String) + Send + Sync>) -> Self {
+        self.on_revoked = Some(callback);
+        self
+    }
+
+    /// Configures the post-start window during which missing Tailscale or transient Serve failures
+    /// remain eligible for background retry (ADR-0054).
+    pub fn with_start_retry_window(mut self, window: Duration) -> Self {
+        self.start_retry_window = Some(window);
+        self
+    }
+
+    pub fn settings(&self) -> &PhoneAccessSettings {
+        &self.settings
+    }
+
+    pub fn active_code_handle(&self) -> Arc<StdMutex<Option<PairingCode>>> {
+        Arc::clone(&self.active_code)
+    }
+
+    pub fn phone_ids_handle(&self) -> Option<Arc<StdMutex<HashSet<String>>>> {
+        self.phone_ids.as_ref().map(Arc::clone)
+    }
+
+    /// Whether `client_id` paired through phone access (a phone, never a desktop paired over SSH).
+    pub fn is_phone(&self, client_id: &str) -> bool {
+        let Some(ref pairing) = self.pairing else {
+            return false;
+        };
+        if self.phone_clients_path.is_some() && self.phone_ids.is_none() {
+            return false;
+        }
+        let is_paired = pairing
+            .lock()
+            .map(|g| g.is_paired(client_id))
+            .unwrap_or(false);
+        if !is_paired {
+            return false;
+        }
+        match &self.phone_ids {
+            Some(ids) => ids.lock().map(|g| g.contains(client_id)).unwrap_or(false),
+            None => true,
+        }
+    }
+
+    pub fn drop_revoked(&self) {
+        if let Some(ref listener) = self.listener {
+            listener.drop_revoked();
+        }
+    }
+
     pub async fn start(&mut self, settings: PhoneAccessSettings) {
+        self.started_at = Some(Instant::now());
         self.settings = settings;
         if self.record_path.exists() {
             match fs::read_to_string(&self.record_path)
@@ -1250,9 +1489,7 @@ impl PhoneAccessManager {
                 .and_then(|t| serde_json::from_str::<PhoneAccessRecord>(&t).ok())
             {
                 Some(rec) => {
-                    if rec.serve_port.is_some_and(|p| p != 10000)
-                        || rec.port == Some(0)
-                    {
+                    if rec.serve_port.is_some_and(|p| p != 10000) || rec.port == Some(0) {
                         self.record_uncertain = true;
                     } else {
                         self.record = rec;
@@ -1273,11 +1510,23 @@ impl PhoneAccessManager {
             self.reserve_port().await;
             self.phase = "cleanup-failed".to_string();
         }
-        if self.local_host_running {
+        if self.local_host_running && !self.shared_pairing {
             let _ = self.load_pairing();
         }
+        if let Some(ref path) = self.phone_clients_path {
+            let ids = read_phone_clients(path);
+            if let Some(ref slot) = self.phone_ids {
+                if let Ok(mut guard) = slot.lock() {
+                    *guard = ids;
+                }
+            } else {
+                self.phone_ids = Some(Arc::new(StdMutex::new(ids)));
+            }
+        }
         self.answer_paired_phones();
+        self.publish();
         self.reconcile().await;
+        self.publish();
     }
 
     pub async fn settings_changed(&mut self, settings: PhoneAccessSettings) -> PhonesState {
@@ -1289,19 +1538,62 @@ impl PhoneAccessManager {
         if !self.phones_wanted() {
             self.cancel_code();
             if let Some(ref listener) = self.listener {
+                listener.drop_revoked();
+            }
+        }
+        if !self.listener_wanted() {
+            if let Some(ref listener) = self.listener {
                 listener.stop_serving();
                 self.listener_stopped = true;
             }
         }
+        self.publish();
         self.reconcile().await;
+        self.publish();
         self.get()
+    }
+
+    pub fn should_retry(&self) -> bool {
+        if self.closed {
+            return false;
+        }
+        if self.phase == "cleanup-failed" {
+            return true;
+        }
+        if !self.listener_wanted() || self.phase != "failed" {
+            return false;
+        }
+        let in_start_window = self
+            .start_retry_window
+            .zip(self.started_at)
+            .is_some_and(|(win, started)| started.elapsed() < win);
+        match &self.tailscale_check {
+            TailscaleCheck::Failed { reason } => reason == "not-running" || in_start_window,
+            _ => {
+                in_start_window
+                    && matches!(&self.serve_check, ServeCheck::Failed { reason, .. } if reason == "failed")
+            }
+        }
+    }
+
+    pub async fn retry_if_needed(&mut self) {
+        if self.closed {
+            return;
+        }
+        if self.phase == "cleanup-failed" {
+            self.reconcile().await;
+            self.publish();
+        } else if self.should_retry() {
+            self.turn_on().await;
+            self.publish();
+        }
     }
 
     pub fn page_port(&self) -> Option<u16> {
         self.listener
             .as_ref()
-            .filter(|l| !self.listener_stopped && self.phones_wanted() && l.is_serving())
-            .map(|l| l.port)
+            .filter(|l| !self.listener_stopped && self.listener_wanted() && l.is_serving())
+            .map(|l| l.port())
     }
 
     pub fn serve_setup_url(&self) -> Option<String> {
@@ -1311,14 +1603,36 @@ impl PhoneAccessManager {
         }
     }
 
+    fn paired_clients(&self) -> Vec<PairedClient> {
+        let Some(ref pairing) = self.pairing else {
+            return Vec::new();
+        };
+        if self.phone_clients_path.is_some() && self.phone_ids.is_none() {
+            return Vec::new();
+        }
+        let guard = match pairing.lock() {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
+        let list = guard.list();
+        match &self.phone_ids {
+            Some(ids_lock) => {
+                let ids = match ids_lock.lock() {
+                    Ok(g) => g,
+                    Err(_) => return Vec::new(),
+                };
+                list.iter()
+                    .filter(|c| ids.contains(&c.client_id))
+                    .cloned()
+                    .collect()
+            }
+            None => list.to_vec(),
+        }
+    }
+
     pub fn brief(&self) -> PhoneAccessBrief {
-        let count = self
-            .pairing
-            .as_ref()
-            .and_then(|p| p.lock().ok())
-            .map(|g| g.list().len())
-            .unwrap_or(0);
-        let phase = if self.listener_stopped && self.phase == "on" && self.phones_wanted() {
+        let count = self.paired_clients().len();
+        let phase = if self.listener_stopped && self.phase == "on" && self.listener_wanted() {
             "starting".to_string()
         } else {
             self.phase.clone()
@@ -1348,29 +1662,35 @@ impl PhoneAccessManager {
             }
             guard.clone()
         };
+        let connected: HashSet<String> = if !self.listener_stopped && self.listener_wanted() {
+            self.listener
+                .as_ref()
+                .map(|l| l.connected_clients().into_iter().collect())
+                .unwrap_or_default()
+        } else {
+            HashSet::new()
+        };
         let policy_store = self.open_memory_read_only();
         let answers_available = policy_store.is_some() || !self.memory_db_path.exists();
-        let phones: Vec<PairedPhoneView> = match self.pairing.as_ref().and_then(|p| p.lock().ok()) {
-            Some(guard) => guard
-                .list()
-                .iter()
-                .map(|client| {
-                    let can_answer = policy_store
-                        .as_ref()
-                        .and_then(|store| store.may_grant_remote(&client.client_id).ok())
-                        .unwrap_or(false);
-                    PairedPhoneView {
-                        client_id: client.client_id.clone(),
-                        name: client.name.clone(),
-                        paired_at: client.paired_at.clone(),
-                        connected: false,
-                        can_answer,
-                    }
-                })
-                .collect(),
-            None => Vec::new(),
-        };
-        let phase = if self.listener_stopped && self.phase == "on" && self.phones_wanted() {
+        let phones: Vec<PairedPhoneView> = self
+            .paired_clients()
+            .into_iter()
+            .map(|client| {
+                let can_answer = policy_store
+                    .as_ref()
+                    .and_then(|store| store.may_grant_remote(&client.client_id).ok())
+                    .unwrap_or(false);
+                let is_connected = connected.contains(&client.client_id);
+                PairedPhoneView {
+                    client_id: client.client_id,
+                    name: client.name,
+                    paired_at: client.paired_at,
+                    connected: is_connected,
+                    can_answer,
+                }
+            })
+            .collect();
+        let phase = if self.listener_stopped && self.phase == "on" && self.listener_wanted() {
             "starting".to_string()
         } else {
             self.phase.clone()
@@ -1401,7 +1721,7 @@ impl PhoneAccessManager {
             PhonesCommand::Retry => {
                 if self.phase == "cleanup-failed" {
                     self.reconcile().await;
-                } else if self.phones_wanted() {
+                } else if self.listener_wanted() {
                     self.turn_on().await;
                 }
             }
@@ -1433,14 +1753,32 @@ impl PhoneAccessManager {
                             .to_string(),
                     );
                 };
+                if let Some(ref phone_ids) = self.phone_ids {
+                    if !phone_ids.lock().unwrap().contains(&client_id) {
+                        return Err(
+                            "That phone is no longer paired. Nothing was changed.".to_string(),
+                        );
+                    }
+                }
                 {
                     let mut guard = pairing.lock().unwrap();
                     guard
                         .revoke(&client_id)
                         .map_err(|e| format!("Could not remove paired phone: {e}"))?;
                 }
+                if let Some(ref phone_ids) = self.phone_ids {
+                    let mut guard = phone_ids.lock().unwrap();
+                    if guard.remove(&client_id) {
+                        if let Some(ref path) = self.phone_clients_path {
+                            write_phone_clients(path, &guard);
+                        }
+                    }
+                }
                 if let Ok(store) = MemoryStore::open(&self.memory_db_path) {
                     let _ = store.set_remote_answers(&client_id, false, PHONE_ANSWERS_NOTE);
+                }
+                if let Some(ref listener) = self.listener {
+                    listener.drop_revoked();
                 }
             }
             PhonesCommand::OpenServeSetup => {
@@ -1453,8 +1791,10 @@ impl PhoneAccessManager {
                 open_external_url = Some(url);
             }
         }
+        let state = self.get();
+        self.publish_state(state.clone());
         Ok(PhoneAccessCommandOutcome {
-            state: self.get(),
+            state,
             open_external_url,
         })
     }
@@ -1471,6 +1811,14 @@ impl PhoneAccessManager {
             self.close_listener().await;
             self.release_port().await;
         }
+        self.publish();
+    }
+
+    fn listener_wanted(&self) -> bool {
+        !self.closed
+            && (self.settings.phone_access
+                || (self.tailnet_desktops && self.settings.tailnet_connections))
+            && self.local_host_running
     }
 
     fn phones_wanted(&self) -> bool {
@@ -1515,13 +1863,11 @@ impl PhoneAccessManager {
     }
 
     fn answer_paired_phones(&self) {
-        let Some(ref pairing) = self.pairing else {
-            return;
-        };
-        let client_ids: Vec<String> = pairing
-            .lock()
-            .map(|g| g.list().iter().map(|c| c.client_id.clone()).collect())
-            .unwrap_or_default();
+        let client_ids: Vec<String> = self
+            .paired_clients()
+            .into_iter()
+            .map(|c| c.client_id)
+            .collect();
         if client_ids.is_empty() {
             return;
         }
@@ -1549,7 +1895,7 @@ impl PhoneAccessManager {
             set.insert(p);
         }
         if let Some(ref l) = self.listener {
-            set.insert(l.port);
+            set.insert(l.port());
         }
         set.into_iter().collect()
     }
@@ -1579,11 +1925,26 @@ impl PhoneAccessManager {
         self.enable_url = None;
     }
 
+    fn publish(&mut self) {
+        if self.on_change.is_none() {
+            return;
+        }
+        let state = self.get();
+        self.publish_state(state);
+    }
+
+    fn publish_state(&self, state: PhonesState) {
+        if let Some(ref cb) = self.on_change {
+            let brief = self.brief();
+            cb(brief, state);
+        }
+    }
+
     async fn reconcile(&mut self) {
         if self.phase == "cleanup-failed"
             && !self.listener_stopped
             && !self.record_uncertain
-            && self.phones_wanted()
+            && self.listener_wanted()
         {
             self.turn_on().await;
             return;
@@ -1594,7 +1955,7 @@ impl PhoneAccessManager {
                 return;
             }
         }
-        if self.phones_wanted() {
+        if self.listener_wanted() {
             if self.phase == "off" {
                 self.turn_on().await;
             }
@@ -1604,13 +1965,14 @@ impl PhoneAccessManager {
     }
 
     async fn turn_on(&mut self) {
-        if self.listener_stopped || !self.phones_wanted() {
+        if self.listener_stopped || !self.listener_wanted() {
             self.turn_off().await;
-            if self.phase == "cleanup-failed" || !self.phones_wanted() {
+            if self.phase == "cleanup-failed" || !self.listener_wanted() {
                 return;
             }
         }
         self.reset("starting");
+        self.publish();
         let ts_backend = Arc::clone(&self.tailscale);
         let status = tokio::task::spawn_blocking(move || ts_backend.status())
             .await
@@ -1640,6 +2002,7 @@ impl PhoneAccessManager {
             host_name,
             dns_name: dns_name.clone(),
         };
+        self.publish();
 
         let ts_backend = Arc::clone(&self.tailscale);
         let serve_cfg = match tokio::task::spawn_blocking(move || ts_backend.serve_status()).await {
@@ -1679,6 +2042,10 @@ impl PhoneAccessManager {
         if owner == ServePortOwner::Ours {
             self.record = PhoneAccessRecord::with_port(self.record.port, true, serve_port);
         }
+        if self.listener_stopped || !self.listener_wanted() {
+            self.turn_off().await;
+            return;
+        }
         if self.listener.is_none() {
             if !self.load_pairing() {
                 self.fail_serve("listener").await;
@@ -1688,6 +2055,8 @@ impl PhoneAccessManager {
             let pairing = Arc::clone(self.pairing.as_ref().unwrap());
             let mem_db = self.memory_db_path.clone();
             let active_code_slot = Arc::clone(&self.active_code);
+            let phone_ids_slot = self.phone_ids.as_ref().map(Arc::clone);
+            let phone_clients_path = self.phone_clients_path.clone();
             let on_paired: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |client_id| {
                 if let Ok(store) = MemoryStore::open(&mem_db) {
                     let _ = store.ensure_remote_answers(&client_id, PHONE_ANSWERS_NOTE);
@@ -1695,20 +2064,47 @@ impl PhoneAccessManager {
                 if let Ok(mut g) = active_code_slot.lock() {
                     *g = None;
                 }
+                if let Some(ref ids_lock) = phone_ids_slot {
+                    if let Ok(mut ids) = ids_lock.lock() {
+                        ids.insert(client_id);
+                        if let Some(ref path) = phone_clients_path {
+                            write_phone_clients(path, &ids);
+                        }
+                    }
+                }
             });
-            match LoopbackPhoneListener::bind(
-                self.record.port,
-                self.host_id.clone(),
-                self.computer_name(),
-                true,
+            let on_peers_changed: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
+            let spawn_cfg = PhoneAccessListenerSpawn {
+                preferred_port: self.record.port,
+                host_id: self.host_id.clone(),
+                computer_name: self.computer_name(),
+                allow_pairing: self.phones_wanted(),
                 pairing,
-                self.coordinator.clone(),
-                self.memory_db_path.clone(),
-                Some(on_paired),
-                None,
-            )
-            .await
-            {
+                coordinator: self.coordinator.clone(),
+                memory_db_path: self.memory_db_path.clone(),
+                on_paired,
+                on_peers_changed,
+                on_revoked: self.on_revoked.clone(),
+            };
+            let listener_res: std::io::Result<Box<dyn PhoneAccessListener>> =
+                if let Some(ref factory) = self.listener_factory {
+                    factory(spawn_cfg).await
+                } else {
+                    LoopbackPhoneListener::bind(
+                        spawn_cfg.preferred_port,
+                        spawn_cfg.host_id,
+                        spawn_cfg.computer_name,
+                        spawn_cfg.allow_pairing,
+                        spawn_cfg.pairing,
+                        spawn_cfg.coordinator,
+                        spawn_cfg.memory_db_path,
+                        Some(spawn_cfg.on_paired),
+                        spawn_cfg.on_revoked,
+                    )
+                    .await
+                    .map(|l| Box::new(l) as Box<dyn PhoneAccessListener>)
+                };
+            match listener_res {
                 Ok(l) => self.listener = Some(l),
                 Err(_) => {
                     self.fail_serve("listener").await;
@@ -1716,13 +2112,21 @@ impl PhoneAccessManager {
                 }
             }
         }
-        let port = self.listener.as_ref().unwrap().port;
+        if self.listener_stopped || !self.listener_wanted() {
+            self.turn_off().await;
+            return;
+        }
+        let port = self.listener.as_ref().unwrap().port();
         if !self.save_record(PhoneAccessRecord::with_port(Some(port), true, serve_port)) {
             self.fail_serve("record").await;
             return;
         }
-        let already_carries =
-            owner == ServePortOwner::Ours && serve_port_owner(&serve_cfg, serve_port, &[port]) == ServePortOwner::Ours;
+        if self.listener_stopped || !self.listener_wanted() {
+            self.turn_off().await;
+            return;
+        }
+        let already_carries = owner == ServePortOwner::Ours
+            && serve_port_owner(&serve_cfg, serve_port, &[port]) == ServePortOwner::Ours;
         let result = if already_carries {
             ServeResult::Ok
         } else {
@@ -1733,9 +2137,14 @@ impl PhoneAccessManager {
         };
         match result {
             ServeResult::Ok => {
+                if self.listener_stopped || !self.listener_wanted() {
+                    self.turn_off().await;
+                    return;
+                }
                 self.serve_check = ServeCheck::Ok;
                 self.address = Some(format!("https://{dns_name}:{serve_port}"));
                 self.phase = "on".to_string();
+                self.publish();
             }
             ServeResult::NotEnabled { enable_url } => {
                 self.enable_url = enable_url;
@@ -1777,6 +2186,7 @@ impl PhoneAccessManager {
         }
         self.release_port().await;
         self.close_listener().await;
+        self.publish();
     }
 
     async fn turn_off(&mut self) {
@@ -1789,6 +2199,7 @@ impl PhoneAccessManager {
         self.release_port().await;
         self.close_listener().await;
         self.reset("off");
+        self.publish();
     }
 
     async fn remove_mapping(&mut self) -> bool {
@@ -1864,6 +2275,7 @@ impl PhoneAccessManager {
             },
             can_open_setup: None,
         };
+        self.publish();
     }
 
     async fn reserve_port(&mut self) {
@@ -2466,6 +2878,7 @@ mod tests {
         mgr.start(PhoneAccessSettings {
             phone_access: true,
             phone_access_name: "Forge Box".into(),
+            tailnet_connections: false,
         })
         .await;
 
