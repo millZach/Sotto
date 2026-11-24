@@ -129,6 +129,8 @@ describe('release contract', () => {
     expect(builderConfig.asarUnpack).toContain('node_modules/node-pty/**')
     // The speech engine's addon and its per-platform native package load outside ASAR too (ADR-0071).
     expect(builderConfig.asarUnpack).toEqual(expect.arrayContaining(['node_modules/sherpa-onnx-node/**', 'node_modules/sherpa-onnx-*/**']))
+    // The forked picture worker must execute from app.asar.unpacked in packaged builds (ADR-0203, ADR-0210).
+    expect(builderConfig.asarUnpack).toContain('out/main/pictureWorker.js')
     expect(packageManifest.scripts['package:dir:mac']).toContain('--config.npmRebuild=true')
     expect(stablePackagePlan('mac', stableVersion).config.npmRebuild).toBe(true)
     expect(stablePackagePlan('win', stableVersion).config.npmRebuild).toBeUndefined()
@@ -150,6 +152,7 @@ describe('release contract', () => {
     expect(viteConfig).toContain("externalDependencyInventory('preload')")
     expect(verifier).toContain('out/main/external-dependencies.json')
     expect(verifier).toContain('out/preload/external-dependencies.json')
+    expect(verifier).toContain("join(resources, 'app.asar.unpacked', 'out', 'main', 'pictureWorker.js')")
     expect(verifier).not.toContain('scripts/probe-memory-store.mjs')
     expect(verifier).not.toContain("SOTTO_MEMORY_PROBE: '1'")
     expect(verifier).toContain('requireApp(join(app.getAppPath(), main))')

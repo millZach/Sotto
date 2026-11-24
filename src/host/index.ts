@@ -48,7 +48,7 @@ import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
 import { KeptThumbnails, ReducedPictures } from '../main/agents/mediaThumbnail'
-import { PictureMaker } from './pictureMaker'
+import { PictureMaker, formatPictureWorkerLog } from './pictureMaker'
 import { FilesService } from '../main/files/service'
 import { MODEL_VISUAL_KIND } from '../shared/models3d'
 import { SOUND_VISUAL_KIND } from '../shared/sounds'
@@ -225,7 +225,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // The copies a phone's tile asks for at its own size (`thread-media-edge`, ADR-0203), made in the picture worker with the
   // decoders compiled into this host, on either release track, as the desktop makes them with Electron's. Only where that
   // worker was built beside this file: without one the host lists no `thread-media-edge` and sends pictures whole.
-  const pictures = options.pictures ?? (PictureMaker.available() ? new PictureMaker(undefined, options.log ? { log: options.log } : {}) : undefined)
+  const pictures = options.pictures ?? (PictureMaker.available()
+    ? new PictureMaker(undefined, options.log ? { log: (event, detail) => { options.log?.(formatPictureWorkerLog(event, detail)) } } : {})
+    : undefined)
   try {
     productEvents.record('app.started', { pairedHosts: 0 })
     await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)

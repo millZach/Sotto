@@ -152,6 +152,82 @@ export async function verifyPackagedMemoryStore(target) {
       })
     }, join(probeRoot, 'no-speech-model'))
     if (speechHelper?.answer !== 'model') throw new Error(`packaged speech helper did not load sherpa-onnx (${speechHelper?.answer})`)
+    // Phone picture copies (`thread-media-edge`, ADR-0203, ADR-0210) fork `pictureWorker.js` outside ASAR.
+    // Prove the unpacked worker exists, starts via `child_process.fork` with `ELECTRON_RUN_AS_NODE=1`, and
+    // resizes an opaque 800x600 PNG at `edge: 640` into a 640x480 JPEG in a separate process.
+    const pictureWorker = await application.evaluate(({ app }) => {
+      const { Buffer } = process.getBuiltinModule('node:buffer')
+      const { fork } = process.getBuiltinModule('node:child_process')
+      const { existsSync } = process.getBuiltinModule('node:fs')
+      const { join } = process.getBuiltinModule('node:path')
+      const { deflateSync } = process.getBuiltinModule('node:zlib')
+      const appPath = app.getAppPath()
+      const unpacked = join(appPath.replace(/\.asar$/u, '.asar.unpacked'), 'out', 'main', 'pictureWorker.js')
+      if (!existsSync(unpacked)) throw new Error('unpacked pictureWorker.js is missing')
+      const width = 800
+      const height = 600
+      const raw = Buffer.alloc(height * (1 + width * 3))
+      for (let y = 0; y < height; y++) {
+        const row = y * (1 + width * 3)
+        raw[row] = 0
+        for (let x = 0; x < width; x++) {
+          const offset = row + 1 + x * 3
+          raw[offset] = (x * 255) / width | 0
+          raw[offset + 1] = (y * 255) / height | 0
+          raw[offset + 2] = ((x + y) * 127) / (width + height) | 0
+        }
+      }
+      const crcTable = new Uint32Array(256)
+      for (let i = 0; i < 256; i++) {
+        let c = i
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1)
+        crcTable[i] = c >>> 0
+      }
+      const crc32 = (buf) => {
+        let c = 0xffffffff
+        for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
+        return (c ^ 0xffffffff) >>> 0
+      }
+      const chunk = (type, data) => {
+        const header = Buffer.alloc(8)
+        header.writeUInt32BE(data.length, 0)
+        header.write(type, 4, 4, 'latin1')
+        const body = Buffer.concat([header.subarray(4), data])
+        const crc = Buffer.alloc(4)
+        crc.writeUInt32BE(crc32(body), 0)
+        return Buffer.concat([header, data, crc])
+      }
+      const ihdr = Buffer.alloc(13)
+      ihdr.writeUInt32BE(width, 0)
+      ihdr.writeUInt32BE(height, 4)
+      ihdr[8] = 8
+      ihdr[9] = 2
+      const png = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk('IHDR', ihdr),
+        chunk('IDAT', deflateSync(raw)),
+        chunk('IEND', Buffer.alloc(0)),
+      ])
+      const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+      return new Promise((resolveProbe, rejectProbe) => {
+        let stderr = ''
+        const child = fork(unpacked, [], { execArgv: [], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+        child.stderr?.on('data', chunkBytes => { stderr = (stderr + String(chunkBytes)).slice(-1024) })
+        const timer = globalThis.setTimeout(() => { child.kill(); rejectProbe(new Error(`packaged picture worker timed out: ${stderr.trim()}`)) }, 15000)
+        child.on('error', error => { globalThis.clearTimeout(timer); rejectProbe(new Error(`packaged picture worker error: ${error.message}`)) })
+        child.on('exit', (code, signal) => { globalThis.clearTimeout(timer); rejectProbe(new Error(`packaged picture worker exited (${code ?? signal}): ${stderr.trim()}`)) })
+        child.on('message', answer => {
+          globalThis.clearTimeout(timer)
+          child.kill()
+          const copy = typeof answer?.copy === 'string' ? answer.copy : null
+          resolveProbe({ separateProcess: answer?.pid !== process.pid, isJpeg: copy?.startsWith('data:image/jpeg;base64,') ?? false, bytes: copy?.length ?? 0 })
+        })
+        child.send({ id: 1, dataUrl, edge: 640 })
+      })
+    })
+    if (pictureWorker?.separateProcess !== true || pictureWorker?.isJpeg !== true || !(pictureWorker.bytes > 100)) {
+      throw new Error(`packaged picture worker did not resize PNG at edge=640 (${JSON.stringify(pictureWorker)})`)
+    }
     // Invoke the shipped main graph through the debugger; installed startup
     // never accepts a probe mode from the environment.
     const result = await Promise.race([application.evaluate(({ app }, root) => {
@@ -168,7 +244,7 @@ export async function verifyPackagedMemoryStore(target) {
         result.migrationVersion !== latestMigrationVersion || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
       throw new Error('invalid store evidence')
     }
-    return { ...result, terminal, speechEngine, speechHelper }
+    return { ...result, terminal, speechEngine, speechHelper, pictureWorker }
   } catch (error) {
     fail(`memory store probe failed: ${error.message}; stderr=${stderr}; stdout=${stdout.slice(-4000)}`)
   } finally {
@@ -316,6 +392,7 @@ export async function verifyPackagedResources(input, options = {}) {
   for (const required of [
     profile.executablePath(target),
     asarPath,
+    join(resources, 'app.asar.unpacked', 'out', 'main', 'pictureWorker.js'),
     join(resources, 'README.md'),
     join(resources, 'THIRD_PARTY_NOTICES.md'),
     // The menu-bar template icons and the Dock icon's coverage are macOS-only extraResources; the key listener ships per platform (none on Linux).

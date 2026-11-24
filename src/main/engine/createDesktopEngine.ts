@@ -3,7 +3,7 @@ import { appendFile, writeFile } from 'node:fs/promises'
 import { hostname as osHostname } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { PictureMaker, BUILT_PICTURE_WORKER } from '../../host/pictureMaker'
+import { PictureMaker, BUILT_PICTURE_WORKER, formatPictureWorkerLog } from '../../host/pictureMaker'
 import { AGENT_E2E, AGENT_STATE, AGENT_THREAD_DETAIL, PROVIDER_LABELS } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
@@ -316,8 +316,9 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   // Pictures in threads and Meshy photo redraws run in the pure-Node picture worker (ADR-0203, ADR-0210).
   const pictureWorkerPath = options.pictureWorkerPath ?? BUILT_PICTURE_WORKER
   const pictureMaker = PictureMaker.available(pictureWorkerPath)
-    ? new PictureMaker(pictureWorkerPath, { log: event => log(event) })
+    ? new PictureMaker(pictureWorkerPath, { log: (event, detail) => log(formatPictureWorkerLog(event, detail)) })
     : undefined
+  if (!pictureMaker && options.isPackaged) log('picture-worker-missing')
   const threadMedia = owlFeatures['inline-media'] ? new ThreadMediaStore(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
   const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
   const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}

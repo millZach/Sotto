@@ -14,10 +14,13 @@ asar: true
 
 # PTY native modules, ConPTY DLLs/agent and Unix spawn-helper execute outside ASAR,
 # and so do the speech engine's addon and the ONNX Runtime it loads (ADR-0071).
+# The picture worker runs in a forked child process (`child_process.fork`), so it must
+# execute as a real file outside ASAR in packaged builds (`PictureMaker`, ADR-0203, ADR-0210).
 asarUnpack:
   - node_modules/node-pty/**
   - node_modules/sherpa-onnx-node/**
   - node_modules/sherpa-onnx-*/**
+  - out/main/pictureWorker.js
 # Windows uses node-pty's Node-API prebuild (source rebuild fails in spaced paths).
 # The macOS package scripts explicitly enable rebuilding native dependencies.
 npmRebuild: false
