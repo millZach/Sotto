@@ -125,6 +125,8 @@ export interface AgentRuntimeOptions {
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   councilEnabled?: boolean
   watcherEnabled?: boolean
+  /** SSH-recorded persistent desktop hostId for each paired desktop clientId, for safe re-pair migration (#2863). */
+  desktopHostIdOf?: (clientId: string) => string | undefined
   /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
   dynamicThreadsEnabled?: boolean
   /** Model routing's Owl answer (ADR-0207), and where its event names are logged. */
@@ -632,7 +634,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, ...options.teams ? { teamMessageGoing: () => options.teams!.userMessageGoing() } : {}, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
+      workerHost: options.runsAs === 'headless-host', ...options.desktopHostIdOf ? { desktopHostIdOf: options.desktopHostIdOf } : {}, revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
       settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...restartStopped ? { holdNews: true } : {}, ...pullRequestState && github ? { pullRequestState: (url: string) => pullRequestState(url, github) } : {},
       ...baseBranchChecks && github ? { baseBranchChecks: (url: string) => baseBranchChecks(url, github) } : {}, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
@@ -649,6 +651,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // This computer's delegations start threads on its paired hosts too (#1316 part 2), each admitted there by that host.
       // A branch landed on a host for a start an exact read proves never made is let go of there (#1316 part 2).
       delegationRemote = new DesktopRemoteDelegations(directory, { machineName: hostId => placingWatcher.machineName(hostId),
+        localHostId: () => agentControl.hostId(),
         ...branchMoves ? { letGo: async landed => { const here = agentControl.hostId(); if (here) await branchMoves.forget({ ...landed, here }) } } : {} })
       const remoteStarts = delegationRemote
       placingWatcher.useDelegationStarts(hostId => remoteStarts.pendingStarts(hostId))

@@ -91,9 +91,18 @@ export interface ClientAgentStateProjection {
 export interface DelegatingKeys {
   readonly desktopHostId?: string | undefined
   readonly clientId?: string | undefined
+  /** Previous client IDs that same host knew this desktop by before a re-pair (#2863). */
+  readonly previousClientIds?: readonly string[] | undefined
+  /** Whether this desktop's own remote delegation store proves it created `threadId` on this host for `caller` (#2863). */
+  readonly ownsThread?: ((threadId: string, caller: string) => boolean) | undefined
+  /** Monotonic revision of `ownsThread` so projection memoization stays O(1) when unchanged. */
+  readonly ownsThreadRevision?: number | undefined
 }
+const sameClientIds = (left: readonly string[] | undefined, right: readonly string[] | undefined): boolean =>
+  left === right || (left !== undefined && right !== undefined && left.length === right.length && left.every((id, index) => id === right[index]))
 const sameKeys = (left: DelegatingKeys | undefined, right: DelegatingKeys | undefined): boolean =>
-  left === right || (left !== undefined && right !== undefined && left.desktopHostId === right.desktopHostId && left.clientId === right.clientId)
+  left === right || (left !== undefined && right !== undefined && left.desktopHostId === right.desktopHostId && left.clientId === right.clientId
+    && sameClientIds(left.previousClientIds, right.previousClientIds) && left.ownsThread === right.ownsThread && left.ownsThreadRevision === right.ownsThreadRevision)
 
 type Fields = Readonly<Record<string, unknown>>
 
@@ -183,7 +192,7 @@ function clientThread(thread: AgentThread, hostId: string, across?: DelegatingKe
   return { ...thread, id: clientThreadId(hostId, thread.id, thread.hostId), projectId: hostEntityKey(own, thread.projectId),
     // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0089), are named as the
     // window names threads, so their links find them; across machines only where the desktop keys them so (#1316 part 3).
-    ...(thread.delegatedBy ? { delegatedBy: across ? delegatingKey(own, thread.delegatedBy, across) : hostEntityKey(own, thread.delegatedBy) } : {}),
+    ...(thread.delegatedBy ? { delegatedBy: across ? delegatingKey(own, thread.delegatedBy, across, thread.id) : hostEntityKey(own, thread.delegatedBy) } : {}),
     ...(thread.swarm ? { swarm: { ...thread.swarm, leadThreadId: hostEntityKey(own, thread.swarm.leadThreadId) } } : {}),
     ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
     ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),
@@ -211,26 +220,34 @@ const REMOTE_CALLER = /^relay:([^:]+):([\s\S]+)$/u
  * desktop's thread may carry the same ID, and its child stays keyed under its own host, as before. So a delegated thread is
  * found under the thread that delegated to it, whichever machine each runs on (#1316 part 3).
  */
-export function delegatingKey(own: string, delegatedBy: string, across: DelegatingKeys): string {
+export function delegatingKey(own: string, delegatedBy: string, across: DelegatingKeys, threadId?: string): string {
   // A key is made again exactly as it was written; a link that names no machine stays keyed under its own host.
-  const parent = delegatingThreadOfLink(own, delegatedBy, across)
+  const parent = delegatingThreadOfLink(own, delegatedBy, across, threadId)
   return parent.hostId === undefined ? hostEntityKey(own, delegatedBy) : hostEntityKey(parent.hostId, parent.id)
 }
 
 /**
  * The thread a `delegatedBy` link on `own` names, by its machine and that machine's ID for it, read as `delegatingKey`
  * reads it: the same machine's thread, one another machine keys, or a desktop's own thread a relay caller names by its
- * bare ID. That last is on `across.desktopHostId` only when its client is the client ID the host knows that desktop by;
+ * bare ID. That last is on `across.desktopHostId` only when its client matches this desktop's current or prior client ID
+ * on that host, or when this desktop's own remote delegation store proves it created `threadId` for `caller` (#2863);
  * another desktop's thread names no machine here, so `hostId` is left out (#1217, Watcher naming the thread to direct).
  */
-export function delegatingThreadOfLink(own: string, delegatedBy: string, across: DelegatingKeys): { readonly hostId?: string; readonly id: string } {
+export function delegatingThreadOfLink(own: string, delegatedBy: string, across: DelegatingKeys, threadId?: string): { readonly hostId?: string; readonly id: string } {
   const keyed = parseHostEntityKey(delegatedBy)
   if (keyed) return keyed
   const remote = REMOTE_CALLER.exec(delegatedBy)
   if (!remote) return { hostId: own, id: delegatedBy }
   const client = remote[1]!, caller = remote[2]!
-  return parseHostEntityKey(caller)
-    ?? (across.desktopHostId !== undefined && across.clientId !== undefined && client === across.clientId ? { hostId: across.desktopHostId, id: caller } : { id: caller })
+  const keyedCaller = parseHostEntityKey(caller)
+  if (keyedCaller) return keyedCaller
+  if (across.desktopHostId !== undefined) {
+    const ownedByDesktop = across.clientId !== undefined && client === across.clientId
+      || across.previousClientIds !== undefined && across.previousClientIds.includes(client)
+      || threadId !== undefined && across.ownsThread?.(threadId, caller) === true
+    if (ownedByDesktop) return { hostId: across.desktopHostId, id: caller }
+  }
+  return { id: caller }
 }
 
 /**

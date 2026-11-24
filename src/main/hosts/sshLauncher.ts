@@ -81,7 +81,7 @@ export interface SshHostConnection {
   readonly bootStart?: BootStatus
   showHostPairingCode(): Promise<SshPairingCode>
   /** Establish this SSH desktop's default policy once; prior policy decisions are never changed. */
-  ensureDesktopAnswers(clientId: string): Promise<void>
+  ensureDesktopAnswers(clientId: string, desktopHostId?: string): Promise<void>
   revokeClient(clientId: string): Promise<boolean>
   /**
    * The running host's administrative token, which this connection's launch read, for the host's phone access routes on
@@ -358,7 +358,7 @@ export class SshHostLauncher {
       return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}), ...(remote.system ? { system: remote.system } : {}),
         ...(remote.bootStart ? { bootStart: remote.bootStart } : {}),
         ...(remote.tailnetAddress ? { tailnetAddress: remote.tailnetAddress } : {}),
-        close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: clientId => this.ensureDesktopAnswers(attempt, clientId), revokeClient: clientId => this.revokeClient(attempt, clientId),
+        close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: (clientId, desktopHostId) => this.ensureDesktopAnswers(attempt, clientId, desktopHostId), revokeClient: clientId => this.revokeClient(attempt, clientId),
         hostAdminToken: () => this.adminToken(attempt),
         stopHost: async () => { try { return await this.stopHost(attempt) } finally { await this.closeAttempt(attempt) } },
         updateHost: (operation, options) => this.updateHost(attempt, operation, options), boot: operation => this.boot(attempt, operation) }
@@ -677,11 +677,11 @@ export class SshHostLauncher {
     if (!attempt.ready.adminToken) throw new SshFailure('admin-failed')
     return attempt.ready.adminToken
   }
-  private async ensureDesktopAnswers(attempt: Attempt, clientId: string): Promise<void> {
+  private async ensureDesktopAnswers(attempt: Attempt, clientId: string, desktopHostId?: string): Promise<void> {
     if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', t`Connect to the SSH host before setting up desktop permissions.`)
     if (!clientId || clientId.length > 512 || /[\p{Cc}]/u.test(clientId)) throw new Error(t`Choose a valid paired client.`)
     const hostId = attempt.ready.hostId
-    await this.request(attempt, { op: 'desktop-answers', hostId, clientId }, 'permission-setup-failed', REQUEST_BUDGET_MS, value => {
+    await this.request(attempt, { op: 'desktop-answers', hostId, clientId, ...(desktopHostId ? { desktopHostId } : {}) }, 'permission-setup-failed', REQUEST_BUDGET_MS, value => {
       const result = desktopAnswersSchema.safeParse(value)
       return result.success && result.data.hostId === hostId ? true : undefined
     })

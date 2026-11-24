@@ -42,8 +42,21 @@ import { isOpenCodeSignInPage, opencodeSignInComesBack, type SignInRefusalReason
 import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
 
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
-const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
+const PREVIOUS_CLIENT_IDS_MAX = 64
+const savedHostSchema = remoteHostSchema.extend({
+  hostId: z.uuid().optional(),
+  clientId: z.string().optional(),
+  /** Client IDs this desktop previously held on this host before re-pairing, so cross-machine links still resolve (#2863). */
+  previousClientIds: z.array(z.string().min(1).max(512)).max(PREVIOUS_CLIENT_IDS_MAX).optional(),
+})
 type SavedHost = z.infer<typeof savedHostSchema>
+function rememberPreviousClientId(host: SavedHost, nextClientId: string): void {
+  const oldClientId = host.clientId
+  if (!oldClientId || oldClientId === nextClientId) return
+  const kept = (host.previousClientIds ?? []).filter(id => id !== oldClientId && id !== nextClientId)
+  kept.push(oldClientId)
+  host.previousClientIds = kept.slice(-PREVIOUS_CLIENT_IDS_MAX)
+}
 /** What a row shows of a saved host, read for every row each time Hosts publishes. */
 const hostFieldsSchema = remoteHostSchema.strip()
 type Connection = Omit<RemoteHost, 'enabled'>
@@ -104,7 +117,9 @@ interface LiveHost { via: HostVia; launcher?: SshHostLauncher; ssh?: SshHostConn
   /** Presses running over this connect's SSH connection now. A move to the tailnet closes that connection only once none is. */
   presses?: number
   /** Set when a move to the tailnet left this connect while a press still ran on its SSH connection, which closes after it. */
-  closeWhenIdle?: boolean }
+  closeWhenIdle?: boolean
+  /** Prior client ID superseded by re-pairing; revoked only after the new client ID is recorded in desktop-clients.json (#2863). */
+  replacedClientId?: string }
 /** Where a socket opens: the address, and the host that must answer there. A tailnet connection's health check is shorter. */
 interface SocketTarget {
   readonly url: string; readonly expectedHostId: string; readonly healthTimeoutMs?: number
@@ -286,6 +301,8 @@ export class DesktopHosts {
      */
     waitingClientVersion?: () => string | undefined;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
+    /** This desktop's own persistent host ID, sent to `desktop-answers` over SSH so re-pair migration can verify identity (#2863). */
+    localHostId?: () => string | undefined;
     /** Opt into launching the native Rust `sotto-host` binary when installed on the remote host (ADR-0214). */
     useRustHost?: boolean;
     launcher?: () => SshHostLauncher;
@@ -1501,6 +1518,10 @@ export class DesktopHosts {
       if (this.setupAttempt === host) this.update(host.id, { phase: 'error', reconnecting: false, error: this.said(host.id, failureWords(failure).unsaved, fix), step, fix: this.shownFix(fix), reason, tailscale: waited })
     }
   }
+  /** This desktop's own persistent host ID, for SSH desktop identity binding (#2863). */
+  private desktopHostId(): string | undefined {
+    return this.options.localHostId?.() ?? this.options.router.localHostId()
+  }
   /** Pairs this computer over the SSH connection's forward, the only place a desktop pairs (ADR-0053). */
   private async pairOverSsh(host: SavedHost, active: LiveHost): Promise<void> {
     if (!this.options.credentials.available()) throw new FinalHostError(CONNECT_FAILURES.credentialsUnavailable())
@@ -1515,8 +1536,13 @@ export class DesktopHosts {
       await ssh.revokeClient(pairing.clientId).catch(() => false)
       throw error
     }
+    const previousClientId = host.clientId
+    rememberPreviousClientId(host, pairing.clientId)
     host.hostId = pairing.hostId; host.clientId = pairing.clientId
     if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
+    // Defer revoking the superseded client until openSocket records the new clientId in desktop-clients.json;
+    // revoking the last recorded desktop earlier turns off the host's tailnet Serve (#2863).
+    if (previousClientId && previousClientId !== pairing.clientId) active.replacedClientId = previousClientId
   }
   /**
    * Final by its code: a failure on this side, an SSH failure only the user can fix, or a host of another Sotto version.
@@ -1601,14 +1627,27 @@ export class DesktopHosts {
     // this connect signed in with: a socket on no SSH connection leaves them for the next one. For a
     // desktop that may already answer, only that record is at stake, and the next SSH connect writes
     // it again, so a failed step never ends a connection that used to skip it.
+    const localHostId = this.desktopHostId()
+    let recordedDesktop = false
     if (active.ssh) {
-      if (hello.capabilities.mayAnswer) await active.ssh.ensureDesktopAnswers(hello.clientId).catch(() => undefined)
-      else await active.ssh.ensureDesktopAnswers(hello.clientId)
+      if (hello.capabilities.mayAnswer) {
+        recordedDesktop = await active.ssh.ensureDesktopAnswers(hello.clientId, localHostId).then(() => true, () => false)
+      } else {
+        await active.ssh.ensureDesktopAnswers(hello.clientId, localHostId)
+        recordedDesktop = true
+      }
     }
     if (this.live.get(host.id) !== active) { await socket.close(); return }
+    const replacedClientId = active.replacedClientId
+    if (recordedDesktop && active.ssh && replacedClientId && replacedClientId !== hello.clientId) {
+      delete active.replacedClientId
+      await active.ssh.revokeClient(replacedClientId).catch(() => false)
+      if (this.live.get(host.id) !== active) { await socket.close(); return }
+    }
     // On a tailnet connection the grant waits for the next SSH or admin connection; nothing opens SSH for it.
     if (!active.ssh) { if (hello.capabilities.mayAnswer) this.grantPending.delete(host.id); else this.grantPending.add(host.id) }
     this.update(host.id, { version: hello.sottoVersion })
+    rememberPreviousClientId(host, hello.clientId)
     host.hostId = hello.hostId; host.clientId = hello.clientId
     if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
     await this.learnAddress(host, hello)
@@ -1636,8 +1675,9 @@ export class DesktopHosts {
       ...socket.supportsBrowser ? { browser: <M extends HostBrowserMethod>(request: Extract<HostBrowserRequest, { method: M }>) => socket.browser(request),
         subscribeBrowser: (listener: (change: BrowserEvent) => void) => socket.subscribeBrowser(listener),
         subscribeBrowserFrames: (listener: (frame: HostBrowserFrame) => void) => socket.subscribeBrowserFrames(listener) } : {},
-      // How this host names this computer's threads that delegated there (#1316 part 3).
+      // How this host names this computer's threads that delegated there (#1316 part 3), plus prior client IDs after re-pair (#2863).
       clientId: hello.clientId,
+      ...(host.previousClientIds?.length ? { previousClientIds: host.previousClientIds } : {}),
     }
     // Back from an update's restart: the new connection takes the place its threads kept on the page.
     // A move to the tailnet takes the place the connection it leaves has on the page.
@@ -1946,7 +1986,7 @@ export class DesktopHosts {
    */
   private async writePendingGrant(host: SavedHost, connection: PressConnection): Promise<void> {
     if (!this.grantPending.has(host.id) || !host.clientId) return
-    await connection.ensureDesktopAnswers(host.clientId).then(() => { this.grantPending.delete(host.id) }, () => undefined)
+    await connection.ensureDesktopAnswers(host.clientId, this.desktopHostId()).then(() => { this.grantPending.delete(host.id) }, () => undefined)
   }
   /** The same press, over a connection already open, opening none: undefined when the host has none. */
   private pressIfOpen<T>(host: SavedHost, press: (connection: PressConnection) => Promise<T>): Promise<T | undefined> {

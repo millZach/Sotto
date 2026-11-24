@@ -109,6 +109,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
    * threads that delegated to its threads (`relay:<client>:<caller>`, #1316 part 3).
    */
   clientId?: string
+  /** Previous client IDs that host knew this computer by before re-pairing (#2863). */
+  previousClientIds?: readonly string[] | undefined
 }
 
 /**
@@ -234,9 +236,38 @@ const ROUTER_PICKS_SHOWN_MAX = 1_000
 export class DesktopHostRouter {
   /** Saved host identities keep an offline computer visible when it has no live thread connection. */
   private usageSavedHostIds: readonly string[] = []
+  /** Remote delegation ownership proof, so pre-re-pair `relay:<oldClientId>:<caller>` links still resolve (#2863). */
+  private remoteDelegationOwnership: {
+    readonly ownsRemoteThread: (hostId: string, threadId: string, callerId: string) => boolean
+    readonly ownedThreadsRevision: () => number
+  } | undefined
+  /** Stable per-host callback cache for `DelegatingKeys.ownsThread`, keeping projection memoization O(1). */
+  private readonly remoteThreadCheckers = new Map<string, (threadId: string, caller: string) => boolean>()
   private readonly watcherListeners = new Set<(hostId?: string, force?: boolean) => void>()
   /** Watcher, told when the user's answer to a host's card goes from here, so its news says the user answered it. */
   private readonly answerListeners = new Set<(hostId: string, threadId: string, requestId: string) => () => void>()
+  useRemoteDelegationOwnership(source: {
+    readonly ownsRemoteThread: (hostId: string, threadId: string, callerId: string) => boolean
+    readonly ownedThreadsRevision: () => number
+  }): void {
+    this.remoteDelegationOwnership = source
+    this.remoteThreadCheckers.clear()
+  }
+  private ownsThreadFor(hostId: string): ((threadId: string, caller: string) => boolean) | undefined {
+    const source = this.remoteDelegationOwnership
+    if (!source) return undefined
+    let check = this.remoteThreadCheckers.get(hostId)
+    if (!check) {
+      check = (threadId, caller) => source.ownsRemoteThread(hostId, threadId, caller)
+      this.remoteThreadCheckers.set(hostId, check)
+    }
+    return check
+  }
+  /** The local host's persistent host ID, read without copying shell state (#2863). */
+  localHostId(): string | undefined {
+    for (const entry of this.hosts.values()) if (entry.connection.kind === 'local') return entry.connection.hostId
+    return undefined
+  }
   watcherHosts(): WatcherRemoteHosts {
     const allowed = () => { if (this.options.watcherEnabled !== true) throw new Error(watcherDisabledWords()) }
     const connection = (id: string) => {
@@ -267,9 +298,11 @@ export class DesktopHostRouter {
           .map(thread => ({ ...thread, connected: connected && thread.connected }))
       } } : {},
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => {
-        const reconnectingSince = this.reconnecting.get(host.hostId)
+        const reconnectingSince = this.reconnecting.get(host.hostId), ownsThread = this.ownsThreadFor(host.hostId)
         return {
           hostId: host.hostId, name: host.name, ...host.clientId !== undefined ? { clientId: host.clientId } : {},
+          ...host.previousClientIds?.length ? { previousClientIds: host.previousClientIds } : {},
+          ...ownsThread ? { ownsThread } : {},
           facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
           origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined,
           setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined,
@@ -1120,7 +1153,12 @@ export class DesktopHostRouter {
       const raw = read(connection)
       const original = this.visibleState(raw, connection.hostId)
       const last = this.built.get(connection.hostId)
-      const projection = projectClientAgentState(original, last?.projection, across ? { desktopHostId, clientId: connection.clientId } : undefined)
+      const ownsThread = across ? this.ownsThreadFor(connection.hostId) : undefined
+      const projection = projectClientAgentState(original, last?.projection, across ? {
+        desktopHostId, clientId: connection.clientId,
+        ...(connection.previousClientIds?.length ? { previousClientIds: connection.previousClientIds } : {}),
+        ...(ownsThread ? { ownsThread, ownsThreadRevision: this.remoteDelegationOwnership?.ownedThreadsRevision() } : {}),
+      } : undefined)
       const threads = this.windowThreads(connection, original, projection.output, multiple, last)
       if (publish) this.built.set(connection.hostId, { projection, threads })
       return { connection, run, raw, original, state: projection.output, threads: threads.made, remade: threads.remade, before: last?.threads.made }

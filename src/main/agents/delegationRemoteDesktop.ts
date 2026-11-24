@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { AgentRuntimeMode } from '../../shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { delegationWorkSchema, type DelegationNews, type DelegationWork } from '../../shared/delegation'
-import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX, type DelegationRemoteAsk, type RelayedReply, type RemoteLandedBranch } from '../../shared/delegationRelay'
+import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX, DELEGATION_REMOTE_CALLER_MAX, type DelegationRemoteAsk, type RelayedReply, type RemoteLandedBranch } from '../../shared/delegationRelay'
 import { watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import type { WorkerPlacementReceipt } from '../../shared/workerMachine'
 import { swarmReceiptSchema } from '../../shared/workerSwarms'
@@ -55,6 +55,8 @@ const remoteSwarmReceiptSchema = swarmReceiptSchema.strip()
 const recordSchema = z.object({
   /** The ID the delegating thread knows it by: this computer's own, given before the host was asked. */
   id: z.uuid(), hostId: z.uuid(), callerId: id, action: z.enum(['start', 'send']), work: delegationWorkSchema,
+  /** The caller string sent on the wire to the host (`host:<desktopHostId>:<callerId>` for new local starts, #2863). */
+  wireCaller: id.optional(),
   /** The host's own copy of the project, where it started. */
   projectId: id,
   /** The caller's own retry key, when it gave one. The host is asked under `id`. */
@@ -147,6 +149,9 @@ export class DesktopRemoteDelegations {
   private readonly bySwarm = new Map<string, RemoteRecord>()
   /** The first delegation to each thread, by caller, host and the host's thread ID: where a second brief goes. */
   private readonly byThread = new Map<string, RemoteRecord>()
+  /** Remote threads created by this desktop, by `${hostId}\n${threadId}` -> local `callerId`, for pre-re-pair link recovery (#2863). */
+  private readonly byRemoteThread = new Map<string, string>()
+  private ownedThreadsVersion = 0
   private readonly byRetry = new Map<string, RemoteRecord>()
   /**
    * Each host's live records: open, untold, or never matched to the host's own ID. Only these are in
@@ -179,6 +184,8 @@ export class DesktopRemoteDelegations {
   constructor(directory: string, private readonly options: {
     /** The name this computer saved for a host, which every sentence about it says. */
     readonly machineName: (hostId: string) => string | undefined
+    /** This desktop's own host ID, used to key local callers as `host:<desktopHostId>:<callerId>` on the wire (#2863). */
+    readonly localHostId?: () => string | undefined
     /** Stable event names only, never a brief, a reply or a thread. */
     readonly log?: (event: 'delegation-remote-answer-lost' | 'delegation-remote-reconciled') => void
     /** Lets go of a move landed in a host's project for a start no thread there owns. Best effort. */
@@ -248,6 +255,29 @@ export class DesktopRemoteDelegations {
     const key = parseHostEntityKey(threadKey)
     return key !== null && this.byThread.has(threadIndex(callerId, key.hostId, key.id))
   }
+  /** Whether this desktop's own record proves it created `threadId` on `hostId` for `callerId` (#2863). */
+  ownsRemoteThread(hostId: string, threadId: string, callerId: string): boolean {
+    return this.byRemoteThread.get(targetIndex(hostId, threadId)) === callerId
+  }
+  /** Monotonic revision of `byRemoteThread` so projection memoization stays O(1) when nothing changed. */
+  ownedThreadsRevision(): number { return this.ownedThreadsVersion }
+  /**
+   * The caller string sent on the wire for a new delegation by `callerId`: local callers are keyed with this desktop's
+   * persistent `hostId` (`host:<desktopHostId>:<callerId>`) so the remote thread's `delegatedBy` survives re-pair (#2863).
+   */
+  private wireCallerFor(callerId: string): string {
+    if (parseHostEntityKey(callerId)) return callerId
+    const localHostId = this.options.localHostId?.()
+    if (!localHostId) return callerId
+    const keyed = hostEntityKey(localHostId, callerId)
+    return keyed.length <= DELEGATION_REMOTE_CALLER_MAX ? keyed : callerId
+  }
+  /** Maps an incoming wire caller from a remote host back to this desktop's local `callerId`. */
+  private localCallerFor(wireCaller: string): string {
+    const keyed = parseHostEntityKey(wireCaller)
+    const localHostId = keyed ? this.options.localHostId?.() : undefined
+    return keyed && localHostId !== undefined && keyed.hostId === localHostId ? keyed.id : wireCaller
+  }
   /** The delegation `callerId` made under its own `retryKey`, if any. */
   retried(callerId: string, retryKey: string): string | undefined {
     return this.byRetry.get(retryIndex(callerId, retryKey))?.id
@@ -279,7 +309,8 @@ export class DesktopRemoteDelegations {
       if (ask.reservation) await this.releasePlace(callerId, placement.hostId, ask.reservation)
       return await this.read(callerId, retried.id)
     }
-    return await this.ask({ callerId, hostId: placement.hostId, projectId: placement.projectId, machine: placement.receipt.name, action: 'start', work }, ask,
+    const wireCaller = this.wireCallerFor(callerId)
+    return await this.ask({ callerId, ...(wireCaller !== callerId ? { wireCaller } : {}), hostId: placement.hostId, projectId: placement.projectId, machine: placement.receipt.name, action: 'start', work }, ask,
       answer => ({ ...answer, placement: { ...placement.receipt, awayFromDefault: placement.receipt.awayFromDefault } }))
   }
   /**
@@ -291,15 +322,16 @@ export class DesktopRemoteDelegations {
     const connection = this.connection(hostId)
     if (!connection || this.closed) throw new RelayUnanswered('away')
     const reservation = randomUUID()
+    const wireCaller = this.wireCallerFor(callerId)
     let answer: unknown
-    try { answer = await connection.service.delegationRemoteAsk!({ type: 'reserve', caller: callerId, reservation, work }, DELEGATION_RELAY_READ_MS) }
+    try { answer = await connection.service.delegationRemoteAsk!({ type: 'reserve', caller: wireCaller, reservation, work }, DELEGATION_RELAY_READ_MS) }
     catch { await this.releasePlace(callerId, hostId, reservation); throw new RelayUnanswered('lost') }
     if (!isObject(answer) || answer.status !== 'ok') throw new RelayUnanswered('lost')
     return reservation
   }
   /** Lets go of a place reserved on `hostId` that no start there took. Best effort: the host also lets it go when this computer's socket closes. */
-  async releasePlace(callerId: string, hostId: string, reservation: string): Promise<void> {
-    await this.connection(hostId)?.service.delegationRemoteAsk!({ type: 'release', caller: callerId, reservation }, DELEGATION_RELAY_READ_MS).catch(() => undefined)
+  async releasePlace(callerId: string, hostId: string, reservation: string, wireCaller?: string): Promise<void> {
+    await this.connection(hostId)?.service.delegationRemoteAsk!({ type: 'release', caller: wireCaller ?? this.wireCallerFor(callerId), reservation }, DELEGATION_RELAY_READ_MS).catch(() => undefined)
   }
   /** Sends another brief to `threadKey`, a thread `callerId` delegated to on a paired host, charged there as any brief is. */
   async send(callerId: string, work: DelegationWork, threadKey: string, ask: RemoteAsk): Promise<Record<string, unknown>> {
@@ -308,11 +340,11 @@ export class DesktopRemoteDelegations {
     const retried = ask.retryKey ? this.byRetry.get(retryIndex(callerId, ask.retryKey)) : undefined
     if (retried) return await this.read(callerId, retried.id)
     if (!this.connection(first.hostId)) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_SEND_AWAY(this.name(first)) }
-    return await this.ask({ callerId, hostId: first.hostId, projectId: first.projectId, machine: first.machine, action: 'send', work, thread: key.id },
+    return await this.ask({ callerId, ...(first.wireCaller ? { wireCaller: first.wireCaller } : {}), hostId: first.hostId, projectId: first.projectId, machine: first.machine, action: 'send', work, thread: key.id },
       { ...ask, input: { ...ask.input, thread: key.id } }, answer => answer)
   }
 
-  private async ask(base: Pick<RemoteRecord, 'callerId' | 'hostId' | 'projectId' | 'machine' | 'action' | 'work'> & { readonly thread?: string }, ask: RemoteAsk,
+  private async ask(base: Pick<RemoteRecord, 'callerId' | 'wireCaller' | 'hostId' | 'projectId' | 'machine' | 'action' | 'work'> & { readonly thread?: string }, ask: RemoteAsk,
     shape: (answer: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>> {
     const connection = this.connection(base.hostId)
     if (!connection || this.closed) throw new RelayUnanswered('away')
@@ -326,7 +358,7 @@ export class DesktopRemoteDelegations {
     let answer: unknown
     try {
       // The host answers at once: a call that waits for its outcome waits here, on the news, so nothing stays open there.
-      answer = await connection.service.delegationRemoteAsk!({ type: 'delegate', caller: base.callerId, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
+      answer = await connection.service.delegationRemoteAsk!({ type: 'delegate', caller: record.wireCaller ?? base.callerId, levels: ask.levels, rootUserMessageId: ask.rootUserMessageId,
         ...ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}, runtimeMode: ask.runtimeMode, projectId: base.projectId,
         input: { ...ask.input, retry_key: record.id, wait_seconds: 0 }, waitMs: 0, ...ask.branch ? { branch: ask.branch } : {},
         ...ask.reservation ? { reservation: ask.reservation } : {} }, DELEGATION_RELAY_ANSWER_GRACE_MS + DELEGATION_RELAY_READ_MS)
@@ -368,7 +400,7 @@ export class DesktopRemoteDelegations {
     const connection = this.connection(record.hostId)
     try {
       if (!connection) throw new RelayUnanswered('away')
-      const answer = await connection.service.delegationRemoteAsk!({ type: 'read', caller: callerId,
+      const answer = await connection.service.delegationRemoteAsk!({ type: 'read', caller: record.wireCaller ?? callerId,
         ...record.delegation ? { delegation: record.delegation } : { retryKey: record.id } }, DELEGATION_RELAY_READ_MS)
       if (!isObject(answer)) throw new RelayUnanswered('lost')
       this.fromRead(record, answer)
@@ -398,7 +430,7 @@ export class DesktopRemoteDelegations {
    */
   private async cancelling(record: RemoteRecord, delegation: string, connection: RemoteDelegationConnection): Promise<Record<string, unknown> | 'unsent' | 'lost'> {
     try {
-      const answer = await connection.service.delegationRemoteAsk!({ type: 'cancel', caller: record.callerId, delegation }, DELEGATION_RELAY_READ_MS)
+      const answer = await connection.service.delegationRemoteAsk!({ type: 'cancel', caller: record.wireCaller ?? record.callerId, delegation }, DELEGATION_RELAY_READ_MS)
       if (!isObject(answer)) return 'lost'
       this.fromRead(record, answer)
       return answer
@@ -440,7 +472,11 @@ export class DesktopRemoteDelegations {
    * was lost, reads that host's open delegations again.
    */
   async news(hostId: string, caller: string, news: DelegationNews, replies: readonly RelayedReply[]): Promise<void> {
-    const recordOf = (delegationId: string) => { const record = this.byTarget.get(targetIndex(hostId, delegationId)); return record?.callerId === caller ? record : undefined }
+    const localCaller = this.localCallerFor(caller)
+    const recordOf = (delegationId: string) => {
+      const record = this.byTarget.get(targetIndex(hostId, delegationId))
+      return record && ((record.wireCaller ?? record.callerId) === caller || record.callerId === localCaller) ? record : undefined
+    }
     let unmatched = false
     const items = news.items.flatMap(item => {
       const record = recordOf(item.delegationId)
@@ -453,10 +489,10 @@ export class DesktopRemoteDelegations {
         outcome: item.outcome, ...item.heldMinutes !== undefined ? { heldMinutes: item.heldMinutes } : {} } }]
     })
     await this.persist()
-    await this.tell(caller, items).catch(() => undefined)
+    await this.tell(localCaller, items).catch(() => undefined)
     // A start whose answer was lost may have been admitted after an early read found nothing: its news names an ID this
     // computer never learned, so that caller's unresolved delegations are read again by retry key. Nothing is resent.
-    if (unmatched) void this.reconcile(hostId, caller)
+    if (unmatched) void this.reconcile(hostId, localCaller)
   }
   /**
    * Reads every open delegation on `hostId` exactly, and every one whose answer was lost (ADR-0058): what the host's record
@@ -474,7 +510,7 @@ export class DesktopRemoteDelegations {
         const connection = this.connection(hostId)
         if (!connection || this.closed) break
         try {
-          const answer = await connection.service.delegationRemoteAsk!({ type: 'read', caller: record.callerId,
+          const answer = await connection.service.delegationRemoteAsk!({ type: 'read', caller: record.wireCaller ?? record.callerId,
             ...record.delegation ? { delegation: record.delegation } : { retryKey: record.id } }, DELEGATION_RELAY_READ_MS)
           if (!isObject(answer)) continue
           this.fromRead(record, answer, false)
@@ -543,7 +579,7 @@ export class DesktopRemoteDelegations {
       this.update(record, saved => { saved.outcome = 'unknown'; if (tells) saved.told = 'unknown'; delete saved.unread; if (saved.delegation === undefined) saved.absent = true; delete saved.moveId; delete saved.reservation })
       this.release(record)
       if (landed) void this.options.letGo?.(landed).catch(() => undefined)
-      if (place) void this.releasePlace(record.callerId, record.hostId, place)
+      if (place) void this.releasePlace(record.callerId, record.hostId, place, record.wireCaller)
     }
   }
   /** Reads a host's unresolved delegations for `callerId` again shortly, while the host is still admitting one. */
@@ -615,7 +651,12 @@ export class DesktopRemoteDelegations {
   private indexed(record: RemoteRecord): void {
     if (record.swarmId) this.bySwarm.set(retryIndex(record.callerId, record.swarmId), record)
     if (record.delegation) this.byTarget.set(targetIndex(record.hostId, record.delegation), record)
-    if (record.thread) { const key = threadIndex(record.callerId, record.hostId, record.thread); if (!this.byThread.has(key)) this.byThread.set(key, record) }
+    if (record.thread) {
+      const key = threadIndex(record.callerId, record.hostId, record.thread)
+      if (!this.byThread.has(key)) this.byThread.set(key, record)
+      const remoteKey = targetIndex(record.hostId, record.thread)
+      if (!this.byRemoteThread.has(remoteKey)) { this.byRemoteThread.set(remoteKey, record.callerId); this.ownedThreadsVersion++ }
+    }
     const live = this.live.get(record.hostId)
     if (this.isLive(record)) { if (live) live.add(record); else this.live.set(record.hostId, new Set([record])) }
     else if (live?.delete(record) && !live.size) this.live.delete(record.hostId)
@@ -633,6 +674,10 @@ export class DesktopRemoteDelegations {
       if (this.byThread.get(key) === record) {
         const next = own?.find(item => item.hostId === record.hostId && item.thread === record.thread)
         if (next) this.byThread.set(key, next); else this.byThread.delete(key)
+        if (!next) {
+          const remoteKey = targetIndex(record.hostId, record.thread)
+          if (this.byRemoteThread.get(remoteKey) === record.callerId) { this.byRemoteThread.delete(remoteKey); this.ownedThreadsVersion++ }
+        }
       }
     }
     if (record.callerRetryKey) drop(this.byRetry, retryIndex(record.callerId, record.callerRetryKey))

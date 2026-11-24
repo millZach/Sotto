@@ -135,7 +135,7 @@ export class AdminConnection {
     return {
       url: connection.url, hostId: connection.hostId, owned: connection.owned, ...(connection.bootStart ? { bootStart: connection.bootStart } : {}),
       revokeClient: clientId => connection.revokeClient(clientId),
-      ensureDesktopAnswers: clientId => connection.ensureDesktopAnswers(clientId),
+      ensureDesktopAnswers: (clientId, desktopHostId) => connection.ensureDesktopAnswers(clientId, desktopHostId),
       hostAdminToken: () => connection.hostAdminToken(),
       stopHost: async () => { try { return await connection.stopHost() } finally { this.end(open) } },
       updateHost: (operation, options) => connection.updateHost(operation, options),

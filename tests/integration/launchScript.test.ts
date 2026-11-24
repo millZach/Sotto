@@ -161,6 +161,26 @@ it('records two desktops connecting at once, and keeps the desktops already reco
   } finally { memory.close() }
 })
 
+it('records desktop-identities.json over SSH without altering desktop-clients.json format, and ignores malformed desktopHostId (#2863)', async () => {
+  const { configuration, memory, clientId, operation } = await desktopPermissionFixture()
+  const DESKTOP_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', DESKTOP_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  try {
+    const pairing = new PairedClients(configuration.dataDirectory)
+    await pairing.load()
+    const second = await pairing.redeem(pairing.issuePairingCode().code, 'Desktop B')
+    const repaired = await pairing.redeem(pairing.issuePairingCode().code, 'Desktop A re-paired')
+    expect((await run(configuration, { ...operation, desktopHostId: DESKTOP_A })).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect((await run(configuration, { ...operation, clientId: second.clientId, desktopHostId: DESKTOP_B })).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect((await run(configuration, { ...operation, clientId: repaired.clientId, desktopHostId: DESKTOP_A })).messages.at(-1)).toEqual({ type: 'desktop-answers', hostId: HOST_ID })
+    expect(new Set(await desktops(configuration) as string[])).toEqual(new Set([clientId, second.clientId, repaired.clientId]))
+    const identities = JSON.parse(await readFile(join(configuration.dataDirectory, 'desktop-identities.json'), 'utf8'))
+    expect(identities).toEqual({ version: 1, desktops: { [clientId]: DESKTOP_A, [second.clientId]: DESKTOP_B, [repaired.clientId]: DESKTOP_A } })
+    // A malformed desktopHostId is refused and never written into desktop-identities.json.
+    expect((await run(configuration, { ...operation, clientId: repaired.clientId, desktopHostId: 'not-a-uuid' })).messages.at(-1)).toEqual({ type: 'failed' })
+    expect(JSON.parse(await readFile(join(configuration.dataDirectory, 'desktop-identities.json'), 'utf8'))).toEqual(identities)
+  } finally { memory.close() }
+})
+
 it('records a confirmed desktop even when its grant cannot be written, since the grant and the record are separate', async () => {
   const { configuration, memory, clientId, operation } = await desktopPermissionFixture()
   memory.close()
