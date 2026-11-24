@@ -1,5 +1,6 @@
 pub mod checkpoints;
 pub mod coordinator;
+pub mod council;
 pub mod credentials;
 pub mod desktop_clients;
 pub mod git_review;
@@ -25,6 +26,35 @@ pub use checkpoints::{
     CheckpointStore, CheckpointThreadInfo, SnapshotFile,
 };
 pub use coordinator::{ClientContext, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle};
+pub use council::{
+    active_panelists, add_round, advance_round, answered_letters, council_counts, counts_for_round,
+    criteria_of, crux_runners, current_round, current_turn, draft_verdict, fairness_done,
+    host_entity_key, is_complete, is_council_remote_provider, is_final, is_late, is_panelist,
+    kinds_of, leave_out, next_clock_change, parse_host_entity_key, project_council_view,
+    read_councils_readonly, reframe, reframable, replace_seat, research_of, retry_turn,
+    review_assignments, row_actions, saved_record, turn_state, validate_council_record,
+    CouncilAngle, CouncilAnswer, CouncilAnswerChallenge, CouncilAnswerFinding, CouncilAskedBy,
+    CouncilAskedByView, CouncilAskedDelivery, CouncilAskedDeliveryState, CouncilCitation,
+    CouncilCitationCheck, CouncilCitationOf, CouncilCommand, CouncilCommandContext,
+    CouncilCommandOutcome, CouncilCommandResult, CouncilCounts, CouncilCriterion,
+    CouncilCriterionSource, CouncilCrux, CouncilCruxMeaning, CouncilCruxOutcome, CouncilCruxResult,
+    CouncilCruxView, CouncilDelivery, CouncilEstimate, CouncilEvidence, CouncilEvidenceSourceKind,
+    CouncilEvidenceView, CouncilFavouriteCount, CouncilFindingCount, CouncilFindingKind,
+    CouncilFraming, CouncilFramingResearch, CouncilFramingResearchView, CouncilFramingView,
+    CouncilHistoryMeta, CouncilHistoryView, CouncilKind, CouncilLegacySnapshot, CouncilLoadedFile,
+    CouncilManager, CouncilMode, CouncilModelInfo, CouncilObjection, CouncilObjectionAnswer,
+    CouncilObjectionView, CouncilObjectionViewAnswer, CouncilOriginThreadInfo, CouncilOriginView,
+    CouncilRankingCount, CouncilRecord, CouncilReview, CouncilReviewAdded, CouncilReviewFinding,
+    CouncilReviewScore, CouncilReviewVerdict, CouncilRole, CouncilRound, CouncilRoundEvidence,
+    CouncilRoundView, CouncilRow, CouncilRowAction, CouncilRowResult, CouncilRowSource,
+    CouncilSeat, CouncilSeatChoice, CouncilSeatView, CouncilSnapshotView, CouncilStage,
+    CouncilStoppedBecause, CouncilStore, CouncilSupportCount, CouncilThreadState,
+    CouncilThreadViewContext, CouncilTurn, CouncilTurnOutcome, CouncilTurnResult, CouncilTurnStage,
+    CouncilVerdictView, CouncilView, CouncilViewStatus, CountedReview, ReframeChange,
+    ReplacementSeatSpec, StageClock, COUNCIL_CHAIR, COUNCIL_FAIRNESS_WAIT_MS, COUNCIL_LETTERS,
+    COUNCIL_PANELISTS_DEFAULT, COUNCIL_PANELISTS_MAX, COUNCIL_PANELISTS_MIN, COUNCIL_RECORDS_MAX,
+    COUNCIL_VIEWS_MAX,
+};
 pub use credentials::{CredentialError, HostCredentialEncryption, HostCredentials};
 pub use desktop_clients::{DesktopClients, DESKTOP_CLIENTS_FILE};
 pub use identity::{load_host_identity, HostIdentityError};

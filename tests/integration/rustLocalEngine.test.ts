@@ -18,6 +18,7 @@ import type { AgentHost } from '../../src/main/agents/host'
 import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
 import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
+import { CouncilStore } from '../../src/main/council/councilStore'
 import { FilesService } from '../../src/main/files/service'
 import { PluginAccounts, pluginAccountSlot } from '../../src/main/plugins/accounts'
 import { MailGrants } from '../../src/main/plugins/mailGrants'
@@ -34,6 +35,12 @@ import {
   listenEngineServer,
 } from '../../src/main/engine/transport'
 import { publicProviderEntityId } from '../../src/shared/agents'
+import {
+  councilChangedSchema,
+  councilCommandResultSchema,
+  councilEstimateSchema,
+  councilViewsSchema,
+} from '../../src/shared/council'
 import { fileListingSchema, filePreviewSchema } from '../../src/shared/files'
 import { hostMachineReportSchema } from '../../src/shared/hostFacts'
 import { phonesStateSchema } from '../../src/shared/phones'
@@ -1386,6 +1393,210 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       const afterReload = await tsReloadedAccounts.list()
       expect(afterReload.map(a => a.id).sort()).toEqual([meshyAcc.id, elevenAcc.id].sort())
       expect(afterReload.find(a => a.id === meshyAcc.id)?.spending).toEqual({ askBefore: false, monthlyLimit: 2500 })
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await server.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('migrates v1 councils.json, drives Council commands, strips words on privacy off, and hands off v2 to TS CouncilStore', async () => {
+    const bin = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-engine-council-'))
+    const repoDir = join(dataDir, 'project')
+    await mkdir(repoDir, { recursive: true })
+    const endpoint = createEngineEndpoint('secn')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+
+    const legacyId = '00000000-0000-4000-8000-000000000501'
+    const legacyTurnId = '11111111-1111-4111-8111-111111111501'
+    const legacyV1 = {
+      version: 1,
+      councils: [
+        {
+          id: legacyId,
+          createdAt: '2026-11-01T10:00:00.000Z',
+          originThread: 'origin-legacy',
+          originTitle: 'Legacy thread',
+          projectId: 'proj-legacy',
+          history: { messages: 2, words: 40, tools: 0, parts: 1 },
+          seats: [
+            {
+              seat: 'A', role: 'panelist', modelId: 'mock-model', modelName: 'Mock A',
+              provider: 'claude', effort: 'high', thread: 't-a', formerThreads: [], started: true, context: true,
+            },
+            {
+              seat: 'B', role: 'panelist', modelId: 'mock-model', modelName: 'Mock B',
+              provider: 'codex', effort: 'high', thread: 't-b', formerThreads: [], started: true, context: true,
+            },
+            {
+              seat: 'chair', role: 'chair', modelId: 'mock-model', modelName: 'Mock Chair',
+              provider: 'grok', effort: 'high', thread: 't-chair', formerThreads: [], started: true, context: true,
+            },
+          ],
+          rounds: [
+            {
+              index: 0, askedAt: '2026-11-01T10:00:00.000Z', stage: 'framing',
+              leftOut: [], objections: [], question: 'Should we keep SQLite?',
+            },
+          ],
+          turns: [
+            {
+              id: legacyTurnId, round: 0, seat: 'chair', thread: 't-chair', stage: 'framing',
+              draftId: '22222222-2222-4222-8222-222222222501',
+              messageId: '33333333-3333-4333-8333-333333333501',
+              delivery: 'dispatching', queuedAt: '2026-11-01T10:00:00.000Z',
+              sentAt: '2026-11-01T10:00:01.000Z', result: 'pending', summary: 'draft framing',
+            },
+          ],
+          deadlineMinutes: 10,
+        },
+      ],
+    }
+    const rawV1 = JSON.stringify(legacyV1, null, 2)
+    await writeFile(join(dataDir, 'councils.json'), rawV1, 'utf8')
+
+    const child = spawn(bin, ['--data', dataDir, '--endpoint', endpoint, '--mock-provider', 'codex'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, SOTTO_ENGINE_TOKEN: token },
+      windowsHide: true,
+    })
+
+    try {
+      const conn = await server.waitForClient(15_000)
+      const exited = new Promise<number | null>(resolveExit => {
+        child.once('exit', code => resolveExit(code))
+      })
+
+      const changedPushes: Array<{ councils: string[] }> = []
+      conn.onPush((event: string, payload: unknown) => {
+        if (event === 'shell:sendToMain') {
+          const msg = payload as { channel?: string; payload?: unknown }
+          if (msg.channel === 'sotto:council:changed') {
+            changedPushes.push(councilChangedSchema.parse(msg.payload))
+          }
+        }
+      })
+
+      // 1. v1 -> v2 migration ran on startup, preserving .v1-backup and recovering dispatching turn.
+      const initialViews = councilViewsSchema.parse(await conn.request('sotto:council:read', []))
+      const backupText = await readFile(join(dataDir, 'councils.json.v1-backup'), 'utf8')
+      expect(backupText).toBe(rawV1)
+      expect(initialViews).toHaveLength(1)
+      expect(initialViews[0]!.id).toBe(legacyId)
+      expect(initialViews[0]!.status).toBe('waiting')
+      expect(initialViews[0]!.origin.thread.startsWith('host:')).toBe(true)
+      expect(initialViews[0]!.rounds[0]!.rows[0]!.state).toBe('unknown')
+      expect(initialViews[0]!.rounds[0]!.rows[0]!.actions).toEqual(['retry', 'replace', 'skip'])
+
+      // 2. Skip framing -> fallback advances to answers, then reframe updates kinds/research/criteria.
+      const skipRes = councilCommandResultSchema.parse(
+        await conn.request('sotto:council:command', [{ type: 'skip', council: legacyId, turn: legacyTurnId }]),
+      )
+      expect(skipRes).toEqual({ ok: true, council: legacyId })
+
+      const afterSkip = councilViewsSchema.parse(await conn.request('sotto:council:read', []))
+      expect(afterSkip[0]!.rounds[0]!.stage).toBe('answers')
+      expect(afterSkip[0]!.rounds[0]!.framing?.fallback).toBe(true)
+      expect(afterSkip[0]!.rounds[0]!.reframable).toBe(true)
+
+      const reframeRes = councilCommandResultSchema.parse(
+        await conn.request('sotto:council:command', [{
+          type: 'reframe',
+          council: legacyId,
+          kinds: ['fact'],
+          research: true,
+          criteria: ['Latency under 5ms'],
+        }]),
+      )
+      expect(reframeRes).toEqual({ ok: true, council: legacyId })
+
+      const afterReframe = councilViewsSchema.parse(await conn.request('sotto:council:read', []))
+      expect(afterReframe[0]!.rounds[0]!.framing?.kinds).toEqual(['fact'])
+      expect(afterReframe[0]!.rounds[0]!.framing?.research.needed).toBe(true)
+      expect(afterReframe[0]!.rounds[0]!.framing?.research.byUser).toBe(true)
+      expect(afterReframe[0]!.rounds[0]!.framing?.criteria[0]?.text).toBe('Latency under 5ms')
+
+      // 3. Create a real local project + thread, estimate it, start a fresh Council, stop and settle it.
+      const projShell = await conn.request('agent.command', [{
+        type: 'create-project',
+        provider: 'codex',
+        title: 'council-proj',
+        path: repoDir,
+        useExisting: true,
+      }]) as {
+        host: { hostId: string; projects: Array<{ id: string }>; models: Array<{ id: string; ready: boolean }> }
+      }
+      const projectId = projShell.host.projects[0]!.id
+      const readyModelId = projShell.host.models.find(m => m.ready)!.id
+
+      const threadShell = await conn.request('agent.command', [{
+        type: 'create-thread',
+        projectId,
+        modelId: readyModelId,
+        title: 'Local origin thread',
+        titleSource: 'user',
+        workingCopy: 'shared',
+        managed: false,
+      }]) as { host: { threads: Array<{ id: string }> } }
+      const originThreadId = threadShell.host.threads[0]!.id
+      const windowOriginKey = `host:${projShell.host.hostId}:${originThreadId}`
+
+      const est = councilEstimateSchema.parse(
+        await conn.request('sotto:council:estimate', [{ originThread: windowOriginKey }]),
+      )
+      expect('parts' in est && est.parts).toBe(1)
+
+      const startRes = councilCommandResultSchema.parse(
+        await conn.request('sotto:council:command', [{
+          type: 'start',
+          originThread: windowOriginKey,
+          question: 'Which cache eviction policy fits best?',
+          panelists: [
+            { modelId: readyModelId, reasoningEffort: null },
+            { modelId: readyModelId, reasoningEffort: null },
+          ],
+          chair: { modelId: readyModelId, reasoningEffort: null },
+        }]),
+      )
+      expect(startRes.ok).toBe(true)
+      const startedId = startRes.ok ? startRes.council : ''
+
+      const settleRes = councilCommandResultSchema.parse(
+        await conn.request('sotto:council:command', [{ type: 'settle', council: startedId }]),
+      )
+      expect(settleRes).toEqual({ ok: true, council: startedId })
+      expect(changedPushes.some(p => p.councils.includes(startedId))).toBe(true)
+
+      const allViews = councilViewsSchema.parse(await conn.request('sotto:council:read', []))
+      expect(allViews.map(v => v.id)).toEqual([startedId, legacyId])
+      expect(allViews[0]!.status).toBe('settled')
+
+      // 4. Privacy off strips words on disk and deletes councils.json.v1-backup.
+      await conn.request('council.privacyChanged', [false])
+      await expect(access(join(dataDir, 'councils.json.v1-backup'))).rejects.toThrow()
+
+      const ro = await conn.request('ops.councilsReadOnly', []) as {
+        version: number
+        councilCount: number
+        climbCount: number
+        hasV1Backup: boolean
+        storageError: string | null
+      }
+      expect(ro).toEqual({ version: 2, councilCount: 2, climbCount: 0, hasV1Backup: false, storageError: null })
+
+      await conn.request('engine:close', [])
+      expect(await exited).toBe(0)
+      conn.close()
+
+      // 5. Fresh TS CouncilStore reads Rust's persisted v2 councils.json cleanly with words stripped.
+      const tsStore = new CouncilStore(dataDir)
+      const tsFile = await tsStore.read()
+      expect(tsFile.version).toBe(2)
+      expect(tsFile.councils).toHaveLength(2)
+      const tsLegacy = tsFile.councils.find(c => c.id === legacyId)
+      expect(tsLegacy && !('phase' in tsLegacy) && tsLegacy.rounds[0]?.question).toBeUndefined()
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
       await server.close().catch(() => undefined)
