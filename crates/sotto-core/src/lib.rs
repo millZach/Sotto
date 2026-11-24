@@ -82,13 +82,15 @@ pub use pairing::{
 };
 pub use phone_access::{
     extract_tailscale_consent_url, is_tailscale_access_denied, is_tailscale_serve_not_enabled,
-    parse_serve_status, parse_tailscale_status, probe_tailscale_status, read_phone_access_readonly,
-    serve_port_owner, serve_target, LocalAppsFile, LocalAppsManager, LocalAppsState,
-    LoopbackPhoneListener, PairedPhoneView, PhoneAccessBrief, PhoneAccessCommandOutcome,
-    PhoneAccessManager, PhoneAccessRecord, PhoneAccessSettings, PhonesCommand, PhonesState,
-    ServeCheck, ServeConfig, ServePortOwner, ServeResult, ServeStatusError, SystemTailscaleCli,
-    TailscaleBackend, TailscaleCheck, TailscalePeer, TailscaleStatus, LOCAL_APPS_CLIENT_NAME,
-    PHONE_ACCESS_SERVE_PORTS,
+    parse_serve_status, parse_tailscale_status, phone_access_summary, probe_tailscale_status,
+    read_phone_access_readonly, serve_port_owner, serve_target, tailnet_address_of,
+    HostPhoneAccessSummary, LocalAppsFile, LocalAppsManager, LocalAppsState, LoopbackPhoneListener,
+    PairedPhoneView, PhoneAccessBrief, PhoneAccessCommandOutcome, PhoneAccessListener,
+    PhoneAccessListenerFactory, PhoneAccessListenerSpawn, PhoneAccessManager, PhoneAccessRecord,
+    PhoneAccessSettings, PhonesCommand, PhonesState, ServeCheck, ServeConfig, ServePortOwner,
+    ServeResult, ServeStatusError, SystemTailscaleCli, TailscaleBackend, TailscaleCheck,
+    TailscalePeer, TailscaleStatus, LOCAL_APPS_CLIENT_NAME, PHONE_ACCESS_SERVE_PORTS,
+    PHONE_CLIENTS_FILE,
 };
 pub use plugins::{
     current_local_month, is_account_plugin, is_bridge_plugin, is_mail_plugin, is_spending_plugin,

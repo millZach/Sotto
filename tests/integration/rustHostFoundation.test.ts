@@ -17,10 +17,12 @@ import { HOST_LOCK_HELD_EXIT_CODE } from '../../src/host/lock'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../src/host/socketFrames'
 import { loadHostIdentity } from '../../src/main/agents/hostIdentity'
 import { PairedClients } from '../../src/main/agents/pairing'
+import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SubagentStore } from '../../src/main/agents/subagentStore'
 import { ThreadRegistry } from '../../src/main/agents/threads'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { UsageStore } from '../../src/main/agents/usageStore'
+import { hostPhonesAnswerSchema } from '../../src/main/hosts/hostPhones'
 import { migrateDatabase } from '../../src/main/memory/migrations.mjs'
 import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
@@ -578,6 +580,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         expect(hello.ok).toBe(true)
         const helloShell = (hello.result as { shell: unknown }).shell
         const parsedHello = protocolAgentStateSchema.parse(helloShell)
+        expect(parsedHello.hostId).toBe(parsedHello.host.hostId)
         expect(parsedHello.notice).toBe('')
         expect(parsedHello.host.version.length).toBeGreaterThan(0)
 
@@ -799,4 +802,105 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
 
     await rm(dataDir, { recursive: true, force: true })
   }, 30_000)
+
+  it('pairs and connects real SocketHostService (validateState + shell pushes) and answers phone/tailnet admin routes against TS schemas', async () => {
+    const svcDir = await mkdtemp(join(tmpdir(), 'sotto-rust-socket-svc-'))
+    const projectDir = join(svcDir, 'project')
+    await mkdir(projectDir, { recursive: true })
+    const running = await startHost(
+      [hostBinary, '--data', '{data}', '--port', '0', '--sotto-version', '0.1.44-owl.20261124.1', '--mock-provider', 'codex'],
+      svcDir,
+      'codex',
+    )
+    try {
+      const descriptor = await waitForFile<{ hostId: string; adminToken: string; port: number }>(
+        join(svcDir, 'host-listener.json'),
+      )
+      const baseUrl = `http://127.0.0.1:${running.port}`
+
+      // 1. Issue pairing code and pair via real SocketHostService.pair.
+      const codeRes = await fetch(`${baseUrl}/v1/admin/pairing-code`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${descriptor.adminToken}` },
+      })
+      expect(codeRes.status).toBe(200)
+      const { code } = await codeRes.json() as { code: string }
+
+      const paired = await SocketHostService.pair(baseUrl, code, 'Real SocketHostService Desktop')
+      expect(paired.hostId).toBe(descriptor.hostId)
+
+      // 2. Grant remote answers and connect via real SocketHostService (exercises validateState on hello + commands + pushes).
+      const allowRes = await fetch(`${baseUrl}/v1/admin/allow-answers`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${descriptor.adminToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: paired.clientId }),
+      })
+      expect(allowRes.status).toBe(200)
+
+      const service = new SocketHostService({
+        url: baseUrl,
+        token: paired.token,
+        expectedHostId: descriptor.hostId,
+        clientVersion: '0.1.44-owl.20261124.1',
+      })
+      try {
+        const hello = await service.connect()
+        expect(hello.hostId).toBe(descriptor.hostId)
+        expect(hello.phoneAccess).toEqual({ status: 'off', phones: 0 })
+        expect(service.shell().hostId).toBe(descriptor.hostId)
+        expect(service.shell().host.hostId).toBe(descriptor.hostId)
+
+        // Create a project and thread to exercise command replies and kept-parts/changed-thread-records shell pushes.
+        const afterProject = await service.command({
+          type: 'create-project',
+          provider: 'codex',
+          title: 'SocketHostService Project',
+          path: projectDir,
+          useExisting: true,
+        })
+        expect(afterProject.hostId).toBe(descriptor.hostId)
+        const projectId = afterProject.host.projects.find(p => p.path === projectDir)!.id
+
+        const afterThread = await service.command({
+          type: 'create-thread',
+          projectId,
+          title: 'SocketHostService Thread',
+          titleSource: 'user',
+          modelId: 'native:codex:model:fixture-model',
+          workingCopy: 'shared',
+        })
+        expect(afterThread.hostId).toBe(descriptor.hostId)
+        expect(afterThread.host.threads.some(t => t.title === 'SocketHostService Thread')).toBe(true)
+      } finally {
+        await service.close()
+      }
+
+      // 3. /v1/admin/phones and /v1/admin/tailnet return valid TS-schema payloads.
+      const phonesRes = await fetch(`${baseUrl}/v1/admin/phones`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${descriptor.adminToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      expect(phonesRes.status).toBe(200)
+      const parsedPhones = hostPhonesAnswerSchema.parse(await phonesRes.json())
+      expect(parsedPhones.hostId).toBe(descriptor.hostId)
+      expect(parsedPhones.state.enabled).toBe(false)
+      expect(parsedPhones.state.phase).toBe('off')
+
+      const tailnetRes = await fetch(`${baseUrl}/v1/admin/tailnet`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${descriptor.adminToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      expect(tailnetRes.status).toBe(200)
+      const tailnetBody = await tailnetRes.json() as { v: number; hostId: string; enabled: boolean; state: unknown }
+      expect(tailnetBody.v).toBe(1)
+      expect(tailnetBody.hostId).toBe(descriptor.hostId)
+      expect(tailnetBody.enabled).toBe(false)
+      hostPhonesAnswerSchema.parse({ v: tailnetBody.v, hostId: tailnetBody.hostId, state: tailnetBody.state })
+    } finally {
+      await running.stop()
+      await rm(svcDir, { recursive: true, force: true })
+    }
+  }, 60_000)
 })

@@ -34,20 +34,26 @@ impl DesktopClients {
     }
 
     pub fn remove(&mut self, client_id: &str) -> bool {
-        let Some(current) = self.read() else {
-            self.ids.clear();
-            return false;
-        };
+        self.remove_and_remaining(client_id).is_some()
+    }
+
+    /// Removes `client_id` from `desktop-clients.json` when it was recorded as a desktop,
+    /// returning the remaining recorded desktop IDs. Returns `None` when `desktop-clients.json`
+    /// cannot be read or did not contain `client_id` (matching `DesktopClients.remove` in
+    /// `src/host/desktopClients.ts`).
+    pub fn remove_and_remaining(&mut self, client_id: &str) -> Option<HashSet<String>> {
+        let current = self.read()?;
+        let had = current.iter().any(|id| id == client_id);
         let left: Vec<String> = current
             .into_iter()
             .filter(|id| id != client_id)
             .collect();
-        let removed = left.len() != self.ids.len() || self.ids.contains(client_id);
         self.ids = left.iter().cloned().collect();
-        if removed {
-            let _ = self.write(&left);
+        if !had {
+            return None;
         }
-        removed
+        let _ = self.write(&left);
+        Some(self.ids.clone())
     }
 
     fn read(&self) -> Option<Vec<String>> {
