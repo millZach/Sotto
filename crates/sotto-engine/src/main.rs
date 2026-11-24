@@ -12,14 +12,16 @@ use tokio::sync::{broadcast, Mutex, Semaphore};
 use sotto_core::{
     acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, mail_grants_shown,
     plugin_account_slot, probe_tailscale_status, read_boot_id, read_checkpoints_readonly,
-    read_github_sign_in, read_phone_access_readonly, read_plugins_readonly, release_host_lock,
-    AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair, CheckpointManager,
-    CheckpointThreadInfo, ClaudeAdapter, ClaudeAdapterConfig, ClientContext, CodexAdapter,
-    CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, HostLease,
-    LocalAppsManager, LocalPluginsManager, MemoryStore, MockProviderAdapter, MuseAdapter,
-    MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig, PhoneAccessManager,
-    PhoneAccessSettings, PhonesCommand, PluginAccountResult, PluginAccountUpdate, PluginUseReport,
-    ProviderAdapter, SystemTailscaleCli,
+    read_councils_readonly, read_github_sign_in, read_phone_access_readonly, read_plugins_readonly,
+    release_host_lock, AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair,
+    CheckpointManager, CheckpointThreadInfo, ClaudeAdapter, ClaudeAdapterConfig, ClientContext,
+    CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle,
+    CouncilCommand, CouncilCommandContext, CouncilManager, CouncilModelInfo,
+    CouncilOriginThreadInfo, CouncilThreadViewContext, HostLease, LocalAppsManager,
+    LocalPluginsManager, MemoryStore, MockProviderAdapter, MuseAdapter, MuseAdapterConfig,
+    OpenCodeAdapter, OpenCodeAdapterConfig, PhoneAccessManager, PhoneAccessSettings, PhonesCommand,
+    PluginAccountResult, PluginAccountUpdate, PluginUseReport, ProviderAdapter, SystemTailscaleCli,
+    COUNCIL_VIEWS_MAX,
 };
 
 use crate::shell_bridge::{CredentialSnapshot, EngineWindowFocus, ShellBridgeClient};
@@ -258,6 +260,7 @@ async fn handle_rpc(
     phone_access: &Arc<Mutex<PhoneAccessManager>>,
     local_apps: &Arc<Mutex<LocalAppsManager>>,
     plugins: &Arc<Mutex<LocalPluginsManager>>,
+    council: &Arc<Mutex<CouncilManager>>,
     host_id: &str,
     data_directory: &Path,
     method: &str,
@@ -1271,12 +1274,236 @@ async fn handle_rpc(
                 .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
             Ok(json!({ "ok": true }))
         }
+        "ops.councilsReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_councils_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("councilsReadOnly task failed."))
+        }
+        "sotto:council:read" => {
+            let ctx = build_council_context(coordinator, host_id, None).await;
+            let guard = council.lock().await;
+            let views = guard.views(&ctx.thread_views, Some(host_id));
+            serde_json::to_value(views)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:council:estimate" => {
+            let origin_key = args
+                .first()
+                .and_then(|v| {
+                    v.get("originThread")
+                        .and_then(Value::as_str)
+                        .or_else(|| v.as_str())
+                })
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| err_invalid("originThread is required."))?;
+            let local_origin = CouncilManager::own_thread_id(Some(host_id), origin_key);
+            let ctx = build_council_context(coordinator, host_id, local_origin.as_deref()).await;
+            let guard = council.lock().await;
+            let estimate = guard.estimate(origin_key, &ctx);
+            serde_json::to_value(estimate)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:council:command" => {
+            let cmd: CouncilCommand = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("Invalid CouncilCommand payload."))?;
+            let local_origin = match &cmd {
+                CouncilCommand::Start { origin_thread, .. } => {
+                    CouncilManager::own_thread_id(Some(host_id), origin_thread)
+                }
+                _ => None,
+            };
+            let ctx = build_council_context(coordinator, host_id, local_origin.as_deref()).await;
+            let outcome = {
+                let mut guard = council.lock().await;
+                guard.command(cmd, &ctx)
+            };
+            let local_client = ClientContext {
+                client_id: "local-desktop".into(),
+                user: "Local Desktop".into(),
+                may_answer: true,
+            };
+            for tid in &outcome.interrupt_threads {
+                if ctx.threads.contains_key(tid) {
+                    let mut map = serde_json::Map::new();
+                    map.insert("type".into(), json!("interrupt"));
+                    map.insert("threadId".into(), json!(tid));
+                    let _ = coordinator.enqueue_command(local_client.clone(), map);
+                }
+            }
+            for tid in &outcome.settle_threads {
+                if ctx.threads.contains_key(tid) {
+                    let mut map = serde_json::Map::new();
+                    map.insert("type".into(), json!("settle-thread"));
+                    map.insert("threadId".into(), json!(tid));
+                    let _ = coordinator.enqueue_command(local_client.clone(), map);
+                }
+            }
+            if !outcome.changed_ids.is_empty() {
+                let councils: Vec<String> = outcome
+                    .changed_ids
+                    .into_iter()
+                    .take(COUNCIL_VIEWS_MAX)
+                    .collect();
+                shell_bridge.send_to_main("sotto:council:changed", json!({ "councils": councils }));
+            }
+            serde_json::to_value(outcome.result)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "council.privacyChanged" => {
+            let enabled = args.first().and_then(Value::as_bool).unwrap_or(true);
+            let mut guard = council.lock().await;
+            guard
+                .set_history_enabled(enabled)
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true }))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
             code: Some("METHOD_NOT_FOUND".into()),
         }),
     }
+}
+
+async fn build_council_context(
+    coordinator: &CoordinatorHandle,
+    host_id: &str,
+    detail_thread_id: Option<&str>,
+) -> CouncilCommandContext {
+    let mut ctx = CouncilCommandContext {
+        local_host_id: Some(host_id.to_string()),
+        deadline_minutes: 10,
+        ..CouncilCommandContext::default()
+    };
+    let Ok(shell) = coordinator.shell(true).await else {
+        return ctx;
+    };
+    let Some(host) = shell.get("host") else {
+        return ctx;
+    };
+    let mut project_paths: HashMap<String, String> = HashMap::new();
+    if let Some(projects) = host.get("projects").and_then(Value::as_array) {
+        for p in projects {
+            if let (Some(id), Some(path)) = (
+                p.get("id").and_then(Value::as_str),
+                p.get("path").and_then(Value::as_str),
+            ) {
+                project_paths.insert(id.to_string(), path.to_string());
+            }
+        }
+    }
+    if let Some(models) = host.get("models").and_then(Value::as_array) {
+        for m in models {
+            let Some(id) = m.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            let name = m.get("name").and_then(Value::as_str).unwrap_or(id);
+            let provider_id = m
+                .get("providerId")
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let ready = m.get("ready").and_then(Value::as_bool).unwrap_or(false);
+            ctx.models.push(CouncilModelInfo {
+                id: id.to_string(),
+                name: name.to_string(),
+                provider_id,
+                ready,
+            });
+        }
+    }
+    if let Some(threads) = host.get("threads").and_then(Value::as_array) {
+        for t in threads {
+            let Some(id) = t.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            let title = t
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let project_id = t
+                .get("projectId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let has_pending_requests = t
+                .get("requests")
+                .and_then(Value::as_array)
+                .map(|r| !r.is_empty())
+                .unwrap_or(false)
+                || t.get("pendingRequestCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    > 0;
+            ctx.thread_views.insert(
+                id.to_string(),
+                CouncilThreadViewContext {
+                    title: title.clone(),
+                    has_pending_requests,
+                },
+            );
+            let working_directory = t
+                .get("workingDirectory")
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+                .or_else(|| project_paths.get(&project_id).cloned());
+            let mut info = CouncilOriginThreadInfo {
+                id: id.to_string(),
+                title,
+                project_id,
+                kind: t
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string),
+                provider_id: t
+                    .get("providerId")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string),
+                working_directory,
+                remote_host: t
+                    .get("remoteHost")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                host_id: t
+                    .get("hostId")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string),
+                messages_count: t
+                    .get("messageCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+                words_count: 0,
+                tools_count: 0,
+                characters_count: 0,
+                last_message_id: None,
+            };
+            if detail_thread_id == Some(id) {
+                if let Ok(Some(detail)) = coordinator.detail(id.to_string()).await {
+                    let mut words = 0u64;
+                    let mut chars = 0u64;
+                    let mut msg_count = 0u64;
+                    let mut last_id = None;
+                    for msg in &detail.messages {
+                        msg_count += 1;
+                        words += msg.text.split_whitespace().count() as u64;
+                        chars += msg.text.chars().count() as u64;
+                        last_id = Some(msg.id.clone());
+                    }
+                    info.messages_count = msg_count;
+                    info.words_count = words;
+                    info.tools_count = detail.activities.len() as u64;
+                    info.characters_count = chars;
+                    info.last_message_id = last_id;
+                }
+            }
+            ctx.threads.insert(id.to_string(), info);
+        }
+    }
+    ctx
 }
 
 fn parse_timeout_budget(arg: Option<&Value>, default_ms: u64) -> std::time::Duration {
@@ -1586,6 +1813,12 @@ async fn handle_accelerator_rpc(
                 .await
                 .map_err(|_| err_invalid("pluginsReadOnly task failed."))
         }
+        "ops.councilsReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_councils_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("councilsReadOnly task failed."))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -1803,6 +2036,11 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         }
     };
 
+    let plugins = Arc::new(Mutex::new(LocalPluginsManager::new(&parsed.data_directory)));
+    let _ = plugins.lock().await.sounds.settle_unfinished();
+    let council = Arc::new(Mutex::new(CouncilManager::new(&parsed.data_directory)));
+    let _ = council.lock().await.recover();
+
     let stream = match connect_engine_stream(&parsed.endpoint).await {
         Ok(s) => s,
         Err(err) => {
@@ -1850,8 +2088,6 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         true,
         Some(coordinator.clone()),
     )));
-    let plugins = Arc::new(Mutex::new(LocalPluginsManager::new(&parsed.data_directory)));
-    let _ = plugins.lock().await.sounds.settle_unfinished();
 
     let mut bcast_rx = coordinator.subscribe();
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
@@ -1965,6 +2201,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                         let phone_mgr = Arc::clone(&phone_access);
                         let la_mgr = Arc::clone(&local_apps);
                         let plugins_mgr = Arc::clone(&plugins);
+                        let council_mgr = Arc::clone(&council);
                         let hid = host_id.clone();
                         let data_dir = parsed.data_directory.clone();
                         let out = duplex.clone();
@@ -1976,6 +2213,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                                 &phone_mgr,
                                 &la_mgr,
                                 &plugins_mgr,
+                                &council_mgr,
                                 &hid,
                                 &data_dir,
                                 &method,
@@ -2011,6 +2249,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         phone_access.lock().await.close().await;
         local_apps.lock().await.close().await;
         plugins.lock().await.pending_changes.close();
+        council.lock().await.close();
     })
     .await;
     let shutdown_completed = tokio::time::timeout(
