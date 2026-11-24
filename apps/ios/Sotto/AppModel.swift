@@ -21,6 +21,8 @@ extension AppModel {
     /// Whether this computer's Watcher page names its machines (#1032): the line under Watcher's name and each machine's
     /// panel. Only a computer with Work across machines on offers it.
     func offersWatcherMachines(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(WatcherWire.machinesFeature) == true }
+    /// Whether this computer answers `watcher-phone-read` (`machines: true`) with compact `{ status: 'ok', machines }`.
+    func offersWatcherMachinesRead(_ hostID: String) -> Bool { offersWatcherMachines(hostID) && live[hostID]?.features.contains(WatcherWire.machinesReadFeature) == true }
     /// The computer whose Watcher the Watcher tab shows: the one last chosen, by a Watcher alert or the menu in the tab's
     /// header, while it still runs Watcher, and otherwise the first paired computer that runs one. With none, there is no
     /// tab, and nothing else in the app changes.
@@ -165,9 +167,19 @@ extension AppModel {
         repeat {
             watcherMachineRereads.remove(hostID)
             guard online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
-            guard case .ok(let page)? = try? await connection.call(WatcherWire.readMachines, as: WatcherPhoneResult.self),
-                  generations[hostID] == epoch else { continue }
-            applyWatcher(page, from: hostID)
+            if offersWatcherMachinesRead(hostID) {
+                guard case .ok(let machines)? = try? await connection.call(WatcherWire.readMachines, as: WatcherPhoneMachinesResult.self),
+                      generations[hostID] == epoch else { continue }
+                if let shown = watcherStore.pages[hostID] {
+                    if shown.machines != machines { watcherStore.pages[hostID] = shown.replacingMachines(machines) }
+                } else {
+                    await readWatcher(hostID)
+                }
+            } else {
+                guard case .ok(let page)? = try? await connection.call(WatcherWire.readMachines, as: WatcherPhoneResult.self),
+                      generations[hostID] == epoch else { continue }
+                applyWatcher(page, from: hostID)
+            }
         } while watcherMachineRereads.contains(hostID)
     }
     /// Reads the machines once for each set of Watcher's starts the line has not been read for (#1032), so the line's words

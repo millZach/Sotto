@@ -59,7 +59,9 @@ public struct KeptPartsCache: Sendable {
         guard let names = shell.keptParts else { return shell }
         var restored = shell
         restored.keptParts = nil
-        let hasWatcherDelta = restored.watcher?.conversationDelta != nil || names.watcherCarried.contains("conversationDelta")
+        let hasConversationDelta = restored.watcher?.conversationDelta != nil || names.watcherCarried.contains("conversationDelta")
+        let hasReceiptDelta = restored.watcher?.receiptGroupsDelta != nil || names.watcherCarried.contains("receiptGroupsDelta")
+        let hasWatcherDelta = hasConversationDelta || hasReceiptDelta
         let previousHeld = self.held
         if names.keepsAny || hasWatcherDelta {
             guard let held = previousHeld, let base = shell.threadRecords?.base, base == held.revision,
@@ -86,7 +88,10 @@ public struct KeptPartsCache: Sendable {
             if names.kept.contains("watcher") {
                 nextWatcherParts = previousHeld?.watcherParts ?? []
             } else if restored.watcher != nil {
-                nextWatcherParts = names.watcherCarried.union(names.watcherKept).union(hasWatcherDelta ? ["conversation"] : []).subtracting(["kept", "conversationDelta"])
+                var deltaRestored: Set<String> = []
+                if hasConversationDelta { deltaRestored.insert("conversation") }
+                if hasReceiptDelta { deltaRestored.insert("receiptGroups") }
+                nextWatcherParts = names.watcherCarried.union(names.watcherKept).union(deltaRestored).subtracting(["kept", "conversationDelta", "receiptGroupsDelta"])
             } else {
                 nextWatcherParts = []
             }

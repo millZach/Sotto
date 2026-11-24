@@ -33,13 +33,29 @@ final class MachinesTests: XCTestCase {
         XCTAssertEqual(MachineLine.problems(try XCTUnwrap(machines.rows.first)), [])
     }
 
-    func testTheMachinesFeatureRidesWithManagementAndItsReadAsksForAFreshRead() {
+    func testTheMachinesFeatureRidesWithManagementAndItsReadAsksForAFreshRead() throws {
         guard case .array(let accepts)? = WatcherWire.managementHello["accepts"] else { return XCTFail("Missing accepts") }
         XCTAssertTrue(accepts.contains(.string(WatcherWire.machinesFeature)))
+        XCTAssertTrue(accepts.contains(.string(WatcherWire.machinesReadFeature)))
         guard case .array(let plain)? = WatcherWire.hello["accepts"] else { return XCTFail("Missing accepts") }
         XCTAssertFalse(plain.contains(.string(WatcherWire.machinesFeature)))
+        XCTAssertFalse(plain.contains(.string(WatcherWire.machinesReadFeature)))
         XCTAssertEqual(WatcherWire.readMachines["op"], .string("watcher-phone-read"))
         XCTAssertEqual(WatcherWire.readMachines["machines"], .bool(true))
+
+        // Compact `watcher-phone-machines-read` response decodes `{ status: "ok", machines }` and replaces only `machines`.
+        let row = #"{"hostId":"00000000-0000-4000-8000-000000000001","name":"This computer","thisComputer":true,"connected":true,"working":3,"starting":0,"isDefault":true,"cpuState":"busy","memoryState":"enough","system":"Windows","logicalCpuCount":16,"totalMemoryBytes":68719476736,"cpuBusyPercent":80,"windowMs":2000,"availableMemoryBytes":34359738368,"loadObservedAt":"2026-10-23T12:41:00Z","unknownWhy":null,"threads":[]}"#
+        let compactJSON = #"{"status":"ok","machines":{"readAt":"2026-10-23T12:41:00Z","rows":["# + row + "]}}"
+        let decoded = try decode(WatcherPhoneMachinesResult.self, compactJSON)
+        guard case .ok(let refreshed) = decoded else { return XCTFail("Expected ok machines result") }
+        XCTAssertEqual(refreshed.readAt, "2026-10-23T12:41:00Z")
+        XCTAssertEqual(refreshed.rows.first?.working, 3)
+
+        let basePage = try decode(WatcherPhoneState.self, page)
+        let updatedPage = basePage.replacingMachines(refreshed)
+        XCTAssertEqual(updatedPage.machines, refreshed)
+        XCTAssertEqual(updatedPage.conversation, basePage.conversation)
+        XCTAssertEqual(updatedPage.observedAt, basePage.observedAt)
     }
 
     func testProblemWordsComeInThePrototypesOrderAndLoadUnknownOnlyWhenBothHalvesAre() throws {

@@ -21,6 +21,6 @@ export function iphoneAccepts() {
     return match[1]
   }
   if (list.includes('StepWindow.feature')) accepts.push(named(step, 'feature'))
-  for (const name of ['feature', 'stopFeature', 'manageFeature', 'steerFeature', 'machinesFeature', 'composerFeature', 'partsFeature']) accepts.push(named(watcher, name))
+  for (const name of ['feature', 'stopFeature', 'manageFeature', 'steerFeature', 'machinesFeature', 'machinesReadFeature', 'composerFeature', 'partsFeature', 'receiptDeltasFeature']) accepts.push(named(watcher, name))
   return accepts
 }

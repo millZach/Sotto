@@ -96,6 +96,47 @@ final class KeptPartsTests: XCTestCase {
     func testThePhoneAcceptsWatcherPhoneParts() {
         guard case .array(let accepts)? = WatcherWire.managementHello["accepts"] else { return XCTFail("Missing accepts") }
         XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.partsFeature) }.count, 1)
+        XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.receiptDeltasFeature) }.count, 1)
+    }
+
+    func testWatcherReceiptGroupsDeltaReassemblesReplacementsHeadDropsAndTailAppends() async throws {
+        var cache = KeptPartsCache()
+        func groupJSON(_ req: String, _ op: String, outcome: String? = nil) -> String {
+            let outcomePart = outcome.map { #","outcome":"\#($0)""# } ?? ""
+            return #"{"replyMessageId":null,"requestId":"\#(req)","rows":[{"operationId":"\#(op)","target":{"hostId":"h","threadId":"t1"},"title":"Task","provider":"codex","action":"send","deliveryState":"accepted","createdAt":"2026-11-22T12:00:00.000Z","updatedAt":"2026-11-22T12:00:00.000Z"\#(outcomePart)}]}"#
+        }
+        let g1 = groupJSON("req-1", "op-1")
+        let g2 = groupJSON("req-2", "op-2")
+        let initialWatcher = #""watcher":{"hostId":"h","current":null,"conversation":{"messages":[],"earlierAvailable":false,"revision":1},"receiptGroups":[\#(g1),\#(g2)],"watchedThreads":[],"needsYou":[],"inFlight":0,"inFlightLimit":8,"working":true,"recoveryNotice":null,"observedAt":"2026-11-22T12:00:00.000Z"}"#
+        let first = try await shell(push(top: wholeTop + "," + initialWatcher, host: wholeHost, revision: 1, base: nil))
+        let appliedFirst = try XCTUnwrap(cache.whole(first))
+        XCTAssertEqual(appliedFirst.watcher?.receiptGroups.map(\.requestId), ["req-1", "req-2"])
+
+        // Push 2 replaces index 0 with outcome="answered" and appends req-3 via receiptGroupsDelta.
+        let g1Answered = groupJSON("req-1", "op-1", outcome: "answered")
+        let g3 = groupJSON("req-3", "op-3")
+        let deltaWatcher = #""watcher":{"observedAt":"2026-11-22T12:00:01.000Z","kept":["hostId","current","conversation","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"receiptGroupsDelta":{"dropHead":0,"keep":2,"replaced":[{"index":0,"group":\#(g1Answered)}],"tail":[\#(g3)]}}"#
+        let patched = try await shell(push(top: keptTop + "," + deltaWatcher, host: keptHost, revision: 2, base: 1))
+        let appliedPatch = try XCTUnwrap(cache.whole(patched))
+        XCTAssertEqual(appliedPatch.watcher?.receiptGroups.map(\.requestId), ["req-1", "req-2", "req-3"])
+        XCTAssertEqual(appliedPatch.watcher?.receiptGroups.first?.rows.first?.outcome, "answered")
+        XCTAssertNil(appliedPatch.watcher?.receiptGroupsDelta)
+
+        // Push 3 drops head group (dropHead: 1) with empty tail.
+        let dropWatcher = #""watcher":{"observedAt":"2026-11-22T12:00:02.000Z","kept":["hostId","current","conversation","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"receiptGroupsDelta":{"dropHead":1,"keep":2,"tail":[]}}"#
+        let dropped = try await shell(push(top: keptTop + "," + dropWatcher, host: keptHost, revision: 3, base: 2))
+        let appliedDrop = try XCTUnwrap(cache.whole(dropped))
+        XCTAssertEqual(appliedDrop.watcher?.receiptGroups.map(\.requestId), ["req-2", "req-3"])
+
+        // Out-of-bounds replacement index is rejected without corrupting held revision 3.
+        let badIndex = #""watcher":{"observedAt":"2026-11-22T12:00:03.000Z","kept":["hostId","current","conversation","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"],"receiptGroupsDelta":{"dropHead":0,"keep":2,"replaced":[{"index":2,"group":\#(g3)}],"tail":[]}}"#
+        let rejected = try await shell(push(top: keptTop + "," + badIndex, host: keptHost, revision: 4, base: 3))
+        XCTAssertNil(cache.whole(rejected))
+
+        // Held revision 3 still works after rejection.
+        let keepAfterReject = #""watcher":{"observedAt":"2026-11-22T12:00:04.000Z","kept":["hostId","current","conversation","receiptGroups","watchedThreads","needsYou","inFlight","inFlightLimit","working","recoveryNotice"]}"#
+        let recovered = try await shell(push(top: keptTop + "," + keepAfterReject, host: keptHost, revision: 4, base: 3))
+        XCTAssertEqual(try XCTUnwrap(cache.whole(recovered)).watcher?.receiptGroups.map(\.requestId), ["req-2", "req-3"])
     }
 
     func testWatcherSubPartsAndConversationDeltaReassembleAcrossTopLevelKeepAndWindowSlide() async throws {

@@ -180,5 +180,71 @@ describe('watcher-phone-parts encoding and reassembly', () => {
     expect(withWatcherPhonePartsPutBack({
       conversationDelta: { dropHead: 0, keep: 0, appendLastText: 'bad', tail: [], earlierAvailable: false, revision: 11 },
     }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({ kept: ['receiptGroupsDelta'] }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({
+      kept: ['receiptGroups'],
+      receiptGroupsDelta: { dropHead: 0, keep: 1, tail: [] },
+    }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({
+      receiptGroups: prev.receiptGroups,
+      receiptGroupsDelta: { dropHead: 0, keep: 1, tail: [] },
+    }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({
+      receiptGroupsDelta: { dropHead: 30, keep: 20, tail: [] },
+    }, prev)).toBeUndefined()
+    expect(withWatcherPhonePartsPutBack({
+      receiptGroupsDelta: { dropHead: 0, keep: 2, replaced: [{ index: 2, group: { requestId: 'bad', count: 0 } }], tail: [] },
+    }, prev)).toBeUndefined()
+  })
+
+  it('deltas receiptGroups only when receiptDeltas is enabled and keeps legacy callers whole', () => {
+    const prev = basePage()
+    // Update one group mid-array (e.g. an older worker finishing with outcome='answered') and append one new group.
+    const updatedGroups = prev.receiptGroups.slice()
+    updatedGroups[5] = { requestId: 'req-5', count: 999 }
+    updatedGroups.push({ requestId: 'req-40', count: 40 })
+    const next = basePage({
+      observedAt: '2026-11-22T12:00:02.000Z',
+      receiptGroups: updatedGroups,
+    })
+
+    // Legacy phone without `watcher-phone-receipt-deltas` still gets `receiptGroups` whole.
+    const legacyWire = withWatcherPhoneParts(next, prev)
+    expect(legacyWire.receiptGroupsDelta).toBeUndefined()
+    expect(legacyWire.receiptGroups).toEqual(updatedGroups)
+    expect(withWatcherPhonePartsPutBack(legacyWire, prev)).toEqual(next)
+
+    // Updated phone with `watcher-phone-receipt-deltas` gets a sparse delta.
+    const deltaWire = withWatcherPhoneParts(next, prev, { receiptDeltas: true })
+    expect(deltaWire.receiptGroups).toBeUndefined()
+    expect(deltaWire.receiptGroupsDelta).toEqual({
+      dropHead: 0,
+      keep: 40,
+      replaced: [{ index: 5, group: { requestId: 'req-5', count: 999 } }],
+      tail: [{ requestId: 'req-40', count: 40 }],
+    })
+    expect(withWatcherPhonePartsPutBack(deltaWire, prev)).toEqual(next)
+    expect(Buffer.byteLength(JSON.stringify(deltaWire))).toBeLessThan(Buffer.byteLength(JSON.stringify(legacyWire)) / 4)
+
+    // Sliding the head as older receipts age out of the 200-message window sends dropHead + new tail only.
+    const slidGroups = [...prev.receiptGroups.slice(2), { requestId: 'req-40', count: 40 }]
+    const slidNext = basePage({ observedAt: '2026-11-22T12:00:03.000Z', receiptGroups: slidGroups })
+    const slidWire = withWatcherPhoneParts(slidNext, prev, { receiptDeltas: true })
+    expect(slidWire.receiptGroupsDelta).toEqual({
+      dropHead: 2,
+      keep: 38,
+      tail: [{ requestId: 'req-40', count: 40 }],
+    })
+    expect(withWatcherPhonePartsPutBack(slidWire, prev)).toEqual(slidNext)
+
+    // Completely replaced receipt history (e.g. New Watcher) falls back cleanly to whole `receiptGroups`.
+    const freshNext = basePage({
+      observedAt: '2026-11-22T12:00:04.000Z',
+      receiptGroups: [{ requestId: 'brand-new', count: 1 }],
+    })
+    const freshWire = withWatcherPhoneParts(freshNext, prev, { receiptDeltas: true })
+    expect(freshWire.receiptGroupsDelta).toBeUndefined()
+    expect(freshWire.receiptGroups).toEqual(freshNext.receiptGroups)
+    expect(withWatcherPhonePartsPutBack(freshWire, prev)).toEqual(freshNext)
   })
 })

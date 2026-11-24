@@ -41,27 +41,40 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
     /// What changed in `conversation` since the push before (`watcher-phone-parts`). Always nil once a shell leaves
     /// `HostConnection`, which puts the conversation back (`KeptPartsCache`).
     var conversationDelta: ConversationDelta? = nil
+    /// What changed in `receiptGroups` since the push before (`watcher-phone-receipt-deltas`). Always nil once a shell
+    /// leaves `HostConnection`, which puts the receipt groups back (`KeptPartsCache`).
+    var receiptGroupsDelta: ReceiptGroupsDelta? = nil
     public struct ConversationDelta: Decodable, Equatable, Sendable {
         public let dropHead: Int; public let keep: Int; public let appendLastText: String?
         public let tail: [Message]; public let earlierAvailable: Bool; public let revision: Int
     }
+    public struct ReceiptGroupsDelta: Decodable, Equatable, Sendable {
+        public struct Replacement: Decodable, Equatable, Sendable {
+            public let index: Int; public let group: ReceiptGroup
+        }
+        public let dropHead: Int; public let keep: Int; public let replaced: [Replacement]?; public let tail: [ReceiptGroup]
+    }
     private enum Keys: String, CodingKey {
         case hostId, current, conversation, receiptGroups, watchedThreads, needsYou, inFlight, inFlightLimit, working, recoveryNotice, observedAt
         case draftDeliveries, runtimeMode, standingWatches, ownChanges, followups, machines, newWatcher, handoverOffered, replaced, nextTurnOptions
-        case kept, conversationDelta
+        case kept, conversationDelta, receiptGroupsDelta
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         // A push to a phone that accepted `watcher-phone-parts` leaves out unchanged sub-parts named in `kept`, and may
-        // replace `conversation` with `conversationDelta`. Kept required fields read empty until `KeptPartsCache` puts them back.
+        // replace `conversation` with `conversationDelta` or `receiptGroups` with `receiptGroupsDelta`. Kept required
+        // fields read empty until `KeptPartsCache` puts them back.
         let kept = Set(try c.decodeIfPresent([String].self, forKey: .kept) ?? [])
         conversationDelta = try c.decodeIfPresent(ConversationDelta.self, forKey: .conversationDelta)
+        receiptGroupsDelta = try c.decodeIfPresent(ReceiptGroupsDelta.self, forKey: .receiptGroupsDelta)
         hostId = kept.contains("hostId") ? (try c.decodeIfPresent(String.self, forKey: .hostId) ?? "") : try c.decode(String.self, forKey: .hostId)
         current = try c.decodeIfPresent(Current.self, forKey: .current)
         if kept.contains("conversation") || conversationDelta != nil {
             conversation = try c.decodeIfPresent(Conversation.self, forKey: .conversation) ?? Conversation(messages: [], earlierAvailable: false, revision: 0)
         } else { conversation = try c.decode(Conversation.self, forKey: .conversation) }
-        receiptGroups = kept.contains("receiptGroups") ? (try c.decodeIfPresent([ReceiptGroup].self, forKey: .receiptGroups) ?? []) : try c.decode([ReceiptGroup].self, forKey: .receiptGroups)
+        if kept.contains("receiptGroups") || receiptGroupsDelta != nil {
+            receiptGroups = try c.decodeIfPresent([ReceiptGroup].self, forKey: .receiptGroups) ?? []
+        } else { receiptGroups = try c.decode([ReceiptGroup].self, forKey: .receiptGroups) }
         watchedThreads = kept.contains("watchedThreads") ? (try c.decodeIfPresent([WatchedThread].self, forKey: .watchedThreads) ?? []) : try c.decode([WatchedThread].self, forKey: .watchedThreads)
         needsYou = kept.contains("needsYou") ? (try c.decodeIfPresent([RequestCard].self, forKey: .needsYou) ?? []) : try c.decode([RequestCard].self, forKey: .needsYou)
         inFlight = kept.contains("inFlight") ? (try c.decodeIfPresent(Int.self, forKey: .inFlight) ?? 0) : try c.decode(Int.self, forKey: .inFlight)
@@ -104,7 +117,22 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
         }
         if keeps("hostId") { hostId = held.hostId }
         if keeps("current") { current = held.current }
-        if keeps("receiptGroups") { receiptGroups = held.receiptGroups }
+        if let delta = receiptGroupsDelta {
+            guard !carried.contains("receiptGroups"), !kept.contains("receiptGroups") else { return false }
+            let previous = held.receiptGroups
+            guard delta.dropHead >= 0, delta.keep >= 0, delta.dropHead <= previous.count,
+                  delta.keep <= previous.count - delta.dropHead else { return false }
+            var groups = Array(previous[delta.dropHead..<(delta.dropHead + delta.keep)])
+            if let replaced = delta.replaced {
+                for patch in replaced {
+                    guard patch.index >= 0, patch.index < groups.count else { return false }
+                    groups[patch.index] = patch.group
+                }
+            }
+            groups.append(contentsOf: delta.tail)
+            receiptGroups = groups
+            receiptGroupsDelta = nil
+        } else if keeps("receiptGroups") { receiptGroups = held.receiptGroups }
         if keeps("watchedThreads") { watchedThreads = held.watchedThreads }
         if keeps("needsYou") { needsYou = held.needsYou }
         if keeps("inFlight") { inFlight = held.inFlight }
@@ -198,6 +226,12 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
         guard hostId == hostID, current == nil || current?.target.hostId == hostID,
               (1...8).contains(inFlightLimit), inFlight >= 0 else { throw ClientError.invalidIdentity }
     }
+    /// Replaces only `machines` from a compact `watcher-phone-machines-read` response.
+    public func replacingMachines(_ updated: WatcherMachines) -> WatcherPhoneState {
+        var copy = self
+        copy.machines = updated
+        return copy
+    }
 }
 
 public struct WatcherRefusal: Decodable, Equatable, Sendable {
@@ -220,6 +254,19 @@ public enum WatcherPhoneResult: Decodable, Sendable {
         let c = try decoder.container(keyedBy: Keys.self)
         switch try WatcherResultStatus.decode(from: decoder) {
         case .ok: self = .ok(try c.decode(WatcherPhoneState.self, forKey: .state))
+        case .refused: self = .refused(try WatcherRefusal(from: decoder))
+        }
+    }
+}
+/// Compact answer to `watcher-phone-read` (`machines: true`) from a computer offering `watcher-phone-machines-read`.
+public enum WatcherPhoneMachinesResult: Decodable, Sendable {
+    case ok(WatcherMachines)
+    case refused(WatcherRefusal)
+    private enum Keys: String, CodingKey { case machines }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        switch try WatcherResultStatus.decode(from: decoder) {
+        case .ok: self = .ok(try c.decode(WatcherMachines.self, forKey: .machines))
         case .refused: self = .refused(try WatcherRefusal(from: decoder))
         }
     }
@@ -311,11 +358,15 @@ public enum WatcherWire {
     /// A shell push whose Watcher page changed omits unchanged sub-parts (`watcher.kept`) and sends a changed conversation
     /// as `watcher.conversationDelta` when it shares messages with the push before (`KeptPartsCache`).
     public static let partsFeature = "watcher-phone-parts"
+    /// A shell push whose `receiptGroups` changed sends `watcher.receiptGroupsDelta` instead of the full list (`KeptPartsCache`).
+    public static let receiptDeltasFeature = "watcher-phone-receipt-deltas"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
     /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {
         var result = hello
-        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature), .string(composerFeature), .string(partsFeature)]) }
+        if case .array(let accepts)? = result["accepts"] {
+            result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature), .string(machinesReadFeature), .string(composerFeature), .string(partsFeature), .string(receiptDeltasFeature)])
+        }
         return result
     }
     public static func setPermission(runtimeMode: String) throws -> [String: JSONValue] {

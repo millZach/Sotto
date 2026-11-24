@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import type { KeptPartsBase, KeptPartsShell, WatcherConversationDelta, WatcherConversationMessage, WatcherPhoneWireParts } from '../../shared/keptParts'
+import type { KeptPartsBase, KeptPartsShell, WatcherConversationDelta, WatcherConversationMessage, WatcherPhoneWireParts, WatcherReceiptGroupLike, WatcherReceiptGroupsDelta } from '../../shared/keptParts'
 import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentThread, AgentThreadsBroadcast, KeptHostPart, KeptPart } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
@@ -183,19 +183,58 @@ function diffWatcherConversation(
     earlierAvailable: next.earlierAvailable, revision: next.revision }
 }
 
+function receiptGroupKey(group: WatcherReceiptGroupLike): string {
+  return `${group.requestId}\0${group.replyMessageId ?? ''}`
+}
+
+function diffWatcherReceiptGroups<Group extends WatcherReceiptGroupLike>(
+  prev: readonly Group[],
+  next: readonly Group[],
+): WatcherReceiptGroupsDelta<Group> | undefined {
+  if (!prev.length || !next.length) return undefined
+  const firstKey = receiptGroupKey(next[0]!)
+  const dropHead = receiptGroupKey(prev[0]!) === firstKey
+    ? 0
+    : prev.findIndex(group => receiptGroupKey(group) === firstKey)
+  if (dropHead < 0) return undefined
+  let keep = 0
+  const replaced: { readonly index: number; readonly group: Group }[] = []
+  while (dropHead + keep < prev.length && keep < next.length && receiptGroupKey(prev[dropHead + keep]!) === receiptGroupKey(next[keep]!)) {
+    if (!samePlainData(prev[dropHead + keep], next[keep])) {
+      replaced.push({ index: keep, group: next[keep]! })
+    }
+    keep++
+  }
+  if (keep === 0) return undefined
+  const tail = next.slice(keep)
+  // Fall back to whole `receiptGroups` when the delta carries as many groups as the full array.
+  if (replaced.length + tail.length >= next.length) return undefined
+  return {
+    dropHead,
+    keep,
+    ...(replaced.length > 0 ? { replaced } : {}),
+    tail,
+  }
+}
+
 /**
  * Encodes a changed Watcher phone page against the last pushed page `prev` (`watcher-phone-parts`): unchanged sub-parts
- * are named in `kept` and omitted, and a changed `conversation` that shares messages with `prev` goes as
- * `conversationDelta` instead of resending all 200 messages.
+ * are named in `kept` and omitted, a changed `conversation` that shares messages with `prev` goes as `conversationDelta`,
+ * and when `receiptDeltas` is enabled (`watcher-phone-receipt-deltas`) a changed `receiptGroups` goes as `receiptGroupsDelta`.
  */
 export function withWatcherPhoneParts<
-  Page extends { readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number } },
->(next: Page, prev: Page): WatcherPhoneWireParts<Page> {
+  Page extends {
+    readonly conversation: { readonly messages: readonly WatcherConversationMessage[]; readonly earlierAvailable: boolean; readonly revision: number }
+    readonly receiptGroups?: readonly WatcherReceiptGroupLike[] | undefined
+  },
+>(next: Page, prev: Page, options?: { readonly receiptDeltas?: boolean }): WatcherPhoneWireParts<Page> {
   const prevRecord = prev as unknown as Readonly<Record<string, unknown>>
   const out: Record<string, unknown> = {}
   const kept: string[] = []
+  const useReceiptDeltas = options?.receiptDeltas === true
   for (const [key, value] of Object.entries(next as unknown as Readonly<Record<string, unknown>>)) {
     if (key === 'conversation') continue
+    if (useReceiptDeltas && key === 'receiptGroups') continue
     if (value !== undefined && Object.hasOwn(prevRecord, key) && samePlainData(prevRecord[key], value)) kept.push(key)
     else out[key] = value
   }
@@ -204,6 +243,14 @@ export function withWatcherPhoneParts<
     const delta = diffWatcherConversation(prev.conversation, next.conversation)
     if (delta !== undefined) out.conversationDelta = delta
     else out.conversation = next.conversation
+  }
+  if (useReceiptDeltas && next.receiptGroups !== undefined) {
+    if (prev.receiptGroups !== undefined && samePlainData(prev.receiptGroups, next.receiptGroups)) kept.push('receiptGroups')
+    else {
+      const delta = prev.receiptGroups !== undefined ? diffWatcherReceiptGroups(prev.receiptGroups, next.receiptGroups) : undefined
+      if (delta !== undefined) out.receiptGroupsDelta = delta
+      else out.receiptGroups = next.receiptGroups
+    }
   }
   if (kept.length) out.kept = kept
   return out as WatcherPhoneWireParts<Page>
