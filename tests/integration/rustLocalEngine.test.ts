@@ -19,9 +19,15 @@ import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
 import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
 import { FilesService } from '../../src/main/files/service'
+import { PluginAccounts, pluginAccountSlot } from '../../src/main/plugins/accounts'
+import { MailGrants } from '../../src/main/plugins/mailGrants'
+import { HeardSpending, monthOf } from '../../src/main/plugins/spending'
+import { PluginUseRecord } from '../../src/main/plugins/useRecord'
 import { CheckpointService } from '../../src/main/tools/checkpoints'
 import type { CheckpointThread } from '../../src/main/tools/checkpointTypes'
+import { SoundRecords } from '../../src/main/tools/elevenlabs/records'
 import { GitChangesService } from '../../src/main/tools/gitChanges'
+import { ModelRecords } from '../../src/main/tools/meshy/records'
 import {
   createEngineEndpoint,
   generateEngineToken,
@@ -31,6 +37,15 @@ import { publicProviderEntityId } from '../../src/shared/agents'
 import { fileListingSchema, filePreviewSchema } from '../../src/shared/files'
 import { hostMachineReportSchema } from '../../src/shared/hostFacts'
 import { phonesStateSchema } from '../../src/shared/phones'
+import {
+  elevenLabsSpentSchema,
+  meshyCreditsSchema,
+  pluginAccountResultSchema,
+  pluginAccountsSchema,
+  pluginCopiesViewSchema,
+  shownPluginUsesSchema,
+  threadMailGrantsSchema,
+} from '../../src/shared/plugins'
 import { agentThreadWordsSchema } from '../../src/shared/threadWords'
 import { toolsResultSchema } from '../../src/shared/tools'
 import { drive, prepareFake } from '../referee/providers'
@@ -1149,6 +1164,228 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       await conn.request('engine:close', [])
       expect(await exited).toBe(0)
       conn.close()
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await server.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('serves local plugin accounts, use records, mail grants, copy choices, and spending parity across TS and Rust', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-plugins-'))
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const month = monthOf(now)
+
+    // Seed plugin stores via TypeScript classes.
+    const secrets = new Map<string, string>()
+    const tsAccounts = new PluginAccounts(dataDir, {
+      credentials: {
+        has: slot => secrets.has(slot),
+        get: slot => secrets.get(slot) ?? '',
+        set: async (slot, value) => { if (value) secrets.set(slot, value); else secrets.delete(slot) },
+      },
+      check: async () => ({ ok: true, signedInAs: 'zach-user' }),
+    })
+    const addMail = await tsAccounts.add({
+      plugin: 'gmail',
+      name: 'Work Gmail',
+      secret: 'abcd efgh ijkl mnop',
+      address: 'zach@example.com',
+    })
+    expect(addMail.ok).toBe(true)
+    const addMeshy = await tsAccounts.add({ plugin: 'meshy', name: 'Studio Meshy', secret: 'msy_key' })
+    expect(addMeshy.ok).toBe(true)
+    const addEleven = await tsAccounts.add({ plugin: 'elevenlabs', name: 'Voice Lab', secret: 'el_key' })
+    expect(addEleven.ok).toBe(true)
+    const seededAccounts = await tsAccounts.list()
+    const mailAcc = seededAccounts.find(a => a.plugin === 'gmail')!
+    const meshyAcc = seededAccounts.find(a => a.plugin === 'meshy')!
+    const elevenAcc = seededAccounts.find(a => a.plugin === 'elevenlabs')!
+
+    const tsUses = new PluginUseRecord(dataDir, { historyEnabled: () => true })
+    await tsUses.add({ threadId: 't-plug', plugin: 'gmail', accountId: mailAcc.id, tool: 'plugin_read', kind: 'mail-search', outcome: 'done' })
+
+    const tsGrants = new MailGrants(dataDir, { open: () => true })
+    expect(await tsGrants.grant('t-plug', mailAcc.id)).toBe(true)
+    tsGrants.close()
+
+    const tsModels = new ModelRecords(dataDir, { historyEnabled: () => true })
+    await tsModels.add({
+      id: 'm-1',
+      threadId: 't-plug',
+      accountId: meshyAcc.id,
+      name: 'Oak barrel',
+      source: { kind: 'words', words: 'Oak barrel' },
+      root: dataDir,
+      folder: join(dataDir, 'models'),
+      formats: ['glb', 'usdz'],
+      state: 'done',
+      credits: 30,
+      askedAt: nowIso,
+      endedAt: nowIso,
+      files: ['oak-barrel.glb'],
+      job: { preview: 'task-1' },
+    })
+    const tsSounds = new SoundRecords(dataDir, { historyEnabled: () => true })
+    await tsSounds.add({
+      id: 's-1',
+      threadId: 't-plug',
+      accountId: elevenAcc.id,
+      kind: 'effect',
+      name: 'Doorbell',
+      words: 'Doorbell chime',
+      folder: 'sounds',
+      fileName: 'doorbell.mp3',
+      bytes: 1234,
+      cost: 0.25,
+      askedAt: nowIso,
+      state: 'made',
+    })
+    const tsMeshyHeard = new HeardSpending(join(dataDir, 'plugin-meshy-spending.json'))
+    await tsMeshyHeard.hear('host-remote', [{
+      accountId: meshyAcc.id,
+      month,
+      credits: 45,
+      session: '11111111-1111-4111-8111-111111111111',
+      revision: 1,
+    }])
+    const tsElevenHeard = new HeardSpending(join(dataDir, 'plugin-elevenlabs-spending.json'))
+    await tsElevenHeard.hear('host-remote', [{
+      accountId: elevenAcc.id,
+      month,
+      credits: 50, // cents = $0.50
+      session: '22222222-2222-4222-8222-222222222222',
+      revision: 1,
+    }])
+
+    const endpoint = createEngineEndpoint('sepl')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+    const child = spawn(binary, ['--data', dataDir, '--endpoint', endpoint], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+      env: { ...process.env, SOTTO_ENGINE_TOKEN: token },
+    })
+    const exited = new Promise<number | null>(resolveExit => child.once('exit', code => resolveExit(code)))
+
+    try {
+      const conn = await server.waitForClient(15_000)
+      conn.onRequest((method, args) => {
+        if (method === 'shell:credentialsSet') {
+          const [slot, val] = args as [string, string]
+          if (val) secrets.set(slot, val)
+          else secrets.delete(slot)
+          return {
+            available: true,
+            plaintext: Object.fromEntries(secrets),
+            sealed: Object.fromEntries([...secrets].map(([k, v]) => [k, `sealed:${v}`])),
+            unreadable: {},
+          }
+        }
+        throw new Error(`UNEXPECTED_SHELL_METHOD: ${method}`)
+      })
+
+      // Sync credentials snapshot into Rust ShellBridgeClient.
+      const initRes = await conn.request('engine:init', [{
+        options: { userDataPath: dataDir },
+        credentials: {
+          available: true,
+          plaintext: Object.fromEntries(secrets),
+          sealed: Object.fromEntries([...secrets].map(([k, v]) => [k, `sealed:${v}`])),
+          unreadable: {},
+        },
+        downloadsFolder: dataDir,
+        browserToolDefinitions: [],
+        hasNotify: false,
+        hasMediaThumbnail: false,
+        hasRedrawPhoto: false,
+      }])
+      expect(initRes).toBeDefined()
+
+      // 1. Accounts read & update (including `projects: null` clearing and spending limit update).
+      const rustAccounts = pluginAccountsSchema.parse(await conn.request('sotto:plugins:accounts', []))
+      expect(rustAccounts).toHaveLength(3)
+      const updatedRes = pluginAccountResultSchema.parse(
+        await conn.request('sotto:plugins:account-update', [{
+          id: meshyAcc.id,
+          askBefore: false,
+          monthlyLimit: 2500,
+          projects: ['proj-a'],
+        }]),
+      )
+      expect(updatedRes.ok).toBe(true)
+      const clearedProjectsRes = pluginAccountResultSchema.parse(
+        await conn.request('sotto:plugins:account-update', [{
+          id: meshyAcc.id,
+          projects: null,
+        }]),
+      )
+      expect(clearedProjectsRes.ok).toBe(true)
+      if (clearedProjectsRes.ok) {
+        const updatedMeshy = clearedProjectsRes.accounts.find(a => a.id === meshyAcc.id)!
+        expect(updatedMeshy.projects).toBeNull()
+        expect(updatedMeshy.spending).toEqual({ askBefore: false, monthlyLimit: 2500 })
+      }
+
+      // 2. Recent use, mail grants & stop, copies, Meshy credits, ElevenLabs spent, 3D models & sounds.
+      const recentUse = shownPluginUsesSchema.parse(await conn.request('sotto:plugins:recent-use', []))
+      expect(recentUse).toHaveLength(1)
+      expect(recentUse[0]!.plugin).toBe('gmail')
+
+      const mailGrants = threadMailGrantsSchema.parse(
+        await conn.request('sotto:plugins:mail-grants', [{ threadId: 't-plug' }]),
+      )
+      expect(mailGrants).toEqual([{ accountId: mailAcc.id, plugin: 'gmail', name: 'Work Gmail' }])
+
+      expect(await conn.request('sotto:plugins:mail-grant-stop', [{ threadId: 't-plug', accountId: mailAcc.id }])).toBe(true)
+      expect(await conn.request('sotto:plugins:mail-grants', [{ threadId: 't-plug' }])).toEqual([])
+
+      const copies = pluginCopiesViewSchema.parse(
+        await conn.request('sotto:plugins:copy-new-set', [{ copyNew: false }]),
+      )
+      expect(copies.copyNew).toBe(false)
+      expect(copies.readable).toBe(true)
+
+      const meshyCredits = meshyCreditsSchema.parse(await conn.request('sotto:plugins:meshy-credits', []))
+      expect(meshyCredits[meshyAcc.id]).toEqual({ here: 30, credits: 75, across: ['host-remote'] })
+
+      const elevenSpent = elevenLabsSpentSchema.parse(await conn.request('sotto:plugins:elevenlabs-spent', []))
+      expect(elevenSpent[elevenAcc.id]!.spent).toBeCloseTo(0.75, 5)
+      expect(elevenSpent[elevenAcc.id]!.across).toEqual(['host-remote'])
+
+      const models = await conn.request<Array<{ id: string; job?: unknown }>>('sotto:plugins:models-3d', [{ threadId: 't-plug' }])
+      expect(models).toHaveLength(1)
+      expect(models[0]!.id).toBe('m-1')
+      expect(models[0]!.job).toBeUndefined()
+
+      const sound = await conn.request<{ id: string; name: string }>('sotto:plugins:sound', [{ id: 's-1' }])
+      expect(sound.name).toBe('Doorbell')
+
+      // 3. Removing an account clears its secret through `shell:credentialsSet` and persists cleanly for TS.
+      const removedRes = pluginAccountResultSchema.parse(
+        await conn.request('sotto:plugins:account-remove', [{ id: mailAcc.id }]),
+      )
+      expect(removedRes.ok).toBe(true)
+      expect(secrets.has(pluginAccountSlot(mailAcc.id))).toBe(false)
+
+      await conn.request('engine:close', [])
+      expect(await exited).toBe(0)
+      conn.close()
+
+      // Fresh TS PluginAccounts + MailGrants agree with Rust's persisted files.
+      const tsReloadedAccounts = new PluginAccounts(dataDir, {
+        credentials: {
+          has: slot => secrets.has(slot),
+          get: slot => secrets.get(slot) ?? '',
+          set: async () => undefined,
+        },
+        check: async () => ({ ok: true, signedInAs: null }),
+      })
+      const afterReload = await tsReloadedAccounts.list()
+      expect(afterReload.map(a => a.id).sort()).toEqual([meshyAcc.id, elevenAcc.id].sort())
+      expect(afterReload.find(a => a.id === meshyAcc.id)?.spending).toEqual({ askBefore: false, monthlyLimit: 2500 })
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
       await server.close().catch(() => undefined)
