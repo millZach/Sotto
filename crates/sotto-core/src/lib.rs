@@ -8,6 +8,7 @@ pub mod identity;
 pub mod lock;
 pub mod ops;
 pub mod phone_access;
+pub mod plugins;
 pub mod usage_ops;
 pub mod pairing;
 pub mod protocol;
@@ -44,6 +45,17 @@ pub use phone_access::{
     ServeCheck, ServeConfig, ServePortOwner, ServeResult, ServeStatusError, SystemTailscaleCli,
     TailscaleBackend, TailscaleCheck, TailscalePeer, TailscaleStatus, LOCAL_APPS_CLIENT_NAME,
     PHONE_ACCESS_SERVE_PORTS,
+};
+pub use plugins::{
+    current_local_month, is_account_plugin, is_bridge_plugin, is_mail_plugin, is_spending_plugin,
+    mail_grants_shown, parse_github_sign_in_json, parse_github_sign_in_words, plugin_account_slot,
+    plugin_secret_as_kept, read_github_sign_in, read_plugins_readonly, CopyChoicesFile,
+    CopyComputerView, GitHubSignIn, HeardReport, HeardSpendingStore, LocalPluginsManager,
+    MailGrant, MailGrantsStore, MeshyJob, ModelRecord, ModelRecordsStore, ModelSource,
+    PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginAccountsStore, PluginBridge,
+    PluginChangeAnswer, PluginChangeCard, PluginChangeRequests, PluginCopiesView,
+    PluginCopyChoicesStore, PluginCopyEntryView, PluginSpending, PluginUse, PluginUseReport,
+    PluginUseStore, SoundRecord, SoundRecordsStore, SpendingReport, ThreadMailGrant,
 };
 pub use protocol::{
     HostDescriptor, HostErrorCode, HostErrorPayload, HostPushEnvelope, HostRequestEnvelope,

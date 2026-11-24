@@ -1,7 +1,7 @@
 mod shell_bridge;
 mod transport;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -10,14 +10,16 @@ use serde_json::{json, Value};
 use tokio::sync::{broadcast, Mutex, Semaphore};
 
 use sotto_core::{
-    acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, probe_tailscale_status,
-    read_boot_id, read_checkpoints_readonly, read_phone_access_readonly, release_host_lock,
+    acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, mail_grants_shown,
+    plugin_account_slot, probe_tailscale_status, read_boot_id, read_checkpoints_readonly,
+    read_github_sign_in, read_phone_access_readonly, read_plugins_readonly, release_host_lock,
     AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair, CheckpointManager,
     CheckpointThreadInfo, ClaudeAdapter, ClaudeAdapterConfig, ClientContext, CodexAdapter,
     CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, HostLease,
-    LocalAppsManager, MemoryStore, MockProviderAdapter, MuseAdapter, MuseAdapterConfig,
-    OpenCodeAdapter, OpenCodeAdapterConfig, PhoneAccessManager, PhoneAccessSettings,
-    PhonesCommand, ProviderAdapter, SystemTailscaleCli,
+    LocalAppsManager, LocalPluginsManager, MemoryStore, MockProviderAdapter, MuseAdapter,
+    MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig, PhoneAccessManager,
+    PhoneAccessSettings, PhonesCommand, PluginAccountResult, PluginAccountUpdate, PluginUseReport,
+    ProviderAdapter, SystemTailscaleCli,
 };
 
 use crate::shell_bridge::{CredentialSnapshot, EngineWindowFocus, ShellBridgeClient};
@@ -255,6 +257,7 @@ async fn handle_rpc(
     checkpoints: &Arc<Mutex<CheckpointManager>>,
     phone_access: &Arc<Mutex<PhoneAccessManager>>,
     local_apps: &Arc<Mutex<LocalAppsManager>>,
+    plugins: &Arc<Mutex<LocalPluginsManager>>,
     host_id: &str,
     data_directory: &Path,
     method: &str,
@@ -964,6 +967,310 @@ async fn handle_rpc(
             shell_bridge.send_to_main("local-apps:changed", val.clone());
             Ok(val)
         }
+        "ops.githubSignIn" | "sotto:plugins:github-sign-in" => {
+            let sign_in = tokio::task::spawn_blocking(read_github_sign_in)
+                .await
+                .map_err(|_| err_invalid("githubSignIn task failed."))?;
+            serde_json::to_value(sign_in)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "ops.pluginsReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_plugins_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("pluginsReadOnly task failed."))
+        }
+        "sotto:plugins:accounts" => {
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            let list = guard
+                .accounts
+                .load(|slot| creds.has(slot))
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            serde_json::to_value(list)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:plugins:account-update" => {
+            let req: PluginAccountUpdate = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("PluginAccountUpdate object is required."))?;
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            let res = guard.accounts.update(&req, |slot| creds.has(slot));
+            serde_json::to_value(res)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:plugins:account-remove" => {
+            let id = args
+                .first()
+                .and_then(|v| v.get("id").and_then(Value::as_str).or_else(|| v.as_str()))
+                .ok_or_else(|| err_invalid("account id is required."))?
+                .to_string();
+            let creds = shell_bridge.credentials().clone();
+            // Confirm account exists before clearing secret, then clear secret FIRST (ADR-0205).
+            {
+                let mut guard = plugins.lock().await;
+                let existing = match guard.accounts.load(|slot| creds.has(slot)) {
+                    Ok(list) => list,
+                    Err(_) => {
+                        return serde_json::to_value(PluginAccountResult::err("store")).map_err(
+                            |e| SerializedEngineError::new(e.to_string(), Some("unavailable")),
+                        );
+                    }
+                };
+                if !existing.iter().any(|a| a.id == id) {
+                    return serde_json::to_value(PluginAccountResult::err("gone")).map_err(|e| {
+                        SerializedEngineError::new(e.to_string(), Some("unavailable"))
+                    });
+                }
+            }
+            if shell_bridge
+                .credentials()
+                .set(&plugin_account_slot(&id), "")
+                .await
+                .is_err()
+            {
+                return serde_json::to_value(PluginAccountResult::err("store")).map_err(|e| {
+                    SerializedEngineError::new(e.to_string(), Some("unavailable"))
+                });
+            }
+            let mut guard = plugins.lock().await;
+            let res = guard.accounts.remove_record_only(&id, |slot| creds.has(slot));
+            let _ = guard.uses.forget_account(&id);
+            guard.mail_grants.forget_account(&id);
+            shell_bridge.send_to_main("sotto:plugins:mail-grants-changed", Value::Null);
+            serde_json::to_value(res)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:plugins:recent-use" => {
+            let shell = coordinator.shell(true).await.ok();
+            let mut titles: HashMap<String, String> = HashMap::new();
+            if let Some(threads) = shell
+                .as_ref()
+                .and_then(|s| s.get("host"))
+                .and_then(|h| h.get("threads"))
+                .and_then(Value::as_array)
+            {
+                for t in threads {
+                    if let (Some(id), Some(title)) = (
+                        t.get("id").and_then(Value::as_str),
+                        t.get("title").and_then(Value::as_str),
+                    ) {
+                        let clipped: String = title.chars().take(512).collect();
+                        titles.insert(id.to_string(), clipped);
+                    }
+                }
+            }
+            let mut guard = plugins.lock().await;
+            let shown: Vec<Value> = guard
+                .uses
+                .list()
+                .into_iter()
+                .map(|u| {
+                    let title = titles.get(&u.thread_id).cloned();
+                    let mut val = serde_json::to_value(&u).unwrap_or_else(|_| json!({}));
+                    if let Some(obj) = val.as_object_mut() {
+                        obj.insert("threadTitle".into(), json!(title));
+                    }
+                    val
+                })
+                .collect();
+            Ok(Value::Array(shown))
+        }
+        "sotto:plugins:mail-grants" => {
+            let thread_id = args
+                .first()
+                .and_then(|v| {
+                    v.get("threadId")
+                        .and_then(Value::as_str)
+                        .or_else(|| v.as_str())
+                })
+                .ok_or_else(|| err_invalid("threadId is required."))?
+                .to_string();
+            let project_id = args
+                .first()
+                .and_then(|v| v.get("projectId").and_then(Value::as_str))
+                .map(ToString::to_string);
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            let grants = guard.mail_grants.list();
+            let accounts = guard
+                .accounts
+                .load(|slot| creds.has(slot))
+                .unwrap_or_default();
+            let shown = mail_grants_shown(&grants, &accounts, &thread_id, project_id.as_deref());
+            serde_json::to_value(shown)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:plugins:mail-grant-stop" => {
+            let req = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("mailGrantStop object is required."))?;
+            let thread_id = req
+                .get("threadId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("threadId is required."))?;
+            let account_id = req
+                .get("accountId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("accountId is required."))?;
+            let mut guard = plugins.lock().await;
+            let stopped = guard.mail_grants.stop(thread_id, account_id);
+            if stopped {
+                shell_bridge.send_to_main("sotto:plugins:mail-grants-changed", Value::Null);
+            }
+            Ok(json!(stopped))
+        }
+        "sotto:plugins:copies" => {
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            let accounts = guard
+                .accounts
+                .load(|slot| creds.has(slot))
+                .unwrap_or_default();
+            let view = guard.copy_choices.view(&accounts, &[]);
+            serde_json::to_value(view)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:plugins:copy-set" => {
+            let req = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("pluginCopySet object is required."))?;
+            let account_id = req
+                .get("accountId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("accountId is required."))?;
+            let computer_id = req
+                .get("computerId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("computerId is required."))?;
+            let on = req
+                .get("on")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| err_invalid("on boolean is required."))?;
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            guard
+                .copy_choices
+                .set_copy(account_id, computer_id, on)
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            let accounts = guard
+                .accounts
+                .load(|slot| creds.has(slot))
+                .unwrap_or_default();
+            let view = guard.copy_choices.view(&accounts, &[]);
+            shell_bridge.send_to_main("sotto:plugins:copies-changed", Value::Null);
+            serde_json::to_value(view)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:plugins:copy-new-set" => {
+            let copy_new = args
+                .first()
+                .and_then(|v| {
+                    v.as_bool()
+                        .or_else(|| v.get("copyNew").and_then(Value::as_bool))
+                })
+                .ok_or_else(|| err_invalid("copyNew boolean is required."))?;
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            guard
+                .copy_choices
+                .set_copy_new(copy_new)
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            let accounts = guard
+                .accounts
+                .load(|slot| creds.has(slot))
+                .unwrap_or_default();
+            let view = guard.copy_choices.view(&accounts, &[]);
+            shell_bridge.send_to_main("sotto:plugins:copies-changed", Value::Null);
+            serde_json::to_value(view)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "sotto:plugins:meshy-credits" => {
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            Ok(guard.meshy_credits(|slot| creds.has(slot), &HashMap::new()))
+        }
+        "sotto:plugins:elevenlabs-spent" => {
+            let creds = shell_bridge.credentials().clone();
+            let mut guard = plugins.lock().await;
+            Ok(guard.elevenlabs_spent(|slot| creds.has(slot), &HashMap::new()))
+        }
+        "sotto:plugins:models-3d" => {
+            let thread_filter = args
+                .first()
+                .and_then(|v| v.get("threadId").and_then(Value::as_str).or_else(|| v.as_str()))
+                .map(ToString::to_string);
+            let mut guard = plugins.lock().await;
+            let list: Vec<Value> = guard
+                .models3d
+                .list()
+                .into_iter()
+                .filter(|m| {
+                    thread_filter
+                        .as_deref()
+                        .is_none_or(|tid| m.get("threadId").and_then(Value::as_str) == Some(tid))
+                })
+                .collect();
+            Ok(Value::Array(list))
+        }
+        "sotto:plugins:model-3d" => {
+            let id = args
+                .first()
+                .and_then(|v| v.get("id").and_then(Value::as_str).or_else(|| v.as_str()))
+                .ok_or_else(|| err_invalid("model id is required."))?;
+            let mut guard = plugins.lock().await;
+            Ok(guard.models3d.model(id).unwrap_or(Value::Null))
+        }
+        "sotto:plugins:sound" => {
+            let id = args
+                .first()
+                .and_then(|v| v.get("id").and_then(Value::as_str).or_else(|| v.as_str()))
+                .ok_or_else(|| err_invalid("sound id is required."))?;
+            let mut guard = plugins.lock().await;
+            match guard.sounds.sound(id) {
+                Some(s) => serde_json::to_value(s)
+                    .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable"))),
+                None => Ok(Value::Null),
+            }
+        }
+        "plugins.recordUse" => {
+            let report: PluginUseReport = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("PluginUseReport object is required."))?;
+            let mut guard = plugins.lock().await;
+            guard
+                .uses
+                .add(report)
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true }))
+        }
+        "plugins.forgetThreads" => {
+            let ids: Vec<String> = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("threadIds array is required."))?;
+            let mut guard = plugins.lock().await;
+            let removed_models = guard
+                .forget_threads(&ids)
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true, "removedModels": removed_models }))
+        }
+        "plugins.privacyChanged" => {
+            let enabled = args.first().and_then(Value::as_bool).unwrap_or(true);
+            let mut guard = plugins.lock().await;
+            guard
+                .set_history_enabled(enabled)
+                .map_err(|e| SerializedEngineError::new(e, Some("unavailable")))?;
+            Ok(json!({ "ok": true }))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -1266,6 +1573,19 @@ async fn handle_accelerator_rpc(
                 .await
                 .map_err(|_| err_invalid("phoneAccessReadOnly task failed."))
         }
+        "ops.githubSignIn" => {
+            let sign_in = tokio::task::spawn_blocking(read_github_sign_in)
+                .await
+                .map_err(|_| err_invalid("githubSignIn task failed."))?;
+            serde_json::to_value(sign_in)
+                .map_err(|e| SerializedEngineError::new(e.to_string(), Some("unavailable")))
+        }
+        "ops.pluginsReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_plugins_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("pluginsReadOnly task failed."))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -1530,6 +1850,8 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         true,
         Some(coordinator.clone()),
     )));
+    let plugins = Arc::new(Mutex::new(LocalPluginsManager::new(&parsed.data_directory)));
+    let _ = plugins.lock().await.sounds.settle_unfinished();
 
     let mut bcast_rx = coordinator.subscribe();
     let mut rpc_tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
@@ -1642,13 +1964,22 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                         let cp_mgr = Arc::clone(&checkpoints);
                         let phone_mgr = Arc::clone(&phone_access);
                         let la_mgr = Arc::clone(&local_apps);
+                        let plugins_mgr = Arc::clone(&plugins);
                         let hid = host_id.clone();
                         let data_dir = parsed.data_directory.clone();
                         let out = duplex.clone();
                         rpc_tasks.spawn(async move {
                             match handle_rpc(
-                                &coord, &bridge, &cp_mgr, &phone_mgr, &la_mgr, &hid, &data_dir,
-                                &method, &args,
+                                &coord,
+                                &bridge,
+                                &cp_mgr,
+                                &phone_mgr,
+                                &la_mgr,
+                                &plugins_mgr,
+                                &hid,
+                                &data_dir,
+                                &method,
+                                &args,
                             )
                             .await
                             {
@@ -1679,6 +2010,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
     let _ = tokio::time::timeout(std::time::Duration::from_secs(8), async {
         phone_access.lock().await.close().await;
         local_apps.lock().await.close().await;
+        plugins.lock().await.pending_changes.close();
     })
     .await;
     let shutdown_completed = tokio::time::timeout(
