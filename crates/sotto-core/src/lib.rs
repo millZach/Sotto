@@ -7,6 +7,7 @@ pub mod host_facts;
 pub mod identity;
 pub mod lock;
 pub mod ops;
+pub mod phone_access;
 pub mod usage_ops;
 pub mod pairing;
 pub mod protocol;
@@ -33,6 +34,16 @@ pub use lock::{
 pub use pairing::{
     PairedClient, PairedClients, PairingCode, PairingError, PairingResult, SessionToken,
     PAIRING_CODE_REJECTED,
+};
+pub use phone_access::{
+    extract_tailscale_consent_url, is_tailscale_access_denied, is_tailscale_serve_not_enabled,
+    parse_serve_status, parse_tailscale_status, probe_tailscale_status, read_phone_access_readonly,
+    serve_port_owner, serve_target, LocalAppsFile, LocalAppsManager, LocalAppsState,
+    LoopbackPhoneListener, PairedPhoneView, PhoneAccessBrief, PhoneAccessCommandOutcome,
+    PhoneAccessManager, PhoneAccessRecord, PhoneAccessSettings, PhonesCommand, PhonesState,
+    ServeCheck, ServeConfig, ServePortOwner, ServeResult, ServeStatusError, SystemTailscaleCli,
+    TailscaleBackend, TailscaleCheck, TailscalePeer, TailscaleStatus, LOCAL_APPS_CLIENT_NAME,
+    PHONE_ACCESS_SERVE_PORTS,
 };
 pub use protocol::{
     HostDescriptor, HostErrorCode, HostErrorPayload, HostPushEnvelope, HostRequestEnvelope,

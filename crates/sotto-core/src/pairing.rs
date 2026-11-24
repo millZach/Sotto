@@ -58,7 +58,7 @@ struct PairedClientsFile {
     clients: Vec<PairedClient>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PairingCode {
     pub code: String,
     #[serde(rename = "expiresAt")]
@@ -152,6 +152,16 @@ impl PairedClients {
             code,
             expires_at: expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         }
+    }
+
+    pub fn cancel_pairing_code(&mut self, code: &str) {
+        let normalized: String = code
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric())
+            .map(|ch| ch.to_ascii_uppercase())
+            .collect();
+        self.pending_codes
+            .retain(|entry| !constant_time_eq(entry.code.as_bytes(), normalized.as_bytes()));
     }
 
     pub fn redeem_pairing_code(

@@ -1082,6 +1082,16 @@ impl MemoryStore {
         }
     }
 
+    /// Grants `remote-answer` authority for `client_id` only if no active allow grant already
+    /// exists, returning `true` if a new policy record was written (matching `PolicyStore.ensureRemoteAnswers`).
+    pub fn ensure_remote_answers(&self, client_id: &str, note: &str) -> Result<bool, StoreError> {
+        if self.may_grant_remote(client_id)? {
+            return Ok(false);
+        }
+        self.set_remote_answers(client_id, true, note)?;
+        Ok(true)
+    }
+
     /// Evaluates whether a paired remote client may answer permission/question cards (ADR-0004).
     /// Reads only `policies`: never `memories` or `memories_fts`.
     pub fn may_grant_remote(&self, client_id: &str) -> Result<bool, StoreError> {
