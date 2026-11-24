@@ -40,6 +40,16 @@ describe('settled threads held back from a phone', () => {
     expect([...heldBackSettled(threads, projects, id => id === 'asks')]).toEqual([])
   })
 
+  it('keeps a settled ancestor named by host entity key on this host when a child asks', () => {
+    const hostId = '11111111-1111-4111-8111-111111111111'
+    const threads = [
+      thread('top', { settledAt: ago(30) }),
+      thread('asks', { delegatedBy: `host:${hostId}:top`, requests: asking }),
+      thread('quiet-child', { settledAt: ago(30), delegatedBy: 'top' }),
+    ]
+    expect([...heldBackSettled(threads, projects, () => false, hostId)]).toEqual(['quiet-child'])
+  })
+
   it('reads held-back threads newest settled first, a page at a time, and finds them by title or project', () => {
     const threads = Array.from({ length: 7 }, (_, index) => thread(`t${index}`, { settledAt: ago(10 + index), title: index % 2 ? `Billing ${index}` : `Docs ${index}` }))
     const first = settledPage(threads, projects, { limit: 3 })

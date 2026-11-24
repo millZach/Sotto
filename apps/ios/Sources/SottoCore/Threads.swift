@@ -135,24 +135,35 @@ public enum ThreadGroups {
                          settled: isSettled(thread, project: projects[thread.projectId]))
         }
     }
-    /// Where each delegated thread is reached from, by row ID: the top of its delegation (ADR-0081), as the desktop's
-    /// sidebar works it out (`delegationTops` in src/renderer/src/agents/threadFacts.ts). The top is the thread at the end
-    /// of its `delegatedBy` links on the same computer. A delegated thread whose delegating thread isn't listed here is the
-    /// top of its own, so it keeps its row and is never out of reach; so is every thread in a loop of links, and an open
-    /// thread whose delegating thread is settled. Threads no thread started are not in the map.
+    /// Whether `thread` was delegated by another thread (ADR-0081), whether on the same computer or another.
+    public static func isDelegated(_ thread: ThreadSummary) -> Bool {
+        thread.delegatedBy?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+    /// Where each delegated thread is reached from, by row ID: the top of its delegation (ADR-0081), across every computer
+    /// in `rows`. A `delegatedBy` link names its thread as `AgentsRoster.delegatingRef` reads it: a bare ID on the same
+    /// computer, `host:<hostId>:<id>`, or `relay:<client>:<caller>` (including persistent `relay:<client>:host:<hostId>:<id>`).
+    /// Settlement does not break the link, so an open delegated thread under a settled parent stays folded under that parent
+    /// rather than leaking into the top-level list. Threads with no visible delegating parent, or in a loop of links, are not
+    /// in the map.
     public static func delegationTops(_ rows: [HostedThread]) -> [String: String] {
         let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        func parent(_ row: HostedThread) -> HostedThread? {
-            row.thread.delegatedBy.flatMap { byID[ThreadRef(hostID: row.ref.hostID, threadID: $0).id] }
+        var holders: [String: [String]] = [:]
+        for row in rows {
+            if holders[row.thread.id]?.contains(row.ref.hostID) != true {
+                holders[row.thread.id, default: []].append(row.ref.hostID)
+            }
         }
-        // A link holds unless it would put an open thread under a settled one.
-        func linked(_ child: HostedThread, _ parent: HostedThread) -> Bool { !parent.settled || child.settled }
+        func parent(_ row: HostedThread) -> HostedThread? {
+            guard let link = row.thread.delegatedBy,
+                  let ref = AgentsRoster.delegatingRef(link, on: row.ref.hostID, holders: holders) else { return nil }
+            return byID[ref.id]
+        }
         var tops: [String: String] = [:]
         for row in rows {
-            guard var top = parent(row), linked(row, top) else { continue }
+            guard var top = parent(row) else { continue }
             var seen: Set<String> = [row.id]
             var loop = false
-            while let up = parent(top), linked(top, up) {
+            while let up = parent(top) {
                 if seen.contains(top.id) { loop = true; break }
                 seen.insert(top.id)
                 top = up
@@ -165,12 +176,12 @@ public enum ThreadGroups {
     /// so that thread is the one to watch (ADR-0081, Zach's pick B of #1217 on November 7, 2026). Its computer refuses a
     /// watch there too; this only keeps the control away, as the desktop does. Nor an owlet, which Watcher neither sees nor
     /// steers (ADR-0213).
-    public static func offersWatch(_ thread: ThreadSummary) -> Bool { thread.delegatedBy == nil && thread.owlet == nil }
+    public static func offersWatch(_ thread: ThreadSummary) -> Bool { !isDelegated(thread) && thread.owlet == nil }
     /// A thread opened and never sent to, as the desktop's sidebar reads it (`isUnsentThread` in
     /// src/shared/threadActivity.ts): on its default title, at rest, asking nothing, not delegated, not settled, and with no
     /// messages. A computer that doesn't say how many messages it holds or where its title came from never makes one.
     public static func isUnsent(_ thread: ThreadSummary) -> Bool {
-        thread.titleSource == "default" && thread.status == "idle" && thread.requests.isEmpty && thread.delegatedBy == nil
+        thread.titleSource == "default" && thread.status == "idle" && thread.requests.isEmpty && !isDelegated(thread)
             && thread.summary?.messageCount == 0 && !isSettled(thread)
     }
     /// Match shared/threadActivity.ts: workspace settlement is inherited, while an explicit active

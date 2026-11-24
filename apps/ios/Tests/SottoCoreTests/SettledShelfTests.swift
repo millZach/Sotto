@@ -71,6 +71,18 @@ final class SettledShelfTests: XCTestCase {
         XCTAssertEqual(search.next, ["laptop": "1:a"])
         XCTAssertTrue(SettledSearch(query: "billing").next.isEmpty)
     }
+    func testOlderRowsLeaveOutDelegatedThreads() throws {
+        let laptop = ComputerThreads(hostID: "laptop", name: "Laptop", status: .online, threads: [], projects: [])
+        let read = [
+            "laptop": try summaries([
+                record("parent", settledAt: "2026-10-20T00:00:00Z"),
+                #"{"hostId":"laptop","id":"local-child","projectId":"p","title":"Child","status":"idle","requests":[],"settledAt":"2026-10-21T00:00:00Z","delegatedBy":"parent"}"#,
+                #"{"hostId":"laptop","id":"remote-child","projectId":"p","title":"Remote","status":"idle","requests":[],"settledAt":"2026-10-22T00:00:00Z","delegatedBy":"relay:c:host:11111111-1111-4111-8111-111111111111:parent"}"#,
+            ]),
+        ]
+        let rows = ThreadGroups.older([laptop], read: read)
+        XCTAssertEqual(rows.map(\.thread.id), ["parent"])
+    }
     func testASearchSaysWhenAComputerCouldNotBeRead() {
         XCTAssertFalse(SettledSearch(query: "billing").failed)
         let failed = SettledSearch(query: "billing", found: [:], failed: true)

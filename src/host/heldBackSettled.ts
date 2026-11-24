@@ -1,4 +1,5 @@
 import type { AgentProject, AgentThread } from '../shared/agents'
+import { parseHostEntityKey } from '../shared/clientIdentity'
 import { isThreadSettled, isWorkspaceThreadSettled } from '../shared/threadActivity'
 
 /**
@@ -28,8 +29,16 @@ export function settledSince(thread: AgentThread, project: Pick<AgentProject, 'w
   return times.length ? Math.max(...times) : Number.NEGATIVE_INFINITY
 }
 
+/** The local thread ID `delegatedBy` names on this host: a bare ID, or `host:<hostId>:<id>` naming this host. */
+function localParentId(delegatedBy: string | undefined, hostId: string | undefined): string | undefined {
+  if (!delegatedBy) return undefined
+  const keyed = parseHostEntityKey(delegatedBy)
+  if (!keyed) return delegatedBy
+  return hostId !== undefined && keyed.hostId === hostId ? keyed.id : undefined
+}
+
 /** The IDs of the threads a phone is not sent: settled, and none of the threads it must keep. */
-export function heldBackSettled(threads: readonly AgentThread[], projects: readonly AgentProject[], kept: (id: string) => boolean): Set<string> {
+export function heldBackSettled(threads: readonly AgentThread[], projects: readonly AgentProject[], kept: (id: string) => boolean, hostId?: string): Set<string> {
   const byProject = new Map(projects.map(project => [project.id, project]))
   const byId = new Map(threads.map(thread => [thread.id, thread]))
   // A thread that asks the user something, and every thread above it in its delegation, so Needs you shows it where it was.
@@ -37,7 +46,11 @@ export function heldBackSettled(threads: readonly AgentThread[], projects: reado
   for (const thread of threads) {
     if (!thread.requests.length) continue
     let at: AgentThread | undefined = thread
-    while (at && !asking.has(at.id)) { asking.add(at.id); at = at.delegatedBy ? byId.get(at.delegatedBy) : undefined }
+    while (at && !asking.has(at.id)) {
+      asking.add(at.id)
+      const parentId = localParentId(at.delegatedBy, hostId)
+      at = parentId ? byId.get(parentId) : undefined
+    }
   }
   const held = new Set<string>()
   for (const thread of threads) {

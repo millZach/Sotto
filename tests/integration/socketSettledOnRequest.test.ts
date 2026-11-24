@@ -117,6 +117,30 @@ describe('settled threads on request', () => {
     expect(again.hello.settledHeldBack).toBe(5)
   })
 
+  it('holds back settled delegated threads from the live shell and leaves them out of settledHeldBack and settled-threads pages', async () => {
+    await settledThreads()
+    const native = fixture.native as unknown as { state: AgentHostSnapshot; emit(): void }
+    const base = native.state.threads[0]!
+    native.state.threads = [...native.state.threads,
+      { ...base, id: 'delegated-settled', title: 'Billing delegated', settledAt: ago(1) }]
+    native.emit()
+    await expect.poll(() => fixture.host.service.shell().host.threads.some(thread => thread.title === 'Billing delegated')).toBe(true)
+    const threads = fixture.host.service.shell().host.threads
+    const parent = threads.find(thread => thread.title === base.title)!
+    const child = threads.find(thread => thread.title === 'Billing delegated')!
+    const host = fixture.host.service as unknown as { control: { dependencies: { host: { setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void> } } } }
+    await host.control.dependencies.host.setDelegatedBy(child.id, parent.id)
+    await expect.poll(() => fixture.host.service.shell().host.threads.find(thread => thread.id === child.id)?.delegatedBy).toBe(parent.id)
+    const held = await phone([...PROVIDERS, 'settled-threads-on-request'])
+    // Held back from the live shell, not counted in settledHeldBack, and omitted from settled-threads pages and search.
+    expect(held.hello.host.threads.some(thread => thread.id === child.id)).toBe(false)
+    expect(held.hello.settledHeldBack).toBe(4)
+    const page = await held.call('page', { op: 'settled-threads' }) as { result: { threads: AgentThread[] } }
+    expect(page.result.threads.some(thread => thread.id === child.id)).toBe(false)
+    const found = await held.call('found', { op: 'settled-threads', query: 'billing' }) as { result: { threads: AgentThread[] } }
+    expect(found.result.threads.map(thread => thread.title)).toEqual(['Billing reconcile', 'Billing export'])
+  })
+
   it('refuses the read to a client that did not accept the feature', async () => {
     await settledThreads()
     const older = await phone([])

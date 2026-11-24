@@ -759,12 +759,22 @@ fn key_thread_value(thread: &Value, host_id: &str, host_label: &str, remote: boo
         .and_then(Value::as_str)
         .map(ToString::to_string)
     {
-        if parse_host_entity_key(&del).is_none() {
-            obj.insert(
-                "delegatedBy".into(),
-                Value::String(host_entity_key(Some(host_id), &del)),
-            );
-        }
+        let projected = if parse_host_entity_key(&del).is_some() {
+            del
+        } else if let Some(rest) = del.strip_prefix("relay:") {
+            if let Some((_, caller)) = rest.split_once(':') {
+                if parse_host_entity_key(caller).is_some() {
+                    caller.to_string()
+                } else {
+                    host_entity_key(Some(host_id), &del)
+                }
+            } else {
+                host_entity_key(Some(host_id), &del)
+            }
+        } else {
+            host_entity_key(Some(host_id), &del)
+        };
+        obj.insert("delegatedBy".into(), Value::String(projected));
     }
     obj.insert("hostId".into(), Value::String(host_id.to_string()));
     obj.insert("hostLabel".into(), Value::String(host_label.to_string()));
@@ -1168,6 +1178,32 @@ mod tests {
         assert_eq!(projected["delegatedBy"], format!("host:{hid}:t-0"));
         assert_eq!(projected["remoteHost"], true);
         assert_eq!(projected["hostLabel"], "Forge");
+
+        // Persistent cross-machine relay link (`relay:<client>:host:<desktopHostId>:<callerId>`)
+        // unwraps to the persistent desktop host entity key rather than double-prefixing.
+        let desktop_hid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        let relayed = json!({
+            "id": "t-2",
+            "projectId": "p-1",
+            "delegatedBy": format!("relay:old-client:host:{desktop_hid}:parent-1"),
+            "title": "Relayed remote work"
+        });
+        let projected_relayed = key_thread_value(&relayed, hid, "Forge", true);
+        assert_eq!(
+            projected_relayed["delegatedBy"],
+            format!("host:{desktop_hid}:parent-1")
+        );
+
+        let direct_host_link = json!({
+            "id": "t-3",
+            "projectId": "p-1",
+            "delegatedBy": format!("host:{desktop_hid}:parent-1"),
+            "title": "Direct host-keyed work"
+        });
+        assert_eq!(
+            key_thread_value(&direct_host_link, hid, "Forge", true)["delegatedBy"],
+            format!("host:{desktop_hid}:parent-1")
+        );
 
         let mut cmd = Map::new();
         cmd.insert("type".into(), json!("manual-send"));

@@ -14,6 +14,9 @@ public struct FocusThreads {
     /// Each Needs you row that stands for a delegated thread waiting on the user, by the row's ID: that delegated
     /// thread, whose requests the row shows. A row that waits on the user itself is not here.
     public private(set) var waitingIn: [String: HostedThread] = [:]
+    /// Each Working now row that works only because a delegated thread below it is working, by the row's ID: that
+    /// delegated thread. A row that is working itself is not here.
+    public private(set) var workingIn: [String: HostedThread] = [:]
     /// The top of each delegated thread's delegation, by row ID, which has the row the list shows in its place.
     private var tops: [String: String] = [:]
     public let searching: Bool
@@ -46,24 +49,52 @@ public struct FocusThreads {
         self.query = query
         self.words = query.isEmpty ? [:] : words
         self.opened = opened
-        let rows = ThreadGroups.merged(computers, show: show)
-        let tops = ThreadGroups.delegationTops(rows)
+        // Resolve delegation across every computer the phone holds so cross-computer delegations fold and roll up even
+        // when the computer menu narrows the list to one machine.
+        let allRows = ThreadGroups.merged(computers, show: .all)
+        let tops = ThreadGroups.delegationTops(allRows)
         self.tops = tops
-        // The delegated thread each listed thread stands for in Needs you: a permission ahead of a question, then the
-        // most recent, as the desktop's sidebar orders them. Only a computer this iPhone can reach has requests to answer.
+        let allByID = Dictionary(allRows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // The delegated thread each listed thread stands for in Needs you (a permission ahead of a question, then the
+        // most recent, as the desktop's sidebar orders them) and in Working now. Only a computer this iPhone can reach
+        // claims live work or answerable requests.
         var below: [String: HostedThread] = [:]
+        var workingBelow: [String: HostedThread] = [:]
         if !tops.isEmpty {
-            for row in rows {
-                guard let top = tops[row.id], row.reachable, ThreadState(row.thread).waitsOnYou else { continue }
-                if let held = below[top], Self.rank(held) >= Self.rank(row) { continue }
-                below[top] = row
+            for row in allRows {
+                guard let top = tops[row.id], row.reachable else { continue }
+                let state = ThreadState(row.thread)
+                if state.waitsOnYou {
+                    if let held = below[top], Self.rank(held) >= Self.rank(row) { continue }
+                    below[top] = row
+                } else if state.workInProgress {
+                    if workingBelow[top] == nil { workingBelow[top] = row }
+                }
             }
         }
         // The rows found only by what was said in their threads, by group, which list after the rest of it.
         var said: [Group: [HostedThread]] = [:]
-        for row in rows where tops[row.id] == nil {
-            if !row.settled && ThreadGroups.isUnsent(row.thread) && row.ref != opened && !holding.contains(row.id) { continue }
+        for row in allRows where show.admits(row.ref.hostID) {
+            if ThreadGroups.isDelegated(row.thread) {
+                // A delegated thread has no top-level row of its own (ADR-0081). When its top is visible under this
+                // filter, that row stands for it; when its parent is settled/held back, on another computer not shown
+                // here, or missing, the delegated thread stays out of Working/Recent/Settled/Snoozed and falls back
+                // into Needs you only while it is reachable and waiting on the user, so no request is ever stranded.
+                let hasVisibleTop = tops[row.id].flatMap { allByID[$0] }.map { show.admits($0.ref.hostID) } ?? false
+                if hasVisibleTop { continue }
+                guard row.reachable && ThreadState(row.thread).waitsOnYou else { continue }
+                var onlySaid = false
+                if !query.isEmpty {
+                    let own = Self.searchable(row, nil).localizedStandardContains(query), found = self.words[row.id] != nil
+                    guard own || found else { continue }
+                    if !own { onlySaid = true } else if found { foundOwn.insert(row.id) }
+                }
+                if onlySaid { wordOnly.insert(row.id); said[.questions, default: []].append(row) } else { add(row, to: .questions) }
+                continue
+            }
             let delegated = below[row.id]
+            let workingChild = workingBelow[row.id]
+            if !row.settled && delegated == nil && workingChild == nil && ThreadGroups.isUnsent(row.thread) && row.ref != opened && !holding.contains(row.id) { continue }
             var onlySaid = false
             if !query.isEmpty {
                 let own = Self.searchable(row, delegated).localizedStandardContains(query), found = self.words[row.id] != nil
@@ -73,10 +104,11 @@ public struct FocusThreads {
             let state = ThreadState(row.thread)
             let group: Group
             if row.reachable && state.waitsOnYou { group = .questions }
-            else if let delegated, row.reachable { waitingIn[row.id] = delegated; group = .questions }
+            else if let delegated { waitingIn[row.id] = delegated; group = .questions }
             else if row.settled { group = .settled }
             else if !row.failed, let until = row.thread.snoozedUntil.flatMap(Stamp.date), until > now { group = .snoozed }
             else if row.reachable && state.workInProgress { group = .working }
+            else if !row.failed, let workingChild { workingIn[row.id] = workingChild; group = .working }
             else { group = .recent }
             if onlySaid { wordOnly.insert(row.id); said[group, default: []].append(row) } else { add(row, to: group) }
         }
