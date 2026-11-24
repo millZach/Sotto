@@ -38,6 +38,10 @@ const RPC_TIMEOUT_MS = 5_000
 const THREAD_WORDS_RPC_TIMEOUT_MS = 2_500
 const LIVE_HOST_FACTS_TIMEOUT_MS = 6_000
 const GIT_REVIEW_RPC_TIMEOUT_MS = 10_000
+// Rust's serial git_changed_files budget is kept strictly under the TS RPC timeout so Rust
+// terminates its child process and releases its `io_limiter` permit before TS times out.
+const GIT_CHANGED_FILES_RPC_TIMEOUT_MS = 10_000
+const GIT_CHANGED_FILES_RUST_BUDGET_MS = 9_000
 const USAGE_QUERY_RPC_TIMEOUT_MS = 10_000
 const SHUTDOWN_TIMEOUT_MS = 5_000
 
@@ -222,7 +226,11 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
       async gitChangedFiles(folder: string): Promise<GitChangedFiles | undefined> {
         if (closed || activeConnection.isClosed) return undefined
         try {
-          const raw = await activeConnection.request('ops.gitChangedFiles', [folder], RPC_TIMEOUT_MS)
+          const raw = await activeConnection.request(
+            'ops.gitChangedFiles',
+            [folder, { timeoutMs: GIT_CHANGED_FILES_RUST_BUDGET_MS }],
+            GIT_CHANGED_FILES_RPC_TIMEOUT_MS,
+          )
           const parsed = gitChangedFilesSchema.safeParse(raw)
           return parsed.success ? parsed.data : undefined
         } catch {

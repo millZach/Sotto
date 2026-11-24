@@ -488,7 +488,7 @@ export class UsageStore {
     const providers = this.statement(`SELECT provider,${aggregateSql()} FROM usage_activity GROUP BY provider ORDER BY provider`).all()
       .map(row => ({ ...aggregate(row), providerId: usageProviderIdSchema.parse(row.provider) }))
     const modelRows = this.statement(`SELECT provider,model,${aggregateSql()} FROM usage_activity GROUP BY provider,model
-      ORDER BY (input_value+output_value) DESC,prompt_total DESC,provider,model LIMIT ?`).all(USAGE_MODEL_ROWS_MAX)
+      ORDER BY (TOTAL(input_value)+TOTAL(output_value)) DESC,TOTAL(prompt_total) DESC,provider,model LIMIT ?`).all(USAGE_MODEL_ROWS_MAX)
     const modelCount = safeCount(this.statement('SELECT COUNT(*) AS count FROM (SELECT 1 FROM usage_activity GROUP BY provider,model)').get()?.count)
     const firstDay = typeof totalRow.first_day === 'string' ? totalRow.first_day : undefined
     const from = query.from ?? firstDay

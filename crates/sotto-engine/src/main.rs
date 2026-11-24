@@ -593,15 +593,18 @@ async fn handle_rpc(
                     code: Some("unavailable".into()),
                 });
             };
+            let budget = parse_timeout_budget(args.get(1), 9_000);
             let folder = ws.working_directory;
-            tokio::task::spawn_blocking(move || sotto_core::ops::git_changed_files(&folder))
-                .await
-                .map_err(|_| err_invalid("gitChangedFiles task failed."))?
-                .map_err(|e| SerializedEngineError {
-                    name: "Error".into(),
-                    message: e,
-                    code: Some("unavailable".into()),
-                })
+            tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_changed_files_with_budget(&folder, budget)
+            })
+            .await
+            .map_err(|_| err_invalid("gitChangedFiles task failed."))?
+            .map_err(|e| SerializedEngineError {
+                name: "Error".into(),
+                message: e,
+                code: Some("unavailable".into()),
+            })
         }
         "ops.threadChanges" => {
             let tid = args
@@ -673,12 +676,21 @@ async fn handle_rpc(
     }
 }
 
+fn parse_timeout_budget(arg: Option<&Value>, default_ms: u64) -> std::time::Duration {
+    let raw = arg.and_then(|v| {
+        v.as_u64()
+            .or_else(|| v.as_object().and_then(|o| o.get("timeoutMs")).and_then(Value::as_u64))
+    });
+    let ms = raw.unwrap_or(default_ms).clamp(50, 30_000);
+    std::time::Duration::from_millis(ms)
+}
+
 fn read_memory_may_grant_remote(data_directory: &Path, client_id: &str) -> Result<Value, String> {
     let db_path = data_directory.join("memory.sqlite");
     if !db_path.exists() {
         return Ok(json!({ "allowed": false }));
     }
-    let store = MemoryStore::open(&db_path).map_err(|e| e.to_string())?;
+    let store = MemoryStore::open_read_only(&db_path).map_err(|e| e.to_string())?;
     let allowed = store
         .may_grant_remote(client_id)
         .map_err(|e| e.to_string())?;
@@ -875,14 +887,17 @@ async fn handle_accelerator_rpc(
                 .filter(|s| !s.trim().is_empty())
                 .ok_or_else(|| err_invalid("folder is required."))?
                 .to_string();
-            tokio::task::spawn_blocking(move || sotto_core::ops::git_changed_files(&folder))
-                .await
-                .map_err(|_| err_invalid("gitChangedFiles task failed."))?
-                .map_err(|e| SerializedEngineError {
-                    name: "Error".into(),
-                    message: e,
-                    code: Some("unavailable".into()),
-                })
+            let budget = parse_timeout_budget(args.get(1), 9_000);
+            tokio::task::spawn_blocking(move || {
+                sotto_core::ops::git_changed_files_with_budget(&folder, budget)
+            })
+            .await
+            .map_err(|_| err_invalid("gitChangedFiles task failed."))?
+            .map_err(|e| SerializedEngineError {
+                name: "Error".into(),
+                message: e,
+                code: Some("unavailable".into()),
+            })
         }
         "ops.memoryMayGrantRemote" => {
             let client_id = args
@@ -973,22 +988,27 @@ async fn run_accelerator(parsed: EngineCliArgs) -> ExitCode {
                         } else {
                             None
                         };
-                        let frame = match handle_accelerator_rpc(&data_dir, &method, &args).await {
-                            Ok(val) => ok_response_frame(id, val),
-                            Err(err) => err_response_frame(id, err),
-                        };
-                        let _ = out.send_frame(frame);
+                        match handle_accelerator_rpc(&data_dir, &method, &args).await {
+                            Ok(val) => {
+                                let _ = out.send_ok(id, val);
+                            }
+                            Err(err) => {
+                                let _ = out.send_err(id, err);
+                            }
+                        }
                     });
                 }
             }
         }
     }
 
-    reader_task.abort();
+    // Drain in-flight RPCs before aborting `reader_task` so any active work completes cleanly.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while rpc_tasks.join_next().await.is_some() {}
     })
     .await;
+    reader_task.abort();
+    duplex.fail_pending("Engine shutting down.");
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
     if let Some(id) = shutdown_req_id {
@@ -1214,19 +1234,24 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                                 Ok(reply_rx) => {
                                     let out = duplex.clone();
                                     rpc_tasks.spawn(async move {
-                                        let frame = match reply_rx.await {
-                                            Ok(Ok(shell)) => ok_response_frame(id, shell),
-                                            Ok(Err(err)) => err_response_frame(id, coord_err(err)),
-                                            Err(_) => err_response_frame(
-                                                id,
-                                                SerializedEngineError {
-                                                    name: "Error".into(),
-                                                    message: "Host coordinator stopped.".into(),
-                                                    code: Some("unavailable".into()),
-                                                },
-                                            ),
-                                        };
-                                        let _ = out.send_frame(frame);
+                                        match reply_rx.await {
+                                            Ok(Ok(shell)) => {
+                                                let _ = out.send_ok(id, shell);
+                                            }
+                                            Ok(Err(err)) => {
+                                                let _ = out.send_err(id, coord_err(err));
+                                            }
+                                            Err(_) => {
+                                                let _ = out.send_err(
+                                                    id,
+                                                    SerializedEngineError {
+                                                        name: "Error".into(),
+                                                        message: "Host coordinator stopped.".into(),
+                                                        code: Some("unavailable".into()),
+                                                    },
+                                                );
+                                            }
+                                        }
                                     });
                                 }
                                 Err(err) => {
@@ -1241,14 +1266,16 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                         let data_dir = parsed.data_directory.clone();
                         let out = duplex.clone();
                         rpc_tasks.spawn(async move {
-                            let frame =
-                                match handle_rpc(&coord, &bridge, &hid, &data_dir, &method, &args)
-                                    .await
-                                {
-                                    Ok(val) => ok_response_frame(id, val),
-                                    Err(err) => err_response_frame(id, err),
-                                };
-                            let _ = out.send_frame(frame);
+                            match handle_rpc(&coord, &bridge, &hid, &data_dir, &method, &args)
+                                .await
+                            {
+                                Ok(val) => {
+                                    let _ = out.send_ok(id, val);
+                                }
+                                Err(err) => {
+                                    let _ = out.send_err(id, err);
+                                }
+                            }
                         });
                     }
                 }
@@ -1256,13 +1283,14 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         }
     }
 
-    reader_task.abort();
-    // Drain in-flight RPCs up to a bounded deadline before aborting stragglers, then flush
-    // coordinator state before sending the `engine.shutdown` / `engine:close` acknowledgement.
+    // Drain in-flight RPCs BEFORE aborting `reader_task` so in-flight reverse-RPC calls to the
+    // shell can still receive their replies during shutdown; then fail any remaining waiters.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while rpc_tasks.join_next().await.is_some() {}
     })
     .await;
+    reader_task.abort();
+    duplex.fail_pending("Engine shutting down.");
     rpc_tasks.abort_all();
     while rpc_tasks.join_next().await.is_some() {}
     let shutdown_completed = tokio::time::timeout(

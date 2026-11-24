@@ -4,14 +4,11 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::transport::{box_binary, unbox_binary, EngineDuplex, SerializedEngineError};
-
-const SHELL_RPC_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Mirror of Electron's `CredentialSnapshot` (`src/main/agents/credentials.ts`, ADR-0210).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -100,12 +97,13 @@ impl RemoteCredentialsCache {
     }
 
     pub async fn set(&self, slot: &str, value: &str) -> Result<(), SerializedEngineError> {
+        // No artificial timeout: interactive OS keychain/DPAPI prompts match Node's unbounded wait.
         let raw = self
             .duplex
             .request(
                 "shell:credentialsSet",
                 vec![json!(slot), json!(value)],
-                SHELL_RPC_TIMEOUT,
+                None,
             )
             .await?;
         let updated: CredentialSnapshot = serde_json::from_value(raw).map_err(|_| {
@@ -125,7 +123,7 @@ impl RemoteCredentialsCache {
             .request(
                 "shell:credentialsRestoreSealed",
                 vec![json!(slot), sealed.map(|s| json!(s)).unwrap_or(Value::Null)],
-                SHELL_RPC_TIMEOUT,
+                None,
             )
             .await?;
         let updated: CredentialSnapshot = serde_json::from_value(raw).map_err(|_| {
@@ -260,11 +258,12 @@ impl ShellBridgeClient {
         self.duplex.send_push("shell:log", json!(code))
     }
 
-    // Reverse-RPC verbs (Engine → Shell)
+    // Reverse-RPC verbs (Engine → Shell); match Node `engineProcess.ts` by not imposing
+    // short arbitrary timeouts on interactive shell dialogs or browser actions.
     pub async fn open_external(&self, url: &str) -> Result<(), SerializedEngineError> {
         let _ = self
             .duplex
-            .request("shell:openExternal", vec![json!(url)], SHELL_RPC_TIMEOUT)
+            .request("shell:openExternal", vec![json!(url)], None)
             .await?;
         Ok(())
     }
@@ -272,7 +271,7 @@ impl ShellBridgeClient {
     pub async fn open_path(&self, path: &str) -> Result<String, SerializedEngineError> {
         let val = self
             .duplex
-            .request("shell:openPath", vec![json!(path)], SHELL_RPC_TIMEOUT)
+            .request("shell:openPath", vec![json!(path)], None)
             .await?;
         Ok(val.as_str().unwrap_or("").to_string())
     }
@@ -280,7 +279,7 @@ impl ShellBridgeClient {
     pub async fn clipboard_write(&self, text: &str) -> Result<(), SerializedEngineError> {
         let _ = self
             .duplex
-            .request("shell:clipboardWrite", vec![json!(text)], SHELL_RPC_TIMEOUT)
+            .request("shell:clipboardWrite", vec![json!(text)], None)
             .await?;
         Ok(())
     }
@@ -288,18 +287,14 @@ impl ShellBridgeClient {
     pub async fn end_host_terminals(&self, host_id: &str) -> Result<(), SerializedEngineError> {
         let _ = self
             .duplex
-            .request(
-                "shell:endHostTerminals",
-                vec![json!(host_id)],
-                SHELL_RPC_TIMEOUT,
-            )
+            .request("shell:endHostTerminals", vec![json!(host_id)], None)
             .await?;
         Ok(())
     }
 
     pub async fn read_writing_settings(&self) -> Result<Value, SerializedEngineError> {
         self.duplex
-            .request("shell:readWritingSettings", vec![], SHELL_RPC_TIMEOUT)
+            .request("shell:readWritingSettings", vec![], None)
             .await
     }
 
@@ -319,18 +314,14 @@ impl ShellBridgeClient {
                     tool_args,
                     context.unwrap_or(Value::Null),
                 ],
-                Duration::from_secs(60),
+                None,
             )
             .await
     }
 
     pub async fn browser_mcp_server(&self, thread_id: &str) -> Result<Value, SerializedEngineError> {
         self.duplex
-            .request(
-                "shell:browserMcpServer",
-                vec![json!(thread_id)],
-                SHELL_RPC_TIMEOUT,
-            )
+            .request("shell:browserMcpServer", vec![json!(thread_id)], None)
             .await
     }
 
@@ -351,7 +342,7 @@ impl ShellBridgeClient {
             .request(
                 "shell:mediaThumbnail",
                 vec![json!(data_url), json!(scale)],
-                SHELL_RPC_TIMEOUT,
+                None,
             )
             .await?;
         Ok(val.as_str().map(ToString::to_string))
@@ -374,7 +365,7 @@ impl ShellBridgeClient {
             .request(
                 "shell:redrawPhoto",
                 vec![box_binary(bytes), json!(kind)],
-                SHELL_RPC_TIMEOUT,
+                None,
             )
             .await?;
         if val.is_null() {

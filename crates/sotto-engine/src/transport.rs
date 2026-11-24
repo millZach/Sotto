@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,6 +21,8 @@ pub const MAX_ENGINE_FRAME_BYTES: usize = 64 * 1024 * 1024;
 pub const DEFAULT_BINARY_CHUNK_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum reassembled binary response size (256 MiB, matching `MAX_CHUNKED_RESPONSE_BYTES`).
 pub const MAX_CHUNKED_RESPONSE_BYTES: usize = 256 * 1024 * 1024;
+/// Upper bound on chunk count accepted for a single response so a peer's `total` cannot exhaust memory.
+const MAX_CHUNKS_PER_RESPONSE: usize = 65_536;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
@@ -101,8 +103,12 @@ pub fn unbox_binary(value: &Value) -> Option<Vec<u8>> {
 
 /// Encodes a JSON value into ADR-0210's 4-byte big-endian length-prefixed binary frame.
 pub fn encode_engine_frame(value: &Value) -> io::Result<Vec<u8>> {
+    encode_engine_frame_with_limit(value, MAX_ENGINE_FRAME_BYTES)
+}
+
+fn encode_engine_frame_with_limit(value: &Value, max_bytes: usize) -> io::Result<Vec<u8>> {
     let body = serde_json::to_vec(value).map_err(io::Error::other)?;
-    if body.len() > MAX_ENGINE_FRAME_BYTES {
+    if body.len() > max_bytes {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "ENGINE_FRAME_TOO_LARGE",
@@ -211,27 +217,54 @@ pub enum IncomingEngineEvent {
 
 struct IncomingChunkState {
     total: usize,
-    parts: Vec<Option<Vec<u8>>>,
-    received: usize,
+    // Sparse map so a peer supplying a huge `total` never forces a giant upfront allocation.
+    parts: HashMap<usize, Vec<u8>>,
     total_bytes: usize,
 }
 
 type PendingSender = oneshot::Sender<Result<Value, SerializedEngineError>>;
 
 struct DuplexState {
+    closed: bool,
     pending: HashMap<u64, PendingSender>,
     chunks: HashMap<u64, IncomingChunkState>,
 }
 
+struct PendingGuard {
+    id: u64,
+    state: Arc<Mutex<DuplexState>>,
+    armed: bool,
+}
+
+impl PendingGuard {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PendingGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            guard.pending.remove(&self.id);
+            guard.chunks.remove(&self.id);
+        }
+    }
+}
+
 /// Full-duplex Phase 2 `EngineTransport` connection supporting simultaneous incoming RPCs/pushes
 /// and outgoing reverse-RPC requests with binary chunk reassembly (`req`/`res`/`res-chunk`/`push`).
+///
+/// Outgoing frames are encoded and validated against `max_frame_bytes` BEFORE queueing onto the
+/// writer channel, so a single oversized message fails only that message without tearing down
+/// the transport link (matching `src/main/engine/transport.ts`).
 #[derive(Clone)]
 pub struct EngineDuplex {
-    out_tx: mpsc::UnboundedSender<Value>,
+    out_tx: mpsc::UnboundedSender<Vec<u8>>,
     state: Arc<Mutex<DuplexState>>,
     next_id: Arc<AtomicU64>,
-    closed: Arc<AtomicBool>,
     binary_chunk_bytes: usize,
+    max_frame_bytes: usize,
 }
 
 /// Lifecycle handles returned alongside [`EngineDuplex`] so the caller owns shutdown ordering.
@@ -254,27 +287,26 @@ impl EngineDuplex {
             write_engine_frame(&mut write_half, &hello_frame(tok)).await?;
         }
 
-        let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Value>();
+        let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
         let (in_tx, incoming_rx) = mpsc::channel::<IncomingEngineEvent>(128);
         let state = Arc::new(Mutex::new(DuplexState {
+            closed: false,
             pending: HashMap::new(),
             chunks: HashMap::new(),
         }));
-        let closed = Arc::new(AtomicBool::new(false));
 
-        let writer_closed = Arc::clone(&closed);
         let writer_state = Arc::clone(&state);
         let writer_task = tokio::spawn(async move {
-            while let Some(frame) = out_rx.recv().await {
-                if write_engine_frame(&mut write_half, &frame).await.is_err() {
+            while let Some(encoded) = out_rx.recv().await {
+                if write_half.write_all(&encoded).await.is_err()
+                    || write_half.flush().await.is_err()
+                {
                     break;
                 }
             }
-            writer_closed.store(true, Ordering::SeqCst);
-            fail_all_pending(&writer_state, "Engine transport writer closed.");
+            close_and_fail_pending(&writer_state, "Engine transport writer closed.");
         });
 
-        let reader_closed = Arc::clone(&closed);
         let reader_state = Arc::clone(&state);
         let reader_task = tokio::spawn(async move {
             while let Ok(Some(msg)) = read_engine_frame(&mut read_half).await {
@@ -333,8 +365,7 @@ impl EngineDuplex {
                     IncomingEngineMessage::Other => {}
                 }
             }
-            reader_closed.store(true, Ordering::SeqCst);
-            fail_all_pending(&reader_state, "Engine transport closed.");
+            close_and_fail_pending(&reader_state, "Engine transport closed.");
         });
 
         Ok(EngineDuplexParts {
@@ -342,8 +373,8 @@ impl EngineDuplex {
                 out_tx,
                 state,
                 next_id: Arc::new(AtomicU64::new(1)),
-                closed,
                 binary_chunk_bytes: DEFAULT_BINARY_CHUNK_BYTES,
+                max_frame_bytes: MAX_ENGINE_FRAME_BYTES,
             },
             incoming_rx,
             reader_task,
@@ -356,28 +387,75 @@ impl EngineDuplex {
         self
     }
 
+    #[cfg(test)]
+    pub fn with_max_frame_bytes(mut self, bytes: usize) -> Self {
+        self.max_frame_bytes = bytes.max(1);
+        self
+    }
+
     pub fn is_closed(&self) -> bool {
-        self.closed.load(Ordering::SeqCst)
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).closed
     }
 
-    pub fn send_frame(&self, frame: Value) -> bool {
-        if self.is_closed() {
-            return false;
+    /// Fails all currently pending outgoing reverse-RPC waiters (e.g., when shutting down
+    /// after draining in-flight RPCs) without closing the writer so a final shutdown reply
+    /// can still be flushed.
+    pub fn fail_pending(&self, message: &str) {
+        let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        guard.chunks.clear();
+        for (_, tx) in guard.pending.drain() {
+            let _ = tx.send(Err(SerializedEngineError::new(
+                message,
+                Some("SHELL_UNAVAILABLE"),
+            )));
         }
-        self.out_tx.send(frame).is_ok()
     }
 
+    /// Encodes and queues a frame without killing the writer loop if the frame exceeds the size cap.
+    pub fn try_send_frame(&self, frame: &Value) -> Result<(), SerializedEngineError> {
+        let encoded = encode_engine_frame_with_limit(frame, self.max_frame_bytes).map_err(|e| {
+            let code = if e.to_string().contains("ENGINE_FRAME_TOO_LARGE") {
+                "FRAME_TOO_LARGE"
+            } else {
+                "ENCODE_ERROR"
+            };
+            SerializedEngineError::new(e.to_string(), Some(code))
+        })?;
+        if self.is_closed() {
+            return Err(SerializedEngineError::new(
+                "Shell connection is closed.",
+                Some("SHELL_UNAVAILABLE"),
+            ));
+        }
+        self.out_tx.send(encoded).map_err(|_| {
+            SerializedEngineError::new("Shell connection is closed.", Some("SHELL_UNAVAILABLE"))
+        })
+    }
+
+    /// Sends a pre-built frame. Oversized frames are dropped without closing the link;
+    /// for RPC responses prefer [`send_ok`] / [`send_err`] so callers receive a structured error.
+    pub fn send_frame(&self, frame: Value) -> bool {
+        self.try_send_frame(&frame).is_ok()
+    }
+
+    /// One-way push; drops oversized pushes without tearing down the link (matching `transport.ts`).
     pub fn send_push(&self, event: &str, payload: Value) -> bool {
-        self.send_frame(push_frame(event, payload))
+        self.try_send_frame(&push_frame(event, payload)).is_ok()
     }
 
+    /// Sends an `ok` RPC response, automatically degrading to a structured `FRAME_TOO_LARGE`
+    /// error response if the payload exceeds `max_frame_bytes` so the link stays open.
     pub fn send_ok(&self, id: u64, value: Value) -> bool {
-        self.send_frame(ok_response_frame(id, value))
+        match self.try_send_frame(&ok_response_frame(id, value)) {
+            Ok(()) => true,
+            Err(err) if err.code.as_deref() == Some("FRAME_TOO_LARGE") => self.send_err(id, err),
+            Err(_) => false,
+        }
     }
 
     pub fn send_ok_binary(&self, id: u64, bytes: &[u8]) -> bool {
         for frame in binary_response_frames(id, bytes, self.binary_chunk_bytes) {
-            if !self.send_frame(frame) {
+            if self.try_send_frame(&frame).is_err() {
                 return false;
             }
         }
@@ -385,52 +463,82 @@ impl EngineDuplex {
     }
 
     pub fn send_err(&self, id: u64, error: SerializedEngineError) -> bool {
-        self.send_frame(err_response_frame(id, error))
+        self.try_send_frame(&err_response_frame(id, error)).is_ok()
     }
 
-    /// Sends a reverse-RPC request (`Engine → Shell`) and waits up to `timeout` for its response.
+    /// Sends a reverse-RPC request (`Engine → Shell`) and waits for its response.
+    /// Pass `timeout: None` for interactive shell requests (such as OS keychain prompts) so they
+    /// match Node's `EngineRpcConnection.request` behavior and only abort on link close/shutdown.
     pub async fn request(
         &self,
         method: &str,
         args: Vec<Value>,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<Value, SerializedEngineError> {
-        if self.is_closed() {
-            return Err(SerializedEngineError::new(
-                "Shell connection is closed.",
-                Some("SHELL_UNAVAILABLE"),
-            ));
-        }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        // Validate & encode frame BEFORE registering pending state so an oversized request
+        // fails only itself and never disturbs the writer loop.
+        let encoded =
+            encode_engine_frame_with_limit(&req_frame(id, method, args), self.max_frame_bytes)
+                .map_err(|e| {
+                    let code = if e.to_string().contains("ENGINE_FRAME_TOO_LARGE") {
+                        "FRAME_TOO_LARGE"
+                    } else {
+                        "ENCODE_ERROR"
+                    };
+                    SerializedEngineError::new(e.to_string(), Some(code))
+                })?;
+
         let (tx, rx) = oneshot::channel();
         {
+            // Atomically check `closed` and insert `pending` under the same mutex as
+            // `close_and_fail_pending`, preventing any race with EOF.
             let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if guard.closed {
+                return Err(SerializedEngineError::new(
+                    "Shell connection is closed.",
+                    Some("SHELL_UNAVAILABLE"),
+                ));
+            }
             guard.pending.insert(id, tx);
         }
-        if self.out_tx.send(req_frame(id, method, args)).is_err() {
-            let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            guard.pending.remove(&id);
+        let mut pending_guard = PendingGuard {
+            id,
+            state: Arc::clone(&self.state),
+            armed: true,
+        };
+        if self.out_tx.send(encoded).is_err() {
+            // `pending_guard` removes `id` on drop.
             return Err(SerializedEngineError::new(
                 "Shell connection is closed.",
                 Some("SHELL_UNAVAILABLE"),
             ));
         }
-        match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(SerializedEngineError::new(
-                "Shell connection closed before answering.",
-                Some("SHELL_UNAVAILABLE"),
-            )),
-            Err(_) => {
-                let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
-                guard.pending.remove(&id);
-                guard.chunks.remove(&id);
-                Err(SerializedEngineError::new(
+
+        let outcome = match timeout {
+            Some(limit) => match tokio::time::timeout(limit, rx).await {
+                Ok(Ok(res)) => res,
+                Ok(Err(_)) => Err(SerializedEngineError::new(
+                    "Shell connection closed before answering.",
+                    Some("SHELL_UNAVAILABLE"),
+                )),
+                Err(_) => Err(SerializedEngineError::new(
                     format!("SHELL_REQUEST_TIMEOUT: {method}"),
                     Some("TIMEOUT"),
-                ))
-            }
+                )),
+            },
+            None => match rx.await {
+                Ok(res) => res,
+                Err(_) => Err(SerializedEngineError::new(
+                    "Shell connection closed before answering.",
+                    Some("SHELL_UNAVAILABLE"),
+                )),
+            },
+        };
+        if outcome.is_ok() {
+            pending_guard.disarm();
         }
+        outcome
     }
 }
 
@@ -445,7 +553,7 @@ fn handle_incoming_chunk(
     if !guard.pending.contains_key(&id) {
         return;
     }
-    if total == 0 || index >= total {
+    if total == 0 || total > MAX_CHUNKS_PER_RESPONSE || index >= total {
         guard.chunks.remove(&id);
         if let Some(tx) = guard.pending.remove(&id) {
             let _ = tx.send(Err(SerializedEngineError::new(
@@ -470,8 +578,7 @@ fn handle_incoming_chunk(
         .entry(id)
         .or_insert_with(|| IncomingChunkState {
             total,
-            parts: vec![None; total],
-            received: 0,
+            parts: HashMap::new(),
             total_bytes: 0,
         });
     if chunk_state.total != total {
@@ -484,10 +591,9 @@ fn handle_incoming_chunk(
         }
         return;
     }
-    if chunk_state.parts[index].is_none() {
+    if let std::collections::hash_map::Entry::Vacant(slot) = chunk_state.parts.entry(index) {
         chunk_state.total_bytes = chunk_state.total_bytes.saturating_add(bytes.len());
-        chunk_state.parts[index] = Some(bytes);
-        chunk_state.received += 1;
+        slot.insert(bytes);
     }
     if chunk_state.total_bytes > MAX_CHUNKED_RESPONSE_BYTES {
         guard.chunks.remove(&id);
@@ -499,11 +605,13 @@ fn handle_incoming_chunk(
         }
         return;
     }
-    if chunk_state.received == chunk_state.total {
-        if let Some(finished) = guard.chunks.remove(&id) {
+    if chunk_state.parts.len() == chunk_state.total {
+        if let Some(mut finished) = guard.chunks.remove(&id) {
             let mut combined = Vec::with_capacity(finished.total_bytes);
-            for part in finished.parts.into_iter().flatten() {
-                combined.extend_from_slice(&part);
+            for i in 0..finished.total {
+                if let Some(part) = finished.parts.remove(&i) {
+                    combined.extend_from_slice(&part);
+                }
             }
             if let Some(tx) = guard.pending.remove(&id) {
                 let _ = tx.send(Ok(box_binary(&combined)));
@@ -512,8 +620,9 @@ fn handle_incoming_chunk(
     }
 }
 
-fn fail_all_pending(state: &Arc<Mutex<DuplexState>>, message: &str) {
+fn close_and_fail_pending(state: &Arc<Mutex<DuplexState>>, message: &str) {
     let mut guard = state.lock().unwrap_or_else(|e| e.into_inner());
+    guard.closed = true;
     guard.chunks.clear();
     for (_, tx) in guard.pending.drain() {
         let _ = tx.send(Err(SerializedEngineError::new(
@@ -606,7 +715,10 @@ mod tests {
         let small = binary_response_frames(7, &data, 32);
         assert_eq!(small.len(), 1);
         assert_eq!(small[0]["kind"], "res");
-        assert_eq!(unbox_binary(&small[0]["value"]).as_deref(), Some(data.as_slice()));
+        assert_eq!(
+            unbox_binary(&small[0]["value"]).as_deref(),
+            Some(data.as_slice())
+        );
 
         let chunked = binary_response_frames(9, &data, 10);
         assert_eq!(chunked.len(), 3);
@@ -659,7 +771,7 @@ mod tests {
                 .request(
                     "shell:redrawPhoto",
                     vec![box_binary(b"input"), json!("image/png")],
-                    Duration::from_secs(5),
+                    Some(Duration::from_secs(5)),
                 )
                 .await
         });
@@ -687,6 +799,113 @@ mod tests {
             unbox_binary(&answer).as_deref(),
             Some(b"hello world".as_slice())
         );
+
+        parts.reader_task.abort();
+        parts.writer_task.abort();
+    }
+
+    #[tokio::test]
+    async fn rejects_oversized_outgoing_frame_without_killing_duplex_link() {
+        let (engine_side, shell_side) = tokio::io::duplex(64 * 1024);
+        let (mut shell_read, mut shell_write) = tokio::io::split(shell_side);
+        let parts = EngineDuplex::connect_stream(engine_side, None)
+            .await
+            .unwrap();
+        let duplex = parts.duplex.clone().with_max_frame_bytes(256);
+
+        // 1. Oversized reverse request fails only itself.
+        let huge = "x".repeat(512);
+        let err = duplex
+            .request("shell:clipboardWrite", vec![json!(huge)], Some(Duration::from_secs(2)))
+            .await
+            .unwrap_err();
+        assert_eq!(err.code.as_deref(), Some("FRAME_TOO_LARGE"));
+        assert!(!duplex.is_closed());
+
+        // 2. Oversized push is dropped without killing the writer.
+        assert!(!duplex.send_push("shell:log", json!(huge)));
+        assert!(!duplex.is_closed());
+
+        // 3. Oversized send_ok degrades to an error response frame while link stays alive.
+        assert!(duplex.send_ok(42, json!(huge)));
+        let res_msg = read_engine_frame(&mut shell_read).await.unwrap().unwrap();
+        match res_msg {
+            IncomingEngineMessage::Res {
+                id,
+                ok,
+                error: Some(err),
+                ..
+            } => {
+                assert_eq!(id, 42);
+                assert!(!ok);
+                assert_eq!(err.code.as_deref(), Some("FRAME_TOO_LARGE"));
+            }
+            other => panic!("expected FRAME_TOO_LARGE error res, got {other:?}"),
+        }
+
+        // 4. Subsequent normal reverse-RPC succeeds on the exact same duplex.
+        let duplex2 = duplex.clone();
+        let ok_task = tokio::spawn(async move {
+            duplex2
+                .request("shell:ping", vec![], Some(Duration::from_secs(2)))
+                .await
+        });
+        let req = read_engine_frame(&mut shell_read).await.unwrap().unwrap();
+        let req_id = match req {
+            IncomingEngineMessage::Req { id, method, .. } => {
+                assert_eq!(method, "shell:ping");
+                id
+            }
+            other => panic!("expected req, got {other:?}"),
+        };
+        write_engine_frame(&mut shell_write, &ok_response_frame(req_id, json!("pong")))
+            .await
+            .unwrap();
+        assert_eq!(ok_task.await.unwrap().unwrap(), json!("pong"));
+
+        parts.reader_task.abort();
+        parts.writer_task.abort();
+    }
+
+    #[tokio::test]
+    async fn cleans_up_pending_state_when_request_future_is_dropped_and_rejects_huge_chunk_total() {
+        let (engine_side, shell_side) = tokio::io::duplex(64 * 1024);
+        let (mut shell_read, mut shell_write) = tokio::io::split(shell_side);
+        let parts = EngineDuplex::connect_stream(engine_side, None)
+            .await
+            .unwrap();
+        let duplex = parts.duplex.clone();
+
+        // Dropping an unanswered request future must immediately remove its pending entry.
+        {
+            let fut = duplex.request("shell:slow", vec![], None);
+            tokio::pin!(fut);
+            // Poll once to register pending entry and write frame.
+            let _ = tokio::time::timeout(Duration::from_millis(20), &mut fut).await;
+        }
+        let _ = read_engine_frame(&mut shell_read).await.unwrap().unwrap();
+        assert!(duplex.state.lock().unwrap().pending.is_empty());
+
+        // A peer sending a huge `total` in res-chunk must be rejected without allocating `total` slots.
+        let duplex2 = duplex.clone();
+        let req_task = tokio::spawn(async move {
+            duplex2
+                .request("shell:chunked", vec![], Some(Duration::from_secs(2)))
+                .await
+        });
+        let req = read_engine_frame(&mut shell_read).await.unwrap().unwrap();
+        let req_id = match req {
+            IncomingEngineMessage::Req { id, .. } => id,
+            other => panic!("expected req, got {other:?}"),
+        };
+        write_engine_frame(
+            &mut shell_write,
+            &res_chunk_frame(req_id, 0, MAX_CHUNKS_PER_RESPONSE + 10, b"x"),
+        )
+        .await
+        .unwrap();
+        let err = req_task.await.unwrap().unwrap_err();
+        assert_eq!(err.code.as_deref(), Some("INVALID_CHUNK"));
 
         parts.reader_task.abort();
         parts.writer_task.abort();

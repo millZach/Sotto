@@ -1314,7 +1314,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!this.gitStatus?.listChangedFiles) throw new Error('Changed files are unavailable on this host.')
     const folder = this.threadRepositoryFolder(request.threadId, 'changed files')
     if (this.gitChangedFilesAccelerator) {
-      const accelerated = await this.gitChangedFilesAccelerator(folder).catch(() => undefined)
+      // Track accelerated reads under `gitStatus.runInFolder` so `idle()` waits before worktree
+      // reclaim (#766) and a held folder skips starting Rust git.
+      const run = (): Promise<GitChangedFiles | undefined> =>
+        this.gitChangedFilesAccelerator!(folder).catch(() => undefined)
+      const tracked = this.gitStatus.runInFolder ? this.gitStatus.runInFolder(folder, run) : run()
+      const accelerated = tracked ? await tracked : undefined
       if (accelerated !== undefined) return accelerated
     }
     return this.gitStatus.listChangedFiles(folder)

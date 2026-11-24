@@ -14,6 +14,8 @@ import { ThreadStore } from '../../src/main/agents/threadStore'
 import { UsageService } from '../../src/main/agents/usageService'
 import { UsageStore } from '../../src/main/agents/usageStore'
 import type { AgentHost } from '../../src/main/agents/host'
+import { PolicyStore } from '../../src/main/memory/policies'
+import { MemoryStore } from '../../src/main/memory/store'
 import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
 import { FilesService } from '../../src/main/files/service'
 import { GitChangesService } from '../../src/main/tools/gitChanges'
@@ -596,13 +598,30 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
         'shell:redrawPhoto',
       ])
 
-      // 4. Phase 2 engine:perfReading & engine:close.
+      // 4. Phase 2 engine:perfReading & N1 shutdown-with-in-flight-reverse-call drain.
       const perf = await conn.request<{ blockedShare: number; freezesOver100ms: number }>('engine:perfReading')
       expect(perf.blockedShare).toBe(0)
       expect(perf.freezesOver100ms).toBe(0)
 
-      const closed = await conn.request<boolean>('engine:close')
-      expect(closed).toBe(true)
+      // Start a reverse-RPC request that the shell holds briefly while `engine:close` arrives.
+      // Because `sotto-engine` drains `rpc_tasks` BEFORE aborting `reader_task`, the shell's reply
+      // still lands cleanly and the reverse-RPC succeeds before shutdown finishes.
+      let releaseSlowShell!: (value: unknown) => void
+      let slowShellStarted = false
+      conn.onRequest((method, args) => {
+        if (method === 'shell:readWritingSettings') {
+          slowShellStarted = true
+          return new Promise(resolve => { releaseSlowShell = resolve })
+        }
+        return reverseCalls.push({ method, args })
+      })
+      const inFlightReverse = conn.request<{ drained: boolean }>('engine:readWritingSettings')
+      while (!slowShellStarted) await new Promise(r => setTimeout(r, 10))
+      const closePromise = conn.request<boolean>('engine:close')
+      await new Promise(r => setTimeout(r, 30))
+      releaseSlowShell({ drained: true })
+      expect(await inFlightReverse).toEqual({ drained: true })
+      expect(await closePromise).toBe(true)
       expect(await exited).toBe(0)
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
@@ -611,6 +630,122 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       }
       await server.close()
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 30_000)
+
+  it('preserves GIT_CONFIG_GLOBAL excludes, model-row sum ordering, and read-only memory policy checks', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-parity-fix-data-'))
+    const repoDir = await mkdtemp(join(tmpdir(), 'sotto-rust-parity-fix-repo-'))
+    const cfgDir = await mkdtemp(join(tmpdir(), 'sotto-rust-parity-fix-cfg-'))
+    const excludesFile = join(cfgDir, 'global-ignore')
+    const globalConfig = join(cfgDir, 'gitconfig')
+    await writeFile(excludesFile, '*.log\n', 'utf8')
+    await writeFile(globalConfig, `[core]\n\texcludesFile = ${excludesFile.replace(/\\/g, '/')}\n`, 'utf8')
+
+    const prevGlobal = process.env.GIT_CONFIG_GLOBAL
+    process.env.GIT_CONFIG_GLOBAL = globalConfig
+
+    const git = (args: string[]) => execFileSync('git', args, {
+      cwd: repoDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test',
+        GIT_AUTHOR_EMAIL: 'test@example.com',
+        GIT_COMMITTER_NAME: 'Test',
+        GIT_COMMITTER_EMAIL: 'test@example.com',
+      },
+    })
+    git(['init', '-b', 'main'])
+    await writeFile(join(repoDir, 'tracked.txt'), 'init\n', 'utf8')
+    git(['add', '.'])
+    git(['commit', '-m', 'init'])
+    await writeFile(join(repoDir, 'ignored.log'), 'should be excluded by GIT_CONFIG_GLOBAL\n', 'utf8')
+    await writeFile(join(repoDir, 'visible.txt'), 'kept\n', 'utf8')
+
+    // N6: Seed multi-bucket rows for two models where model A has small single rows summing to 1000
+    // and model B has one larger row of 600 — both TS and Rust must rank model A first.
+    const usageStore = new UsageStore(join(dataDir, 'usage.sqlite'))
+    usageStore.open()
+    for (let i = 0; i < 4; i++) {
+      usageStore.observeTokens({
+        providerId: 'claude',
+        threadId: 't-n6',
+        recordKey: `${'a'.repeat(63)}${i}`,
+        modelId: 'claude-small-rows-big-sum',
+        tokens: { input: 200, output: 50 },
+        at: `2026-11-21T0${i}:05:00.000Z`,
+        phase: 'live',
+        partial: false,
+      })
+    }
+    usageStore.observeTokens({
+      providerId: 'claude',
+      threadId: 't-n6',
+      recordKey: 'b'.repeat(64),
+      modelId: 'claude-one-medium-row',
+      tokens: { input: 500, output: 100 },
+      at: '2026-11-21T05:05:00.000Z',
+      phase: 'live',
+      partial: false,
+    })
+    const tsUsage = usageStore.query({ timeZone: 'UTC' })
+    usageStore.close()
+
+    // N8: Seed memory.sqlite with a remote-answer grant and verify read-only query.
+    const memoryStore = new MemoryStore(join(dataDir, 'memory.sqlite'))
+    memoryStore.open()
+    const policyStore = new PolicyStore(memoryStore)
+    policyStore.setRemoteAnswers('client-ro-1', true, 'test grant')
+    memoryStore.close()
+
+    const endpoint = createEngineEndpoint('sep')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+    const child = spawn(
+      binary,
+      ['--data', dataDir, '--endpoint', endpoint, '--accelerator'],
+      {
+        stdio: ['ignore', 'ignore', 'ignore'],
+        windowsHide: true,
+        env: { ...process.env, SOTTO_ENGINE_TOKEN: token, GIT_CONFIG_GLOBAL: globalConfig },
+      },
+    )
+    const exited = new Promise<number | null>(resolveExit => child.once('exit', code => resolveExit(code)))
+
+    try {
+      const conn = await server.waitForClient(15_000)
+
+      // L5: GIT_CONFIG_GLOBAL excludes `ignored.log` identically in Rust and TS.
+      const gitStatus = new GitStatusReader({ fetchIntervalMs: () => 60_000 })
+      const tsChanged = await gitStatus.listChangedFiles(repoDir)
+      const rustChanged = await conn.request('ops.gitChangedFiles', [repoDir, { timeoutMs: 9_000 }])
+      expect(tsChanged.files.map(f => f.path)).toEqual(['visible.txt'])
+      expect(rustChanged).toEqual(tsChanged)
+
+      // N6: Model ordering parity by true summed tokens.
+      const rustUsage = await conn.request<{ models: { modelId: string }[] }>('ops.usageQuery', [{ timeZone: 'UTC' }])
+      expect(tsUsage.models.map(m => m.modelId)).toEqual(['claude-small-rows-big-sum', 'claude-one-medium-row'])
+      expect(rustUsage).toEqual(tsUsage)
+
+      // N8: Read-only ops.memoryMayGrantRemote succeeds without write locks.
+      expect(await conn.request('ops.memoryMayGrantRemote', ['client-ro-1'])).toEqual({ allowed: true })
+      expect(await conn.request('ops.memoryMayGrantRemote', ['client-unknown'])).toEqual({ allowed: false })
+
+      await conn.request('engine.shutdown')
+      expect(await exited).toBe(0)
+    } finally {
+      if (prevGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL
+      else process.env.GIT_CONFIG_GLOBAL = prevGlobal
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGTERM')
+        await exited.catch(() => undefined)
+      }
+      await server.close()
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(cfgDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 30_000)
 
