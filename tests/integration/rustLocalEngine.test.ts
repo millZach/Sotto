@@ -972,25 +972,25 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(rustInspect.value.patches).toEqual(inspectedTs.value.patches)
 
       // Rust restores the TS-captured checkpoint back to initial repo state.
-      const rustRestore = await conn.request<{ ok: boolean; value: { record: { status: string } } }>(
+      const rustRestore = await conn.request<{ ok: boolean; value?: { record: { status: string } }; error?: unknown }>(
         'checkpoints.restore',
         [cpId],
       )
-      expect(rustRestore.ok).toBe(true)
-      expect(rustRestore.value.record.status).toBe('reverted')
+      expect(rustRestore.ok, `checkpoints.restore failed: ${JSON.stringify(rustRestore)}`).toBe(true)
+      expect(rustRestore.value!.record.status).toBe('reverted')
 
       // Rust captures a brand-new checkpoint; a fresh TS CheckpointService reads & inspects it.
-      const rustBefore = await conn.request<{ ok: boolean }>('checkpoints.beforeTurn', [threadInfo, wsId, repoDir])
-      expect(rustBefore.ok).toBe(true)
+      const rustBefore = await conn.request<{ ok: boolean; error?: unknown }>('checkpoints.beforeTurn', [threadInfo, wsId, repoDir])
+      expect(rustBefore.ok, `checkpoints.beforeTurn failed: ${JSON.stringify(rustBefore)}`).toBe(true)
       await writeFile(join(repoDir, 'app.txt'), 'written-for-rust-cp\n', 'utf8')
       const threadAfter = { ...threadInfo, userMessageIds: ['u1', 'u2', 'u3'] }
-      const rustAfter = await conn.request<{ ok: boolean; value: { record: { id: string; status: string } } }>(
+      const rustAfter = await conn.request<{ ok: boolean; value?: { record: { id: string; status: string } }; error?: unknown }>(
         'checkpoints.afterTurn',
         [threadAfter],
       )
-      expect(rustAfter.ok).toBe(true)
-      expect(rustAfter.value.record.status).toBe('ready')
-      const rustCpId = rustAfter.value.record.id
+      expect(rustAfter.ok, `checkpoints.afterTurn failed: ${JSON.stringify(rustAfter)}`).toBe(true)
+      expect(rustAfter.value!.record.status).toBe('ready')
+      const rustCpId = rustAfter.value!.record.id
 
       await conn.request('engine:close', [])
       expect(await exited).toBe(0)

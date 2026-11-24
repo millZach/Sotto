@@ -926,10 +926,12 @@ fn file_stamp(meta: &fs::Metadata) -> FileStamp {
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_nanos() as i128)
             .unwrap_or(mtime_ns);
+        // Match Node.js (libuv) `st_mode` on Windows: regular files report `0o100666` when
+        // writable and `0o100444` when read-only.
         let mode = if meta.permissions().readonly() {
             0o100444
         } else {
-            0o100644
+            0o100666
         };
         (ctime, 0u64, mode)
     };
@@ -1035,15 +1037,52 @@ fn run_checkpoint_git(cwd: &Path, args: &[&str], deadline: Instant) -> Result<St
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
+/// Strips Windows `\\?\` verbatim prefixes on standard drive/UNC paths so canonical paths match
+/// Node.js `fs.realpath` (and work cleanly as `git.exe` working directories on Windows).
+fn normalize_canonical_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = path.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            if rest.len() < 248
+                && rest.as_bytes().get(1) == Some(&b':')
+                && rest.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+            {
+                return PathBuf::from(rest);
+            }
+        }
+    }
+    path
+}
+
+/// Joins a validated slash-separated relative checkpoint path onto `root` component by component
+/// so Windows verbatim `\\?\` paths never receive unnormalized `/` separators.
+fn join_rel_path(root: &Path, rel: &str) -> PathBuf {
+    let mut out = root.to_path_buf();
+    for part in rel.split('/') {
+        if !part.is_empty() {
+            out.push(part);
+        }
+    }
+    out
+}
+
 /// Resolves a checkout identity matching `checkoutIdentity` (`src/main/agents/threadWorktrees.ts`):
 /// the canonical Git directory path if inside a repository, else the canonical folder path.
 pub fn checkout_identity(folder: &Path) -> String {
-    let canon = fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+    let canon = fs::canonicalize(folder)
+        .map(normalize_canonical_path)
+        .unwrap_or_else(|_| folder.to_path_buf());
     let deadline = Instant::now() + GIT_CHECKPOINT_TIMEOUT;
     if let Ok(git_dir) = run_checkpoint_git(&canon, &["rev-parse", "--absolute-git-dir"], deadline) {
         let trimmed = git_dir.trim();
         if !trimmed.is_empty() {
-            let gd = fs::canonicalize(trimmed).unwrap_or_else(|_| PathBuf::from(trimmed));
+            let gd = fs::canonicalize(trimmed)
+                .map(normalize_canonical_path)
+                .unwrap_or_else(|_| PathBuf::from(trimmed));
             return gd.to_string_lossy().into_owned();
         }
     }
@@ -1065,6 +1104,7 @@ pub fn safe_checkpoint_target(canon_root: &Path, rel: &str) -> Result<PathBuf, C
                     return Err(CheckpointError::new("blocked", LINK_MESSAGE));
                 }
                 let resolved = fs::canonicalize(&current)
+                    .map(normalize_canonical_path)
                     .map_err(|_| CheckpointError::new("blocked", LINK_MESSAGE))?;
                 if !resolved.starts_with(canon_root) {
                     return Err(CheckpointError::new("blocked", LINK_MESSAGE));
@@ -1079,7 +1119,7 @@ pub fn safe_checkpoint_target(canon_root: &Path, rel: &str) -> Result<PathBuf, C
             }
         }
     }
-    let target = canon_root.join(rel);
+    let target = join_rel_path(canon_root, rel);
     if !target.starts_with(canon_root) {
         return Err(CheckpointError::new(
             "blocked",
@@ -1151,6 +1191,7 @@ impl CheckpointCapture {
         reuse: bool,
     ) -> Result<CheckpointSnapshot, CheckpointError> {
         let canon_root = fs::canonicalize(cwd)
+            .map(normalize_canonical_path)
             .map_err(|e| CheckpointError::new("workspace-unavailable", format!("Working folder unavailable: {e}")))?;
         let deadline = Instant::now() + GIT_CHECKPOINT_TIMEOUT;
         let started_ns = SystemTime::now()
@@ -1204,6 +1245,7 @@ impl CheckpointCapture {
                                     return Err(CheckpointError::new("blocked", LINK_MESSAGE));
                                 }
                                 let resolved = fs::canonicalize(&acc)
+                                    .map(normalize_canonical_path)
                                     .map_err(|_| CheckpointError::new("blocked", LINK_MESSAGE))?;
                                 if !resolved.starts_with(&canon_root) {
                                     return Err(CheckpointError::new("blocked", LINK_MESSAGE));
@@ -1232,7 +1274,7 @@ impl CheckpointCapture {
                 }
             }
 
-            let abs = canon_root.join(rel);
+            let abs = join_rel_path(&canon_root, rel);
             let meta = match fs::symlink_metadata(&abs) {
                 Ok(m) => m,
                 Err(e)
@@ -1613,9 +1655,11 @@ impl CheckpointManager {
             self.records.remove(pos);
             removed_pending = true;
         }
-        let canon = fs::canonicalize(working_directory).map_err(|e| {
-            CheckpointError::new("workspace-unavailable", format!("Working folder unavailable: {e}"))
-        })?;
+        let canon = fs::canonicalize(working_directory)
+            .map(normalize_canonical_path)
+            .map_err(|e| {
+                CheckpointError::new("workspace-unavailable", format!("Working folder unavailable: {e}"))
+            })?;
         let mut capture_reason: Option<String> = None;
         let before = match self.capture.snapshot(&canon, true) {
             Ok(snap) => snap,
@@ -1909,9 +1953,11 @@ impl CheckpointManager {
         };
         let record = self.records[pos].clone();
         self.check_files(&record, true)?;
-        let canon_root = fs::canonicalize(&record.cwd).map_err(|e| {
-            CheckpointError::new("workspace-unavailable", format!("Working folder unavailable: {e}"))
-        })?;
+        let canon_root = fs::canonicalize(&record.cwd)
+            .map(normalize_canonical_path)
+            .map_err(|e| {
+                CheckpointError::new("workspace-unavailable", format!("Working folder unavailable: {e}"))
+            })?;
         for entry in Self::changes(&record) {
             let target = safe_checkpoint_target(&canon_root, &entry.path)?;
             let before = record.before.files.get(&entry.path);
