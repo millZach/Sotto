@@ -122,7 +122,7 @@ export interface WatcherRemoteHosts {
    * computer may answer on it, Ask for approval where it may not. `clientId` is the client ID the host knows this computer
    * by, which names this computer's threads in its delegation links (`relay:<client>:<caller>`, #1217).
    */
-  hosts(): { hostId: string; name?: string; clientId?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; gitInit?: boolean; checks?: boolean; checkStop?: boolean; swarms?: boolean; newOwner?: boolean; muse?: boolean; cursor?: boolean; antigravity?: boolean; connected: boolean; reconnecting?: boolean; reconnectingSince?: number; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; name?: string; clientId?: string; previousClientIds?: readonly string[]; ownsThread?: (threadId: string, caller: string) => boolean; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; gitInit?: boolean; checks?: boolean; checkStop?: boolean; swarms?: boolean; newOwner?: boolean; muse?: boolean; cursor?: boolean; antigravity?: boolean; connected: boolean; reconnecting?: boolean; reconnectingSince?: number; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined

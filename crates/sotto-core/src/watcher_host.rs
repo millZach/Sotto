@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Deserializer, Serialize};
@@ -20,6 +20,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::coordinator::{ClientContext, CoordinatorHandle};
+use crate::desktop_clients::DesktopClients;
 use crate::ops::{working_copy_options, WorkingCopyOptions};
 use crate::watcher::{
     cut_to_bytes, validate_watcher_record, WatcherIdentity, WatcherOperation, WatcherParticipant,
@@ -802,23 +803,6 @@ fn watch_fence_matches_id(fence: &Value, watch_id: &str) -> bool {
     fence.get("id").and_then(Value::as_str) == Some(watch_id)
 }
 
-fn watch_fence_matches_target_origin(
-    fence: &Value,
-    target: &WatcherThreadTarget,
-    client_id: &str,
-    master_host_id: &str,
-) -> bool {
-    let target_ok = fence
-        .get("target")
-        .and_then(|v| serde_json::from_value::<WatcherThreadTarget>(v.clone()).ok())
-        .is_some_and(|t| t == *target);
-    let origin_ok = fence
-        .get("remoteOrigin")
-        .and_then(|v| serde_json::from_value::<WatcherWatchOrigin>(v.clone()).ok())
-        .is_some_and(|o| o.client_id == client_id && o.master_host_id == master_host_id);
-    target_ok && origin_ok
-}
-
 fn thread_background_work_count(thread: &Value) -> usize {
     let bg = thread
         .get("backgroundWork")
@@ -1121,6 +1105,7 @@ impl WatcherHostRuntime {
 pub struct WatcherHostService {
     host_id: String,
     coordinator: CoordinatorHandle,
+    desktops: Option<Arc<Mutex<DesktopClients>>>,
     record_store: Mutex<WatcherRecordStore>,
     runtime: Mutex<WatcherHostRuntime>,
     tx_lock: tokio::sync::Mutex<()>,
@@ -1139,11 +1124,19 @@ impl WatcherHostService {
         Ok(Self {
             host_id,
             coordinator,
+            desktops: None,
             record_store: Mutex::new(store),
             runtime: Mutex::new(WatcherHostRuntime::default()),
             tx_lock: tokio::sync::Mutex::new(()),
             notify_tx,
         })
+    }
+
+    /// Attaches the shared SSH-recorded desktop client & identity store (`desktop-clients.json`
+    /// and `desktop-identities.json`) for safe re-pair ownership migration (#2863).
+    pub fn with_desktops(mut self, desktops: Arc<Mutex<DesktopClients>>) -> Self {
+        self.desktops = Some(desktops);
+        self
     }
 
     pub fn host_id(&self) -> &str {
@@ -1717,8 +1710,318 @@ impl WatcherHostService {
     }
 
     // -----------------------------------------------------------------------
-    // Authority & validation checks
+    // Authority, re-pair migration & validation checks
     // -----------------------------------------------------------------------
+
+    fn desktop_host_id_of(&self, client_id: &str) -> Option<String> {
+        self.desktops.as_ref().and_then(|d| {
+            d.lock()
+                .unwrap()
+                .host_id_of(client_id)
+                .map(ToString::to_string)
+        })
+    }
+
+    fn check_caller_host_binding(
+        &self,
+        client_id: &str,
+        master_host_id: &str,
+    ) -> Result<(), WatcherRefusal> {
+        if let Some(caller_host) = self.desktop_host_id_of(client_id) {
+            if caller_host != master_host_id {
+                return Err(refuse(
+                    "INVALID_INPUT",
+                    "This desktop identity does not match the Watcher master computer. Nothing was sent.",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether an authenticated desktop `client_id` owns `(origin_client_id, origin_master_host_id)`
+    /// for `master_host_id` (#2863):
+    /// - If `client_id` has an SSH-recorded `desktopHostId` binding, it may only act for that host.
+    /// - Exact `client_id` matches are always owned (once the caller binding passes).
+    /// - Cross-`client_id` migration after a desktop re-pair is permitted ONLY when `client_id` is
+    ///   SSH-verified as `master_host_id` and `origin_client_id` is not bound to a different desktop.
+    fn owns_remote_origin(
+        &self,
+        origin_client_id: &str,
+        origin_master_host_id: &str,
+        client_id: &str,
+        master_host_id: &str,
+    ) -> bool {
+        if origin_client_id.is_empty() || origin_master_host_id != master_host_id {
+            return false;
+        }
+        let caller_host = self.desktop_host_id_of(client_id);
+        if caller_host
+            .as_deref()
+            .is_some_and(|bound| bound != master_host_id)
+        {
+            return false;
+        }
+        if origin_client_id == client_id {
+            return true;
+        }
+        if caller_host.as_deref() != Some(master_host_id) {
+            return false;
+        }
+        let origin_host = self.desktop_host_id_of(origin_client_id);
+        origin_host.is_none() || origin_host.as_deref() == Some(master_host_id)
+    }
+
+    fn watch_fence_matches_target_origin(
+        &self,
+        fence: &Value,
+        target: &WatcherThreadTarget,
+        client_id: &str,
+        master_host_id: &str,
+    ) -> bool {
+        let target_ok = fence
+            .get("target")
+            .and_then(|v| serde_json::from_value::<WatcherThreadTarget>(v.clone()).ok())
+            .is_some_and(|t| t == *target);
+        let origin_ok = fence
+            .get("remoteOrigin")
+            .and_then(|v| serde_json::from_value::<WatcherWatchOrigin>(v.clone()).ok())
+            .is_some_and(|o| {
+                self.owns_remote_origin(&o.client_id, &o.master_host_id, client_id, master_host_id)
+            });
+        target_ok && origin_ok
+    }
+
+    fn needs_remote_client_migration(
+        &self,
+        record: &WatcherRecord,
+        client_id: &str,
+        master_host_id: &str,
+    ) -> bool {
+        if self.desktop_host_id_of(client_id).as_deref() != Some(master_host_id) {
+            return false;
+        }
+        let has_watch = record.watches.as_deref().unwrap_or(&[]).iter().any(|w| {
+            w.remote_origin.as_ref().is_some_and(|o| {
+                o.client_id != client_id
+                    && self.owns_remote_origin(
+                        &o.client_id,
+                        &o.master_host_id,
+                        client_id,
+                        master_host_id,
+                    )
+            })
+        });
+        if has_watch {
+            return true;
+        }
+        let has_fence = record
+            .watch_fences
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(|f| {
+                f.get("remoteOrigin")
+                    .and_then(|v| serde_json::from_value::<WatcherWatchOrigin>(v.clone()).ok())
+                    .is_some_and(|o| {
+                        o.client_id != client_id
+                            && self.owns_remote_origin(
+                                &o.client_id,
+                                &o.master_host_id,
+                                client_id,
+                                master_host_id,
+                            )
+                    })
+            });
+        if has_fence {
+            return true;
+        }
+        let has_request = record.requests.iter().any(|r| {
+            r.remote_origin
+                .as_ref()
+                .and_then(remote_origin_fields)
+                .is_some_and(|(cid, m, _, _)| {
+                    cid != client_id
+                        && self.owns_remote_origin(&cid, &m.target.host_id, client_id, master_host_id)
+                })
+        });
+        if has_request {
+            return true;
+        }
+        let has_master = record
+            .remote_masters
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(|m| {
+                let Some(cid) = m.get("clientId").and_then(Value::as_str) else {
+                    return false;
+                };
+                let Some(hid) = m.get("masterHostId").and_then(Value::as_str) else {
+                    return false;
+                };
+                cid != client_id && self.owns_remote_origin(cid, hid, client_id, master_host_id)
+            });
+        if has_master {
+            return true;
+        }
+        record
+            .remote_absences
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .any(|a| {
+                let Some(cid) = a.get("clientId").and_then(Value::as_str) else {
+                    return false;
+                };
+                let Some(hid) = a
+                    .get("master")
+                    .and_then(|m| m.get("target"))
+                    .and_then(|t| t.get("hostId"))
+                    .and_then(Value::as_str)
+                else {
+                    return false;
+                };
+                cid != client_id && self.owns_remote_origin(cid, hid, client_id, master_host_id)
+            })
+    }
+
+    /// Atomically re-stamps a verified re-paired desktop's prior `clientId` records to its new
+    /// `clientId` (#2863), deduplicating `remoteMasters` while keeping the newest replacement
+    /// watermark. Caller must hold `tx_lock`.
+    fn migrate_remote_client(
+        &self,
+        master: &WatcherIdentity,
+        client_id: &str,
+    ) -> Result<(), WatcherRefusal> {
+        let master_host_id = master.target.host_id.as_str();
+        if self.desktop_host_id_of(client_id).as_deref() != Some(master_host_id) {
+            return Ok(());
+        }
+        let current = self.record_snapshot();
+        if !self.needs_remote_client_migration(&current, client_id, master_host_id) {
+            return Ok(());
+        }
+        self.update_record(|next| {
+            if let Some(ref mut watches) = next.watches {
+                for w in watches.iter_mut() {
+                    if let Some(ref mut o) = w.remote_origin {
+                        if o.client_id != client_id
+                            && self.owns_remote_origin(
+                                &o.client_id,
+                                &o.master_host_id,
+                                client_id,
+                                master_host_id,
+                            )
+                        {
+                            o.client_id = client_id.to_string();
+                        }
+                    }
+                }
+            }
+            if let Some(ref mut fences) = next.watch_fences {
+                for f in fences.iter_mut() {
+                    let should_migrate = f
+                        .get("remoteOrigin")
+                        .and_then(|v| serde_json::from_value::<WatcherWatchOrigin>(v.clone()).ok())
+                        .is_some_and(|o| {
+                            o.client_id != client_id
+                                && self.owns_remote_origin(
+                                    &o.client_id,
+                                    &o.master_host_id,
+                                    client_id,
+                                    master_host_id,
+                                )
+                        });
+                    if should_migrate {
+                        if let Some(ro) = f.get_mut("remoteOrigin").and_then(Value::as_object_mut) {
+                            ro.insert("clientId".into(), Value::String(client_id.to_string()));
+                        }
+                    }
+                }
+            }
+            for req in &mut next.requests {
+                let should_migrate = req
+                    .remote_origin
+                    .as_ref()
+                    .and_then(remote_origin_fields)
+                    .is_some_and(|(cid, m, _, _)| {
+                        cid != client_id
+                            && self.owns_remote_origin(
+                                &cid,
+                                &m.target.host_id,
+                                client_id,
+                                master_host_id,
+                            )
+                    });
+                if should_migrate {
+                    if let Some(ro) = req.remote_origin.as_mut().and_then(Value::as_object_mut) {
+                        ro.insert("clientId".into(), Value::String(client_id.to_string()));
+                    }
+                }
+            }
+            if let Some(ref mut masters) = next.remote_masters {
+                let mut newest: Option<(String, String)> = None;
+                let mut others: Vec<Value> = Vec::with_capacity(masters.len());
+                for origin in masters.drain(..) {
+                    let cid = origin.get("clientId").and_then(Value::as_str).unwrap_or("");
+                    let hid = origin
+                        .get("masterHostId")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if self.owns_remote_origin(cid, hid, client_id, master_host_id) {
+                        let created_at = origin
+                            .get("createdAt")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        let op_id = origin
+                            .get("creationOperationId")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        if newest
+                            .as_ref()
+                            .is_none_or(|(best_at, _)| created_at.as_str() > best_at.as_str())
+                        {
+                            newest = Some((created_at, op_id));
+                        }
+                    } else {
+                        others.push(origin);
+                    }
+                }
+                if let Some((created_at, op_id)) = newest {
+                    others.push(json!({
+                        "clientId": client_id,
+                        "masterHostId": master_host_id,
+                        "creationOperationId": op_id,
+                        "createdAt": created_at,
+                    }));
+                }
+                *masters = others;
+            }
+            if let Some(ref mut absences) = next.remote_absences {
+                for absence in absences.iter_mut() {
+                    let should_migrate = {
+                        let cid = absence.get("clientId").and_then(Value::as_str).unwrap_or("");
+                        let hid = absence
+                            .get("master")
+                            .and_then(|m| m.get("target"))
+                            .and_then(|t| t.get("hostId"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        cid != client_id
+                            && self.owns_remote_origin(cid, hid, client_id, master_host_id)
+                    };
+                    if should_migrate {
+                        if let Some(obj) = absence.as_object_mut() {
+                            obj.insert("clientId".into(), Value::String(client_id.to_string()));
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
 
     fn check_remote_master(
         &self,
@@ -1732,12 +2035,15 @@ impl WatcherHostService {
                 "Unknown Watcher provider. Nothing was sent.",
             ));
         }
+        self.check_caller_host_binding(client_id, &master.target.host_id)?;
         if let Some(masters) = record.remote_masters.as_deref() {
             for item in masters {
-                if item.get("clientId").and_then(Value::as_str) == Some(client_id)
-                    && item.get("masterHostId").and_then(Value::as_str)
-                        == Some(master.target.host_id.as_str())
-                {
+                let item_cid = item.get("clientId").and_then(Value::as_str).unwrap_or("");
+                let item_host = item
+                    .get("masterHostId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if self.owns_remote_origin(item_cid, item_host, client_id, &master.target.host_id) {
                     let retained_at = item
                         .get("createdAt")
                         .and_then(Value::as_str)
@@ -1759,7 +2065,12 @@ impl WatcherHostService {
             }
         }
         let check_origin = |origin: &WatcherWatchOrigin| -> Result<(), WatcherRefusal> {
-            if origin.client_id == client_id && origin.master_host_id == master.target.host_id {
+            if self.owns_remote_origin(
+                &origin.client_id,
+                &origin.master_host_id,
+                client_id,
+                &master.target.host_id,
+            ) {
                 if let Some(ref created_at) = origin.master_created_at {
                     let op_id = origin
                         .master_creation_operation_id
@@ -1827,10 +2138,13 @@ impl WatcherHostService {
                     w.id == aid
                         && w.target == operation.target
                         && w.remote_origin.as_ref().is_some_and(|o| {
-                            o.client_id == client_id
-                                && o.master_host_id == master.target.host_id
-                                && o.master_creation_operation_id.as_deref()
-                                    == Some(master.creation_operation_id.as_str())
+                            self.owns_remote_origin(
+                                &o.client_id,
+                                &o.master_host_id,
+                                client_id,
+                                &master.target.host_id,
+                            ) && o.master_creation_operation_id.as_deref()
+                                == Some(master.creation_operation_id.as_str())
                         })
                 });
             if !matched {
@@ -1843,7 +2157,7 @@ impl WatcherHostService {
         if operation.standing_watch_id.is_none()
             && operation.confirmed_stop != Some(true)
             && fences.iter().any(|f| {
-                watch_fence_matches_target_origin(
+                self.watch_fence_matches_target_origin(
                     f,
                     &operation.target,
                     client_id,
@@ -2621,8 +2935,10 @@ impl WatcherHostService {
         client_id: &str,
         may_answer: bool,
     ) -> Result<(WatcherOperation, bool), WatcherRefusal> {
+        let pre_record = self.record_snapshot();
+        self.check_remote_master(&pre_record, master, client_id)?;
+        self.migrate_remote_client(master, client_id)?;
         let record = self.record_snapshot();
-        self.check_remote_master(&record, master, client_id)?;
 
         // Check remote absence fence.
         if record
@@ -2646,7 +2962,7 @@ impl WatcherHostService {
                 .as_ref()
                 .and_then(remote_origin_fields)
                 .is_some_and(|(cid, m, cop, ceil)| {
-                    cid == client_id
+                    self.owns_remote_origin(&cid, &m.target.host_id, client_id, &master.target.host_id)
                         && m == *master
                         && cop == master.creation_operation_id
                         && ceil == ceiling
@@ -3743,6 +4059,7 @@ impl WatcherHostService {
             }
         }
 
+        self.check_caller_host_binding(client_id, &master.target.host_id)?;
         let shell = self.refresh_shell(may_answer).await?;
 
         if adopt == Some(true) {
@@ -3789,6 +4106,7 @@ impl WatcherHostService {
                 }
                 let op = {
                     let _guard = self.tx_lock.lock().await;
+                    self.migrate_remote_client(&master, client_id)?;
                     let record = self.record_snapshot();
                     let found = record
                         .operations
@@ -3802,8 +4120,13 @@ impl WatcherHostService {
                                 && r.remote_origin
                                     .as_ref()
                                     .and_then(remote_origin_fields)
-                                    .is_some_and(|(cid, _, cop, _)| {
-                                        cid == client_id && cop == master.creation_operation_id
+                                    .is_some_and(|(cid, m, cop, _)| {
+                                        self.owns_remote_origin(
+                                            &cid,
+                                            &m.target.host_id,
+                                            client_id,
+                                            &master.target.host_id,
+                                        ) && cop == master.creation_operation_id
                                     })
                         });
                         if !owned {
@@ -3861,7 +4184,13 @@ impl WatcherHostService {
             "{}:{}:{}:{}",
             client_id, master.target.host_id, master.target.thread_id, master.creation_operation_id
         );
-        if self.runtime.lock().unwrap().adopted.contains(&seen_key) {
+        if self.runtime.lock().unwrap().adopted.contains(&seen_key)
+            && !self.needs_remote_client_migration(
+                &self.record_snapshot(),
+                client_id,
+                &master.target.host_id,
+            )
+        {
             return Ok(());
         }
         if master.target.host_id == self.host_id {
@@ -3870,8 +4199,10 @@ impl WatcherHostService {
                 "A remote request must belong to its master computer.",
             ));
         }
+        let pre_record = self.record_snapshot();
+        self.check_remote_master(&pre_record, master, client_id)?;
+        self.migrate_remote_client(master, client_id)?;
         let record = self.record_snapshot();
-        self.check_remote_master(&record, master, client_id)?;
 
         let made_by_older = |req: &WatcherRequest| -> bool {
             let Some((cid, orig_master, _, _)) =
@@ -4009,8 +4340,10 @@ impl WatcherHostService {
             ));
         }
 
+        let pre_record = self.record_snapshot();
+        self.check_remote_master(&pre_record, master, client_id)?;
+        self.migrate_remote_client(master, client_id)?;
         let record = self.record_snapshot();
-        self.check_remote_master(&record, master, client_id)?;
 
         let threads = shell
             .get("host")
@@ -4042,6 +4375,15 @@ impl WatcherHostService {
             })
             .collect();
 
+        let kept_ids: HashSet<String> = kept.iter().map(|w| w.id.clone()).collect();
+        let kept_targets: HashSet<String> = kept.iter().map(|w| w.target.key()).collect();
+        if kept_ids.len() != kept.len() || kept_targets.len() != kept.len() {
+            return Err(refuse(
+                "INVALID_INPUT",
+                "The watch assignment does not match its owning host.",
+            ));
+        }
+
         for w in &kept {
             let Some(thread) = find_thread(&w.target.thread_id) else {
                 return Err(refuse(
@@ -4057,12 +4399,23 @@ impl WatcherHostService {
                 .iter()
                 .find(|item| item.id == w.id || item.target == w.target)
             {
-                let same_owner = prev.id == w.id
-                    && prev.target == w.target
-                    && prev.remote_origin.as_ref().is_some_and(|o| {
-                        o.client_id == client_id && o.master_host_id == master.target.host_id
-                    });
-                if !same_owner {
+                let owned_by_caller = prev.remote_origin.as_ref().is_some_and(|o| {
+                    self.owns_remote_origin(
+                        &o.client_id,
+                        &o.master_host_id,
+                        client_id,
+                        &master.target.host_id,
+                    )
+                });
+                let same_owner = prev.id == w.id && prev.target == w.target && owned_by_caller;
+                // If this same desktop replaced its own watch on the same thread (e.g. toggling
+                // Watch off/on while disconnected or after re-pair), withdraw the old watch below
+                // before installing the replacement (#2863).
+                let replaceable_own = prev.target == w.target
+                    && prev.id != w.id
+                    && !kept_ids.contains(prev.id.as_str())
+                    && owned_by_caller;
+                if !same_owner && !replaceable_own {
                     return Err(refuse(
                         "THREAD_TAKEN_OVER",
                         "Another watch owns this thread. Nothing was changed.",
@@ -4100,7 +4453,6 @@ impl WatcherHostService {
                 }));
             }
 
-            let kept_ids: HashSet<&str> = kept.iter().map(|w| w.id.as_str()).collect();
             let to_withdraw: Vec<(WatcherThreadTarget, bool)> = next
                 .watches
                 .as_deref()
@@ -4108,7 +4460,12 @@ impl WatcherHostService {
                 .iter()
                 .filter(|w| {
                     w.remote_origin.as_ref().is_some_and(|o| {
-                        o.client_id == client_id && o.master_host_id == master.target.host_id
+                        self.owns_remote_origin(
+                            &o.client_id,
+                            &o.master_host_id,
+                            client_id,
+                            &master.target.host_id,
+                        )
                     }) && !kept_ids.contains(w.id.as_str())
                 })
                 .map(|w| (w.target.clone(), !delegated_ids.contains(&w.id)))
@@ -4242,6 +4599,8 @@ impl WatcherHostService {
                 "A remote request must belong to its master computer.",
             ));
         }
+        self.check_caller_host_binding(client_id, &master.target.host_id)?;
+        self.migrate_remote_client(master, client_id)?;
         let record = self.record_snapshot();
         for entry in &stops {
             if entry.request.watcher != master.target {
@@ -4256,7 +4615,13 @@ impl WatcherHostService {
                     .as_ref()
                     .and_then(remote_origin_fields)
                     .is_some_and(|(cid, m, _, ceil)| {
-                        cid == client_id && m == *master && ceil == entry.ceiling
+                        self.owns_remote_origin(
+                            &cid,
+                            &m.target.host_id,
+                            client_id,
+                            &master.target.host_id,
+                        ) && m == *master
+                            && ceil == entry.ceiling
                     });
                 if !origin_ok
                     || existing.root_user_message_id != entry.request.root_user_message_id
@@ -4324,6 +4689,30 @@ impl WatcherHostService {
         master: &WatcherIdentity,
         client_id: &str,
     ) -> WatcherHostProjection {
+        if self
+            .desktop_host_id_of(client_id)
+            .as_deref()
+            .is_some_and(|bound| bound != master.target.host_id.as_str())
+        {
+            let empty_reqs: Vec<WatcherRequest> = Vec::new();
+            let empty_ops: Vec<WatcherOperation> = Vec::new();
+            let empty_watches: Vec<WatcherStandingWatch> = Vec::new();
+            let empty_ev: Vec<Value> = Vec::new();
+            let empty_prog: Vec<WatcherProgressEntry> = Vec::new();
+            let work_rev = json_digest(&(&empty_reqs, &empty_ops, &empty_watches));
+            let revision = json_digest(&(&work_rev, &empty_ev, &empty_prog));
+            return WatcherHostProjection {
+                host_id: self.host_id.clone(),
+                master: master.clone(),
+                standing_watches: Some(empty_watches),
+                revision,
+                observed_at: now_iso(),
+                requests: empty_reqs,
+                operations: empty_ops,
+                evidence: empty_ev,
+                progress: Some(empty_prog),
+            };
+        }
         let record = self.record_snapshot();
         let owned_requests: Vec<WatcherRequest> = record
             .requests
@@ -4333,8 +4722,13 @@ impl WatcherHostService {
                     && r.remote_origin
                         .as_ref()
                         .and_then(remote_origin_fields)
-                        .is_some_and(|(cid, _, cop, _)| {
-                            cid == client_id && cop == master.creation_operation_id
+                        .is_some_and(|(cid, m, cop, _)| {
+                            self.owns_remote_origin(
+                                &cid,
+                                &m.target.host_id,
+                                client_id,
+                                &master.target.host_id,
+                            ) && cop == master.creation_operation_id
                         })
             })
             .cloned()
@@ -4395,10 +4789,13 @@ impl WatcherHostService {
             .iter()
             .filter(|w| {
                 w.remote_origin.as_ref().is_some_and(|o| {
-                    o.client_id == client_id
-                        && o.master_host_id == master.target.host_id
-                        && o.master_creation_operation_id.as_deref()
-                            == Some(master.creation_operation_id.as_str())
+                    self.owns_remote_origin(
+                        &o.client_id,
+                        &o.master_host_id,
+                        client_id,
+                        &master.target.host_id,
+                    ) && o.master_creation_operation_id.as_deref()
+                        == Some(master.creation_operation_id.as_str())
                 })
             })
             .cloned()
@@ -6350,6 +6747,295 @@ mod tests {
             .unwrap()
             .iter()
             .any(|t| t["id"] == t2));
+
+        coordinator.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn repair_migrates_verified_desktop_and_blocks_cross_desktop_spoofing() {
+        let (dir, host_id, _mock, coordinator, watcher) = setup_service().await;
+        let desktops = Arc::new(Mutex::new(DesktopClients::new(dir.path())));
+        let watcher = watcher.with_desktops(Arc::clone(&desktops));
+
+        let project_dir = TempDir::new().unwrap();
+        let mut create_proj = Map::new();
+        create_proj.insert("type".into(), json!("create-project"));
+        create_proj.insert("title".into(), json!("Repo"));
+        create_proj.insert(
+            "path".into(),
+            json!(project_dir.path().to_string_lossy().to_string()),
+        );
+        let client = ClientContext {
+            client_id: "client-old".into(),
+            user: "Desktop A".into(),
+            may_answer: true,
+        };
+        let shell = coordinator.run_command(client.clone(), create_proj).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let model_id = shell["host"]["models"][0]["id"].as_str().unwrap().to_string();
+
+        let tid = Uuid::new_v4().to_string();
+        let mut create_t = Map::new();
+        create_t.insert("type".into(), json!("create-thread"));
+        create_t.insert("threadId".into(), json!(tid));
+        create_t.insert("projectId".into(), json!(project_id));
+        create_t.insert("modelId".into(), json!(model_id));
+        create_t.insert("title".into(), json!("Watched Worker"));
+        create_t.insert("workingCopy".into(), json!("shared"));
+        let shell = coordinator.run_command(client, create_t).await.unwrap();
+        watcher.observe_shell(&shell);
+
+        let desktop_a = Uuid::new_v4().to_string();
+        let desktop_b = Uuid::new_v4().to_string();
+        let master_old = WatcherIdentity {
+            target: WatcherThreadTarget::new(&desktop_a, "w-old"),
+            project_id: "watcher-proj".into(),
+            provider: "codex".into(),
+            creation_operation_id: Uuid::new_v4().to_string(),
+            created_at: "2026-11-01T00:00:00.000Z".into(),
+        };
+        let master_a = WatcherIdentity {
+            target: WatcherThreadTarget::new(&desktop_a, "w-current"),
+            project_id: "watcher-proj".into(),
+            provider: "codex".into(),
+            creation_operation_id: Uuid::new_v4().to_string(),
+            created_at: "2026-11-02T00:00:00.000Z".into(),
+        };
+        let watch_1 = Uuid::new_v4().to_string();
+        let watch_2 = Uuid::new_v4().to_string();
+
+        // Pre-re-pair sync & send under `client-old` (before desktop-identities.json exists).
+        std::fs::write(
+            dir.path().join(crate::desktop_clients::DESKTOP_CLIENTS_FILE),
+            serde_json::to_string(&["client-old"]).unwrap(),
+        )
+        .unwrap();
+        desktops.lock().unwrap().refresh();
+
+        let synced = watcher
+            .read_remote(
+                json!({
+                    "master": master_a,
+                    "standingWatches": [{
+                        "id": watch_1,
+                        "target": { "hostId": host_id, "threadId": tid },
+                        "createdAt": "2026-11-02T00:00:01.000Z",
+                        "generation": 0
+                    }]
+                }),
+                "client-old",
+                true,
+            )
+            .await;
+        assert_eq!(synced["standingWatches"].as_array().unwrap().len(), 1);
+
+        let make_send = |watch_id: &str, text: &str| {
+            let req_id = Uuid::new_v4().to_string();
+            let root_msg_id = Uuid::new_v4().to_string();
+            let input = SendToThreadInput {
+                request_id: req_id.clone(),
+                retry_key: Uuid::new_v4().to_string(),
+                target: WatcherThreadTarget::new(&host_id, &tid),
+                text: text.into(),
+                delivery: Some("now".into()),
+                expected_last_user_message_id: None,
+                expected_turn_id: None,
+                go_merge: None,
+            };
+            let digest = WatcherControlCall::SendToThread(input.clone()).digest();
+            let ts = now_iso();
+            json!({
+                "master": master_a,
+                "request": {
+                    "id": req_id,
+                    "watcher": master_a.target,
+                    "rootUserMessageId": root_msg_id,
+                    "createdAt": ts,
+                    "standingWatchId": watch_id,
+                },
+                "ceiling": "full-access",
+                "operation": {
+                    "id": Uuid::new_v4().to_string(),
+                    "requestId": req_id,
+                    "retryKey": input.retry_key,
+                    "digest": digest,
+                    "action": "send",
+                    "target": { "hostId": host_id, "threadId": tid },
+                    "standingWatchId": watch_id,
+                    "generation": 0,
+                    "delivery": "now",
+                    "deliveryState": "queued",
+                    "createdAt": ts,
+                    "updatedAt": ts,
+                    "receiptId": Uuid::new_v4().to_string(),
+                    "cardId": Uuid::new_v4().to_string(),
+                    "draftId": Uuid::new_v4().to_string(),
+                    "messageId": Uuid::new_v4().to_string(),
+                    "anchorMessageId": root_msg_id,
+                },
+                "call": { "name": "send_to_thread", "input": input },
+            })
+        };
+
+        let sent_1 = watcher
+            .admit_remote(make_send(&watch_1, "Before re-pair"), "client-old", "Desktop A", true)
+            .await;
+        assert_eq!(sent_1["status"], "ok", "pre-repair send failed: {sent_1}");
+        let op_1_id = sent_1["receipt"]["operationId"].as_str().unwrap().to_string();
+
+        // Simulate re-pair + another bound desktop B + an unbound desktop U.
+        std::fs::write(
+            dir.path().join(crate::desktop_clients::DESKTOP_CLIENTS_FILE),
+            serde_json::to_string(&["client-new", "client-b", "client-unbound"]).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join(crate::desktop_clients::DESKTOP_IDENTITIES_FILE),
+            serde_json::to_string(&json!({
+                "version": 1,
+                "desktops": {
+                    "client-new": desktop_a,
+                    "client-b": desktop_b
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        desktops.lock().unwrap().refresh();
+
+        // Bound Desktop B spoofing Desktop A's masterHostId is refused and gets empty projection.
+        let spoof_b_sync = watcher
+            .read_remote(json!({ "master": master_a, "standingWatches": [] }), "client-b", true)
+            .await;
+        assert_eq!(spoof_b_sync["status"], "refused");
+        assert_eq!(spoof_b_sync["code"], "INVALID_INPUT");
+        let spoof_b_send = watcher
+            .admit_remote(make_send(&watch_1, "Spoof B"), "client-b", "Desktop B", true)
+            .await;
+        assert_eq!(spoof_b_send["status"], "refused");
+        assert_eq!(spoof_b_send["code"], "INVALID_INPUT");
+        assert!(watcher.remote_projection(&master_a, "client-b").standing_watches.unwrap().is_empty());
+
+        // Unbound Desktop U spoofing Desktop A CANNOT migrate watches, send, or read operations.
+        let spoof_u_sync = watcher
+            .read_remote(
+                json!({
+                    "master": master_a,
+                    "standingWatches": [{
+                        "id": watch_1,
+                        "target": { "hostId": host_id, "threadId": tid },
+                        "createdAt": "2026-11-02T00:00:01.000Z",
+                        "generation": 0
+                    }]
+                }),
+                "client-unbound",
+                true,
+            )
+            .await;
+        assert_eq!(spoof_u_sync["status"], "refused");
+        assert_eq!(spoof_u_sync["code"], "THREAD_TAKEN_OVER");
+        let spoof_u_send = watcher
+            .admit_remote(make_send(&watch_1, "Spoof U"), "client-unbound", "Unbound", true)
+            .await;
+        assert_eq!(spoof_u_send["status"], "refused");
+        assert_eq!(spoof_u_send["code"], "REQUEST_NOT_ACTIVE");
+        let spoof_u_read = watcher
+            .read_remote(
+                json!({
+                    "master": master_a,
+                    "call": { "name": "read_operation", "input": { "operationId": op_1_id } }
+                }),
+                "client-unbound",
+                true,
+            )
+            .await;
+        assert_eq!(spoof_u_read["status"], "refused");
+        assert_eq!(spoof_u_read["code"], "UNKNOWN_OPERATION");
+
+        // Verified re-paired Desktop A (`client-new`) migrates watches & operations seamlessly!
+        let synced_after = watcher
+            .read_remote(
+                json!({
+                    "master": master_a,
+                    "standingWatches": [{
+                        "id": watch_1,
+                        "target": { "hostId": host_id, "threadId": tid },
+                        "createdAt": "2026-11-02T00:00:01.000Z",
+                        "generation": 0
+                    }]
+                }),
+                "client-new",
+                true,
+            )
+            .await;
+        assert_eq!(synced_after["standingWatches"].as_array().unwrap().len(), 1);
+        assert_eq!(synced_after["standingWatches"][0]["remoteOrigin"]["clientId"], "client-new");
+
+        // Replacement watermark survives re-pair (`NOT_CURRENT_WATCHER` for older Watcher).
+        let old_refused = watcher
+            .read_remote(json!({ "master": master_old, "standingWatches": [] }), "client-new", true)
+            .await;
+        assert_eq!(old_refused["status"], "refused");
+        assert_eq!(old_refused["code"], "NOT_CURRENT_WATCHER");
+
+        // Pre-re-pair operation read succeeds under `client-new`.
+        let op_read = watcher
+            .read_remote(
+                json!({
+                    "master": master_a,
+                    "call": { "name": "read_operation", "input": { "operationId": op_1_id } }
+                }),
+                "client-new",
+                true,
+            )
+            .await;
+        assert_eq!(op_read["status"], "ok");
+        assert_eq!(op_read["receipt"]["operationId"], op_1_id);
+
+        // Toggling Watch off/on (replacing watch_1 with watch_2 on the same thread) succeeds cleanly.
+        let replaced = watcher
+            .read_remote(
+                json!({
+                    "master": master_a,
+                    "standingWatches": [{
+                        "id": watch_2,
+                        "target": { "hostId": host_id, "threadId": tid },
+                        "createdAt": "2026-11-02T00:05:00.000Z",
+                        "generation": 0
+                    }]
+                }),
+                "client-new",
+                true,
+            )
+            .await;
+        assert_eq!(replaced["standingWatches"][0]["id"], watch_2);
+
+        // Wait for first mock turn to finish or just complete it before sending under watch_2.
+        _mock.complete_turn(&tid, "Done 1");
+        for _ in 0..50 {
+            let s = coordinator.shell(true).await.unwrap();
+            watcher.observe_shell(&s);
+            if s["host"]["threads"][0]["status"] == "idle" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let sent_2 = watcher
+            .admit_remote(make_send(&watch_2, "After re-pair"), "client-new", "Desktop A", true)
+            .await;
+        assert_eq!(sent_2["status"], "ok", "post-repair send failed: {sent_2}");
+
+        // Deduplicated remoteMasters for desktop_a.
+        let snap = watcher.record_snapshot();
+        let masters_a: Vec<&Value> = snap
+            .remote_masters
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .filter(|m| m.get("masterHostId").and_then(Value::as_str) == Some(desktop_a.as_str()))
+            .collect();
+        assert_eq!(masters_a.len(), 1);
+        assert_eq!(masters_a[0]["clientId"], "client-new");
 
         coordinator.shutdown().await;
     }

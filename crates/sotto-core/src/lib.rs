@@ -60,7 +60,7 @@ pub use council::{
     COUNCIL_VIEWS_MAX,
 };
 pub use credentials::{CredentialError, HostCredentialEncryption, HostCredentials};
-pub use desktop_clients::{DesktopClients, DESKTOP_CLIENTS_FILE};
+pub use desktop_clients::{DesktopClients, DESKTOP_CLIENTS_FILE, DESKTOP_IDENTITIES_FILE};
 pub use desktop_hosts::{
     read_desktop_hosts_readonly, remote_host_credential_slot, settled_with_parent,
     CascadedSettleEntry, CascadedSettlesStore, DesktopHostsManager, FilesBindingEntry,

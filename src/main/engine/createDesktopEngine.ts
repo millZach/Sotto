@@ -492,7 +492,10 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   watcherTells?.useHosts(hostRouter)
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
-  if ('delegationRemote' in localRuntime) localRuntime.delegationRemote?.useHosts(hostRouter)
+  if ('delegationRemote' in localRuntime && localRuntime.delegationRemote) {
+    localRuntime.delegationRemote.useHosts(hostRouter)
+    hostRouter.useRemoteDelegationOwnership(localRuntime.delegationRemote)
+  }
   if (localRuntime.branchMoves) hostRouter.useBranchMoves(localRuntime.branchMoves)
 
   const desktopDefaultsPush = crossMachineEnabled ? new DesktopDefaultsPush({ connections: () => hostRouter.remoteConnections(), log }) : undefined
@@ -590,6 +593,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled,
     localHostEnabled: () => workingCopySettings.localHostEnabled,
+    localHostId: () => agentControl.hostId(),
     restart: () => shellBridge.relaunchApp(),
     useRustHost: owlFeatures['rust-remote-host'],
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),

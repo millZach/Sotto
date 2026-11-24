@@ -204,6 +204,38 @@ describe('a delegation on a paired host, on the desktop', () => {
     expect(remote.list('parent-1')).toEqual([expect.objectContaining({ id, outcome: 'answered', machine: 'the Mac', action: 'start' })])
   })
 
+  it('qualifies local callers with persistent desktop hostId on the wire and tracks remote thread ownership for re-pair recovery (#2863)', async () => {
+    const mac = host(ask => ask.type === 'delegate'
+      ? { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' } }
+      : { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'answered', reply: { from: 'delegated-thread', thread: 'child-mac', messageId: 'r1', text: 'Done.', truncated: false } } })
+    const root = await folder()
+    const remote = new DesktopRemoteDelegations(root, { machineName: () => 'the Mac', localHostId: () => DESKTOP })
+    await remote.load()
+    const revBefore = remote.ownedThreadsRevision()
+    const told: { callerId: string; news: DelegationNews }[] = []
+    remote.useDelivery(async (callerId, news) => { told.push({ callerId, news }) })
+    remote.useHosts(hosts([mac.connection]).source)
+    const answer = await remote.start('parent-1', 'code-review', macPlacement, askOf)
+    const id = (answer.delegation as { id: string }).id
+    // Wire caller carries the persistent desktop hostId so remote delegatedBy survives desktop re-pair.
+    expect(mac.asked[0]).toMatchObject({ type: 'delegate', caller: `host:${DESKTOP}:parent-1` })
+    expect(remote.ownedThreadsRevision()).toBeGreaterThan(revBefore)
+    expect(remote.ownsRemoteThread(MAC, 'child-mac', 'parent-1')).toBe(true)
+    expect(remote.ownsRemoteThread(MAC, 'child-mac', 'other-parent')).toBe(false)
+    expect(remote.ownsRemoteThread(FORGE, 'child-mac', 'parent-1')).toBe(false)
+    // News pushed under the wire caller is delivered back to the local bare callerId.
+    mac.push(`host:${DESKTOP}:parent-1`, { source: 'delegation', items: [{ delegationId: THERE, threadId: 'child-mac', outcome: 'answered' }] })
+    await expect.poll(() => told.length).toBe(1)
+    expect(told[0]).toEqual({ callerId: 'parent-1', news: { source: 'delegation', items: [{ delegationId: id, threadId: `host:${MAC}:child-mac`, outcome: 'answered' }] } })
+    // Subsequent reads send the same wire caller, and ownership survives reload from disk.
+    await remote.read('parent-1', id)
+    expect(mac.asked[1]).toMatchObject({ type: 'read', caller: `host:${DESKTOP}:parent-1`, delegation: THERE })
+    const reloaded = new DesktopRemoteDelegations(root, { machineName: () => 'the Mac', localHostId: () => DESKTOP })
+    await reloaded.load()
+    expect(reloaded.ownsRemoteThread(MAC, 'child-mac', 'parent-1')).toBe(true)
+    remote.close(); reloaded.close()
+  })
+
   it('waits for the outcome on the host\'s news, never on an open request, and reads it exactly once it moves', async () => {
     let outcome = 'working'
     const mac = host(ask => ({ status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: ask.type === 'read' ? outcome : 'working' } }))

@@ -106,3 +106,41 @@ it('keys every delegation link by its own host in Stable, saved Owl links includ
   expect(owl.output.host.threads[1]!.delegatedBy).toBe(hostEntityKey(DESKTOP, 'parent'))
   expect(projectClientAgentState(state, owl).output.host.threads[1]!.delegatedBy).toBe(hostEntityKey(FORGE, 'relay:client-1:parent'))
 })
+
+it('keeps cross-machine sub-agents attached to their desktop parent across desktop re-pair without claiming other desktops (#2863)', () => {
+  const FORGE = '44444444-4444-4444-8444-444444444444', DESKTOP = '55555555-5555-4555-8555-555555555555'
+  // New delegations carry the persistent desktop hostId inside the relay caller, surviving any clientId change.
+  expect(delegatingKey(FORGE, `relay:old-client:${hostEntityKey(DESKTOP, 'parent')}`, { desktopHostId: DESKTOP, clientId: 'new-client' }))
+    .toBe(hostEntityKey(DESKTOP, 'parent'))
+  expect(delegatingThreadOfLink(FORGE, `relay:old-client:${hostEntityKey(DESKTOP, 'parent')}`, { desktopHostId: DESKTOP, clientId: 'new-client' }))
+    .toEqual({ hostId: DESKTOP, id: 'parent' })
+
+  // Pre-re-pair bare links resolve when the old clientId is remembered in previousClientIds.
+  const rePaired: DelegatingKeys = { desktopHostId: DESKTOP, clientId: 'new-client', previousClientIds: ['old-client'] }
+  expect(delegatingKey(FORGE, 'relay:old-client:parent', rePaired)).toBe(hostEntityKey(DESKTOP, 'parent'))
+  expect(delegatingThreadOfLink(FORGE, 'relay:old-client:parent', rePaired)).toEqual({ hostId: DESKTOP, id: 'parent' })
+  // Another desktop's unknown clientId still does NOT resolve to this desktop.
+  expect(delegatingKey(FORGE, 'relay:other-desktop:parent', rePaired)).toBe(hostEntityKey(FORGE, 'relay:other-desktop:parent'))
+  expect(delegatingThreadOfLink(FORGE, 'relay:other-desktop:parent', rePaired)).toEqual({ id: 'parent' })
+
+  // Pre-fix re-paired links with an unrecorded old clientId recover ONLY for remote threads owned by this desktop's local delegation store.
+  const state = threadsStateFixture()
+  state.hostId = FORGE
+  const child = state.host.threads[1]!
+  child.delegatedBy = 'relay:forgotten-old-client:parent'
+  const withoutOwnership = projectClientAgentState(state, undefined, { desktopHostId: DESKTOP, clientId: 'new-client', ownsThreadRevision: 0 })
+  expect(withoutOwnership.output.host.threads[1]!.delegatedBy).toBe(hostEntityKey(FORGE, 'relay:forgotten-old-client:parent'))
+  const withOwnership = projectClientAgentState(state, withoutOwnership, {
+    desktopHostId: DESKTOP,
+    clientId: 'new-client',
+    ownsThread: (threadId, caller) => threadId === child.id && caller === 'parent',
+    ownsThreadRevision: 1,
+  })
+  expect(withOwnership.output.host.threads[1]!.delegatedBy).toBe(hostEntityKey(DESKTOP, 'parent'))
+  // Another remote thread with the same caller name but not in this desktop's local delegation store is NOT claimed.
+  expect(delegatingKey(FORGE, 'relay:forgotten-old-client:parent', {
+    desktopHostId: DESKTOP,
+    clientId: 'new-client',
+    ownsThread: (threadId, caller) => threadId === child.id && caller === 'parent',
+  }, 'someone-elses-thread')).toBe(hostEntityKey(FORGE, 'relay:forgotten-old-client:parent'))
+})

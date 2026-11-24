@@ -1,7 +1,7 @@
 import { HOST_NODE_MAJOR, HOST_NODE_MINIMUM } from './sshFailure'
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
-import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../../shared/desktopClients'
+import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX, DESKTOP_IDENTITIES_FILE } from '../../shared/desktopClients'
 import { HOST_STOP_DRAIN_MS, HOST_UPDATE_LOCK_UNNAMED_MS, hostLaunchTimings } from '../../shared/hostLaunchTimings'
 
 /**
@@ -59,6 +59,8 @@ const descriptorPath = path.join(data, 'host-listener.json');
 const legacyLauncherPath = path.join(data, 'host-launcher.json');
 const lockPath = path.join(data, 'host-listener.lock');
 const desktopsPath = path.join(data, ${JSON.stringify(DESKTOP_CLIENTS_FILE)});
+const identitiesPath = path.join(data, ${JSON.stringify(DESKTOP_IDENTITIES_FILE)});
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Only an address the host's Serve setting could carry, on the owner's tailnet: https on a MagicDNS name, with its port.
 const TAILNET_ADDRESS = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net:\d{1,5}$/;
 const RELEASE = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/;
@@ -581,14 +583,15 @@ const readDesktops = async () => {
 // connect left behind when it died is taken over once it is older than any write takes. A connect that cannot take it
 // records nothing, and the next connect records this one.
 const desktopsLockPath = desktopsPath + '.lock';
-const withDesktopsLock = async work => {
+const identitiesLockPath = identitiesPath + '.lock';
+const withFileLock = async (lockFile, work) => {
   for (let attempt = 0; attempt < 100; attempt++) {
     let handle;
-    try { handle = await fs.open(desktopsLockPath, 'wx', 0o600); }
+    try { handle = await fs.open(lockFile, 'wx', 0o600); }
     catch (error) {
       if (!error || error.code !== 'EEXIST') return;
-      const held = await fs.stat(desktopsLockPath).then(info => Date.now() - info.mtimeMs, () => 0);
-      if (held > 10000) await fs.rm(desktopsLockPath, { force: true }).catch(() => undefined);
+      const held = await fs.stat(lockFile).then(info => Date.now() - info.mtimeMs, () => 0);
+      if (held > 10000) await fs.rm(lockFile, { force: true }).catch(() => undefined);
       else await pause(10 + Math.floor(Math.random() * 40));
       continue;
     }
@@ -597,12 +600,12 @@ const withDesktopsLock = async work => {
     try { await handle.writeFile(token); await work(); }
     finally {
       await handle.close().catch(() => undefined);
-      if ((await fs.readFile(desktopsLockPath, 'utf8').catch(() => '')) === token) await fs.rm(desktopsLockPath, { force: true }).catch(() => undefined);
+      if ((await fs.readFile(lockFile, 'utf8').catch(() => '')) === token) await fs.rm(lockFile, { force: true }).catch(() => undefined);
     }
     return;
   }
 };
-const recordDesktop = clientId => withDesktopsLock(async () => {
+const recordDesktop = clientId => withFileLock(desktopsLockPath, async () => {
   for (let attempt = 0; attempt < 8; attempt++) {
     const ids = await readDesktops();
     if (!ids) { await pause(25 + Math.floor(Math.random() * 50)); continue; }
@@ -614,17 +617,50 @@ const recordDesktop = clientId => withDesktopsLock(async () => {
     } catch { await fs.rm(temporary, { force: true }).catch(() => undefined); await pause(25 + Math.floor(Math.random() * 50)); }
   }
 });
+// Records the desktop's persistent hostId beside its paired clientId in desktop-identities.json (#2863), written only
+// over the owner's SSH session so the host can safely migrate Watcher ownership on re-pair without weakening isolation.
+const readDesktopIdentities = async () => {
+  let text;
+  try { text = await fs.readFile(identitiesPath, 'utf8'); } catch (error) { return error && error.code === 'ENOENT' ? {} : undefined; }
+  try {
+    const value = JSON.parse(text);
+    if (!value || value.version !== 1 || !value.desktops || typeof value.desktops !== 'object' || Array.isArray(value.desktops)) return {};
+    const kept = {};
+    for (const [cid, hid] of Object.entries(value.desktops)) {
+      if (typeof cid === 'string' && cid.length > 0 && cid.length <= ${DESKTOP_CLIENT_ID_MAX} && typeof hid === 'string' && UUID_PATTERN.test(hid)) kept[cid] = hid;
+    }
+    return kept;
+  } catch { return {}; }
+};
+const recordDesktopIdentity = (clientId, desktopHostId) => withFileLock(identitiesLockPath, async () => {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const current = await readDesktopIdentities();
+    if (!current) { await pause(25 + Math.floor(Math.random() * 50)); continue; }
+    if (current[clientId] === desktopHostId) return;
+    const entries = Object.entries(current).filter(([cid]) => cid !== clientId);
+    entries.push([clientId, desktopHostId]);
+    const next = { version: 1, desktops: Object.fromEntries(entries.slice(-${DESKTOP_CLIENTS_MAX})) };
+    const temporary = identitiesPath + '.' + process.pid + '.' + crypto.randomUUID() + '.tmp';
+    try {
+      await fs.writeFile(temporary, JSON.stringify(next) + '\n', { mode: 0o600 });
+      await fs.rename(temporary, identitiesPath);
+      return;
+    } catch { await fs.rm(temporary, { force: true }).catch(() => undefined); await pause(25 + Math.floor(Math.random() * 50)); }
+  }
+});
 // The authenticated SSH account establishes its desktop's default authority, through the same policy
 // records the running host reads. One conditional write preserves revoked decisions and works with
 // existing host archives, without exposing a new grant operation to paired socket clients.
 const desktopAnswers = async () => {
   const current = await discover().catch(() => null);
   if (!current || current.hostId !== cfg.hostId || typeof cfg.clientId !== 'string' || !cfg.clientId || cfg.clientId.length > 512 || /[\p{Cc}]/u.test(cfg.clientId)) return finish({ type: 'failed' });
+  if (cfg.desktopHostId !== undefined && (typeof cfg.desktopHostId !== 'string' || !UUID_PATTERN.test(cfg.desktopHostId))) return finish({ type: 'failed' });
   let db;
   try {
     const paired = JSON.parse(await fs.readFile(path.join(data, 'paired-clients.json'), 'utf8'));
     if (!Array.isArray(paired.clients) || !paired.clients.some(client => client.clientId === cfg.clientId)) return finish({ type: 'failed' });
     await recordDesktop(cfg.clientId);
+    if (typeof cfg.desktopHostId === 'string') await recordDesktopIdentity(cfg.clientId, cfg.desktopHostId);
     const file = path.join(data, 'memory.sqlite');
     if (!(await fs.stat(file)).isFile()) return finish({ type: 'failed' });
     const { DatabaseSync } = require('node:sqlite');
@@ -1108,7 +1144,7 @@ export type LaunchOperation =
    */
   | { readonly op: 'launch'; readonly start?: false; readonly removeBoot?: true; readonly useRustHost?: true }
   | { readonly op: 'pairing-code'; readonly hostId: string }
-  | { readonly op: 'desktop-answers'; readonly hostId: string; readonly clientId: string }
+  | { readonly op: 'desktop-answers'; readonly hostId: string; readonly clientId: string; readonly desktopHostId?: string }
   | { readonly op: 'revoke-client'; readonly hostId: string; readonly clientId: string }
   | { readonly op: 'stop-host'; readonly hostId: string }
   /** Download `version`'s archive for the host's own platform, and its checksum, from `releasesUrl`, and check one against the other. */

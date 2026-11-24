@@ -452,7 +452,8 @@ impl RunningServer {
                 config.host_id.clone(),
                 coordinator.clone(),
             )
-            .map_err(std::io::Error::other)?,
+            .map_err(std::io::Error::other)?
+            .with_desktops(Arc::clone(&desktops)),
         );
         if let Ok(initial_shell) = coordinator.shell(false).await {
             let _ = watcher.observe_shell(&initial_shell);
@@ -2559,11 +2560,13 @@ async fn handle_ws_request(
                 .read_remote(request_val, client_id, may_answer)
                 .await;
             if let Some(scope_req) = parsed_scope {
-                if wire.has("watcher-reads") {
-                    watcher_peer.scope = Some(scope_req.master);
-                }
-                if let Ok(proj) = serde_json::from_value::<WatcherHostProjection>(result.clone()) {
-                    watcher_peer.record_written(&proj, wire.has("watcher-progress"));
+                if result.get("status").and_then(Value::as_str) != Some("refused") {
+                    if wire.has("watcher-reads") {
+                        watcher_peer.scope = Some(scope_req.master);
+                    }
+                    if let Ok(proj) = serde_json::from_value::<WatcherHostProjection>(result.clone()) {
+                        watcher_peer.record_written(&proj, wire.has("watcher-progress"));
+                    }
                 }
             }
             HostResponseEnvelope::ok(req.id, result)
