@@ -371,6 +371,13 @@ pub struct StoredThreadEvent {
     pub event: Value,
 }
 
+#[derive(Debug, Clone)]
+pub struct ForwardMessagesPage {
+    pub messages: Vec<(StoredMessage, i64)>,
+    pub earlier_available: bool,
+    pub has_more: bool,
+}
+
 /// Reads and writes Sotto's `threads.sqlite` database in place (schema v1–v11),
 /// matching `src/main/agents/threadStore.ts`.
 pub struct ThreadStore {
@@ -664,6 +671,190 @@ impl ThreadStore {
             out.truncate(limit);
         }
         Ok((out, has_more))
+    }
+
+    /// Latest committed `messages-reset` event for `thread_id`, matching `ThreadStore.readMessageEpoch`.
+    pub fn read_message_epoch(&self, thread_id: &str) -> Result<Option<(Option<String>, i64)>, StoreError> {
+        let row: Option<(i64, String)> = self
+            .conn
+            .query_row(
+                "SELECT seq, payload FROM events
+                 WHERE thread_id = ?1 AND kind = 'messages-reset'
+                 ORDER BY seq DESC LIMIT 1",
+                [thread_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((seq, raw)) = row else {
+            return Ok(None);
+        };
+        let parsed: Value = serde_json::from_str(&raw)?;
+        let epoch = parsed
+            .get("historyEpoch")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        Ok(Some((epoch, seq)))
+    }
+
+    /// Forward position-based message read for Watcher automation, matching `ThreadStore.readForwardMessages`.
+    pub fn read_forward_messages(
+        &self,
+        thread_id: &str,
+        after_position: Option<i64>,
+        limit: usize,
+    ) -> Result<ForwardMessagesPage, StoreError> {
+        let count = limit.clamp(1, 50);
+        let fetch = (count + 1) as i64;
+        let newest = after_position.is_none();
+        let mut rows_out: Vec<(StoredMessage, i64)> = Vec::new();
+        let map_row = |row: &rusqlite::Row<'_>| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<i64>>(10)?,
+            ))
+        };
+        let raw_rows: Vec<_> = if newest {
+            let mut stmt = self.conn.prepare(
+                "SELECT position, message_id, role, text, created_at, command_id, attachments,
+                        watcher_own_change, watcher_observed_changes, turn_message_id, provider_error
+                 FROM messages
+                 WHERE thread_id = ?1
+                 ORDER BY position DESC
+                 LIMIT ?2",
+            )?;
+            let mut collected: Vec<_> = stmt
+                .query_map(rusqlite::params![thread_id, fetch], map_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+            collected.reverse();
+            collected
+        } else {
+            let after = after_position.unwrap_or(-1);
+            let mut stmt = self.conn.prepare(
+                "SELECT position, message_id, role, text, created_at, command_id, attachments,
+                        watcher_own_change, watcher_observed_changes, turn_message_id, provider_error
+                 FROM messages
+                 WHERE thread_id = ?1 AND position > ?2
+                 ORDER BY position ASC
+                 LIMIT ?3",
+            )?;
+            let rows = stmt
+                .query_map(rusqlite::params![thread_id, after, fetch], map_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        let has_more = !newest && raw_rows.len() > count;
+        let slice = if newest && raw_rows.len() > count {
+            &raw_rows[raw_rows.len() - count..]
+        } else if !newest && raw_rows.len() > count {
+            &raw_rows[..count]
+        } else {
+            &raw_rows[..]
+        };
+        for (
+            position,
+            id,
+            role,
+            text,
+            created_at,
+            command_id,
+            attachments_raw,
+            own_raw,
+            observed_raw,
+            turn_message_id,
+            provider_error_raw,
+        ) in slice.iter().cloned()
+        {
+            rows_out.push((
+                StoredMessage {
+                    id,
+                    role,
+                    text,
+                    created_at,
+                    command_id,
+                    turn_message_id,
+                    attachments: parse_optional_json(attachments_raw)?,
+                    watcher_own_change: parse_optional_json(own_raw)?,
+                    watcher_observed_changes: parse_optional_json(observed_raw)?,
+                    provider_error: (provider_error_raw == Some(1)).then_some(true),
+                },
+                position,
+            ));
+        }
+        let earlier_available = rows_out.first().is_some_and(|(_, pos)| *pos > 0);
+        Ok(ForwardMessagesPage {
+            messages: rows_out,
+            earlier_available,
+            has_more,
+        })
+    }
+
+    /// Reads one message by ID without loading the full thread transcript.
+    pub fn read_message_by_id(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+    ) -> Result<Option<StoredMessage>, StoreError> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT message_id, role, text, created_at, command_id, attachments,
+                        watcher_own_change, watcher_observed_changes, turn_message_id, provider_error
+                 FROM messages
+                 WHERE thread_id = ?1 AND message_id = ?2
+                 LIMIT 1",
+                rusqlite::params![thread_id, message_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<i64>>(9)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((
+            id,
+            role,
+            text,
+            created_at,
+            command_id,
+            attachments_raw,
+            own_raw,
+            observed_raw,
+            turn_message_id,
+            provider_error_raw,
+        )) = row
+        else {
+            return Ok(None);
+        };
+        Ok(Some(StoredMessage {
+            id,
+            role,
+            text,
+            created_at,
+            command_id,
+            turn_message_id,
+            attachments: parse_optional_json(attachments_raw)?,
+            watcher_own_change: parse_optional_json(own_raw)?,
+            watcher_observed_changes: parse_optional_json(observed_raw)?,
+            provider_error: (provider_error_raw == Some(1)).then_some(true),
+        }))
     }
 }
 

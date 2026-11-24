@@ -82,6 +82,32 @@ pub enum CoordinatorBroadcast {
     Detail(AgentThreadDetail),
 }
 
+#[derive(Debug, Clone)]
+pub struct WatcherThreadRead {
+    pub availability: String,
+    pub history_epoch: String,
+    pub messages: Vec<(StoredMessage, i64)>,
+    pub earlier_available: bool,
+    pub has_more: bool,
+    pub activities: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QueuedThreadFollowup {
+    id: String,
+    thread_id: String,
+    draft_id: String,
+    #[serde(skip_serializing)]
+    message_id: String,
+    text: String,
+    status: String,
+    created_at: String,
+    updated_at: String,
+    #[serde(skip_serializing)]
+    client: ClientContext,
+}
+
 struct PendingCommand {
     client: ClientContext,
     command: Map<String, Value>,
@@ -212,6 +238,52 @@ enum ActorMessage {
     GitStatusReady {
         thread_id: String,
         git: Value,
+    },
+    WatcherReadThread {
+        thread_id: String,
+        after_position: Option<i64>,
+        limit: usize,
+        reply: oneshot::Sender<Option<WatcherThreadRead>>,
+    },
+    WatcherReadMessage {
+        thread_id: String,
+        message_id: String,
+        reply: oneshot::Sender<Option<StoredMessage>>,
+    },
+    WatcherCreateThread {
+        command: Map<String, Value>,
+        reply: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    WatcherSendMessage {
+        thread_id: String,
+        text: String,
+        draft_id: String,
+        message_id: String,
+        delivery: String,
+        client: ClientContext,
+        reply: oneshot::Sender<Result<(String, Option<String>), CoordinatorError>>,
+    },
+    WatcherCancelQueuedFollowups {
+        draft_ids: HashSet<String>,
+        reply: oneshot::Sender<usize>,
+    },
+    WatcherInterrupt {
+        thread_id: String,
+        client: ClientContext,
+        reply: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    WatcherSettleThread {
+        thread_id: String,
+        settle: bool,
+        reply: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    GetProjectsForOrigins {
+        reply: oneshot::Sender<Vec<(String, String, Option<String>)>>,
+    },
+    SetThreadDelegatedBy {
+        thread_id: String,
+        delegating_thread_id: String,
+        reply: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -466,6 +538,168 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
     }
 
+    pub async fn watcher_read_thread(
+        &self,
+        thread_id: String,
+        after_position: Option<i64>,
+        limit: usize,
+    ) -> Result<Option<WatcherThreadRead>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::WatcherReadThread {
+                thread_id,
+                after_position,
+                limit,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn watcher_read_message(
+        &self,
+        thread_id: String,
+        message_id: String,
+    ) -> Result<Option<StoredMessage>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::WatcherReadMessage {
+                thread_id,
+                message_id,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn watcher_create_thread(
+        &self,
+        command: Map<String, Value>,
+    ) -> Result<(), CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::WatcherCreateThread {
+                command,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+    }
+
+    pub async fn watcher_send_message(
+        &self,
+        thread_id: String,
+        text: String,
+        draft_id: String,
+        message_id: String,
+        delivery: String,
+        client: ClientContext,
+    ) -> Result<(String, Option<String>), CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::WatcherSendMessage {
+                thread_id,
+                text,
+                draft_id,
+                message_id,
+                delivery,
+                client,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+    }
+
+    pub async fn watcher_cancel_queued_followups(
+        &self,
+        draft_ids: HashSet<String>,
+    ) -> Result<usize, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::WatcherCancelQueuedFollowups {
+                draft_ids,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn watcher_interrupt(
+        &self,
+        thread_id: String,
+        client: ClientContext,
+    ) -> Result<(), CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::WatcherInterrupt {
+                thread_id,
+                client,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+    }
+
+    pub async fn watcher_settle_thread(
+        &self,
+        thread_id: String,
+        settle: bool,
+    ) -> Result<(), CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::WatcherSettleThread {
+                thread_id,
+                settle,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+    }
+
+    pub async fn projects_for_origins(
+        &self,
+    ) -> Result<Vec<(String, String, Option<String>)>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetProjectsForOrigins { reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn set_thread_delegated_by(
+        &self,
+        thread_id: String,
+        delegating_thread_id: String,
+    ) -> Result<(), CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::SetThreadDelegatedBy {
+                thread_id,
+                delegating_thread_id,
+                reply: reply_tx,
+            })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+    }
+
     pub async fn shutdown(&self) {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self.tx.send(ActorMessage::Shutdown { reply: reply_tx }).is_ok() {
@@ -539,6 +773,7 @@ struct CoordinatorActor {
     busy_thread_ids: HashSet<String>,
     thread_queues: HashMap<String, VecDeque<PendingCommand>>,
     in_flight_sends: HashMap<String, InFlightSend>,
+    queued_followups: Vec<QueuedThreadFollowup>,
     staged: StagedAttachments,
 
     shell_dirty: bool,
@@ -651,6 +886,7 @@ impl CoordinatorActor {
             busy_thread_ids: HashSet::new(),
             thread_queues: HashMap::new(),
             in_flight_sends: HashMap::new(),
+            queued_followups: Vec::new(),
             staged,
             shell_dirty: false,
             dirty_details: HashSet::new(),
@@ -889,6 +1125,243 @@ impl CoordinatorActor {
                     }
                 }
             }
+            ActorMessage::WatcherReadThread {
+                thread_id,
+                after_position,
+                limit,
+                reply,
+            } => {
+                let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+                    let _ = reply.send(None);
+                    return;
+                };
+                let provider_connected = self
+                    .provider_statuses
+                    .get(&thread.provider_id)
+                    .is_some_and(|s| s.connection == "connected");
+                let availability = if provider_connected {
+                    "available"
+                } else {
+                    "unavailable"
+                }
+                .to_string();
+                let history_epoch = match self.thread_store.read_message_epoch(&thread_id) {
+                    Ok(Some((Some(epoch), _))) if !epoch.is_empty() => epoch,
+                    Ok(Some((None, seq))) => format!("seq:{seq}"),
+                    _ => "0".into(),
+                };
+                let page = self
+                    .thread_store
+                    .read_forward_messages(&thread_id, after_position, limit)
+                    .ok();
+                let (messages, earlier_available, has_more) = match page {
+                    Some(p) if !p.messages.is_empty() || after_position.is_some() => {
+                        (p.messages, p.earlier_available, p.has_more)
+                    }
+                    _ => {
+                        // Fall back to in-memory detail when messages have not yet hit SQLite.
+                        let mem = self
+                            .details
+                            .get(&thread_id)
+                            .map(|d| d.messages.clone())
+                            .unwrap_or_default();
+                        let total = mem.len();
+                        let start = total.saturating_sub(limit);
+                        let slice: Vec<(StoredMessage, i64)> = mem
+                            .into_iter()
+                            .enumerate()
+                            .skip(start)
+                            .map(|(i, m)| (m, i as i64))
+                            .collect();
+                        (slice, start > 0, false)
+                    }
+                };
+                let activities = self
+                    .details
+                    .get(&thread_id)
+                    .map(|d| d.activities.clone())
+                    .unwrap_or_else(|| {
+                        self.thread_store
+                            .read_activities(&thread_id)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|a| a.payload)
+                            .collect()
+                    });
+                let _ = reply.send(Some(WatcherThreadRead {
+                    availability,
+                    history_epoch,
+                    messages,
+                    earlier_available,
+                    has_more,
+                    activities,
+                }));
+            }
+            ActorMessage::WatcherReadMessage {
+                thread_id,
+                message_id,
+                reply,
+            } => {
+                let found = self
+                    .details
+                    .get(&thread_id)
+                    .and_then(|d| d.messages.iter().find(|m| m.id == message_id).cloned())
+                    .or_else(|| {
+                        self.thread_store
+                            .read_message_by_id(&thread_id, &message_id)
+                            .ok()
+                            .flatten()
+                    });
+                let _ = reply.send(found);
+            }
+            ActorMessage::WatcherCreateThread { command, reply } => {
+                let res = self.cmd_create_thread(&command, true);
+                if res.is_ok() {
+                    self.shell_dirty = true;
+                    self.flush_dirty();
+                }
+                let _ = reply.send(res);
+            }
+            ActorMessage::WatcherSendMessage {
+                thread_id,
+                text,
+                draft_id,
+                message_id,
+                delivery,
+                client,
+                reply,
+            } => {
+                let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+                    let _ = reply.send(Err(CoordinatorError::invalid("Unknown thread.")));
+                    return;
+                };
+                if delivery == "queue"
+                    && (thread.status == "running" || self.busy_thread_ids.contains(&thread_id))
+                {
+                    let item_id = Uuid::new_v4().to_string();
+                    let now = now_iso();
+                    self.queued_followups.push(QueuedThreadFollowup {
+                        id: item_id.clone(),
+                        thread_id,
+                        draft_id,
+                        message_id,
+                        text,
+                        status: "queued".into(),
+                        created_at: now.clone(),
+                        updated_at: now,
+                        client,
+                    });
+                    self.shell_dirty = true;
+                    self.flush_dirty();
+                    let _ = reply.send(Ok(("queued".into(), Some(item_id))));
+                    return;
+                }
+                let mut cmd = Map::new();
+                cmd.insert("type".into(), Value::String("manual-send".into()));
+                cmd.insert("threadId".into(), Value::String(thread_id.clone()));
+                cmd.insert("text".into(), Value::String(text));
+                cmd.insert("draftId".into(), Value::String(draft_id.clone()));
+                let (inner_tx, inner_rx) = oneshot::channel();
+                self.busy_thread_ids.insert(thread_id.clone());
+                self.spawn_cmd_manual_send(
+                    Some(thread_id),
+                    client,
+                    &cmd,
+                    Some(message_id),
+                    inner_tx,
+                );
+                tokio::spawn(async move {
+                    let mapped = match inner_rx.await {
+                        Ok(Ok(shell)) => {
+                            let status = shell
+                                .get("deliveries")
+                                .and_then(Value::as_array)
+                                .and_then(|arr| {
+                                    arr.iter().rev().find(|d| {
+                                        d.get("draftId").and_then(Value::as_str)
+                                            == Some(draft_id.as_str())
+                                    })
+                                })
+                                .and_then(|d| d.get("status").and_then(Value::as_str))
+                                .unwrap_or("accepted")
+                                .to_string();
+                            Ok((status, None))
+                        }
+                        Ok(Err(err)) => Err(err),
+                        Err(_) => Err(CoordinatorError::unavailable("Host coordinator stopped.")),
+                    };
+                    let _ = reply.send(mapped);
+                });
+            }
+            ActorMessage::WatcherCancelQueuedFollowups { draft_ids, reply } => {
+                let before = self.queued_followups.len();
+                self.queued_followups
+                    .retain(|f| !draft_ids.contains(&f.draft_id));
+                let removed = before.saturating_sub(self.queued_followups.len());
+                if removed > 0 {
+                    self.shell_dirty = true;
+                    self.flush_dirty();
+                }
+                let _ = reply.send(removed);
+            }
+            ActorMessage::WatcherInterrupt {
+                thread_id,
+                client,
+                reply,
+            } => {
+                let mut cmd = Map::new();
+                cmd.insert("type".into(), Value::String("interrupt".into()));
+                cmd.insert("threadId".into(), Value::String(thread_id.clone()));
+                let (inner_tx, inner_rx) = oneshot::channel();
+                self.busy_thread_ids.insert(thread_id.clone());
+                self.spawn_cmd_interrupt(Some(thread_id), client, &cmd, inner_tx);
+                tokio::spawn(async move {
+                    let mapped = match inner_rx.await {
+                        Ok(Ok(_)) => Ok(()),
+                        Ok(Err(err)) => Err(err),
+                        Err(_) => Err(CoordinatorError::unavailable("Host coordinator stopped.")),
+                    };
+                    let _ = reply.send(mapped);
+                });
+            }
+            ActorMessage::WatcherSettleThread {
+                thread_id,
+                settle,
+                reply,
+            } => {
+                let mut cmd = Map::new();
+                cmd.insert("threadId".into(), Value::String(thread_id));
+                let res = self.cmd_settle_thread(&cmd, settle);
+                if res.is_ok() {
+                    self.shell_dirty = true;
+                    self.flush_dirty();
+                }
+                let _ = reply.send(res);
+            }
+            ActorMessage::GetProjectsForOrigins { reply } => {
+                let out = self
+                    .projects
+                    .iter()
+                    .map(|p| (p.id.clone(), p.path.clone(), p.provider_id.clone()))
+                    .collect();
+                let _ = reply.send(out);
+            }
+            ActorMessage::SetThreadDelegatedBy {
+                thread_id,
+                delegating_thread_id,
+                reply,
+            } => {
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                    thread.delegated_by = Some(delegating_thread_id);
+                    thread.updated_at = now_iso();
+                    self.save_workspace();
+                    self.shell_dirty = true;
+                    self.flush_dirty();
+                    let _ = reply.send(Ok(()));
+                } else {
+                    let _ = reply.send(Err(CoordinatorError::invalid("Unknown thread.")));
+                }
+            }
             ActorMessage::RunCommand {
                 client,
                 command,
@@ -1019,7 +1492,7 @@ impl CoordinatorActor {
                 self.finish_sync_command(lane, &client, Ok(()), reply);
             }
             "create-thread" => {
-                let res = self.cmd_create_thread(&command);
+                let res = self.cmd_create_thread(&command, false);
                 self.finish_sync_command(lane, &client, res, reply);
             }
             "select-thread" => {
@@ -1050,7 +1523,56 @@ impl CoordinatorActor {
             "connect" => self.spawn_cmd_connect(lane, client, &command, reply),
             "disconnect" => self.spawn_cmd_disconnect(lane, client, &command, reply),
             "configure-thread" => self.spawn_cmd_configure_thread(lane, client, &command, reply),
-            "manual-send" => self.spawn_cmd_manual_send(lane, client, &command, reply),
+            "manual-send" | "steer" => {
+                self.spawn_cmd_manual_send(lane, client, &command, None, reply)
+            }
+            "queue-followup" => {
+                let Some(tid) = command
+                    .get("threadId")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string)
+                else {
+                    self.finish_sync_command(
+                        lane,
+                        &client,
+                        Err(CoordinatorError::invalid("threadId is required.")),
+                        reply,
+                    );
+                    return;
+                };
+                let is_running = self
+                    .threads
+                    .iter()
+                    .find(|t| t.id == tid)
+                    .is_some_and(|t| t.status == "running");
+                if is_running {
+                    let text = command
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    let draft_id = command
+                        .get("draftId")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| Uuid::new_v4().to_string());
+                    let now = now_iso();
+                    self.queued_followups.push(QueuedThreadFollowup {
+                        id: Uuid::new_v4().to_string(),
+                        thread_id: tid,
+                        draft_id,
+                        message_id: Uuid::new_v4().to_string(),
+                        text,
+                        status: "queued".into(),
+                        created_at: now.clone(),
+                        updated_at: now,
+                        client: client.clone(),
+                    });
+                    self.finish_sync_command(lane, &client, Ok(()), reply);
+                } else {
+                    self.spawn_cmd_manual_send(lane, client, &command, None, reply);
+                }
+            }
             "answer" => self.spawn_cmd_answer(lane, client, &command, reply),
             "interrupt" => self.spawn_cmd_interrupt(lane, client, &command, reply),
             "compact-thread" => self.spawn_cmd_compact(lane, client, &command, reply),
@@ -1291,6 +1813,7 @@ impl CoordinatorActor {
         lane: Option<String>,
         client: ClientContext,
         command: &Map<String, Value>,
+        explicit_message_id: Option<String>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
         let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
@@ -1386,7 +1909,7 @@ impl CoordinatorActor {
         let self_tx = self.self_tx.clone();
         let model_opt = (!thread.model_id.is_empty()).then_some(thread.model_id.clone());
 
-        let message_id = Uuid::new_v4().to_string();
+        let message_id = explicit_message_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         self.in_flight_sends.insert(
             tid.clone(),
             InFlightSend {
@@ -2043,6 +2566,42 @@ impl CoordinatorActor {
         let Some(path) = command.get("path").and_then(Value::as_str) else {
             return Err(CoordinatorError::invalid("Project path is required."));
         };
+        let use_existing = command
+            .get("useExisting")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let git_init = command
+            .get("gitInit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let dir = Path::new(path);
+        let mut created_dir = false;
+        if !use_existing {
+            if !dir.exists() {
+                std::fs::create_dir_all(dir)
+                    .map_err(|_| CoordinatorError::unavailable("Could not create project folder."))?;
+                created_dir = true;
+            }
+        } else if !dir.exists() && git_init {
+            std::fs::create_dir_all(dir)
+                .map_err(|_| CoordinatorError::unavailable("Could not create project folder."))?;
+            created_dir = true;
+        }
+        if git_init {
+            let status = Command::new("git")
+                .args(["init"])
+                .current_dir(dir)
+                .output();
+            let ok = status.is_ok_and(|o| o.status.success());
+            if !ok {
+                if created_dir {
+                    let _ = std::fs::remove_dir_all(dir);
+                }
+                return Err(CoordinatorError::unavailable(
+                    "Could not initialize Git in the project folder.",
+                ));
+            }
+        }
         let id = Uuid::new_v4().to_string();
         let project = AgentProject {
             id: id.clone(),
@@ -2059,7 +2618,11 @@ impl CoordinatorActor {
         Ok(())
     }
 
-    fn cmd_create_thread(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+    fn cmd_create_thread(
+        &mut self,
+        command: &Map<String, Value>,
+        preserve_selection: bool,
+    ) -> Result<(), CoordinatorError> {
         let Some(project_id) = command.get("projectId").and_then(Value::as_str) else {
             return Err(CoordinatorError::invalid("Thread projectId is required."));
         };
@@ -2095,6 +2658,10 @@ impl CoordinatorActor {
             .map(ToString::to_string);
         let reasoning_effort = command
             .get("reasoningEffort")
+            .and_then(Value::as_str)
+            .map(ToString::to_string);
+        let speed = command
+            .get("speed")
             .and_then(Value::as_str)
             .map(ToString::to_string);
         let provider_mode = command
@@ -2200,12 +2767,15 @@ impl CoordinatorActor {
             status: "idle".into(),
             model_id,
             reasoning_effort,
+            speed,
             runtime_mode,
             provider_mode,
             native_session_started: false,
             created_at: now.clone(),
             updated_at: now.clone(),
             settled_at: None,
+            workspace_settled_at: None,
+            delegated_by: None,
             working_directory,
             last_user_message_id: None,
             last_turn: None,
@@ -2234,7 +2804,9 @@ impl CoordinatorActor {
             earlier_available: None,
         };
         self.details.insert(thread_id.clone(), detail);
-        self.active_thread_id = Some(thread_id);
+        if !preserve_selection {
+            self.active_thread_id = Some(thread_id);
+        }
         self.save_workspace();
         Ok(())
     }
@@ -2267,7 +2839,9 @@ impl CoordinatorActor {
         let Some(thread) = self.threads.iter_mut().find(|t| t.id == tid) else {
             return Err(CoordinatorError::invalid("Unknown thread."));
         };
-        thread.settled_at = settle.then(now_iso);
+        let ts = settle.then(now_iso);
+        thread.settled_at = ts.clone();
+        thread.workspace_settled_at = ts;
         thread.updated_at = now_iso();
         self.save_workspace();
         Ok(())
@@ -2497,6 +3071,29 @@ impl CoordinatorActor {
             }
         }
         self.shell_dirty = true;
+        if status == "completed" {
+            if let Some(pos) = self
+                .queued_followups
+                .iter()
+                .position(|f| f.thread_id == thread_id)
+            {
+                let next = self.queued_followups.remove(pos);
+                let mut cmd = Map::new();
+                cmd.insert("type".into(), Value::String("manual-send".into()));
+                cmd.insert("threadId".into(), Value::String(next.thread_id.clone()));
+                cmd.insert("text".into(), Value::String(next.text));
+                cmd.insert("draftId".into(), Value::String(next.draft_id));
+                let (tx, _rx) = oneshot::channel();
+                self.busy_thread_ids.insert(next.thread_id.clone());
+                self.spawn_cmd_manual_send(
+                    Some(next.thread_id),
+                    next.client,
+                    &cmd,
+                    Some(next.message_id),
+                    tx,
+                );
+            }
+        }
     }
 
     fn push_message_to_detail(&mut self, thread_id: &str, message: StoredMessage) {
@@ -2636,7 +3233,7 @@ impl CoordinatorActor {
             "draftThreadId": null,
             "error": self.error,
             "followupReceipts": [],
-            "followups": [],
+            "followups": self.queued_followups,
             "globalLaneBusy": self.global_lane_busy,
             "historyEnabled": true,
             "hostId": self.host_id,
