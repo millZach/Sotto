@@ -2558,6 +2558,223 @@ pub fn read_subagent_assignments(
     out
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubRepository {
+    pub host: String,
+    pub owner: String,
+    pub name: String,
+}
+
+/// Parses a Git remote URL into a GitHub repository matching `parseGitHubRemote` in
+/// `src/main/agents/git/github.ts`.
+pub fn parse_github_remote(url: &str) -> Option<GitHubRepository> {
+    let trimmed = url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (raw_host, ssh, rest) = if let Some(after) = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("HTTPS://"))
+    {
+        let (authority, path) = after.split_once('/')?;
+        let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        let host = host_port.split_once(':').map_or(host_port, |(h, _)| h);
+        (host.to_ascii_lowercase(), false, path)
+    } else if let Some(after) = trimmed
+        .strip_prefix("ssh://")
+        .or_else(|| trimmed.strip_prefix("SSH://"))
+    {
+        let (authority, path) = after.split_once('/')?;
+        let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        let host = host_port.split_once(':').map_or(host_port, |(h, _)| h);
+        (host.to_ascii_lowercase(), true, path)
+    } else if let Some((left, path)) = trimmed.split_once(':') {
+        if path.starts_with('/') || left.contains('/') {
+            return None;
+        }
+        let host = left.rsplit_once('@').map_or(left, |(_, h)| h);
+        (host.to_ascii_lowercase(), true, path)
+    } else {
+        return None;
+    };
+
+    let (owner, name_raw) = rest.split_once('/')?;
+    if owner.is_empty() || name_raw.is_empty() || name_raw.contains('/') || owner.contains(char::is_whitespace) || name_raw.contains(char::is_whitespace) {
+        return None;
+    }
+    let name = name_raw
+        .strip_suffix(".git")
+        .or_else(|| name_raw.strip_suffix(".GIT"))
+        .unwrap_or(name_raw);
+    if name.is_empty() {
+        return None;
+    }
+
+    let api_host = if raw_host == "github.com"
+        || raw_host.ends_with(".github.com")
+        || (ssh
+            && ((!raw_host.contains('.') && raw_host.contains("github"))
+                || raw_host.starts_with("github.com-")
+                || raw_host.starts_with("github.com_")))
+    {
+        Some("github.com".to_string())
+    } else if raw_host.contains("github") {
+        Some(raw_host)
+    } else {
+        None
+    }?;
+
+    Some(GitHubRepository {
+        host: api_host,
+        owner: owner.to_string(),
+        name: name.to_string(),
+    })
+}
+
+/// Reads each project's `origin` GitHub repository without network calls, matching
+/// `readProjectOrigins` in `src/main/agents/projectOrigins.ts`.
+pub fn project_origins(projects: &[(String, String)]) -> Value {
+    const PROJECT_ORIGINS_MAX: usize = 1_000;
+    let listed = &projects[..projects.len().min(PROJECT_ORIGINS_MAX)];
+    let mut by_path: HashMap<&str, Option<GitHubRepository>> = HashMap::new();
+    for (_, path) in listed {
+        let key = path.as_str();
+        if by_path.contains_key(key) {
+            continue;
+        }
+        let repo = if key.trim().is_empty() {
+            None
+        } else {
+            run_git(key, &["config", "--get", "remote.origin.url"])
+                .ok()
+                .and_then(|url| parse_github_remote(&url))
+        };
+        by_path.insert(key, repo);
+    }
+    let items: Vec<Value> = listed
+        .iter()
+        .map(|(project_id, path)| {
+            let repository = by_path
+                .get(path.as_str())
+                .and_then(|opt| opt.as_ref())
+                .map(|repo| {
+                    json!({
+                        "host": repo.host,
+                        "owner": repo.owner,
+                        "name": repo.name,
+                    })
+                });
+            json!({
+                "projectId": project_id,
+                "repository": repository,
+            })
+        })
+        .collect();
+    json!({ "projects": items })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeEntry {
+    pub path: String,
+    pub branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkingCopyOptions {
+    pub is_git: bool,
+    pub current_branch: Option<String>,
+    pub worktrees: Vec<WorktreeEntry>,
+    pub branches: Vec<String>,
+}
+
+/// Inspects a project directory's Git working-copy choices for Watcher's `list_working_copies`
+/// and `start_thread`, matching `WorktreeManager.options`.
+pub fn working_copy_options(project_path: &str) -> WorkingCopyOptions {
+    let root = Path::new(project_path);
+    if project_path.trim().is_empty() || !root.is_dir() {
+        return WorkingCopyOptions {
+            is_git: false,
+            current_branch: None,
+            worktrees: Vec::new(),
+            branches: Vec::new(),
+        };
+    }
+    let is_git = run_git(project_path, &["rev-parse", "--is-inside-work-tree"])
+        .ok()
+        .is_some_and(|out| out.trim() == "true");
+    if !is_git {
+        return WorkingCopyOptions {
+            is_git: false,
+            current_branch: None,
+            worktrees: Vec::new(),
+            branches: Vec::new(),
+        };
+    }
+    let current_branch = run_git(project_path, &["symbolic-ref", "--short", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let mut worktrees = Vec::new();
+    if let Ok(porcelain) = run_git(project_path, &["worktree", "list", "--porcelain"]) {
+        let mut cur_path: Option<String> = None;
+        let mut cur_branch: Option<String> = None;
+        let flush = |worktrees: &mut Vec<WorktreeEntry>, cur_path: &mut Option<String>, cur_branch: &mut Option<String>| {
+            if let Some(p) = cur_path.take() {
+                let canon_p = fs::canonicalize(&p).ok();
+                let canon_root = fs::canonicalize(root).ok();
+                let is_main = canon_p.is_some() && canon_p == canon_root || p == project_path;
+                if !is_main {
+                    worktrees.push(WorktreeEntry {
+                        path: p,
+                        branch: cur_branch.take(),
+                    });
+                } else {
+                    cur_branch.take();
+                }
+            }
+        };
+        for line in porcelain.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                flush(&mut worktrees, &mut cur_path, &mut cur_branch);
+            } else if let Some(p) = trimmed.strip_prefix("worktree ") {
+                flush(&mut worktrees, &mut cur_path, &mut cur_branch);
+                cur_path = Some(p.trim().to_string());
+            } else if let Some(b) = trimmed.strip_prefix("branch refs/heads/") {
+                cur_branch = Some(b.trim().to_string());
+            }
+        }
+        flush(&mut worktrees, &mut cur_path, &mut cur_branch);
+    }
+
+    let mut branches = Vec::new();
+    if let Ok(raw) = run_git(
+        project_path,
+        &["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", "refs/heads"],
+    ) {
+        for line in raw.lines() {
+            let name = line.trim();
+            if !name.is_empty() && !branches.iter().any(|b| b == name) {
+                branches.push(name.to_string());
+                if branches.len() >= 100 {
+                    break;
+                }
+            }
+        }
+    }
+
+    WorkingCopyOptions {
+        is_git: true,
+        current_branch,
+        worktrees,
+        branches,
+    }
+}
+
 enum ContainedError {
     Outside,
     Unavailable,

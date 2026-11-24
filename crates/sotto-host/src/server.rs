@@ -17,10 +17,12 @@ use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::{
-    BoxFuture, ClientContext, CoordinatorBroadcast, CoordinatorHandle, DesktopClients,
-    HostCredentials, HostDescriptor, HostErrorCode, HostRequestEnvelope, HostResponseEnvelope,
-    MemoryStore, PairedClients, PairingError, PhoneAccessListener, PhoneAccessListenerSpawn,
-    ProviderAdapter, SubagentStore, TailscaleBackend, HOST_PROTOCOL_VERSION,
+    parse_watcher_host_read, watcher_progress_change, watcher_record_digest, BoxFuture,
+    ClientContext, CoordinatorBroadcast, CoordinatorHandle, DesktopClients, HostCredentials,
+    HostDescriptor, HostErrorCode, HostRequestEnvelope, HostResponseEnvelope, MemoryStore,
+    PairedClients, PairingError, PhoneAccessListener, PhoneAccessListenerSpawn, ProviderAdapter,
+    SubagentStore, TailscaleBackend, WatcherHostProgress, WatcherHostProjection,
+    WatcherHostService, WatcherIdentity, WatcherProgressEntry, HOST_PROTOCOL_VERSION,
 };
 
 use crate::phones::{phones_off_message, HostAdminPhonesCommand, HostPhoneAccess};
@@ -69,6 +71,8 @@ pub fn advertised_features() -> Vec<String> {
         "thread-files".into(),
         "thread-changes".into(),
         "host-facts".into(),
+        "project-origins".into(),
+        "project-git-init".into(),
         "thread-words".into(),
         "subagents".into(),
         "usage-dashboard".into(),
@@ -76,7 +80,37 @@ pub fn advertised_features() -> Vec<String> {
         "usage-muse-opencode".into(),
         "usage-antigravity".into(),
         "usage-antigravity-no-limits".into(),
+        "watcher-control".into(),
+        "watcher-reads".into(),
+        "watcher-progress".into(),
+        "watcher-standing-watch".into(),
+        "watcher-work-settled".into(),
+        "watcher-outcomes".into(),
+        "watcher-new-owner".into(),
+        "watcher-check-queue".into(),
+        "watcher-check-stop".into(),
+        "watcher-muse".into(),
+        "watcher-cursor".into(),
+        "watcher-antigravity".into(),
     ]
+}
+
+/// Filters host-advertised features per authenticated client: `watcher-*` (non-phone) and
+/// `project-origins` are offered ONLY to authenticated paired desktops recorded in
+/// `desktop-clients.json` (ADR-0073, ADR-0082).
+fn features_for_client(features: &[String], is_desktop: bool) -> Vec<String> {
+    if is_desktop {
+        return features.to_vec();
+    }
+    features
+        .iter()
+        .filter(|feat| {
+            let s = feat.as_str();
+            let is_desktop_watcher = s.starts_with("watcher-") && !s.starts_with("watcher-phone");
+            !is_desktop_watcher && s != "project-origins"
+        })
+        .cloned()
+        .collect()
 }
 
 pub struct HostState {
@@ -94,7 +128,9 @@ pub struct HostState {
     pub credentials: Mutex<HostCredentials>,
     pub coordinator: CoordinatorHandle,
     pub phones: Arc<HostPhoneAccess>,
+    pub watcher: Arc<WatcherHostService>,
     pub revoked_tx: broadcast::Sender<String>,
+    pub capabilities_tx: broadcast::Sender<String>,
 }
 
 impl HostState {
@@ -410,11 +446,23 @@ impl RunningServer {
             config.providers,
         )
         .map_err(std::io::Error::other)?;
+        let watcher = Arc::new(
+            WatcherHostService::open(
+                config.data_directory.clone(),
+                config.host_id.clone(),
+                coordinator.clone(),
+            )
+            .map_err(std::io::Error::other)?,
+        );
+        if let Ok(initial_shell) = coordinator.shell(false).await {
+            let _ = watcher.observe_shell(&initial_shell);
+        }
 
         let listener = TcpListener::bind(("127.0.0.1", config.port)).await?;
         let bound_port = listener.local_addr()?.port();
         let admin_token = generate_admin_token();
         let (revoked_tx, _) = broadcast::channel(64);
+        let (capabilities_tx, _) = broadcast::channel(64);
         let phones = HostPhoneAccess::new(
             config.data_directory.clone(),
             config.host_id.clone(),
@@ -441,7 +489,9 @@ impl RunningServer {
             credentials: Mutex::new(config.credentials),
             coordinator,
             phones: Arc::clone(&phones),
+            watcher,
             revoked_tx,
+            capabilities_tx,
         });
 
         let initial_descriptor = state.descriptor();
@@ -482,6 +532,51 @@ impl RunningServer {
             .phones
             .start_background(Arc::downgrade(&state), shutdown_rx.clone());
 
+        // Background observer feeding coordinator shell broadcasts into WatcherHostService so
+        // outcomes, standing watches, native takeovers, evidence, and queued checks stay live.
+        {
+            let observer_watcher = Arc::clone(&state.watcher);
+            let observer_coord = state.coordinator.clone();
+            let mut observer_rx = observer_coord.subscribe();
+            let mut observer_shutdown = shutdown_rx.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = observer_shutdown.changed() => {
+                            if *observer_shutdown.borrow() {
+                                break;
+                            }
+                        }
+                        bcast = observer_rx.recv() => {
+                            match bcast {
+                                Ok(CoordinatorBroadcast::Shell(shell)) => {
+                                    let to_launch = observer_watcher.observe_shell(&shell);
+                                    for (op_id, payload) in to_launch {
+                                        let w = Arc::clone(&observer_watcher);
+                                        tokio::spawn(async move {
+                                            w.launch_queued_check(op_id, payload).await;
+                                        });
+                                    }
+                                }
+                                Ok(CoordinatorBroadcast::Detail(_)) => {}
+                                Err(broadcast::error::RecvError::Lagged(_)) => {
+                                    if let Ok(shell) = observer_coord.shell(false).await {
+                                        let to_launch = observer_watcher.observe_shell(&shell);
+                                        for (op_id, payload) in to_launch {
+                                            let w = Arc::clone(&observer_watcher);
+                                            tokio::spawn(async move {
+                                                w.launch_queued_check(op_id, payload).await;
+                                            });
+                                        }
+                                    }
+                                }
+                                Err(broadcast::error::RecvError::Closed) => break,
+                            }
+                        }
+                    }
+                }
+            });
+        }
         let server_state = Arc::clone(&state);
         let conn_limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
         let task = tokio::spawn(async move {
@@ -880,6 +975,7 @@ async fn handle_connection(
             );
             match write_res {
                 Ok(()) => {
+                    let _ = state.capabilities_tx.send(parsed.client_id);
                     send_http_json(
                         &mut stream,
                         200,
@@ -1026,6 +1122,114 @@ enum OutboundFrame {
     Close,
 }
 
+#[derive(Debug, Clone)]
+struct WatcherWritten {
+    revision: String,
+    record: String,
+    progress: Vec<WatcherProgressEntry>,
+}
+
+#[derive(Default)]
+struct WatcherPeerState {
+    scope: Option<WatcherIdentity>,
+    last_revision: Option<String>,
+    written: Option<WatcherWritten>,
+}
+
+impl WatcherPeerState {
+    fn reset(&mut self) {
+        self.scope = None;
+        self.last_revision = None;
+        self.written = None;
+    }
+
+    fn record_written(&mut self, projection: &WatcherHostProjection, track_progress: bool) {
+        self.last_revision = Some(projection.revision.clone());
+        if track_progress {
+            self.written = Some(WatcherWritten {
+                revision: projection.revision.clone(),
+                record: watcher_record_digest(projection),
+                progress: projection.progress.clone().unwrap_or_default(),
+            });
+        } else {
+            self.written = None;
+        }
+    }
+}
+
+fn push_watcher_projection(
+    state: &HostState,
+    client_id: &str,
+    wire: &ClientWireState,
+    watcher_peer: &mut WatcherPeerState,
+    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+) -> bool {
+    if !wire.hello_done || !wire.has("watcher-reads") {
+        return true;
+    }
+    let Some(master) = watcher_peer.scope.clone() else {
+        return true;
+    };
+    let is_desktop = {
+        let mut desktops = state.desktops.lock().unwrap();
+        desktops.refresh();
+        desktops.has(client_id)
+    };
+    if !is_desktop {
+        return true;
+    }
+    let projection = state.watcher.remote_projection(&master, client_id);
+    if watcher_peer.last_revision.as_deref() == Some(projection.revision.as_str()) {
+        return true;
+    }
+    let track_progress = wire.has("watcher-progress");
+    if track_progress {
+        let record_digest = watcher_record_digest(&projection);
+        if let Some(ref written) = watcher_peer.written {
+            if written.record == record_digest
+                && watcher_peer.last_revision.as_deref() == Some(written.revision.as_str())
+            {
+                let change = watcher_progress_change(
+                    &written.progress,
+                    projection.progress.as_deref().unwrap_or(&[]),
+                );
+                let progress = WatcherHostProgress {
+                    base_revision: written.revision.clone(),
+                    revision: projection.revision.clone(),
+                    observed_at: projection.observed_at.clone(),
+                    changed: change.changed,
+                    removed: change.removed,
+                    whole: change.whole,
+                };
+                let frame = json!({
+                    "v": HOST_PROTOCOL_VERSION,
+                    "event": "watcher-progress",
+                    "progress": progress,
+                });
+                if let Ok(encoded) = serde_json::to_string(&frame) {
+                    if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                        return false;
+                    }
+                    watcher_peer.record_written(&projection, true);
+                }
+                return true;
+            }
+        }
+    }
+    let frame = json!({
+        "v": HOST_PROTOCOL_VERSION,
+        "event": "watcher-state",
+        "projection": projection,
+    });
+    if let Ok(encoded) = serde_json::to_string(&frame) {
+        if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+            return false;
+        }
+        watcher_peer.record_written(&projection, track_progress);
+    }
+    true
+}
+
 async fn handle_websocket_upgrade(
     mut stream: TcpStream,
     headers: &HashMap<String, String>,
@@ -1145,12 +1349,15 @@ async fn handle_websocket_upgrade(
     });
 
     let mut wire = ClientWireState::default();
+    let mut watcher_peer = WatcherPeerState::default();
     let mut revoked_rx = state.revoked_tx.subscribe();
     let mut drop_rx = match mode {
         ListenerMode::Tailnet(ref ctrl) => Some(ctrl.drop_tx.subscribe()),
         ListenerMode::Admin => None,
     };
+    let mut capabilities_rx = state.capabilities_tx.subscribe();
     let mut coord_rx = state.coordinator.subscribe();
+    let mut watcher_rx = state.watcher.subscribe();
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -1193,6 +1400,24 @@ async fn handle_websocket_upgrade(
                 if !keep {
                     let _ = out_tx.send(OutboundFrame::Close);
                     break;
+                }
+            }
+            cap_id = capabilities_rx.recv() => {
+                if wire.hello_done && matches!(cap_id, Ok(ref id) if id == &client_id) {
+                    let may_answer = state
+                        .memory
+                        .lock()
+                        .unwrap()
+                        .may_grant_remote(&client_id)
+                        .unwrap_or(false);
+                    if let Ok(shell) = state.coordinator.shell(may_answer).await {
+                        let frame = wire.encode_shell_push(shell);
+                        if let Ok(encoded) = serde_json::to_string(&frame) {
+                            if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                                break;
+                            }
+                        }
+                    }
                 }
             }
             _ = &mut expiry_sleep => {
@@ -1251,6 +1476,16 @@ async fn handle_websocket_upgrade(
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
+            watcher_ev = watcher_rx.recv() => {
+                match watcher_ev {
+                    Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                        if !push_watcher_projection(&state, &client_id, &wire, &mut watcher_peer, &out_tx) {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {}
+                }
+            }
             maybe_msg = in_rx.recv() => {
                 let Some(msg) = maybe_msg else {
                     let _ = out_tx.send(OutboundFrame::Close);
@@ -1271,6 +1506,7 @@ async fn handle_websocket_upgrade(
                             &client_name,
                             &session,
                             &mut wire,
+                            &mut watcher_peer,
                             &out_tx,
                             &text,
                         )
@@ -1309,6 +1545,7 @@ async fn handle_ws_request(
     client_name: &str,
     upgrade_session: &str,
     wire: &mut ClientWireState,
+    watcher_peer: &mut WatcherPeerState,
     out_tx: &mpsc::UnboundedSender<OutboundFrame>,
     raw: &str,
 ) -> HostResponseEnvelope {
@@ -1356,8 +1593,14 @@ async fn handle_ws_request(
 
     match req.op.as_str() {
         "hello" => {
+            let is_desktop = {
+                let mut desktops = state.desktops.lock().unwrap();
+                desktops.refresh();
+                desktops.has(client_id)
+            };
+            let client_features = features_for_client(&state.features, is_desktop);
             let advertised: std::collections::HashSet<&str> =
-                state.features.iter().map(String::as_str).collect();
+                client_features.iter().map(String::as_str).collect();
             let accepts: Vec<String> = req
                 .fields
                 .get("accepts")
@@ -1371,6 +1614,7 @@ async fn handle_ws_request(
                 })
                 .unwrap_or_default();
             wire.apply_hello(accepts);
+            watcher_peer.reset();
 
             let after_seq = req
                 .fields
@@ -1405,19 +1649,15 @@ async fn handle_ws_request(
                 .unwrap_or(false);
             let credentials_secure = state.credentials.lock().unwrap().is_secure();
 
-            let is_desktop = match mode {
+            let phone_access_visible = match mode {
                 ListenerMode::Admin => true,
-                ListenerMode::Tailnet(_) => {
-                    let mut desktops = state.desktops.lock().unwrap();
-                    desktops.refresh();
-                    desktops.has(client_id)
-                }
+                ListenerMode::Tailnet(_) => is_desktop,
             };
             let mut result = json!({
                 "hostId": state.host_id,
                 "clientId": client_id,
                 "sottoVersion": state.sotto_version,
-                "features": state.features,
+                "features": client_features,
                 "capabilities": { "mayAnswer": may_answer },
                 "events": events,
                 "hasMore": has_more,
@@ -1436,7 +1676,7 @@ async fn handle_ws_request(
                 if let Some(tailnet_address) = state.phones.address() {
                     obj.insert("tailnetAddress".into(), Value::String(tailnet_address));
                 }
-                if is_desktop {
+                if phone_access_visible {
                     let summary = state.phones.summary();
                     obj.insert(
                         "phoneAccess".into(),
@@ -2236,6 +2476,136 @@ async fn handle_ws_request(
             );
             HostResponseEnvelope::ok(req.id, filtered)
         }
+        "watcher-control" => {
+            let is_desktop = {
+                let mut desktops = state.desktops.lock().unwrap();
+                desktops.refresh();
+                desktops.has(client_id)
+            };
+            if !is_desktop {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            if !wire.hello_done {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            let Some(request_val) = req.fields.get("request").cloned() else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            // Reject swarm starts since this host does not advertise `worker-swarms`.
+            if request_val.get("call").and_then(|c| c.get("name")).and_then(Value::as_str)
+                == Some("start_thread")
+            {
+                let input = request_val.get("call").and_then(|c| c.get("input"));
+                if input.and_then(|i| i.get("count")).is_some()
+                    || input.and_then(|i| i.get("prompts")).is_some()
+                {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::InvalidRequest,
+                        HostErrorCode::InvalidRequest.default_message(),
+                    );
+                }
+            }
+            let result = state
+                .watcher
+                .admit_remote(request_val, client_id, client_name, may_answer)
+                .await;
+            HostResponseEnvelope::ok(req.id, result)
+        }
+        "watcher-read" => {
+            let is_desktop = {
+                let mut desktops = state.desktops.lock().unwrap();
+                desktops.refresh();
+                desktops.has(client_id)
+            };
+            if !is_desktop {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            if !wire.hello_done {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            let Some(request_val) = req.fields.get("request").cloned() else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let parsed_scope = parse_watcher_host_read(&request_val)
+                .ok()
+                .filter(|r| r.call.is_none());
+            let result = state
+                .watcher
+                .read_remote(request_val, client_id, may_answer)
+                .await;
+            if let Some(scope_req) = parsed_scope {
+                if wire.has("watcher-reads") {
+                    watcher_peer.scope = Some(scope_req.master);
+                }
+                if let Ok(proj) = serde_json::from_value::<WatcherHostProjection>(result.clone()) {
+                    watcher_peer.record_written(&proj, wire.has("watcher-progress"));
+                }
+            }
+            HostResponseEnvelope::ok(req.id, result)
+        }
+        "project-origins" => {
+            let is_desktop = {
+                let mut desktops = state.desktops.lock().unwrap();
+                desktops.refresh();
+                desktops.has(client_id)
+            };
+            if !is_desktop {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            if !wire.hello_done {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            let projects = match state.coordinator.projects_for_origins().await {
+                Ok(list) => list
+                    .into_iter()
+                    .map(|(id, path, _)| (id, path))
+                    .collect::<Vec<_>>(),
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+            };
+            match tokio::task::spawn_blocking(move || sotto_core::ops::project_origins(&projects))
+                .await
+            {
+                Ok(val) => HostResponseEnvelope::ok(req.id, val),
+                Err(_) => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
+        }
         "usage-clear" => {
             if !may_answer {
                 return HostResponseEnvelope::err(
@@ -2357,4 +2727,57 @@ async fn send_http_error(
         }
     });
     send_http_json(stream, code.http_status(), &body).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn advertised_features_truthfully_match_implemented_watcher_ops() {
+        let feats = advertised_features();
+        for required in [
+            "watcher-control",
+            "watcher-reads",
+            "watcher-progress",
+            "watcher-standing-watch",
+            "watcher-work-settled",
+            "watcher-outcomes",
+            "watcher-new-owner",
+            "watcher-check-queue",
+            "watcher-check-stop",
+            "watcher-muse",
+            "watcher-cursor",
+            "watcher-antigravity",
+            "project-origins",
+            "project-git-init",
+        ] {
+            assert!(
+                feats.iter().any(|f| f == required),
+                "expected advertised feature {required}"
+            );
+        }
+        // Never advertise unimplemented host-side MCP or swarm features.
+        for unimplemented in ["watcher-tell", "watcher-ready", "worker-swarms", "branch-moves"] {
+            assert!(
+                !feats.iter().any(|f| f == unimplemented),
+                "must not advertise unimplemented feature {unimplemented}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_desktop_clients_receive_zero_watcher_or_project_origins_features() {
+        let all = advertised_features();
+        let non_desktop = features_for_client(&all, false);
+        assert!(!non_desktop.iter().any(|f| f.starts_with("watcher-")));
+        assert!(!non_desktop.iter().any(|f| f == "project-origins"));
+        // Normal non-watcher features remain available.
+        assert!(non_desktop.iter().any(|f| f == "detail-delta"));
+
+        let desktop = features_for_client(&all, true);
+        assert!(desktop.iter().any(|f| f == "watcher-control"));
+        assert!(desktop.iter().any(|f| f == "watcher-reads"));
+        assert!(desktop.iter().any(|f| f == "project-origins"));
+    }
 }

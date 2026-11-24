@@ -20,6 +20,7 @@ pub mod providers;
 pub mod remote_commands;
 pub mod stores;
 pub mod watcher;
+pub mod watcher_host;
 pub mod workspace;
 
 pub use checkpoints::{
@@ -146,6 +147,12 @@ pub use watcher::{
     WatcherToldPayload, WatcherUserUnwatch, WatcherWatchOrigin, FOLLOWUPS_FILE,
     LIMIT_RESTARTS_FILE, WATCHER_QUESTIONS_FILE, WATCHER_RECORD_FILE, WATCHER_STATE_FILE,
     WATCHER_TOLD_FILE,
+};
+pub use watcher_host::{
+    parse_watcher_host_read, watcher_progress_change, watcher_progress_fingerprint,
+    watcher_record_digest, watcher_result_for_host_v1, WatcherHostControl, WatcherHostProgress,
+    WatcherHostProjection, WatcherHostRead, WatcherHostService, WatcherProgressChange,
+    WatcherProgressEntry,
 };
 pub use workspace::{
     diff_thread_detail, now_iso, parse_public_provider_entity_id, provider_label,

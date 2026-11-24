@@ -286,6 +286,12 @@ pub struct AgentThread {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settled_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_settled_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegated_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_directory: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_user_message_id: Option<String>,
