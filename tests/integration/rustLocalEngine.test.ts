@@ -20,6 +20,9 @@ import { MemoryStore } from '../../src/main/memory/store'
 import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
 import { CouncilStore } from '../../src/main/council/councilStore'
 import { FilesService } from '../../src/main/files/service'
+import { RetainedDraftStore } from '../../src/main/agents/retainedDraftStore'
+import { CascadedSettles } from '../../src/main/hosts/crossMachineCascade'
+import { TailnetStore } from '../../src/main/hosts/tailnetStore'
 import { PluginAccounts, pluginAccountSlot } from '../../src/main/plugins/accounts'
 import { MailGrants } from '../../src/main/plugins/mailGrants'
 import { HeardSpending, monthOf } from '../../src/main/plugins/spending'
@@ -77,6 +80,25 @@ async function findRustEngineBinary(): Promise<string> {
     }
   }
   throw new Error(`Could not find compiled Rust ${exe}. Run cargo build -p sotto-engine --bin sotto-engine first.`)
+}
+
+async function findRustHostBinary(): Promise<string> {
+  const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+  const cargoTargetDir = process.env.CARGO_TARGET_DIR
+  const candidates = [
+    ...(cargoTargetDir ? [join(cargoTargetDir, 'debug', exe), join(cargoTargetDir, 'release', exe)] : []),
+    resolve('target', 'debug', exe),
+    resolve('target', 'release', exe),
+  ]
+  for (const candidate of candidates) {
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // Try next build location.
+    }
+  }
+  throw new Error(`Could not find compiled Rust ${exe}. Run cargo build -p sotto-host --bin sotto-host first.`)
 }
 
 describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 4 / ADR-0215)', () => {
@@ -1601,6 +1623,233 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
       await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('connects Rust DesktopHostRouter to a live Rust sotto-host, routes commands/details, and shares DesktopHosts stores with TypeScript', async () => {
+    const engineBin = await findRustEngineBinary()
+    const hostBin = await findRustHostBinary()
+    const desktopDir = await mkdtemp(join(tmpdir(), 'sotto-rust-desktop-hosts-'))
+    const remoteDir = await mkdtemp(join(tmpdir(), 'sotto-rust-remote-host-'))
+    const localRepo = join(desktopDir, 'local-proj')
+    const remoteRepo = join(remoteDir, 'remote-proj')
+    await mkdir(localRepo, { recursive: true })
+    await mkdir(remoteRepo, { recursive: true })
+
+    // 1. Start a real Rust `sotto-host` on an ephemeral loopback port with a mock provider.
+    const hostChild = spawn(hostBin, ['--data', remoteDir, '--port', '0', '--mock-provider', 'codex'], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+    })
+
+    const endpoint = createEngineEndpoint('sedh')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+    const engineChild = spawn(engineBin, ['--data', desktopDir, '--endpoint', endpoint, '--mock-provider', 'codex'], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: { ...process.env, SOTTO_ENGINE_TOKEN: token },
+      windowsHide: true,
+    })
+
+    try {
+      // Wait for `sotto-host` to publish host-listener.json.
+      const listenerPath = join(remoteDir, 'host-listener.json')
+      let listener: { port: number; adminToken: string } | undefined
+      const deadline = Date.now() + 15_000
+      while (Date.now() < deadline) {
+        try {
+          listener = JSON.parse(await readFile(listenerPath, 'utf8')) as { port: number; adminToken: string }
+          if (listener.port > 0 && listener.adminToken) break
+        } catch {
+          // Wait for host startup.
+        }
+        await new Promise(r => setTimeout(r, 40))
+      }
+      expect(listener).toBeDefined()
+      const remoteUrl = `http://127.0.0.1:${listener!.port}`
+
+      // Pair a desktop client against the live `sotto-host` over HTTP.
+      const codeResp = await fetch(`${remoteUrl}/v1/admin/pairing-code`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${listener!.adminToken}` },
+      })
+      expect(codeResp.status).toBe(200)
+      const { code } = await codeResp.json() as { code: string }
+
+      const pairResp = await fetch(`${remoteUrl}/v1/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ v: 1, code, name: 'Rust Desktop Engine' }),
+      })
+      expect(pairResp.status).toBe(200)
+      const paired = await pairResp.json() as { clientId: string; token: string }
+
+      const allowResp = await fetch(`${remoteUrl}/v1/admin/allow-answers`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${listener!.adminToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ clientId: paired.clientId }),
+      })
+      expect(allowResp.status).toBe(200)
+
+      // 2. Connect to `sotto-engine` over EngineTransport.
+      const conn = await server.waitForClient(15_000)
+      const engineExited = new Promise<number | null>(resolveExit => engineChild.once('exit', c => resolveExit(c)))
+      const secrets = new Map<string, string>()
+      conn.onRequest((method, args) => {
+        if (method === 'shell:credentialsSet') {
+          const [slot, val] = args as [string, string]
+          if (val) secrets.set(slot, val)
+          else secrets.delete(slot)
+          return { available: true, plaintext: Object.fromEntries(secrets), sealed: {}, unreadable: {} }
+        }
+        throw new Error(`UNEXPECTED_SHELL_METHOD: ${method}`)
+      })
+      await conn.request('engine:init', [{
+        options: { userDataPath: desktopDir },
+        credentials: { available: true, plaintext: {}, sealed: {}, unreadable: {} },
+        downloadsFolder: desktopDir,
+        browserToolDefinitions: [],
+        hasNotify: false,
+        hasMediaThumbnail: false,
+        hasRedrawPhoto: false,
+      }])
+
+      // 3. Save remote host via `hosts:command` (save + set-connection + rename) and attach live RemoteHostClient.
+      const savedId = '11111111-1111-4111-8111-111111111601'
+      await conn.request('hosts:command', [{
+        type: 'save',
+        host: {
+          id: savedId,
+          name: 'Forge Box',
+          target: 'zach@forge',
+          identityFile: '',
+          installPath: '~/.local/share/sotto-host',
+          dataDirectory: '~/.sotto',
+        },
+        prefer: 'tailnet',
+      }])
+      await conn.request('hosts:command', [{ type: 'rename', id: savedId, name: 'Forge Primary' }])
+
+      const attached = await conn.request('router.attachRemote', [{
+        savedId,
+        name: 'Forge Primary',
+        url: remoteUrl,
+        token: paired.token,
+        sshTerminal: { target: 'zach@forge', sshPort: 22 },
+      }]) as { ok: boolean; hostId: string; clientId: string; mayAnswer: boolean }
+      expect(attached.ok).toBe(true)
+      expect(attached.clientId).toBe(paired.clientId)
+      expect(attached.mayAnswer).toBe(true)
+      const remoteHostId = attached.hostId
+
+      // 4. Create a local project/thread AND a remote project/thread via `router.command`!
+      const afterLocalProj = await conn.request('router.command', [{
+        type: 'create-project',
+        provider: 'codex',
+        title: 'Local Proj',
+        path: localRepo,
+        useExisting: true,
+      }]) as { hostId: string; connections: Array<{ hostId: string; kind: string; connected: boolean }>; host: { projects: Array<{ id: string; hostId: string }>; models: Array<{ id: string; ready: boolean }> } }
+      expect(afterLocalProj.connections).toHaveLength(2)
+      expect(afterLocalProj.connections.some(c => c.hostId === remoteHostId && c.kind === 'remote' && c.connected)).toBe(true)
+
+      const afterRemoteProj = await conn.request('router.command', [{
+        type: 'create-project',
+        hostId: remoteHostId,
+        provider: 'codex',
+        title: 'Remote Proj',
+        path: remoteRepo,
+        useExisting: true,
+      }]) as { host: { projects: Array<{ id: string; hostId: string }>; models: Array<{ id: string; ready: boolean }> } }
+      const remoteProjKey = afterRemoteProj.host.projects.find(p => p.hostId === remoteHostId)!.id
+      expect(remoteProjKey.startsWith(`host:${remoteHostId}:`)).toBe(true)
+
+      const readyModelId = afterRemoteProj.host.models.find(m => m.ready)!.id
+      const afterRemoteThread = await conn.request('router.command', [{
+        type: 'create-thread',
+        projectId: remoteProjKey,
+        modelId: readyModelId,
+        title: 'Remote routed thread',
+        titleSource: 'user',
+        workingCopy: 'shared',
+        managed: false,
+      }]) as { host: { threads: Array<{ id: string; hostId: string; remoteHost: boolean; title: string }> } }
+      const remoteThread = afterRemoteThread.host.threads.find(t => t.hostId === remoteHostId)!
+      expect(remoteThread.remoteHost).toBe(true)
+      expect(remoteThread.title).toBe('Remote routed thread')
+      expect(remoteThread.id.startsWith(`host:${remoteHostId}:`)).toBe(true)
+
+      // 5. Read remote detail through `router.detail` and check `router.filesBindings` delta!
+      const remoteDetail = await conn.request('router.detail', [remoteThread.id]) as { threadId?: string; detail?: { threadId?: string } }
+      expect(remoteDetail.threadId ?? remoteDetail.detail?.threadId).toBe(remoteThread.id)
+
+      const fb = await conn.request('router.filesBindings', []) as {
+        delta: { hostedFolders?: Record<string, { hostId: string }>; terminalHosts?: Record<string, { target: string }> }
+      }
+      expect(fb.delta.hostedFolders?.[remoteThread.id]?.hostId).toBe(remoteHostId)
+      expect(fb.delta.terminalHosts?.[remoteHostId]?.target).toBe('zach@forge')
+
+      // 6. Persist retained draft + cascaded settle and verify TS stores read Rust's files cleanly!
+      await conn.request('hosts.putRetainedDraft', [{
+        hostId: remoteHostId,
+        registrationId: savedId,
+        providerId: 'codex',
+        draft: {
+          threadId: 'remote-t-1',
+          draftId: '33333333-3333-4333-8333-333333333601',
+          text: 'draft for remote host',
+          attachments: [],
+          requestId: null,
+          updatedAt: '2026-11-23T00:00:00.000Z',
+        },
+        questionsDigest: null,
+        saved: false,
+        recovery: false,
+      }])
+      await conn.request('hosts.keepCascadedSettle', [{
+        parent: `host:${afterLocalProj.hostId}:parent-1`,
+        settled: [remoteThread.id],
+        left: [],
+        uncertain: [],
+      }])
+
+      const ro = await conn.request('ops.desktopHostsReadOnly', []) as {
+        savedHosts: number
+        tailnetEntries: number
+        retainedDrafts: number
+        cascadedSettles: number
+      }
+      expect(ro.savedHosts).toBe(1)
+      expect(ro.tailnetEntries).toBe(1)
+      expect(ro.retainedDrafts).toBe(1)
+      expect(ro.cascadedSettles).toBe(1)
+
+      await conn.request('engine:close', [])
+      expect(await engineExited).toBe(0)
+      conn.close()
+
+      // Verify TypeScript stores parse Rust's persisted files cleanly!
+      const tsTailnet = new TailnetStore(desktopDir)
+      await tsTailnet.load()
+      expect(tsTailnet.get(savedId).prefer).toBe('tailnet')
+
+      const tsDrafts = new RetainedDraftStore({ directory: desktopDir, heldProviders: new Set() })
+      tsDrafts.setSavedHosts([{ hostId: remoteHostId, registrationId: savedId }])
+      await tsDrafts.load()
+      expect(tsDrafts.get(remoteHostId, 'remote-t-1')?.draft.text).toBe('draft for remote host')
+
+      const tsSettles = new CascadedSettles(desktopDir)
+      await tsSettles.load()
+      expect([...(tsSettles.of(`host:${afterLocalProj.hostId}:parent-1`)?.settled ?? [])]).toEqual([remoteThread.id])
+    } finally {
+      if (engineChild.exitCode === null && engineChild.signalCode === null) engineChild.kill('SIGTERM')
+      if (hostChild.exitCode === null && hostChild.signalCode === null) hostChild.kill('SIGTERM')
+      await server.close().catch(() => undefined)
+      await rm(desktopDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(remoteDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 45_000)
 })

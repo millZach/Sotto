@@ -3,8 +3,10 @@ pub mod coordinator;
 pub mod council;
 pub mod credentials;
 pub mod desktop_clients;
+pub mod desktop_hosts;
 pub mod git_review;
 pub mod host_facts;
+pub mod host_router;
 pub mod identity;
 pub mod lock;
 pub mod ops;
@@ -57,6 +59,18 @@ pub use council::{
 };
 pub use credentials::{CredentialError, HostCredentialEncryption, HostCredentials};
 pub use desktop_clients::{DesktopClients, DESKTOP_CLIENTS_FILE};
+pub use desktop_hosts::{
+    read_desktop_hosts_readonly, remote_host_credential_slot, settled_with_parent,
+    CascadedSettleEntry, CascadedSettlesStore, DesktopHostsManager, FilesBindingEntry,
+    FilesBindingsDelta, FilesBindingsTracker, HostConnectionPreference, HostStatusView,
+    HostThreadFoldersEntry, HostsStateView, RetainedDraft, RetainedDraftStore,
+    RetainedSendAttempt, SavedHost, SavedHostsStore, SshTerminalHostEntry, TailnetEntry,
+    TailnetStore, CASCADED_SETTLES_FILE, DEFAULT_HOST_DATA_DIRECTORY, DEFAULT_HOST_INSTALL_PATH,
+    REMOTE_HOSTS_FILE, RETAINED_DRAFTS_FILE, SETTLE_CASCADE_SKEW_MS, TAILNET_STORE_FILE,
+};
+pub use host_router::{
+    DesktopHostRouter, HostConnectionSummary, RemoteHostClient, RemoteHostEvent, RemoteHostInfo,
+};
 pub use identity::{load_host_identity, HostIdentityError};
 pub use lock::{
     acquire_host_lock, lease_holder_alive, process_alive, read_boot_id, release_host_lock,
