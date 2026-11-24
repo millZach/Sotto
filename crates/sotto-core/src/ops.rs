@@ -3062,9 +3062,10 @@ mod tests {
         {
             std::os::unix::fs::symlink("/dev/zero", root.join("zero-link")).unwrap();
         }
-        // N5: Astral character (UTF-16 surrogate 0xD83D) sorts BEFORE U+FF00 in JS `<`/`>`.
+        // N5: Astral character (UTF-16 surrogate 0xD83D) sorts BEFORE U+FF21 in JS `<`/`>`
+        // (and U+FF21 is an assigned Unicode code point accepted by macOS APFS, unlike U+FF00).
         let astral_name = "\u{1F600}.txt";
-        let high_bmp_name = "\u{FF00}.txt";
+        let high_bmp_name = "\u{FF21}.txt";
         fs::write(root.join(astral_name), "a\n").unwrap();
         fs::write(root.join(high_bmp_name), "b\n").unwrap();
 
@@ -3090,7 +3091,7 @@ mod tests {
             .expect("expected high BMP filename");
         assert!(
             astral_idx < high_bmp_idx,
-            "UTF-16 sort must place U+1F600 before U+FF00 matching JS"
+            "UTF-16 sort must place U+1F600 before U+FF21 matching JS"
         );
 
         // L3: Zero budget aborts immediately with timeout error.
