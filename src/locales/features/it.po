@@ -149,11 +149,7 @@ msgid "{0}, shared from another tailnet"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "{about}, {system}. No account with Sotto. Product events are off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
-msgstr ""
-
-#: src/renderer/src/features/help/HelpView.tsx
-msgid "{about}, {system}. No account with Sotto. Product events are on until you turn them off.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
+msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -1217,10 +1213,6 @@ msgstr ""
 msgid "A thread"
 msgstr ""
 
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "A thread begins its first turn. It shows which providers and ways of starting get used."
-msgstr ""
-
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "a thread no longer here"
@@ -1242,10 +1234,6 @@ msgstr ""
 #. Whose a check is: a thread delegated it.
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A thread’s"
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "A turn ends. It shows reliability, speed and token use by provider and model."
 msgstr ""
 
 #. Heading over the running version and what Sotto sends where
@@ -1651,7 +1639,7 @@ msgid "Attempts"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer. Product events tell Sotto’s developers which features and public models you use, with hashed IDs of your accounts that link your computers to one person. They never say what you wrote or said. Turn them off in Settings → Application."
+msgid "Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -2067,7 +2055,6 @@ msgid "Climb"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Close"
@@ -2663,10 +2650,6 @@ msgstr ""
 msgid "Each bar is one second of the last minute; taller means main was blocked longer."
 msgstr ""
 
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "Each event carries a random ID for this install, and Sotto also sends hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person."
-msgstr ""
-
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Each model, {valuesWhen}"
 msgstr ""
@@ -2744,10 +2727,6 @@ msgstr ""
 msgid "Every 3D model"
 msgstr ""
 
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "Every product event"
-msgstr ""
-
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Every read of your desk ({reads})"
 msgstr ""
@@ -2820,10 +2799,6 @@ msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Favourites: {liked}."
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
 msgstr ""
 
 #: src/renderer/src/features/models3d/ModelsPage.tsx
@@ -3043,11 +3018,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Got a code from your teammate?"
-msgstr ""
-
-#. On the product events notice: keeps them on and closes the notice.
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "Got it"
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -3378,10 +3348,6 @@ msgstr ""
 #. placeholder {0}: agoWords(now - at)
 #: src/renderer/src/watcher/MoveSuggestion.tsx
 msgid "It last worked {0} and is between turns."
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys."
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
@@ -4348,7 +4314,7 @@ msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans 
 msgstr ""
 
 #: src/renderer/src/features/setup/SetupWalk.tsx
-msgid "No Sotto account. Product events are on until you turn them off in Settings."
+msgid "No Sotto account. No telemetry."
 msgstr ""
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
@@ -4685,14 +4651,6 @@ msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "On a Mac with Apple silicon, the <0>Core ML models</0> that FluidAudio keeps."
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "Once per start, for each account signed in. It links one person’s computers."
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "Once per start. It counts active installs by version and system."
 msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
@@ -5149,10 +5107,6 @@ msgstr ""
 msgid "Privacy"
 msgstr ""
 
-#: src/renderer/src/App.tsx
-msgid "Product events are off. Sotto sends nothing."
-msgstr ""
-
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Project: {scope}"
 msgstr ""
@@ -5325,10 +5279,6 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "Read again"
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "Read every field on the docs page"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
@@ -5848,10 +5798,6 @@ msgstr ""
 #: src/renderer/src/features/dictate/Journal.tsx
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Search transcripts"
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "See every event"
 msgstr ""
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
@@ -6495,10 +6441,6 @@ msgstr ""
 
 #: src/renderer/src/features/models3d/modelPanels.tsx
 msgid "Sotto no longer has a record of it."
-msgstr ""
-
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "Sotto now sends product events"
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -7551,10 +7493,6 @@ msgstr ""
 msgid "To do"
 msgstr ""
 
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "To learn what to build next, Sotto sends its developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts."
-msgstr ""
-
 #: src/renderer/src/features/dictate/journalFacts.ts
 #: src/renderer/src/features/dictate/JournalStats.tsx
 #: src/renderer/src/features/usage/UsageCharts.tsx
@@ -7720,11 +7658,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Trying again…"
-msgstr ""
-
-#. On the product events notice: turns them off.
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "Turn off"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx
@@ -8548,10 +8481,6 @@ msgstr ""
 msgid "You skipped this question."
 msgstr ""
 
-#: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
-msgid "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."
-msgstr ""
-
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You told Sotto"
 msgstr ""
@@ -8560,12 +8489,8 @@ msgstr ""
 msgid "You took over {thread}. Watcher stopped sending to it."
 msgstr ""
 
-#: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
-msgid "Your answer could not be saved, and nothing was sent. Try again."
-msgstr ""
-
 #: src/renderer/src/features/setup/SetupWalk.tsx
-msgid "Your audio never leaves this computer. No Sotto account. Product events are on until you turn them off in Settings."
+msgid "Your audio never leaves this computer. No Sotto account. No telemetry."
 msgstr ""
 
 #: src/renderer/src/features/dictate/JournalStats.tsx

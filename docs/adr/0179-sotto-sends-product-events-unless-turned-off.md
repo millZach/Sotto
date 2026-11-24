@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted November 2, 2026, at Zach's ask: "add anonymous analytics like T3 code has. Use their source code as reference and make it on my default in application tab of settings". He was told that hashed logins can still identify a person, and chose them. **Number provisional until merge** (docs/agents/domain.md).
+**Superseded / Reversed on November 24, 2026** by Zach's explicit order: Sotto has zero telemetry and sends no user data anywhere. All product-events code, UI, host protocol feature (`product-events` / `product-events-answer`), Cloudflare Worker (`workers/product-events/`), and documentation have been removed. Legacy `settings.json` keys are ignored on load and any leftover `product-events-install-id` file is deleted on startup. `AGENTS.md`, `README.md`, `docs/guide.md`, and `ADR-0017` restore Sotto's zero-telemetry, no-analytics promise, guarded by a regression test.
+
+Originally accepted November 2, 2026, at Zach's ask: "add anonymous analytics like T3 code has. Use their source code as reference and make it on my default in application tab of settings". He was told that hashed logins can still identify a person, and chose them. **Number provisional until merge** (docs/agents/domain.md).
 
 This amends the promise in `AGENTS.md`, the README and ADR-0017 that Sotto adds no analytics. Crash upload stays out. No build could send until the part of this decision that names the endpoint, the notice, the README, the guide, setup's and Help's lines, which shipped in one pull request and so in one release.
 

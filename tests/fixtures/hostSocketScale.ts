@@ -145,7 +145,7 @@ async function built(root: string, testClock: StepClock, delivery: ReturnType<ty
   // Sotto's own client of this host, with the switches an Owl or a stable desktop gives it. What its hello accepts is
   // what the desktop accepts of this host, its features filtered by what the host offers.
   const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: clientPairing.token, watcherEnabled: owl, crossMachineEnabled: owl,
-    pairedHostBrowser: owl, ...(owl ? { nextPromptsWanted: () => true } : {}), productEventAnswer: () => 'off' })
+    pairedHostBrowser: owl, ...(owl ? { nextPromptsWanted: () => true } : {}) })
   let accepted: string[] | undefined
   const inner = client as unknown as { call(operation: { op: string; accepts?: string[] }, ...rest: unknown[]): Promise<unknown> }
   const call = inner.call.bind(client)

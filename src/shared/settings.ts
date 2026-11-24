@@ -443,13 +443,6 @@ export interface AppSettings {
    * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
    */
   nextPromptSuggestions: boolean
-  /**
-   * Send product events (ADR-0179): on by default, and nothing goes until the notice has been answered. Off sends nothing
-   * more, drops what is waiting and deletes the install ID.
-   */
-  productEventsEnabled: boolean
-  /** A button on the product events notice has been pressed. Reset settings clears it, so the notice asks again. */
-  productEventsNoticeAnswered: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
@@ -623,8 +616,6 @@ const fieldSchemas = {
   autoSettleMergedThreads: z.boolean(),
   clearSettledThreadsAfterDays: clearSettledThreadsAfterDaysSchema,
   proactivePanels: z.boolean(),
-  productEventsEnabled: z.boolean(),
-  productEventsNoticeAnswered: z.boolean(),
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   autoUpdateCheck: z.boolean(),
@@ -763,8 +754,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   clearSettledThreadsAfterDays: 30,
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
-  productEventsEnabled: true,
-  productEventsNoticeAnswered: false,
   pullRequestText: true,
   // On by default: when a thread's provider writes nothing, the Git action commits
   // under the stand-in subject "Update project files" rather than waiting.
@@ -966,8 +955,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     clearSettledThreadsAfterDays: carried ? parseField(persisted, 'clearSettledThreadsAfterDays', defaults)
       : persisted.clearSettledThreadsAfterDays === 90 || persisted.clearSettledThreadsAfterDays === 180 ? persisted.clearSettledThreadsAfterDays : null,
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
-    productEventsEnabled: parseField(persisted, 'productEventsEnabled', defaults),
-    productEventsNoticeAnswered: parseField(persisted, 'productEventsNoticeAnswered', defaults),
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),

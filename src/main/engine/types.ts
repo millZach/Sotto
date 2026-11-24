@@ -21,10 +21,7 @@ import type { QuestionPageOpening } from '../hosts/desktopHostRouter'
 import type { HostThreadFolders } from '../hosts/hostedTerminals'
 import type { SshTerminalHost } from '../hosts/sshTerminal'
 import type { OwnCleanupResolution } from '../llm/ownServerCleanup'
-import type { PRODUCT_EVENT_FEATURES } from '../productEvents/schema'
 import type { E2EConfiguration } from '../e2e/e2eBoundary'
-
-export type ProductEventFeature = typeof PRODUCT_EVENT_FEATURES[number]
 
 export type EngineIpcRole = 'main' | 'popup'
 
@@ -169,7 +166,6 @@ export interface DesktopEngine {
   onAppUpdatePhaseChanged(waitingHostVersion: string | undefined): void
   checkClientsAfresh(): void
   restartHold(): string | undefined
-  featureUsed(feature: ProductEventFeature): void
 
   readVisual(threadId: string, visualId: string): Promise<AgentVisual | undefined>
   threadMediaPart(part: AgentThreadMediaPartRequest): Promise<ThreadVideoPart | null>

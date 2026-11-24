@@ -21,7 +21,7 @@ import type { ProfilerTarget, RawCpuProfile } from '../performance/activityRecor
 import type { RemoteHostE2E, RemoteHostE2EConnection } from '../e2e/remoteHost'
 import type { EngineInitPayload, EngineInitResult } from './engineProcess'
 import { createEngineEndpoint, generateEngineToken, listenEngineServer, type EngineRpcConnection } from './transport'
-import type { DesktopEngine, DesktopEngineOptions, EngineCertifiedDetailStats, EngineIpcRole, EngineShellBridge, EngineTurnRecordsInfo, EngineWindowFocus, FilesBindingsDelta, GitChangesMethod, HostedGitChangesMethod, ProductEventFeature } from './types'
+import type { DesktopEngine, DesktopEngineOptions, EngineCertifiedDetailStats, EngineIpcRole, EngineShellBridge, EngineTurnRecordsInfo, EngineWindowFocus, FilesBindingsDelta, GitChangesMethod, HostedGitChangesMethod } from './types'
 
 const ENGINE_INIT_TIMEOUT_MS = 30_000
 const ENGINE_CLOSE_TIMEOUT_MS = 20_000
@@ -336,7 +336,6 @@ export async function startOutOfProcessEngine(
     },
     checkClientsAfresh: () => { connection.sendPush('engine:checkClientsAfresh', null) },
     restartHold: () => cachedRestartHold,
-    featureUsed: (feature: ProductEventFeature) => { connection.sendPush('engine:featureUsed', feature) },
 
     readVisual: (threadId: string, visualId: string) =>
       connection.request<AgentVisual | undefined>('engine:readVisual', [threadId, visualId]),

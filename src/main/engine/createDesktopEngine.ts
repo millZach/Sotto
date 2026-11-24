@@ -22,7 +22,6 @@ import { NEXT_PROMPT_CHANGED } from '../../shared/nextPrompt'
 import { PHONES_CHANGED } from '../../shared/phones'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_ELEVENLABS_SPENT_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../../shared/plugins'
 import { POPUP_THREAD } from '../../shared/popup'
-import { getReleaseTrack } from '../../shared/releaseTrack'
 import { REQUEST_DRAFT_CHANGED } from '../../shared/requestDrafts'
 import type { AppSettings } from '../../shared/settings'
 import { PLUGINS_SOUND_CHANGED, SOUND_VISUAL_KIND } from '../../shared/sounds'
@@ -156,8 +155,6 @@ import { pluginToolHandlers } from '../plugins/toolHandlers'
 import { PluginUseRecord } from '../plugins/useRecord'
 import { checkVercelToken, type VercelFetch } from '../plugins/vercel/read'
 import { PopupFeed } from '../popup/popupFeed'
-import { registerProductEventsIpc } from '../productEvents/ipc'
-import { createProductEvents, productEventsOffBy, productEventsPermission } from '../productEvents/productEvents'
 import { cleanSettingsHistory } from '../settings/privacyCleanup'
 import { RetiredChatHistory } from '../settings/retiredChats'
 import { registerTeamsIpc } from '../teams/ipc'
@@ -223,7 +220,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const babysittingRetired = owlFeatures['restart-stopped-threads']
   const keepMainCurrentEnabled = owlFeatures['keep-main-current'] && startupSettings.localHostEnabled && env['SOTTO_DESIGN_CAPTURE'] !== '1'
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
-  const releaseTrack = getReleaseTrack(appRunningVersion)
 
   let workingCopySettings: AppSettings = startupSettings
   let agentHistoryEnabled = startupSettings.historyEnabled
@@ -232,17 +228,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   let popupShown = false
   let runningTerminalThreads = new Set<string>()
   const terminalLeases = new Map<string, () => void>()
-
-  const productEvents = createProductEvents({
-    released: isPackaged,
-    dataDirectory: userDataPath,
-    holdWhileWaiting: false,
-    version: appRunningVersion,
-    channel: releaseTrack,
-    surface: 'desktop',
-    log: event => console.warn(event),
-  })
-  productEvents.setPermission(productEventsPermission(workingCopySettings))
 
   const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
     ? new OwnServers({
@@ -357,7 +342,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     owletsEnabled: owlFeatures.owlets,
     heldProviders,
     usageEnabled,
-    productEvents,
     resumeAfterRestart: owlFeatures['resume-after-restart'],
     restartStoppedThreads: owlFeatures['restart-stopped-threads'],
     streamingPublishCost: owlFeatures['streaming-publish-cost'],
@@ -587,7 +571,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   })
 
   const desktopHosts = new DesktopHosts({
-    featureUsed: feature => productEvents.featureUsed(feature),
     directory: userDataPath,
     credentials: shellBridge.credentials as import('../agents/credentials').AgentCredentials,
     router: hostRouter,
@@ -599,7 +582,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     elevenLabsSounds: pluginsEnabled,
     ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void shellBridge.endHostTerminals(hostId).catch(() => log('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}),
-    productEventAnswer: () => productEventsPermission(workingCopySettings),
     relaysDelegation: delegationRelay !== undefined,
     parentCoordinationEnabled: owlFeatures['parent-thread-coordination'],
     heldProviders,
@@ -615,7 +597,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     openExternal: async url => { if (e2eConfiguration === null) await shellBridge.openExternal(url); else shellBridge.onE2EExternalLink?.(url) },
   })
   await desktopHosts.start()
-  productEvents.record('app.started', { pairedHosts: desktopHosts.get().hosts.length })
   await retainedDrafts.load()
 
   const agentJobThreads = coordinatorSetupThreads({ coordinator: agentControl, folder: join(userDataPath, 'host-setup'), localHostRunning: startupSettings.localHostEnabled })
@@ -972,7 +953,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const remoteHostE2E = e2eConfiguration !== null && !isPackaged ? installRemoteHostE2E(hostRouter, retainedDrafts, watcherEnabled, heldProviders, crossMachineEnabled, pairedHostBrowser) : undefined
 
   const phoneAccess = new PhoneAccess({
-    featureUsed: feature => productEvents.featureUsed(feature),
     directory: userDataPath,
     listener: { sottoVersion: hostVersion, delegation: delegationEnabled, phoneSends: phoneSendsFor(userDataPath), ...(phoneCompression ? {} : { compressPhones: false }), ...(phoneModelViews ? { phoneModels: phoneModelViews } : {}) },
     service: startupSettings.localHostEnabled ? hostService : undefined,
@@ -1178,9 +1158,8 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     reveal: path => { if (e2eConfiguration !== null) shellBridge.onE2EFileAction?.('show', path); else shellBridge.revealInFolder(path) },
   })
   const cleanupSubagents = registerSubagentIpc(ipc, agentHost, senders, change => shellBridge.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
-  const cleanupProductEvents = registerProductEventsIpc(ipc, { featureUsed: tool => productEvents.featureUsed(tool), state: { canSend: productEvents.canSend, offBy: productEventsOffBy(env) } }, senders)
   const cleanupUsage = registerUsageIpc(ipc, {
-    read: query => { productEvents.featureUsed('usage'); return hostRouter.usageRead(query) },
+    read: query => hostRouter.usageRead(query),
     refresh: query => hostRouter.usageRefresh(query),
     clear: query => hostRouter.usageClear(query),
   }, senders, usageEnabled)
@@ -1435,7 +1414,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     cleanupFiles()
     cleanupSubagents()
     cleanupUsage()
-    cleanupProductEvents()
     cleanupDelegations()
     cleanupCoordination()
     coordinationRelay?.close()
@@ -1511,7 +1489,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ])
     hostRouter.dispose()
     disposeIpc()
-    productEvents.stop()
     memoryStore?.close()
     const failure = [...councilResults, ...results].find(result => result.status === 'rejected')
     if (failure?.status === 'rejected') throw failure.reason
@@ -1556,12 +1533,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       const babysittingChanged = !babysittingRetired && settings.babysitPullRequests !== previous.babysitPullRequests
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(previous.workerRoles)
       workingCopySettings = settings
-      const productEventAnswer = productEventsPermission(settings)
-      productEvents.setPermission(productEventAnswer)
-      if (productEventAnswer !== productEventsPermission(previous)) {
-        hostRouter.tellProductEventAnswer()
-        if (productEventAnswer === 'on') productEvents.record('app.started', { pairedHosts: desktopHosts.get().hosts.length })
-      }
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       if (workerRolesChanged || settings.workerCeiling !== previous.workerCeiling || settings.workerMachineCeilings !== previous.workerMachineCeilings || settings.showEveryAgentPicture !== previous.showEveryAgentPicture) desktopDefaultsFollow?.defaultsChanged()
@@ -1592,7 +1563,6 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       void hostRouter.checkHostClientsAfresh()
     },
     restartHold: () => hostUpdates.restartHold(),
-    featureUsed: feature => productEvents.featureUsed(feature),
 
     readVisual: (threadId, visualId) => Promise.resolve(agentHost.visual(threadId, visualId)),
     threadMediaPart: part => hostRouter.threadMediaPart(part),

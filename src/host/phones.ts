@@ -1,4 +1,3 @@
-import type { ProductEventPermission } from '../shared/hostProtocol'
 import type { HostService } from '../main/agents/hostService'
 import type { PairedClients } from '../main/agents/pairing'
 import type { SecureSettings } from '../main/agents/secureSettings'
@@ -53,8 +52,6 @@ export interface HostPhoneAccess {
   peers(): number
   /** Whether a desktop on the tailnet listener wants the host's next prompts now (ADR-0173). */
   nextPromptsWanted(): boolean
-  /** What each desktop on the tailnet listener has answered for this host's product events (ADR-0179). */
-  productEventAnswers(): ProductEventPermission[]
   /** Told the tailnet address whenever phone access or the listener changed, so the host can record a new one. */
   subscribe(listener: (address: string | undefined) => void): () => void
   /** Told after a client was revoked on either listener: a desktop leaves the record, and the last one turns `tailnetConnections` off. */
@@ -88,8 +85,6 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
   let revoking: Promise<void> = Promise.resolve()
   const revoked = (clientId: string): void => {
     options.onClientRevoked?.(clientId)
-    // A revoked desktop's answer for product events stops counting now, on either listener (ADR-0179).
-    options.listener?.onProductEventAnswer?.()
     revoking = revoking.then(async () => {
       const left = await options.desktops.remove(clientId)
       // Only a desktop's revocation counts, and a record that cannot be read says nothing about who is left: either way
@@ -156,7 +151,6 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
     summary: () => phoneAccessSummary(access.brief()),
     peers: () => access.peers(),
     nextPromptsWanted: () => access.nextPromptsWanted(),
-    productEventAnswers: () => access.productEventAnswers(),
     subscribe: listener => access.watch(brief => listener(tailnetAddress(brief))),
     revoked,
     isPhone: clientId => access.isPhone(clientId),

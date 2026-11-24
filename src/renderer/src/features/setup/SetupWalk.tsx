@@ -383,8 +383,8 @@ export function SetupWalk({ settings, platform, onOpenPage, navigation, onUpdate
           </div>
           {lookFailed ? <p className="setup-walk__failed tt-paragraph" role="alert"><Trans>That look could not be saved. Your previous look is still on. Choose it again to retry.</Trans></p> : null}
           <p className="setup-walk__aside tt-paragraph">{cloudTranscription
-            ? <Trans>No Sotto account. Product events are on until you turn them off in Settings.</Trans>
-            : <Trans>Your audio never leaves this computer. No Sotto account. Product events are on until you turn them off in Settings.</Trans>}</p>
+            ? <Trans>No Sotto account. No telemetry.</Trans>
+            : <Trans>Your audio never leaves this computer. No Sotto account. No telemetry.</Trans>}</p>
         </> : null}
         {said ? <p className="setup-walk__status tt-paragraph" data-tone={said.tone} role="status">{said.text}</p> : null}
         {last ? left.length === 0 ? <p className="setup-walk__status tt-paragraph" data-tone="done"><Trans>Everything in the walk is set up.</Trans></p>

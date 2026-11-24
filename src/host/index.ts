@@ -3,9 +3,8 @@ import { AtomicJsonStore } from '../main/storage/atomicJsonStore'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../main/agents/runtime'
-import { createProductEvents, productEventsHostFollower } from '../main/productEvents/productEvents'
-import type { ProductEventPermission } from '../shared/hostProtocol'
 import { removeRetiredVoiceCache } from '../main/agents/retiredVoiceCache'
+import { removeLegacyTelemetryFiles } from '../main/storage/legacyTelemetryCleanup'
 import { loadHostIdentity } from '../main/agents/hostIdentity'
 import { MISSING_REMOTE_ATTACHMENT } from '../main/agents/attachmentStore'
 import { SecureSettings } from '../main/agents/secureSettings'
@@ -53,10 +52,6 @@ import { FilesService } from '../main/files/service'
 import { MODEL_VISUAL_KIND } from '../shared/models3d'
 import { SOUND_VISUAL_KIND } from '../shared/sounds'
 import { phoneSendsFor } from './phoneSends'
-
-/** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
-declare const __SOTTO_RELEASED_HOST__: boolean | undefined
-
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -215,8 +210,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   })
   // The host's identity, read once from its own file; the self-update reads it here rather than copying the runtime's state.
   const hostId = await loadHostIdentity(directory)
-  // Product events (ADR-0179): a host holds them in memory until a connected desktop says the switch is on, and makes no ID before that.
-  const productEvents = createProductEvents({ released: typeof __SOTTO_RELEASED_HOST__ !== 'undefined' && __SOTTO_RELEASED_HOST__, dataDirectory: directory, holdWhileWaiting: true, version: options.sottoVersion ?? packageVersion, channel: getReleaseTrack(options.sottoVersion ?? packageVersion), surface: 'host', ...options.log ? { log: options.log } : {} })
   let memory: ReturnType<typeof openRuntimeMemory>
   let browser: HostBrowserTools | undefined
   let delegationRelay: HostDelegationRelay | undefined
@@ -229,10 +222,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     ? new PictureMaker(undefined, options.log ? { log: (event, detail) => { options.log?.(formatPictureWorkerLog(event, detail)) } } : {})
     : undefined)
   try {
-    productEvents.record('app.started', { pairedHosts: 0 })
     await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
     await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
     await removeRetiredVoiceCache(directory)
+    await removeLegacyTelemetryFiles(directory)
     const startup = await settings.get()
     historyNow = startup.historyEnabled
     memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
@@ -242,10 +235,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let peersConnected = (): boolean => false
     /** Whether a desktop on either listener wants next prompts (ADR-0173); none before the listeners start. */
     let nextPromptsWanted = (): boolean => false
-    /** What every connected desktop has answered for product events (ADR-0179), on either listener; none before they start. */
-    let productEventAnswers = (): ProductEventPermission[] => []
-    const followDesktops = productEventsHostFollower(productEvents)
-    const onProductEventAnswer = (): void => followDesktops(productEventAnswers())
     const pairing = new PairedClients(directory)
     const desktops = new DesktopClients(directory, options.log)
     // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.
@@ -288,7 +277,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, parentCoordinationEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], owletsEnabled: owlFeatures.owlets, heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, parentCoordinationEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], owletsEnabled: owlFeatures.owlets, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
       nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
@@ -432,16 +421,16 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
           // A revoked desktop's account copies, and their secrets, are deleted with it (ADR-0205, amending ADR-0025).
           ...(pluginAccountCopies ? { onClientRevoked: (clientId: string) => { void pluginAccountCopies.forgetDesktop(clientId).catch(() => options.log?.('plugin-account-copies-not-forgotten')) } } : {}),
-          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
+          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
             // Phones reach only the tailnet listener; the one with the administrative routes counts every client a desktop.
             ...(options.compressPhones === false ? { compressPhones: false } : {}), phoneSends: phoneSendsFor(directory) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
-        listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
+        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
           heldSessions: runtime.heldSessions,
           watcherDesktops: desktops, delegation, ...hostUpdate, ...listenerServices,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
-          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => { tailnet.revoked(clientId); onProductEventAnswer() },
+          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => { tailnet.revoked(clientId) },
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')
@@ -455,9 +444,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         peersConnected = () => peers() > 0 || tailnet.peers() > 0
         const loopback = listener
         nextPromptsWanted = () => loopback.nextPromptsWanted() || tailnet.nextPromptsWanted()
-        productEventAnswers = () => [...loopback.productEventAnswers(), ...tailnet.productEventAnswers()]
-        // A desktop on the tailnet listener may have answered before this one was up.
-        onProductEventAnswer()
         describing = true
         await writeDescriptor()
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.
@@ -481,7 +467,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           // answer to it is taken. Phone access and the listener can take seconds to close, and a card allowed in
           // that time would change something outside Sotto for a host that is already going away.
           const pluginsClosed = plugins?.close()
-          productEvents.stop()
           delegationRelay?.close()
           coordinationRelay?.close()
           signIns.close()
@@ -508,7 +493,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     }
   } catch (error) {
     await Promise.allSettled([
-      async () => productEvents.stop(), async () => delegationRelay?.close(), async () => coordinationRelay?.close(), async () => browser?.close(), async () => plugins?.close(), async () => startedRuntime?.close(),
+      async () => delegationRelay?.close(), async () => coordinationRelay?.close(), async () => browser?.close(), async () => plugins?.close(), async () => startedRuntime?.close(),
       async () => pictures?.close(),
     ].map(stop => stop()))
     try { memory?.close() } catch { /* Keep the startup failure. */ }

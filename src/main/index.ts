@@ -253,6 +253,7 @@ import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
 import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
+import { removeLegacyTelemetryFiles } from './storage/legacyTelemetryCleanup'
 import { exposeStartupMarksForE2E } from './e2e/startupMarks'
 import { markStartup } from './performance/startupMarks'
 import { probeMemoryStore } from './memory/probe'
@@ -682,6 +683,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const dictationTiming = process.env.SOTTO_DICTATION_TIMING === '1' || process.argv.includes('--dictation-timing')
     ? createDictationTiming(userDataPath) : undefined
   await removeRetiredVoiceCache(userDataPath)
+  await removeLegacyTelemetryFiles(userDataPath)
   // Packaged builds get the brand icon stamped onto the executable by
   // electron-builder; an unpackaged run has to name the repository icon itself.
   const unpackagedIconPath = app.isPackaged
@@ -1946,7 +1948,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         threadSwitchTimings(userDataPath))
       // The see-through window (ADR-0150): only while Glass's Owl feature is on, so stable registers nothing.
       const cleanupGlassWindow = registerGlassWindowIpc(ipcMain, glassThemeEnabled ? on => windows.setMainWindowSeeThrough(on) : null, () => windows.getTrustedRenderers())
-      browserService = new BrowserService({ featureUsed: feature => engine.featureUsed(feature), files: shellFiles,
+      browserService = new BrowserService({ files: shellFiles,
         getWindow: () => BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents()) ?? null,
         emit: event => { windows.sendToMain(BROWSER_EVENT, event) },
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
@@ -1955,7 +1957,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         pointAtSomething: owlFeatures['quiet-browser'],
       })
       cloudIphoneService = new CloudIphoneService({
-        featureUsed: feature => engine.featureUsed(feature), files: shellFiles, credentials,
+        files: shellFiles, credentials,
         settings: () => ({ monthlyMinutes: workingCopySettings.cloudIphoneMonthlyMinutes, idleMinutes: workingCopySettings.cloudIphoneIdleMinutes }),
         ledger: cloudIphoneLedger,
         threadTitle: threadId => filesBindingsMirror.threadTitle(threadId),
@@ -1970,7 +1972,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       void cloudIphoneService.resumeCleanup()
       const gitChangesCall = (method: GitChangesMethod) => (payload: unknown) => engine.gitChangesCall(method, payload)
       const cleanupTools = registerToolsIpc(ipcMain, {
-        featureUsed: feature => engine.featureUsed(feature), terminal: terminalService,
+        terminal: terminalService,
         onTerminalFocus: focused => {
           const main = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())?.webContents
           if (main) { if (focused) terminalFocus.add(main); else terminalFocus.delete(main) }

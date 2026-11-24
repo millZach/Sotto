@@ -9,13 +9,11 @@ import { HOST_BUNDLED_PACKAGES } from './release-external-dependencies.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 
-export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OUT_DIR || 'out/host'), { version, released = false } = {}) {
+export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OUT_DIR || 'out/host'), { version } = {}) {
   if (version !== undefined && !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/u.test(version)) throw new Error('Host packaging needs a stable or Owl version.')
   await build({
     root,
     configFile: false,
-    // Only a packaged host has the product events endpoint (ADR-0179): one built to run in place, as tests do, has none.
-    define: { __SOTTO_RELEASED_HOST__: JSON.stringify(released) },
     plugins: [...(version === undefined ? [] : [{
       name: 'sotto-host-package-version',
       enforce: 'pre',

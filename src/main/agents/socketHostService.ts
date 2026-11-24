@@ -1,4 +1,3 @@
-import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
@@ -155,10 +154,6 @@ export interface SocketHostServiceOptions {
    * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
    */
   nextPromptsWanted?: () => boolean
-  /** This desktop's answer for a host's product events (ADR-0179): read on each connection, and `setProductEventAnswer` tells a change. */
-  productEventAnswer?: () => ProductEventPermission
-  /** How long after a failed telling it is tried again; each failure in a row doubles it, up to a minute. */
-  productEventAnswerRetryMs?: number
   /**
    * This desktop relays a host's delegations to other machines (#1316): only then, and only with Work across machines on,
    * does its hello accept `delegation-relay`. Stable relays nothing and is asked nothing.
@@ -472,7 +467,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'usage-antigravity-no-limits', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.parentCoordinationEnabled === true ? ['thread-coordination-views', 'thread-coordination-relay'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['detached-runs-elsewhere', 'client-liveness', 'detail-delta', 'detail-read-held', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'usage-antigravity', 'usage-antigravity-no-limits', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.parentCoordinationEnabled === true ? ['thread-coordination-views', 'thread-coordination-relay'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -485,8 +480,6 @@ export class SocketHostService implements HostService {
       }
       // Told before the threads this window shows, which is when the host first looks at them for a next prompt (ADR-0173).
       if (this.supportsNextPrompts) await this.call({ op: 'next-prompts-wanted', wanted: this.options.nextPromptsWanted!() }).catch(() => undefined)
-      // Not waited for: a lost acknowledgement must not hold up the connection.
-      this.tellProductEventAnswer()
       await this.observe(this.observed, this.shown)
       const pickedThreadId = this.options.getSelectedThreadId ? this.options.getSelectedThreadId() : selectedThreadId
       if (this.threadAvailable(pickedThreadId) && pickedThreadId && hello.shell.host.threads.some(thread => thread.id === pickedThreadId)) {
@@ -2087,10 +2080,6 @@ export class SocketHostService implements HostService {
     this.frameListeners.add(listener)
     return () => { this.frameListeners.delete(listener) }
   }
-  private productEventAnswerTelling = false
-  private productEventAnswerAgain = false
-  private productEventAnswerFailures = 0
-  private productEventAnswerRetry: NodeJS.Timeout | null = null
   /** The host lists `next-prompts` and this desktop accepted it (ADR-0173): it pushes its threads' next prompts. */
   get supportsNextPrompts(): boolean { return this.options.nextPromptsWanted !== undefined && this.features.includes('next-prompts') }
   /** The host's next prompts as it last pushed them, by its own thread IDs, read in place. */
@@ -2104,31 +2093,6 @@ export class SocketHostService implements HostService {
   setNextPromptsWanted(wanted: boolean): void {
     if (!this.supportsNextPrompts || !this.frames) return
     void this.call({ op: 'next-prompts-wanted', wanted }).catch(() => undefined)
-  }
-  private get followsProductEventAnswer(): boolean { return this.options.productEventAnswer !== undefined && this.features.includes('product-events') }
-  /**
-   * Tells the host this desktop's answer for its product events as it stands when the telling goes (ADR-0179). One goes at a
-   * time, and a change during one or a failure tells it again, so an off is never lost while the connection lasts: the
-   * request queue can be full, and nothing else would say it again until the next connection.
-   */
-  tellProductEventAnswer(): void {
-    if (!this.followsProductEventAnswer || !this.frames) return
-    if (this.productEventAnswerTelling) { this.productEventAnswerAgain = true; return }
-    if (this.productEventAnswerRetry) { clearTimeout(this.productEventAnswerRetry); this.productEventAnswerRetry = null }
-    this.productEventAnswerTelling = true
-    this.productEventAnswerAgain = false
-    const frames = this.frames
-    void this.call({ op: 'product-events-answer', permission: this.options.productEventAnswer!() }).then(() => { this.productEventAnswerFailures = 0; return true }, () => false).then(told => {
-      this.productEventAnswerTelling = false
-      // Its connection ended. A newer one told the answer it read, which a change since may have overtaken.
-      if (this.frames !== frames) { if (this.productEventAnswerAgain) this.tellProductEventAnswer(); return }
-      if (this.productEventAnswerAgain) { this.tellProductEventAnswer(); return }
-      if (told) return
-      const wait = Math.min(60_000, (this.options.productEventAnswerRetryMs ?? 2_000) * 2 ** this.productEventAnswerFailures)
-      this.productEventAnswerFailures += 1
-      this.productEventAnswerRetry = setTimeout(() => { this.productEventAnswerRetry = null; this.tellProductEventAnswer() }, wait)
-      this.productEventAnswerRetry.unref?.()
-    })
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }

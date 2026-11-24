@@ -15,7 +15,7 @@ import { mainProcessProfiler } from '../performance/profilers'
 import type { ProfilerTarget, RawCpuProfile } from '../performance/activityRecorder'
 import { createDesktopEngine } from './createDesktopEngine'
 import { connectEngineClient, type EngineRpcConnection } from './transport'
-import type { DesktopEngine, DesktopEngineOptions, EngineIpcRole, EngineMetadata, EngineShellBridge, EngineWindowFocus, GitChangesMethod, HostedGitChangesMethod, ProductEventFeature } from './types'
+import type { DesktopEngine, DesktopEngineOptions, EngineIpcRole, EngineMetadata, EngineShellBridge, EngineWindowFocus, GitChangesMethod, HostedGitChangesMethod } from './types'
 
 export interface EngineInitPayload {
   readonly options: DesktopEngineOptions
@@ -179,7 +179,6 @@ export function attachEngineProcessServer(
       case 'engine:releaseTerminalStart': engine.releaseTerminalStart(String(payload)); break
       case 'engine:onAppUpdatePhaseChanged': engine.onAppUpdatePhaseChanged(payload as string | undefined); break
       case 'engine:checkClientsAfresh': engine.checkClientsAfresh(); break
-      case 'engine:featureUsed': engine.featureUsed(payload as ProductEventFeature); break
       case 'engine:questionPageOpened': void engine.questionPageOpened(payload as QuestionPageOpen); break
       case 'engine:prepareForShutdown':
         hangWatchdog?.quitReceived()
