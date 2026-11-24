@@ -141,7 +141,7 @@ struct HostRefusal: Error, LocalizedError {
         if op == "receipt" { return Self.receipts[operation["commandId"]?.string ?? ""] ?? Self.receipt }
         if op == "host-folders", let handler = Self.folderHandler { return try await handler(hostID, operation["request"] ?? .null) }
         if op == "stage-attachment", let handler = Self.stageHandler { return try await handler(operation["image"] ?? .null) }
-        if op == "preview", let handler = Self.previewHandler { return try await handler(operation["request"] ?? .null) }
+        if (op == "preview" || op == "thread-media"), let handler = Self.previewHandler { return try await handler(operation["request"] ?? .null) }
         if op == "stage-file-part", let handler = Self.fileHandler { return try await handler(op, operation["part"] ?? .null) }
         if op == "attachment-file", let handler = Self.fileHandler { return try await handler(op, operation["request"] ?? .null) }
         return .null

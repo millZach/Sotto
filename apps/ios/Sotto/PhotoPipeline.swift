@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CoreGraphics
+import CryptoKit
 import ImageIO
 import UniformTypeIdentifiers
 import SottoCore
@@ -81,6 +82,16 @@ enum PhotoPipeline {
         return scaled(source, edge: edge)
     }
 
+    /// Compact thumbnail bytes suitable for the bounded on-disk cache: keeps already-small resized bytes as-is, and
+    /// re-encodes oversized responses (for example from an older host without `thread-media-edge`) to JPEG at `edge`.
+    static func thumbnailData(_ data: Data, edge: Int) async -> Data? {
+        guard !data.isEmpty else { return nil }
+        if data.count <= ThumbnailDiskCache.directWriteBytes { return data }
+        guard let source = CGImageSourceCreateWithData(data as CFData, Self.uncached),
+              let thumb = scaled(source, edge: edge) else { return nil }
+        return encode(thumb, as: .jpeg, quality: 0.82)
+    }
+
     /// An upright image at most `edge` pixels on its longest side, decoded at that size rather than whole.
     private static func scaled(_ source: CGImageSource, edge: Int) -> CGImage? {
         let options: [CFString: Any] = [
@@ -137,5 +148,146 @@ extension PhotoPipeline {
         let poster = try? await generator.image(at: .zero).image
         let seconds = duration.map(\.seconds).flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
         return VideoFrame(poster: poster, duration: seconds)
+    }
+}
+
+/// Bounded LRU disk cache for thread photo and agent picture thumbnails, keyed by `(digest, edge)`.
+/// Stored under the app's `Caches` directory (excluded from backup) so reconnects and relaunches reuse unchanged
+/// thumbnails without re-downloading them, while iOS may reclaim the folder under storage pressure.
+actor ThumbnailDiskCache {
+    static let defaultByteLimit = 50 * 1024 * 1024
+    static let defaultCountLimit = 1_000
+    /// Responses at or below this size are already compact thumbnails and stored without re-encoding.
+    static let directWriteBytes = 256 * 1024
+    /// Maximum single entry size accepted on disk.
+    static let maxEntryBytes = 512 * 1024
+
+    static let shared: ThumbnailDiskCache = {
+        let root = (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory)
+            .appendingPathComponent("sotto-thumbnails", isDirectory: true)
+        return ThumbnailDiskCache(directory: root)
+    }()
+
+    let directory: URL
+    let byteLimit: Int
+    let countLimit: Int
+    private let now: @Sendable () -> Date
+    private var prepared = false
+
+    init(directory: URL, byteLimit: Int = ThumbnailDiskCache.defaultByteLimit, countLimit: Int = ThumbnailDiskCache.defaultCountLimit,
+         now: @escaping @Sendable () -> Date = Date.init) {
+        self.directory = directory
+        self.byteLimit = max(1, byteLimit)
+        self.countLimit = max(1, countLimit)
+        self.now = now
+    }
+
+    /// Safe filename for `(digest, edge)`: lowercase 64-hex digest + edge, or SHA-256 of a fallback identity string.
+    static func fileName(digest: String, edge: Int) -> String? {
+        let normalized = digest.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty, edge > 0 else { return nil }
+        let safeKey: String
+        if normalized.count == 64 && normalized.allSatisfy({ $0.isHexDigit }) {
+            safeKey = normalized
+        } else {
+            safeKey = sha256Hex(normalized)
+        }
+        return "\(safeKey)_\(edge).thumb"
+    }
+
+    static func fallbackDigest(hostID: String, threadID: String, messageID: String, activityID: String?, attachmentID: String) -> String {
+        let raw = activityID.map { "media/\(hostID)/\(threadID)/\($0)/\(attachmentID)" }
+            ?? "attachment/\(hostID)/\(threadID)/\(messageID)/\(attachmentID)"
+        return sha256Hex(raw)
+    }
+
+    private static func sha256Hex(_ string: String) -> String {
+        SHA256.hash(data: Data(string.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func ensureDirectory() {
+        guard !prepared else { return }
+        var url = directory
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+        prepared = true
+    }
+
+    /// Reads cached bytes for `(digest, edge)` and updates modification date so recently used thumbnails stay hot.
+    func read(digest: String, edge: Int) -> Data? {
+        guard let name = Self.fileName(digest: digest, edge: edge) else { return nil }
+        let url = directory.appendingPathComponent(name, isDirectory: false)
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
+        try? FileManager.default.setAttributes([.modificationDate: now()], ofItemAtPath: url.path)
+        return data
+    }
+
+    /// Writes thumbnail bytes atomically under `(digest, edge)` and evicts least-recently-used entries past the bounds.
+    func write(_ data: Data, digest: String, edge: Int) {
+        guard !data.isEmpty, data.count <= Self.maxEntryBytes, data.count <= byteLimit,
+              let name = Self.fileName(digest: digest, edge: edge) else { return }
+        ensureDirectory()
+        let url = directory.appendingPathComponent(name, isDirectory: false)
+        let temp = directory.appendingPathComponent(UUID().uuidString + ".tmp", isDirectory: false)
+        do {
+            try data.write(to: temp, options: .atomic)
+            try? FileManager.default.removeItem(at: url)
+            try FileManager.default.moveItem(at: temp, to: url)
+            try? FileManager.default.setAttributes([.modificationDate: now()], ofItemAtPath: url.path)
+        } catch {
+            try? FileManager.default.removeItem(at: temp)
+            return
+        }
+        prune()
+    }
+
+    /// Evicts least-recently-used `.thumb` files until total bytes <= `byteLimit` and count <= `countLimit`.
+    func prune() {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        struct Entry { let url: URL; let size: Int; let modified: Date }
+        var entries: [Entry] = []
+        var totalBytes = 0
+        for url in urls where url.pathExtension == "thumb" {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { continue }
+            let size = values.fileSize ?? 0
+            let modified = values.contentModificationDate ?? .distantPast
+            entries.append(Entry(url: url, size: size, modified: modified))
+            totalBytes += size
+        }
+        guard entries.count > countLimit || totalBytes > byteLimit else { return }
+        entries.sort { $0.modified < $1.modified }
+        var remainingCount = entries.count
+        for entry in entries {
+            guard remainingCount > countLimit || totalBytes > byteLimit else { break }
+            try? fm.removeItem(at: entry.url)
+            totalBytes -= entry.size
+            remainingCount -= 1
+        }
+    }
+
+    /// Current entry count and total bytes on disk.
+    func stats() -> (count: Int, bytes: Int) {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return (0, 0) }
+        var count = 0, bytes = 0
+        for url in urls where url.pathExtension == "thumb" {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { continue }
+            count += 1
+            bytes += values.fileSize ?? 0
+        }
+        return (count, bytes)
     }
 }
