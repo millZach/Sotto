@@ -58,6 +58,24 @@ import {
 } from '../../src/shared/plugins'
 import { agentThreadWordsSchema } from '../../src/shared/threadWords'
 import { toolsResultSchema } from '../../src/shared/tools'
+import { tellWatcherAnswerSchema } from '../../src/shared/tellWatcher'
+import {
+  watcherKeptRecordSchema,
+  watcherRecordSchema,
+  watcherToolSchemas,
+} from '../../src/shared/watcher'
+import { watcherEventSchema } from '../../src/shared/watcherNews'
+import { watcherQuestionSchema } from '../../src/shared/watcherQuestions'
+import {
+  applyWatcherRoomUpdate,
+  watcherHandoverReadSchema,
+  watcherMachinesReadSchema,
+  watcherPrepareStopAllResultSchema,
+  watcherRoomResultSchema,
+  watcherStopAllResultSchema,
+  type WatcherRoomHeld,
+  type WatcherRoomUpdate,
+} from '../../src/shared/watcherRoom'
 import { drive, prepareFake } from '../referee/providers'
 import { THREAD } from '../referee/scenario'
 
@@ -1850,6 +1868,276 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       await server.close().catch(() => undefined)
       await rm(desktopDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(remoteDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('runs WatcherMaster natively in sotto-engine with WatcherRoomUpdate delta patching and TypeScript store parity', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-watcher-'))
+    const repoDir = join(dataDir, 'proj')
+    await mkdir(repoDir, { recursive: true })
+
+    // Pre-seed legacy `watcher-state.json` to prove transparent migration to line IDs.
+    await writeFile(join(dataDir, 'watcher-state.json'), JSON.stringify({
+      decisions: ['Keep SQLite WAL single-writer'],
+      rules: ['Never drop user rules'],
+      issues: [],
+      updatedAt: '2026-11-24T00:00:00.000Z',
+    }), 'utf8')
+
+    const endpoint = createEngineEndpoint('sewm')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+    const child = spawn(binary, ['--data', dataDir, '--endpoint', endpoint, '--mock-provider', 'codex'], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: { ...process.env, SOTTO_ENGINE_TOKEN: token },
+      windowsHide: true,
+    })
+
+    try {
+      const conn = await server.waitForClient(15_000)
+      const exited = new Promise<number | null>(resolveExit => child.once('exit', code => resolveExit(code)))
+      const roomUpdates: WatcherRoomUpdate[] = []
+      conn.onPush((event, payload) => {
+        if (event === 'shell:sendToMain') {
+          const msg = payload as { channel?: string; payload?: unknown }
+          if (msg.channel === 'sotto:watcher:changed') {
+            roomUpdates.push(msg.payload as WatcherRoomUpdate)
+          }
+        }
+      })
+
+      const init = await conn.request<{ metadata: { localHostId: string } }>('engine:init', [{
+        options: { userDataPath: dataDir },
+        credentials: { available: true, plaintext: {}, sealed: {}, unreadable: {} },
+        downloadsFolder: dataDir,
+        browserToolDefinitions: [],
+        hasNotify: false,
+        hasMediaThumbnail: false,
+        hasRedrawPhoto: false,
+      }])
+      const localHostId = init.metadata.localHostId
+
+      // 1. Initial `engine:watcherCall('get')` validates against strict `watcherRoomResultSchema`
+      // and shows the migrated legacy `watcher-state.json` entries.
+      const initialRoom = watcherRoomResultSchema.parse(await conn.request('engine:watcherCall', ['get']))
+      expect(initialRoom.status).toBe('ok')
+      if (initialRoom.status !== 'ok') throw new Error('expected ok room')
+      expect(initialRoom.state.state?.kept.decisions[0]?.id).toBe('d1')
+      expect(initialRoom.state.state?.kept.rules[0]?.id).toBe('r2')
+
+      // 2. Create a local project and worker thread, then open Watcher on the ready mock Codex model.
+      const afterProj = await conn.request('agent.command', [{
+        type: 'create-project',
+        provider: 'codex',
+        title: 'Watcher Test Proj',
+        path: repoDir,
+        useExisting: true,
+      }]) as { host: { projects: Array<{ id: string }>; models: Array<{ id: string; ready: boolean }> } }
+      const projId = afterProj.host.projects[0]!.id
+      const readyModelId = afterProj.host.models.find(m => m.ready)!.id
+
+      const afterWorker = await conn.request('agent.command', [{
+        type: 'create-thread',
+        projectId: projId,
+        modelId: readyModelId,
+        title: 'Worker Slice 7',
+        titleSource: 'user',
+        workingCopy: 'shared',
+        managed: false,
+      }]) as { host: { threads: Array<{ id: string; title: string }> } }
+      const workerThreadId = afterWorker.host.threads.find(t => t.title === 'Worker Slice 7')!.id
+
+      const opened = watcherRoomResultSchema.parse(
+        await conn.request('engine:watcherCall', ['open', { provider: 'codex', modelId: readyModelId }]),
+      )
+      expect(opened.status).toBe('ok')
+      if (opened.status !== 'ok') throw new Error('expected ok open')
+      expect(opened.state.current?.provider).toBe('codex')
+      const firstWatcherThreadId = opened.state.current!.target.threadId
+
+      // 3. Watch the worker thread, verify delta patching via TS `applyWatcherRoomUpdate`!
+      const workerTarget = { hostId: localHostId, threadId: workerThreadId }
+      const watched = watcherRoomResultSchema.parse(
+        await conn.request('engine:watcherCall', ['watchThread', { target: workerTarget }]),
+      )
+      expect(watched.status).toBe('ok')
+      if (watched.status !== 'ok') throw new Error('expected ok watch')
+      expect(watched.state.watchedThreads.some(row => row.target.threadId === workerThreadId && row.watched)).toBe(true)
+
+      // 4. Exercise `tellWatcher`, `readyToMerge`, `keepState`, `readState` (`changedSince`), `askUser`, `answerQuestion`, `parkThread`.
+      const toldAns = tellWatcherAnswerSchema.parse(await conn.request('watcher.tellWatcher', [{
+        target: workerTarget,
+        words: 'Slice 7 ready for review.',
+        userMessage: {
+          id: 'u-msg-1',
+          words: 'Please tell Watcher that Slice 7 is ready.',
+          named: true,
+          cut: false,
+        },
+      }]))
+      expect(toldAns).toEqual({ status: 'told', requestOpened: true })
+
+      const readyAns = tellWatcherAnswerSchema.parse(await conn.request('watcher.readyToMerge', [{
+        target: workerTarget,
+        ready: {
+          pullRequest: 'https://github.com/millZach/Sotto/pull/2855',
+          head: '0123456789abcdef0123456789abcdef01234567',
+        },
+      }]))
+      expect(readyAns).toEqual({ status: 'told', requestOpened: false })
+
+      const keepRes = watcherToolSchemas.keep_state.output.parse(await conn.request('watcher.keepState', [{
+        add: [{ list: 'issues', text: 'Track Slice 7 parity' }],
+      }]))
+      expect(keepRes.status).toBe('ok')
+
+      const state1 = watcherToolSchemas.read_state.output.parse(await conn.request('watcher.readState', [{}]))
+      expect(state1.status).toBe('ok')
+      if (state1.status !== 'ok') throw new Error('expected ok read_state')
+      expect(state1.watching.some(row => row.target.threadId === workerThreadId)).toBe(true)
+      expect(state1.changeCursor).toBeDefined()
+
+      const state2 = watcherToolSchemas.read_state.output.parse(
+        await conn.request('watcher.readState', [{ changedSince: state1.changeCursor }]),
+      )
+      expect(state2.status).toBe('ok')
+      if (state2.status !== 'ok') throw new Error('expected ok changedSince read_state')
+      expect(state2.watching).toHaveLength(0)
+      expect(state2.unchanged?.watching).toBeGreaterThanOrEqual(1)
+
+      const asked = await conn.request<{ status: string; question: { id: string } }>('watcher.askUser', [{
+        watcherThreadId: firstWatcherThreadId,
+        input: { question: 'Ship Slice 7 now?', options: [{ label: 'Yes' }, { label: 'Wait' }] },
+      }])
+      expect(asked.status).toBe('ok')
+      await conn.request('watcher.answerQuestion', [asked.question.id, 'Yes'])
+
+      const parked = await conn.request<{ status: string; parked: boolean }>('watcher.parkThread', [{
+        watcherThreadId: firstWatcherThreadId,
+        target: workerTarget,
+        parked: true,
+      }])
+      expect(parked).toMatchObject({ status: 'ok', parked: true })
+
+      // 5. Verify Stop all preview + execution + `readMachines`.
+      const preview = watcherPrepareStopAllResultSchema.parse(
+        await conn.request('engine:watcherCall', ['prepareStopAll']),
+      )
+      expect(preview.status).toBe('ok')
+      if (preview.status !== 'ok') throw new Error('expected ok preview')
+      const stopped = watcherStopAllResultSchema.parse(
+        await conn.request('engine:watcherCall', ['stopAll', { confirmationId: preview.confirmationId }]),
+      )
+      expect(stopped.status).toBe('ok')
+
+      const machines = watcherMachinesReadSchema.parse(
+        await conn.request('engine:watcherCall', ['readMachines']),
+      )
+      expect(machines.status).toBe('ok')
+      if (machines.status === 'ok') {
+        expect(machines.machines.some(m => m.hostId === localHostId && m.thisComputer)).toBe(true)
+      }
+
+      // 6. Send a message on Watcher's thread; verify `startNew` refuses while running,
+      // then interrupt to idle, start a new Watcher, and exercise handover!
+      await conn.request('agent.command', [{
+        type: 'manual-send',
+        threadId: firstWatcherThreadId,
+        draftId: '44444444-4444-4444-8444-444444444701',
+        text: 'Check Slice 7 status',
+        attachments: [],
+      }])
+      const busyStartNew = watcherRoomResultSchema.parse(
+        await conn.request('engine:watcherCall', ['startNew']),
+      )
+      expect(busyStartNew.status).toBe('refused')
+      if (busyStartNew.status === 'refused') {
+        expect(busyStartNew.code).toBe('THREAD_BUSY')
+      }
+      await conn.request('agent.command', [{
+        type: 'interrupt',
+        threadId: firstWatcherThreadId,
+      }])
+      const startedNew = watcherRoomResultSchema.parse(
+        await conn.request('engine:watcherCall', ['startNew']),
+      )
+      expect(startedNew.status).toBe('ok')
+      if (startedNew.status !== 'ok') throw new Error('expected ok startNew')
+      expect(startedNew.state.current?.target.threadId).not.toBe(firstWatcherThreadId)
+      expect(startedNew.state.history.some(h => h.target.threadId === firstWatcherThreadId)).toBe(true)
+      expect(startedNew.state.handover?.source.threadId).toBe(firstWatcherThreadId)
+
+      const handover = watcherHandoverReadSchema.parse(
+        await conn.request('engine:watcherCall', ['readHandover']),
+      )
+      expect(handover.status).toBe('ok')
+      if (handover.status === 'ok') {
+        expect(handover.text).toContain('Check Slice 7 status')
+        expect(handover.text).toContain('Never drop user rules')
+      }
+
+      const dismissed = watcherRoomResultSchema.parse(
+        await conn.request('engine:watcherCall', ['dismissHandover']),
+      )
+      expect(dismissed.status).toBe('ok')
+      if (dismissed.status === 'ok') {
+        expect(dismissed.state.handover).toBeNull()
+      }
+
+      // 7. Replay every pushed `WatcherRoomUpdate` through TypeScript's `applyWatcherRoomUpdate`!
+      expect(roomUpdates.length).toBeGreaterThanOrEqual(4)
+      let held: WatcherRoomHeld | null = null
+      let appliedDeltas = 0
+      for (const update of roomUpdates) {
+        held = applyWatcherRoomUpdate(held, update)
+        expect(held).not.toBeNull()
+        if (update.base !== null) appliedDeltas++
+      }
+      expect(appliedDeltas).toBeGreaterThanOrEqual(2)
+
+      // 8. Check `ops.watcherReadOnly` and close engine cleanly.
+      const ro = await conn.request<{
+        recordLoaded: boolean
+        historyCount: number
+        standingWatchesCount: number
+        readyPullRequestsCount: number
+        questionsCount: number
+        toldCount: number
+      }>('ops.watcherReadOnly', [])
+      expect(ro.recordLoaded).toBe(true)
+      expect(ro.historyCount).toBe(1)
+      expect(ro.standingWatchesCount).toBe(1)
+      expect(ro.readyPullRequestsCount).toBe(1)
+      expect(ro.questionsCount).toBe(1)
+      expect(ro.toldCount).toBe(2)
+
+      await conn.request('engine:close', [])
+      expect(await exited).toBe(0)
+      conn.close()
+
+      // 9. Validate every Rust-persisted Watcher JSON file against TypeScript's strict zod schemas!
+      const diskRecord = JSON.parse(await readFile(join(dataDir, 'watcher-record.json'), 'utf8')) as { watcher: unknown }
+      const parsedRec = watcherRecordSchema.parse(diskRecord.watcher)
+      expect(parsedRec.history).toHaveLength(1)
+      expect(parsedRec.readyPullRequests).toHaveLength(1)
+
+      const diskState = JSON.parse(await readFile(join(dataDir, 'watcher-state.json'), 'utf8')) as unknown
+      const parsedState = watcherKeptRecordSchema.parse(diskState)
+      expect(parsedState.issues.some(i => i.text === 'Track Slice 7 parity')).toBe(true)
+
+      const diskQuestions = JSON.parse(await readFile(join(dataDir, 'watcher-questions.json'), 'utf8')) as { version: number; questions: unknown[] }
+      expect(diskQuestions.version).toBe(1)
+      expect(watcherQuestionSchema.parse(diskQuestions.questions[0]).state).toBe('answered')
+
+      const diskTold = JSON.parse(await readFile(join(dataDir, 'watcher-told.json'), 'utf8')) as { version: number; events: unknown[] }
+      expect(diskTold.version).toBe(1)
+      expect(diskTold.events).toHaveLength(2)
+      for (const ev of diskTold.events) watcherEventSchema.parse(ev)
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await server.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 45_000)
 })

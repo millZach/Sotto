@@ -13,7 +13,7 @@ use sotto_core::{
     acquire_host_lock, inspect_checkpoint_blobs, load_host_identity, mail_grants_shown,
     plugin_account_slot, probe_tailscale_status, read_boot_id, read_checkpoints_readonly,
     read_councils_readonly, read_desktop_hosts_readonly, read_github_sign_in,
-    read_phone_access_readonly, read_plugins_readonly, release_host_lock,
+    read_phone_access_readonly, read_plugins_readonly, read_watcher_readonly, release_host_lock,
     remote_host_credential_slot, AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair,
     CheckpointManager, CheckpointThreadInfo, ClaudeAdapter, ClaudeAdapterConfig, ClientContext,
     CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle,
@@ -22,8 +22,9 @@ use sotto_core::{
     HostConnectionPreference, HostLease, LocalAppsManager, LocalPluginsManager, MemoryStore,
     MockProviderAdapter, MuseAdapter, MuseAdapterConfig, OpenCodeAdapter, OpenCodeAdapterConfig,
     PhoneAccessManager, PhoneAccessSettings, PhonesCommand, PluginAccountResult,
-    PluginAccountUpdate, PluginUseReport, ProviderAdapter, RemoteHostClient, RetainedDraft,
-    SavedHost, SshTerminalHostEntry, SystemTailscaleCli, COUNCIL_VIEWS_MAX,
+    PluginAccountUpdate, PluginUseReport, ProviderAdapter, ReadyToMerge, RemoteHostClient,
+    RetainedDraft, SavedHost, SshTerminalHostEntry, SystemTailscaleCli, ToldUserMessage,
+    WatcherAskInput, WatcherKeepStateInput, WatcherMaster, WatcherThreadTarget, COUNCIL_VIEWS_MAX,
 };
 
 use crate::shell_bridge::{CredentialSnapshot, EngineWindowFocus, ShellBridgeClient};
@@ -265,6 +266,7 @@ async fn handle_rpc(
     council: &Arc<Mutex<CouncilManager>>,
     desktop_hosts: &Arc<Mutex<DesktopHostsManager>>,
     host_router: &Arc<Mutex<DesktopHostRouter>>,
+    watcher: &Arc<Mutex<WatcherMaster>>,
     host_id: &str,
     data_directory: &Path,
     method: &str,
@@ -1371,6 +1373,12 @@ async fn handle_rpc(
                 .await
                 .map_err(|_| err_invalid("desktopHostsReadOnly task failed."))
         }
+        "ops.watcherReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_watcher_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("watcherReadOnly task failed."))
+        }
         "hosts:get" => {
             let guard = desktop_hosts.lock().await;
             serde_json::to_value(guard.state())
@@ -1682,6 +1690,282 @@ async fn handle_rpc(
                 "delta": delta,
                 "snapshot": snap,
             }))
+        }
+        "engine:watcherCall" => {
+            let op = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("Watcher method name is required."))?;
+            let payload = args.get(1).cloned().unwrap_or(Value::Null);
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let (result, push_room) = match op {
+                "get" => (w.get(coordinator, Some(&router_guard)).await, false),
+                "open" => (w.open(&payload, coordinator, Some(&router_guard)).await, true),
+                "startNew" => (w.start_new(coordinator, Some(&router_guard)).await, true),
+                "setPermission" => (
+                    w.set_permission(&payload, coordinator, Some(&router_guard))
+                        .await,
+                    true,
+                ),
+                "watchThread" => (
+                    w.watch_thread(&payload, "user", coordinator, Some(&router_guard))
+                        .await,
+                    true,
+                ),
+                "unwatchThread" => (
+                    w.unwatch_thread(&payload, "user", coordinator, Some(&router_guard))
+                        .await,
+                    true,
+                ),
+                "prepareStopAll" => (w.prepare_stop_all(None), false),
+                "stopAll" => {
+                    let cid = payload
+                        .get("confirmationId")
+                        .and_then(Value::as_str)
+                        .or_else(|| payload.as_str())
+                        .ok_or_else(|| err_invalid("confirmationId is required."))?;
+                    (
+                        w.stop_all(cid, None, coordinator, Some(&router_guard))
+                            .await,
+                        true,
+                    )
+                }
+                "readHandover" => (w.read_handover(coordinator).await, false),
+                "continueWithHandover" => (
+                    w.continue_with_handover(&payload, coordinator, Some(&router_guard))
+                        .await,
+                    true,
+                ),
+                "dismissHandover" => (
+                    w.dismiss_handover(coordinator, Some(&router_guard)).await,
+                    true,
+                ),
+                "tryNow" => (w.try_now(coordinator, Some(&router_guard)).await, true),
+                "readMachines" => (w.read_machines(coordinator, Some(&router_guard)).await, false),
+                other => {
+                    return Err(SerializedEngineError::new(
+                        format!("ENGINE_WATCHER_METHOD_UNKNOWN: {other}"),
+                        Some("METHOD_NOT_FOUND"),
+                    ))
+                }
+            };
+            if push_room {
+                let room = if let Some(st) = result.get("state").filter(|v| v.is_object()) {
+                    st.clone()
+                } else {
+                    w.state(coordinator, Some(&router_guard)).await
+                };
+                w.broadcast.send(room, |update| {
+                    if let Ok(val) = serde_json::to_value(update) {
+                        shell_bridge.send_to_main("sotto:watcher:changed", val);
+                        true
+                    } else {
+                        false
+                    }
+                });
+            }
+            Ok(result)
+        }
+        "watcher.tellWatcher" => {
+            let obj = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("tellWatcher object is required."))?;
+            let target: WatcherThreadTarget = obj
+                .get("target")
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("target is required."))?;
+            let words = obj
+                .get("words")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("words is required."))?;
+            let user_message: Option<ToldUserMessage> = obj
+                .get("userMessage")
+                .cloned()
+                .filter(|v| !v.is_null())
+                .and_then(|v| serde_json::from_value(v).ok());
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let ans = w.thread_told(target, words, user_message);
+            let room = w.state(coordinator, Some(&router_guard)).await;
+            w.broadcast.send(room, |update| {
+                if let Ok(val) = serde_json::to_value(update) {
+                    shell_bridge.send_to_main("sotto:watcher:changed", val);
+                    true
+                } else {
+                    false
+                }
+            });
+            Ok(ans)
+        }
+        "watcher.readyToMerge" => {
+            let obj = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("readyToMerge object is required."))?;
+            let target: WatcherThreadTarget = obj
+                .get("target")
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("target is required."))?;
+            let ready: ReadyToMerge = obj
+                .get("ready")
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("ready { pullRequest, head } is required."))?;
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let ans = w.thread_ready(target, ready);
+            let room = w.state(coordinator, Some(&router_guard)).await;
+            w.broadcast.send(room, |update| {
+                if let Ok(val) = serde_json::to_value(update) {
+                    shell_bridge.send_to_main("sotto:watcher:changed", val);
+                    true
+                } else {
+                    false
+                }
+            });
+            Ok(ans)
+        }
+        "watcher.keepState" => {
+            let input: WatcherKeepStateInput = args
+                .first()
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("keepState input is required."))?;
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let res = w.keep_state(&input);
+            let room = w.state(coordinator, Some(&router_guard)).await;
+            w.broadcast.send(room, |update| {
+                if let Ok(val) = serde_json::to_value(update) {
+                    shell_bridge.send_to_main("sotto:watcher:changed", val);
+                    true
+                } else {
+                    false
+                }
+            });
+            Ok(res)
+        }
+        "watcher.readState" => {
+            let obj = args.first().and_then(Value::as_object);
+            let open_only = obj
+                .and_then(|o| o.get("openOnly"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let changed_since = obj
+                .and_then(|o| o.get("changedSince"))
+                .and_then(Value::as_str);
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            Ok(w
+                .read_state(open_only, changed_since, coordinator, Some(&router_guard))
+                .await)
+        }
+        "watcher.askUser" => {
+            let obj = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("askUser object is required."))?;
+            let tid = obj
+                .get("watcherThreadId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("watcherThreadId is required."))?;
+            let input: WatcherAskInput = obj
+                .get("input")
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("input is required."))?;
+            let asked_under = obj
+                .get("askedUnder")
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let q = w
+                .questions
+                .ask(tid, input, asked_under)
+                .map_err(|e| err_invalid(&e))?;
+            let room = w.state(coordinator, Some(&router_guard)).await;
+            w.broadcast.send(room, |update| {
+                if let Ok(val) = serde_json::to_value(update) {
+                    shell_bridge.send_to_main("sotto:watcher:changed", val);
+                    true
+                } else {
+                    false
+                }
+            });
+            Ok(json!({ "status": "ok", "question": q }))
+        }
+        "watcher.answerQuestion" => {
+            let id = args
+                .first()
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("question id is required."))?;
+            let choice = args
+                .get(1)
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("choice is required."))?;
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let q = w.questions.answer(id, choice);
+            let room = w.state(coordinator, Some(&router_guard)).await;
+            w.broadcast.send(room, |update| {
+                if let Ok(val) = serde_json::to_value(update) {
+                    shell_bridge.send_to_main("sotto:watcher:changed", val);
+                    true
+                } else {
+                    false
+                }
+            });
+            Ok(json!({ "question": q }))
+        }
+        "watcher.parkThread" => {
+            let obj = args
+                .first()
+                .and_then(Value::as_object)
+                .ok_or_else(|| err_invalid("parkThread object is required."))?;
+            let tid = obj
+                .get("watcherThreadId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err_invalid("watcherThreadId is required."))?;
+            let target: WatcherThreadTarget = obj
+                .get("target")
+                .cloned()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .ok_or_else(|| err_invalid("target is required."))?;
+            let parked = obj.get("parked").and_then(Value::as_bool).unwrap_or(true);
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let res = w.park_thread(tid, &target, parked).await;
+            let room = w.state(coordinator, Some(&router_guard)).await;
+            w.broadcast.send(room, |update| {
+                if let Ok(val) = serde_json::to_value(update) {
+                    shell_bridge.send_to_main("sotto:watcher:changed", val);
+                    true
+                } else {
+                    false
+                }
+            });
+            Ok(res)
+        }
+        "watcher.pushDelta" => {
+            let router_guard = host_router.lock().await;
+            let mut w = watcher.lock().await;
+            let room = w.state(coordinator, Some(&router_guard)).await;
+            let mut sent_update: Option<Value> = None;
+            w.broadcast.send(room, |update| {
+                if let Ok(val) = serde_json::to_value(update) {
+                    shell_bridge.send_to_main("sotto:watcher:changed", val.clone());
+                    sent_update = Some(val);
+                    true
+                } else {
+                    false
+                }
+            });
+            Ok(sent_update.unwrap_or(Value::Null))
         }
         other => Err(SerializedEngineError {
             name: "Error".into(),
@@ -2147,6 +2431,12 @@ async fn handle_accelerator_rpc(
                 .await
                 .map_err(|_| err_invalid("desktopHostsReadOnly task failed."))
         }
+        "ops.watcherReadOnly" => {
+            let dir = data_directory.to_path_buf();
+            tokio::task::spawn_blocking(move || read_watcher_readonly(&dir))
+                .await
+                .map_err(|_| err_invalid("watcherReadOnly task failed."))
+        }
         other => Err(SerializedEngineError {
             name: "Error".into(),
             message: format!("ENGINE_METHOD_UNHANDLED: {other}"),
@@ -2378,6 +2668,12 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         "This computer",
         coordinator.clone(),
     )));
+    let watcher = Arc::new(Mutex::new(WatcherMaster::new(
+        &parsed.data_directory,
+        host_id.clone(),
+        true,
+    )));
+    let _ = watcher.lock().await.load();
 
     let stream = match connect_engine_stream(&parsed.endpoint).await {
         Ok(s) => s,
@@ -2542,6 +2838,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                         let council_mgr = Arc::clone(&council);
                         let hosts_mgr = Arc::clone(&desktop_hosts);
                         let router_mgr = Arc::clone(&host_router);
+                        let watcher_mgr = Arc::clone(&watcher);
                         let hid = host_id.clone();
                         let data_dir = parsed.data_directory.clone();
                         let out = duplex.clone();
@@ -2556,6 +2853,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
                                 &council_mgr,
                                 &hosts_mgr,
                                 &router_mgr,
+                                &watcher_mgr,
                                 &hid,
                                 &data_dir,
                                 &method,
@@ -2592,6 +2890,7 @@ async fn run_engine(parsed: EngineCliArgs) -> ExitCode {
         local_apps.lock().await.close().await;
         plugins.lock().await.pending_changes.close();
         council.lock().await.close();
+        watcher.lock().await.close();
         host_router.lock().await.close();
     })
     .await;
