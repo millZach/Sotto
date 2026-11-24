@@ -22,16 +22,22 @@ const evidence = { sqliteVersion: '3.51.2', migrationVersion: latestMigrationVer
 const terminal = { modules: '148', napi: '10', exitCode: 0, output: 'SOTTO_PTY_PACKAGE_OK' }
 const speechEngine = { recognizer: true, onnxruntime: '1.28.2' }
 const speechHelper = { answer: 'model' }
+const pictureWorker = { separateProcess: true, isJpeg: true, bytes: 12000 }
 function launchResult(output, exitCode = 0) {
   const child = new EventEmitter()
   child.stdout = new PassThrough()
   child.stderr = new PassThrough()
   const application = {
     process: () => child,
-    evaluate: vi.fn().mockResolvedValueOnce(terminal).mockResolvedValueOnce(speechEngine).mockResolvedValueOnce(speechHelper).mockImplementationOnce(async () => {
-      if (exitCode !== 0) throw new Error('packaged process failed')
-      return JSON.parse(output)
-    }),
+    evaluate: vi.fn()
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce(speechEngine)
+      .mockResolvedValueOnce(speechHelper)
+      .mockResolvedValueOnce(pictureWorker)
+      .mockImplementationOnce(async () => {
+        if (exitCode !== 0) throw new Error('packaged process failed')
+        return JSON.parse(output)
+      }),
     close: vi.fn(async () => undefined),
   }
   electron.launch.mockResolvedValue(application)
@@ -41,7 +47,7 @@ function launchResult(output, exitCode = 0) {
 describe('packaged memory probe', () => {
   it('launches the packaged application with an isolated profile, collects evidence and cleans up', async () => {
     launchResult(`${JSON.stringify(evidence)}\n`)
-    await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...evidence, terminal, speechEngine, speechHelper })
+    await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...evidence, terminal, speechEngine, speechHelper, pictureWorker })
     const options = electron.launch.mock.calls.at(-1)[0]
     expect(options.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
     expect(options.env.SOTTO_MEMORY_PROBE).toBeUndefined()
@@ -54,7 +60,7 @@ describe('packaged memory probe', () => {
   it('invokes the probe exported by the shipped main entry rather than checkout code', async () => {
     const application = launchResult(JSON.stringify(evidence))
     await verifyPackagedMemoryStore('release/win-unpacked')
-    const [evaluate, root] = application.evaluate.mock.calls[3]
+    const [evaluate, root] = application.evaluate.mock.calls[4]
     const probe = vi.fn(() => evidence)
     const requireApp = vi.fn(path => path === './package.json' ? { main: 'out/main/index.js' } : { probeMemoryStore: probe })
     const builtin = process.getBuiltinModule.bind(process)
@@ -107,6 +113,48 @@ describe('packaged memory probe', () => {
     expect(application.close).toHaveBeenCalledOnce()
   })
 
+  it('fails verification and closes the app when the packaged picture worker does not resize PNG at edge=640', async () => {
+    const application = launchResult(JSON.stringify(evidence))
+    application.evaluate.mockReset()
+      .mockResolvedValueOnce(terminal)
+      .mockResolvedValueOnce(speechEngine)
+      .mockResolvedValueOnce(speechHelper)
+      .mockResolvedValueOnce({ separateProcess: true, isJpeg: false, bytes: 0 })
+    await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/packaged picture worker did not resize PNG at edge=640/)
+    expect(application.close).toHaveBeenCalledOnce()
+  })
+
+  it('forks the unpacked picture worker outside app.asar and checks edge=640 JPEG resizing', async () => {
+    const application = launchResult(JSON.stringify(evidence))
+    await verifyPackagedMemoryStore('release/win-unpacked')
+    const [evaluate] = application.evaluate.mock.calls[3]
+    const child = Object.assign(new EventEmitter(), { stderr: new PassThrough(), send: vi.fn(), kill: vi.fn() })
+    const fork = vi.fn(() => child)
+    const existsSyncMock = vi.fn(() => true)
+    const builtin = process.getBuiltinModule.bind(process)
+    vi.spyOn(process, 'getBuiltinModule').mockImplementation(name => {
+      if (name === 'node:child_process') return { fork }
+      if (name === 'node:fs') return { existsSync: existsSyncMock }
+      return builtin(name)
+    })
+    const { join } = builtin('node:path')
+    const answered = evaluate({ app: { getAppPath: () => join('resources', 'app.asar') } })
+    const sentRequest = child.send.mock.calls[0][0]
+    expect(sentRequest.edge).toBe(640)
+    expect(sentRequest.dataUrl.startsWith('data:image/png;base64,')).toBe(true)
+    const fakeJpeg = `data:image/jpeg;base64,${'A'.repeat(200)}`
+    child.emit('message', { id: sentRequest.id, copy: fakeJpeg, pid: process.pid + 1 })
+    await expect(answered).resolves.toEqual({ separateProcess: true, isJpeg: true, bytes: fakeJpeg.length })
+    const expectedUnpacked = join('resources', 'app.asar.unpacked', 'out', 'main', 'pictureWorker.js')
+    expect(existsSyncMock).toHaveBeenCalledWith(expectedUnpacked)
+    expect(fork).toHaveBeenCalledWith(
+      expectedUnpacked,
+      [],
+      expect.objectContaining({ execArgv: [], env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }) }),
+    )
+    expect(child.kill).toHaveBeenCalledOnce()
+  })
+
   it('starts the packaged speech helper in a utility process on a folder with no model', async () => {
     const application = launchResult(JSON.stringify(evidence))
     await verifyPackagedMemoryStore('release/win-unpacked')
@@ -147,7 +195,7 @@ describe('packaged memory probe', () => {
       const { verifyPackagedMemoryStore } = await import('../../../scripts/verify-packaged-resources.mjs')
       const next = { ...evidence, migrationVersion: latestMigrationVersion + 1 }
       launchResult(JSON.stringify(next))
-      await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...next, terminal, speechEngine, speechHelper })
+      await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...next, terminal, speechEngine, speechHelper, pictureWorker })
       launchResult(JSON.stringify(evidence))
       await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/invalid store evidence/)
     } finally {
