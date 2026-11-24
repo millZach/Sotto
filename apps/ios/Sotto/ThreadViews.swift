@@ -1534,15 +1534,17 @@ extension AppModel {
     /// The name of the project a thread belongs to, where this iPhone lists the thread.
     func projectTitle(_ ref: ThreadRef) -> String? {
         guard let id = thread(ref)?.projectId else { return nil }
-        return projectsListed(ref.hostID).first { $0.id == id }?.title
+        return project(id, on: ref.hostID)?.title
     }
     /// Where a thread runs, as every row and card says it (#1861): provider · project · computer, the project only where
     /// this iPhone lists the thread. The caller names the provider and computer, since Watcher's records name them for
     /// threads this iPhone may not list.
     /// An owlet's project is its own folder, named as the desktop names it, `Owlets/Tawny` (ADR-0213).
     func placeLine(_ ref: ThreadRef, provider: String, computer: String) -> String {
-        let project = thread(ref)?.owlet != nil ? projectTitle(ref).map(Owlets.folderLabel) : projectTitle(ref)
-        return [provider, project, computer].compactMap { $0 }.joined(separator: " · ")
+        let found = thread(ref)
+        let title = found.flatMap { project($0.projectId, on: ref.hostID)?.title }
+        let name = found?.owlet != nil ? title.map(Owlets.folderLabel) : title
+        return [provider, name, computer].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -2665,7 +2667,7 @@ private struct ReplyText: UIViewRepresentable {
 }
 
 /// The reply text views holding a selection, so the page keeps their rows where they are while words are selected.
-private enum ReplySelection {
+enum ReplySelection {
     static var views: Set<ObjectIdentifier> = []
 }
 

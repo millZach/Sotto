@@ -1095,6 +1095,51 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(connection.disconnects, 0)
     }
 
+    @MainActor func testIndexedThreadAndProjectLookupsStayInSyncAcrossLiveAndSettledUpdates() async throws {
+        let (model, ref) = try fixture()
+        let host = ref.hostID
+        HostConnection.features = ["host-folders", Wire.settledThreadsFeature]
+        let threads = (0..<1_200).map { i in
+            #"{"id":"t-\#(i)","projectId":"p-\#(i % 20)","title":"Thread \#(i)","status":"idle","requests":[]}"#
+        }.joined(separator: ",")
+        let projects = (0..<20).map { i in
+            #"{"id":"p-\#(i)","title":"Project \#(i)"}"#
+        }.joined(separator: ",")
+        HostConnection.shell = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"hostId":"\#(host)","settledHeldBack":1,"host":{"hostId":"\#(host)","name":"Laptop","threads":[\#(threads)],"projects":[\#(projects)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}}"#.utf8))
+        model.phase(.active); await model.waitForActivation()
+        defer { model.phase(.background) }
+
+        XCTAssertEqual(model.thread(ThreadRef(hostID: host, threadID: "t-0"))?.title, "Thread 0")
+        XCTAssertEqual(model.thread(ThreadRef(hostID: host, threadID: "t-599"))?.title, "Thread 599")
+        XCTAssertEqual(model.thread(ThreadRef(hostID: host, threadID: "t-1199"))?.title, "Thread 1199")
+        XCTAssertNil(model.thread(ThreadRef(hostID: host, threadID: "missing")))
+        XCTAssertEqual(model.project("p-19", on: host)?.title, "Project 19")
+        XCTAssertNil(model.project("p-missing", on: host))
+
+        // Shell update invalidates the per-host index and bumps threadListRevision.
+        let revisionBeforeShell = model.threadListRevision
+        let connection = try XCTUnwrap(HostConnection.instances.last)
+        let updatedShell = #"{"hostId":"\#(host)","settledHeldBack":1,"host":{"hostId":"\#(host)","name":"Laptop","threads":[{"id":"t-1199","projectId":"p-19","title":"Renamed 1199","status":"running","requests":[]}],"projects":[{"id":"p-19","title":"Renamed Project 19"}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}}"#
+        connection.push(try await Wire.readFrame(Data(#"{"v":1,"event":"shell","state":\#(updatedShell)}"#.utf8)))
+        XCTAssertGreaterThan(model.threadListRevision, revisionBeforeShell)
+        XCTAssertNil(model.thread(ThreadRef(hostID: host, threadID: "t-0")), "Removed thread drops out of the index")
+        XCTAssertEqual(model.thread(ThreadRef(hostID: host, threadID: "t-1199"))?.title, "Renamed 1199")
+        XCTAssertEqual(model.project("p-19", on: host)?.title, "Renamed Project 19")
+
+        // Older settled threads read from the shelf and search are also resolved through the O(1) index.
+        let revisionBeforeSettled = model.threadListRevision
+        HostConnection.settledPage = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"threads":[{"id":"t-settled","projectId":"p-19","title":"Settled thread","status":"idle","settledAt":"2026-10-10T00:00:00.000Z","requests":[]}],"next":null}"#.utf8))
+        await model.readOlderSettled(show: .all)
+        XCTAssertGreaterThan(model.threadListRevision, revisionBeforeSettled)
+        XCTAssertEqual(model.thread(ThreadRef(hostID: host, threadID: "t-settled"))?.title, "Settled thread")
+
+        let revisionBeforeSearch = model.threadListRevision
+        HostConnection.settledPage = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"threads":[{"id":"t-search","projectId":"p-19","title":"Search match","status":"idle","settledAt":"2026-10-09T00:00:00.000Z","requests":[]}],"next":null}"#.utf8))
+        await model.searchSettled("Search", show: .all)
+        XCTAssertGreaterThan(model.threadListRevision, revisionBeforeSearch)
+        XCTAssertEqual(model.thread(ThreadRef(hostID: host, threadID: "t-search"))?.title, "Search match")
+    }
+
 }
 
 private actor RetryClock {
