@@ -1,16 +1,19 @@
 // @vitest-environment node
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire, isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { createPackageWithOptions } from '@electron/asar'
 import { build } from 'vite'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BUILT_PICTURE_WORKER } from '../../../src/host/pictureMaker'
+import { BUILT_PICTURE_WORKER, PictureMaker } from '../../../src/host/pictureMaker'
 import { BUILT_GIT_LAUNCHER_WORKER } from '../../../src/main/agents/git/gitLauncher'
 import { BUILT_STORE_WORKER } from '../../../src/main/agents/storeWorker'
 import { BUILT_USAGE_STORE_WORKER } from '../../../src/main/agents/usageStoreClient'
-import { resolveBuiltWorkerPath } from '../../../src/main/builtWorkerPath'
+import { asarUnpackedWorkerPath, resolveBuiltWorkerPath } from '../../../src/main/builtWorkerPath'
+import { builtPictureWorker } from '../../fixtures/pictureWorker'
+import { dataUrl, screenshotPng } from '../../fixtures/syntheticPictures'
 
 const WORKER_FILES = [
   'threadStoreWorker.js',
@@ -171,6 +174,64 @@ describe('resolveBuiltWorkerPath', () => {
       engineExports.BUILT_PICTURE_WORKER,
     ]) {
       expect(existsSync(resolved)).toBe(true)
+    }
+  }, 30_000)
+
+  it('prefers app.asar.unpacked for unpacked workers in both direct and Rollup chunk paths while leaving packed workers inside app.asar', () => {
+    expect(asarUnpackedWorkerPath('C:\\Program Files\\Sotto\\resources\\app.asar\\out\\main\\pictureWorker.js')).toBe(
+      'C:\\Program Files\\Sotto\\resources\\app.asar.unpacked\\out\\main\\pictureWorker.js',
+    )
+    expect(asarUnpackedWorkerPath('/opt/sotto/resources/app.asar/out/main/pictureWorker.js')).toBe(
+      '/opt/sotto/resources/app.asar.unpacked/out/main/pictureWorker.js',
+    )
+    expect(asarUnpackedWorkerPath('/opt/sotto/resources/app.asar.unpacked/out/main/pictureWorker.js')).toBeUndefined()
+
+    const asarMain = join(tmpdir(), 'sotto-packaged', 'resources', 'app.asar', 'out', 'main')
+    const asarChunks = join(asarMain, 'chunks')
+    const unpackedPictureWorker = join(tmpdir(), 'sotto-packaged', 'resources', 'app.asar.unpacked', 'out', 'main', 'pictureWorker.js')
+    const packedPictureWorker = join(asarMain, 'pictureWorker.js')
+    const packedStoreWorker = join(asarMain, 'threadStoreWorker.js')
+    const known = new Set([unpackedPictureWorker, packedPictureWorker, packedStoreWorker])
+    const exists = (candidate: string): boolean => known.has(candidate)
+
+    // Even though Electron's ASAR fs reports the virtual app.asar path as existing, the unpacked sibling must win.
+    expect(resolveBuiltWorkerPath('pictureWorker.js', asarMain, exists)).toBe(unpackedPictureWorker)
+    expect(resolveBuiltWorkerPath('pictureWorker.js', asarChunks, exists)).toBe(unpackedPictureWorker)
+    // Workers not in asarUnpack stay inside app.asar.
+    expect(resolveBuiltWorkerPath('threadStoreWorker.js', asarMain, exists)).toBe(packedStoreWorker)
+    expect(resolveBuiltWorkerPath('threadStoreWorker.js', asarChunks, exists)).toBe(packedStoreWorker)
+  })
+
+  it('resolves an ASAR-unpacked pictureWorker.js and resizes a PNG at edge=640 in a child process', async () => {
+    const dir = await makeLayout('packaged-picture-worker', ['stage/out/main/chunks', 'resources'])
+    const built = await builtPictureWorker()
+    const makers: PictureMaker[] = []
+    try {
+      await copyFile(built.path, join(dir, 'stage', 'out', 'main', 'pictureWorker.js'))
+      await writeFile(join(dir, 'stage', 'out', 'main', 'chunks', 'shared.js'), '// chunk\n')
+      await writeFile(join(dir, 'stage', 'package.json'), '{}')
+      const asarPath = join(dir, 'resources', 'app.asar')
+      await createPackageWithOptions(join(dir, 'stage'), asarPath, { unpack: 'pictureWorker.js' })
+
+      const chunkDirInsideAsar = join(asarPath, 'out', 'main', 'chunks')
+      const resolvedWorker = resolveBuiltWorkerPath('pictureWorker.js', chunkDirInsideAsar)
+      const expectedUnpacked = join(dir, 'resources', 'app.asar.unpacked', 'out', 'main', 'pictureWorker.js')
+      expect(resolvedWorker).toBe(expectedUnpacked)
+      expect(PictureMaker.available(resolvedWorker)).toBe(true)
+
+      const pngBytes = await screenshotPng()
+      const original = dataUrl('image/png', pngBytes)
+      const maker = new PictureMaker(resolvedWorker)
+      makers.push(maker)
+      const reduced = await maker.reduce(original, 640)
+      expect(reduced).not.toBeNull()
+      expect(reduced!.startsWith('data:image/jpeg;base64,')).toBe(true)
+      expect(reduced!.length).toBeLessThan(original.length / 4)
+      expect(maker.made).toBe(1)
+      expect(maker.lastFailure).toBeUndefined()
+    } finally {
+      await Promise.all(makers.map(maker => maker.close()))
+      await built.dispose()
     }
   }, 30_000)
 })

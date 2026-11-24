@@ -3,7 +3,7 @@ import { cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { createPackage } from '@electron/asar'
+import { createPackage, createPackageWithOptions } from '@electron/asar'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -163,5 +163,26 @@ describe('release build provenance', () => {
       asarPath,
       repositoryRoot: root,
     })).rejects.toThrow('packaged build provenance does not match the current source and output')
+  })
+
+  it('verifies provenance when out/main/pictureWorker.js is unpacked into app.asar.unpacked', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-provenance-'))
+    temporaryRoots.push(root)
+    const out = await createOut(root, 'current renderer')
+    await writeFile(join(out, 'main', 'pictureWorker.js'), '// unpacked picture worker\n')
+    const written = await writeBuildProvenance({ outRoot: out, sourceCommit: 'def456', buildInputsRevision: '1'.repeat(64) })
+
+    const packageRoot = join(root, 'package')
+    await mkdir(packageRoot)
+    await cp(out, join(packageRoot, 'out'), { recursive: true })
+    await writeFile(join(packageRoot, 'package.json'), '{}')
+    const asarPath = join(root, 'app.asar')
+    await createPackageWithOptions(packageRoot, asarPath, { unpack: 'pictureWorker.js' })
+
+    await expect(verifyBuildProvenance({
+      outRoot: out,
+      asarPath,
+      buildInputsRevision: '1'.repeat(64),
+    })).resolves.toEqual(written)
   })
 })

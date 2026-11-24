@@ -20,8 +20,52 @@ export const PICTURES_WAITING_MAX = 8
  * picture whole until it restarts. One answer clears the count.
  */
 const FAILED_STARTS_MAX = 3
+/** Maximum bytes retained from the picture worker's stderr for startup/crash diagnostics. */
+const PICTURE_WORKER_STDERR_MAX = 1_024
+/** Maximum characters included from worker stderr in a single diagnostic log line. */
+const PICTURE_WORKER_STDERR_LOG_CHARS = 240
 
 const KINDS = ['data:image/png;base64,', 'data:image/jpeg;base64,'] as const
+
+export type PictureWorkerLogEvent =
+  | 'picture-worker-start-failed'
+  | 'picture-worker-exited'
+  | 'picture-worker-stopped'
+  | 'picture-worker-unavailable'
+
+export interface PictureWorkerFailureDetail {
+  readonly failedStarts: number
+  readonly code?: string | undefined
+  readonly exitCode?: number | null | undefined
+  readonly signal?: NodeJS.Signals | null | undefined
+  readonly stderr?: string | undefined
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const code = (error as { readonly code?: unknown }).code
+  return typeof code === 'string' && code.length > 0 ? code : undefined
+}
+
+function normalizeStderr(raw: string): string | undefined {
+  const compact = raw.replace(/\s+/gu, ' ').trim()
+  if (compact.length === 0) return undefined
+  return compact.length > PICTURE_WORKER_STDERR_LOG_CHARS
+    ? `${compact.slice(0, PICTURE_WORKER_STDERR_LOG_CHARS - 1)}…`
+    : compact
+}
+
+/** Formats a picture worker event and optional failure detail as one bounded diagnostic log string. */
+export function formatPictureWorkerLog(event: PictureWorkerLogEvent, detail?: PictureWorkerFailureDetail): string {
+  if (!detail) return event
+  const parts: string[] = []
+  if (detail.code) parts.push(`code=${detail.code}`)
+  if (detail.exitCode !== undefined && detail.exitCode !== null) parts.push(`exit=${detail.exitCode}`)
+  if (detail.signal) parts.push(`signal=${detail.signal}`)
+  parts.push(`failed=${detail.failedStarts}/${FAILED_STARTS_MAX}`)
+  if (detail.stderr) parts.push(`stderr=${detail.stderr}`)
+  return parts.length > 0 ? `${event} (${parts.join(' ')})` : event
+}
 
 /**
  * A headless host's maker of the copies phones ask for at a longest edge (`thread-media-edge`, ADR-0203), for
@@ -43,9 +87,14 @@ export class PictureMaker {
   private closed = false
   private failedStarts = 0
   private copies = 0
+  private workerStderr = ''
+  private lastFailureDetail: PictureWorkerFailureDetail | undefined
 
   constructor(private readonly path: string = BUILT_PICTURE_WORKER, private readonly options: {
-    readonly idleMs?: number; readonly limitMs?: number; readonly log?: (event: 'picture-worker-stopped' | 'picture-worker-unavailable') => void } = {}) {}
+    readonly idleMs?: number
+    readonly limitMs?: number
+    readonly log?: (event: PictureWorkerLogEvent, detail?: PictureWorkerFailureDetail) => void
+  } = {}) {}
 
   /** Whether the worker file is there to start: where it is not, the host offers no copies and lists no `thread-media-edge`. */
   static available(path: string = BUILT_PICTURE_WORKER): boolean { return existsSync(path) }
@@ -54,6 +103,8 @@ export class PictureMaker {
   get made(): number { return this.copies }
   /** Whether a worker is running now: from the first picture asked for until it has been idle a while. */
   get running(): boolean { return this.worker !== undefined }
+  /** Most recent worker startup/exit failure detail, cleared once a worker answers a request. */
+  get lastFailure(): PictureWorkerFailureDetail | undefined { return this.lastFailureDetail }
 
   /** The copy of `dataUrl` at no more than `edge` on its longest side, or null to send the picture whole. */
   reduce(dataUrl: string, edge: number): Promise<string | null> {
@@ -87,7 +138,7 @@ export class PictureMaker {
     const id = this.next++
     return new Promise(resolve => {
       this.waiting.set(id, resolve)
-      worker.send(build(id), error => { if (error) this.lose(worker, true) })
+      worker.send(build(id), error => { if (error) this.lose(worker, true, 'picture-worker-start-failed', { code: errorCodeOf(error) }) })
       // A picture asked for while others wait keeps their deadline: only an answer starts the clock again.
       if (!this.awaitingAnswer) this.watch()
     })
@@ -104,13 +155,25 @@ export class PictureMaker {
     if (this.worker) return this.worker
     if (!existsSync(this.path)) return undefined
     let worker: ChildProcess
-    // The host's own Node runs it, with none of the host's flags, and nothing it might print is read or kept.
-    try { worker = fork(this.path, [], { execArgv: [], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }) } catch { this.failed(); return undefined }
+    this.workerStderr = ''
+    // The host's own Node runs it, with none of the host's flags; stderr is piped boundedly so startup/crash failures are visible in diagnostics.
+    try { worker = fork(this.path, [], { execArgv: [], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] }) } catch (error) {
+      this.failed('picture-worker-start-failed', { code: errorCodeOf(error) })
+      return undefined
+    }
+    const appendStderr = (chunk: Buffer | string): void => {
+      if (this.worker !== worker) return
+      this.workerStderr = (this.workerStderr + String(chunk)).slice(-PICTURE_WORKER_STDERR_MAX)
+    }
+    worker.stderr?.on('data', appendStderr)
+    // A piped stderr stream holds its own libuv handle; unref it alongside the child and IPC channel so it never keeps the host running.
+    ;(worker.stderr as { unref?: () => void } | null)?.unref?.()
     worker.on('message', (answer: PictureAnswer) => { this.answered(answer) })
     // A worker that goes before it is stopped, by failing to start or ending on its own, takes nothing with it: what waited
     // is sent whole. One the host stopped is already let go.
-    worker.on('error', () => { this.lose(worker, true) })
-    worker.on('exit', () => { this.lose(worker, true) })
+    worker.on('error', error => { this.lose(worker, true, 'picture-worker-start-failed', { code: errorCodeOf(error) }) })
+    // Use `close` rather than `exit` so any stderr written right before a startup crash finishes draining into diagnostics.
+    worker.on('close', (exitCode, signal) => { this.lose(worker, true, 'picture-worker-exited', { exitCode, signal }) })
     // It never keeps the host running on its own.
     worker.unref()
     worker.channel?.unref()
@@ -123,6 +186,7 @@ export class PictureMaker {
     if (!settle) return
     this.waiting.delete(answer.id)
     this.failedStarts = 0
+    this.lastFailureDetail = undefined
     // Counted only from a process other than the host's own.
     if (answer.copy !== null && answer.pid !== process.pid) this.copies++
     settle({ copy: answer.copy, ...(answer.kind ? { kind: answer.kind } : {}) })
@@ -159,18 +223,41 @@ export class PictureMaker {
   }
 
   /** `worker` is gone: whatever waited on it is sent whole. `failed` when it went on its own, before it was stopped. */
-  private lose(worker: ChildProcess, failed: boolean): void {
+  private lose(
+    worker: ChildProcess,
+    failed: boolean,
+    event?: 'picture-worker-start-failed' | 'picture-worker-exited',
+    info?: { readonly code?: string | undefined; readonly exitCode?: number | null | undefined; readonly signal?: NodeJS.Signals | null | undefined },
+  ): void {
     if (this.worker !== worker) return
+    const buffered = worker.stderr?.read()
+    if (buffered) this.workerStderr = (this.workerStderr + String(buffered)).slice(-PICTURE_WORKER_STDERR_MAX)
+    const stderr = normalizeStderr(this.workerStderr)
+    this.workerStderr = ''
+    worker.stderr?.destroy()
     this.worker = undefined
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
     this.awaitingAnswer = false
-    if (failed) this.failed()
+    if (failed) this.failed(event, { ...info, ...(stderr ? { stderr } : {}) })
     for (const settle of this.waiting.values()) settle({ copy: null })
     this.waiting.clear()
   }
 
-  private failed(): void {
-    if (++this.failedStarts === FAILED_STARTS_MAX) this.options.log?.('picture-worker-unavailable')
+  private failed(
+    event?: 'picture-worker-start-failed' | 'picture-worker-exited',
+    info?: { readonly code?: string | undefined; readonly exitCode?: number | null | undefined; readonly signal?: NodeJS.Signals | null | undefined; readonly stderr?: string | undefined },
+  ): void {
+    const failedStarts = ++this.failedStarts
+    const detail: PictureWorkerFailureDetail = {
+      failedStarts,
+      ...(info?.code ? { code: info.code } : {}),
+      ...(info?.exitCode !== undefined ? { exitCode: info.exitCode } : {}),
+      ...(info?.signal !== undefined ? { signal: info.signal } : {}),
+      ...(info?.stderr ? { stderr: info.stderr } : {}),
+    }
+    this.lastFailureDetail = detail
+    if (event) this.options.log?.(event, detail)
+    if (failedStarts === FAILED_STARTS_MAX) this.options.log?.('picture-worker-unavailable', detail)
   }
 }

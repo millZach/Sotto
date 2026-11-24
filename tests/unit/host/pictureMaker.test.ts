@@ -8,7 +8,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PictureMaker, PICTURES_WAITING_MAX } from '../../../src/host/pictureMaker'
+import { formatPictureWorkerLog, PictureMaker, PICTURES_WAITING_MAX, type PictureWorkerFailureDetail, type PictureWorkerLogEvent } from '../../../src/host/pictureMaker'
 
 const roots: string[] = []
 const makers: PictureMaker[] = []
@@ -105,5 +105,38 @@ describe('the picture worker, from the host\'s side', () => {
     const missing = join(tmpdir(), 'sotto-picture-maker-none', 'pictureWorker.js')
     expect(PictureMaker.available(missing)).toBe(false)
     await expect(maker(missing).reduce(PNG, 640)).resolves.toBeNull()
+  })
+
+  it('surfaces worker crash stderr and exit code into diagnostics before falling back permanently', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-picture-maker-')); roots.push(root)
+    const crashingWorker = join(root, 'pictureWorker.cjs')
+    await writeFile(crashingWorker, "process.stderr.write('Error: Cannot find module pictureWorker\\n'); process.exit(1)\n")
+    const recorded: { event: PictureWorkerLogEvent; detail: PictureWorkerFailureDetail | undefined }[] = []
+    const pictures = maker(crashingWorker, { log: (event, detail) => { recorded.push({ event, detail }) } })
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await expect(pictures.reduce(PNG, 640)).resolves.toBeNull()
+    }
+
+    expect(recorded.map(entry => entry.event)).toEqual([
+      'picture-worker-exited',
+      'picture-worker-exited',
+      'picture-worker-exited',
+      'picture-worker-unavailable',
+    ])
+    expect(recorded[0]?.detail).toMatchObject({
+      failedStarts: 1,
+      exitCode: 1,
+      stderr: 'Error: Cannot find module pictureWorker',
+    })
+    expect(recorded[3]?.detail).toMatchObject({
+      failedStarts: 3,
+      exitCode: 1,
+      stderr: 'Error: Cannot find module pictureWorker',
+    })
+    expect(pictures.lastFailure).toEqual(recorded[3]?.detail)
+    expect(formatPictureWorkerLog('picture-worker-unavailable', recorded[3]?.detail)).toBe(
+      'picture-worker-unavailable (exit=1 failed=3/3 stderr=Error: Cannot find module pictureWorker)',
+    )
   })
 })
