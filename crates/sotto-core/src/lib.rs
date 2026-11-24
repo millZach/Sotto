@@ -1,3 +1,4 @@
+pub mod checkpoints;
 pub mod coordinator;
 pub mod credentials;
 pub mod desktop_clients;
@@ -15,6 +16,12 @@ pub mod remote_commands;
 pub mod stores;
 pub mod workspace;
 
+pub use checkpoints::{
+    blob_hash, checkout_identity, inspect_checkpoint_blobs, read_checkpoints_readonly,
+    read_verified_blob, CheckpointBlobPair, CheckpointChangeEntry, CheckpointError,
+    CheckpointManager, CheckpointPatch, CheckpointRecord, CheckpointSnapshot, CheckpointStatus,
+    CheckpointStore, CheckpointThreadInfo, SnapshotFile,
+};
 pub use coordinator::{ClientContext, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle};
 pub use credentials::{CredentialError, HostCredentialEncryption, HostCredentials};
 pub use desktop_clients::{DesktopClients, DESKTOP_CLIENTS_FILE};

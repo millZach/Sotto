@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { access } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { z } from 'zod'
+import { checkpointPatchSchema, type CheckpointPatch } from '../../shared/checkpoints'
 import {
   fileListingSchema,
   filePreviewSchema,
@@ -50,6 +52,13 @@ const threadFilesResultSchema = filesResultSchema(fileListingSchema)
 const threadFilePreviewResultSchema = filesResultSchema(filePreviewSchema)
 const threadChangesResultSchema = toolsResultSchema(gitListingSchema)
 const threadChangesReviewResultSchema = toolsResultSchema(gitReviewSchema)
+const checkpointInspectBlobsResultSchema = toolsResultSchema(z.array(checkpointPatchSchema))
+
+export interface RustCheckpointBlobPair {
+  readonly path: string
+  readonly beforeHash: string | null
+  readonly afterHash: string | null
+}
 
 export interface RustLocalEngineOptions {
   readonly userDataPath: string
@@ -82,6 +91,10 @@ export interface RustLocalEngineClient {
     scope: GitReviewScope,
     ignoreWhitespace?: boolean,
   ): Promise<ToolsResult<GitReview> | undefined>
+  checkpointInspectBlobs(
+    blobsDir: string,
+    pairs: readonly RustCheckpointBlobPair[],
+  ): Promise<ToolsResult<CheckpointPatch[]> | undefined>
   close(): Promise<void>
 }
 
@@ -290,6 +303,23 @@ export async function startRustLocalEngine(options: RustLocalEngineOptions): Pro
             GIT_REVIEW_RPC_TIMEOUT_MS,
           )
           const parsed = threadChangesReviewResultSchema.safeParse(raw)
+          return parsed.success ? parsed.data : undefined
+        } catch {
+          return undefined
+        }
+      },
+      async checkpointInspectBlobs(
+        blobsDir: string,
+        pairs: readonly RustCheckpointBlobPair[],
+      ): Promise<ToolsResult<CheckpointPatch[]> | undefined> {
+        if (closed || activeConnection.isClosed) return undefined
+        try {
+          const raw = await activeConnection.request(
+            'ops.checkpointInspectBlobs',
+            [blobsDir, pairs],
+            RPC_TIMEOUT_MS,
+          )
+          const parsed = checkpointInspectBlobsResultSchema.safeParse(raw)
           return parsed.success ? parsed.data : undefined
         } catch {
           return undefined

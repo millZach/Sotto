@@ -1,6 +1,19 @@
 import type { CheckpointObservation } from '../agents/watcherEvidence'
 import type { ProviderId } from '../../shared/agents'
+import type { CheckpointPatch } from '../../shared/checkpoints'
+import type { ToolsResult } from '../../shared/tools'
 import type { FilesService } from '../files/service'
+
+export interface CheckpointBlobPair {
+  readonly path: string
+  readonly beforeHash: string | null
+  readonly afterHash: string | null
+}
+
+export type CheckpointInspectAccelerator = (
+  blobsDir: string,
+  pairs: readonly CheckpointBlobPair[],
+) => Promise<ToolsResult<CheckpointPatch[]> | undefined>
 
 export interface CheckpointThread {
   /** Stable Sotto thread identity. Native adapters resolve their own exact binding. */
@@ -37,4 +50,6 @@ export interface CheckpointDependencies {
   rollback(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<{ accepted: boolean; uncertain?: boolean }>
   /** Read authoritative native history for reconciliation, never resend rollback. */
   refresh(threadId: string): Promise<void>
+  /** Optional native accelerator for read-only blob verification and UTF-8 patch decoding. */
+  inspectAccelerator?: CheckpointInspectAccelerator | undefined
 }

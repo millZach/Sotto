@@ -18,6 +18,8 @@ import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
 import { startRustLocalEngine } from '../../src/main/engine/rustLocalEngineClient'
 import { FilesService } from '../../src/main/files/service'
+import { CheckpointService } from '../../src/main/tools/checkpoints'
+import type { CheckpointThread } from '../../src/main/tools/checkpointTypes'
 import { GitChangesService } from '../../src/main/tools/gitChanges'
 import {
   createEngineEndpoint,
@@ -833,6 +835,196 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
     } finally {
       usageService.close()
       await client?.close().catch(() => undefined)
+      await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
+      await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 45_000)
+
+  it('offloads checkpoint blob inspection and shares on-disk checkpoint storage bidirectionally between TypeScript and Rust', async () => {
+    const binary = await findRustEngineBinary()
+    const dataDir = await mkdtemp(join(tmpdir(), 'sotto-rust-cp-data-'))
+    const repoDir = await mkdtemp(join(tmpdir(), 'sotto-rust-cp-repo-'))
+    const gitEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'Test',
+      GIT_COMMITTER_EMAIL: 'test@example.com',
+    }
+    execFileSync('git', ['init', '-b', 'main'], { cwd: repoDir, env: gitEnv })
+    await writeFile(join(repoDir, 'app.txt'), 'line 1\n', 'utf8')
+    execFileSync('git', ['add', '.'], { cwd: repoDir, env: gitEnv })
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repoDir, env: gitEnv })
+
+    const client = await startRustLocalEngine({
+      userDataPath: dataDir,
+      isPackaged: false,
+      binaryPath: binary,
+    })
+    const files = new FilesService({
+      resolveBinding: () => ({ threadId: 't-cp', projectId: 'p-cp', workingDirectory: repoDir }),
+      copyPath: () => undefined,
+      reveal: () => undefined,
+      open: async () => undefined,
+    })
+    const resolvedWs = await files.resolveWorkspace('t-cp')
+    expect(resolvedWs.ok).toBe(true)
+    if (!resolvedWs.ok) throw new Error('expected ok workspace')
+    const wsId = resolvedWs.value.workspaceId
+    let userMessages = ['u1']
+    const resolveThread = async (): Promise<CheckpointThread> => ({
+      threadId: 't-cp',
+      providerId: 'codex',
+      bindingId: 'codex:cp-1',
+      userMessageIds: [...userMessages],
+      busy: false,
+      running: false,
+      rollbackSupported: true,
+    })
+    let rustInspectCalls = 0
+    const tsCheckpoints = new CheckpointService({
+      files,
+      directory: join(dataDir, 'checkpoints'),
+      resolveThread,
+      rollback: async () => ({ accepted: true }),
+      refresh: async () => undefined,
+      inspectAccelerator: (blobsDir, pairs) => {
+        rustInspectCalls++
+        return client!.checkpointInspectBlobs(blobsDir, pairs)
+      },
+    })
+
+    // Also test full-mode Rust engine reading TS-written checkpoints and writing Rust checkpoints back.
+    const endpoint = createEngineEndpoint('secp')
+    const token = generateEngineToken()
+    const server = await listenEngineServer(endpoint, token)
+    let child: ReturnType<typeof spawn> | undefined
+
+    try {
+      expect(client).toBeDefined()
+      await tsCheckpoints.initialize()
+      await tsCheckpoints.beforeTurn('t-cp')
+      await writeFile(join(repoDir, 'app.txt'), 'line 1\nline 2\n', 'utf8')
+      await writeFile(join(repoDir, 'bin.dat'), Buffer.from([0x00, 0x01, 0x02]))
+      userMessages = ['u1', 'u2']
+      await tsCheckpoints.afterTurn('t-cp')
+
+      const listed = await tsCheckpoints.checkpoints({ threadId: 't-cp', workspaceId: wsId })
+      expect(listed.ok).toBe(true)
+      if (!listed.ok) throw new Error('expected ok listing')
+      const cpId = listed.value.checkpoints[0]!.id
+
+      // 1. TS CheckpointService offloads blob verification & decoding to Rust --accelerator.
+      const inspectedRust = await tsCheckpoints.inspectCheckpoint({
+        threadId: 't-cp',
+        workspaceId: wsId,
+        checkpointId: cpId,
+      })
+      expect(rustInspectCalls).toBe(1)
+      expect(inspectedRust.ok).toBe(true)
+      if (!inspectedRust.ok) throw new Error('expected ok inspection')
+      expect(inspectedRust.value.patches).toEqual([
+        { path: 'app.txt', before: 'line 1\n', after: 'line 1\nline 2\n', binary: false },
+        { path: 'bin.dat', before: null, after: null, binary: true },
+      ])
+
+      // 2. After closing the accelerator, TS transparently falls back with identical output.
+      await client!.close()
+      const inspectedTs = await tsCheckpoints.inspectCheckpoint({
+        threadId: 't-cp',
+        workspaceId: wsId,
+        checkpointId: cpId,
+      })
+      expect(inspectedTs).toEqual(inspectedRust)
+      if (!inspectedTs.ok) throw new Error('expected ok TS inspection')
+
+      // 3. Full-mode Rust sotto-engine loads the exact TS-created checkpoints.json/blobs,
+      // inspects it, restores files, and writes a new checkpoint that TS can read back.
+      child = spawn(binary, ['--data', dataDir, '--endpoint', endpoint], {
+        stdio: ['ignore', 'ignore', 'pipe'],
+        windowsHide: true,
+        env: { ...process.env, SOTTO_ENGINE_TOKEN: token },
+      })
+      const exited = new Promise<number | null>(resolveExit => child!.once('exit', code => resolveExit(code)))
+      const conn = await server.waitForClient(15_000)
+
+      const threadInfo = {
+        threadId: 't-cp',
+        providerId: 'codex',
+        bindingId: 'codex:cp-1',
+        userMessageIds: ['u1', 'u2'],
+        busy: false,
+        running: false,
+        rollbackSupported: true,
+      }
+      const rustList = await conn.request<{ ok: boolean; value: { checkpoints: { id: string; status: string }[] } }>(
+        'checkpoints.list',
+        ['t-cp', wsId, threadInfo],
+      )
+      expect(rustList.ok).toBe(true)
+      expect(rustList.value.checkpoints.some(c => c.id === cpId && c.status === 'ready')).toBe(true)
+
+      const rustInspect = await conn.request<{ ok: boolean; value: { patches: unknown[] } }>(
+        'checkpoints.inspect',
+        ['t-cp', wsId, cpId, threadInfo],
+      )
+      expect(rustInspect.ok).toBe(true)
+      expect(rustInspect.value.patches).toEqual(inspectedTs.value.patches)
+
+      // Rust restores the TS-captured checkpoint back to initial repo state.
+      const rustRestore = await conn.request<{ ok: boolean; value?: { record: { status: string } }; error?: unknown }>(
+        'checkpoints.restore',
+        [cpId],
+      )
+      expect(rustRestore.ok, `checkpoints.restore failed: ${JSON.stringify(rustRestore)}`).toBe(true)
+      expect(rustRestore.value!.record.status).toBe('reverted')
+
+      // Rust captures a brand-new checkpoint; a fresh TS CheckpointService reads & inspects it.
+      const rustBefore = await conn.request<{ ok: boolean; error?: unknown }>('checkpoints.beforeTurn', [threadInfo, wsId, repoDir])
+      expect(rustBefore.ok, `checkpoints.beforeTurn failed: ${JSON.stringify(rustBefore)}`).toBe(true)
+      await writeFile(join(repoDir, 'app.txt'), 'written-for-rust-cp\n', 'utf8')
+      const threadAfter = { ...threadInfo, userMessageIds: ['u1', 'u2', 'u3'] }
+      const rustAfter = await conn.request<{ ok: boolean; value?: { record: { id: string; status: string } }; error?: unknown }>(
+        'checkpoints.afterTurn',
+        [threadAfter],
+      )
+      expect(rustAfter.ok, `checkpoints.afterTurn failed: ${JSON.stringify(rustAfter)}`).toBe(true)
+      expect(rustAfter.value!.record.status).toBe('ready')
+      const rustCpId = rustAfter.value!.record.id
+
+      await conn.request('engine:close', [])
+      expect(await exited).toBe(0)
+      conn.close()
+
+      userMessages = ['u1', 'u2', 'u3']
+      const tsReloaded = new CheckpointService({
+        files,
+        directory: join(dataDir, 'checkpoints'),
+        resolveThread,
+        rollback: async () => ({ accepted: true }),
+        refresh: async () => undefined,
+      })
+      try {
+        await tsReloaded.initialize()
+        const tsReadsRust = await tsReloaded.inspectCheckpoint({
+          threadId: 't-cp',
+          workspaceId: wsId,
+          checkpointId: rustCpId,
+        })
+        expect(tsReadsRust.ok).toBe(true)
+        if (tsReadsRust.ok) {
+          expect(tsReadsRust.value.patches).toEqual([
+            { path: 'app.txt', before: 'line 1\n', after: 'written-for-rust-cp\n', binary: false },
+          ])
+        }
+      } finally {
+        tsReloaded.dispose()
+      }
+    } finally {
+      tsCheckpoints.dispose()
+      await client?.close().catch(() => undefined)
+      if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
     }
