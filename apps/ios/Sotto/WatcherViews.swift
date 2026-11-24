@@ -205,7 +205,7 @@ private struct WatcherMachinesLine: View {
             .accessibilityIdentifier("watcher-machines")
             // Machine facts are read when Watcher places work, once for each set of starts, and when a panel opens.
             .onAppear { model.readWatcherMachinesAfterStarts(hostID) }
-            .onChange(of: model.watcherPage(hostID)?.receiptGroups) { _, _ in model.readWatcherMachinesAfterStarts(hostID) }
+            .onChange(of: watcherStore.startReceiptsRevision[hostID] ?? 0) { _, _ in model.readWatcherMachinesAfterStarts(hostID) }
             .onChange(of: hostID) { _, _ in all = false; open = nil }
             .sheet(item: $open) { machine in
                 MachineSheet(hostID: hostID, machineID: machine.id)
@@ -462,6 +462,30 @@ private struct WatcherTail: Equatable {
     let followups: [WatcherPage.Followup]
 }
 
+/// Everything besides the items slice that Watcher's older items are drawn from.
+private struct OlderWatcherItemsInputs: Equatable {
+    let hostID: String
+    let ref: ThreadRef?
+    let showsVideos: Bool
+    let lastMessage: String?
+    let threadListRevision: UInt64
+    let spacing: CGFloat
+}
+
+/// Watcher items before the latest turns, materialized lazily as they scroll into view. Drawn again only when the older
+/// slice or thread state they read changes, not on each streamed word into the latest reply or composer keystroke.
+private struct OlderWatcherItems<Row: View>: View, Equatable {
+    let items: ArraySlice<WatcherItem>
+    let inputs: OlderWatcherItemsInputs
+    @ViewBuilder let row: (WatcherItem) -> Row
+    static func == (a: Self, b: Self) -> Bool { a.inputs == b.inputs && a.items == b.items }
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: inputs.spacing) {
+            ForEach(items) { row($0) }
+        }
+    }
+}
+
 private struct WatcherConversationPane: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -478,6 +502,7 @@ private struct WatcherConversationPane: View {
     @Environment(\.sottoGlow) private var glow
     @Environment(\.colorScheme) private var scheme
     @State private var follow = WatcherFollow()
+    @State private var timeline = WatcherConversationCache()
     /// The height between the status bar and the box, so a short conversation sits at the bottom with the hero still at
     /// the top.
     @State private var visible: CGFloat = 0
@@ -504,16 +529,24 @@ private struct WatcherConversationPane: View {
         let sendingPhotos = model.watcherSendingPhotos[hostID] ?? [], sendingFiles = model.watcherSendingFiles[hostID] ?? []
         // The photos of Watcher's messages are its thread's, read through Watcher's page.
         let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
-        let items = page.map { WatcherConversation.items($0) } ?? []
+        let items = timeline.items(for: page, hostID: hostID, holdSplit: !ReplySelection.views.isEmpty)
+        let split = min(timeline.latestTurnsStart, items.count)
+        let showsVideos = ref.map { model.stagesVideos($0.hostID) } ?? false
+        let watchedIDs = model.watchedThreadIDs
+        let spacing = Space.dense(Space.s5, density)
         // Whether the page has words to follow, the conversation's or the user's on their way.
         let hasWords = !items.isEmpty || sending != nil
         // The message following must leave on screen, unless the user's words on their way come after it.
         let lastMessage = sending == nil ? items.last(where: { if case .message = $0 { return true }; return false })?.id : nil
+        let olderLastMessage: String? = {
+            guard split > 0, let lastMessage else { return nil }
+            return items[split...].contains(where: { $0.id == lastMessage }) ? nil : lastMessage
+        }()
         let working = model.online(hostID) && page?.working == true
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                    VStack(alignment: .leading, spacing: spacing) {
                         // In to the page's gutter, as a tab's page has it, rather than the conversation's narrower margin.
                         WatcherHero(hostID: hostID).padding(.horizontal, Space.gutter - Space.s4)
                         Spacer(minLength: 0)
@@ -521,18 +554,21 @@ private struct WatcherConversationPane: View {
                         if hasWords {
                             // The conversation and the words on their way, whose bottom is the newest words.
                             VStack(alignment: .leading, spacing: 0) {
-                                VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                                    ForEach(items) { item in
-                                        Group {
-                                            switch item {
-                                            case .message(let message):
-                                                WatcherMessage(message: message, ref: ref, showsVideos: ref.map { model.stagesVideos($0.hostID) } ?? false) { viewing = $0 }.equatable()
-                                                    .background { if item.id == lastMessage { reader { follow.lastWords = $0.maxY } } }
-                                            case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
-                                            case .ownChange(let change): WatcherOwnChangeLine(change: change)
-                                            }
+                                VStack(alignment: .leading, spacing: spacing) {
+                                    if split > 0 {
+                                        let olderInputs = OlderWatcherItemsInputs(hostID: hostID, ref: ref, showsVideos: showsVideos,
+                                                                                  lastMessage: olderLastMessage,
+                                                                                  threadListRevision: model.threadListRevision,
+                                                                                  spacing: spacing)
+                                        OlderWatcherItems(items: items[..<split], inputs: olderInputs) { item in
+                                            itemRow(item, ref: ref, showsVideos: showsVideos, lastMessage: olderLastMessage,
+                                                    watchedIDs: watchedIDs)
                                         }
-                                        .id(item.id)
+                                        .equatable()
+                                    }
+                                    ForEach(items[split...]) { item in
+                                        itemRow(item, ref: ref, showsVideos: showsVideos, lastMessage: lastMessage,
+                                                watchedIDs: watchedIDs)
                                     }
                                     if let sending {
                                         SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID)
@@ -871,6 +907,34 @@ private struct WatcherConversationPane: View {
             .background(reader { follow.cards[key] = $0 })
             .onDisappear { follow.cards[key] = nil }
     }
+
+    @ViewBuilder private func itemRow(_ item: WatcherItem, ref: ThreadRef?, showsVideos: Bool, lastMessage: String?,
+                                      watchedIDs: Set<String>) -> some View {
+        Group {
+            switch item {
+            case .message(let message):
+                WatcherMessage(message: message, ref: ref, showsVideos: showsVideos) { viewing = $0 }.equatable()
+                    .background { if item.id == lastMessage { reader { follow.lastWords = $0.maxY } } }
+            case .receipts(let group, _):
+                ReceiptCard(card: receiptCardModel(for: group, watchedIDs: watchedIDs)).equatable()
+            case .ownChange(let change):
+                WatcherOwnChangeLine(change: change)
+            }
+        }
+        .id(item.id)
+    }
+
+    private func receiptCardModel(for group: WatcherPage.ReceiptGroup, watchedIDs: Set<String>) -> WatcherReceiptCardModel {
+        let rows = group.rows.map { row in
+            let computer = model.computerName(row.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
+            let thread = model.thread(row.target.ref)
+            let place = model.placeLine(row.target.ref, provider: AgentNames.name(row.provider), computer: computer)
+            return WatcherReceiptRowModel(row: row, place: place, opens: thread != nil,
+                                          threadState: thread.map(ThreadState.init),
+                                          watched: watchedIDs.contains(row.target.ref.id))
+        }
+        return WatcherReceiptCardModel(rows: rows, time: timeline.receiptTime(for: group))
+    }
 }
 
 /// A message in Watcher's conversation: the user's in a bubble at the trailing edge, Watcher's on the canvas under the
@@ -1051,46 +1115,40 @@ private struct SetAsideCard: View {
 // MARK: - What Watcher did (2B)
 
 /// One card for what Watcher did for a reply, a row per thread. Each row opens its thread where this iPhone has it.
-private struct ReceiptCard: View {
-    @EnvironmentObject var model: AppModel
-    let hostID: String
-    let group: WatcherPage.ReceiptGroup
+/// Equatable and free of `AppModel` observation so streaming or unrelated model updates do not re-evaluate unchanged cards.
+private struct ReceiptCard: View, Equatable {
+    let card: WatcherReceiptCardModel
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
                 Text("What Watcher did").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
                 Spacer(minLength: Space.s2)
-                if let time { Text(time).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
+                if let time = card.time { Text(time).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
             }
             .padding(.horizontal, Space.s4)
             .padding(.top, Space.s3)
             .padding(.bottom, Space.s1)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
-            ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
+            ForEach(Array(card.rows.enumerated()), id: \.element.id) { index, item in
                 if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 44) }
-                let computer = model.computerName(row.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
-                ReceiptRow(row: row, place: model.placeLine(row.target.ref, provider: AgentNames.name(row.provider), computer: computer),
-                           thread: model.thread(row.target.ref), watched: model.watchedByWatcher(row.target.ref))
+                ReceiptRow(item: item)
             }
         }
         .padding(.bottom, Space.s1)
         .sottoCard(.plain)
     }
-    private var time: String? {
-        group.rows.compactMap { Words.date($0.createdAt) }.max()?.formatted(date: .omitted, time: .shortened)
-    }
 }
 
-private struct ReceiptRow: View {
-    let row: WatcherPage.Receipt
-    /// Where the thread runs: provider · project · computer.
-    let place: String
-    /// The thread as this iPhone's list has it; nil when it isn't listed here, so the row doesn't open it.
-    let thread: ThreadSummary?
-    let watched: Bool
+private struct ReceiptRow: View, Equatable {
+    let item: WatcherReceiptRowModel
+    private var row: WatcherPage.Receipt { item.row }
+    private var place: String { item.place }
+    private var opens: Bool { item.opens }
+    private var threadState: ThreadState? { item.threadState }
+    private var watched: Bool { item.watched }
     var body: some View {
-        if thread != nil {
+        if opens {
             NavigationLink(value: ThreadRoute(ref: row.target.ref)) { content(opens: true) }
                 .buttonStyle(PressStyle())
                 .accessibilityLabel(spoken)
@@ -1118,8 +1176,7 @@ private struct ReceiptRow: View {
                 if let words = WatcherWords.delivery(row) {
                     Text(words).font(.sotto(.small, .semibold))
                         .foregroundStyle(row.deliveryState == "failed" ? Palette.dangerText : Palette.warningText)
-                } else if let thread {
-                    let state = ThreadState(thread)
+                } else if let state = threadState {
                     HStack(spacing: 6) {
                         StatusDot(state: state, size: 7)
                         Text(state.words).font(.sotto(.small, .semibold))
@@ -1150,7 +1207,7 @@ private struct ReceiptRow: View {
     private var spoken: String {
         var words = "\(row.title), \(WatcherWords.action(row.action)), \(place)" + WatchedWords.spoken(watched)
         if let delivery = WatcherWords.delivery(row) { words += ", " + delivery }
-        else if let thread { words += ", " + ThreadState(thread).words }
+        else if let state = threadState { words += ", " + state.words }
         return words
     }
 }

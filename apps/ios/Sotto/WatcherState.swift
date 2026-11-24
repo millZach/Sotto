@@ -250,11 +250,30 @@ enum WatcherItem: Identifiable, Equatable {
     }
 }
 
+/// Pre-resolved values for one row of `ReceiptCard`, so `ReceiptCard` is `Equatable` and never observes `AppModel`.
+struct WatcherReceiptRowModel: Identifiable, Equatable {
+    let row: WatcherPage.Receipt
+    /// Where the thread runs: provider · project · computer.
+    let place: String
+    /// Whether this iPhone lists the thread, so the row opens it.
+    let opens: Bool
+    /// The thread's live state, when this iPhone lists it.
+    let threadState: ThreadState?
+    let watched: Bool
+    var id: String { row.id }
+}
+
+/// Pre-resolved values for `ReceiptCard`, built per visible card from O(1) lookups and cached timestamps.
+struct WatcherReceiptCardModel: Equatable {
+    let rows: [WatcherReceiptRowModel]
+    let time: String?
+}
+
 enum WatcherConversation {
     /// Messages in order, each reply followed by what Watcher did for it (2B), then by the line saying it changed files
     /// itself, when it did (mark B). A group whose reply isn't in the conversation is never attached to another reply: it
     /// stands alone, placed by when it happened. A mark whose reply isn't there is left out: it says nothing on its own.
-    static func items(_ page: WatcherPage) -> [WatcherItem] {
+    static func items(_ page: WatcherPage, date: (String) -> Date? = Stamp.date) -> [WatcherItem] {
         let messages = page.conversation.messages
         let ids = Set(messages.map(\.id))
         var attached: [String: [WatcherPage.ReceiptGroup]] = [:]
@@ -263,32 +282,131 @@ enum WatcherConversation {
             if let reply = group.replyMessageId, ids.contains(reply) { attached[reply, default: []].append(group) }
             else { loose.append(group) }
         }
+        var ownByReply: [String: WatcherPage.OwnChange] = [:]
+        if let changes = page.ownChanges, !changes.isEmpty {
+            ownByReply = Dictionary(changes.map { ($0.replyMessageId, $0) }, uniquingKeysWith: { first, _ in first })
+        }
         // Each loose group goes after the last message written before it; with no times to go by, at the end.
+        // Skip parsing message timestamps altogether when every receipt group attaches directly to a reply.
         var after: [Int: [WatcherPage.ReceiptGroup]] = [:]
         var leading: [WatcherPage.ReceiptGroup] = []
         var trailing: [WatcherPage.ReceiptGroup] = []
-        let dated: [(index: Int, date: Date)] = messages.enumerated().compactMap { index, message in
-            guard let stamp = message.createdAt, let date = Stamp.date(stamp) else { return nil }
-            return (index, date)
-        }
-        for group in loose {
-            guard !dated.isEmpty, let when = group.rows.compactMap({ Stamp.date($0.createdAt) }).min() else {
-                trailing.append(group)
-                continue
+        if !loose.isEmpty {
+            let dated: [(index: Int, date: Date)] = messages.enumerated().compactMap { index, message in
+                guard let stamp = message.createdAt, let parsed = date(stamp) else { return nil }
+                return (index, parsed)
             }
-            if let index = dated.last(where: { $0.date <= when })?.index { after[index, default: []].append(group) }
-            else { leading.append(group) }
+            for group in loose {
+                guard !dated.isEmpty, let when = group.rows.compactMap({ date($0.createdAt) }).min() else {
+                    trailing.append(group)
+                    continue
+                }
+                if let index = dated.last(where: { $0.date <= when })?.index { after[index, default: []].append(group) }
+                else { leading.append(group) }
+            }
         }
         var items: [WatcherItem] = leading.map { .receipts($0, attached: false) }
+        items.reserveCapacity(leading.count + messages.count + page.receiptGroups.count + ownByReply.count + trailing.count)
         for (index, message) in messages.enumerated() {
             items.append(.message(message))
-            items += (attached[message.id] ?? []).map { .receipts($0, attached: true) }
-            if message.role == "assistant", let change = page.ownChange(for: message.id), max(change.fileCount, change.files.count) > 0 {
+            if let groups = attached[message.id] {
+                items += groups.map { .receipts($0, attached: true) }
+            }
+            if message.role == "assistant", let change = ownByReply[message.id], max(change.fileCount, change.files.count) > 0 {
                 items.append(.ownChange(change))
             }
-            items += (after[index] ?? []).map { .receipts($0, attached: false) }
+            if let groups = after[index] {
+                items += groups.map { .receipts($0, attached: false) }
+            }
         }
-        return items + trailing.map { .receipts($0, attached: false) }
+        if !trailing.isEmpty { items += trailing.map { .receipts($0, attached: false) } }
+        return items
+    }
+
+    /// Where the latest `turns` turns begin: the index of the `turns`-th user message, counted from the end.
+    /// Zero when the conversation holds no more turns than that.
+    static func latestTurnsStart(_ items: [WatcherItem], turns: Int = ThreadTimeline.openingTurns) -> Int {
+        guard turns > 0 else { return items.count }
+        var seen = 0
+        for index in items.indices.reversed() {
+            guard case .message(let message) = items[index], message.role == "user" else { continue }
+            seen += 1
+            if seen == turns { return index }
+        }
+        return 0
+    }
+}
+
+/// Memoizes Watcher's conversation items and parsed timestamps across body evaluations so redraws from composer typing,
+/// scroll-anchor updates, or unrelated model publishes do not rebuild the item list or re-parse ISO dates.
+final class WatcherConversationCache {
+    struct Key: Equatable {
+        let hostID: String
+        let threadID: String?
+        let revision: Int
+        let messageCount: Int
+        let firstMessageID: String?
+        let lastMessageID: String?
+        let lastMessageText: String?
+        let receiptGroups: [WatcherPage.ReceiptGroup]
+        let ownChanges: [WatcherPage.OwnChange]?
+    }
+    /// Cap on items kept eager at the bottom so jumping to the end lands on materialized rows even when a long
+    /// conversation has few user messages or many unattached receipts.
+    static let maxTailItems = 24
+    private var key: Key?
+    private var cached: [WatcherItem] = []
+    /// Index of the first item laid out eagerly at the bottom; items before it live in a lazy stack.
+    private(set) var latestTurnsStart = 0
+    /// That item's identity, so a split held while words are selected can be found again in the next revision.
+    private var latestTurnsStartID: String?
+    /// Number of times `WatcherConversation.items` was recomputed (for tests).
+    private(set) var builds = 0
+    /// Number of ISO date strings parsed on cache misses (for tests).
+    private(set) var dateParses = 0
+    private var dates: [String: Date] = [:]
+
+    func items(for page: WatcherPage?, hostID: String, holdSplit: Bool = false) -> [WatcherItem] {
+        guard let page else {
+            key = nil
+            cached = []
+            latestTurnsStart = 0
+            latestTurnsStartID = nil
+            return []
+        }
+        let messages = page.conversation.messages
+        let next = Key(hostID: hostID, threadID: page.current?.target.threadId, revision: page.conversation.revision,
+                       messageCount: messages.count, firstMessageID: messages.first?.id,
+                       lastMessageID: messages.last?.id, lastMessageText: messages.last?.text,
+                       receiptGroups: page.receiptGroups, ownChanges: page.ownChanges)
+        if next == key { return cached }
+        key = next
+        if dates.count > 10_000 { dates.removeAll(keepingCapacity: true) }
+        builds += 1
+        let built = WatcherConversation.items(page, date: { self.date($0) })
+        let byTurns = WatcherConversation.latestTurnsStart(built)
+        let byCap = max(0, built.count - Self.maxTailItems)
+        var start = max(byTurns, byCap)
+        if holdSplit, let held = latestTurnsStartID, let index = built.firstIndex(where: { $0.id == held }), index < start {
+            start = index
+        }
+        latestTurnsStart = start
+        latestTurnsStartID = start < built.count ? built[start].id : nil
+        cached = built
+        return built
+    }
+
+    func date(_ stamp: String) -> Date? {
+        if let known = dates[stamp] { return known }
+        dateParses += 1
+        guard let parsed = Stamp.date(stamp) else { return nil }
+        dates[stamp] = parsed
+        return parsed
+    }
+
+    /// Short time string for a receipt group's latest row timestamp, reusing cached parsed dates.
+    func receiptTime(for group: WatcherPage.ReceiptGroup) -> String? {
+        group.rows.compactMap { date($0.createdAt) }.max()?.formatted(date: .omitted, time: .shortened)
     }
 }
 

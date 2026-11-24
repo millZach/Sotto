@@ -1747,4 +1747,129 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertFalse(WatcherPermissions.grants("approval-required"))
         XCTAssertTrue(WatcherPermissions.grants("auto-accept-edits"))
     }
+
+    func testWatcherConversationCacheMemoizesItemsAndDatesAndBoundsEagerTail() throws {
+        let laptop = self.laptop
+        func iso(_ seconds: Int) -> String {
+            let m = seconds / 60, s = seconds % 60
+            return String(format: "2026-10-11T08:%02d:%02d.000Z", m, s)
+        }
+        func makePage(turns: Int, revision: Int, looseCount: Int, lastSuffix: String = "") throws -> WatcherPage {
+            var messages: [String] = []
+            for i in 0..<turns {
+                let u = i * 2, a = i * 2 + 1
+                let suffix = i == turns - 1 ? lastSuffix : ""
+                messages.append(#"{"id":"u-\#(i)","role":"user","text":"Ask \#(i)","createdAt":"\#(iso(u))"}"#)
+                messages.append(#"{"id":"a-\#(i)","role":"assistant","text":"Reply \#(i)\#(suffix)","createdAt":"\#(iso(a))"}"#)
+            }
+            var groups: [String] = []
+            for i in 0..<60 {
+                let ts = iso(i * 2 + 1)
+                groups.append(#"{"replyMessageId":"a-\#(i)","requestId":"req-a-\#(i)","rows":[{"operationId":"op-a-\#(i)","target":{"hostId":"\#(laptop)","threadId":"t-\#(i)"},"title":"Thread \#(i)","provider":"claude","action":"send","deliveryState":"accepted","createdAt":"\#(ts)","updatedAt":"\#(ts)"}]}"#)
+            }
+            for i in 0..<looseCount {
+                let ts = iso(i * 2 + 1)
+                groups.append(#"{"replyMessageId":null,"requestId":"req-l-\#(i)","rows":[{"operationId":"op-l-\#(i)","target":{"hostId":"\#(laptop)","threadId":"tl-\#(i)"},"title":"Loose \#(i)","provider":"codex","action":"send","deliveryState":"accepted","createdAt":"\#(ts)","updatedAt":"\#(ts)"}]}"#)
+            }
+            let json = #"""
+            {"hostId":"\#(laptop)","current":{"target":{"hostId":"\#(laptop)","threadId":"w"},"provider":"codex","modelId":"m","reasoningEffort":"high","status":"running","connected":true},
+             "conversation":{"messages":[\#(messages.joined(separator: ","))],"earlierAvailable":true,"revision":\#(revision)},
+             "receiptGroups":[\#(groups.joined(separator: ","))],
+             "watchedThreads":[],"needsYou":[],"inFlight":0,"inFlightLimit":4,"working":true,"observedAt":"2026-10-11T09:00:00.000Z"}
+            """#
+            return try JSONDecoder().decode(WatcherPage.self, from: Data(json.utf8))
+        }
+
+        let cache = WatcherConversationCache()
+        let first = try makePage(turns: 100, revision: 200, looseCount: 60)
+        let items1 = cache.items(for: first, hostID: laptop)
+        XCTAssertEqual(cache.builds, 1)
+        XCTAssertEqual(items1.count, 320, "200 messages + 60 attached + 60 loose receipt groups")
+        XCTAssertGreaterThan(cache.latestTurnsStart, 0, "Long conversation splits older items into the lazy stack")
+        XCTAssertLessThanOrEqual(items1.count - cache.latestTurnsStart, WatcherConversationCache.maxTailItems,
+                                 "Eager tail stays bounded even on long conversations")
+        let parsesAfterFirst = cache.dateParses
+        XCTAssertGreaterThan(parsesAfterFirst, 0)
+
+        // Repeated reads with unchanged revision and receiptGroups hit the memoized cache with zero work.
+        let items2 = cache.items(for: first, hostID: laptop)
+        XCTAssertEqual(items2, items1)
+        XCTAssertEqual(cache.builds, 1)
+        XCTAssertEqual(cache.dateParses, parsesAfterFirst)
+
+        // Receipt card time formatting reuses cached dates and never re-parses on subsequent reads.
+        for group in first.receiptGroups { _ = cache.receiptTime(for: group) }
+        let parsesAfterTimes = cache.dateParses
+        for group in first.receiptGroups { _ = cache.receiptTime(for: group) }
+        XCTAssertEqual(cache.dateParses, parsesAfterTimes)
+
+        // Streaming a new chunk bumps revision and rebuilds the list, but reuses every cached timestamp.
+        let streamed = try makePage(turns: 100, revision: 201, looseCount: 60, lastSuffix: " more words")
+        let items3 = cache.items(for: streamed, hostID: laptop)
+        XCTAssertEqual(cache.builds, 2)
+        XCTAssertEqual(cache.dateParses, parsesAfterTimes, "Streaming reuses cached ISO dates instead of re-parsing 200+ timestamps")
+        if case .message(let last)? = items3.last { XCTAssertTrue(last.text.hasSuffix(" more words")) }
+        else { XCTFail("Expected streamed message at the end") }
+
+        // Holding the split while words are selected keeps the previous boundary when a new turn arrives.
+        let splitBeforeTurn = cache.latestTurnsStart
+        let nextTurn = try makePage(turns: 101, revision: 202, looseCount: 60)
+        _ = cache.items(for: nextTurn, hostID: laptop, holdSplit: true)
+        XCTAssertEqual(cache.latestTurnsStart, splitBeforeTurn, "Active text selection holds the lazy/eager boundary")
+
+        // When every receipt group attaches to a message, no message timestamps need parsing at all.
+        let attachedOnly = try makePage(turns: 100, revision: 200, looseCount: 0)
+        let attachedCache = WatcherConversationCache()
+        _ = attachedCache.items(for: attachedOnly, hostID: laptop)
+        XCTAssertEqual(attachedCache.dateParses, 0, "Attached-only receipts skip ISO date parsing for all messages")
+
+        // Receipt card models compare by value so equatable ReceiptCard skips unchanged redraws.
+        let receipt = try XCTUnwrap(first.receiptGroups.first?.rows.first)
+        let rowA = WatcherReceiptRowModel(row: receipt, place: "Claude Code · Sotto · Laptop", opens: true, threadState: .working, watched: true)
+        let rowB = WatcherReceiptRowModel(row: receipt, place: "Claude Code · Sotto · Laptop", opens: true, threadState: .done, watched: true)
+        XCTAssertEqual(WatcherReceiptCardModel(rows: [rowA], time: "8:01 AM"), WatcherReceiptCardModel(rows: [rowA], time: "8:01 AM"))
+        XCTAssertNotEqual(WatcherReceiptCardModel(rows: [rowA], time: "8:01 AM"), WatcherReceiptCardModel(rows: [rowB], time: "8:01 AM"))
+    }
+
+    @MainActor func testWatcherStoreStartReceiptsRevisionOnlyBumpsOnStartReceiptChanges() async throws {
+        let model = try await fixture(features: Self.watcherFeatures + [WatcherWire.machinesFeature, WatcherWire.machinesReadFeature], spec: Spec())
+        defer { model.phase(.background) }
+        XCTAssertEqual(model.watcherStore.startReceiptsRevision[laptop], 1)
+        XCTAssertEqual(model.watcherStore.startReceiptsKey[laptop], "bbbbbbbb-0000-4000-8000-000000000001")
+
+        var readCalls = 0
+        HostConnection.watcherHandler = { op, operation, _ in
+            if op == "watcher-phone-read", operation["machines"] == .bool(true) {
+                readCalls += 1
+                return try self.json(#"{"status":"ok","machines":{"rows":[]}}"#)
+            }
+            return try self.ok(self.page())
+        }
+        model.readWatcherMachinesAfterStarts(laptop)
+        await until { readCalls == 1 }
+        model.readWatcherMachinesAfterStarts(laptop)
+        await Task.yield()
+        XCTAssertEqual(readCalls, 1, "Same start receipt set does not trigger a second machines read")
+
+        // Pushing a page with an extra non-start ("send") receipt leaves startReceiptsRevision untouched.
+        let sendAdded = page(Spec(observedAt: "2026-10-11T09:01:00.000Z")).replacingOccurrences(
+            of: #""receiptGroups":["#,
+            with: #""receiptGroups":[{"replyMessageId":"started","requestId":"req-send","rows":[{"operationId":"op-send-1","target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","action":"send","deliveryState":"accepted","createdAt":"2026-10-11T08:01:30.000Z","updatedAt":"2026-10-11T08:01:30.000Z"}]}, "#
+        )
+        try connection.push(.shell(try shell(sendAdded, mayAnswer: true).decode(Shell.self)))
+        await until { model.watcherPage(laptop)?.receiptGroups.count == 2 }
+        XCTAssertEqual(model.watcherStore.startReceiptsRevision[laptop], 1, "Non-start receipt updates do not bump startReceiptsRevision")
+
+        // Pushing a page with a new "start" receipt bumps startReceiptsRevision and triggers one machines read.
+        let startAdded = page(Spec(observedAt: "2026-10-11T09:02:00.000Z")).replacingOccurrences(
+            of: #""receiptGroups":["#,
+            with: #""receiptGroups":[{"replyMessageId":"started","requestId":"req-start-2","rows":[{"operationId":"op-start-2","target":{"hostId":"\#(laptop)","threadId":"t"},"title":"New worker","provider":"codex","action":"start","deliveryState":"accepted","createdAt":"2026-10-11T08:02:00.000Z","updatedAt":"2026-10-11T08:02:00.000Z"}]}, "#
+        )
+        try connection.push(.shell(try shell(startAdded, mayAnswer: true).decode(Shell.self)))
+        await until { model.watcherStore.startReceiptsRevision[laptop] == 2 }
+        XCTAssertEqual(model.watcherStore.startReceiptsKey[laptop], "op-start-2,bbbbbbbb-0000-4000-8000-000000000001")
+        model.readWatcherMachinesAfterStarts(laptop)
+        await until { readCalls == 2 }
+        XCTAssertEqual(readCalls, 2)
+    }
 }

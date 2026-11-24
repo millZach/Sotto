@@ -100,11 +100,14 @@ extension AppModel {
     }
     /// Whether Watcher works with this thread now: the owl after its provider's logo, and the line in its reply box.
     func watchedByWatcher(_ ref: ThreadRef) -> Bool {
-        computers.contains { watcherSummary($0.hostID)?.watched.contains(ref.id) == true }
+        watchedThreadIDs.contains(ref.id)
     }
-    /// Every thread Watcher works with now, by `ThreadRef.id`, for a list to read once.
+    /// Every thread Watcher works with now, by `ThreadRef.id`, cached until `computers` or `live` changes.
     var watchedThreadIDs: Set<String> {
-        Set(computers.flatMap { computer in watcherSummary(computer.hostID)?.watched ?? [] })
+        if let kept = listed.watched { return kept }
+        let built = Set(computers.flatMap { computer in watcherSummary(computer.hostID)?.watched ?? [] })
+        listed.watched = built
+        return built
     }
     /// The name a thread's computer goes by here, or nil for a computer this iPhone isn't paired with.
     func computerName(_ hostID: String) -> String? { computer(hostID)?.name }
@@ -185,9 +188,8 @@ extension AppModel {
     /// Reads the machines once for each set of Watcher's starts the line has not been read for (#1032), so the line's words
     /// follow a start. Starts are the page's start receipts; the same set is not read for twice while the app runs.
     func readWatcherMachinesAfterStarts(_ hostID: String) {
-        guard offersWatcherMachines(hostID), let page = watcherPage(hostID) else { return }
-        let starts = page.receiptGroups.flatMap { $0.rows }.filter { $0.action == "start" }.map(\.operationId).joined(separator: ",")
-        guard !starts.isEmpty, watcherStore.machinesReadFor[hostID] != starts else { return }
+        guard offersWatcherMachines(hostID), let starts = watcherStore.startReceiptsKey[hostID],
+              !starts.isEmpty, watcherStore.machinesReadFor[hostID] != starts else { return }
         watcherStore.machinesReadFor[hostID] = starts
         Task { await readWatcherMachines(hostID) }
     }
@@ -1385,9 +1387,40 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 /// with every shell its computer sends, and only the Watcher tab reads it. The tab's dot and badge and the owl on watched
 /// threads read a summary on the model, which changes far less often.
 @MainActor final class WatcherStore: ObservableObject {
-    @Published var pages: [String: WatcherPage] = [:]
+    @Published var pages: [String: WatcherPage] = [:] {
+        didSet { refreshStartReceipts() }
+    }
     /// The starts each computer's machines were last read for, so a placement is read for once however often the tab opens.
     var machinesReadFor: [String: String] = [:]
+    /// Monotonic revision per computer that bumps only when its `"start"` receipt operation IDs change, giving
+    /// `WatcherMachinesLine` an O(1) `.onChange(of:)` trigger without deep-comparing `receiptGroups`.
+    private(set) var startReceiptsRevision: [String: Int] = [:]
+    /// Precomputed comma-joined `"start"` operation IDs per computer, read by `AppModel.readWatcherMachinesAfterStarts`.
+    private(set) var startReceiptsKey: [String: String] = [:]
+
+    private func refreshStartReceipts() {
+        for hostID in Array(startReceiptsKey.keys) where pages[hostID] == nil {
+            startReceiptsKey.removeValue(forKey: hostID)
+            startReceiptsRevision.removeValue(forKey: hostID)
+        }
+        for (hostID, page) in pages {
+            let key = Self.startsKey(in: page)
+            if startReceiptsKey[hostID] != key {
+                startReceiptsKey[hostID] = key
+                startReceiptsRevision[hostID, default: 0] &+= 1
+            }
+        }
+    }
+
+    static func startsKey(in page: WatcherPage) -> String {
+        var ids: [String] = []
+        for group in page.receiptGroups {
+            for row in group.rows where row.action == "start" {
+                ids.append(row.operationId)
+            }
+        }
+        return ids.joined(separator: ",")
+    }
 }
 
 /// A thread's history as it was last read, and the thread it belongs to.
@@ -1414,16 +1447,30 @@ struct RailAsk: Equatable {
         count == 1 ? String(localized: "1 saved computer needs pairing again.") : String(localized: "\(count) saved computers need pairing again.")
     }
     /// In the order they were added. Credentials live in the Keychain, one item per host ID.
-    @Published private(set) var computers: [SavedComputer] = [] { didSet { listed = Listed() } }
-    @Published private(set) var live: [String: Live] = [:] { didSet { listed = Listed() } }
+    @Published private(set) var computers: [SavedComputer] = [] { didSet { listed = Listed(); threadListRevision &+= 1 } }
+    @Published private(set) var live: [String: Live] = [:] { didSet { listed = Listed(); threadIndex.clearLive(); threadListRevision &+= 1 } }
     @Published private(set) var selected: ThreadRef?
     /// The Settled shelf's threads read from each computer so far (`settled-threads-on-request`), and whether a read is
     /// under way or the last one failed.
-    @Published private(set) var olderSettled: [String: OlderSettled] = [:]
+    @Published private(set) var olderSettled: [String: OlderSettled] = [:] { didSet { threadIndex.clearSettled(); threadListRevision &+= 1 } }
     @Published private(set) var olderSettledReading = false
     @Published private(set) var olderSettledFailed = false
     /// What Threads' search last asked the computers for among their held-back settled threads, and what each found.
-    @Published private(set) var settledSearch = SettledSearch()
+    @Published private(set) var settledSearch = SettledSearch() { didSet { threadIndex.clearSearch(); threadListRevision &+= 1 } }
+    /// Monotonic revision bumped whenever `computers`, `live`, `olderSettled`, or `settledSearch` changes, so lazy
+    /// views like Watcher's older receipt cards skip re-diffing during streaming or composer edits.
+    private(set) var threadListRevision: UInt64 = 0
+    /// Per-host dictionaries built lazily on first lookup so `thread(_:)` and `project(_:on:)` are O(1) (#1702).
+    private let threadIndex = ThreadIndex()
+    private final class ThreadIndex {
+        var liveThreads: [String: [String: ThreadSummary]] = [:]
+        var liveProjects: [String: [String: Project]] = [:]
+        var settledThreads: [String: [String: ThreadSummary]] = [:]
+        var searchThreads: [String: [String: ThreadSummary]] = [:]
+        func clearLive() { liveThreads.removeAll(keepingCapacity: true); liveProjects.removeAll(keepingCapacity: true) }
+        func clearSettled() { settledThreads.removeAll(keepingCapacity: true) }
+        func clearSearch() { searchThreads.removeAll(keepingCapacity: true) }
+    }
     /// What Threads' search last read of what was said in each computer's threads (`thread-words`), and the search it
     /// answers. The lists are grouped again with it.
     @Published private(set) var threadWords = ThreadWordsSearch() { didSet { if threadWords != oldValue { listed = Listed() } } }
@@ -1441,6 +1488,7 @@ struct RailAsk: Equatable {
         struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef?; let holding: Set<String> }
         var groups: [GroupKey: FocusThreads] = [:]
         var refs: Set<String>?
+        var watched: Set<String>?
         var badge: (opened: ThreadRef?, count: Int)?
         var agents: [ThreadRef: AgentsCount?] = [:]
     }
@@ -2946,9 +2994,40 @@ struct RailAsk: Equatable {
         }
     }
     /// A thread from its computer's list, or an older settled one the shelf or search read, which the list leaves out.
-    func thread(_ ref: ThreadRef) -> ThreadSummary? { live[ref.hostID]?.shell?.host.threads.first { $0.id == ref.threadID } ?? readSettled(ref) }
+    /// Indexed per host on first lookup after a list change so lookups are O(1) (#1702).
+    func thread(_ ref: ThreadRef) -> ThreadSummary? { liveThread(ref) ?? readSettled(ref) }
+    private func liveThread(_ ref: ThreadRef) -> ThreadSummary? {
+        if let indexed = threadIndex.liveThreads[ref.hostID] { return indexed[ref.threadID] }
+        let threads = live[ref.hostID]?.shell?.host.threads ?? []
+        let indexed = Dictionary(threads.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        threadIndex.liveThreads[ref.hostID] = indexed
+        return indexed[ref.threadID]
+    }
     private func readSettled(_ ref: ThreadRef) -> ThreadSummary? {
-        olderSettled[ref.hostID]?.threads.first { $0.id == ref.threadID } ?? settledSearch.found[ref.hostID]?.first { $0.id == ref.threadID }
+        if let settled = settledThread(ref) { return settled }
+        return searchThread(ref)
+    }
+    private func settledThread(_ ref: ThreadRef) -> ThreadSummary? {
+        if let indexed = threadIndex.settledThreads[ref.hostID] { return indexed[ref.threadID] }
+        let threads = olderSettled[ref.hostID]?.threads ?? []
+        let indexed = Dictionary(threads.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        threadIndex.settledThreads[ref.hostID] = indexed
+        return indexed[ref.threadID]
+    }
+    private func searchThread(_ ref: ThreadRef) -> ThreadSummary? {
+        if let indexed = threadIndex.searchThreads[ref.hostID] { return indexed[ref.threadID] }
+        let threads = settledSearch.found[ref.hostID] ?? []
+        let indexed = Dictionary(threads.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        threadIndex.searchThreads[ref.hostID] = indexed
+        return indexed[ref.threadID]
+    }
+    /// A project from its computer's list, indexed per host so `projectTitle(_:)` and `placeLine(_:provider:computer:)` are O(1).
+    func project(_ id: String, on hostID: String) -> Project? {
+        if let indexed = threadIndex.liveProjects[hostID] { return indexed[id] }
+        let projects = live[hostID]?.shell?.host.projects ?? []
+        let indexed = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        threadIndex.liveProjects[hostID] = indexed
+        return indexed[id]
     }
     func detail(for ref: ThreadRef) -> ThreadDetail? { selected == ref && openDetail?.threadId == ref.threadID ? openDetail : nil }
     /// The open thread as its page shows it: the latest copy, or while that is being read again, the copy read before,
