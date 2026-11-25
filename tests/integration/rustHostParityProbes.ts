@@ -4,9 +4,10 @@
 //
 // A probe is the smallest request either host must take seriously: it parses, it names the thread the test made for it,
 // and it does nothing outside the test's own folders. Nothing here reaches GitHub, a provider's sign-in page or a real
-// provider client: the hosts run with an empty `gh` configuration, the referee's fake provider and no network for clients.
+// provider client: the hosts run with an empty `gh` configuration, Git limited to local files, the referee's fake provider
+// and no provider client on their PATH. A repository a probe names is on `github.invalid`, a name that never resolves.
 import { randomUUID } from 'node:crypto'
-import type { AgentCommand } from '../../src/shared/agents'
+import { publicProviderEntityId, type AgentCommand } from '../../src/shared/agents'
 import type { HostRequest } from '../../src/shared/hostProtocol'
 
 /** What a probe may name: the host's project, a thread made for this probe alone, and a folder inside the test's own. */
@@ -19,6 +20,8 @@ export interface ProbeIds {
 type CommandType = AgentCommand['type']
 type CommandProbe<T extends CommandType> = (ids: ProbeIds) => AgentCommand & { type: T }
 
+/** The referee's fake Codex model, by the ID the host's model list gives it. */
+export const FIXTURE_MODEL = publicProviderEntityId('codex', 'model', 'fixture-model')
 const PULL_REQUEST = 'https://github.com/sotto-parity-probe/none/pull/1'
 const SHA = 'a'.repeat(64)
 
@@ -55,9 +58,9 @@ export const COMMAND_PROBES: { readonly [T in CommandType]?: CommandProbe<T> } =
   'restore-thread': ({ threadId }) => ({ type: 'restore-thread', threadId }),
   'rename-thread': ({ threadId }) => ({ type: 'rename-thread', threadId, title: 'Renamed probe' }),
   'regenerate-thread-title': ({ threadId }) => ({ type: 'regenerate-thread-title', threadId }),
-  'create-owlet': () => ({ type: 'create-owlet', threadId: randomUUID(), name: 'Probe owlet', role: 'Answers probes', modelId: 'fixture-model' }),
+  'create-owlet': () => ({ type: 'create-owlet', threadId: randomUUID(), name: 'Probe owlet', role: 'Answers probes', modelId: FIXTURE_MODEL }),
   'set-owlet': ({ threadId }) => ({ type: 'set-owlet', threadId, name: 'Probe owlet' }),
-  'create-thread': ({ projectId }) => ({ type: 'create-thread', projectId, title: 'Probe thread', modelId: 'fixture-model', threadId: randomUUID() }),
+  'create-thread': ({ projectId }) => ({ type: 'create-thread', projectId, title: 'Probe thread', modelId: FIXTURE_MODEL, threadId: randomUUID() }),
   'continue-agent': ({ threadId }) => ({ type: 'continue-agent', threadId, agentId: 'agent-probe', newThreadId: randomUUID() }),
   'fork-thread': ({ threadId }) => ({ type: 'fork-thread', threadId, messageId: 'message-probe', newThreadId: randomUUID() }),
   'retry-thread-worktree': ({ threadId }) => ({ type: 'retry-thread-worktree', threadId }),
@@ -106,7 +109,7 @@ export const OPERATION_PROBES: { readonly [O in Operation]: OperationProbe<O> } 
   'watcher-phone-set-permission': () => ({ op: 'watcher-phone-set-permission', request: { runtimeMode: 'approval-required' } }),
   'watcher-phone-watch': ({ threadId }) => ({ op: 'watcher-phone-watch', request: { target: target(threadId) } }),
   'watcher-phone-unwatch': ({ threadId }) => ({ op: 'watcher-phone-unwatch', request: { target: target(threadId) } }),
-  'watcher-phone-open': () => ({ op: 'watcher-phone-open', request: { target: target(randomUUID()), provider: 'codex', modelId: 'fixture-model' } }),
+  'watcher-phone-open': () => ({ op: 'watcher-phone-open', request: { target: target(randomUUID()), provider: 'codex', modelId: FIXTURE_MODEL } }),
   'watcher-phone-new': () => ({ op: 'watcher-phone-new', request: { target: target(randomUUID()) } }),
   'watcher-phone-stop-turn': () => ({ op: 'watcher-phone-stop-turn', request: { target: target(randomUUID()) } }),
   'watcher-phone-dismiss-handover': () => ({ op: 'watcher-phone-dismiss-handover', request: { target: target(randomUUID()) } }),
@@ -159,7 +162,7 @@ export const OPERATION_PROBES: { readonly [O in Operation]: OperationProbe<O> } 
   'detached-runs-look': () => ({ op: 'detached-runs-look' }),
   'detached-run-elsewhere-stop': () => ({ op: 'detached-run-elsewhere-stop', runId: randomUUID(), mark: { name: 'CODEX_THREAD_ID', value: 'probe' } }),
   'project-origins': () => ({ op: 'project-origins' }),
-  'project-setup': () => ({ op: 'project-setup', request: { repository: { host: 'github.com', owner: 'sotto-parity-probe', name: 'none' }, title: 'Probe' } }),
+  'project-setup': () => ({ op: 'project-setup', request: { repository: { host: 'github.invalid', owner: 'sotto-parity-probe', name: 'none' }, title: 'Probe' } }),
   'desktop-defaults': () => ({ op: 'desktop-defaults', defaults: { newThreadRuntimeMode: null } }),
   'plugin-account-copy': () => ({ op: 'plugin-account-copy', copy: { account: { id: randomUUID(), plugin: 'vercel', name: 'Probe', savedAt: now(), signedInAs: null, on: true, projects: null }, secret: 'probe-secret' } }),
   'plugin-account-copy-remove': () => ({ op: 'plugin-account-copy-remove', accountId: randomUUID() }),

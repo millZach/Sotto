@@ -71,7 +71,7 @@
       ],
       "extra": []
     },
-    "phone": {
+    "unrecorded": {
       "missing": [
         "activity-bodies",
         "agents-view",
@@ -118,21 +118,32 @@
       "extra": []
     }
   },
+  "unseen": {
+    "features": [
+      "host-update",
+      "opencode-sign-in",
+      "thread-media-edge"
+    ],
+    "operations": [
+      "host-update",
+      "opencode-sign-in"
+    ]
+  },
   "commands": {
     "babysit-pull-request": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "bring-changes-back": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "cancel-client-updates": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "cancel-draft": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "cancel-restart": {
@@ -144,24 +155,32 @@
       "rust": "invalid_request"
     },
     "compact-thread": {
-      "node": "ok",
+      "node": "refused",
       "rust": "unavailable"
     },
     "compose": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
+    },
+    "configure-thread": {
+      "node": "refused",
+      "rust": "ok"
     },
     "configure-thread-working-copy": {
       "node": "ok",
       "rust": "invalid_request"
     },
     "continue-agent": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "create-owlet": {
       "node": "ok",
       "rust": "invalid_request"
+    },
+    "create-project": {
+      "node": "refused",
+      "rust": "ok"
     },
     "delete-thread": {
       "node": "ok",
@@ -176,43 +195,43 @@
       "rust": "invalid_request"
     },
     "edit-followup": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "fork-thread": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-action": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-checkout-pull-request": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-init": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-link-pull-request": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-publish": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-pull": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-pull-request-action": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-switch-branch": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "git-unlink-pull-request": {
@@ -220,7 +239,7 @@
       "rust": "invalid_request"
     },
     "interrupt": {
-      "node": "ok",
+      "node": "refused",
       "rust": "unavailable"
     },
     "load-earlier-messages": {
@@ -232,19 +251,19 @@
       "rust": "invalid_request"
     },
     "preview-reclaim-thread-worktree": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "queue-client-updates": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "reclaim-thread-worktree": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "recover-draft": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "refresh-thread-skills": {
@@ -260,7 +279,7 @@
       "rust": "invalid_request"
     },
     "remove-followup": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "reorder-followups": {
@@ -272,7 +291,7 @@
       "rust": "invalid_request"
     },
     "restore-thread-branch": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "resume-followups": {
@@ -287,16 +306,12 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "select-thread": {
-      "node": "unavailable",
-      "rust": "ok"
-    },
     "send": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "set-owlet": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "settle-project": {
@@ -311,20 +326,28 @@
       "node": "ok",
       "rust": "invalid_request"
     },
+    "steer": {
+      "node": "refused",
+      "rust": "ok"
+    },
     "steer-followup": {
       "node": "ok",
       "rust": "invalid_request"
     },
     "stop-babysitting": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     },
     "stop-detached-run": {
-      "node": "ok",
+      "node": "refused",
       "rust": "invalid_request"
     }
   },
   "operations": {
+    "activity-body": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
     "attachment-file": {
       "node": "ok",
       "rust": "invalid_request"
@@ -333,24 +356,8 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "browser": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "check-answer": {
       "node": "stale_request",
-      "rust": "invalid_request"
-    },
-    "coordination-relay-answer": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "coordination-relay-news": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "coordination-remote-ask": {
-      "node": "ok",
       "rust": "invalid_request"
     },
     "coordination-reply": {
@@ -365,22 +372,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "delegation-relay-answer": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "delegation-relay-name": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "delegation-relay-news": {
-      "node": "unavailable",
-      "rust": "invalid_request"
-    },
-    "delegation-remote-ask": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "delegation-views": {
       "node": "ok",
       "rust": "invalid_request"
@@ -389,44 +380,20 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "detached-run-elsewhere-stop": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "detached-runs-look": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "earlier-steps": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "file-upload-progress": {
       "node": "ok",
       "rust": "invalid_request"
-    },
-    "git-changed-files": {
-      "node": "unavailable",
-      "rust": "ok"
     },
     "git-pull-request": {
       "node": "unavailable",
       "rust": "invalid_request"
     },
     "git-pull-request-list": {
-      "node": "unavailable",
+      "node": "ok",
       "rust": "invalid_request"
-    },
-    "git-refs": {
-      "node": "unavailable",
-      "rust": "ok"
     },
     "hermes-sign-out": {
       "node": "unavailable",
-      "rust": "invalid_request"
-    },
-    "next-prompts-wanted": {
-      "node": "ok",
       "rust": "invalid_request"
     },
     "plugin-account-copies": {
@@ -438,14 +405,6 @@
       "rust": "invalid_request"
     },
     "plugin-account-copy-remove": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "plugin-elevenlabs-sound": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "plugin-elevenlabs-sound-bytes": {
       "node": "ok",
       "rust": "invalid_request"
     },
@@ -493,10 +452,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "settled-threads": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "sign-in-cancel": {
       "node": "ok",
       "rust": "invalid_request"
@@ -516,14 +471,6 @@
     "start-handover": {
       "node": "ok",
       "rust": "invalid_request"
-    },
-    "subagent-assignments": {
-      "node": "unavailable",
-      "rust": "ok"
-    },
-    "subagent-page": {
-      "node": "unavailable",
-      "rust": "ok"
     },
     "thread-delegations": {
       "node": "ok",
@@ -550,10 +497,6 @@
       "rust": "invalid_request"
     },
     "thread-prompts": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "watcher-tell-answer": {
       "node": "ok",
       "rust": "invalid_request"
     }
