@@ -1296,20 +1296,41 @@ pub struct PhoneAccessCommandOutcome {
 
 type PhoneAccessChangeCallback = Arc<dyn Fn(PhoneAccessBrief, PhonesState) + Send + Sync>;
 
+/// Copies a store this build cannot read to `<name>.corrupt-<millis>` beside it, as Node's `AtomicJsonStore` does before
+/// it starts over, so the next save does not lose what was in it (ADR-0214). The file itself stays where it is.
+fn keep_unreadable_copy(path: &Path) {
+    let millis = Utc::now().timestamp_millis();
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("store.json");
+    let _ = fs::copy(path, path.with_file_name(format!("{name}.corrupt-{millis}")));
+}
+
+/// Reads `phone-access.json` as Node's schema does, or none when it is not there or does not read. One that does not
+/// read is copied aside first.
+fn read_record(path: &Path) -> Option<PhoneAccessRecord> {
+    let text = fs::read_to_string(path).ok()?;
+    let record = serde_json::from_str::<PhoneAccessRecord>(&text)
+        .ok()
+        .filter(|rec| !(rec.serve_port.is_some_and(|p| p != 10000) || rec.port == Some(0)));
+    if record.is_none() {
+        keep_unreadable_copy(path);
+    }
+    record
+}
+
 fn read_phone_clients(path: &Path) -> HashSet<String> {
     let Ok(text) = fs::read_to_string(path) else {
         return HashSet::new();
     };
-    let Ok(ids) = serde_json::from_str::<Vec<String>>(&text) else {
+    let ids = serde_json::from_str::<Vec<String>>(&text).ok().filter(|ids| {
+        ids.len() <= MAX_PHONE_CLIENTS
+            && ids
+                .iter()
+                .all(|id| !id.is_empty() && id.len() <= MAX_CLIENT_ID_LEN)
+    });
+    let Some(ids) = ids else {
+        keep_unreadable_copy(path);
         return HashSet::new();
     };
-    if ids.len() > MAX_PHONE_CLIENTS
-        || ids
-            .iter()
-            .any(|id| id.is_empty() || id.len() > MAX_CLIENT_ID_LEN)
-    {
-        return HashSet::new();
-    }
     ids.into_iter().collect()
 }
 
@@ -1496,20 +1517,9 @@ impl PhoneAccessManager {
         self.started_at = Some(Instant::now());
         self.settings = settings;
         if self.record_path.exists() {
-            match fs::read_to_string(&self.record_path)
-                .ok()
-                .and_then(|t| serde_json::from_str::<PhoneAccessRecord>(&t).ok())
-            {
-                Some(rec) => {
-                    if rec.serve_port.is_some_and(|p| p != 10000) || rec.port == Some(0) {
-                        self.record_uncertain = true;
-                    } else {
-                        self.record = rec;
-                    }
-                }
-                None => {
-                    self.record_uncertain = true;
-                }
+            match read_record(&self.record_path) {
+                Some(rec) => self.record = rec,
+                None => self.record_uncertain = true,
             }
         }
         if self.record.mapped && self.record.port.is_none() {
@@ -3001,5 +3011,96 @@ mod tests {
         assert_eq!(st_off.phase, "off");
         assert!(!dir.path().join("local-apps.json").exists());
         assert!(!mem.may_grant_remote(&file3.client_id).unwrap());
+    }
+
+    fn phone_access_manager(dir: &Path) -> PhoneAccessManager {
+        PhoneAccessManager::new(dir.to_path_buf(), "host-1".into(), false, None, MockTailscale::running("forge.tail.ts.net.", "forge"))
+    }
+
+    #[test]
+    fn node_phone_access_survives_a_rust_load_and_save() {
+        let node = || json!({ "port": 41234, "mapped": true, "servePort": 10000 });
+        crate::store_trip::round_trip("phone-access.json", node, |dir| {
+            let mut manager = phone_access_manager(dir);
+            let record = read_record(&dir.join("phone-access.json")).expect("Node's record reads");
+            assert!(manager.save_record(record));
+        });
+    }
+
+    #[test]
+    fn rust_created_phone_access_reads_in_node() {
+        let written = crate::store_trip::created("phone-access.json", |dir| {
+            assert!(phone_access_manager(dir).save_record(PhoneAccessRecord::with_port(Some(41234), true, 10000)));
+        });
+        assert_eq!(written, json!({ "port": 41234, "mapped": true, "servePort": 10000 }));
+    }
+
+    #[test]
+    fn a_phone_access_record_that_does_not_read_is_copied_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("phone-access.json");
+        fs::write(&path, r#"{ "port": 41234, "mapped": true, "servePort": 9999 }"#).unwrap();
+        assert!(read_record(&path).is_none());
+        assert!(path.exists());
+        let names: Vec<String> = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert!(names.iter().any(|name| name.starts_with("phone-access.json.corrupt-")), "{names:?}");
+    }
+
+    #[test]
+    fn node_phone_clients_survives_a_rust_load_and_save() {
+        // Node keeps these as a set, and Rust writes them sorted, so the fixture is in sorted order.
+        let node = || json!(["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"]);
+        crate::store_trip::round_trip(PHONE_CLIENTS_FILE, node, |dir| {
+            let path = dir.join(PHONE_CLIENTS_FILE);
+            let ids = read_phone_clients(&path);
+            assert_eq!(ids.len(), 2);
+            write_phone_clients(&path, &ids);
+        });
+    }
+
+    #[test]
+    fn rust_created_phone_clients_reads_in_node() {
+        let written = crate::store_trip::created(PHONE_CLIENTS_FILE, |dir| {
+            let ids: HashSet<String> = ["33333333-3333-4333-8333-333333333333".to_string()].into();
+            write_phone_clients(&dir.join(PHONE_CLIENTS_FILE), &ids);
+        });
+        assert_eq!(written, json!(["33333333-3333-4333-8333-333333333333"]));
+    }
+
+    #[test]
+    fn phone_clients_that_do_not_read_are_copied_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PHONE_CLIENTS_FILE);
+        fs::write(&path, r#"["client-1", ""]"#).unwrap();
+        assert!(read_phone_clients(&path).is_empty());
+        let names: Vec<String> = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert!(names.iter().any(|name| name.starts_with("phone-clients.json.corrupt-")), "{names:?}");
+    }
+
+    #[test]
+    fn node_local_apps_survives_a_rust_load_and_save() {
+        let node = || json!({ "version": 1, "port": 51234, "token": "local-token-1", "clientId": "44444444-4444-4444-8444-444444444444" });
+        crate::store_trip::round_trip("local-apps.json", node, |dir| {
+            let manager = LocalAppsManager::new(dir.to_path_buf(), "host-la".into(), true, None);
+            let file = manager.read_file().expect("Node's file reads");
+            write_atomic_private_json(&manager.file_path, &file).unwrap();
+        });
+    }
+
+    #[test]
+    fn rust_created_local_apps_reads_in_node() {
+        let _guard = LOOPBACK_TEST_LOCK.blocking_lock();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut paired = Value::Null;
+        let written = crate::store_trip::created("local-apps.json", |dir| {
+            runtime.block_on(async {
+                let mut manager = LocalAppsManager::new(dir.to_path_buf(), "host-la".into(), true, None);
+                assert_eq!(manager.start(true).await.phase, "on");
+                manager.close().await;
+            });
+            paired = serde_json::from_str(&fs::read_to_string(dir.join("local-apps").join("paired-clients.json")).unwrap()).unwrap();
+        });
+        assert_eq!(written["version"], 1);
+        assert_eq!(paired["clients"][0]["clientId"], written["clientId"]);
     }
 }

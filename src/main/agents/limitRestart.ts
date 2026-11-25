@@ -45,6 +45,8 @@ const recordSchema = z.object({
 const fileSchema = z.object({ version: z.literal(1), threads: z.array(recordSchema).max(RECORDS_MAX) }).strict()
 type LimitRecord = z.infer<typeof recordSchema>
 type LimitFile = z.infer<typeof fileSchema>
+/** Reads `limit-restarts.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseLimitRestartFile = (input: unknown): LimitFile => fileSchema.parse(input)
 
 /** What the restart reads of the coordinator, by thread ID and without copying its state. */
 export interface LimitRestartControl {
@@ -121,7 +123,7 @@ export class LimitRestart {
   constructor(private readonly options: LimitRestartOptions) {
     this.now = options.now ?? Date.now
     this.schedule = options.schedule ?? ((callback, delay) => { const timer = setTimeout(callback, delay); timer.unref?.(); return () => clearTimeout(timer) })
-    this.store = new AtomicJsonStore(join(options.directory, 'limit-restarts.json'), input => fileSchema.parse(input), () => ({ version: 1, threads: [] }))
+    this.store = new AtomicJsonStore(join(options.directory, 'limit-restarts.json'), parseLimitRestartFile, () => ({ version: 1, threads: [] }))
   }
 
   /** Reads what was scheduled before Sotto last closed, and sets the timer for it. */

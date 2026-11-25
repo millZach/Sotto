@@ -2419,6 +2419,67 @@ mod tests {
         assert!(recovered_mgr.recovery_backup().unwrap().exists());
     }
 
+    /// `checkpoints.json` as Node writes it, with every optional field a record can have. Node's schemas are strict,
+    /// so a field Sotto does not know marks a record damaged on both sides, and both set the file aside first. The
+    /// fixture has no `generation`: it names each write, so every save, Node's or Rust's, gives it a new one.
+    fn node_checkpoints() -> Value {
+        let snapshot = |hash: char| {
+            json!({ "files": { "app.txt": { "hash": hash.to_string().repeat(64), "mode": 33188 }, "src/main.ts": { "hash": "b".repeat(64), "mode": 33261 } },
+                "index": "index-tree", "head": "head-commit" })
+        };
+        let ready = json!({
+            "id": "6f1c2d3e-4b5a-4c6d-8e7f-001122334455", "threadId": "thread-1", "workspaceId": "c".repeat(64), "cwd": "/home/zach/work",
+            "checkout": "/home/zach/work", "providerId": "codex", "bindingId": "codex:session-1", "createdAt": "2026-11-20T10:00:00.000Z",
+            "beforeUsers": ["u1"], "afterUsers": ["u1", "u2"], "before": snapshot('a'), "after": snapshot('d'), "status": "ready",
+        });
+        let unavailable = json!({
+            "id": "7a2b3c4d-5e6f-4a7b-9c8d-112233445566", "threadId": "thread-2", "workspaceId": "c".repeat(64), "cwd": "/home/zach/work",
+            "providerId": "claude", "bindingId": "claude:session-2", "createdAt": "2026-11-20T11:00:00.000Z", "beforeUsers": [],
+            "before": { "files": {}, "index": "", "head": "" }, "status": "unavailable", "reason": "Another thread shares this checkout.",
+            "unavailableReason": "shared-checkout",
+        });
+        json!({ "version": 2, "records": [ready, unavailable] })
+    }
+
+    #[test]
+    fn node_checkpoints_survives_a_rust_load_and_save() {
+        crate::store_trip::round_trip("checkpoints/checkpoints.json", node_checkpoints, |dir| {
+            let mut store = CheckpointStore::new(dir.join("checkpoints"));
+            let (records, set_aside) = store.load().unwrap();
+            assert_eq!((records.len(), set_aside), (2, None));
+            store.write(&records).unwrap();
+        });
+    }
+
+    #[test]
+    fn rust_created_checkpoints_reads_in_node() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        init_git_repo(repo_dir.path());
+        let written = crate::store_trip::created("checkpoints/checkpoints.json", |dir| {
+            let mut mgr = CheckpointManager::new(dir.join("checkpoints"));
+            let thread = CheckpointThreadInfo {
+                thread_id: "t-1".into(),
+                provider_id: "codex".into(),
+                binding_id: "codex:sess-1".into(),
+                user_message_ids: vec!["u1".into()],
+                busy: Some(false),
+                running: Some(false),
+                rollback_supported: true,
+                unsupported_reason: None,
+            };
+            mgr.before_turn(&thread, &"c".repeat(64), repo_dir.path()).unwrap().unwrap();
+            fs::write(repo_dir.path().join("app.txt"), "v2\n").unwrap();
+            let after = CheckpointThreadInfo { user_message_ids: vec!["u1".into(), "u2".into()], ..thread };
+            mgr.after_turn(&after).unwrap().unwrap();
+            // A full save, so the record is in the file rather than only in the journal.
+            mgr.set_history_enabled(true).unwrap();
+        });
+        assert_eq!(written["version"], 2);
+        let record = &written["records"][0];
+        assert_eq!((record["status"].as_str(), record["afterUsers"].as_array().map(Vec::len)), (Some("ready"), Some(2)));
+        assert!(record["before"]["files"]["app.txt"]["hash"].as_str().is_some_and(is_valid_sha256_hex));
+    }
+
     #[test]
     fn capture_rejects_symlinks_in_working_copy() {
         #[cfg(unix)]

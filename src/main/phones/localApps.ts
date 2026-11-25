@@ -52,6 +52,8 @@ const fileSchema = z.object({
   clientId: z.string().min(1).max(512),
 }).strict()
 type LocalAppsFile = z.infer<typeof fileSchema>
+/** Reads `local-apps.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseLocalAppsFile = (input: unknown): LocalAppsFile => fileSchema.parse(input)
 
 type Listener = Awaited<ReturnType<typeof startSocketServer>>
 

@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { PLUGIN_USE_KEPT, pluginUseSchema, type PluginUse } from '../../shared/plugins'
 
 const fileSchema = z.object({ version: z.literal(1), uses: z.array(z.unknown()) })
+/** Reads `plugin-use.json`: every entry this version can read, and a file it cannot read throws. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parsePluginUses = (value: unknown): PluginUse[] => fileSchema.parse(value).uses.flatMap(entry => { const use = pluginUseSchema.safeParse(entry); return use.success ? [use.data] : [] })
 
 /** What a tool reports of one use. The record adds when, and an ID of its own. */
 export type PluginUseReport = Omit<PluginUse, 'id' | 'at'>
@@ -82,9 +84,8 @@ export class PluginUseRecord {
     if (this.uses) return this.uses
     let uses: PluginUse[] = []
     try {
-      const parsed = fileSchema.safeParse(JSON.parse(await readFile(this.path, 'utf8')))
       // An entry this version cannot read is dropped rather than failing the rest.
-      if (parsed.success) uses = parsed.data.uses.flatMap(entry => { const use = pluginUseSchema.safeParse(entry); return use.success ? [use.data] : [] })
+      uses = parsePluginUses(JSON.parse(await readFile(this.path, 'utf8')))
     } catch { /* No file yet, or one that cannot be read: an empty record. */ }
     this.uses = uses
     return uses

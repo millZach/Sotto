@@ -8,6 +8,8 @@ import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadAct
 
 const grantSchema = z.object({ threadId: z.string().min(1).max(200), accountId: z.uuid(), at: z.iso.datetime() }).strict()
 const fileSchema = z.object({ version: z.literal(1), grants: z.array(z.unknown()) })
+/** Reads `plugin-mail-grants.json`: every grant this version can read, and a file it cannot read throws. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseMailGrants = (value: unknown): MailGrant[] => fileSchema.parse(value).grants.flatMap(entry => { const grant = grantSchema.safeParse(entry); return grant.success ? [grant.data] : [] })
 /** One thread's leave to read one mail account, and when the user gave it. */
 export type MailGrant = z.infer<typeof grantSchema>
 
@@ -239,8 +241,7 @@ export class MailGrants {
     if (this.grants) return this.grants
     let grants: MailGrant[] = []
     try {
-      const parsed = fileSchema.safeParse(JSON.parse(await readFile(this.path, 'utf8')))
-      if (parsed.success) grants = parsed.data.grants.flatMap(entry => { const grant = grantSchema.safeParse(entry); return grant.success ? [grant.data] : [] })
+      grants = parseMailGrants(JSON.parse(await readFile(this.path, 'utf8')))
     } catch { /* No file, or one that cannot be read: no grants, and every thread asks again. */ }
     this.grants = grants
     return grants

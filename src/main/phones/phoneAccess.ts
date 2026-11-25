@@ -129,6 +129,11 @@ const recordSchema = z.object({
   servePort: z.literal(10000).optional(),
 }).strict()
 type PhoneAccessRecord = z.infer<typeof recordSchema>
+/** Reads `phone-access.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parsePhoneAccessRecord = (input: unknown): PhoneAccessRecord => recordSchema.parse(input)
+const phoneClientsSchema = z.array(z.string().min(1).max(512)).max(1000)
+/** Reads `phone-clients.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parsePhoneClients = (input: unknown): string[] => phoneClientsSchema.parse(input)
 
 /** The Serve port a record's setting is on, or was last on. */
 const servePortOf = (record: PhoneAccessRecord): PhoneAccessServePort => record.servePort ?? 8443
@@ -174,7 +179,7 @@ export class PhoneAccess {
   constructor(private readonly options: PhoneAccessOptions) {
     this.pairing = options.pairing ?? new PairedClients(options.directory)
     this.pairingReady = options.pairing !== undefined
-    if (options.pairing) this.phoneStore = new AtomicJsonStore(join(options.directory, 'phone-clients.json'), z.array(z.string().min(1).max(512)).max(1000).parse, () => [])
+    if (options.pairing) this.phoneStore = new AtomicJsonStore(join(options.directory, 'phone-clients.json'), parsePhoneClients, () => [])
     this.store = new AtomicJsonStore(join(options.directory, 'phone-access.json'), recordSchema.parse, () => { this.recordUncertain = true; return { port: null, mapped: true } })
   }
 

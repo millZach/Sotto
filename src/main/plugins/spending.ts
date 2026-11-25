@@ -65,6 +65,8 @@ const heardSchema = z.object({
   }).strict())),
 }).strict()
 type Heard = z.infer<typeof heardSchema>
+/** Reads `plugin-meshy-spending.json` and `plugin-elevenlabs-spending.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseHeardSpending = (value: unknown): Heard => heardSchema.parse(value)
 
 /**
  * Where a computer's report for another month than its newest is kept: beside it, under its own sender key, so the
@@ -185,7 +187,7 @@ export class HeardSpending {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return (this.kept = { version: 1, heard: {} })
       throw error
     }
-    return (this.kept = heardSchema.parse(JSON.parse(text)))
+    return (this.kept = parseHeardSpending(JSON.parse(text)))
   }
 
   /**

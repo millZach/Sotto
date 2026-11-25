@@ -135,12 +135,6 @@
       "reason": "Payload schemas passed to register() once when the channels are registered at start, not in a handler."
     }
   },
-  "src/main/phones/phoneAccess.ts": {
-    "PhoneAccess.constructor": {
-      "count": 1,
-      "reason": "Built once when phone access is constructed at start."
-    }
-  },
   "src/main/tools/terminal.ts": {
     "TerminalService.constructor.(anonymous)": {
       "count": 1,

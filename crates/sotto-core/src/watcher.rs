@@ -77,6 +77,15 @@ const RETIRED_WATCHER_KINDS: &[&str] = &[
 // Core shared identity & record types
 // ---------------------------------------------------------------------------
 
+/// Reads a field Node writes as `null` or leaves out as two answers: `Some(None)` for `null`, so a save writes the
+/// `null` back, and `None` (with `default`) for a field that is not there.
+fn present_or_null<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatcherThreadTarget {
@@ -129,9 +138,9 @@ pub struct WatcherStandingWatch {
     pub target: WatcherThreadTarget,
     pub created_at: String,
     pub generation: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "present_or_null", skip_serializing_if = "Option::is_none")]
     pub paused_by_user_message_id: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "present_or_null", skip_serializing_if = "Option::is_none")]
     pub last_user_message_id: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parked: Option<bool>,
@@ -158,7 +167,7 @@ pub struct WatcherParticipant {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_stopped: Option<bool>,
     pub target: WatcherThreadTarget,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "present_or_null", skip_serializing_if = "Option::is_none")]
     pub last_user_message_id: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parked: Option<bool>,
@@ -303,7 +312,7 @@ pub struct WatcherCreation {
     pub model_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "present_or_null", skip_serializing_if = "Option::is_none")]
     pub speed: Option<Option<String>>,
     pub phase: String,
     pub replaces: Option<WatcherThreadTarget>,
@@ -641,9 +650,11 @@ impl WatcherRecordStore {
         if own.exists() {
             let text = fs::read_to_string(&own)
                 .map_err(|e| format!("Could not read watcher-record.json: {e}"))?;
-            let env: WatcherRecordEnvelope = serde_json::from_str(&text)
-                .map_err(|e| format!("Invalid watcher-record.json: {e}"))?;
-            validate_watcher_record(&env.watcher)?;
+            // A record this build cannot read is set aside, as Node does, so the next update does not write over it.
+            let env = serde_json::from_str::<WatcherRecordEnvelope>(&text)
+                .map_err(|e| format!("Invalid watcher-record.json: {e}"))
+                .and_then(|env| validate_watcher_record(&env.watcher).map(|()| env))
+                .inspect_err(|_| set_aside_unreadable(&own))?;
             self.record = env.watcher;
             rebuild_reservations(&mut self.record);
             return Ok(());
@@ -701,6 +712,14 @@ fn write_atomic_compact(path: &Path, text: &str) -> Result<(), String> {
         let _ = fs::remove_file(&tmp);
         format!("Could not commit file {}: {e}", path.display())
     })
+}
+
+/// Moves a store this build cannot read aside as `<name>.corrupt-<millis>`, as Node's `AtomicJsonStore` does, so the
+/// next save does not write over what was in it (ADR-0214).
+fn set_aside_unreadable(path: &Path) {
+    let millis = Utc::now().timestamp_millis();
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("store.json");
+    let _ = fs::rename(path, path.with_file_name(format!("{name}.corrupt-{millis}")));
 }
 
 fn remove_file_and_backups(directory: &Path, base_name: &str) -> Result<(), String> {
@@ -1539,6 +1558,7 @@ impl WatcherQuestionsStore {
                     return;
                 }
             }
+            set_aside_unreadable(&path);
         }
         self.questions.clear();
     }
@@ -1884,6 +1904,7 @@ impl WatcherToldNewsStore {
                     return &self.events;
                 }
             }
+            set_aside_unreadable(&self.path());
         }
         self.events.clear();
         &self.events
@@ -2070,14 +2091,15 @@ struct LimitRestartFile {
 #[derive(Debug)]
 pub struct LimitRestartStore {
     directory: PathBuf,
-    records: BTreeMap<String, LimitRestartRecord>,
+    /// One record per thread in the order Node keeps them, which decides which records the bound keeps.
+    records: Vec<LimitRestartRecord>,
 }
 
 impl LimitRestartStore {
     pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
-            records: BTreeMap::new(),
+            records: Vec::new(),
         }
     }
 
@@ -2088,23 +2110,39 @@ impl LimitRestartStore {
     pub fn load(&mut self) {
         self.records.clear();
         if let Ok(text) = fs::read_to_string(self.path()) {
-            if let Ok(file) = serde_json::from_str::<LimitRestartFile>(&text) {
-                if file.version == 1 {
+            match serde_json::from_str::<LimitRestartFile>(&text) {
+                Ok(file) if file.version == 1 => {
                     for rec in file.threads.into_iter().take(LIMIT_RESTARTS_RECORDS_MAX) {
-                        self.records.insert(rec.thread_id.clone(), rec);
+                        self.insert(rec);
                     }
                 }
+                _ => set_aside_unreadable(&self.path()),
             }
         }
     }
 
+    fn get(&self, thread_id: &str) -> Option<&LimitRestartRecord> {
+        self.records.iter().find(|rec| rec.thread_id == thread_id)
+    }
+
+    /// Replaces a thread's record where it stands, or adds it last, as Node's `Map.set` does.
+    fn insert(&mut self, record: LimitRestartRecord) {
+        match self.records.iter_mut().find(|rec| rec.thread_id == record.thread_id) {
+            Some(rec) => *rec = record,
+            None => self.records.push(record),
+        }
+    }
+
+    fn remove(&mut self, thread_id: &str) -> bool {
+        let before = self.records.len();
+        self.records.retain(|rec| rec.thread_id != thread_id);
+        self.records.len() != before
+    }
+
     fn save(&self) -> Result<(), String> {
-        let threads: Vec<LimitRestartRecord> = self
-            .records
-            .values()
-            .take(LIMIT_RESTARTS_RECORDS_MAX)
-            .cloned()
-            .collect();
+        // The newest records fill the bound, as Node's do.
+        let start = self.records.len().saturating_sub(LIMIT_RESTARTS_RECORDS_MAX);
+        let threads: Vec<LimitRestartRecord> = self.records[start..].to_vec();
         let file = LimitRestartFile {
             version: 1,
             threads,
@@ -2114,11 +2152,11 @@ impl LimitRestartStore {
     }
 
     pub fn list(&self) -> Vec<LimitRestartRecord> {
-        self.records.values().cloned().collect()
+        self.records.clone()
     }
 
     pub fn scheduled(&self, thread_id: &str) -> Option<ScheduledRestart> {
-        let rec = self.records.get(thread_id)?;
+        let rec = self.get(thread_id)?;
         if rec.sent == Some(true) {
             return None;
         }
@@ -2143,7 +2181,6 @@ impl LimitRestartStore {
         now_ms: i64,
     ) -> Result<bool, String> {
         let existing_restarts = self
-            .records
             .get(thread_id)
             .map(|r| r.restarts)
             .unwrap_or(0);
@@ -2161,37 +2198,34 @@ impl LimitRestartStore {
         let stopped_at = DateTime::<Utc>::from_timestamp_millis(now_ms)
             .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
             .unwrap_or_else(now_iso);
-        self.records.insert(
-            thread_id.to_string(),
-            LimitRestartRecord {
-                thread_id: thread_id.to_string(),
-                provider: provider.to_string(),
-                stopped_at,
-                at,
-                restarts: existing_restarts,
-                sent: None,
-                cause: None,
-                turn_id: turn_id.map(ToString::to_string),
-            },
-        );
+        self.insert(LimitRestartRecord {
+            thread_id: thread_id.to_string(),
+            provider: provider.to_string(),
+            stopped_at,
+            at,
+            restarts: existing_restarts,
+            sent: None,
+            cause: None,
+            turn_id: turn_id.map(ToString::to_string),
+        });
         self.save()?;
         Ok(true)
     }
 
     pub fn cancel(&mut self, thread_id: &str) -> Result<bool, String> {
-        let Some(rec) = self.records.get(thread_id) else {
+        let Some(rec) = self.get(thread_id) else {
             return Ok(false);
         };
         if rec.sent == Some(true) {
             return Ok(false);
         }
-        self.records.remove(thread_id);
+        self.remove(thread_id);
         self.save()?;
         Ok(true)
     }
 
     pub fn clear(&mut self, thread_id: &str) -> Result<bool, String> {
-        if self.records.remove(thread_id).is_some() {
+        if self.remove(thread_id) {
             self.save()?;
             return Ok(true);
         }
@@ -2199,7 +2233,7 @@ impl LimitRestartStore {
     }
 
     pub fn mark_sent(&mut self, thread_id: &str) -> Result<bool, String> {
-        let Some(rec) = self.records.get_mut(thread_id) else {
+        let Some(rec) = self.records.iter_mut().find(|rec| rec.thread_id == thread_id) else {
             return Ok(false);
         };
         if rec.restarts >= LIMIT_RESTARTS_IN_A_ROW_MAX {
@@ -2213,7 +2247,7 @@ impl LimitRestartStore {
 
     pub fn due_restarts(&self, now_ms: i64) -> Vec<LimitRestartRecord> {
         self.records
-            .values()
+            .iter()
             .filter(|rec| {
                 rec.sent != Some(true)
                     && rec.restarts < LIMIT_RESTARTS_IN_A_ROW_MAX
@@ -2264,6 +2298,11 @@ pub struct QueuedFollowup {
     pub news: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phone_origin: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_id: Option<String>,
+    /// Fields this build does not know, written back as they were (ADR-0214).
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2273,6 +2312,8 @@ pub struct FollowupReceipt {
     pub draft_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub digest: Option<String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -2282,6 +2323,8 @@ struct FollowupFile {
     items: Vec<QueuedFollowup>,
     #[serde(default)]
     receipts: Vec<FollowupReceipt>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 /// Computes the exact SHA-256 digest matching `src/main/agents/followups.ts:followupDigest`.
@@ -2354,6 +2397,8 @@ pub struct FollowupStore {
     history_enabled: bool,
     items: Vec<QueuedFollowup>,
     receipts: Vec<FollowupReceipt>,
+    /// Top-level fields this build does not know, written back as they were.
+    extra: Map<String, Value>,
 }
 
 impl FollowupStore {
@@ -2363,6 +2408,7 @@ impl FollowupStore {
             history_enabled,
             items: Vec::new(),
             receipts: Vec::new(),
+            extra: Map::new(),
         }
     }
 
@@ -2379,8 +2425,13 @@ impl FollowupStore {
         }
         let text = fs::read_to_string(&path)
             .map_err(|e| format!("Could not read followups.json: {e}"))?;
-        let parsed: FollowupFile =
-            serde_json::from_str(&text).map_err(|e| format!("Invalid followups.json: {e}"))?;
+        // A queue this build cannot read is set aside, as Node does, so the next save does not write over it.
+        let parsed: FollowupFile = serde_json::from_str(&text).map_err(|e| {
+            set_aside_unreadable(&path);
+            self.items.clear();
+            self.receipts.clear();
+            format!("Invalid followups.json: {e}")
+        })?;
         let mut items = strip_retired_news(parsed.items);
         if !self.history_enabled {
             items.retain(|i| {
@@ -2400,6 +2451,7 @@ impl FollowupStore {
         }
         self.items = items;
         self.receipts = parsed.receipts;
+        self.extra = parsed.extra;
         if mutated {
             self.save(watcher_thread_ids)?;
         }
@@ -2421,6 +2473,7 @@ impl FollowupStore {
         let file = FollowupFile {
             items: persisted_items,
             receipts: self.receipts.clone(),
+            extra: self.extra.clone(),
         };
         write_atomic_json(&self.path(), &file)
             .map_err(|e| format!("Could not save followups.json: {e}"))
@@ -2513,6 +2566,8 @@ impl FollowupStore {
             message_id: None,
             news: None,
             phone_origin: None,
+            command_id: None,
+            extra: Map::new(),
         };
         // User follow-ups go ahead of non-leading waiting wake-ups.
         let insert_at = self
@@ -2534,6 +2589,7 @@ impl FollowupStore {
             thread_id: thread_id.to_string(),
             draft_id: draft_id.to_string(),
             digest: Some(digest),
+            extra: Map::new(),
         });
         if self.receipts.len() > FOLLOWUPS_RECEIPTS_MAX {
             let drain = self.receipts.len() - FOLLOWUPS_RECEIPTS_MAX;
@@ -5803,5 +5859,234 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    // Node -> Rust -> Node for the Watcher stores the Node host writes too (ADR-0214). Each fixture is a store as Node
+    // writes it, with the optional fields Node can write. Node's schemas for these are strict but `followups.json`'s,
+    // so only that one carries a field this build does not know.
+
+    const TRIP_HOST: &str = "0b6f1c2d-3e4b-4a5c-8d6e-7f8091a2b3c4";
+    const TRIP_MASTER_HOST: &str = "1c7a2d3e-4f5b-4b6c-9d7e-8091a2b3c4d5";
+    const TRIP_REQUEST: &str = "2d8b3e4f-5a6c-4c7d-8e8f-91a2b3c4d5e6";
+    const TRIP_OPERATION: &str = "3e9c4f5a-6b7d-4d8e-9f9a-a2b3c4d5e6f7";
+    const TRIP_TIME: &str = "2026-11-20T10:00:00.000Z";
+    const TRIP_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000abc";
+
+    fn trip_target(thread_id: &str) -> Value {
+        json!({ "hostId": TRIP_HOST, "threadId": thread_id })
+    }
+
+    fn trip_identity(thread_id: &str, operation: &str) -> Value {
+        json!({ "target": trip_target(thread_id), "projectId": "project-1", "provider": "claude",
+            "creationOperationId": operation, "createdAt": TRIP_TIME })
+    }
+
+    fn node_watcher_record() -> Value {
+        let origin = json!({ "clientId": "client-1", "masterHostId": TRIP_MASTER_HOST,
+            "masterCreationOperationId": "4fad5a6b-7c8e-4e9f-8a0b-b3c4d5e6f708", "masterCreatedAt": TRIP_TIME });
+        json!({ "watcher": {
+            "version": 1,
+            "current": trip_identity("watcher-1", "5abe6b7c-8d9f-4f0a-9b1c-c4d5e6f70819"),
+            "promptTurns": [{ "id": "6bcf7c8d-9e0a-4a1b-8c2d-d5e6f708192a", "watcher": trip_target("watcher-1"), "createdAt": TRIP_TIME,
+                "rootUserMessageId": "m-1", "nativeTurnId": "turn-1", "previousNativeTurnId": "turn-0" }],
+            "lastRuntimeMode": "full-access",
+            "watches": [{ "id": "7cd08d9e-0f1b-4b2c-9d3e-e6f708192a3b", "target": trip_target("t-1"), "createdAt": TRIP_TIME, "generation": 2,
+                "pausedByUserMessageId": null, "lastUserMessageId": "m-2", "parked": true, "remoteOrigin": origin }],
+            "readyPullRequests": [{ "target": trip_target("t-1"), "url": "https://github.com/millZach/Sotto/pull/1",
+                "head": "0123456789abcdef0123456789abcdef01234567", "at": TRIP_TIME }],
+            "watchFences": [{ "id": "8de19eaf-1a2c-4c3d-8e4f-f708192a3b4c", "target": trip_target("t-2"), "remoteOrigin": origin }],
+            "userUnwatches": [{ "target": trip_target("t-2"), "watcherHead": null, "at": TRIP_TIME }],
+            "localTakeovers": [{ "target": trip_target("t-1"), "at": TRIP_TIME, "lastRequestId": TRIP_REQUEST,
+                "userDrafts": [{ "draftId": "9ef2afb0-2b3d-4d4e-9f5a-08192a3b4c5d", "digest": TRIP_DIGEST, "messageId": "m-3" }] }],
+            "remoteMasters": [{ "clientId": "client-1", "masterHostId": TRIP_MASTER_HOST,
+                "creationOperationId": "4fad5a6b-7c8e-4e9f-8a0b-b3c4d5e6f708", "createdAt": TRIP_TIME }],
+            "creation": null,
+            "history": [trip_identity("watcher-0", "a0f3b0c1-3c4e-4e5f-8a6b-192a3b4c5d6e")],
+            "requests": [{ "id": TRIP_REQUEST, "watcher": trip_target("watcher-1"), "rootUserMessageId": "m-1",
+                "standingWatchId": "7cd08d9e-0f1b-4b2c-9d3e-e6f708192a3b",
+                "displayPrompt": { "originalLength": 12, "wireDigest": TRIP_DIGEST },
+                "pairedPermissionCeiling": "approval-required",
+                "state": "active", "createdAt": TRIP_TIME, "closedAt": null,
+                "userFollowups": [{ "draftId": "b104c1d2-4d5f-4f6a-9b7c-2a3b4c5d6e7f", "messageId": "m-4", "afterTakeover": true }],
+                "participants": [{ "requestId": TRIP_REQUEST, "startedBy": "watcher", "generation": 2, "state": "participating",
+                    "target": trip_target("t-1"), "lastUserMessageId": "m-2", "promptCount": 1 }] }],
+            "operations": [{ "id": TRIP_OPERATION, "requestId": TRIP_REQUEST, "retryKey": "c215d2e3-5e6a-4a7b-8c8d-3b4c5d6e7f80",
+                "digest": TRIP_DIGEST, "promptTurnId": "6bcf7c8d-9e0a-4a1b-8c2d-d5e6f708192a",
+                "standingWatchId": "7cd08d9e-0f1b-4b2c-9d3e-e6f708192a3b", "inputDigest": TRIP_DIGEST,
+                "action": "send", "target": trip_target("t-1"), "generation": 2, "deliveryState": "accepted",
+                "createdAt": TRIP_TIME, "updatedAt": TRIP_TIME, "receiptId": "r-1", "cardId": "c-1", "messageId": "m-5",
+                "outcome": "answered", "outcomeAt": TRIP_TIME, "turnMessageId": "m-6", "nativeTurnId": "turn-2", "replyMessageId": "m-7" }],
+            "reservations": [{ "target": trip_target("t-1"), "requestId": TRIP_REQUEST, "operationId": TRIP_OPERATION,
+                "generation": 2, "reason": "active-turn" }],
+            "reads": [{ "target": trip_target("t-1"), "position": { "historyEpoch": "epoch-1", "afterPosition": 3 },
+                "readAt": TRIP_TIME, "lastWakeEventId": "e-1" }],
+            "remoteAbsences": [{ "operationId": "d326e3f4-6f7b-4b8c-9d9e-4c5d6e7f8091",
+                "master": trip_identity("watcher-9", "e437f4a5-7a8c-4c9d-8eaf-5d6e7f8091a2"), "clientId": "client-1", "observedAt": TRIP_TIME }],
+            "wakeEventIds": ["e-1"],
+        } })
+    }
+
+    #[test]
+    fn node_watcher_record_survives_a_rust_load_and_save() {
+        crate::store_trip::round_trip(WATCHER_RECORD_FILE, node_watcher_record, |dir| {
+            let mut store = WatcherRecordStore::new(dir);
+            store.load().unwrap();
+            let loaded = store.view().clone();
+            // The store writes only a record that changed, so it starts from nothing and is handed back what it read.
+            store.record = WatcherRecord::empty();
+            store.update(|record| { *record = loaded; Ok(()) }).unwrap();
+        });
+    }
+
+    #[test]
+    fn node_watcher_state_survives_a_rust_load_and_save() {
+        crate::store_trip::round_trip(WATCHER_STATE_FILE, || json!({
+            "decisions": [{ "id": "d1", "text": "Ship the fix", "touchedAt": TRIP_TIME, "closedAt": TRIP_TIME, "closedNote": "Shipped" }],
+            "rules": [{ "id": "r2", "text": "Ask before merging", "touchedAt": TRIP_TIME }],
+            "issues": [{ "id": "i3", "text": "#2880 is open", "touchedAt": TRIP_TIME }],
+            "updatedAt": TRIP_TIME, "nextId": 4,
+        }), |dir| {
+            let mut store = WatcherStateStore::new(dir, true);
+            store.load();
+            assert!(store.readable());
+            store.set_history_enabled(true).unwrap();
+        });
+    }
+
+    #[test]
+    fn node_watcher_questions_survives_a_rust_load_and_save() {
+        crate::store_trip::round_trip(WATCHER_QUESTIONS_FILE, || json!({ "version": 1, "questions": [
+            { "id": "f548a5b6-8b9d-4dae-9fb0-6e7f8091a2b3", "watcherThreadId": "watcher-1", "question": "Settle t-1?",
+                "options": [{ "label": SETTLE_IT, "description": "Stop watching it." }, { "label": KEEP_WATCHING }],
+                "settle": trip_target("t-1"), "state": "answered", "choice": SETTLE_IT, "at": TRIP_TIME, "endedAt": TRIP_TIME,
+                "spent": true, "askedUnder": TRIP_REQUEST },
+            { "id": "0659b6c7-9cae-4ebf-8ac1-7f8091a2b3c4", "watcherThreadId": "watcher-1", "question": "Which one?",
+                "options": [{ "label": "First" }, { "label": "Second" }], "state": "open", "at": TRIP_TIME },
+        ] }), |dir| {
+            let mut store = WatcherQuestionsStore::new(dir, true);
+            store.load();
+            assert_eq!(store.all().len(), 2);
+            store.save();
+        });
+    }
+
+    #[test]
+    fn node_watcher_told_survives_a_rust_load_and_save() {
+        let event = |id: &str, kind: &str| json!({ "id": id, "kind": kind, "requestId": TRIP_REQUEST, "target": trip_target("t-1"),
+            "generation": 1, "observedAt": TRIP_TIME });
+        let mut full = event("e-4", "thread-moved");
+        full.as_object_mut().unwrap().extend(json!({ "turnId": "turn-1", "requestCardId": "card-1", "requestCardKind": "question",
+            "revision": "rev-1", "operationId": TRIP_OPERATION, "backgroundWorkCount": 2, "evidenceIds": ["ev-1"],
+            "delegatedThreadId": "t-3", "answeredByUser": true, "endedWithoutAnswer": true,
+            "swarm": { "id": "1760c7d8-0dbf-4fc0-9bd2-8091a2b3c4d5", "count": 3, "done": 1, "failed": 0, "queued": 2 },
+            "restartedBy": "limit", "restartCause": "work-left", "moveId": "2871d8e9-1ec0-4ad1-8ce3-91a2b3c4d5e6",
+            "movedTo": trip_target("t-4"), "moveOutcome": "moved", "machine": "forge" }).as_object().unwrap().clone());
+        let mut told = event("e-1", "thread-told");
+        told["told"] = json!({ "words": "Done with the fix", "userWords": "Ship it", "userWordsCut": true, "opened": false });
+        let mut ready = event("e-2", "thread-ready");
+        ready["ready"] = json!({ "pullRequest": "https://github.com/millZach/Sotto/pull/2855", "head": "0123456789abcdef0123456789abcdef01234567" });
+        let mut answered = event("e-3", "user-answered");
+        answered["answered"] = json!({ "questionId": "f548a5b6-8b9d-4dae-9fb0-6e7f8091a2b3", "question": "Settle t-1?",
+            "choice": SETTLE_IT, "settle": true, "opened": true });
+        crate::store_trip::round_trip(WATCHER_TOLD_FILE, || json!({ "version": 1, "events": [told, ready, answered, full] }), |dir| {
+            let mut store = WatcherToldNewsStore::new(dir, true);
+            assert_eq!(store.load().len(), 4);
+            store.save().unwrap();
+        });
+    }
+
+    #[test]
+    fn node_limit_restarts_survives_a_rust_load_and_save() {
+        // Out of thread order on purpose: Node keeps its records in the order they came, and so must a save here.
+        crate::store_trip::round_trip(LIMIT_RESTARTS_FILE, || json!({ "version": 1, "threads": [
+            { "threadId": "t-b", "provider": "claude", "stoppedAt": TRIP_TIME, "at": "2026-11-20T15:00:00.000Z", "restarts": 1,
+                "sent": true, "cause": "work-left", "turnId": "turn-1" },
+            { "threadId": "t-a", "provider": "codex", "stoppedAt": TRIP_TIME, "restarts": 0 },
+        ] }), |dir| {
+            let mut store = LimitRestartStore::new(dir);
+            store.load();
+            assert_eq!(store.list().len(), 2);
+            store.save().unwrap();
+        });
+    }
+
+    #[test]
+    fn node_followups_survives_a_rust_load_and_save() {
+        crate::store_trip::round_trip(FOLLOWUPS_FILE, || json!({
+            "items": [{ "id": "3982e9fa-2fd1-4be2-9df4-a2b3c4d5e6f7", "threadId": "t-1", "draftId": "4a93fa0b-3ae2-4cf3-8e05-b3c4d5e6f708",
+                "text": "Sotto's wake-up", "attachments": [], "createdAt": TRIP_TIME, "updatedAt": TRIP_TIME, "status": "paused",
+                "error": "Watcher stopped this thread.", "commandId": "command-1", "messageId": "m-1", "resumeAfterTurnId": "turn-1",
+                "wakeUp": true, "pausedBy": "watcher", "watcherOperationId": TRIP_OPERATION,
+                "news": [{ "source": "watcher", "watcher": trip_target("watcher-1"), "omitted": 0, "events": [{ "id": "e-1",
+                    "kind": "turn-finished", "requestId": TRIP_REQUEST, "target": trip_target("t-1"), "generation": 1, "observedAt": TRIP_TIME }] }],
+                "phoneOrigin": { "kind": "phone", "hostId": TRIP_HOST, "clientId": "phone-1" },
+                "nodeOnlyField": "kept" }],
+            "receipts": [{ "threadId": "t-1", "draftId": "4a93fa0b-3ae2-4cf3-8e05-b3c4d5e6f708", "digest": TRIP_DIGEST, "nodeOnlyField": "kept" }],
+            "nodeOnlyField": "kept",
+        }), |dir| {
+            let mut store = FollowupStore::new(dir, true);
+            store.load(&HashSet::new()).unwrap();
+            assert_eq!(store.items().len(), 1);
+            store.save(&HashSet::new()).unwrap();
+        });
+    }
+
+    #[test]
+    fn rust_created_watcher_state_reads_in_node() {
+        let written = crate::store_trip::created(WATCHER_STATE_FILE, |dir| {
+            let mut store = WatcherStateStore::new(dir, true);
+            store.load();
+            let input = WatcherKeepStateInput { add: Some(vec![WatcherKeepAddItem { list: WatcherKeptList::Rules, text: "Ask before merging".into() }]),
+                ..Default::default() };
+            store.keep(&input, &now_iso()).unwrap();
+        });
+        assert_eq!(written["rules"][0]["text"], "Ask before merging");
+    }
+
+    #[test]
+    fn rust_created_watcher_questions_reads_in_node() {
+        let written = crate::store_trip::created(WATCHER_QUESTIONS_FILE, |dir| {
+            let mut store = WatcherQuestionsStore::new(dir, true);
+            store.load();
+            let options = vec![WatcherQuestionOption { label: "First".into(), description: Some("The first one.".into()) },
+                WatcherQuestionOption { label: "Second".into(), description: None }];
+            store.ask("watcher-1", WatcherAskInput { question: "Which one?".into(), options: Some(options), settle: None },
+                Some(TRIP_REQUEST.into())).unwrap();
+        });
+        assert_eq!(written["questions"][0]["askedUnder"], TRIP_REQUEST);
+    }
+
+    #[test]
+    fn rust_created_limit_restarts_reads_in_node() {
+        let written = crate::store_trip::created(LIMIT_RESTARTS_FILE, |dir| {
+            let mut store = LimitRestartStore::new(dir);
+            store.load();
+            let now = Utc::now();
+            let resets = (now + Duration::minutes(30)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            assert!(store.record_stop("t-1", "claude", Some(&resets), Some("turn-1"), now.timestamp_millis()).unwrap());
+        });
+        assert_eq!(written["threads"][0]["turnId"], "turn-1");
+    }
+
+    #[test]
+    fn rust_created_followups_reads_in_node() {
+        let written = crate::store_trip::created(FOLLOWUPS_FILE, |dir| {
+            let mut store = FollowupStore::new(dir, true);
+            store.load(&HashSet::new()).unwrap();
+            store.enqueue("t-1", "4a93fa0b-3ae2-4cf3-8e05-b3c4d5e6f708", "Next, run the tests", Vec::new(), None, &HashSet::new()).unwrap();
+        });
+        assert_eq!(written["items"][0]["status"], "queued");
+    }
+
+    #[test]
+    fn an_unreadable_watcher_store_is_moved_aside_rather_than_overwritten() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(LIMIT_RESTARTS_FILE), "{ not json").unwrap();
+        let mut store = LimitRestartStore::new(dir.path());
+        store.load();
+        assert!(!dir.path().join(LIMIT_RESTARTS_FILE).exists());
+        let aside: Vec<_> = fs::read_dir(dir.path()).unwrap().map(|entry| entry.unwrap().file_name().into_string().unwrap()).collect();
+        assert_eq!(aside.len(), 1);
+        assert!(aside[0].starts_with("limit-restarts.json.corrupt-"));
     }
 }
