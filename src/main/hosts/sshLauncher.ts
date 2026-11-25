@@ -701,11 +701,12 @@ export class SshHostLauncher {
   private updateHost(attempt: Attempt, operation: SshHostUpdateOperation, options: SshHostUpdateOptions = {}): Promise<SshHostUpdateResult> {
     if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before updating it.`))
     const hostId = attempt.ready.hostId
+    const rustFlag = this.dependencies.useRustHost === true ? { useRustHost: true as const } : {}
     let launch: LaunchOperation, budget: number, stdin: Uint8Array | undefined
-    if (operation.op === 'update-restart') { launch = { op: 'update-restart', hostId, version: operation.version }; budget = HOST_STOP_DRAIN_MS + 2 * this.readyTimeout() + 10_000 }
+    if (operation.op === 'update-restart') { launch = { op: 'update-restart', hostId, version: operation.version, ...rustFlag }; budget = HOST_STOP_DRAIN_MS + 2 * this.readyTimeout() + 10_000 }
     else if (operation.op === 'update-receive') { launch = { op: 'update-receive', file: operation.file, size: operation.size }; budget = 10 * 60_000; stdin = operation.archive }
     else if (operation.op === 'update-fetch') { launch = operation; budget = 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000 }
-    else { launch = operation; budget = 2 * 60_000 }
+    else { launch = { ...operation, ...rustFlag }; budget = 2 * 60_000 }
     return this.request(attempt, launch, 'update-failed', budget, value => {
       const parsed = updateResultSchema.safeParse(value)
       return parsed.success ? parsed.data : undefined

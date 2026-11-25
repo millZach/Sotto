@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { spawn as spawnProcess } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createHostSelfUpdate, hostInstallation, runByBootUnit, transientRestartCommand, type HostSelfUpdate, type HostSelfUpdateOptions, type HostUpdateContext } from '../../../src/host/selfUpdate'
+import { createHostSelfUpdate, findCompatibleNode, hostInstallation, nodeSatisfiesRange, runByBootUnit, transientRestartCommand, type HostSelfUpdate, type HostSelfUpdateOptions, type HostUpdateContext } from '../../../src/host/selfUpdate'
 import { HOST_RELEASES_URL, hostArchiveName } from '../../../src/shared/hostUpdates'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from '../../../src/shared/hostLaunchTimings'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../../../src/main/hosts/launchScript'
@@ -373,5 +373,158 @@ describe('the restart and its status file', () => {
   it('gives a transient unit only the environment the restart needs', () => {
     const args = transientRestartCommand({ node: '/n', script: '/d/s.cjs', configuration: '{}', unit: 'sotto-host-update-1', env: { PATH: '/bin', SECRET_TOKEN: 'no', HOME: '', LANG: 'C\nX' } })
     expect(args).toEqual(['--user', '--collect', '--quiet', '--unit=sotto-host-update-1', '--setenv=PATH=/bin', '--', '/n', '/d/s.cjs', '{}'])
+  })
+})
+
+describe('compatible Node discovery and Rust host handoff', () => {
+  async function readyWithManifest(version = '1.2.4', manifest: Record<string, unknown> = {}) {
+    const place = await installed()
+    const versionDir = join(place.install, 'versions', version)
+    await mkdir(join(versionDir, 'host'), { recursive: true })
+    await writeFile(join(versionDir, 'host', 'index.js'), '')
+    await writeFile(join(versionDir, 'runtime-manifest.json'), JSON.stringify({ sottoVersion: version, ...manifest }))
+    return place
+  }
+  const statusFile = (place: { data: string }): string => join(place.data, 'host-update-status.json')
+  async function claimAs(call: Call, value: Record<string, unknown>): Promise<void> {
+    const resultFile = String(call.configuration.resultFile), attempt = String(call.configuration.attempt)
+    await writeFile(`${resultFile}.${attempt}.claim`, 'restart', { flag: 'wx' })
+    await writeFile(resultFile, JSON.stringify({ v: 1, attempt, version: call.configuration.version, ...value }))
+  }
+
+  it('matches Node versions against runtime-manifest ranges', () => {
+    expect(nodeSatisfiesRange('24.22.1', '>=24.22.1 <25')).toBe(true)
+    expect(nodeSatisfiesRange('v24.23.0', '>=24.22.1 <25')).toBe(true)
+    expect(nodeSatisfiesRange('24.21.0', '>=24.22.1 <25')).toBe(false)
+    expect(nodeSatisfiesRange('25.0.0', '>=24.22.1 <25')).toBe(false)
+    expect(nodeSatisfiesRange('not-a-version', '>=24.22.1 <25')).toBe(false)
+  })
+
+  it('finds a newer compatible Node in mise installs when the running Node and shim are too old', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'sotto-node-probe-')); directories.push(home)
+    const oldNode = join(home, '.local', 'share', 'mise', 'installs', 'node', '24.21.0', 'bin', 'node')
+    const newNode = join(home, '.local', 'share', 'mise', 'installs', 'node', '24.22.1', 'bin', 'node')
+    const tooNewNode = join(home, '.local', 'share', 'mise', 'installs', 'node', '25.1.0', 'bin', 'node')
+    const shimNode = join(home, '.local', 'share', 'mise', 'shims', 'node')
+    for (const file of [oldNode, newNode, tooNewNode, shimNode]) {
+      await mkdir(join(file, '..'), { recursive: true })
+      await writeFile(file, '')
+    }
+    const versions = new Map<string, string>([
+      [oldNode, '24.21.0'],
+      [shimNode, '24.21.0'],
+      [tooNewNode, '25.1.0'],
+      [newNode, '24.22.1'],
+    ])
+    const probed: string[] = []
+    const found = await findCompatibleNode('>=24.22.1 <25', {
+      env: { PATH: '', HOME: home },
+      platform: 'linux',
+      homeDir: home,
+      currentNode: oldNode,
+      loginShellNode: async () => null,
+      isExecutable: async candidate => versions.has(candidate),
+      probeVersion: async candidate => { probed.push(candidate); return versions.get(candidate) ?? null },
+    })
+    expect(found).toBe(newNode)
+    // Probes highest semver first among sibling/mise installs: 25.1.0 is rejected (<25), then 24.22.1 wins before 24.21.0.
+    expect(probed).toContain(newNode)
+    expect(await findCompatibleNode('>=26 <27', {
+      env: { PATH: '', HOME: home },
+      platform: 'linux',
+      homeDir: home,
+      currentNode: oldNode,
+      loginShellNode: async () => null,
+      isExecutable: async candidate => versions.has(candidate),
+      probeVersion: async candidate => versions.get(candidate) ?? null,
+    })).toBeNull()
+  })
+
+  it('retries update-install with a discovered compatible Node when the running Node fails manifest.node', async () => {
+    const place = await installed()
+    const newerNode = '/home/zach/.local/share/mise/installs/node/24.22.1/bin/node'
+    const { spawn, calls } = fakeSpawn((call, child) => {
+      if (call.file === '/usr/bin/node') {
+        answer(child, { type: 'update-step', step: 'install' }, { type: 'error', reason: 'node-unsupported', range: '>=24.22.1 <25', node: '24.21.0' })
+      } else {
+        answer(child, { type: 'update-step', step: 'install' }, { type: 'update-installed', version: '1.2.4' })
+      }
+    })
+    const host = hostWith(place, spawn, {
+      nodeVersion: '24.21.0',
+      findNode: async range => (range === '>=24.22.1 <25' ? newerNode : null),
+    })
+    expect(await host.run({ action: 'install', version: '1.2.4', file: hostArchiveName('1.2.4'), sha256: 'a'.repeat(64) }, context()))
+      .toEqual({ type: 'update-installed', version: '1.2.4' })
+    expect(calls.map(call => call.file)).toEqual(['/usr/bin/node', newerNode])
+  })
+
+  it('returns node-unsupported when no compatible Node is found on the machine', async () => {
+    const place = await installed()
+    const { spawn, calls } = fakeSpawn((_call, child) => {
+      answer(child, { type: 'error', reason: 'node-unsupported', range: '>=24.22.1 <25', node: '24.21.0' })
+    })
+    const host = hostWith(place, spawn, { nodeVersion: '24.21.0', findNode: async () => null })
+    expect(await host.run({ action: 'install', version: '1.2.4', file: hostArchiveName('1.2.4'), sha256: 'a'.repeat(64) }, context()))
+      .toEqual({ type: 'error', reason: 'node-unsupported', range: '>=24.22.1 <25', node: '24.21.0' })
+    expect(calls).toHaveLength(1)
+  })
+
+  it('restarts detached and systemd-unit hosts with the discovered compatible Node when the running Node is below manifest.node', async () => {
+    const newerNode = '/home/zach/.local/share/mise/installs/node/24.22.1/bin/node'
+    const detachedPlace = await readyWithManifest('1.2.4', { node: '>=24.22.1 <25' })
+    const { spawn: spawnDetached, calls: detachedCalls } = fakeSpawn(async call => { await claimAs(call, { state: 'restarting', pid: 4242 }) })
+    const detachedHost = hostWith(detachedPlace, spawnDetached, {
+      nodeVersion: '24.21.0',
+      findNode: async range => (range === '>=24.22.1 <25' ? newerNode : null),
+    })
+    expect(await detachedHost.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
+    expect(detachedCalls[0]!.file).toBe(newerNode)
+
+    const unitPlace = await readyWithManifest('1.2.4', { node: '>=24.22.1 <25' })
+    const { spawn: spawnUnit, calls: unitCalls } = fakeSpawn(async (call, child) => {
+      setImmediate(() => child.emit('exit', 0, null))
+      await claimAs(call, { state: 'restarting', pid: 4243 })
+    })
+    const unitHost = hostWith(unitPlace, spawnUnit, {
+      runByUnit: async () => true,
+      nodeVersion: '24.21.0',
+      findNode: async range => (range === '>=24.22.1 <25' ? newerNode : null),
+    })
+    expect(await unitHost.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
+    expect(unitCalls[0]!.file).toBe('systemd-run')
+    expect(unitCalls[0]!.args.slice(-4, -1)).toEqual(['--', newerNode, join(unitPlace.data, 'host-update-restart.cjs')])
+  })
+
+  it('forwards useRustHost on install and syncs it on restart only when manifest.rustBinary is present, staying backwards compatible when omitted', async () => {
+    const placeWithRust = await readyWithManifest('1.2.4', { node: '>=24.22.1 <25', rustBinary: 'host/sotto-host' })
+    const { spawn: spawnInstall, calls: installCalls } = fakeSpawn((_call, child) => answer(child, { type: 'update-installed', version: '1.2.4' }))
+    const installHost = hostWith(placeWithRust, spawnInstall, { nodeVersion: '24.22.1' })
+    expect(await installHost.run({ action: 'install', version: '1.2.4', file: hostArchiveName('1.2.4'), sha256: 'a'.repeat(64), useRustHost: true }, context()))
+      .toEqual({ type: 'update-installed', version: '1.2.4' })
+    expect(installCalls[0]!.configuration.useRustHost).toBe(true)
+    expect(await installHost.run({ action: 'install', version: '1.2.4', file: hostArchiveName('1.2.4'), sha256: 'a'.repeat(64) }, context()))
+      .toEqual({ type: 'update-installed', version: '1.2.4' })
+    expect(installCalls[1]!.configuration.useRustHost).toBeUndefined()
+
+    const { spawn: spawnRustRestart, calls: rustRestartCalls } = fakeSpawn(async call => { await claimAs(call, { state: 'restarting', pid: 4242 }) })
+    const rustRestartHost = hostWith(placeWithRust, spawnRustRestart, { nodeVersion: '24.22.1' })
+    expect(await rustRestartHost.run({ action: 'restart', version: '1.2.4', useRustHost: true }, context()))
+      .toEqual({ type: 'update-restarting', version: '1.2.4' })
+    expect(rustRestartCalls[0]!.configuration.useRustHost).toBe(true)
+
+    // Backwards compatibility: omitting useRustHost leaves cfg.useRustHost undefined.
+    await rm(statusFile(placeWithRust), { force: true })
+    expect(await rustRestartHost.run({ action: 'restart', version: '1.2.4' }, context()))
+      .toEqual({ type: 'update-restarting', version: '1.2.4' })
+    expect(rustRestartCalls[1]!.configuration.useRustHost).toBeUndefined()
+
+    // Node-only archive (no manifest.rustBinary): useRustHost: true is not forwarded on restart.
+    const placeNodeOnly = await readyWithManifest('1.2.4', { node: '>=24.22.1 <25' })
+    const { spawn: spawnNodeOnly, calls: nodeOnlyCalls } = fakeSpawn(async call => { await claimAs(call, { state: 'restarting', pid: 4242 }) })
+    const nodeOnlyHost = hostWith(placeNodeOnly, spawnNodeOnly, { nodeVersion: '24.22.1' })
+    expect(await nodeOnlyHost.run({ action: 'restart', version: '1.2.4', useRustHost: true }, context()))
+      .toEqual({ type: 'update-restarting', version: '1.2.4' })
+    expect(nodeOnlyCalls[0]!.configuration.useRustHost).toBeUndefined()
   })
 })

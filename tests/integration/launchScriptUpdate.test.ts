@@ -412,6 +412,97 @@ it('refuses an archive that is not the release it was asked for, or needs anothe
   }
 })
 
+it('skips manifest.node enforcement in installUpdate when useRustHost is active and manifest.rustBinary is verified, while still enforcing it for Node mode', async () => {
+  // Minimal valid executable header matching launchScript.ts's rustHostRunnable() check for this platform/arch.
+  const validRustBinary = (): Buffer => {
+    if (process.platform === 'win32') return Buffer.from('MZ' + '\0'.repeat(22), 'binary')
+    if (process.platform === 'linux') {
+      const elf = Buffer.alloc(24)
+      elf.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0], 0)
+      elf.writeUInt16LE(process.arch === 'arm64' ? 0xb7 : 0x3e, 18)
+      return elf
+    }
+    return Buffer.from('#!/bin/sh\nexit 0\n', 'utf8')
+  }
+  const invalidRustBinary = Buffer.from('not-an-executable-header-at-all', 'utf8')
+
+  // 1. Even with a verified rustBinary, Node mode (no useRustHost and no marker) still rejects incompatible Node.
+  const nodeModeConfig = await fixture()
+  const rustArchive = tarGz(hostRelease(NEW, 'export {}', { nodeRange: '>=99 <100', rustBinary: validRustBinary() }))
+  expect(last(await receive(nodeModeConfig, FILE, rustArchive))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(nodeModeConfig, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(rustArchive) })))
+    .toMatchObject({ type: 'error', reason: 'node-unsupported', range: '>=99 <100' })
+
+  // 2. With useRustHost: true but an unverified/invalid rustBinary (or missing manifest.rustBinary), still rejects incompatible Node.
+  const badBinConfig = await fixture()
+  const badBinArchive = tarGz(hostRelease(NEW, 'export {}', { nodeRange: '>=99 <100', rustBinary: invalidRustBinary }))
+  expect(last(await receive(badBinConfig, FILE, badBinArchive))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(badBinConfig, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(badBinArchive), useRustHost: true })))
+    .toMatchObject({ type: 'error', reason: 'node-unsupported', range: '>=99 <100' })
+
+  const nodeOnlyArchive = tarGz(hostRelease(NEW, 'export {}', { nodeRange: '>=99 <100' }))
+  expect(last(await receive(badBinConfig, FILE, nodeOnlyArchive))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(badBinConfig, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(nodeOnlyArchive), useRustHost: true })))
+    .toMatchObject({ type: 'error', reason: 'node-unsupported', range: '>=99 <100' })
+
+  // 3. With useRustHost: true and a verified manifest.rustBinary, installUpdate succeeds even when Node is below manifest.node.
+  const rustOptInConfig = await fixture()
+  expect(last(await receive(rustOptInConfig, FILE, rustArchive))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(rustOptInConfig, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(rustArchive), useRustHost: true })))
+    .toEqual({ type: 'update-installed', version: NEW })
+
+  // 4. With an existing use-rust-host marker (and useRustHost omitted), installUpdate also succeeds on a verified rustBinary.
+  const markerConfig = await fixture()
+  await writeFile(join(markerConfig.installPath, 'use-rust-host'), '1\n')
+  expect(last(await receive(markerConfig, FILE, rustArchive))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(markerConfig, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(rustArchive) })))
+    .toEqual({ type: 'update-installed', version: NEW })
+})
+
+it('syncs use-rust-host on update-restart when manifest.rustBinary is verified and transitions a running Node host', async () => {
+  const configuration = await fixture()
+  await launch(configuration)
+  const rustRanMarker = join(configuration.directory, 'rust-host-ran.txt')
+  const rustShim = process.platform === 'win32'
+    ? Buffer.from('MZ' + '\0'.repeat(22), 'binary')
+    : `#!/bin/sh\nprintf 'rust' > '${rustRanMarker.replace(/'/gu, "'\\''")}'\nexec '${process.execPath.replace(/'/gu, "'\\''")}' "$(dirname "$0")/index.js" "$@"\n`
+  const archive = tarGz(hostRelease(NEW, await fakeHost(), { rustBinary: rustShim }))
+  expect(last(await receive(configuration, FILE, archive))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(archive), useRustHost: true })))
+    .toEqual({ type: 'update-installed', version: NEW })
+  // Installing alone has not switched use-rust-host yet.
+  await expect(readFile(join(configuration.installPath, 'use-rust-host'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+
+  const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, useRustHost: true }))
+  expect(restarted).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID })
+  hosts.push(restarted.pid as number)
+  // Restart synced the use-rust-host marker so later launches stay on the Rust binary.
+  expect(await readFile(join(configuration.installPath, 'use-rust-host'), 'utf8')).toBe('1\n')
+  if (process.platform !== 'win32') {
+    expect(await readFile(rustRanMarker, 'utf8')).toBe('rust')
+  }
+})
+
+it('restores the prior use-rust-host marker state if update-restart rolls back to the previous version', async () => {
+  const configuration = await fixture()
+  await launch(configuration)
+  const failingRust = process.platform === 'win32'
+    ? Buffer.from('MZ' + '\0'.repeat(22), 'binary')
+    : '#!/bin/sh\nexit 1\n'
+  const archive = tarGz(hostRelease(NEW, 'process.exit(1)\n', { rustBinary: failingRust }))
+  expect(last(await receive(configuration, FILE, archive))).toMatchObject({ type: 'update-received' })
+  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(archive), useRustHost: true })))
+    .toEqual({ type: 'update-installed', version: NEW })
+
+  const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, useRustHost: true }))
+  expect(restarted).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' })
+  const running = await descriptor(configuration)
+  hosts.push(running.pid)
+  expect(alive(running.pid)).toBe(true)
+  expect(await pointer(configuration)).toBeNull()
+  await expect(readFile(join(configuration.installPath, 'use-rust-host'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
 it('installs and restarts one update at a time in a folder, and takes over a lock whose process has gone', async () => {
   const configuration = await fixture()
   const install = { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }

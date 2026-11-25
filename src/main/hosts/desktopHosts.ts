@@ -441,7 +441,10 @@ export class DesktopHosts {
     if (socket && (operation.op === 'update-fetch' || operation.op === 'update-install')) {
       // The request carries a version, and for install the archive the host's own download named. Never a releases page.
       const action: 'fetch' | 'install' = operation.op === 'update-fetch' ? 'fetch' : 'install'
-      const request: HostUpdateRequest = operation.op === 'update-fetch' ? { action, version: operation.version } : { action, version: operation.version, file: operation.file, sha256: operation.sha256 }
+      const rustFlag = this.options.useRustHost === true ? { useRustHost: true as const } : {}
+      const request: HostUpdateRequest = operation.op === 'update-fetch'
+        ? { action, version: operation.version }
+        : { action, version: operation.version, file: operation.file, sha256: operation.sha256, ...rustFlag }
       let answer: HostUpdateAnswer | undefined, miss: HostUpdateMiss = 'closed'
       try { answer = await this.socketStep(id, () => socket.hostUpdate(request, { onStep: options?.onStep, signal: options?.signal })) }
       catch (error) { miss = missOf(error) }
@@ -546,7 +549,8 @@ export class DesktopHosts {
         return { restarting: true }
       }
       let answer: HostUpdateAnswer
-      try { answer = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'restart', version })) }
+      const rustFlag = this.options.useRustHost === true ? { useRustHost: true as const } : {}
+      try { answer = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'restart', version, ...rustFlag })) }
       catch (error) {
         const next = afterSocketMiss('restart', missOf(error), false)
         if (next === 'ssh') return { refused: true }

@@ -2200,7 +2200,8 @@ export class SocketHostService implements HostService {
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const operation = { op: 'host-update', action: request.action, ...(request.version ? { version: request.version } : {}),
-        ...(request.file ? { file: request.file } : {}), ...(request.sha256 ? { sha256: request.sha256 } : {}) } as const
+        ...(request.file ? { file: request.file } : {}), ...(request.sha256 ? { sha256: request.sha256 } : {}),
+        ...(request.useRustHost !== undefined ? { useRustHost: request.useRustHost } : {}) } as const
       let answer: unknown
       try { answer = await this.call(operation, randomUUID(), undefined, timeoutMs) }
       catch (error) {
