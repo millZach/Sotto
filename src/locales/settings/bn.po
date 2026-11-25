@@ -3458,6 +3458,16 @@ msgstr ""
 msgid "Host name"
 msgstr ""
 
+#. Label before a remote host’s Node | Rust choice.
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Host program"
+msgstr ""
+
+#. placeholder {0}: host.name
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Host program on {0}"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Host started"
 msgstr ""
@@ -4541,6 +4551,12 @@ msgstr ""
 msgid "Nobody answered in time."
 msgstr ""
 
+#. The Node host program on a remote host.
+#. The Node host program on a remote host.
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Node"
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -5341,7 +5357,9 @@ msgstr ""
 msgid "Press to start and stop"
 msgstr ""
 
+#. The Rust host program is still a preview.
 #. The card on Settings > Appearance that shows a small window in the chosen theme
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
 #: src/renderer/src/features/settings/LanguagePicker.tsx
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Preview"
@@ -5967,6 +5985,11 @@ msgstr ""
 msgid "Restart stopped threads"
 msgstr ""
 
+#. placeholder {0}: programName(chosen)
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Restarting on {0}…"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Restore defaults"
 msgstr ""
@@ -6036,8 +6059,24 @@ msgstr ""
 msgid "run.cloud key"
 msgstr ""
 
+#. placeholder {0}: programName(running)
+#. placeholder {1}: programName(chosen)
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Runs {0} now, and {1} from its next start."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Runs threads here as well as on remote hosts. Changes apply after a restart, and saved data stays."
+msgstr ""
+
+#. The Rust host program on a remote host, a preview.
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Rust"
+msgstr ""
+
+#. The Rust host program on a remote host, still a preview.
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Rust (preview)"
 msgstr ""
 
 #: src/renderer/src/features/settings/LanguagePicker.tsx

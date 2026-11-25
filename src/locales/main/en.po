@@ -1220,6 +1220,10 @@ msgstr "No meaningful improvement in two completed attempts."
 msgid "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 msgstr "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 
+#: src/main/hosts/desktopHosts.ts
+msgid "Node is saved for {host}, but its host could not be restarted. It runs Node from its next start."
+msgstr "Node is saved for {host}, but its host could not be restarted. It runs Node from its next start."
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Node was not found on the SSH host. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
 msgstr "Node was not found on the SSH host. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
@@ -1565,6 +1569,10 @@ msgstr "Run the commands below on {name} to see what the host says, then connect
 #: src/main/hosts/hostBootStart.ts
 msgid "Run this on {name}, then press Start at boot again. Sotto never runs sudo."
 msgstr "Run this on {name}, then press Start at boot again. Sotto never runs sudo."
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Rust is saved for {host}, but its host could not be restarted. It runs Rust from its next start."
+msgstr "Rust is saved for {host}, but its host could not be restarted. It runs Rust from its next start."
 
 #: src/main/agents/retainedDraftStore.ts
 msgid "Saved remote drafts could not be read. The original file was preserved. Repair local storage before saving draft text."
@@ -3645,6 +3653,10 @@ msgstr "This turn changed Git history or staging. Review and restore it with Git
 #: src/main/tools/ipc.ts
 msgid "This version of Sotto doesn't show a host's browser. Nothing was changed."
 msgstr "This version of Sotto doesn't show a host's browser. Nothing was changed."
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This version of Sotto runs every remote host on Node. Nothing was changed."
+msgstr "This version of Sotto runs every remote host on Node. Nothing was changed."
 
 #: src/main/agents/delegationIpc.ts
 msgid "This worker's brief is too long to hand on with a note about the move. Ask the overseer in a message to give the piece to {model}. Nothing was started."

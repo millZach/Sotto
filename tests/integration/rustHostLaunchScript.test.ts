@@ -4,7 +4,7 @@
 // `/v1/health` discovery, `startedBy: "launch-script"` ownership, `stop-host`, and strict default
 // preservation when `useRustHost` is omitted.
 import { spawn } from 'node:child_process'
-import { access, chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -117,6 +117,51 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host opt-in launch script integratio
       await rm(root, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 45_000)
+
+  // The row's Node | Rust control (ADR-0214): a launch naming the other program restarts a detached host Sotto started on
+  // the one named, and Node clears the marker. Windows cannot say which program a process is, so it only syncs the marker.
+  it('switches a detached host Sotto started between Rust and Node when a launch names the other program', async () => {
+    const binary = await findRustHostBinary()
+    const root = await mkdtemp(join(tmpdir(), 'sotto-rust-launch-switch-'))
+    const installPath = join(root, 'install')
+    const dataDirectory = join(root, 'data')
+    const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+    await mkdir(join(installPath, 'host'), { recursive: true })
+    await mkdir(dataDirectory, { recursive: true })
+    await copyFile(binary, join(installPath, 'host', exe))
+    await writeFile(join(installPath, 'package.json'), JSON.stringify({ type: 'module' }))
+    await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(installPath, 'host', 'index.js'))
+    const marker = join(installPath, 'use-rust-host')
+    const baseCfg = {
+      installPath, dataDirectory, remotePort: 0, nodeRange: '>=24.0.0 <25', readyTimeoutMs: 15_000, stopDrainMs: 5_000,
+      archiveLimitBytes: 100_000_000, downloadTimeoutMs: 10_000, updateLockUnnamedMs: 5_000,
+    }
+    const switches = process.platform !== 'win32'
+    let running: Record<string, unknown> | undefined
+    try {
+      running = (await runLaunchScript({ ...baseCfg, op: 'launch', useRustHost: true })).find(ev => ev.type === 'ready')
+      expect(running).toMatchObject({ owned: true })
+      expect(await readFile(marker, 'utf8')).toBe('1\n')
+      if (switches) expect(running?.runtime).toBe('rust')
+      const rustPid = running?.pid
+
+      running = (await runLaunchScript({ ...baseCfg, op: 'launch', useRustHost: false })).find(ev => ev.type === 'ready')
+      expect(running).toMatchObject({ owned: true })
+      await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+      if (switches) {
+        expect(running?.runtime).toBe('node')
+        expect(running?.pid).not.toBe(rustPid)
+        expect(running?.hostId).toBe('11111111-1111-4111-8111-111111111111')
+      }
+
+      // A launch that names no program, as stable's, leaves the running host as it is.
+      const kept = (await runLaunchScript({ ...baseCfg, op: 'launch' })).find(ev => ev.type === 'ready')
+      expect(kept?.pid).toBe(running?.pid)
+    } finally {
+      if (typeof running?.hostId === 'string') await runLaunchScript({ ...baseCfg, op: 'stop-host', hostId: running.hostId }).catch(() => undefined)
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 60_000)
 
   it('falls back cleanly to Node host when sotto-host is non-executable, wrong-arch, or fails startup on unreadable agents.json (N5)', async () => {
     const binary = await findRustHostBinary()

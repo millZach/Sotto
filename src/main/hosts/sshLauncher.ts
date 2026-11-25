@@ -15,7 +15,7 @@ import { AskpassBroker, type AskpassQuestion } from './sshAskpass'
 import { LAUNCH_REASONS, SshFailure, classifySshExit, failureFix, type SshFailureCode } from './sshFailure'
 import { tailscaleHold, type TailscaleHold } from './tailscaleApproval'
 import { isTailnetAddress } from '../../shared/hostConnection'
-import { TAILSCALE_APPROVAL_MS, type HostSetupStep } from '../../shared/hosts'
+import { HOST_RUNTIMES, TAILSCALE_APPROVAL_MS, type HostRuntime, type HostSetupStep } from '../../shared/hosts'
 import { HOST_ARCHIVE_PATTERN, HOST_SYSTEM_PATTERN, type HostUpdateStep } from '../../shared/hostUpdates'
 import { bootStatusSchema, type BootStatus } from '../../shared/bootStart'
 import { version as desktopVersion } from '../../../package.json'
@@ -72,6 +72,8 @@ export interface SshHostConnection {
    * (ADR-0077). Absent from a launch that did not say.
    */
   readonly system?: string
+  /** The program the host runs, Node or Rust, as the launch reported it (ADR-0214). Absent when the launch could not tell. */
+  readonly runtime?: HostRuntime
   /**
    * The host's tailnet address as its launch reported it, `https://<MagicDNS name>:<port>`, while Tailscale Serve carries
    * its tailnet listener (ADR-0053). Absent until Serve is up, which is often a few seconds after a start.
@@ -124,7 +126,10 @@ export interface SshLauncherDependencies {
   readonly localPort?: () => Promise<number>
   /** The Node the askpass helper runs under. In the app this is Electron's own binary, run as Node. */
   readonly askpassNode?: string
-  /** Opt into launching the native Rust `sotto-host` binary when present on the remote host (ADR-0214). */
+  /**
+   * The host program this saved host is set to run (ADR-0214): true for the Rust `sotto-host` when it is installed, false
+   * for Node, which clears the host's `use-rust-host` marker. Left out, as stable does, the launch keeps what the host has.
+   */
   readonly useRustHost?: boolean
 }
 const healthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535) })
@@ -135,6 +140,8 @@ const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boo
   node: z.string().max(4096).regex(/^[^\p{Cc}]+$/u).optional().catch(undefined),
   /** The launch's `process.platform-process.arch`, as the host archive's name carries it. One Sotto cannot read is left out. */
   system: z.string().max(64).regex(HOST_SYSTEM_PATTERN).optional().catch(undefined),
+  /** The program the host runs, Node or Rust, when the launch script could tell (ADR-0214). */
+  runtime: z.enum(HOST_RUNTIMES).optional().catch(undefined),
   /** The host's tailnet address (ADR-0053). One this build cannot accept reads as absent. */
   tailnetAddress: z.string().max(300).refine(value => isTailnetAddress(value)).optional().catch(undefined),
   /** Start at boot on the host, which every launch reports (ADR-0054). One this build cannot read is left out. */
@@ -319,7 +326,7 @@ export class SshHostLauncher {
       const route = attempt.route = await this.resolve(attempt)
       const launchOperation: LaunchOperation = options.start === false
         ? { op: 'launch', start: false as const, ...(options.removeBoot ? { removeBoot: true as const } : {}) }
-        : { op: 'launch', ...(this.dependencies.useRustHost === true ? { useRustHost: true as const } : {}) }
+        : { op: 'launch', ...this.rustFlag() }
       const result = await this.control(attempt, launchOperation, authentication + this.readyTimeout(), 'host-start-failed', { onOutput: signedIn, onStarting: () => { this.advance(attempt, 'start'); this.status(attempt, 'starting') } })
       if (result.type === 'error') throw this.launchFailure(result)
       const parsed = readySchema.safeParse(result)
@@ -355,7 +362,7 @@ export class SshHostLauncher {
       this.signedIn(attempt, forward)
       attempt.connected = true
       this.status(attempt, 'ready')
-      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}), ...(remote.system ? { system: remote.system } : {}),
+      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}), ...(remote.system ? { system: remote.system } : {}), ...(remote.runtime ? { runtime: remote.runtime } : {}),
         ...(remote.bootStart ? { bootStart: remote.bootStart } : {}),
         ...(remote.tailnetAddress ? { tailnetAddress: remote.tailnetAddress } : {}),
         close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: (clientId, desktopHostId) => this.ensureDesktopAnswers(attempt, clientId, desktopHostId), revokeClient: clientId => this.revokeClient(attempt, clientId),
@@ -574,6 +581,10 @@ export class SshHostLauncher {
     delete attempt.approval
     attempt.callbacks.onApproval?.(null)
   }
+  /** The host program to name in a launch, an update or a boot change: none when this desktop has no choice to make. */
+  private rustFlag(): { readonly useRustHost?: boolean } {
+    return this.dependencies.useRustHost === undefined ? {} : { useRustHost: this.dependencies.useRustHost }
+  }
   private launchFailure(result: Record<string, unknown>): SshFailure {
     const reason = typeof result.reason === 'string' ? result.reason : ''
     if (!LAUNCH_REASONS.has(reason as SshFailureCode)) return new SshFailure('host-start-failed')
@@ -701,7 +712,7 @@ export class SshHostLauncher {
   private updateHost(attempt: Attempt, operation: SshHostUpdateOperation, options: SshHostUpdateOptions = {}): Promise<SshHostUpdateResult> {
     if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before updating it.`))
     const hostId = attempt.ready.hostId
-    const rustFlag = this.dependencies.useRustHost === true ? { useRustHost: true as const } : {}
+    const rustFlag = this.rustFlag()
     let launch: LaunchOperation, budget: number, stdin: Uint8Array | undefined
     if (operation.op === 'update-restart') { launch = { op: 'update-restart', hostId, version: operation.version, ...rustFlag }; budget = HOST_STOP_DRAIN_MS + 2 * this.readyTimeout() + 10_000 }
     else if (operation.op === 'update-receive') { launch = { op: 'update-receive', file: operation.file, size: operation.size }; budget = 10 * 60_000; stdin = operation.archive }
@@ -719,7 +730,7 @@ export class SshHostLauncher {
   private boot(attempt: Attempt, operation: SshBootOperation): Promise<SshBootResult> {
     if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before changing whether it starts at boot.`))
     const hostId = attempt.ready.hostId
-    const rustFlag = this.dependencies.useRustHost === true ? { useRustHost: true as const } : {}
+    const rustFlag = this.rustFlag()
     const launch: LaunchOperation = operation.op === 'boot-install'
       ? { op: 'boot-install', hostId, ...rustFlag }
       : operation.op === 'boot-remove'

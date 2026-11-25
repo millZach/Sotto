@@ -23,7 +23,8 @@ export interface AdminSignInReport {
 }
 
 export interface AdminConnectionsOptions {
-  readonly launcher?: () => SshHostLauncher
+  /** The launcher for one host's admin connection, which names that host's host program in what it runs there (ADR-0214). */
+  readonly launcher?: (host: AdminHost) => SshHostLauncher
   readonly report: (id: string, report: AdminSignInReport) => void
   /** The Node the host's launch script ran under, for the command that revokes this computer there by hand. */
   readonly node: (id: string, node: string) => void
@@ -79,7 +80,7 @@ export class AdminConnections {
   private entry(host: AdminHost): Entry {
     const existing = this.entries.get(host.id)
     if (existing) return existing
-    const launcher = this.options.launcher?.() ?? new SshHostLauncher()
+    const launcher = this.options.launcher?.(host) ?? new SshHostLauncher()
     const sign: Entry['sign'] = { live: true }
     const connection = new AdminConnection({ open: dropped => this.signIn(host, launcher, sign, dropped), close: () => launcher.disconnect(), ...(this.options.idleMs ? { idleMs: this.options.idleMs } : {}) })
     const entry: Entry = { connection, launcher, sign }

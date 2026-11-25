@@ -139,6 +139,8 @@ describe('SshHostLauncher Rust host opt-in (ADR-0214)', () => {
   it.each([
     { label: 'omits useRustHost by default', useRustHost: undefined, expected: undefined },
     { label: 'forwards useRustHost: true when enabled', useRustHost: true, expected: true },
+    // A saved host set back to Node names Node, so the launch script clears the host's use-rust-host marker.
+    { label: 'forwards useRustHost: false for a host set to Node', useRustHost: false, expected: false },
   ])('$label across launch, boot-install, boot-remove, update-install, and update-restart', async ({ useRustHost, expected }) => {
     vi.spyOn(AskpassBroker, 'start').mockResolvedValue({
       environment: () => ({}),
@@ -180,7 +182,7 @@ describe('SshHostLauncher Rust host opt-in (ADR-0214)', () => {
       if (op) recordedOps.push(op)
       return createFakeProcess((_proc, stdout, finish) => {
         if (op?.op === 'launch') {
-          stdout.write(`${JSON.stringify({ type: 'ready', v: 1, status: 'ready', hostId: HOST_ID, pid: HOST_PID, port: REMOTE_PORT, owned: true })}\n`)
+          stdout.write(`${JSON.stringify({ type: 'ready', v: 1, status: 'ready', hostId: HOST_ID, pid: HOST_PID, port: REMOTE_PORT, owned: true, runtime: useRustHost ? 'rust' : 'node' })}\n`)
         } else if (op?.op === 'boot-install') {
           stdout.write(`${JSON.stringify({ type: 'boot-installed', installed: true, stopped: false, bootStart: bootOk })}\n`)
         } else if (op?.op === 'boot-remove') {
@@ -196,11 +198,13 @@ describe('SshHostLauncher Rust host opt-in (ADR-0214)', () => {
 
     const launcher = new SshHostLauncher({
       spawn: spawner,
-      ...(useRustHost ? { useRustHost } : {}),
+      ...(useRustHost !== undefined ? { useRustHost } : {}),
     })
     launchers.push(launcher)
 
     const connection = await launcher.connect(config)
+    // The launch says which program the host runs, for the row's host program control.
+    expect(connection.runtime).toBe(useRustHost ? 'rust' : 'node')
     await connection.boot({ op: 'boot-install' })
     await connection.boot({ op: 'boot-remove', restart: true })
     await connection.updateHost({ op: 'update-install', version: '1.2.4', file: 'Sotto-host-1.2.4-linux-x64.tar.gz', sha256: 'a'.repeat(64) })

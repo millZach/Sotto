@@ -34,3 +34,16 @@ Developers and worktrees should point `CARGO_TARGET_DIR` at one shared folder ou
 - Remote hosts gain a path to a single static binary with no Node 24 requirement and true multi-threaded I/O and parsing.
 - iPhone and Android clients keep speaking host protocol version 1 without changes.
 - Phase 4 (`sotto-engine`) builds directly on `crates/sotto-core` and plugs into ADR-0210's `EngineTransport` wire protocol.
+
+## Amendment, November 24, 2026: per-host opt-in, built (#2874)
+
+Decision 4 said opt-in per remote host, but Owl shipped it as opt-in per desktop: every SSH launch from an Owl desktop sent `useRustHost: true`, so every remote host ran `sotto-host` on its next start. On forge that host refused about 50 remote commands it does not implement, held 888 MB RSS against a 628 MB `threads.sqlite`, and left one thread with 2,001 activity rows, which Node's store then refused on every save. Choosing Node again did not help either, because a launch either named Rust or named nothing, and naming nothing keeps the host's `use-rust-host` marker.
+
+What changed:
+
+- **The host program is chosen host by host.** Each saved remote host has a **host program**: Node unless the owner picks Rust on that host's row in Settings > Hosts & phones, in a Node | Rust control (Zach's pick among three prototypes: on the row, one press, no confirm). The choice is saved with the host in `remote-hosts.json` (`runtime`) and kept across Owl updates. `rust-remote-host` stays an Owl feature with `sentToStable: false`, and now gates only that control and the program each launch names.
+- **Every launch from an Owl desktop names the program.** Launch, boot changes and updates, over SSH or the socket, send `useRustHost: true` or `false`. `false` clears the marker, and a detached host Sotto started that runs the other program is stopped and started on the one named, the way the boot unit already was. A desktop with no choice to make, such as stable, names nothing, and the host keeps what it has. A launch reports the program the host runs (`runtime`) where the system can say (Linux and macOS), for the row to show.
+- **A switch restarts the host now** when Sotto started it and this computer is connected: the desktop stops it and connects again over SSH, and that launch starts the program chosen. Any other host takes the choice at its next start, and the row says so.
+- **Both engines keep a thread's newest 2,000 activity records.** Rust writes keep at most `MAX_AGENT_ACTIVITIES` rows per thread, each at its own position, and Node reads and saves a longer list as its newest 2,000 instead of throwing. `tests/integration/rustHostActivityCap.test.ts` opens a database Rust wrote in Node's store.
+
+Rust becomes the default on Owl only after the five gates in `docs/plans/2026-11-24-rust-remote-host-cutover-readiness.md` pass.
