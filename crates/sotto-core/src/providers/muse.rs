@@ -75,6 +75,15 @@ pub(crate) struct MuseThreadRecord {
     extra: Map<String, Value>,
 }
 
+/// The thread's permission mode as Node's `muse-threads.json` records it (ADR-0214). Node's store has three; any other
+/// runs as `promptUnmatched` (`muse_approval_mode`), which is approval-required, and is recorded as that.
+fn muse_node_runtime_mode(runtime_mode: Option<&str>) -> Option<String> {
+    runtime_mode.map(|mode| match mode {
+        "auto" | "full-access" => mode.to_string(),
+        _ => "approval-required".to_string(),
+    })
+}
+
 fn muse_approval_mode(runtime_mode: Option<&str>) -> &'static str {
     match runtime_mode.unwrap_or("approval-required") {
         "full-access" => "allowAll",
@@ -907,11 +916,7 @@ impl ProviderAdapter for MuseAdapter {
                             muse_session_id: sid.clone(),
                             cwd: req.cwd.clone(),
                             model_id: Some(raw_model.clone()),
-                            // Node's store has no other mode, so another is left to Node's default.
-                            runtime_mode: req
-                                .runtime_mode
-                                .clone()
-                                .filter(|mode| ["approval-required", "auto", "full-access"].contains(&mode.as_str())),
+                            runtime_mode: muse_node_runtime_mode(req.runtime_mode.as_deref()),
                             extra: Map::new(),
                         },
                         fields,
@@ -952,7 +957,8 @@ impl ProviderAdapter for MuseAdapter {
                         }
                         self.shared.save_records();
                     }
-                    if req.runtime_mode.is_some() && rec.runtime_mode != req.runtime_mode {
+                    let requested_mode = muse_node_runtime_mode(req.runtime_mode.as_deref());
+                    if requested_mode.is_some() && rec.runtime_mode != requested_mode {
                         proc.call(
                             "session/setApprovalMode",
                             json!({
@@ -964,7 +970,7 @@ impl ProviderAdapter for MuseAdapter {
                         )
                         .await?;
                         if let Some(entry) = self.shared.records.lock().unwrap().get_mut(&req.thread_id) {
-                            entry.runtime_mode = req.runtime_mode.clone();
+                            entry.runtime_mode = requested_mode;
                         }
                         self.shared.save_records();
                     }
@@ -1224,7 +1230,7 @@ impl ProviderAdapter for MuseAdapter {
                         self.shared.save_records();
                     }
                 }
-                if let Some(mode) = runtime_mode {
+                if let Some(mode) = muse_node_runtime_mode(runtime_mode.as_deref()) {
                     if rec.runtime_mode.as_deref() != Some(mode.as_str()) {
                         proc.call(
                             "session/setApprovalMode",

@@ -8,7 +8,7 @@ import { mergeAgentActivities, type OwnServerTurn } from '../../shared/agentActi
 import type { MediaCapture } from './threadMedia'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -242,7 +242,7 @@ export class DeepSeekAcpHost implements ProviderHost {
   constructor(private readonly userDataDirectory: string, private readonly options: DeepSeekAcpOptions = {}) {
     this.homeDirectory = options.homeDirectory ?? join(userDataDirectory, 'deepseek')
     this.patchPath = join(this.homeDirectory, 'sotto-acp.patch.yml')
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'deepseek-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'deepseek-threads.json'), parseEntries(aliasSchema), () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'deepseek-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs === undefined ? {} : { sweepEveryMs: options.reaperSweepMs }),

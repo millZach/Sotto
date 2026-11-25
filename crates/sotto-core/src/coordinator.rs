@@ -3622,13 +3622,20 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
     })
 }
 
+/// Reads `threads.json`. One that is there and does not read is moved aside as `.corrupt-<millis>`, as Node's registry
+/// moves it, rather than written over at the next save: its bindings name the key each provider store holds a Node
+/// thread's record under (ADR-0214).
 fn load_thread_bindings(dir: &Path) -> HashMap<String, ThreadBindingRecord> {
     let path = dir.join("threads.json");
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    let Ok(raw) = std::fs::read_to_string(&path) else {
         return HashMap::new();
     };
-    let Ok(val) = serde_json::from_str::<Value>(&raw) else {
-        return HashMap::new();
+    let val = match serde_json::from_str::<Value>(&raw) {
+        Ok(val) if val.get("bindings").is_some_and(Value::is_array) => val,
+        _ => {
+            let _ = std::fs::rename(&path, crate::workspace::corrupt_copy_path(&path));
+            return HashMap::new();
+        }
     };
     let mut map = HashMap::new();
     if let Some(arr) = val.get("bindings").and_then(Value::as_array) {
@@ -3956,6 +3963,16 @@ mod tests {
         coord.shutdown().await;
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("workspace.json")).unwrap()).unwrap();
         assert_eq!(workspace["snapshot"]["threads"][0]["title"], "Made on Rust");
+    }
+
+    #[test]
+    fn an_unreadable_threads_json_is_set_aside_rather_than_written_over() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("threads.json"), "{ not json").unwrap();
+        assert!(load_thread_bindings(dir.path()).is_empty());
+        let names: Vec<String> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert_eq!(names.len(), 1);
+        assert!(names[0].starts_with("threads.json.corrupt-"), "{names:?}");
     }
 
     #[test]

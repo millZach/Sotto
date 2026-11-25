@@ -87,11 +87,14 @@ pub(crate) fn load_thread_records<T>(path: &std::path::Path, parse: impl Fn(&ser
         Ok(serde_json::Value::Object(map)) => {
             let keys = StoreKeys::of(path);
             for (disk_key, value) in &map {
-                let Some(record) = parse(value) else { continue };
                 let sotto_id = keys.sotto(disk_key);
-                // A record under the thread's own ID beside the one under Node's key for it is a stray an earlier build
-                // made; the thread is the one Node bound.
-                if keys.disk(sotto_id) == disk_key || !out.contains_key(sotto_id) {
+                // A record under the Sotto ID of a thread Node bound to another key is a stray an earlier build made.
+                // It is never read, so it can never be written over the record under Node's key, which may be one Node
+                // made before the thread had a session.
+                if keys.disk(sotto_id) != disk_key {
+                    continue;
+                }
+                if let Some(record) = parse(value) {
                     out.insert(sotto_id.to_string(), record);
                 }
             }
@@ -119,7 +122,7 @@ pub(crate) fn save_thread_records<T>(
         if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&raw) {
             for (disk_key, value) in map {
                 let sotto_id = keys.sotto(&disk_key);
-                let stray = records.contains_key(sotto_id) && keys.disk(sotto_id) != disk_key;
+                let stray = keys.disk(sotto_id) != disk_key;
                 if stray || (!records.contains_key(sotto_id) && parse(&value).is_none()) {
                     out.insert(disk_key, value);
                 }
@@ -374,6 +377,16 @@ mod tests {
         save_thread_records(&path, &records, parse_serde_record::<codex::CodexThreadRecord>, encode_serde_record);
         let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(saved, json!({ node_key: node, rust_thread: rust, thread: stray }));
+
+        // Node made the thread and never sent to it, and an earlier build started a session under the Sotto ID: the
+        // stray is not read, so Node's record is not written over, and both stay on disk.
+        let node_waiting = json!({ "cwd": "/w", "modelId": "m", "projectId": "p", "title": "Node's", "createdAt": "2026-11-20T10:00:00.000Z" });
+        std::fs::write(&path, json!({ node_key: node_waiting, thread: stray }).to_string()).unwrap();
+        let records = load_thread_records(&path, parse_serde_record::<codex::CodexThreadRecord>);
+        assert!(records.is_empty(), "read a stray");
+        save_thread_records(&path, &records, parse_serde_record::<codex::CodexThreadRecord>, encode_serde_record);
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved, json!({ node_key: node_waiting, thread: stray }));
 
         let waiting = dir.path().join("devin-threads.json");
         std::fs::write(dir.path().join("threads.json"), json!({ "bindings": [
