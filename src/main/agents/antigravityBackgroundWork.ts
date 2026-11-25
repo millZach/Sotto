@@ -32,7 +32,12 @@ const SYSTEM_HELPER_NAMES = new Set(['conhost', 'openconsole', 'werfault'])
  * How early a runtime wakeup may arrive against Sotto's own reckoning of a one-shot timer's end: `agy` starts the timer
  * before Sotto reads the call that set it, so its wakeup can land a moment before `expiresAt`.
  */
-const TIMER_WAKEUP_SLACK_MS = 5_000
+const TIMER_WAKEUP_SLACK_MS = 1_000
+/**
+ * How far past its time a one-shot timer must be before Sotto drops it with no wakeup seen: `agy` wakes a turn as soon as a
+ * timer fires, so one this late has fired, while one just due may still have its wakeup on the way.
+ */
+const TIMER_OVERDUE_MS = 30_000
 
 const normalizeProgram = (value: string): string => value.replace(/\\/gu, '/').split('/').pop()?.replace(/\.(?:exe|cmd|bat)$/iu, '').toLowerCase() ?? ''
 const programLabel = (executable: string | undefined): string | undefined => executable ? executable.replace(/\\/gu, '/').split('/').pop()?.replace(/\.exe$/iu, '') : undefined
@@ -147,6 +152,11 @@ function commandLabelOverlap(taskLabel: string, liveLabel: string): boolean {
  */
 export class AntigravityBackgroundTasks {
   private readonly tasks = new Map<string, TrackedTask>()
+  /**
+   * How long a `schedule` call still waiting on its \`pending\` frame asked to wait: it is not tracked until it runs, and the
+   * update that settles it may carry no input, so its length is kept here until then.
+   */
+  private readonly pendingTimerSeconds = new Map<string, number>()
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -171,12 +181,17 @@ export class AntigravityBackgroundTasks {
     }
 
     const existing = this.tasks.get(signal.toolCallId)
+    const durationSeconds = signal.durationSeconds ?? this.pendingTimerSeconds.get(signal.toolCallId)
+    if (signal.status === 'running' && signal.pending && !signal.heuristic && !existing && !signal.isControlTool) {
+      if (signal.isTimer && signal.durationSeconds !== undefined && this.pendingTimerSeconds.size < MAX_BACKGROUND_WORK) this.pendingTimerSeconds.set(signal.toolCallId, signal.durationSeconds)
+      return changed
+    }
+    this.pendingTimerSeconds.delete(signal.toolCallId)
     if (signal.status === 'running') {
       if (signal.isControlTool) return changed
-      if (signal.pending && !signal.heuristic && !existing) return changed
       const label = sanitizeAntigravityWorkLabel(signal.label) ?? existing?.label ?? BACKGROUND_WORK_LABELS[signal.type]
       if (!existing) {
-        if (signal.isTimer && this.dropFiredTimers(0)) changed = true
+        if (signal.isTimer && this.dropFiredTimers('overdue')) changed = true
         if (this.tasks.size >= MAX_BACKGROUND_WORK) return changed
         this.tasks.set(signal.toolCallId, {
           id: randomUUID(),
@@ -190,7 +205,7 @@ export class AntigravityBackgroundTasks {
           turnKey,
           touchedAtTurn: turnKey,
           ...(signal.nativeTaskId ? { nativeTaskId: signal.nativeTaskId } : {}),
-          ...(signal.durationSeconds !== undefined ? { expiresAt: this.now() + signal.durationSeconds * 1_000 } : {}),
+          ...(durationSeconds !== undefined ? { expiresAt: this.now() + durationSeconds * 1_000 } : {}),
           inFlight: true,
           heuristic: signal.heuristic,
           outlived: false,
@@ -214,7 +229,7 @@ export class AntigravityBackgroundTasks {
       existing.touchedAtTurn = turnKey
       if (signal.nativeTaskId) existing.nativeTaskId = signal.nativeTaskId
       // The timer's end is reckoned once, from when Sotto first saw it set; a repeated `DurationSeconds` does not push it later.
-      if (signal.durationSeconds !== undefined && existing.expiresAt === undefined) existing.expiresAt = this.now() + signal.durationSeconds * 1_000
+      if (durationSeconds !== undefined && existing.expiresAt === undefined) existing.expiresAt = this.now() + durationSeconds * 1_000
       return changed
     }
 
@@ -232,14 +247,14 @@ export class AntigravityBackgroundTasks {
     if (signal.status === 'completed') {
       if (signal.backgroundLaunch) {
         const label = sanitizeAntigravityWorkLabel(signal.label) ?? existing?.label ?? BACKGROUND_WORK_LABELS[signal.type]
-        const expiresAt = existing?.expiresAt ?? (signal.durationSeconds !== undefined ? this.now() + signal.durationSeconds * 1_000 : undefined)
+        const expiresAt = existing?.expiresAt ?? (durationSeconds !== undefined ? this.now() + durationSeconds * 1_000 : undefined)
         const timer = existing?.timer === true || signal.isTimer
         const type = timer ? 'command' : signal.type
         // A timer set while its turn runs is the turn's to hold until the turn ends (`turnEnded`); one that fires first is
         // dropped then (`dropFiredTimers`), so a turn that sets one wakeup after another never piles them up.
         const outlived = !timer
         if (!existing) {
-          if (timer && this.dropFiredTimers(0)) changed = true
+          if (timer && this.dropFiredTimers('overdue')) changed = true
           if (this.tasks.size >= MAX_BACKGROUND_WORK) return changed
           this.tasks.set(signal.toolCallId, {
             id: randomUUID(),
@@ -287,7 +302,7 @@ export class AntigravityBackgroundTasks {
 
   /** Reconciles tracked tasks when a turn ends, marking still-running calls outlived and pruning resolved heuristic commands and expired one-shot timers. */
   turnEnded(turnKey: string, reactive: boolean, liveProcessCommands: boolean): boolean {
-    let changed = this.dropFiredTimers(0)
+    let changed = this.dropFiredTimers('overdue')
     const now = this.now()
     for (const [toolCallId, task] of [...this.tasks]) {
       if ((task.inFlight || task.timer) && !task.outlived) {
@@ -308,8 +323,10 @@ export class AntigravityBackgroundTasks {
         changed = true
         continue
       }
-      if (reactive && !task.inFlight && task.timer && task.expiresAt !== undefined && now >= task.expiresAt
-        && task.turnKey !== turnKey && task.touchedAtTurn !== turnKey) {
+      // A timer an earlier turn set: the wakeup turn it starts ends it (with the slack, as `agy` may fire a moment early),
+      // and any other turn that ends well past its time ran through its wakeup.
+      if (!task.inFlight && task.timer && task.expiresAt !== undefined && task.turnKey !== turnKey && task.touchedAtTurn !== turnKey
+        && (reactive ? now + TIMER_WAKEUP_SLACK_MS >= task.expiresAt : now >= task.expiresAt + TIMER_OVERDUE_MS)) {
         this.tasks.delete(toolCallId)
         changed = true
       }
@@ -318,6 +335,7 @@ export class AntigravityBackgroundTasks {
   }
 
   clear(): boolean {
+    this.pendingTimerSeconds.clear()
     if (!this.tasks.size) return false
     this.tasks.clear()
     return true
@@ -383,24 +401,27 @@ export class AntigravityBackgroundTasks {
   }
 
   /**
-   * A runtime wakeup arrived while a turn runs: any one-shot timer that turn set and whose time is up has fired, whatever
-   * the wakeup says. `agy` wakes a fired `schedule` with the timer's own prompt rather than a "Task id … finished" line, so
-   * the wakeup alone cannot name it.
+   * A runtime wakeup naming no task arrived while a turn runs: any one-shot timer whose time is up has fired into it. `agy`
+   * wakes a fired `schedule` with the timer's own prompt rather than a "Task id … finished" line, so the wakeup alone cannot
+   * name it, and the running turn holds the thread from here, so nothing looks settled in between.
    */
   settleFiredTimers(): boolean {
-    return this.dropFiredTimers(TIMER_WAKEUP_SLACK_MS)
+    return this.dropFiredTimers('woken')
   }
 
   /**
-   * Drops one-shot timers set in a turn that is still running (not yet outlived) whose time is up: `agy` wakes the running
-   * turn when one fires, so it is done. A timer that outlived its turn stays until the wakeup turn it starts ends
-   * (`turnEnded`), so the thread is never left looking settled between the two.
+   * Drops one-shot timers that have fired. `woken`: a wakeup reached a running turn, so any timer due by now (give or take
+   * the slack) has fired. `overdue`: no wakeup was seen, so only a timer its still-running turn set (not yet outlived) and
+   * well past its time is dropped; one just due keeps its place until the wakeup turn it starts ends (`turnEnded`), so the
+   * thread is never left looking settled before that turn begins.
    */
-  private dropFiredTimers(slackMs: number): boolean {
+  private dropFiredTimers(evidence: 'woken' | 'overdue'): boolean {
     const now = this.now()
     let removed = false
     for (const [key, task] of this.tasks) {
-      if (task.timer && !task.outlived && !task.inFlight && task.expiresAt !== undefined && now + slackMs >= task.expiresAt) {
+      if (!task.timer || task.inFlight || task.expiresAt === undefined) continue
+      const fired = evidence === 'woken' ? now + TIMER_WAKEUP_SLACK_MS >= task.expiresAt : !task.outlived && now >= task.expiresAt + TIMER_OVERDUE_MS
+      if (fired) {
         this.tasks.delete(key)
         removed = true
       }

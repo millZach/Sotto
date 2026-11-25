@@ -333,24 +333,35 @@ describe('antigravityBackgroundWork', () => {
       expect(tasks.working(new Set(), [], false).map(item => [item.type, item.label])).toEqual([['command', 'Run schedule']])
     })
 
-    it('drops a fired timer when the turn sets the next one or ends, even without a recognised wakeup', () => {
+    it('drops a timer well past its time when the turn sets the next one or ends, even without a recognised wakeup', () => {
       let clock = 1_000_000
       const tasks = new AntigravityBackgroundTasks(() => clock)
       tasks.observe(scheduleCall(1, { DurationSeconds: 60 }), 't1')
-      clock += 61_000
+      clock += 91_000
       tasks.observe(scheduleCall(2, { DurationSeconds: 60 }), 't1')
-      clock += 61_000
+      clock += 91_000
       tasks.observe(scheduleCall(3, { DurationSeconds: 600 }), 't1')
       clock += 1_000
       tasks.turnEnded('t1', false, false)
       expect(tasks.working(new Set(), [], false)).toHaveLength(1)
 
-      // A turn that ends after its only timer's time is up leaves nothing behind.
+      // A turn that ends well after its only timer's time leaves nothing behind.
       const lone = new AntigravityBackgroundTasks(() => clock)
       lone.observe(scheduleCall(4, { DurationSeconds: 30 }), 't2')
-      clock += 31_000
+      clock += 61_000
       expect(lone.turnEnded('t2', false, false)).toBe(true)
       expect(lone.working(new Set(), [], false)).toEqual([])
+    })
+
+    it('keeps a timer just due at turn end for the wakeup turn it starts, so the thread never looks settled before it', () => {
+      let clock = 1_000_000
+      const tasks = new AntigravityBackgroundTasks(() => clock)
+      tasks.observe(scheduleCall(1, { DurationSeconds: 30 }), 't1')
+      clock += 31_000
+      tasks.turnEnded('t1', false, false)
+      expect(tasks.working(new Set(), [], false)).toHaveLength(1)
+      expect(tasks.turnEnded('t1:wakeup:1', true, false)).toBe(true)
+      expect(tasks.working(new Set(), [], false)).toEqual([])
     })
 
     it('settles a wakeup that lands a moment before Sotto reckons the timer due, but not one far from due', () => {
@@ -360,7 +371,57 @@ describe('antigravityBackgroundWork', () => {
       clock += 30_000
       expect(tasks.settleFiredTimers()).toBe(false)
       clock += 28_000
+      expect(tasks.settleFiredTimers()).toBe(false)
+      clock += 1_500
       expect(tasks.settleFiredTimers()).toBe(true)
+    })
+
+    it('settles a timer that outlived its turn when it wakes a later turn the user started', () => {
+      let clock = 1_000_000
+      const tasks = new AntigravityBackgroundTasks(() => clock)
+      tasks.observe(scheduleCall(1, { DurationSeconds: 60 }), 't1')
+      tasks.turnEnded('t1', false, false)
+      clock += 61_000
+      // The user's own turn t2 is running when the timer fires into it.
+      expect(tasks.settleFiredTimers()).toBe(true)
+      expect(tasks.hasAny).toBe(false)
+
+      // Unrecognised, it still goes when a later turn ends well past its time.
+      const quiet = new AntigravityBackgroundTasks(() => clock)
+      quiet.observe(scheduleCall(2, { DurationSeconds: 60 }), 't1')
+      quiet.turnEnded('t1', false, false)
+      clock += 91_000
+      expect(quiet.turnEnded('t2', false, false)).toBe(true)
+      expect(quiet.hasAny).toBe(false)
+    })
+
+    it('ends a timer that fired a moment early with the wakeup turn it started', () => {
+      let clock = 1_000_000
+      const tasks = new AntigravityBackgroundTasks(() => clock)
+      tasks.observe(scheduleCall(1, { DurationSeconds: 60 }), 't1')
+      tasks.turnEnded('t1', false, false)
+      clock += 59_500
+      expect(tasks.turnEnded('t1:wakeup:1', true, false)).toBe(true)
+      expect(tasks.hasAny).toBe(false)
+    })
+
+    it('keeps the length a pending schedule call asked for when the update that runs it carries no input', () => {
+      let clock = 1_000_000
+      const tasks = new AntigravityBackgroundTasks(() => clock)
+      const pending = scheduleCall(1, { DurationSeconds: 60 }, 'in_progress', { status: 'pending' })
+      expect(pending.pending).toBe(true)
+      expect(tasks.observe(pending, 't1')).toBe(false)
+      const done = antigravityToolCallSignal({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'sched-call-1',
+        status: 'completed',
+        rawOutput: { status: 'scheduled', taskId: 'conv-1/sched-1' },
+      }, 'k-sched-1', { title: 'Run schedule', status: 'running' })!
+      expect(done.durationSeconds).toBeUndefined()
+      tasks.observe(done, 't1')
+      clock += 61_000
+      expect(tasks.settleFiredTimers()).toBe(true)
+      expect(tasks.hasAny).toBe(false)
     })
 
     it('keeps a timer that outlived its turn until the wakeup turn it starts ends', () => {
@@ -370,8 +431,8 @@ describe('antigravityBackgroundWork', () => {
       tasks.turnEnded('t1', false, false)
       expect(tasks.working(new Set(), [], false)).toHaveLength(1)
       clock += 61_000
-      // The wakeup arrives with no turn running: the reactive turn it opens holds the thread from here.
-      expect(tasks.settleFiredTimers()).toBe(false)
+      // The wakeup arrives with no turn running, so the adapter settles nothing on it (`settleFiredTimers` is for a running
+      // turn): the reactive turn it opens holds the thread from here.
       expect(tasks.working(new Set(), [], false)).toHaveLength(1)
       expect(tasks.turnEnded('t1:wakeup:1', true, false)).toBe(true)
       expect(tasks.working(new Set(), [], false)).toEqual([])
