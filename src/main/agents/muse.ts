@@ -107,6 +107,8 @@ const aliasSchema = z.object({
   forkedMessages: z.array(z.string()).optional(),
 })
 type Alias = z.infer<typeof aliasSchema>
+/** Reads `muse-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseMuseThreadStore = preserveLegacyAliases(z.record(z.string(), aliasSchema).parse)
 /**
  * The turn under which an origin saved without one waits in `unsettledSteers`: a steer from before steers recorded their
  * turn, or a send, which a whole history of a session with no running turn settles (#1408).
@@ -625,7 +627,7 @@ export class MuseMspHost implements ProviderHost {
         return this.quotaReading
       }
     }
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'muse-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'muse-threads.json'), parseMuseThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'muse-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),

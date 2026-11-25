@@ -20,7 +20,7 @@ use crate::provider::{
 };
 use crate::stores::StoredMessage;
 use crate::workspace::{
-    now_iso, parse_public_provider_entity_id, public_provider_entity_id, write_atomic_json,
+    now_iso, parse_public_provider_entity_id, public_provider_entity_id,
     AgentCapabilities, AgentModel, AgentProviderStatus, ClientUpdateRow,
 };
 
@@ -66,16 +66,21 @@ impl CodexAdapterConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CodexThreadRecord {
+pub(crate) struct CodexThreadRecord {
     codex_thread_id: String,
     #[serde(default)]
     cwd: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    model: Option<String>,
+    /// Node's `modelId`; `model` is what earlier Rust builds wrote.
+    #[serde(alias = "model", skip_serializing_if = "Option::is_none")]
+    model_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     runtime_mode: Option<String>,
+    /// Every field Node's record has that this one does not model, kept as they were so a rollback to Node finds its
+    /// record whole (ADR-0214).
+    #[serde(default, flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -373,7 +378,7 @@ impl CodexSharedState {
     fn save_records(&self) {
         let snapshot = self.records.lock().unwrap().clone();
         let path = self.data_directory.join(CODEX_THREADS_FILE);
-        let _ = write_atomic_json(&path, &snapshot);
+        crate::providers::save_thread_records(&path, &snapshot, crate::providers::parse_serde_record::<CodexThreadRecord>, crate::providers::encode_serde_record);
     }
 
     fn resolve_sotto_thread(&self, native_thread_id: &str) -> Option<String> {
@@ -1075,14 +1080,17 @@ impl ProviderAdapter for CodexAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| "Codex thread/start returned no thread ID.".to_string())?
                         .to_string();
+                    // A record this thread already had keeps the fields it carries for Node.
+                    let kept = self.shared.records.lock().unwrap().get(&req.thread_id).map(|r| r.extra.clone()).unwrap_or_default();
                     self.shared.records.lock().unwrap().insert(
                         req.thread_id.clone(),
                         CodexThreadRecord {
                             codex_thread_id: native_id.clone(),
                             cwd: req.cwd.clone(),
-                            model: Some(raw_model),
+                            model_id: Some(raw_model),
                             reasoning_effort: Some(effort),
                             runtime_mode: req.runtime_mode.clone(),
+                            extra: kept,
                         },
                     );
                     self.shared
@@ -1339,11 +1347,7 @@ fn codex_activity_id(native_thread_id: &str, key: &str) -> String {
 }
 
 fn load_codex_records(data_directory: &Path) -> HashMap<String, CodexThreadRecord> {
-    let path = data_directory.join(CODEX_THREADS_FILE);
-    let Ok(raw) = fs::read_to_string(path) else {
-        return HashMap::new();
-    };
-    serde_json::from_str(&raw).unwrap_or_default()
+    crate::providers::load_thread_records(&data_directory.join(CODEX_THREADS_FILE), crate::providers::parse_serde_record)
 }
 
 fn build_codex_request_card(req_id: &str, method: &str, params: &Value) -> Value {

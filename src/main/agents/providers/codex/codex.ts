@@ -128,6 +128,8 @@ const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().
 const aliasesSchema = z.record(z.string(), aliasSchema)
 
 type Alias = z.infer<typeof aliasSchema>
+/** Reads `codex-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseCodexThreadStore = preserveLegacyAliases(aliasesSchema.parse)
 type Origin = z.infer<typeof originSchema>
 /** The text parts of a user message's content, the only shape of it Sotto reads. */
 const userContent = z.array(z.object({ type: z.string(), text: z.string().optional() })).optional()
@@ -570,7 +572,7 @@ export class CodexAppServerHost implements ProviderHost {
       }
     }
     // Compact: it holds an identity for every turn of every thread, and is rewritten whole.
-    this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'codex-threads.json'), preserveLegacyAliases(aliasesSchema.parse), () => ({}))
+    this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'codex-threads.json'), parseCodexThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(options.userDataPath, 'codex-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.rolloutPositions = new RolloutPositionFiles(join(options.userDataPath, 'codex-rollouts'))
     this.reaper = new SessionReaper({

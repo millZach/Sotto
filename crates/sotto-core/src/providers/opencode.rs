@@ -23,7 +23,7 @@ use crate::provider::{
 };
 use crate::stores::StoredMessage;
 use crate::workspace::{
-    now_iso, parse_public_provider_entity_id, public_provider_entity_id, write_atomic_json,
+    now_iso, parse_public_provider_entity_id, public_provider_entity_id,
     AgentCapabilities, AgentModel, AgentProviderStatus, ClientUpdateRow,
 };
 
@@ -70,7 +70,7 @@ impl OpenCodeAdapterConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct OpenCodeThreadRecord {
+pub(crate) struct OpenCodeThreadRecord {
     session_id: String,
     #[serde(default)]
     cwd: String,
@@ -78,6 +78,10 @@ struct OpenCodeThreadRecord {
     model_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<String>,
+    /// Every field Node's record has that this one does not model, kept as they were so a rollback to Node finds its
+    /// record whole (ADR-0214).
+    #[serde(default, flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -288,7 +292,7 @@ impl OpenCodeSharedState {
     fn save_records(&self) {
         let snapshot = self.records.lock().unwrap().clone();
         let path = self.data_directory.join(OPENCODE_THREADS_FILE);
-        let _ = write_atomic_json(&path, &snapshot);
+        crate::providers::save_thread_records(&path, &snapshot, crate::providers::parse_serde_record::<OpenCodeThreadRecord>, crate::providers::encode_serde_record);
     }
 
     fn resolve_sotto(&self, native_sid: &str) -> Option<String> {
@@ -847,6 +851,8 @@ impl ProviderAdapter for OpenCodeAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| "OpenCode session.create returned no id.".to_string())?
                         .to_string();
+                    // A record this thread already had keeps the fields it carries for Node.
+                    let kept = self.shared.records.lock().unwrap().get(&req.thread_id).map(|r| r.extra.clone()).unwrap_or_default();
                     self.shared.records.lock().unwrap().insert(
                         req.thread_id.clone(),
                         OpenCodeThreadRecord {
@@ -854,6 +860,7 @@ impl ProviderAdapter for OpenCodeAdapter {
                             cwd: req.cwd.clone(),
                             model_id: Some(raw_model.clone()),
                             reasoning_effort: req.reasoning_effort.clone(),
+                            extra: kept,
                         },
                     );
                     self.shared
@@ -1216,9 +1223,5 @@ fn opencode_id(kind: &str, key: &str) -> String {
 }
 
 fn load_opencode_records(data_directory: &Path) -> HashMap<String, OpenCodeThreadRecord> {
-    let path = data_directory.join(OPENCODE_THREADS_FILE);
-    let Ok(raw) = fs::read_to_string(path) else {
-        return HashMap::new();
-    };
-    serde_json::from_str(&raw).unwrap_or_default()
+    crate::providers::load_thread_records(&data_directory.join(OPENCODE_THREADS_FILE), crate::providers::parse_serde_record)
 }

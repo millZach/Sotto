@@ -78,6 +78,8 @@ const aliasSchema = z.object({
   origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
 })
 type Alias = z.infer<typeof aliasSchema>
+/** Reads `cursor-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseCursorThreadStore = z.record(z.string(), aliasSchema).parse
 /**
  * How many answered request IDs a thread keeps. A request's ID carries the nonce of the process that asked, so one from
  * a process that has ended can never come again; the window covers every request a running process can hold open
@@ -319,7 +321,7 @@ export class CursorAcpHost implements ProviderHost {
 
   constructor(private readonly userDataDirectory: string, private readonly options: CursorAcpOptions = {}) {
     this.configDirectory = options.configDirectory ?? join(userDataDirectory, 'cursor', 'config')
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'cursor-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'cursor-threads.json'), parseCursorThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'cursor-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs === undefined ? {} : { sweepEveryMs: options.reaperSweepMs }),

@@ -21,7 +21,7 @@ use crate::provider::{
 };
 use crate::stores::StoredMessage;
 use crate::workspace::{
-    now_iso, parse_public_provider_entity_id, public_provider_entity_id, write_atomic_json,
+    now_iso, parse_public_provider_entity_id, public_provider_entity_id,
     AgentCapabilities, AgentModel, AgentProviderStatus,
 };
 
@@ -67,7 +67,7 @@ impl ClaudeAdapterConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ClaudeThreadRecord {
+pub(crate) struct ClaudeThreadRecord {
     session_id: String,
     #[serde(default)]
     cwd: String,
@@ -79,6 +79,10 @@ struct ClaudeThreadRecord {
     runtime_mode: Option<String>,
     #[serde(default)]
     started: bool,
+    /// Every field Node's record has that this one does not model (`projectId`, `title`, `createdAt`, `lineage`,
+    /// `origins` and the rest), kept as they were so a rollback to Node finds its record whole (ADR-0214).
+    #[serde(default, flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -490,7 +494,7 @@ impl ClaudeSharedState {
     fn save_records(&self) {
         let snapshot = self.records.lock().unwrap().clone();
         let path = self.data_directory.join(CLAUDE_THREADS_FILE);
-        let _ = write_atomic_json(&path, &snapshot);
+        crate::providers::save_thread_records(&path, &snapshot, crate::providers::parse_serde_record::<ClaudeThreadRecord>, crate::providers::encode_serde_record);
     }
 
     fn handle_control_request(
@@ -875,9 +879,9 @@ impl ClaudeAdapter {
             .unwrap()
             .get(&req.thread_id)
             .cloned();
-        let (session_id, resume) = match existing_record {
-            Some(rec) => (rec.session_id, rec.started),
-            None => (Uuid::new_v4().to_string(), false),
+        let (session_id, resume, extra) = match existing_record {
+            Some(rec) => (rec.session_id, rec.started, rec.extra),
+            None => (Uuid::new_v4().to_string(), false, Map::new()),
         };
 
         let proc = ClaudeSessionProcess::spawn(
@@ -903,6 +907,7 @@ impl ClaudeAdapter {
                 reasoning_effort: req.reasoning_effort.clone(),
                 runtime_mode: req.runtime_mode.clone(),
                 started: true,
+                extra,
             },
         );
         self.shared.save_records();
@@ -1312,11 +1317,7 @@ fn claude_activity_id(sotto_thread_id: &str, key: &str) -> String {
 }
 
 fn load_claude_records(data_directory: &Path) -> HashMap<String, ClaudeThreadRecord> {
-    let path = data_directory.join(CLAUDE_THREADS_FILE);
-    let Ok(raw) = fs::read_to_string(path) else {
-        return HashMap::new();
-    };
-    serde_json::from_str(&raw).unwrap_or_default()
+    crate::providers::load_thread_records(&data_directory.join(CLAUDE_THREADS_FILE), crate::providers::parse_serde_record)
 }
 
 fn build_claude_user_content(req: &SendMessageRequest) -> Value {

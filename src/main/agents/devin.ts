@@ -58,6 +58,8 @@ const aliasSchema = z.object({
   reasoningEffort: z.string().optional(),
 })
 type Alias = z.infer<typeof aliasSchema>
+/** Reads `devin-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseDevinThreadStore = z.record(z.string(), aliasSchema).parse
 type Origin = z.infer<typeof originSchema>
 const optionSchema = z.object({ value: z.string().min(1), name: z.string().min(1), description: z.string().max(2_000).optional() })
 const configSchema = z.object({
@@ -339,7 +341,7 @@ export class DevinAcpHost implements ProviderHost {
    */
   private checksStarted = 0
   constructor(private readonly userDataDirectory: string, private readonly options: DevinAcpOptions = {}) {
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'devin-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'devin-threads.json'), parseDevinThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'devin-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.levels = new DevinThinkingLevels(join(userDataDirectory, 'devin'))
     this.reaper = new SessionReaper({
