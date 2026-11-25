@@ -623,11 +623,12 @@ impl ThreadStore {
                    COALESCE((SELECT MAX(position) FROM activities WHERE thread_id = ?1), -1) + 1, ?3)",
                 rusqlite::params![thread_id, activity_id, encoded],
             )?;
+            // By row rather than by position, so rows an earlier build left at one position cannot outlast the limit.
             self.conn.execute(
-                "DELETE FROM activities WHERE thread_id = ?1 AND position < (
-                   SELECT position FROM activities WHERE thread_id = ?1
-                   ORDER BY position DESC LIMIT 1 OFFSET ?2)",
-                rusqlite::params![thread_id, (MAX_AGENT_ACTIVITIES - 1) as i64],
+                "DELETE FROM activities WHERE thread_id = ?1 AND rowid NOT IN (
+                   SELECT rowid FROM activities WHERE thread_id = ?1
+                   ORDER BY position DESC, rowid DESC LIMIT ?2)",
+                rusqlite::params![thread_id, MAX_AGENT_ACTIVITIES as i64],
             )?;
             Ok(())
         })();
@@ -1479,6 +1480,23 @@ mod tests {
         let positions: HashSet<i64> = rows.iter().map(|(_, position)| *position).collect();
         assert_eq!(positions.len(), rows.len());
         assert_eq!(store.read_activities("upserted").unwrap().len(), MAX_AGENT_ACTIVITIES);
+
+        // A full thread an earlier build left with every row at one position: one new record still leaves the limit.
+        // Its own database, since the shared one holds only what Rust itself writes, for Node to open.
+        let tied_store = ThreadStore::open(&dir.path().join("tied.sqlite")).unwrap();
+        for index in 0..MAX_AGENT_ACTIVITIES {
+            tied_store
+                .conn
+                .execute(
+                    "INSERT INTO activities (thread_id, activity_id, position, payload) VALUES ('tied', ?1, 0, ?2)",
+                    rusqlite::params![format!("tied-{index}"), activity(&format!("tied-{index}")).to_string()],
+                )
+                .unwrap();
+        }
+        tied_store.upsert_activity("tied", &activity("tied-new")).unwrap();
+        let tied = stored_rows(&tied_store, "tied");
+        assert_eq!(tied.len(), MAX_AGENT_ACTIVITIES);
+        assert_eq!(tied.last().unwrap(), &("tied-new".to_string(), 1));
 
         // Rows Node left at its own positions, with gaps, then a Rust upsert: the new record goes after the last.
         for (index, position) in [(0, 5), (1, 9), (2, 40)] {
