@@ -1,7 +1,9 @@
-import { spawn as spawnProcess, type ChildProcess } from 'node:child_process'
+import { execFile, spawn as spawnProcess, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { constants as fsConstants } from 'node:fs'
 import { access, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, isAbsolute, join, posix as posixPath, resolve } from 'node:path'
 import { z } from 'zod'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScript'
 import { hostLaunchTimings } from '../shared/hostLaunchTimings'
@@ -72,6 +74,177 @@ export function transientRestartCommand(input: { readonly node: string; readonly
   return ['--user', '--collect', '--quiet', '--unit=' + input.unit, ...environment, '--', input.node, input.script, input.configuration]
 }
 
+function versionParts(value: string): [number, number, number] {
+  const parts = value.trim().replace(/^v/u, '').split('.').map(part => parseInt(part, 10) || 0)
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0]
+}
+function compareVersionParts(a: readonly [number, number, number], b: readonly [number, number, number]): number {
+  for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index]! - b[index]!
+  return 0
+}
+/** Whether a Node version string (e.g. `24.22.1`) satisfies a runtime-manifest range (e.g. `>=24.22.1 <25`). */
+export function nodeSatisfiesRange(version: string, range: string): boolean {
+  const normalized = version.trim().replace(/^v/u, '')
+  if (!/^\d+(?:\.\d+){0,2}$/u.test(normalized)) return false
+  const have = versionParts(normalized)
+  return range.trim().split(/\s+/u).every(token => {
+    const match = /^(>=|<)(\d+(?:\.\d+){0,2})$/u.exec(token)
+    if (!match) return true
+    const difference = compareVersionParts(have, versionParts(match[2]!))
+    return match[1] === '>=' ? difference >= 0 : difference < 0
+  })
+}
+
+function probeNodeVersion(candidate: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  return new Promise(done => {
+    execFile(candidate, ['-e', 'process.stdout.write(process.versions.node)'],
+      { timeout: 5_000, windowsHide: true, encoding: 'utf8', env, maxBuffer: 4096 },
+      (error, stdout) => {
+        if (error) { done(null); return }
+        const version = String(stdout ?? '').trim()
+        done(/^\d+(?:\.\d+){0,2}$/u.test(version) ? version : null)
+      })
+  })
+}
+
+function probeLoginShellNode(env: NodeJS.ProcessEnv): Promise<string | null> {
+  const shell = typeof env.SHELL === 'string' && env.SHELL.trim() ? env.SHELL.trim() : '/bin/sh'
+  return new Promise(done => {
+    execFile(shell, ['-l', '-c', 'command -v node'],
+      { timeout: 3_000, windowsHide: true, encoding: 'utf8', env, maxBuffer: 4096 },
+      (error, stdout) => {
+        if (error) { done(null); return }
+        const line = String(stdout ?? '').split(/\r?\n/u).map(item => item.trim()).filter(Boolean).at(-1)
+        done(line && isAbsolute(line) ? line : null)
+      })
+  })
+}
+
+export interface FindCompatibleNodeOptions {
+  readonly env?: NodeJS.ProcessEnv | undefined
+  readonly platform?: NodeJS.Platform | undefined
+  readonly currentNode?: string | undefined
+  readonly homeDir?: string | undefined
+  readonly probeVersion?: ((candidate: string) => Promise<string | null>) | undefined
+  readonly loginShellNode?: (() => Promise<string | null>) | undefined
+  readonly isExecutable?: ((candidate: string) => Promise<boolean>) | undefined
+}
+
+/**
+ * Discovers a Node executable on this machine whose version satisfies `range`, mirroring `NODE_PROBE_SOURCE`:
+ * PATH, the account's login shell, sibling installs next to the running Node, and Volta/mise/asdf/fnm/nvm/Homebrew.
+ * Version-manager install directories are probed highest version first so newer installs (e.g. 24.22.1 beside 24.21.0) win.
+ */
+export async function findCompatibleNode(range: string, options: FindCompatibleNodeOptions = {}): Promise<string | null> {
+  const env = options.env ?? process.env
+  const platform = options.platform ?? process.platform
+  const home = options.homeDir ?? env.HOME ?? env.USERPROFILE ?? homedir()
+  const nodeName = platform === 'win32' ? 'node.exe' : 'node'
+  const joinCandidate = (...parts: string[]): string => (platform !== 'win32' && parts[0]?.startsWith('/') ? posixPath.join(...parts) : join(...parts))
+  const dirnameOf = (value: string): string => (platform !== 'win32' && value.startsWith('/') ? posixPath.dirname(value) : dirname(value))
+  const basenameOf = (value: string): string => (platform !== 'win32' && value.startsWith('/') ? posixPath.basename(value) : basename(value))
+  const probeVersion = options.probeVersion ?? (candidate => probeNodeVersion(candidate, env))
+  const checkExecutable = options.isExecutable ?? (async (candidate: string): Promise<boolean> => {
+    try { await access(candidate, platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK); return true } catch { return false }
+  })
+  const seen = new Set<string>()
+  const tryCandidate = async (candidate: string | null | undefined): Promise<string | null> => {
+    if (!candidate || seen.has(candidate)) return null
+    seen.add(candidate)
+    if (!(await checkExecutable(candidate))) return null
+    const version = await probeVersion(candidate)
+    return version && nodeSatisfiesRange(version, range) ? candidate : null
+  }
+  const tryList = async (candidates: readonly (string | null | undefined)[]): Promise<string | null> => {
+    for (const candidate of candidates) {
+      const found = await tryCandidate(candidate)
+      if (found) return found
+    }
+    return null
+  }
+  const versionManagerDirs = async (parentDir: string, suffixParts: readonly string[]): Promise<string[]> => {
+    let names: string[]
+    try { names = await readdir(parentDir) } catch { return [] }
+    names.sort((a, b) => compareVersionParts(versionParts(b), versionParts(a)) || b.localeCompare(a, 'en'))
+    return names.map(name => joinCandidate(parentDir, name, ...suffixParts))
+  }
+
+  // 1. Current PATH.
+  const pathEnv = env.PATH ?? env.Path ?? ''
+  const pathEntries = pathEnv.split(platform === 'win32' ? ';' : ':').filter(Boolean).map(dir => joinCandidate(dir, nodeName))
+  const fromPath = await tryList(pathEntries)
+  if (fromPath) return fromPath
+
+  // 2. Login shell (POSIX only), mirroring NODE_PROBE_SOURCE.
+  if (platform !== 'win32') {
+    const loginNode = await (options.loginShellNode ?? (() => probeLoginShellNode(env)))()
+    const fromLogin = await tryCandidate(loginNode)
+    if (fromLogin) return fromLogin
+  }
+
+  // 3. Sibling version-manager installs beside the currently running Node (e.g. custom MISE_DATA_DIR / NVM_DIR).
+  if (options.currentNode) {
+    const binDir = dirnameOf(options.currentNode)
+    const versionDir = dirnameOf(binDir)
+    const siblingRoot = dirnameOf(versionDir)
+    if (basenameOf(binDir) === 'bin' && siblingRoot !== versionDir && siblingRoot !== dirnameOf(siblingRoot)
+      && /^v?\d+(?:\.\d+){0,2}/u.test(basenameOf(versionDir))) {
+      const fromSiblings = await tryList(await versionManagerDirs(siblingRoot, ['bin', nodeName]))
+      if (fromSiblings) return fromSiblings
+    }
+  }
+
+  // 4. Version manager shims and default aliases.
+  if (platform !== 'win32') {
+    const shims = [
+      joinCandidate(env.VOLTA_HOME || joinCandidate(home, '.volta'), 'bin', 'node'),
+      joinCandidate(env.MISE_DATA_DIR || joinCandidate(home, '.local', 'share', 'mise'), 'shims', 'node'),
+      joinCandidate(home, '.local', 'share', 'mise', 'shims', 'node'),
+      joinCandidate(env.ASDF_DATA_DIR || joinCandidate(home, '.asdf'), 'shims', 'node'),
+      joinCandidate(env.FNM_DIR || joinCandidate(home, '.local', 'share', 'fnm'), 'aliases', 'default', 'bin', 'node'),
+      joinCandidate(home, '.fnm', 'aliases', 'default', 'bin', 'node'),
+    ]
+    const fromShims = await tryList(shims)
+    if (fromShims) return fromShims
+
+    // 5. Version manager installation directories, highest version first.
+    const installRoots: readonly [string, readonly string[]][] = [
+      [joinCandidate(env.NVM_DIR || joinCandidate(home, '.nvm'), 'versions', 'node'), ['bin', 'node']],
+      [joinCandidate(env.FNM_DIR || joinCandidate(home, '.local', 'share', 'fnm'), 'node-versions'), ['installation', 'bin', 'node']],
+      [joinCandidate(home, '.fnm', 'node-versions'), ['installation', 'bin', 'node']],
+      [joinCandidate(env.MISE_DATA_DIR || joinCandidate(home, '.local', 'share', 'mise'), 'installs', 'node'), ['bin', 'node']],
+      [joinCandidate(home, '.local', 'share', 'mise', 'installs', 'node'), ['bin', 'node']],
+      [joinCandidate(env.ASDF_DATA_DIR || joinCandidate(home, '.asdf'), 'installs', 'node'), ['bin', 'node']],
+    ]
+    for (const [root, suffix] of installRoots) {
+      const found = await tryList(await versionManagerDirs(root, suffix))
+      if (found) return found
+    }
+
+    // 6. Standard system locations.
+    return tryList(['/usr/local/bin/node', '/opt/homebrew/bin/node', '/usr/bin/node'])
+  }
+
+  // Windows version manager locations.
+  const winShims = [
+    joinCandidate(env.VOLTA_HOME || joinCandidate(home, '.volta'), 'node.exe'),
+    ...(env.LOCALAPPDATA ? [joinCandidate(env.LOCALAPPDATA, 'mise', 'shims', 'node.exe')] : []),
+  ]
+  const fromWinShims = await tryList(winShims)
+  if (fromWinShims) return fromWinShims
+  const winRoots: [string, readonly string[]][] = [
+    ...(env.LOCALAPPDATA ? [[joinCandidate(env.LOCALAPPDATA, 'mise', 'installs', 'node'), ['node.exe']] as [string, readonly string[]],
+      [joinCandidate(env.LOCALAPPDATA, 'mise', 'installs', 'node'), ['bin', 'node.exe']] as [string, readonly string[]]] : []),
+    ...(env.FNM_DIR || env.APPDATA ? [[joinCandidate(env.FNM_DIR || joinCandidate(env.APPDATA!, 'fnm'), 'node-versions'), ['installation', 'node.exe']] as [string, readonly string[]]] : []),
+    ...(env.NVM_HOME ? [[env.NVM_HOME, ['node.exe']] as [string, readonly string[]]] : []),
+  ]
+  for (const [root, suffix] of winRoots) {
+    const found = await tryList(await versionManagerDirs(root, suffix))
+    if (found) return found
+  }
+  return null
+}
+
 export interface HostSelfUpdateOptions {
   /** The running host's entry, `process.argv[1]`: where it was installed is read from it. */
   readonly entry: string
@@ -84,6 +257,10 @@ export interface HostSelfUpdateOptions {
   /** Tests stand a local releases page in; a host always uses the published one. */
   readonly releasesUrl?: string | undefined
   readonly node?: string | undefined
+  /** The version of `node`; defaults to `process.versions.node` when `node` is the running executable. */
+  readonly nodeVersion?: string | undefined
+  /** Discovers a compatible Node when `node` does not satisfy an update's `runtime-manifest.json` range. */
+  readonly findNode?: ((range: string) => Promise<string | null>) | undefined
   readonly env?: NodeJS.ProcessEnv | undefined
   readonly platform?: NodeJS.Platform | undefined
   readonly arch?: string | undefined
@@ -137,12 +314,15 @@ export class HostSelfUpdate {
   private static readonly ATTEMPT_FILES_KEPT_MS = 10 * 60_000
   private readonly statusPath: string
   private readonly node: string
+  private readonly nodeVersion: string | undefined
+  private readonly compatibleNodes = new Map<string, string>()
   private readonly env: NodeJS.ProcessEnv
   private readonly spawn: typeof spawnProcess
 
   constructor(private readonly options: HostSelfUpdateOptions, readonly installation: HostInstallation) {
     this.statusPath = join(resolve(options.dataDirectory), HOST_UPDATE_STATUS_FILE)
     this.node = options.node ?? process.execPath
+    this.nodeVersion = options.nodeVersion ?? (options.node === undefined || options.node === process.execPath ? process.versions.node : undefined)
     this.env = options.env ?? process.env
     this.spawn = options.spawn ?? spawnProcess
   }
@@ -212,6 +392,41 @@ export class HostSelfUpdate {
     }
   }
 
+  private async currentNodeSatisfies(range: string): Promise<boolean> {
+    if (this.nodeVersion !== undefined) return nodeSatisfiesRange(this.nodeVersion, range)
+    const version = await probeNodeVersion(this.node, this.env)
+    return version !== null && nodeSatisfiesRange(version, range)
+  }
+
+  private async resolveCompatibleNode(range: string): Promise<string | null> {
+    const cached = this.compatibleNodes.get(range)
+    if (cached) {
+      if (this.options.findNode || await access(cached).then(() => true, () => false)) return cached
+      this.compatibleNodes.delete(range)
+    }
+    const found = this.options.findNode
+      ? await this.options.findNode(range)
+      : await findCompatibleNode(range, { env: this.env, platform: this.options.platform ?? process.platform, currentNode: this.node })
+    if (found) this.compatibleNodes.set(range, found)
+    return found
+  }
+
+  private async readVersionManifest(versionDir: string): Promise<{ readonly node?: string; readonly rustBinary?: string } | null> {
+    try {
+      const parsed = JSON.parse(await readFile(join(versionDir, 'runtime-manifest.json'), 'utf8')) as { node?: unknown; rustBinary?: unknown }
+      return {
+        ...(typeof parsed.node === 'string' && parsed.node.trim() ? { node: parsed.node.trim() } : {}),
+        ...(typeof parsed.rustBinary === 'string' && parsed.rustBinary.trim() ? { rustBinary: parsed.rustBinary.trim() } : {}),
+      }
+    } catch { return null }
+  }
+
+  private async nodeForManifest(manifest: { readonly node?: string } | null): Promise<string> {
+    if (!manifest?.node) return this.node
+    if (await this.currentNodeSatisfies(manifest.node)) return this.node
+    return (await this.resolveCompatibleNode(manifest.node)) ?? this.node
+  }
+
   private async install(request: HostUpdateRequest, context: HostUpdateContext): Promise<HostUpdateAnswer> {
     const version = this.newer(request.version)
     // The archive is the one this host's own download names, for its own system: a client chooses no file.
@@ -220,15 +435,29 @@ export class HostSelfUpdate {
     if (!this.take('install')) return busy()
     // Unpacking carries on when the client's socket closes, as it does over SSH: it is never stopped partway.
     try {
-      const result = await this.script(this.configuration({ op: 'update-install', version, file: request.file, sha256: request.sha256 }), context.onStep, HOST_UPDATE_INSTALL_BUDGET_MS)
-      return installResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
+      const configuration = this.configuration({ op: 'update-install', version, file: request.file, sha256: request.sha256,
+        ...(request.useRustHost !== undefined ? { useRustHost: request.useRustHost } : {}) })
+      const result = await this.script(configuration, context.onStep, HOST_UPDATE_INSTALL_BUDGET_MS)
+      const parsed = installResult.safeParse(result).data ?? { type: 'error' as const, reason: 'update-failed' }
+      if (parsed.type === 'error' && parsed.reason === 'node-unsupported' && parsed.range) {
+        const compatible = await this.resolveCompatibleNode(parsed.range)
+        if (compatible && compatible !== this.node) {
+          const retried = await this.script(configuration, context.onStep, HOST_UPDATE_INSTALL_BUDGET_MS, undefined, compatible)
+          return installResult.safeParse(retried).data ?? { type: 'error', reason: 'update-failed' }
+        }
+      }
+      return parsed
     } finally { this.running = null }
   }
 
   private async restart(request: HostUpdateRequest, context: HostUpdateContext): Promise<HostUpdateAnswer> {
     const version = this.newer(request.version)
     if (!version) return invalid()
-    try { await access(join(this.installation.installPath, 'versions', version, 'host', 'index.js')) } catch { return { type: 'error', reason: 'update-missing' } }
+    const versionDir = join(this.installation.installPath, 'versions', version)
+    const rustBinName = (this.options.platform ?? process.platform) === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+    const hasEntry = await access(join(versionDir, 'host', 'index.js')).then(() => true, () => false)
+      || (request.useRustHost === true && await access(join(versionDir, 'host', rustBinName)).then(() => true, () => false))
+    if (!hasEntry) return { type: 'error', reason: 'update-missing' }
     if (!this.take('restart')) return busy()
     try {
       // A restart this host already answered for may still be stopping it: its status says restarting and its process is
@@ -240,10 +469,16 @@ export class HostSelfUpdate {
       // its own, so an earlier restart this host gave up on can never take this one's.
       await rm(this.statusPath, { force: true })
       await this.forgetOldAttempts()
+      const manifest = await this.readVersionManifest(versionDir)
+      const node = await this.nodeForManifest(manifest)
+      const useRustHost = request.useRustHost === true
+        ? (manifest?.rustBinary === `host/${rustBinName}` ? true : undefined)
+        : request.useRustHost
       const attempt = randomBytes(8).toString('hex')
-      const configuration = this.configuration({ op: 'update-restart', version, resultFile: this.statusPath, attempt, answerWaitMs: HOST_UPDATE_ANSWER_WAIT_MS })
+      const configuration = this.configuration({ op: 'update-restart', version, resultFile: this.statusPath, attempt, answerWaitMs: HOST_UPDATE_ANSWER_WAIT_MS,
+        ...(useRustHost !== undefined ? { useRustHost } : {}) })
       const unit = await (this.options.runByUnit ?? (() => runByBootUnit(this.options.platform)))()
-      const ended = unit ? (await this.restartInUnit(configuration)).ended : this.restartDetached(configuration)
+      const ended = unit ? (await this.restartInUnit(configuration, node)).ended : this.restartDetached(configuration, node)
       const answer = await this.awaitRestart(version, attempt, ended)
       if (answer.type === 'update-restarting') this.answering = hostUpdateAttemptFile(this.statusPath, attempt, 'answered')
       return answer
@@ -274,8 +509,8 @@ export class HostSelfUpdate {
   }
 
   /** The restart in its own session, which outlives this host: setsid on Linux and macOS, its own process group on Windows. */
-  private restartDetached(configuration: string): Promise<void> {
-    const child = this.spawn(this.node, ['--input-type=commonjs', '-', configuration], { detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, env: this.env })
+  private restartDetached(configuration: string, node: string): Promise<void> {
+    const child = this.spawn(node, ['--input-type=commonjs', '-', configuration], { detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, env: this.env })
     const ended = new Promise<void>(done => { child.once('exit', () => done()); child.once('error', () => done()) })
     child.stdin?.on('error', () => undefined)
     child.stdin?.end(LAUNCH_SCRIPT_SOURCE)
@@ -289,12 +524,12 @@ export class HostSelfUpdate {
    * kills everything in that unit's cgroup, a detached process included (`KillMode=mixed`). The script goes in the data
    * folder, which is this account's own; it holds nothing secret.
    */
-  private async restartInUnit(configuration: string): Promise<{ readonly ended: Promise<void> }> {
+  private async restartInUnit(configuration: string, node: string): Promise<{ readonly ended: Promise<void> }> {
     const script = join(resolve(this.options.dataDirectory), 'host-update-restart.cjs')
     await writeFile(script, LAUNCH_SCRIPT_SOURCE, { mode: 0o600 })
     const env = { ...this.env }
     if (!env.XDG_RUNTIME_DIR && typeof process.getuid === 'function') env.XDG_RUNTIME_DIR = '/run/user/' + process.getuid()
-    const args = transientRestartCommand({ node: this.node, script, configuration, env, unit: 'sotto-host-update-' + randomUUID().slice(0, 8) })
+    const args = transientRestartCommand({ node, script, configuration, env, unit: 'sotto-host-update-' + randomUUID().slice(0, 8) })
     const child: ChildProcess = this.spawn('systemd-run', args, { stdio: 'ignore', windowsHide: true, env })
     const code = await new Promise<number | null>(done => {
       const timer = setTimeout(() => { child.kill('SIGKILL'); done(null) }, 15_000)
@@ -361,8 +596,8 @@ export class HostSelfUpdate {
    * Runs one launch script operation as a child of this host, the way the probe runs it over SSH: the source on stdin and
    * the configuration as its last argument. Each `update-step` line is told as it comes; the answer is the last result.
    */
-  private script(configuration: string, onStep: (step: HostUpdateStep) => void, budgetMs: number, signal?: AbortSignal): Promise<unknown> {
-    const child = this.spawn(this.node, ['--input-type=commonjs', '-', configuration], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: this.env })
+  private script(configuration: string, onStep: (step: HostUpdateStep) => void, budgetMs: number, signal?: AbortSignal, node: string = this.node): Promise<unknown> {
+    const child = this.spawn(node, ['--input-type=commonjs', '-', configuration], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: this.env })
     child.stdin?.on('error', () => undefined)
     child.stdin?.end(LAUNCH_SCRIPT_SOURCE)
     let buffer = '', size = 0, result: unknown

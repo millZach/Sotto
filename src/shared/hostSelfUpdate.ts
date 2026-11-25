@@ -19,6 +19,8 @@ export interface HostUpdateRequest {
   readonly version?: string | undefined
   readonly file?: string | undefined
   readonly sha256?: string | undefined
+  /** Desktop preference for running the native Rust `sotto-host` binary when bundled (`rust-remote-host`, ADR-0214). */
+  readonly useRustHost?: boolean | undefined
 }
 /** The largest status file the host reads: a few small fields, so anything larger is not one it wrote. */
 export const HOST_UPDATE_STATUS_LIMIT_BYTES = 4096

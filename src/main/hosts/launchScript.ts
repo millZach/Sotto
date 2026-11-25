@@ -207,6 +207,14 @@ const rustHostEntry = async () => {
   const candidate = await rustHostCandidate();
   return (await rustHostRunnable(candidate)) ? candidate : null;
 };
+const expectedRustBinary = 'host/' + rustBinName;
+const manifestHasVerifiedRustBinary = async (directory, manifest) => {
+  let parsed = manifest;
+  if (!parsed) {
+    try { parsed = JSON.parse(await fs.readFile(path.join(directory, 'runtime-manifest.json'), 'utf8')); } catch { return false; }
+  }
+  return !!parsed && parsed.rustBinary === expectedRustBinary && (await rustHostRunnable(path.join(directory, 'host', rustBinName)));
+};
 const readLegacyLauncher = async () => {
   try { const value = JSON.parse(await fs.readFile(legacyLauncherPath, 'utf8')); return value && value.v === 1 && Number.isInteger(value.pid) ? value : null; }
   catch { return null; }
@@ -294,7 +302,9 @@ const stopTimedOutChild = async child => {
   while (Date.now() < killDeadline && (await lockHolder()) !== null) await pause(50);
 };
 const spawnDetachedHost = async (command, args, env, deadline) => {
-  const child = spawn(command, args, { detached: true, stdio: 'ignore', env });
+  let child;
+  try { child = spawn(command, args, { detached: true, stdio: 'ignore', env }); }
+  catch { return { failed: true }; }
   child.unref();
   let childFailed = false; child.on('error', () => { childFailed = true; });
   while (Date.now() < deadline) {
@@ -849,7 +859,9 @@ const installUpdate = async () => {
   try { manifest = JSON.parse(await fs.readFile(path.join(partial, 'runtime-manifest.json'), 'utf8')); } catch {}
   // The archive is the release it was asked for, and has a host in it.
   if (release.version !== version || manifest.sottoVersion !== version || !(await exists(path.join(partial, 'host', 'index.js')))) throw new Error(await discard('archive-invalid'));
-  if (typeof manifest.node === 'string' && !satisfies(process.versions.node, manifest.node)) {
+  // Skip manifest.node enforcement only when this install will run the verified Rust sotto-host binary.
+  const willRunRust = (await wantsRustHost()) && (await manifestHasVerifiedRustBinary(partial, manifest));
+  if (!willRunRust && typeof manifest.node === 'string' && !satisfies(process.versions.node, manifest.node)) {
     await discard('node-unsupported');
     return { type: 'error', reason: 'node-unsupported', range: manifest.node.slice(0, 64), node: process.versions.node };
   }
@@ -900,11 +912,14 @@ const startOrRollBack = async undo => {
 };
 const restartForUpdate = async () => {
   const version = updateVersion();
-  const hasRust = (await wantsRustHost()) && (await exists(rustEntryOf(version)));
+  const versionDir = path.join(versionsPath, version);
+  const versionHasRust = await manifestHasVerifiedRustBinary(versionDir);
+  const hasRust = (await wantsRustHost()) && versionHasRust;
   if (!hasRust && !(await exists(entryOf(version)))) throw new Error('update-missing');
   const current = await discover().catch(() => null);
   if (!current || current.hostId !== cfg.hostId || !(await sottoStarted(current))) return { type: 'error', reason: 'update-not-owned' };
   const previous = await currentVersion();
+  const hadRustMarker = await exists(rustMarkerPath);
   // The checks have passed. A host that asked over its socket stops waiting here: from now on the restart goes ahead, unless
   // that host gave up first, when nothing has been touched (ADR-0088).
   if (!(await claim({ state: 'restarting', pid: process.pid }))) return { type: 'error', reason: 'restart-not-sent' };
@@ -913,8 +928,19 @@ const restartForUpdate = async () => {
   await writePointer(version);
   // A host the unit runs is stopped through it, and start() below has the unit start the new version (ADR-0054).
   if (!(await stopRunning(current.pid))) { await writePointer(previous); return { type: 'error', reason: 'update-stop-failed' }; }
+  // Sync use-rust-host on opt-in only when the target version carries a verified Rust binary; restore the prior marker on rollback.
+  const requestedRust = cfg.useRustHost;
+  if (requestedRust === true && !versionHasRust) delete cfg.useRustHost;
+  const restorePrevious = async () => {
+    await writePointer(previous);
+    if (requestedRust !== undefined) {
+      cfg.useRustHost = hadRustMarker;
+      if (hadRustMarker && (await exists(install))) await writeAtomically(rustMarkerPath, '1\n');
+      else if (!hadRustMarker) await fs.rm(rustMarkerPath, { force: true }).catch(() => undefined);
+    }
+  };
   // The new version did not start: point back at the old one and start it again, whatever the pointer's write says.
-  const outcome = await startOrRollBack(() => writePointer(previous));
+  const outcome = await startOrRollBack(restorePrevious);
   if (!outcome.ready) return { type: 'error', reason: 'update-start-failed', restarted: outcome.restarted, cause: outcome.cause };
   await prune([version, previous]);
   return outcome.ready;
@@ -1152,14 +1178,14 @@ export type LaunchOperation =
   /** Take `size` bytes of `file` on stdin, through the receive script. */
   | { readonly op: 'update-receive'; readonly file: string; readonly size: number }
   /** Check `file` against `sha256` and unpack it beside the version running. */
-  | { readonly op: 'update-install'; readonly version: string; readonly file: string; readonly sha256: string }
+  | { readonly op: 'update-install'; readonly version: string; readonly file: string; readonly sha256: string; readonly useRustHost?: boolean }
   /**
    * Start `version` in place of the running host, or start the running one again when it does not start. `resultFile`, a
    * file in the data folder, and `attempt` are only for a host that updates itself over its socket (ADR-0088): the restart
    * claims the attempt once its checks pass and writes how it stands in `resultFile`, since the host that asked is the one it
    * stops. It then waits up to `answerWaitMs` for the host to say it has answered its desktop, before it stops the host.
    */
-  | { readonly op: 'update-restart'; readonly hostId: string; readonly version: string; readonly resultFile?: string; readonly attempt?: string; readonly answerWaitMs?: number }
+  | { readonly op: 'update-restart'; readonly hostId: string; readonly version: string; readonly resultFile?: string; readonly attempt?: string; readonly answerWaitMs?: number; readonly useRustHost?: boolean }
   /** What start at boot looks like on the host (ADR-0054). */
   | { readonly op: 'boot-status' }
   /** Turn on linger, install and enable the boot unit, and hand the running host over to it when Sotto started it. */

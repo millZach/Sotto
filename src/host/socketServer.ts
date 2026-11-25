@@ -2568,7 +2568,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!hostUpdate || !features.includes('host-update') || !peer.ready) throw new Refusal('invalid_request')
         if (!mayUpdate(peer)) throw new Refusal('forbidden')
         try {
-          return await hostUpdate.run({ action: request.action, version: request.version, file: request.file, sha256: request.sha256 }, { owner: peer, gone: peer.gone.signal,
+          return await hostUpdate.run({ action: request.action, version: request.version, file: request.file, sha256: request.sha256,
+            ...(request.useRustHost !== undefined ? { useRustHost: request.useRustHost } : {}) }, { owner: peer, gone: peer.gone.signal,
             onStep: next => { if (peer.hostUpdate && !peer.frames.isClosed && authenticated(peer)) push(peer, { v: 1, event: 'host-update-step', step: next }) } })
         } catch { throw new Refusal('unavailable') }
       }

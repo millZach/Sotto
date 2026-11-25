@@ -13,7 +13,8 @@ export function tarGz(files: Readonly<Record<string, string | Uint8Array>>): Buf
     const field = (value: string, offset: number, length: number): void => { header.write(value, offset, length, 'ascii') }
     const octal = (value: number, offset: number, length: number): void => field(value.toString(8).padStart(length - 1, '0') + '\0', offset, length)
     field(name, 0, 100)
-    octal(0o644, 100, 8); octal(0, 108, 8); octal(0, 116, 8); octal(body.length, 124, 12); octal(Math.floor(Date.now() / 1000), 136, 12)
+    const mode = name === 'host/sotto-host' || name === 'host/sotto-host.exe' ? 0o755 : 0o644
+    octal(mode, 100, 8); octal(0, 108, 8); octal(0, 116, 8); octal(body.length, 124, 12); octal(Math.floor(Date.now() / 1000), 136, 12)
     header.fill(' ', 148, 156)
     field('0', 156, 1)
     field('ustar\0', 257, 6); field('00', 263, 2)
@@ -36,10 +37,33 @@ export const localArchiveName = (version: string): string => `Sotto-host-${versi
  * The files of a host release: its package.json and runtime manifest, and `host/index.js` from the given source, an ES
  * module unless it says it is CommonJS, as a bundle built for Node is.
  */
-export function hostRelease(version: string, entry: string, options: { readonly nodeRange?: string; readonly commonjs?: boolean } = {}): Record<string, string> {
+export function hostRelease(version: string, entry: string, options?: {
+  readonly nodeRange?: string
+  readonly commonjs?: boolean
+  readonly rustBinary?: string
+  readonly manifestRustBinary?: string
+}): Record<string, string>
+export function hostRelease(version: string, entry: string, options: {
+  readonly nodeRange?: string
+  readonly commonjs?: boolean
+  readonly rustBinary: string | Uint8Array
+  readonly manifestRustBinary?: string
+}): Record<string, string | Uint8Array>
+export function hostRelease(version: string, entry: string, options: {
+  readonly nodeRange?: string
+  readonly commonjs?: boolean
+  readonly rustBinary?: string | Uint8Array
+  readonly manifestRustBinary?: string
+} = {}): Record<string, string | Uint8Array> {
   const major = Number(process.versions.node.split('.')[0])
-  return { 'package.json': JSON.stringify({ name: 'sotto-host', version, ...(options.commonjs ? {} : { type: 'module' }) }),
-    'runtime-manifest.json': JSON.stringify({ sottoVersion: version, node: options.nodeRange ?? `>=${major} <${major + 1}` }), 'host/index.js': entry }
+  const rustBinName = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+  const rustRel = options.manifestRustBinary ?? (options.rustBinary !== undefined ? `host/${rustBinName}` : undefined)
+  return {
+    'package.json': JSON.stringify({ name: 'sotto-host', version, ...(options.commonjs ? {} : { type: 'module' }) }),
+    'runtime-manifest.json': JSON.stringify({ sottoVersion: version, node: options.nodeRange ?? `>=${major} <${major + 1}`, ...(rustRel ? { rustBinary: rustRel } : {}) }),
+    'host/index.js': entry,
+    ...(options.rustBinary !== undefined ? { [`host/${rustBinName}`]: options.rustBinary } : {}),
+  }
 }
 
 /**

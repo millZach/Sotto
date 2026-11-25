@@ -61,6 +61,13 @@ it('accepts host-update in its hello, sends the steps to the call that asked, an
   script(async (_request, context) => { context.onStep('install'); return { type: 'update-installed', version: '9.9.9' } })
   expect(await client.hostUpdate({ action: 'install', version: '9.9.9', file: 'Sotto-host-9.9.9-linux-x64.tar.gz', sha256: 'a'.repeat(64) })).toEqual({ type: 'update-installed', version: '9.9.9' })
   expect(steps).toEqual(['download', 'check'])
+  // Optional useRustHost preference crosses the host-update wire protocol when specified, and stays omitted otherwise.
+  expect(asked[1]).toEqual({ action: 'install', version: '9.9.9', file: 'Sotto-host-9.9.9-linux-x64.tar.gz', sha256: 'a'.repeat(64) })
+  expect(await client.hostUpdate({ action: 'install', version: '9.9.9', file: 'Sotto-host-9.9.9-linux-x64.tar.gz', sha256: 'a'.repeat(64), useRustHost: true })).toEqual({ type: 'update-installed', version: '9.9.9' })
+  expect(asked[2]).toEqual({ action: 'install', version: '9.9.9', file: 'Sotto-host-9.9.9-linux-x64.tar.gz', sha256: 'a'.repeat(64), useRustHost: true })
+  script(async () => ({ type: 'update-restarting', version: '9.9.9' }))
+  expect(await client.hostUpdate({ action: 'restart', version: '9.9.9', useRustHost: true })).toEqual({ type: 'update-restarting', version: '9.9.9' })
+  expect(asked[3]).toEqual({ action: 'restart', version: '9.9.9', file: undefined, sha256: undefined, useRustHost: true })
 })
 
 it('sends nothing to a host that does not offer it, or to a desktop it does not offer it to', async () => {

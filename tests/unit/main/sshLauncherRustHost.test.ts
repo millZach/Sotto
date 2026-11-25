@@ -128,12 +128,18 @@ describe('SshHostLauncher Rust host opt-in (ADR-0214)', () => {
 
     const rustBootRemove = JSON.parse(launchConfiguration(config, { op: 'boot-remove', restart: true, useRustHost: true }, 30_000)) as Record<string, unknown>
     expect(rustBootRemove.useRustHost).toBe(true)
+
+    const rustInstall = JSON.parse(launchConfiguration(config, { op: 'update-install', version: '1.2.4', file: 'Sotto-host-1.2.4-linux-x64.tar.gz', sha256: 'a'.repeat(64), useRustHost: true }, 30_000)) as Record<string, unknown>
+    expect(rustInstall.useRustHost).toBe(true)
+
+    const rustRestart = JSON.parse(launchConfiguration(config, { op: 'update-restart', hostId: 'h1', version: '1.2.4', useRustHost: true }, 30_000)) as Record<string, unknown>
+    expect(rustRestart.useRustHost).toBe(true)
   })
 
   it.each([
     { label: 'omits useRustHost by default', useRustHost: undefined, expected: undefined },
     { label: 'forwards useRustHost: true when enabled', useRustHost: true, expected: true },
-  ])('$label across launch, boot-install, and boot-remove', async ({ useRustHost, expected }) => {
+  ])('$label across launch, boot-install, boot-remove, update-install, and update-restart', async ({ useRustHost, expected }) => {
     vi.spyOn(AskpassBroker, 'start').mockResolvedValue({
       environment: () => ({}),
       forget: () => undefined,
@@ -179,6 +185,10 @@ describe('SshHostLauncher Rust host opt-in (ADR-0214)', () => {
           stdout.write(`${JSON.stringify({ type: 'boot-installed', installed: true, stopped: false, bootStart: bootOk })}\n`)
         } else if (op?.op === 'boot-remove') {
           stdout.write(`${JSON.stringify({ type: 'boot-removed', stopped: false, bootStart: { ...bootOk, installed: false, enabled: false, active: false } })}\n`)
+        } else if (op?.op === 'update-install') {
+          stdout.write(`${JSON.stringify({ type: 'update-installed', version: '1.2.4' })}\n`)
+        } else if (op?.op === 'update-restart') {
+          stdout.write(`${JSON.stringify({ type: 'ready', v: 1, status: 'ready', hostId: HOST_ID, pid: HOST_PID, port: REMOTE_PORT, owned: true })}\n`)
         }
         finish(0)
       })
@@ -193,9 +203,11 @@ describe('SshHostLauncher Rust host opt-in (ADR-0214)', () => {
     const connection = await launcher.connect(config)
     await connection.boot({ op: 'boot-install' })
     await connection.boot({ op: 'boot-remove', restart: true })
+    await connection.updateHost({ op: 'update-install', version: '1.2.4', file: 'Sotto-host-1.2.4-linux-x64.tar.gz', sha256: 'a'.repeat(64) })
+    await connection.updateHost({ op: 'update-restart', version: '1.2.4' })
     await connection.close()
 
-    expect(recordedOps.map(op => op.op)).toEqual(['launch', 'boot-install', 'boot-remove'])
+    expect(recordedOps.map(op => op.op)).toEqual(['launch', 'boot-install', 'boot-remove', 'update-install', 'update-restart'])
     for (const op of recordedOps) {
       expect(op.useRustHost).toBe(expected)
     }

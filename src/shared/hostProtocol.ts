@@ -863,7 +863,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('thread-words'), query: z.string().trim().min(1).max(THREAD_WORDS_QUERY) }).strict(),
   /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0088). */
   z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
-    file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
+    file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional(), useRustHost: z.boolean().optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
   z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(usageProviderIdSchema.options.length).optional(),
     background: z.literal(true).optional() }).strict(),
