@@ -67,6 +67,8 @@ const aliasSchema = z.object({
 })
 type Alias = z.infer<typeof aliasSchema>
 const aliasStoreSchema = z.record(z.string(), aliasSchema)
+/** Reads `hermes-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseHermesThreadStore = aliasStoreSchema.parse
 const projectStoreSchema = z.array(agentProjectSchema)
 const ANSWERED_KEPT = 128
 /** A thread's saved origins and answered requests, indexed from its record once, the way Cursor's are. */
@@ -252,7 +254,7 @@ export class HermesAcpHost implements ProviderHost {
   constructor(private readonly userDataDirectory: string, private readonly options: HermesAcpOptions = {}) {
     this.homeDirectory = options.homeDirectory ?? join(userDataDirectory, 'hermes')
     this.runtime = new HermesRuntime(this.homeDirectory, () => this.disconnect(), options.environment)
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'hermes-threads.json'), aliasStoreSchema.parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'hermes-threads.json'), parseHermesThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'hermes-projects.json'), projectStoreSchema.parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs === undefined ? {} : { sweepEveryMs: options.reaperSweepMs }),

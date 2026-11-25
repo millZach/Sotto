@@ -109,6 +109,8 @@ const THREAD_PROCESS_LOST = 'Grok Build stopped before this reply finished, so i
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]), endedTurn: z.object({ id: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
+/** Reads `grok-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseGrokThreadStore = preserveLegacyAliases(z.record(z.string(), aliasSchema).parse)
 const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional(), default: z.boolean().optional() })).optional() }).optional() })).min(1) })
 const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabilities: z.object({ loadSession: z.literal(true), mcpCapabilities: z.object({ http: z.boolean().optional() }).optional() }), authMethods: z.array(z.object({ id: z.string() })), _meta: z.object({ agentVersion: z.string().min(1).max(64), modelState: catalogSchema }) })
 type GrokClient = z.infer<typeof initializeSchema>
@@ -438,7 +440,7 @@ export class GrokAcpHost implements ProviderHost {
         return read
       }
     }
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), parseGrokThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'grok-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),

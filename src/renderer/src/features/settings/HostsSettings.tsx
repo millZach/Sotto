@@ -21,6 +21,7 @@ import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismis
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { HostBootDialog, HostBootResult, bootMenuLabel, bootStartOn, canChangeBoot } from './HostBootStart'
+import { HostRuntimeChoice } from './HostRuntimeChoice'
 import type { HostBootState } from '../../../../shared/bootStart'
 import type { AgentClientHost, AgentProviderStatus } from '../../../../shared/agents'
 import './hosts.css'
@@ -159,6 +160,7 @@ function HostRow({ host, onCommand, onAction, onOpenPhones, phones, providers, c
       <h4>{host.name}</h4>
       <p className="hosts-row__meta">{line.connection ? <><span className="hosts-row__via" data-via={line.via ?? undefined}>{line.connection}</span> · </> : ''}<span data-phase={host.phase}>{waitingForAnswer ? t`Waiting for your answer` : line.status}</span>{line.note ? ` · ${line.note}` : ''}{shown ? ` · ${connectedProvidersLabel(shown)}` : ''}{phonesLabel ? ` · ${phonesLabel}` : ''}{booting ? ` · ${booting}` : ''}</p>
       {line.note && host.tailnetNote ? <TailnetRowNote name={host.name} note={host.tailnetNote} /> : null}
+      <HostRuntimeChoice host={host} onCommand={onCommand} />
       {host.error ? <p className="hosts-row__error" role="alert">{host.error}</p> : null}
     </div>
     <div className="hosts-row__actions">

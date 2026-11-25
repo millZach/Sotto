@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -22,7 +21,7 @@ use crate::provider::{
 };
 use crate::stores::StoredMessage;
 use crate::workspace::{
-    now_iso, provider_label, public_provider_entity_id, write_atomic_json, AgentCapabilities,
+    now_iso, provider_label, public_provider_entity_id, AgentCapabilities,
     AgentModel, AgentProviderStatus, ClientUpdateRow,
 };
 
@@ -450,14 +449,44 @@ impl AcpProcess {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct AcpThreadRecord {
+#[derive(Debug, Clone)]
+pub(crate) struct AcpThreadRecord {
     session_id: String,
     cwd: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     model_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<String>,
+    /// The whole record as Node wrote it (`projectId`, `title`, `createdAt`, `origins` and the rest), which a save
+    /// writes back with the fields above set, so a rollback to Node finds its record whole (ADR-0214).
+    extra: Map<String, Value>,
+}
+
+impl AcpThreadRecord {
+    /// A record as Node's `*-threads.json` holds it, under this provider's own session ID field; none without one.
+    pub(crate) fn parse(flavor: AcpFlavor, value: &Value) -> Option<Self> {
+        let obj = value.as_object()?;
+        let session_id = obj.get(flavor.session_id_field())?.as_str()?.to_string();
+        let text = |key: &str| obj.get(key).and_then(Value::as_str).map(ToString::to_string);
+        Some(Self {
+            session_id,
+            cwd: text("cwd").unwrap_or_default(),
+            model_id: text("modelId"),
+            reasoning_effort: text("reasoningEffort"),
+            extra: obj.clone(),
+        })
+    }
+
+    pub(crate) fn encode(&self, flavor: AcpFlavor) -> Value {
+        let mut entry = self.extra.clone();
+        entry.insert(flavor.session_id_field().into(), Value::String(self.session_id.clone()));
+        entry.insert("cwd".into(), Value::String(self.cwd.clone()));
+        if let Some(model_id) = &self.model_id {
+            entry.insert("modelId".into(), Value::String(model_id.clone()));
+        }
+        if let Some(effort) = &self.reasoning_effort {
+            entry.insert("reasoningEffort".into(), Value::String(effort.clone()));
+        }
+        Value::Object(entry)
+    }
 }
 
 struct AcpStreamingMessage {
@@ -521,16 +550,9 @@ impl AcpSharedState {
 
     fn save_records(&self) {
         let records = self.records.lock().unwrap().clone();
-        let field = self.flavor.session_id_field();
-        let mut out = Map::new();
-        for (sotto_id, rec) in records {
-            let mut entry = Map::new();
-            entry.insert(field.into(), Value::String(rec.session_id));
-            entry.insert("cwd".into(), Value::String(rec.cwd));
-            out.insert(sotto_id, Value::Object(entry));
-        }
-        let path = self.data_directory.join(self.flavor.threads_file());
-        let _ = write_atomic_json(&path, &Value::Object(out));
+        let flavor = self.flavor;
+        let path = self.data_directory.join(flavor.threads_file());
+        crate::providers::save_thread_records(&path, &records, |value| AcpThreadRecord::parse(flavor, value), |record| record.encode(flavor));
     }
 
     fn resolve_sotto_thread(&self, native_session_id: &str) -> Option<String> {
@@ -1093,6 +1115,8 @@ impl ProviderAdapter for AcpAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| format!("{} session/new returned no sessionId.", flavor.name()))?
                         .to_string();
+                    // A record this thread already had keeps the fields it carries for Node.
+                    let kept = self.shared.records.lock().unwrap().get(&req.thread_id).map(|r| r.extra.clone()).unwrap_or_default();
                     self.shared.records.lock().unwrap().insert(
                         req.thread_id.clone(),
                         AcpThreadRecord {
@@ -1100,6 +1124,7 @@ impl ProviderAdapter for AcpAdapter {
                             cwd: req.cwd.clone(),
                             model_id: None,
                             reasoning_effort: None,
+                            extra: kept,
                         },
                     );
                     self.shared
@@ -1369,40 +1394,7 @@ fn acp_activity_id(provider: &str, native_sid: &str, key: &str) -> String {
 }
 
 fn load_acp_records(data_directory: &Path, flavor: AcpFlavor) -> HashMap<String, AcpThreadRecord> {
-    let path = data_directory.join(flavor.threads_file());
-    let Ok(raw) = fs::read_to_string(path) else {
-        return HashMap::new();
-    };
-    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&raw) else {
-        return HashMap::new();
-    };
-    let field = flavor.session_id_field();
-    let mut out = HashMap::new();
-    for (sotto_id, val) in map {
-        if let Some(sid) = val.get(field).and_then(Value::as_str) {
-            let cwd = val
-                .get("cwd")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            out.insert(
-                sotto_id,
-                AcpThreadRecord {
-                    session_id: sid.to_string(),
-                    cwd,
-                    model_id: val
-                        .get("modelId")
-                        .and_then(Value::as_str)
-                        .map(ToString::to_string),
-                    reasoning_effort: val
-                        .get("reasoningEffort")
-                        .and_then(Value::as_str)
-                        .map(ToString::to_string),
-                },
-            );
-        }
-    }
-    out
+    crate::providers::load_thread_records(&data_directory.join(flavor.threads_file()), |value| AcpThreadRecord::parse(flavor, value))
 }
 
 fn extract_grok_models(init: &Value) -> Vec<AgentModel> {

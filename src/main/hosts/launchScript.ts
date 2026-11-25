@@ -320,12 +320,39 @@ const spawnDetachedHost = async (command, args, env, deadline) => {
   await stopTimedOutChild(child);
   return { timedOut: true };
 };
+// Which program a running host is (ADR-0214): its executable's name on Linux, or what ps names it elsewhere. Undefined
+// when neither says, as on Windows, and then nothing is restarted for it.
+const runtimeOf = async pid => {
+  let name;
+  if (process.platform === 'linux') { try { name = path.basename(await fs.readlink('/proc/' + pid + '/exe')); } catch {} }
+  if (name === undefined && process.platform !== 'win32') {
+    name = await new Promise(resolve => execFile('ps', ['-o', 'comm=', '-p', String(pid)], { timeout: 5000 }, (error, stdout) => resolve(error ? undefined : path.basename(String(stdout).trim()))));
+  }
+  if (!name) return undefined;
+  if (name.startsWith('sotto-host')) return 'rust';
+  if (name.startsWith('node')) return 'node';
+  return undefined;
+};
+// A launch that names the program, as an Owl desktop's per-host choice does (ADR-0214), stops a host Sotto started as a
+// detached process when it runs the other one, so the start below runs the one chosen; startByUnit does the same for the
+// unit. A launch that names none, as stable's, leaves the running host as it is. Rust is not forced over a Node host when
+// no runnable Rust binary is installed, since the start would run Node again.
+const stopsForRuntime = async (found, useRust) => {
+  if (typeof cfg.useRustHost !== 'boolean' || !found.owned) return false;
+  const now = await runtimeOf(found.pid);
+  if (now === undefined || now === (useRust ? 'rust' : 'node')) return false;
+  if (useRust && (await rustHostEntry()) === null) return false;
+  if (!(await stopRunning(found.pid))) throw new Error('host-busy');
+  const legacy = await readLegacyLauncher();
+  if (legacy && legacy.pid === found.pid) await fs.rm(legacyLauncherPath, { force: true }).catch(() => undefined);
+  return true;
+};
 // Finds the running host, or starts the one the installation folder names as a detached process, and answers once it listens.
 const startDetached = async () => {
   const useRust = await wantsRustHost();
   await syncRustHostMarker(useRust);
   const found = await running();
-  if (found) return found;
+  if (found && !(await stopsForRuntime(found, useRust))) return found;
   const rustBin = await rustHostEntry();
   const nodeEntry = await hostEntry();
   const hasNode = await exists(nodeEntry);
@@ -547,8 +574,11 @@ const launch = async () => {
   // A found host reports start at boot as a started one does, and counts as Sotto's when this installation's unit runs it.
   const ready = found ? { type: 'ready', ...found, owned: await sottoStarted(found), bootStart: await bootStatus(await unitProperties()) } : await start();
   const token = await adminToken(ready);
+  // Only a launch that names a program, an Owl desktop's, asks which one runs.
+  const runtime = typeof cfg.useRustHost === 'boolean' ? await runtimeOf(ready.pid) : undefined;
   // The system names the host archive an update downloads, as archiveName does, so Sotto can ask for it before an update.
-  return finish({ ...ready, node: process.execPath, system: process.platform + '-' + process.arch, ...(token ? { adminToken: token } : {}) });
+  // The runtime is the program the host runs, Node or Rust, for the row's host program control (ADR-0214).
+  return finish({ ...ready, node: process.execPath, system: process.platform + '-' + process.arch, ...(token ? { adminToken: token } : {}), ...(runtime ? { runtime } : {}) });
 };
 const admin = async () => {
   const current = await discover().catch(() => null);
@@ -1168,7 +1198,7 @@ export type LaunchOperation =
    * Find or start the host. `start: false` only finds one, for an admin connection, and starts nothing. `removeBoot`, for
    * Forget, also takes this installation's boot unit away when no host runs (ADR-0054).
    */
-  | { readonly op: 'launch'; readonly start?: false; readonly removeBoot?: true; readonly useRustHost?: true }
+  | { readonly op: 'launch'; readonly start?: false; readonly removeBoot?: true; readonly useRustHost?: boolean }
   | { readonly op: 'pairing-code'; readonly hostId: string }
   | { readonly op: 'desktop-answers'; readonly hostId: string; readonly clientId: string; readonly desktopHostId?: string }
   | { readonly op: 'revoke-client'; readonly hostId: string; readonly clientId: string }
@@ -1189,9 +1219,9 @@ export type LaunchOperation =
   /** What start at boot looks like on the host (ADR-0054). */
   | { readonly op: 'boot-status' }
   /** Turn on linger, install and enable the boot unit, and hand the running host over to it when Sotto started it. */
-  | { readonly op: 'boot-install'; readonly hostId: string; readonly useRustHost?: true }
+  | { readonly op: 'boot-install'; readonly hostId: string; readonly useRustHost?: boolean }
   /** Disable and remove the boot unit; `restart` starts the host again as a launch does, for a host that is switched on. */
-  | { readonly op: 'boot-remove'; readonly restart: boolean; readonly useRustHost?: true }
+  | { readonly op: 'boot-remove'; readonly restart: boolean; readonly useRustHost?: boolean }
 
 /** The configuration the launch script reads from its argument. It carries paths, IDs and a release URL, never a secret. */
 export function launchConfiguration(configuration: ValidatedSshHostConfiguration, operation: LaunchOperation, readyTimeoutMs: number): string {

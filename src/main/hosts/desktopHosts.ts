@@ -5,7 +5,7 @@ import { msg, t } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 import { z } from 'zod'
-import { remoteHostSchema, type HostAddTailnet, type HostForgotten, type HostForgottenCause, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostSetupStep, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../shared/hosts'
+import { HOST_RUNTIMES, remoteHostSchema, type HostRuntime, type HostAddTailnet, type HostForgotten, type HostForgottenCause, type HostPhonesView, type HostSetupChoice, type HostSetupState, type HostSetupStep, type HostsCommand, type HostsState, type HostStatus, type RemoteHost } from '../../shared/hosts'
 import type { HostPhonesCommand } from '../../shared/phones'
 import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -48,6 +48,8 @@ const savedHostSchema = remoteHostSchema.extend({
   clientId: z.string().optional(),
   /** Client IDs this desktop previously held on this host before re-pairing, so cross-machine links still resolve (#2863). */
   previousClientIds: z.array(z.string().min(1).max(512)).max(PREVIOUS_CLIENT_IDS_MAX).optional(),
+  /** The host program the owner chose on the row (ADR-0214). Absent means Node; kept whole when the Owl feature is off. */
+  runtime: z.enum(HOST_RUNTIMES).optional(),
 })
 type SavedHost = z.infer<typeof savedHostSchema>
 function rememberPreviousClientId(host: SavedHost, nextClientId: string): void {
@@ -99,7 +101,7 @@ const UNTOUCHED_RESTARTS: ReadonlySet<string> = new Set(['update-not-owned', 'up
 /** The launch script's answers to a start at boot change that it gave before stopping anything, so the host runs as it did. */
 const UNTOUCHED_BOOT_CHANGES: ReadonlySet<string> = new Set(['boot-unit-taken', 'boot-install-failed', 'boot-stop-failed', 'update-busy', 'archive-missing'])
 /** The commands that act on one saved host's connection, which wait while that host is being updated or its start at boot changes. */
-const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'set-connection', 'connect', 'disconnect', 'stop-host', 'forget'])
+const CONNECTION_COMMANDS: ReadonlySet<HostsCommand['type']> = new Set<HostsCommand['type']>(['save', 'set-enabled', 'set-connection', 'set-runtime', 'connect', 'disconnect', 'stop-host', 'forget'])
 /**
  * One connect to a saved host and what it opened. `via` is the connection its socket is on: the SSH connection's forward,
  * where `ssh` is that connection while it is open, or the host's tailnet address, with no `ssh` and no launcher at all
@@ -308,9 +310,14 @@ export class DesktopHosts {
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
     /** This desktop's own persistent host ID, sent to `desktop-answers` over SSH so re-pair migration can verify identity (#2863). */
     localHostId?: () => string | undefined;
-    /** Opt into launching the native Rust `sotto-host` binary when installed on the remote host (ADR-0214). */
-    useRustHost?: boolean;
-    launcher?: () => SshHostLauncher;
+    /**
+     * The Owl feature `rust-remote-host` (ADR-0214): each saved host's row offers Node | Rust, and every launch, update and
+     * boot change names the host program chosen for that host, Node unless the owner picked Rust. Off, as on stable, a
+     * launch names none and the host keeps what it has.
+     */
+    rustHostChoice?: boolean;
+    /** A stand-in launcher, told the host program to name as the app's own would be (`runsRust`). */
+    launcher?: (useRustHost?: boolean) => SshHostLauncher;
     retryDelayMs?: (attempt: number) => number;
     /** Opens a Tailscale approval page in the default browser, on the user's press. */
     openExternal?: (url: string) => Promise<void>;
@@ -328,7 +335,7 @@ export class DesktopHosts {
     this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, heldProviders: this.heldProviders })
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
-    this.admins = new AdminConnections({ launcher: () => this.createLauncher(), report: (id, report) => this.adminSignIn(id, report),
+    this.admins = new AdminConnections({ launcher: host => this.createLauncher(this.saved.find(item => item.id === host.id)), report: (id, report) => this.adminSignIn(id, report),
       node: (id, node) => this.nodePaths.set(id, node), system: (id, system) => void this.rememberSystem(id, system), identityChanged: () => new FinalHostError(CONNECT_FAILURES.identityChanged()) })
   }
   /**
@@ -441,7 +448,7 @@ export class DesktopHosts {
     if (socket && (operation.op === 'update-fetch' || operation.op === 'update-install')) {
       // The request carries a version, and for install the archive the host's own download named. Never a releases page.
       const action: 'fetch' | 'install' = operation.op === 'update-fetch' ? 'fetch' : 'install'
-      const rustFlag = this.options.useRustHost === true ? { useRustHost: true as const } : {}
+      const rustFlag = this.rustFlag(host)
       const request: HostUpdateRequest = operation.op === 'update-fetch'
         ? { action, version: operation.version }
         : { action, version: operation.version, file: operation.file, sha256: operation.sha256, ...rustFlag }
@@ -549,7 +556,7 @@ export class DesktopHosts {
         return { restarting: true }
       }
       let answer: HostUpdateAnswer
-      const rustFlag = this.options.useRustHost === true ? { useRustHost: true as const } : {}
+      const rustFlag = this.rustFlag(host)
       try { answer = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'restart', version, ...rustFlag })) }
       catch (error) {
         const next = afterSocketMiss('restart', missOf(error), false)
@@ -676,7 +683,7 @@ export class DesktopHosts {
    * connection carries on and the threads read as they did.
    */
   private async restartOnPurpose<T>(host: SavedHost, operation: () => Promise<T>, untouched: (result: T) => boolean,
-    reconnect: () => Pick<Retry, 'since' | 'tailnetOnlyMs'> = () => ({ since: this.now() })): Promise<T> {
+    reconnect: () => Pick<Retry, 'since' | 'tailnetOnlyMs' | 'edited'> = () => ({ since: this.now() })): Promise<T> {
     const id = host.id
     // A move to the tailnet under way ends first, here or back on SSH, so the restart holds the threads of the connect that
     // has them on the page and its drop is the one restart it expects. The press itself stays on the SSH connection it began on.
@@ -795,7 +802,7 @@ export class DesktopHosts {
   /** What a row shows of a saved host: its connection, with `enabled` read as on when an older file left it out. */
   private fields(host: SavedHost): Omit<HostStatus, 'phase'> {
     const { enabled, ...fields } = hostFieldsSchema.parse(host)
-    return { ...fields, enabled: enabled !== false }
+    return { ...fields, enabled: enabled !== false, ...(this.options.rustHostChoice === true ? { runtime: host.runtime ?? 'node' } : {}) }
   }
   /** What a row and Edit connection show of how a saved host is reached (ADR-0053): the owner's choice, and the tailnet address last learned. */
   private tailnetFields(host: SavedHost): Pick<HostStatus, 'prefer' | 'tailnetAddress' | 'tailnetSeen'> {
@@ -932,6 +939,7 @@ export class DesktopHosts {
     }
     if (command.type === 'forget') return this.forget(host)
     if (command.type === 'set-connection') { await this.setConnection(host, command.prefer); return this.get() }
+    if (command.type === 'set-runtime') { await this.setRuntime(host, command.runtime); return this.get() }
     if (this.closed) return this.get()
     // Connect pressed while a retry waits is the user's attempt, not Sotto's.
     const pending = this.retries.get(host.id)
@@ -1348,7 +1356,7 @@ export class DesktopHosts {
     // Add host's own add turns the host's tailnet connections on, once it is saved; the setup's add leaves the host on SSH.
     const fromDialog = this.adding === host
     const note = miss.note
-    const launcher = this.createLauncher()
+    const launcher = this.createLauncher(host)
     const active: LiveHost = { via: 'ssh', launcher, generation: ++this.generation }
     this.live.set(host.id, active)
     this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: this.retries.has(host.id) && !this.retries.get(host.id)!.first, error: undefined,
@@ -1361,7 +1369,7 @@ export class DesktopHosts {
       if (this.live.get(host.id) !== active) { await ssh.close(); return }
       if (ssh.node) this.nodePaths.set(host.id, ssh.node)
       if (ssh.system) void this.rememberSystem(host.id, ssh.system)
-      this.update(host.id, { step: 'pair' })
+      this.update(host.id, { step: 'pair', ...(this.options.rustHostChoice === true ? { runningRuntime: ssh.runtime } : {}) })
       if (host.hostId && host.hostId !== ssh.hostId) throw new FinalHostError(CONNECT_FAILURES.identityChanged())
       const same = adding ? this.saved.find(item => item.hostId === ssh.hostId) : undefined
       if (same) throw new FinalHostError(CONNECT_FAILURES.sameHost(same.name))
@@ -1530,11 +1538,21 @@ export class DesktopHosts {
     await pending
     return this.attempt(host.id)
   }
-  private createLauncher(): SshHostLauncher {
-    return this.options.launcher?.() ?? new SshHostLauncher(this.options.useRustHost === true ? { useRustHost: true } : undefined)
+  private createLauncher(host: SavedHost | undefined): SshHostLauncher {
+    const useRustHost = this.runsRust(host)
+    return this.options.launcher?.(useRustHost) ?? new SshHostLauncher(useRustHost === undefined ? undefined : { useRustHost })
+  }
+  /** Whether a saved host is set to run the Rust host (ADR-0214): undefined where this desktop offers no choice, as stable. */
+  private runsRust(host: SavedHost | undefined): boolean | undefined {
+    return this.options.rustHostChoice === true && host ? host.runtime === 'rust' : undefined
+  }
+  /** The host program a socket update names for a host, as a launch over SSH does. */
+  private rustFlag(host: SavedHost | undefined): { readonly useRustHost?: boolean } {
+    const useRustHost = this.runsRust(host)
+    return useRustHost === undefined ? {} : { useRustHost }
   }
   private async runCheck(host: SavedHost): Promise<void> {
-    const launcher = this.createLauncher()
+    const launcher = this.createLauncher(host)
     const active: LiveHost = { via: 'ssh', launcher, generation: ++this.generation }
     this.live.set(host.id, active)
     try {
@@ -1729,7 +1747,7 @@ export class DesktopHosts {
     const owned = active.ssh ? active.ssh.owned === true : startedBySotto(hello.startedBy)
     // Start at boot comes with a launch; a tailnet connection has none, and shows what the last launch or boot change said.
     this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned, via: active.via,
-      phoneAccess: active.ssh ? undefined : hello.phoneAccess, bootStart: active.ssh ? active.ssh.bootStart : this.tailnet.get(host.id).bootStart })
+      phoneAccess: active.ssh ? undefined : hello.phoneAccess, ...(this.options.rustHostChoice === true && hello.hostProgram ? { runningRuntime: hello.hostProgram } : {}), bootStart: active.ssh ? active.ssh.bootStart : this.tailnet.get(host.id).bootStart })
   }
   /** Keeps the tailnet address a saved host reported in its hello, which follows Serve as it comes and goes. */
   private async learnAddress(host: SavedHost, about: Pick<HostHello, 'tailnetAddress'>): Promise<void> {
@@ -1939,6 +1957,36 @@ export class DesktopHosts {
     } catch { return undefined }
   }
   /**
+   * The row's Node | Rust control (ADR-0214; Owl only). Saves the host program for this host, and for a host Sotto started
+   * that this computer is connected to, stops it and connects again over SSH: that launch starts the program chosen, and
+   * sets or clears the host's `use-rust-host` marker. Any other host takes the program at its next launch from here; a host
+   * this computer did not start keeps running what it runs until it next starts.
+   */
+  private async setRuntime(host: SavedHost, runtime: HostRuntime): Promise<void> {
+    if (this.options.rustHostChoice !== true) throw new Error(t`Only Sotto Owl offers a choice of host program, and this Sotto leaves each host running what it runs. Nothing was changed.`)
+    const before = this.status.get(host.id)
+    // The same choice again restarts a host that still runs the other program, as one Owl turned to Rust before the choice.
+    if ((host.runtime ?? 'node') === runtime && (before?.runningRuntime === undefined || before.runningRuntime === runtime)) return
+    if ((host.runtime ?? 'node') !== runtime) {
+      if (runtime === 'rust') host.runtime = 'rust'; else delete host.runtime
+      await this.save()
+      // An admin connection keeps the launcher it signed in with, which names the program chosen before.
+      await this.admins.close(host.id)
+      this.update(host.id, { runtime })
+    }
+    const status = this.status.get(host.id)
+    if (status?.phase !== 'connected' || status.owned !== true || !this.live.has(host.id) || !this.reachable(host.id)) return
+    this.update(host.id, { switchingRuntime: true })
+    let stopped: boolean
+    try {
+      // Connect again over SSH first, as after Edit connection's save, since only a launch starts the program chosen.
+      stopped = await this.press(host, connection => this.restartOnPurpose(host, () => this.stopOwnedHost(connection), done => !done, () => ({ edited: true })))
+    } finally { this.update(host.id, { switchingRuntime: undefined }) }
+    if (!stopped) throw new Error(runtime === 'rust'
+      ? t`Rust is saved for ${{ host: host.name }}, but its host could not be restarted. It runs Rust from its next start.`
+      : t`Node is saved for ${{ host: host.name }}, but its host could not be restarted. It runs Node from its next start.`)
+  }
+  /**
    * How Sotto connects (ADR-0053, Edit connection): the owner's choice, and the host's own tailnet connections setting,
    * set over the SSH connection or an admin connection so the press is the owner's consent to that Serve setting. The
    * choice is written first, so a drop the host's change causes reconnects the way the owner chose; a press that does not
@@ -2090,7 +2138,7 @@ export class DesktopHosts {
     }
     const status = this.status.get(id)
     if (status) { delete status.prompt; delete status.adminSignIn; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version
-      delete status.bootStart; delete status.via; delete status.tailnetNote; delete status.phoneAccess; status.phase = 'disconnected'; this.emit() }
+      delete status.bootStart; delete status.via; delete status.tailnetNote; delete status.phoneAccess; delete status.runningRuntime; status.phase = 'disconnected'; this.emit() }
   }
   /**
    * Clears every pending retry first, including those for hosts whose connect failed and so are no longer

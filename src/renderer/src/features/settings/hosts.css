@@ -32,6 +32,9 @@
 /* How the host is connected: the tailnet reads as the text does, SSH as quietly as the rest of the line. */
 .hosts-row__via[data-via='tailnet'] { color: var(--tt-text); }
 .hosts-settings .hosts-row__note { margin-top: 2px; font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+/* A remote host's host program, Node or the Rust preview (ADR-0214; Owl only): a small choice under the row's line. */
+.hosts-row__runtime { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.hosts-row__runtime-tag { border-radius: var(--tt-radius-tag); background: var(--tt-accent-wash); padding: 1px 6px; color: var(--tt-accent-text); }
 .hosts-settings .hosts-row__error { margin-top: 4px; color: var(--tt-error-text); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .hosts-row__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .hosts-empty { padding: 16px 0; border-block: 1px solid var(--tt-hairline); }

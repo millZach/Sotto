@@ -99,6 +99,8 @@ const aliasSchema = z.object({ councilJudge: z.literal(true).optional(), session
   /** The journal generation of the whole write that wrote this record; see `ClaudeOriginJournal`. A record written before there was one has none. */
   journalGeneration: z.number().int().nonnegative().optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
+/** Reads `claude-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseClaudeThreadStore = preserveLegacyAliases(z.record(z.string(), aliasSchema).parse)
 /** One folder however it is spelled: resolved, and on Windows without regard to case. */
 const pathKey = (path: string): string => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
 /**
@@ -605,7 +607,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
       }
     }
     // Compact: it holds every thread's record and every origin, and is rewritten whole.
-    this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'claude-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
+    this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'claude-threads.json'), parseClaudeThreadStore, () => ({}))
     const journalLine = z.object({ threadId: z.string(), origin: originSchema, generation: z.number().int().nonnegative().optional() })
     this.originJournal = new ClaudeOriginJournal(join(options.userDataPath, 'claude-origins.jsonl'), value => {
       const entry = journalLine.safeParse(value)

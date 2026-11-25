@@ -1220,6 +1220,10 @@ msgstr "No meaningful improvement in two completed attempts."
 msgid "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 msgstr "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 
+#: src/main/hosts/desktopHosts.ts
+msgid "Node is saved for {host}, but its host could not be restarted. It runs Node from its next start."
+msgstr "Node is saved for {host}, but its host could not be restarted. It runs Node from its next start."
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Node was not found on the SSH host. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
 msgstr "Node was not found on the SSH host. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
@@ -1276,6 +1280,10 @@ msgstr "Only a PNG image up to 10 MiB can be pasted into a terminal."
 #: src/main/tools/browser.ts
 msgid "Only an allowed action can be granted for the whole thread. Answer this one once."
 msgstr "Only an allowed action can be granted for the whole thread. Answer this one once."
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Only Sotto Owl offers a choice of host program, and this Sotto leaves each host running what it runs. Nothing was changed."
+msgstr "Only Sotto Owl offers a choice of host program, and this Sotto leaves each host running what it runs. Nothing was changed."
 
 #: src/main/tools/checkpoints.ts
 msgid "Only the latest completed checkpoint with unchanged native history can be reverted."
@@ -1565,6 +1573,10 @@ msgstr "Run the commands below on {name} to see what the host says, then connect
 #: src/main/hosts/hostBootStart.ts
 msgid "Run this on {name}, then press Start at boot again. Sotto never runs sudo."
 msgstr "Run this on {name}, then press Start at boot again. Sotto never runs sudo."
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Rust is saved for {host}, but its host could not be restarted. It runs Rust from its next start."
+msgstr "Rust is saved for {host}, but its host could not be restarted. It runs Rust from its next start."
 
 #: src/main/agents/retainedDraftStore.ts
 msgid "Saved remote drafts could not be read. The original file was preserved. Repair local storage before saving draft text."

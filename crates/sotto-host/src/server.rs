@@ -1660,6 +1660,8 @@ async fn handle_ws_request(
                 "sottoVersion": state.sotto_version,
                 "features": client_features,
                 "capabilities": { "mayAnswer": may_answer },
+                // The host program this host is (ADR-0214), for a desktop row's Node | Rust control.
+                "hostProgram": "rust",
                 "events": events,
                 "hasMore": has_more,
                 "latestSeq": latest_seq.max(after_seq),

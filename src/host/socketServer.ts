@@ -2130,7 +2130,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (peer.watcherPhone) await observe()
         const phoneAccess = peer.desktop ? options.phoneAccess?.() : undefined
         return { hostId, clientId: peer.client.clientId, shell: shell(peer), capabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false }, sottoVersion, features: featuresFor(peer),
-          ...about(), ...(phoneAccess ? { phoneAccess } : {}), ...events(peer, peer.afterSeq) }
+          // The host program this host is (ADR-0214), for a desktop row's Node | Rust control.
+          hostProgram: 'node' as const, ...about(), ...(phoneAccess ? { phoneAccess } : {}), ...events(peer, peer.afterSeq) }
       }
       // A client reading the shell whole holds its threads afresh, so the next push lists every record (#996).
       // One that accepted `reply-thread-records` holds this answer's records instead, once it is written (`onMessage`).

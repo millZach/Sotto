@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { agentActivitySchema, type AgentActivity } from '../../../src/shared/agentActivity'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../../src/shared/agentActivity'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { immutableActivities, isImmutableActivity } from '../../../src/main/agents/activitySnapshots'
 
@@ -47,6 +47,36 @@ async function onDisk(root: string): Promise<string> {
 }
 
 describe('thread activity store', () => {
+
+  it('reads a thread stored over the record limit as its newest records and trims it on the next save (ADR-0214)', async () => {
+    const { store, path } = await fixture()
+    store.syncActivities('thread', [activity('seed')])
+    store.close()
+    // The other host program's writes left more rows than the limit, as the Rust host did on forge with 2,001.
+    const db = inspect(path)
+    db.exec('DELETE FROM activities')
+    const insert = db.prepare('INSERT INTO activities (thread_id, activity_id, position, payload) VALUES (?, ?, ?, ?)')
+    const total = MAX_AGENT_ACTIVITIES + 5
+    for (let index = 0; index < total; index++) insert.run('thread', `work-${index}`, index, JSON.stringify(activity(`work-${index}`)))
+    store.open()
+    expect(store.activityCount('thread')).toBe(MAX_AGENT_ACTIVITIES)
+    const raw = store.readActivities('thread', { keep: false })
+    expect(raw).toHaveLength(MAX_AGENT_ACTIVITIES)
+    expect(raw[0]!.id).toBe('work-5')
+    const held = store.readActivities('thread')
+    expect(held).toHaveLength(MAX_AGENT_ACTIVITIES)
+    expect(held[0]!.id).toBe('work-5')
+    expect(held.at(-1)!.id).toBe(`work-${total - 1}`)
+    // A save of the held list deletes the older rows; a list over the limit saves its newest rather than throwing.
+    expect(() => store.syncActivities('thread', [...held, activity('newest')])).not.toThrow()
+    const count = (): number => Number(db.prepare('SELECT COUNT(*) AS count FROM activities WHERE thread_id = ?').get('thread')!.count)
+    expect(count()).toBe(MAX_AGENT_ACTIVITIES)
+    store.close(); store.open()
+    const reread = store.readActivities('thread')
+    expect(reread).toHaveLength(MAX_AGENT_ACTIVITIES)
+    expect(reread[0]!.id).toBe('work-6')
+    expect(reread.at(-1)!.id).toBe('newest')
+  })
 
   it('does not visit unchanged certified records after a successful save', async () => {
     const { store } = await fixture()

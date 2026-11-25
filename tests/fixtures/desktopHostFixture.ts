@@ -42,6 +42,10 @@ export function useDesktopHostFixture() {
 
   let owned = true, stopResult: boolean | Error = true
 
+  /** The Owl feature `rust-remote-host` for the next manager (ADR-0214), and the host program each launcher was told to name. */
+  let rustHostChoice = false
+  const launchRuntimes: (boolean | undefined)[] = []
+
   /** Where the fixture tunnel leads; by default the real host's listener. */
   let tunnelUrl: (() => string) | undefined
 
@@ -127,6 +131,7 @@ export function useDesktopHostFixture() {
   const FIXTURE_SYSTEM = 'linux-x64'
 
   class FixtureSsh extends SshHostLauncher {
+    constructor(readonly runsRust?: boolean) { super() }
     callbacks?: SshCallbacks
     configuration?: SshHostConfiguration
     options?: SshConnectOptions
@@ -150,7 +155,7 @@ export function useDesktopHostFixture() {
         throw stopped
       }
       const which = options.start === false ? 'admin' : 'ssh'
-      return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] }, node: FIXTURE_NODE, system: FIXTURE_SYSTEM,
+      return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] }, node: FIXTURE_NODE, system: FIXTURE_SYSTEM, runtime: this.runsRust ? 'rust' : 'node',
         close: async () => undefined,
         showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
         ensureDesktopAnswers: async clientId => { if (desktopAnswersFailure) throw desktopAnswersFailure; await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId) },
@@ -180,6 +185,7 @@ export function useDesktopHostFixture() {
     credentials = await testCredentials(join(root, 'desktop'), { encryption: new HostCredentialEncryption('synthetic-desktop-credential-key') });
     router = new DesktopHostRouter(emptyDesktopState)
     launchers.length = 0; failures.length = 0; stops.length = 0; answers.length = 0; askOnConnect = undefined; onConnect = undefined; opened.length = 0; scheduled.length = 0; retryDelay = () => 0; owned = true; stopResult = true; beforeStopReply = async () => undefined; tunnelUrl = undefined; updateHost = noUpdates; desktopAnswersFailure = undefined; tailnetAt = () => serveWithNothingBehind()
+    rustHostChoice = false; launchRuntimes.length = 0
     operations.length = 0; hostRunning = true; bootLeftOnStop = false; revokeFails = false; revokeError = undefined; bootStart = undefined; boot = noBoot; boots.length = 0
     manager = newManager()
     await manager.start()
@@ -187,7 +193,8 @@ export function useDesktopHostFixture() {
 
   /** `versions` stands in for the running Sotto's host version and the one its waiting update brings (ADR-0077). */
   function newManager(retainedDrafts?: RetainedDraftStore, versions: { clientVersion?: string; waitingClientVersion?: () => string | undefined } = {}): DesktopHosts {
-    return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, ...(retainedDrafts ? { retainedDrafts } : {}), ...versions, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
+    return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, ...(retainedDrafts ? { retainedDrafts } : {}), ...versions, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: useRustHost => { const launcher = new FixtureSsh(useRustHost); launchers.push(launcher); launchRuntimes.push(useRustHost); return launcher },
+      ...(rustHostChoice ? { rustHostChoice: true } : {}),
       openExternal: async url => { opened.push(url) }, resolveTailnet: address => tailnetAt(address) })
   }
 
@@ -255,6 +262,9 @@ export function useDesktopHostFixture() {
     set bootStart(value: typeof bootStart) { bootStart = value },
     boots,
     connection,
+    launchRuntimes,
+    get rustHostChoice() { return rustHostChoice },
+    set rustHostChoice(value: typeof rustHostChoice) { rustHostChoice = value },
     get credentials() { return credentials },
     set credentials(value: typeof credentials) { credentials = value },
     get desktopAnswersFailure() { return desktopAnswersFailure },

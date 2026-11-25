@@ -147,6 +147,8 @@ const aliasSchema = z.object({
   endedTurn: z.object({ messageId: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional(),
 })
 type Alias = z.infer<typeof aliasSchema>
+/** Reads `opencode-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseOpenCodeThreadStore = z.record(z.string(), aliasSchema).parse
 
 const infoSchema = z.looseObject({ version: z.string().min(1).max(64) })
 const modelSchema = z.looseObject({
@@ -422,7 +424,7 @@ export class OpenCodeHost implements ProviderHost {
       this.subscribeUsage = listener => observed.subscribe(listener)
     }
     this.folders = opencodeFolders(join(userDataDirectory, 'opencode'))
-    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'opencode-threads.json'), z.record(z.string(), aliasSchema).parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'opencode-threads.json'), parseOpenCodeThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'opencode-projects.json'), z.array(agentProjectSchema).parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs !== undefined ? { sweepEveryMs: options.reaperSweepMs } : {}),

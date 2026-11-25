@@ -4,7 +4,7 @@ import { hostProviderIdSchema, type HostOpenCodeAnswer, type HostOpenCodeCall, t
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
 import { hostBootCommandSchema, type BootStatus, type HostBootState } from './bootStart'
-import type { HostPhoneAccessSummary } from './hostProtocol'
+import { HOST_PROGRAMS, type HostPhoneAccessSummary, type HostProgram } from './hostProtocol'
 import { HOST_CONNECTIONS, type HostConnectionName } from './hostConnection'
 
 export const HOSTS_GET = 'hosts:get'
@@ -28,6 +28,12 @@ export const remoteHostSchema = z.object({
   enabled: z.boolean().optional(),
 }).strict()
 export type RemoteHost = z.infer<typeof remoteHostSchema>
+/**
+ * The **host program** a remote host runs (ADR-0214): Node, the host Sotto has always run, or the Rust `sotto-host`, an Owl
+ * preview the owner turns on host by host. A host nobody chose for runs Node.
+ */
+export const HOST_RUNTIMES = HOST_PROGRAMS
+export type HostRuntime = HostProgram
 /**
  * The host setup checklist: the steps a connect goes through, in the order it meets them. Add host shows
  * them once pressed. `tailscale` appears only when Tailscale SSH holds the connection for the user's approval.
@@ -117,6 +123,15 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
   phoneAccess?: HostPhoneAccessSummary | undefined
   /** Start at boot on the host, as this connection last found it (ADR-0054). */
   bootStart?: BootStatus | undefined
+  /**
+   * The host program the owner chose for this host (ADR-0214). Present only where the Owl feature `rust-remote-host` is on,
+   * which is when the row shows its Node | Rust control; Node unless the owner picked Rust.
+   */
+  runtime?: HostRuntime | undefined
+  /** The host program the host ran when this computer last launched it over SSH, when its launch could tell. */
+  runningRuntime?: HostRuntime | undefined
+  /** True while a change of host program restarts the host. */
+  switchingRuntime?: boolean | undefined
 }
 /** A model the host setup thread can run on: one of this computer's ready models. */
 export interface HostSetupModel { readonly id: string; readonly name: string; readonly provider: string
@@ -242,6 +257,11 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
    * consent to the Tailscale Serve setting it turns on there.
    */
   z.object({ type: z.literal('set-connection'), id: z.uuid(), prefer: z.enum(HOST_CONNECTIONS) }).strict(),
+  /**
+   * The row's Node | Rust control (ADR-0214; Owl only): saves the host program for this host and, when Sotto started the
+   * host and this computer is connected to it, restarts it on that program.
+   */
+  z.object({ type: z.literal('set-runtime'), id: z.uuid(), runtime: z.enum(HOST_RUNTIMES) }).strict(),
   /** Puts away what Forget said about a host it could not revoke this computer on. */
   z.object({ type: z.literal('dismiss-forgotten'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('ssh-answer'), id: z.uuid(), promptId: z.string().max(256), answer: z.string().max(4096) }).strict(),

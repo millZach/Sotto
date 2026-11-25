@@ -106,6 +106,8 @@ const aliasSchema = z.object({
 })
 type Alias = z.infer<typeof aliasSchema>
 const aliasesSchema = z.record(z.string(), aliasSchema)
+/** Reads `antigravity-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseAntigravityThreadStore = aliasesSchema.parse
 const projectsSchema = z.array(agentProjectSchema)
 /** How many origins and answered request IDs a thread keeps: enough for every retry and every open request, no more. */
 const KEPT = 128
@@ -426,7 +428,7 @@ export class AntigravityAcpHost implements ProviderHost {
     // Usage knows each session Sotto owns by its `agy` session ID, so Sotto's own threads count as Sotto's, not Antigravity's app.
     this.usage = options.usageEnabled ? antigravityUsageHooks({ directory, owned: () => new Map(Object.entries(this.aliases).flatMap(([id, alias]) => alias.antigravitySessionId ? [[alias.antigravitySessionId, id] as const] : [])) }) : undefined
     if (this.usage) { const usage = this.usage; this.scanUsageHistory = (sink, signal) => usage.scanUsageHistory(sink, signal) }
-    this.aliasStore = new AtomicJsonStore(join(directory, 'antigravity-threads.json'), aliasesSchema.parse, () => ({}))
+    this.aliasStore = new AtomicJsonStore(join(directory, 'antigravity-threads.json'), parseAntigravityThreadStore, () => ({}))
     this.projectStore = new AtomicJsonStore(join(directory, 'antigravity-projects.json'), projectsSchema.parse, () => [])
     this.reaper = new SessionReaper({
       ...(options.reaperSweepMs === undefined ? {} : { sweepEveryMs: options.reaperSweepMs }),

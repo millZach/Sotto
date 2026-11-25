@@ -1022,7 +1022,7 @@ export interface HostPhoneAccessSummary { status: typeof HOST_PHONE_ACCESS_STATU
  * which on a headless host's tailnet listener depends on whether it is a desktop (ADR-0053). `phoneAccess` goes only to
  * a desktop, as it stood when the session's hello was answered.
  */
-export interface HostHello extends HostEventPage, HostAbout { hostId: string; clientId: string; shell: HostClientShell; capabilities: { mayAnswer: boolean }; sottoVersion: string; features: string[]; phoneAccess?: HostPhoneAccessSummary | undefined }
+export interface HostHello extends HostEventPage, HostAbout { hostId: string; clientId: string; shell: HostClientShell; capabilities: { mayAnswer: boolean }; sottoVersion: string; features: string[]; phoneAccess?: HostPhoneAccessSummary | undefined; hostProgram?: HostProgram | undefined }
 export interface HostSession { v: 1; hostId: string; clientId: string; session: string; expiresAt: string }
 export interface HostPairing { v: 1; hostId: string; clientId: string; token: string }
 export interface HostReceipt {
@@ -1059,8 +1059,14 @@ const aboutShape = {
   startedBy: z.string().min(1).max(64).optional().catch(undefined),
 }
 export const hostPhoneAccessSchema = z.object({ status: z.enum(HOST_PHONE_ACCESS_STATUSES), phones: z.number().int().nonnegative().max(1000) })
+/**
+ * The **host program** a host is (ADR-0214): the Node host or the Rust `sotto-host`. A hello from a host before it carries
+ * none, which reads as not known.
+ */
+export const HOST_PROGRAMS = ['node', 'rust'] as const
+export type HostProgram = typeof HOST_PROGRAMS[number]
 export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList,
-  ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
+  ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined), hostProgram: z.enum(HOST_PROGRAMS).optional().catch(undefined) })
 /** One activity record whole as a host answers `activity-body`, or null when the thread no longer has it. */
 export const hostActivityBodySchema = agentActivitySchema.nullable()
 /** The prompts above a pane's window as a host answers `thread-prompts`, or null when its store cannot say (ADR-0109). */

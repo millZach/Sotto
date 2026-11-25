@@ -5,18 +5,6 @@
       "reason": "Reads the host's credential file once when the host starts."
     }
   },
-  "src/main/agents/providers/claude/claude.ts": {
-    "ClaudeStreamJsonHost.constructor": {
-      "count": 3,
-      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
-    }
-  },
-  "src/main/agents/providers/codex/codex.ts": {
-    "CodexAppServerHost.constructor": {
-      "count": 1,
-      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
-    }
-  },
   "src/main/agents/credentials.ts": {
     "AgentCredentials.constructor": {
       "count": 1,
@@ -25,7 +13,7 @@
   },
   "src/main/agents/cursor.ts": {
     "CursorAcpHost.constructor": {
-      "count": 2,
+      "count": 1,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
@@ -43,7 +31,7 @@
   },
   "src/main/agents/devin.ts": {
     "DevinAcpHost.constructor": {
-      "count": 2,
+      "count": 1,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
@@ -65,7 +53,7 @@
       "reason": "Checks the answer against this thread's own session ID with z.literal; runs once per session load, not per frame."
     },
     "GrokAcpHost.constructor": {
-      "count": 2,
+      "count": 1,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     },
     "GrokAcpHost.executeNative.(anonymous)": {
@@ -81,13 +69,25 @@
   },
   "src/main/agents/muse.ts": {
     "MuseMspHost.constructor": {
-      "count": 2,
+      "count": 1,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
   "src/main/agents/opencode.ts": {
     "OpenCodeHost.constructor": {
+      "count": 1,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/providers/claude/claude.ts": {
+    "ClaudeStreamJsonHost.constructor": {
       "count": 2,
+      "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
+    }
+  },
+  "src/main/agents/providers/codex/codex.ts": {
+    "CodexAppServerHost.constructor": {
+      "count": 1,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },

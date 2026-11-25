@@ -189,6 +189,7 @@
         ],
         "hasMore": false,
         "hostId": "<id:1>",
+        "hostProgram": "node",
         "latestSeq": 9007199254740991,
         "phoneAccess": {"phones":0,"status":"off"},
         "shell": {
@@ -848,6 +849,7 @@
         ],
         "hasMore": false,
         "hostId": "<id:1>",
+        "hostProgram": "node",
         "latestSeq": 9007199254740991,
         "phoneAccess": {"phones":0,"status":"off"},
         "shell": {
@@ -1463,6 +1465,7 @@
         ],
         "hasMore": false,
         "hostId": "<id:1>",
+        "hostProgram": "node",
         "latestSeq": 9007199254740991,
         "phoneAccess": {"phones":0,"status":"off"},
         "shell": {

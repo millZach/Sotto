@@ -11,6 +11,10 @@ use uuid::Uuid;
 
 const THREAD_PROJECTION_VERSION: &str = "2";
 
+/// The most activity records one thread keeps, as Node's `MAX_AGENT_ACTIVITIES` in `src/shared/agentActivity.ts`.
+/// Node's protocol schemas refuse a longer list, so a Rust write must never leave more rows than this for a thread.
+pub const MAX_AGENT_ACTIVITIES: usize = 2_000;
+
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("SQLite error: {0}")]
@@ -536,9 +540,11 @@ impl ThreadStore {
                 row.get::<_, String>(2)?,
             ))
         })?;
-        let mut out = Vec::new();
-        for row in rows {
-            let (activity_id, position, raw) = row?;
+        let rows = rows.collect::<Result<Vec<_>, _>>()?;
+        // A list over the limit on disk reads as its newest records, as Node's store reads it.
+        let skip = rows.len().saturating_sub(MAX_AGENT_ACTIVITIES);
+        let mut out = Vec::with_capacity(rows.len() - skip);
+        for (activity_id, position, raw) in rows.into_iter().skip(skip) {
             out.push(StoredActivity {
                 activity_id,
                 position,
@@ -565,12 +571,17 @@ impl ThreadStore {
                  ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch, message_reset_seq = excluded.message_reset_seq",
                 rusqlite::params![thread_id, epoch, message_reset_seq],
             )?;
-            for (position, activity) in activities.iter().enumerate() {
+            // Only the newest MAX_AGENT_ACTIVITIES are kept, each at its own position in list order.
+            let skip = activities.len().saturating_sub(MAX_AGENT_ACTIVITIES);
+            for (position, activity) in activities.iter().skip(skip).enumerate() {
                 if let Some(activity_id) = activity.get("id").and_then(Value::as_str) {
                     let encoded = serde_json::to_string(activity)?;
                     self.conn.execute(
                         "INSERT INTO activities (thread_id, activity_id, position, payload)
-                         VALUES (?1, ?2, ?3, ?4)",
+                         VALUES (?1, ?2, ?3, ?4)
+                         ON CONFLICT(thread_id, activity_id) DO UPDATE SET
+                           position = excluded.position,
+                           payload = excluded.payload",
                         rusqlite::params![thread_id, activity_id, position as i64, encoded],
                     )?;
                 }
@@ -589,26 +600,50 @@ impl ThreadStore {
         }
     }
 
-    /// Incrementally inserts or updates a single activity row in O(1) without rewriting history.
-    pub fn upsert_activity(
-        &self,
-        thread_id: &str,
-        position: i64,
-        activity: &Value,
-    ) -> Result<(), StoreError> {
+    /// Inserts or updates a single activity row without rewriting history. A record already stored keeps its position;
+    /// a new one goes after the last, so positions stay unique whatever list index the caller holds it at. A new
+    /// record past `MAX_AGENT_ACTIVITIES` deletes the oldest, so the table never holds a list Node refuses.
+    pub fn upsert_activity(&self, thread_id: &str, activity: &Value) -> Result<(), StoreError> {
         let Some(activity_id) = activity.get("id").and_then(Value::as_str) else {
             return Ok(());
         };
         let encoded = serde_json::to_string(activity)?;
-        self.conn.execute(
-            "INSERT INTO activities (thread_id, activity_id, position, payload)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(thread_id, activity_id) DO UPDATE SET
-               position = excluded.position,
-               payload = excluded.payload",
-            rusqlite::params![thread_id, activity_id, position, encoded],
+        let updated = self.conn.execute(
+            "UPDATE activities SET payload = ?3 WHERE thread_id = ?1 AND activity_id = ?2",
+            rusqlite::params![thread_id, activity_id, encoded],
         )?;
-        Ok(())
+        if updated > 0 {
+            return Ok(());
+        }
+        self.conn.execute_batch("SAVEPOINT activity_upsert;")?;
+        let res = (|| -> Result<(), StoreError> {
+            self.conn.execute(
+                "INSERT INTO activities (thread_id, activity_id, position, payload)
+                 VALUES (?1, ?2,
+                   COALESCE((SELECT MAX(position) FROM activities WHERE thread_id = ?1), -1) + 1, ?3)",
+                rusqlite::params![thread_id, activity_id, encoded],
+            )?;
+            // By row rather than by position, so rows an earlier build left at one position cannot outlast the limit.
+            self.conn.execute(
+                "DELETE FROM activities WHERE thread_id = ?1 AND rowid NOT IN (
+                   SELECT rowid FROM activities WHERE thread_id = ?1
+                   ORDER BY position DESC, rowid DESC LIMIT ?2)",
+                rusqlite::params![thread_id, MAX_AGENT_ACTIVITIES as i64],
+            )?;
+            Ok(())
+        })();
+        match res {
+            Ok(()) => {
+                self.conn.execute_batch("RELEASE SAVEPOINT activity_upsert;")?;
+                Ok(())
+            }
+            Err(err) => {
+                let _ = self
+                    .conn
+                    .execute_batch("ROLLBACK TO SAVEPOINT activity_upsert; RELEASE SAVEPOINT activity_upsert;");
+                Err(err)
+            }
+        }
     }
 
     pub fn read_events(
@@ -1339,6 +1374,7 @@ fn map_policy_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<PolicyRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use tempfile::tempdir;
 
     #[test]
@@ -1401,5 +1437,88 @@ mod tests {
             .set_remote_answers("client-1", false, "Denied for test")
             .unwrap();
         assert!(!mem_store.may_grant_remote("client-1").unwrap());
+    }
+
+    fn activity(id: &str) -> Value {
+        serde_json::json!({ "id": id, "turnId": "turn", "sequence": 0, "kind": "command", "status": "completed", "title": "Run tests" })
+    }
+
+    /// Rows a thread holds, in position order, with their positions.
+    fn stored_rows(store: &ThreadStore, thread_id: &str) -> Vec<(String, i64)> {
+        let mut stmt = store
+            .conn
+            .prepare("SELECT activity_id, position FROM activities WHERE thread_id = ?1 ORDER BY position")
+            .unwrap();
+        stmt.query_map([thread_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    /// Rust activity writes never leave a table Node's `ThreadStore` refuses (ADR-0214): no thread over
+    /// MAX_AGENT_ACTIVITIES rows and every position unique. With `SOTTO_SHARED_ACTIVITIES_DB` set, the database
+    /// is written there for `tests/integration/rustHostActivityCap.test.ts` to open with Node's store.
+    #[test]
+    fn activity_writes_stay_within_node_limits() {
+        let dir = tempdir().unwrap();
+        let path = std::env::var_os("SOTTO_SHARED_ACTIVITIES_DB")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| dir.path().join("threads.sqlite"));
+        let store = ThreadStore::open(&path).unwrap();
+        let total = MAX_AGENT_ACTIVITIES + 25;
+
+        // Incremental writes, as the coordinator makes, past the limit: the oldest go and positions never repeat.
+        for index in 0..total {
+            store.upsert_activity("upserted", &activity(&format!("work-{index}"))).unwrap();
+        }
+        // An update of a held record keeps its position rather than taking its list index.
+        store.upsert_activity("upserted", &activity(&format!("work-{}", total - 10))).unwrap();
+        let rows = stored_rows(&store, "upserted");
+        assert_eq!(rows.len(), MAX_AGENT_ACTIVITIES);
+        assert_eq!(rows[0].0, "work-25");
+        assert_eq!(rows.last().unwrap().0, format!("work-{}", total - 1));
+        let positions: HashSet<i64> = rows.iter().map(|(_, position)| *position).collect();
+        assert_eq!(positions.len(), rows.len());
+        assert_eq!(store.read_activities("upserted").unwrap().len(), MAX_AGENT_ACTIVITIES);
+
+        // A full thread an earlier build left with every row at one position: one new record still leaves the limit.
+        // Its own database, since the shared one holds only what Rust itself writes, for Node to open.
+        let tied_store = ThreadStore::open(&dir.path().join("tied.sqlite")).unwrap();
+        for index in 0..MAX_AGENT_ACTIVITIES {
+            tied_store
+                .conn
+                .execute(
+                    "INSERT INTO activities (thread_id, activity_id, position, payload) VALUES ('tied', ?1, 0, ?2)",
+                    rusqlite::params![format!("tied-{index}"), activity(&format!("tied-{index}")).to_string()],
+                )
+                .unwrap();
+        }
+        tied_store.upsert_activity("tied", &activity("tied-new")).unwrap();
+        let tied = stored_rows(&tied_store, "tied");
+        assert_eq!(tied.len(), MAX_AGENT_ACTIVITIES);
+        assert_eq!(tied.last().unwrap(), &("tied-new".to_string(), 1));
+
+        // Rows Node left at its own positions, with gaps, then a Rust upsert: the new record goes after the last.
+        for (index, position) in [(0, 5), (1, 9), (2, 40)] {
+            store
+                .conn
+                .execute(
+                    "INSERT INTO activities (thread_id, activity_id, position, payload) VALUES ('mixed', ?1, ?2, ?3)",
+                    rusqlite::params![format!("node-{index}"), position, activity(&format!("node-{index}")).to_string()],
+                )
+                .unwrap();
+        }
+        store.upsert_activity("mixed", &activity("rust-0")).unwrap();
+        let mixed = stored_rows(&store, "mixed");
+        assert_eq!(mixed.last().unwrap(), &("rust-0".to_string(), 41));
+
+        // A whole list over the limit saves its newest records at unique positions.
+        let list: Vec<Value> = (0..total).map(|index| activity(&format!("saved-{index}"))).collect();
+        store.save_activities("saved", None, None, &list).unwrap();
+        let saved = stored_rows(&store, "saved");
+        assert_eq!(saved.len(), MAX_AGENT_ACTIVITIES);
+        assert_eq!(saved[0].0, "saved-25");
+        let positions: HashSet<i64> = saved.iter().map(|(_, position)| *position).collect();
+        assert_eq!(positions.len(), saved.len());
     }
 }

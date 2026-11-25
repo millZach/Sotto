@@ -181,6 +181,13 @@ interface ActivityState {
   resetSequence: number | undefined
   records: Map<string, StoredActivityRecord>
   input?: { activities: readonly AgentActivity[]; redactionRevision: number } | undefined
+  /** Identities of stored rows older than the newest `MAX_AGENT_ACTIVITIES`: not held, and deleted by the next save. */
+  overflow?: readonly string[] | undefined
+}
+
+/** The newest `MAX_AGENT_ACTIVITIES` of rows read in position order: a list over the limit on disk reads as its newest records. */
+function newestActivityRows<T>(rows: readonly T[]): readonly T[] {
+  return rows.length > MAX_AGENT_ACTIVITIES ? rows.slice(-MAX_AGENT_ACTIVITIES) : rows
 }
 
 /** What one thread's activity list changes in the store: worked out before the transaction, written inside it. */
@@ -624,13 +631,16 @@ export class ThreadStore {
     if (state === undefined) {
       const epochRow = this.statement('SELECT epoch, message_reset_seq FROM activity_epochs WHERE thread_id = ?').get(threadId)
       const epoch = epochRow?.epoch
-      const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
+      const all = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
+      const rows = newestActivityRows(all)
       const records: ActivityState['records'] = new Map()
       for (const row of rows) {
         const activity = ownBuiltActivity(storedActivity(row))
         records.set(activity.id, { position: Number(row.position), activity })
       }
-      state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records }
+      // More rows than the limit, as the Rust host program's writes once left (ADR-0214): the newest are held, the rest go at the next save.
+      const overflow = all.length > rows.length ? all.slice(0, all.length - rows.length).map(row => String(row.activity_id)) : undefined
+      state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records, ...(overflow ? { overflow } : {}) }
       this.activityStates.set(threadId, state)
       this.activityMetas.delete(threadId)
     }
@@ -651,7 +661,7 @@ export class ThreadStore {
       meta = { known: epochRow !== undefined,
         epoch: epochRow?.epoch === undefined || epochRow.epoch === null ? undefined : String(epochRow.epoch),
         resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq),
-        count: Number(countRow?.count ?? 0) }
+        count: Math.min(MAX_AGENT_ACTIVITIES, Number(countRow?.count ?? 0)) }
       this.activityMetas.set(threadId, meta)
     }
     return meta
@@ -728,7 +738,7 @@ export class ThreadStore {
   readActivities(threadId: string, options: { keep?: boolean; shared?: boolean } = {}): AgentActivity[] {
     const held = this.activityStates.get(threadId)
     if (held === undefined && options.keep === false && options.shared !== true) {
-      return this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(storedActivity)
+      return newestActivityRows(this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)).map(storedActivity)
     }
     const records = Array.from((held ?? this.activityState(threadId)).records.values(), ({ activity }) => activity)
     return options.shared === true ? records : clonePlainData(records)
@@ -793,8 +803,9 @@ export class ThreadStore {
   }
 
   /** What one thread's list changes in the store, worked out without writing; undefined when nothing does. */
-  private planActivitySync(threadId: string, activities: readonly AgentActivity[], epoch: string | undefined): ActivitySyncPlan | undefined {
-    if (activities.length > MAX_AGENT_ACTIVITIES) throw new Error('Too many thread activities')
+  private planActivitySync(threadId: string, given: readonly AgentActivity[], epoch: string | undefined): ActivitySyncPlan | undefined {
+    // A list over the limit keeps its newest records rather than failing this save and every save after it.
+    const activities = newestActivityRows(given)
     const previous = this.activityState(threadId)
     const resetSequence = this.readMessageEpoch(threadId)?.sequence ?? 0
     const reset = previous.epoch !== epoch || (previous.resetSequence !== undefined && previous.resetSequence !== resetSequence)
@@ -839,6 +850,7 @@ export class ThreadStore {
       }
     }
     const removed = [...previous.records.keys()].filter(id => !next.records.has(id))
+    if (!reset && previous.overflow) removed.push(...previous.overflow.filter(id => !next.records.has(id)))
     if (previous.known && previous.resetSequence === resetSequence && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) {
       // Keep what the records were compared from, so the next save of the same records skips the comparison too.
       for (const [id, record] of next.records) { const held = previous.records.get(id); if (held && record.input) held.input = record.input }

@@ -459,6 +459,25 @@ it('skips manifest.node enforcement in installUpdate when useRustHost is active 
     .toEqual({ type: 'update-installed', version: NEW })
 })
 
+it('sets use-rust-host on a launch that names Rust, keeps it on one that names none, and clears it on one that names Node (ADR-0214)', async () => {
+  const configuration = await fixture()
+  const marker = join(configuration.installPath, 'use-rust-host')
+  // No Rust binary is installed, so the host started is Node, and Rust is not forced over it.
+  const first = last(await run(configuration, { op: 'launch', useRustHost: true }))
+  expect(first).toMatchObject({ type: 'ready', hostId: HOST_ID, owned: true })
+  hosts.push(first.pid as number)
+  expect(await readFile(marker, 'utf8')).toBe('1\n')
+  // A desktop that offers no choice, such as stable, leaves the marker and the running host as they are.
+  expect(last(await run(configuration, { op: 'launch' }))).toMatchObject({ type: 'ready', pid: first.pid })
+  expect(await readFile(marker, 'utf8')).toBe('1\n')
+  // A host set back to Node clears the marker; the host already runs Node, so it keeps running.
+  const back = last(await run(configuration, { op: 'launch', useRustHost: false }))
+  expect(back).toMatchObject({ type: 'ready', pid: first.pid })
+  await expect(readFile(marker, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  // The launch names the program the host runs where the system can say: Windows cannot.
+  expect(back.runtime).toBe(process.platform === 'win32' ? undefined : 'node')
+})
+
 it('syncs use-rust-host on update-restart when manifest.rustBinary is verified and transitions a running Node host', async () => {
   const configuration = await fixture()
   await launch(configuration)
