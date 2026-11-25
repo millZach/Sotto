@@ -10,6 +10,8 @@ interface TrackedTask {
   readonly toolCallId: string
   type: 'command' | 'subagent' | 'workflow'
   isCommand: boolean
+  /** A `schedule` wakeup timer: shown as waited-on work, and gone once it fires (`expiresAt`, one-shot only). */
+  timer: boolean
   label: string
   startedAt: string
   turnKey: string
@@ -26,6 +28,11 @@ const SHELL_NAMES = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'fish', 
 const INTERPRETER_NAMES = new Set(['node', 'nodejs', 'python', 'python3', 'py', 'bun', 'deno', 'ruby', 'perl', 'env', 'tsx', 'ts-node', 'uv', 'uvx', 'npx', 'npm', 'pnpm', 'yarn', 'bunx'])
 const LAUNCHER_NAMES = new Set(['npx', 'uvx', 'pnpm', 'yarn', 'npm', 'bunx'])
 const SYSTEM_HELPER_NAMES = new Set(['conhost', 'openconsole', 'werfault'])
+/**
+ * How early a runtime wakeup may arrive against Sotto's own reckoning of a one-shot timer's end: `agy` starts the timer
+ * before Sotto reads the call that set it, so its wakeup can land a moment before `expiresAt`.
+ */
+const TIMER_WAKEUP_SLACK_MS = 5_000
 
 const normalizeProgram = (value: string): string => value.replace(/\\/gu, '/').split('/').pop()?.replace(/\.(?:exe|cmd|bat)$/iu, '').toLowerCase() ?? ''
 const programLabel = (executable: string | undefined): string | undefined => executable ? executable.replace(/\\/gu, '/').split('/').pop()?.replace(/\.exe$/iu, '') : undefined
@@ -169,6 +176,7 @@ export class AntigravityBackgroundTasks {
       if (signal.pending && !signal.heuristic && !existing) return changed
       const label = sanitizeAntigravityWorkLabel(signal.label) ?? existing?.label ?? BACKGROUND_WORK_LABELS[signal.type]
       if (!existing) {
+        if (signal.isTimer && this.dropFiredTimers(0)) changed = true
         if (this.tasks.size >= MAX_BACKGROUND_WORK) return changed
         this.tasks.set(signal.toolCallId, {
           id: randomUUID(),
@@ -176,6 +184,7 @@ export class AntigravityBackgroundTasks {
           toolCallId: signal.toolCallId,
           type: signal.type,
           isCommand: signal.isCommand,
+          timer: signal.isTimer,
           label,
           startedAt: new Date(this.now()).toISOString(),
           turnKey,
@@ -189,18 +198,23 @@ export class AntigravityBackgroundTasks {
         })
         return true
       }
-      if (existing.type !== signal.type || existing.isCommand !== signal.isCommand || existing.label !== label
+      // Once a call is known as a timer it stays one: a later `tool_call_update` may omit the input that said so.
+      const timer = existing.timer || signal.isTimer
+      const type = timer ? 'command' : signal.type
+      if (existing.type !== type || existing.isCommand !== signal.isCommand || existing.label !== label
         || !existing.inFlight || existing.heuristic !== signal.heuristic || existing.nativeTaskId !== (signal.nativeTaskId ?? existing.nativeTaskId)) {
         changed = true
       }
-      existing.type = signal.type
+      existing.type = type
+      existing.timer = timer
       existing.isCommand = signal.isCommand
       existing.label = label
       existing.inFlight = true
       existing.heuristic = signal.heuristic
       existing.touchedAtTurn = turnKey
       if (signal.nativeTaskId) existing.nativeTaskId = signal.nativeTaskId
-      if (signal.durationSeconds !== undefined) existing.expiresAt = this.now() + signal.durationSeconds * 1_000
+      // The timer's end is reckoned once, from when Sotto first saw it set; a repeated `DurationSeconds` does not push it later.
+      if (signal.durationSeconds !== undefined && existing.expiresAt === undefined) existing.expiresAt = this.now() + signal.durationSeconds * 1_000
       return changed
     }
 
@@ -218,15 +232,22 @@ export class AntigravityBackgroundTasks {
     if (signal.status === 'completed') {
       if (signal.backgroundLaunch) {
         const label = sanitizeAntigravityWorkLabel(signal.label) ?? existing?.label ?? BACKGROUND_WORK_LABELS[signal.type]
-        const expiresAt = signal.durationSeconds !== undefined ? this.now() + signal.durationSeconds * 1_000 : existing?.expiresAt
+        const expiresAt = existing?.expiresAt ?? (signal.durationSeconds !== undefined ? this.now() + signal.durationSeconds * 1_000 : undefined)
+        const timer = existing?.timer === true || signal.isTimer
+        const type = timer ? 'command' : signal.type
+        // A timer set while its turn runs is the turn's to hold until the turn ends (`turnEnded`); one that fires first is
+        // dropped then (`dropFiredTimers`), so a turn that sets one wakeup after another never piles them up.
+        const outlived = !timer
         if (!existing) {
+          if (timer && this.dropFiredTimers(0)) changed = true
           if (this.tasks.size >= MAX_BACKGROUND_WORK) return changed
           this.tasks.set(signal.toolCallId, {
             id: randomUUID(),
             activityId: signal.activityId,
             toolCallId: signal.toolCallId,
-            type: signal.type,
+            type,
             isCommand: signal.isCommand,
+            timer,
             label,
             startedAt: new Date(this.now()).toISOString(),
             turnKey,
@@ -235,18 +256,19 @@ export class AntigravityBackgroundTasks {
             ...(expiresAt !== undefined ? { expiresAt } : {}),
             inFlight: false,
             heuristic: signal.heuristic,
-            outlived: true,
+            outlived,
             sawProcess: false,
           })
           return true
         }
-        if (existing.inFlight || !existing.outlived || existing.heuristic !== signal.heuristic || existing.label !== label
-          || existing.type !== signal.type || existing.isCommand !== signal.isCommand) changed = true
+        if (existing.inFlight || (outlived && !existing.outlived) || existing.heuristic !== signal.heuristic || existing.label !== label
+          || existing.type !== type || existing.isCommand !== signal.isCommand) changed = true
         existing.inFlight = false
         existing.heuristic = signal.heuristic
-        existing.outlived = true
+        existing.outlived ||= outlived
         existing.label = label
-        existing.type = signal.type
+        existing.type = type
+        existing.timer = timer
         existing.isCommand = signal.isCommand
         existing.touchedAtTurn = turnKey
         if (signal.nativeTaskId) existing.nativeTaskId = signal.nativeTaskId
@@ -265,10 +287,10 @@ export class AntigravityBackgroundTasks {
 
   /** Reconciles tracked tasks when a turn ends, marking still-running calls outlived and pruning resolved heuristic commands and expired one-shot timers. */
   turnEnded(turnKey: string, reactive: boolean, liveProcessCommands: boolean): boolean {
-    let changed = false
+    let changed = this.dropFiredTimers(0)
     const now = this.now()
     for (const [toolCallId, task] of [...this.tasks]) {
-      if (task.inFlight && !task.outlived) {
+      if ((task.inFlight || task.timer) && !task.outlived) {
         task.outlived = true
         changed = true
       }
@@ -286,7 +308,7 @@ export class AntigravityBackgroundTasks {
         changed = true
         continue
       }
-      if (reactive && !task.inFlight && task.type === 'workflow' && task.expiresAt !== undefined && now >= task.expiresAt
+      if (reactive && !task.inFlight && task.timer && task.expiresAt !== undefined && now >= task.expiresAt
         && task.turnKey !== turnKey && task.touchedAtTurn !== turnKey) {
         this.tasks.delete(toolCallId)
         changed = true
@@ -358,6 +380,32 @@ export class AntigravityBackgroundTasks {
   /** Settles tracked background work matching a runtime wakeup's task ID (exact or `/<id>` suffix). */
   settleNativeTask(nativeTaskId: string): boolean {
     return this.removeMatchingNativeTask(nativeTaskId, true)
+  }
+
+  /**
+   * A runtime wakeup arrived while a turn runs: any one-shot timer that turn set and whose time is up has fired, whatever
+   * the wakeup says. `agy` wakes a fired `schedule` with the timer's own prompt rather than a "Task id … finished" line, so
+   * the wakeup alone cannot name it.
+   */
+  settleFiredTimers(): boolean {
+    return this.dropFiredTimers(TIMER_WAKEUP_SLACK_MS)
+  }
+
+  /**
+   * Drops one-shot timers set in a turn that is still running (not yet outlived) whose time is up: `agy` wakes the running
+   * turn when one fires, so it is done. A timer that outlived its turn stays until the wakeup turn it starts ends
+   * (`turnEnded`), so the thread is never left looking settled between the two.
+   */
+  private dropFiredTimers(slackMs: number): boolean {
+    const now = this.now()
+    let removed = false
+    for (const [key, task] of this.tasks) {
+      if (task.timer && !task.outlived && !task.inFlight && task.expiresAt !== undefined && now + slackMs >= task.expiresAt) {
+        this.tasks.delete(key)
+        removed = true
+      }
+    }
+    return removed
   }
 
   private deleteByNativeTaskId(nativeTaskId: string): boolean {

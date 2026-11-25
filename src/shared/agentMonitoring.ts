@@ -18,7 +18,8 @@ export type AgentMonitoringTask = z.infer<typeof agentMonitoringSchema>[number]
 /**
  * What kind of background work the provider confirmed, or Sotto found. Sotto's own names, not a provider's task types, so
  * the renderer never learns a native discriminant: a workflow, a subagent, a teammate, a remote agent, a command left
- * running in the background, or a detached run (#2476). A command is not an agent: it waits rather than works. A detached
+ * running in the background, or a detached run (#2476). A command is not an agent: it waits rather than works, and a
+ * provider's wakeup timer, such as Antigravity's `schedule`, is reported as one for the same reason. A detached
  * run is an agent client the thread started and cut loose from its own process, which Sotto finds itself.
  */
 export const backgroundWorkTypes = ['workflow', 'subagent', 'teammate', 'remote-agent', 'command', 'detached-run'] as const

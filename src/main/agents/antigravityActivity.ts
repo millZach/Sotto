@@ -23,6 +23,12 @@ export interface AntigravityToolSignal {
   readonly pending: boolean
   readonly isControlTool: boolean
   readonly isSubagent: boolean
+  /**
+   * `agy`'s `schedule` tool: a wakeup timer, one-shot (`DurationSeconds`) or recurring (`CronExpression`). The thread waits
+   * on it rather than works, so it is reported as waited-on work (`type: 'command'`), never as an agent, though no process
+   * runs for it (`isCommand` stays false).
+   */
+  readonly isTimer: boolean
   readonly backgroundLaunch: boolean
   readonly heuristic: boolean
   readonly durationSeconds?: number | undefined
@@ -159,7 +165,8 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
   const isWorkflowTool = canBackground && (/^(?:run(?:ning)?\s+)?run_workflow\b/iu.test(trimmedTitle) || Boolean(fields.input?.ScriptPath || fields.input?.Script))
   const isCommand = fields.nativeKind === 'execute'
     || (canBackground && (fields.command !== undefined || /^(?:run(?:ning)?\s+)?(?:run_command|command_status|shell|terminal|bash)\b/iu.test(trimmedTitle)))
-  const type: 'command' | 'subagent' | 'workflow' = fields.subagent ? 'subagent' : isWorkflowTool || isScheduleTool ? 'workflow' : 'command'
+  const isTimer = !fields.subagent && !isWorkflowTool && isScheduleTool
+  const type: 'command' | 'subagent' | 'workflow' = fields.subagent ? 'subagent' : isWorkflowTool ? 'workflow' : 'command'
 
   const explicitOutputRunning = Boolean(
     (outputStatus && RUNNING_OUTPUT_STATUS.has(outputStatus))
@@ -204,6 +211,7 @@ export function antigravityToolCallSignal(update: Record<string, unknown>, key: 
     pending: update.status === 'pending',
     isControlTool,
     isSubagent: fields.subagent,
+    isTimer,
     backgroundLaunch,
     heuristic,
     ...(durationSeconds !== undefined ? { durationSeconds } : {}),
