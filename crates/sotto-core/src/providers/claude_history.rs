@@ -35,6 +35,28 @@ pub fn claude_transcript_path(claude_home: &Path, cwd: &str, session_id: &str) -
     claude_project_dir(claude_home, cwd).join(format!("{session_id}.jsonl"))
 }
 
+/// Whether Claude Code has a transcript for `session_id` in `cwd`, found the way Node's `ClaudeSessionLog` finds it:
+/// each UTF-16 code unit that is not an ASCII letter or digit becomes `-`, and a folder name longer than 200 is matched
+/// by its first 200 and a `-`. Node resumes a session exactly when this is true, and so does this host (ADR-0214).
+pub fn claude_session_exists(claude_home: &Path, cwd: &str, session_id: &str) -> bool {
+    let folder: String = cwd
+        .encode_utf16()
+        .map(|unit| match char::from_u32(u32::from(unit)) {
+            Some(c) if c.is_ascii_alphanumeric() => c,
+            _ => '-',
+        })
+        .collect();
+    let projects = claude_home.join("projects");
+    let file = format!("{session_id}.jsonl");
+    if folder.len() <= 200 {
+        return projects.join(&folder).join(&file).is_file();
+    }
+    let prefix = format!("{}-", &folder[..200]);
+    std::fs::read_dir(&projects).into_iter().flatten().flatten().any(|entry| {
+        entry.file_name().to_str().is_some_and(|name| name.starts_with(&prefix)) && entry.path().join(&file).is_file()
+    })
+}
+
 /// Reads a Claude Code `.jsonl` session transcript natively in Rust, ignoring sidechain frames,
 /// attachments, and tool-only frames, and collapsing consecutive assistant blocks with the same
 /// API message ID.

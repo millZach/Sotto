@@ -32,6 +32,8 @@ const choicesSchema = z.object({
   choices: z.record(z.uuid(), z.record(z.string().min(1).max(512), z.boolean())),
 }).strict()
 type Choices = z.infer<typeof choicesSchema>
+/** Reads `plugin-account-copy-choices.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parsePluginCopyChoices = (value: unknown): Choices => choicesSchema.parse(value)
 
 const RETRY_AFTER_MS = 2_000
 const RETRY_AFTER_MAX_MS = 60_000
@@ -359,7 +361,7 @@ export class PluginAccountCopySync {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return (this.kept = { version: 1, copyNew: true, choices: {} })
       throw error
     }
-    return (this.kept = choicesSchema.parse(JSON.parse(text)))
+    return (this.kept = parsePluginCopyChoices(JSON.parse(text)))
   }
 
   /**

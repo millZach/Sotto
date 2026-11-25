@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentProviderMode, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities } from '../../shared/agentActivity'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../storage/atomicJsonStore'
 import { ProviderUnavailable } from './providerProblem'
 import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose } from './host'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -59,7 +59,7 @@ const aliasSchema = z.object({
 })
 type Alias = z.infer<typeof aliasSchema>
 /** Reads `devin-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseDevinThreadStore = z.record(z.string(), aliasSchema).parse
+export const parseDevinThreadStore = parseEntries(aliasSchema)
 type Origin = z.infer<typeof originSchema>
 const optionSchema = z.object({ value: z.string().min(1), name: z.string().min(1), description: z.string().max(2_000).optional() })
 const configSchema = z.object({

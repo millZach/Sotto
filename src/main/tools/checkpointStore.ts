@@ -23,6 +23,8 @@ export type Snapshot = z.infer<typeof snapshotSchema>
  */
 const STORAGE_VERSION = 2
 const storageSchema = z.object({ version: z.union([z.literal(1), z.literal(STORAGE_VERSION)]), generation: z.string().uuid().optional(), records: z.array(recordSchema) }).strict()
+/** Reads `checkpoints.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseCheckpointStorage = (input: unknown): z.infer<typeof storageSchema> => storageSchema.parse(input)
 const journalLineSchema = z.object({ generation: z.string().uuid(), record: z.unknown() }).strict()
 /** The journal is folded into `checkpoints.json` once it outgrows the file, and never before this much. */
 const JOURNAL_FOLD_BYTES = 64 * 1024

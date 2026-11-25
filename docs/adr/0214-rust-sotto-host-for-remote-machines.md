@@ -49,3 +49,17 @@ What changed:
 - **The hello names the host program** (`hostProgram`, `node` or `rust`), so the row knows what runs on a tailnet connection, where no launch reports it. A host Sotto started that runs the other program offers **Restart on Node** or **Restart on Rust**.
 
 Rust becomes the default on Owl only after the five gates in `docs/plans/2026-11-24-rust-remote-host-cutover-readiness.md` pass.
+
+## Amendment, November 25, 2026: every shared store survives a rollback (#2880)
+
+Gate 1's storage half. Working on it turned up a fault larger than the three the issue named. Node's thread registry binds each Sotto thread to the provider adapter's own ID for it, and each adapter keys its `<provider>-threads.json` by that ID. On this computer none of about 1,400 bindings uses the Sotto thread ID. Rust looked provider records up by the Sotto thread ID, so on a Rust host no thread Node had made found its record: every send began a fresh native session, and the record Rust then wrote under the Sotto ID would have shown in Node as a second thread after a rollback.
+
+What changed:
+
+- **Rust reads and writes a Node thread's provider record under Node's key.** It translates through the bindings in `threads.json`, as Node's registry does. A thread Rust makes is bound to its own ID, as before. A record an earlier Rust build wrote under the Sotto ID beside Node's is kept on disk and not read.
+- **A record Rust creates carries what Node's schema requires**: `projectId`, `title` and `createdAt` from the thread, no `origins`, and each provider's own required fields. `settingsConfirmed` is false, so Node confirms the model and settings when it next loads the session. OpenCode's session is marked confirmed with a fresh `createToken`. The thread's permission mode is written only where that provider's Node store allows it. A Node record with no session yet, which Rust cannot read, is kept whole when Rust starts its session.
+- **Claude resumes a session when Claude Code has its transcript**, as Node decides, so a thread Node made no longer starts over on Rust.
+- **Node reads each provider store entry by entry.** An entry it cannot read costs only itself and is copied to `<file>.unreadable-<time>-<id>` before a save drops it. A store that is not a JSON object is still set aside whole as `.corrupt-*`.
+- **The coordinator's stores keep what Node wrote.** A thread's worktree and last turn keep the fields Rust does not model (`baseCommit`, `sentBranch`, `reclaimedAt` and the rest), and a default Rust fills in on reading is not written back. The plugin, Watcher and phone stores keep their unknown fields. Each now refuses or sets aside a file it cannot read, as Node does, rather than writing over it. The Council, checkpoint and pairing stores already matched.
+- **Every JSON store both host programs write has a Node → Rust → Node test**, which reads the store with Node's own parser before and after a Rust load and save and reads what Rust creates in it: `rustHostThreadStoreRollback.test.ts`, `rustHostWorkspaceStoreRollback.test.ts` and `rustHostSharedStoreRollback.test.ts`. The provider suites also read, after a real conversation, the record each provider's Rust adapter wrote.
+

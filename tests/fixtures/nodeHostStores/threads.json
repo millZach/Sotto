@@ -1,0 +1,7 @@
+{
+  "bindings": [
+    { "threadId": "6f1c2d3e-4b5a-4c6d-8e7f-001122334455", "provider": "codex", "sessionId": "1b4e28ba-2fa1-41d2-883f-0016d3cca427", "projectId": "project-1", "createdAt": "2026-11-20T10:00:00.000Z" },
+    { "threadId": "7a2b3c4d-5e6f-4a7b-9c8d-112233445566", "provider": "claude", "sessionId": "3d6a4adc-4b63-43f4-a5a2-2238f5e6c649", "projectId": "project-1", "createdAt": "2026-11-20T11:00:00.000Z" },
+    { "threadId": "8b3c4d5e-6f7a-4b8c-9d0e-223344556677", "provider": "grok", "sessionId": "4e7b5bed-5c74-44a5-b6b3-3349a6f7d75a", "projectId": "project-2", "createdAt": "2026-11-20T12:00:00.000Z" }
+  ]
+}

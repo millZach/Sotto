@@ -37,6 +37,8 @@ const pairedClientsFileSchema = z.object({
   clients: z.array(pairedClientSchema).max(1_000),
 }).strict()
 type PairedClientsFile = z.infer<typeof pairedClientsFileSchema>
+/** Reads `paired-clients.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parsePairedClientsFile = (input: unknown): PairedClientsFile => pairedClientsFileSchema.parse(input)
 
 export interface PairingCode {
   readonly code: string

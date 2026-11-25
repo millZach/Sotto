@@ -8,7 +8,7 @@ import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { compareClientVersions } from './clientVersions'
@@ -108,7 +108,7 @@ const aliasSchema = z.object({
 })
 type Alias = z.infer<typeof aliasSchema>
 /** Reads `muse-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseMuseThreadStore = preserveLegacyAliases(z.record(z.string(), aliasSchema).parse)
+export const parseMuseThreadStore = preserveLegacyAliases(parseEntries(aliasSchema))
 /**
  * The turn under which an origin saved without one waits in `unsettledSteers`: a steer from before steers recorded their
  * turn, or a send, which a whole history of a session with no running turn settles (#1408).

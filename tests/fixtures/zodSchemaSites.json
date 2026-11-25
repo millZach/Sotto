@@ -25,7 +25,7 @@
   },
   "src/main/agents/deepseek.ts": {
     "DeepSeekAcpHost.constructor": {
-      "count": 2,
+      "count": 1,
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
@@ -133,12 +133,6 @@
     "registerIpc": {
       "count": 3,
       "reason": "Payload schemas passed to register() once when the channels are registered at start, not in a handler."
-    }
-  },
-  "src/main/phones/phoneAccess.ts": {
-    "PhoneAccess.constructor": {
-      "count": 1,
-      "reason": "Built once when phone access is constructed at start."
     }
   },
   "src/main/tools/terminal.ts": {

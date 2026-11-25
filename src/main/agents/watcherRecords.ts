@@ -98,6 +98,8 @@ export function migrateWorkspaceThreadKinds(input: unknown): unknown {
 }
 
 const savedWatcherFileSchema = z.object({ watcher: z.unknown().optional() })
+/** Reads `watcher-record.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseWatcherRecordFile = (input: unknown): { watcher: WatcherRecord } => ({ watcher: migrateWatcherRecord(savedWatcherFileSchema.parse(input).watcher) })
 /** A mutable copy and the immutable record it was copied from. */
 export interface WatcherDraft { readonly from: Readonly<WatcherRecord>; readonly record: WatcherRecord }
 
@@ -132,7 +134,7 @@ export class WatcherRecords {
     this.display = options.enabled ? new WatcherMessageDisplay() : undefined
     this.archive = options.enabled ? new WatcherArchive(options.directory, options.historyEnabled) : undefined
     this.store = AtomicJsonStore.compact(join(options.directory, WATCHER_RECORD_FILE),
-      input => ({ watcher: migrateWatcherRecord(savedWatcherFileSchema.parse(input).watcher) }), () => ({ watcher: emptyWatcherRecord() }))
+      parseWatcherRecordFile, () => ({ watcher: emptyWatcherRecord() }))
   }
 
   async readOwn(): Promise<void> {

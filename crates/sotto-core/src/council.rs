@@ -4355,4 +4355,111 @@ mod tests {
         );
         assert!(mgr2.records()[0].stopped_at.is_some());
     }
+
+    /// `councils.json` as Node writes it: an ordinary Council with every optional field Node can write, and a Climb.
+    /// Node's schemas are strict, so the only place Node can keep a field Sotto does not know is a turn's block.
+    fn node_councils() -> Value {
+        let seat = |seat: &str, role: &str, thread: &str| {
+            json!({ "seat": seat, "role": role, "modelId": "model-1", "modelName": "Model One", "provider": "claude",
+                "effort": "high", "thread": thread, "formerThreads": ["former-1"], "started": true, "context": true })
+        };
+        let frozen = |id: &str| {
+            json!({ "kind": "frozen", "id": id, "sourceKind": "git", "manifestHash": "a".repeat(64), "files": 2, "bytes": 10,
+                "retained": true, "capturedAt": "2026-11-20T10:00:00.000Z", "removedAt": "2026-11-21T10:00:00.000Z" })
+        };
+        let snapshot = json!({ "path": "/snapshots/1", "repositoryRoot": "/home/zach/work", "commit": "abc123", "branch": "main",
+            "untracked": 1, "dirty": true, "removedAt": "2026-11-21T10:00:00.000Z" });
+        let (baseline, candidate) = ("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222");
+        let round = json!({
+            "index": 0, "askedAt": "2026-11-20T10:00:00.000Z", "stage": "done", "leftOut": ["B"],
+            "reviewPlan": { "A": ["B"] }, "framingFallback": false, "kinds": ["decision", "fact"], "research": true,
+            "reframedAt": "2026-11-20T10:01:00.000Z",
+            "criteria": [{ "id": "c1", "source": "user", "text": "Fast" }], "cruxRunners": ["A"], "cruxDone": true,
+            "fairnessAt": "2026-11-20T10:05:00.000Z", "doneAt": "2026-11-20T10:06:00.000Z",
+            "objections": [{ "seat": "A", "claim": "Too slow", "passage": "It runs twice", "answer": "amended", "reason": "Fixed",
+                "turn": "33333333-3333-4333-8333-333333333333" }],
+            "question": "Should we migrate?",
+            "framing": { "kinds": ["decision"], "criteria": [{ "id": "c1", "source": "question", "text": "Fast" }], "headings": ["Answer"],
+                "words": 300, "angles": [{ "seat": "A", "text": "Cost" }], "research": { "needed": true, "reason": "Docs" } },
+            "crux": { "test": "Run it", "lookup": false, "sides": [["A"], ["B"]],
+                "meanings": [{ "result": "fast", "meaning": "A wins" }, { "result": "slow", "meaning": "B wins" }] },
+            "verdict": "Migrate.", "amended": true,
+            "evidence": { "source": "legacy-git", "baseline": baseline, "candidate": candidate, "incumbent": baseline, "reference": candidate }
+        });
+        let turn = json!({
+            "id": "33333333-3333-4333-8333-333333333333", "round": 0, "seat": "chair", "thread": "t-c", "stage": "amend",
+            "repairOf": "44444444-4444-4444-8444-444444444444", "establish": 1, "part": 1, "objections": ["A"],
+            "draftId": "55555555-5555-4555-8555-555555555555", "messageId": "66666666-6666-4666-8666-666666666666",
+            "delivery": "accepted", "outcome": "answered", "queuedAt": "2026-11-20T10:02:00.000Z", "sentAt": "2026-11-20T10:02:01.000Z",
+            "briefs": true, "replyMessageId": "reply-1", "result": "valid", "superseded": false,
+            "block": { "answers": [{ "objection": "A", "answer": "amended" }], "nodeOnlyField": "kept" },
+            "summary": "Amended", "reason": "Fixed",
+            "citations": [{ "finding": "A1", "path": "src/a.ts", "lines": "1-2", "check": "matches", "of": "source" }]
+        });
+        json!({ "version": 2, "councils": [
+            {
+                "id": "00000000-0000-4000-8000-000000000001", "createdAt": "2026-11-20T10:00:00.000Z", "originThread": "thread-origin",
+                "originTitle": "Origin thread", "projectId": "project-1", "snapshot": snapshot,
+                "history": { "messages": 4, "words": 120, "tools": 1, "parts": 2, "lastMessageId": "msg-4" },
+                "seats": [seat("A", "panelist", "t-a"), seat("B", "panelist", "t-b"),
+                    { "seat": "chair", "role": "chair", "modelId": "model-2", "modelName": "Model Two", "effort": null, "thread": "t-c",
+                      "formerThreads": [], "started": false, "context": false }],
+                "rounds": [round],
+                "turns": [turn],
+                "deadlineMinutes": 10, "stoppedAt": "2026-11-20T10:07:00.000Z", "stoppedBecause": "user", "settledAt": "2026-11-20T10:08:00.000Z",
+                "mode": "standard",
+                "askedBy": { "provider": "claude", "userMessageId": "user-1", "words": "Ask the Council",
+                    "delivery": { "draftId": "77777777-7777-4777-8777-777777777777", "messageId": "88888888-8888-4888-8888-888888888888", "state": "sent" } },
+                "evidence": [frozen(baseline), frozen(candidate), { "kind": "legacyGit", "id": "legacy-git", "snapshot": snapshot },
+                    { "kind": "legacyLive", "id": "legacy-live" }]
+            },
+            {
+                "mode": "climb", "id": "99999999-9999-4999-8999-999999999999", "createdAt": "2026-11-20T11:00:00.000Z",
+                "originThread": "thread-origin", "originTitle": "Origin thread", "projectId": "project-1", "phase": "setup",
+                "evidence": [], "rounds": [], "turns": [], "noImprovement": 0, "completedTurns": 0, "originLastUser": null, "retained": true
+            }
+        ]})
+    }
+
+    #[test]
+    fn node_councils_survives_a_rust_load_and_save() {
+        crate::store_trip::round_trip("councils.json", node_councils, |dir| {
+            let mut store = CouncilStore::new(dir);
+            let loaded = store.read().unwrap();
+            assert_eq!((loaded.records.len(), loaded.climb_records.len()), (1, 1));
+            store.write(&loaded.records, &loaded.climb_records, true).unwrap();
+        });
+    }
+
+    #[test]
+    fn a_council_field_rust_does_not_know_keeps_the_file_unchanged() {
+        let dir = TempDir::new().unwrap();
+        let mut councils = node_councils();
+        councils["councils"][0]["rounds"][0]["nodeOnlyField"] = json!("kept");
+        let raw = serde_json::to_string_pretty(&councils).unwrap();
+        fs::write(dir.path().join("councils.json"), &raw).unwrap();
+        let mut mgr = CouncilManager::new(dir.path());
+        assert!(mgr.recover_at(1_760_000_000_000).is_empty());
+        assert!(mgr.storage_error().is_some());
+        assert!(mgr.persist().is_ok());
+        assert_eq!(fs::read_to_string(dir.path().join("councils.json")).unwrap(), raw);
+    }
+
+    #[test]
+    fn rust_created_councils_reads_in_node() {
+        let cid = "00000000-0000-4000-8000-000000000099";
+        let written = crate::store_trip::created("councils.json", |dir| {
+            fs::write(dir.join("councils.json"), serde_json::to_string_pretty(&sample_v1_json(cid)).unwrap()).unwrap();
+            let mut mgr = CouncilManager::new(dir);
+            mgr.recover_at(1_760_000_000_000);
+            let turn = "11111111-1111-4111-8111-111111111111".to_string();
+            let skipped = mgr.command_at(CouncilCommand::Skip { council: cid.into(), turn }, &CouncilCommandContext::default(), 1_760_000_001_000);
+            assert!(matches!(skipped.result, CouncilCommandResult::Ok { .. }));
+        });
+        let record = &written["councils"][0];
+        assert_eq!((written["version"].as_u64(), record["mode"].as_str()), (Some(2), Some("standard")));
+        assert_eq!(record["evidence"][0], json!({ "kind": "legacyLive", "id": format!("{cid}:legacy") }));
+        assert_eq!(record["rounds"][0]["stage"], "answers");
+        assert_eq!(record["turns"].as_array().unwrap().len(), 3);
+    }
 }

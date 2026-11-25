@@ -18,6 +18,8 @@ import {
  * for the same reason again.
  */
 const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), accounts: z.array(z.unknown()) })
+/** Reads `plugin-accounts.json`: every account this version can read, and a file it cannot read throws. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parsePluginAccounts = (value: unknown): PluginAccount[] => fileSchema.parse(value).accounts.flatMap(entry => { const account = pluginAccountSchema.safeParse(entry); return account.success ? [account.data] : [] })
 
 /** The part of the credential store plugin accounts use: this computer's, or a headless host's own. */
 export interface PluginCredentials {
@@ -313,10 +315,7 @@ export class PluginAccounts {
       text = null
     }
     if (text !== null) {
-      let parsed: ReturnType<typeof fileSchema.safeParse>
-      try { parsed = fileSchema.safeParse(JSON.parse(text)) } catch { throw new PluginAccountsUnreadable() }
-      if (!parsed.success) throw new PluginAccountsUnreadable()
-      accounts = parsed.data.accounts.flatMap(entry => { const account = pluginAccountSchema.safeParse(entry); return account.success ? [account.data] : [] })
+      try { accounts = parsePluginAccounts(JSON.parse(text)) } catch { throw new PluginAccountsUnreadable() }
     }
     // An account whose secret is gone cannot be used and is not shown as saved.
     this.accounts = accounts.filter(account => this.options.credentials.has(pluginAccountSlot(account.id)))

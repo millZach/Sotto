@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Datelike, Local, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::workspace::now_iso;
@@ -99,6 +99,16 @@ pub fn month_of_rfc3339(ts: &str) -> Option<String> {
     Some(format!("{:04}-{:02}", local.year(), local.month()))
 }
 
+/// Adds the fields of `extra` that `value` does not already have, so a save keeps what Node wrote.
+fn with_extra(mut value: Value, extra: &Map<String, Value>) -> Value {
+    if let Value::Object(ref mut object) = value {
+        for (key, held) in extra {
+            object.entry(key.clone()).or_insert_with(|| held.clone());
+        }
+    }
+    value
+}
+
 fn write_atomic_private_json_compact<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -134,18 +144,24 @@ fn write_atomic_private_json_compact<T: Serialize>(path: &Path, value: &T) -> st
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginSpending {
     pub ask_before: bool,
     pub monthly_limit: u64,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginBridge {
     pub imap_port: u16,
     pub smtp_port: u16,
     pub certificate: String,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 fn default_true() -> bool {
@@ -153,7 +169,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginAccount {
     pub id: String,
     pub plugin: String,
@@ -170,6 +186,9 @@ pub struct PluginAccount {
     pub spending: Option<PluginSpending>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bridge: Option<PluginBridge>,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl PluginAccount {
@@ -272,12 +291,15 @@ impl PluginAccountResult {
 struct PluginAccountsFileRaw {
     version: u32,
     accounts: Vec<Value>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 /// Manages `plugin-accounts.json` v1–v6 with exact TS serialization & version-bump parity.
 pub struct PluginAccountsStore {
     path: PathBuf,
     accounts: Option<Vec<PluginAccount>>,
+    file_extra: Map<String, Value>,
 }
 
 impl PluginAccountsStore {
@@ -285,6 +307,7 @@ impl PluginAccountsStore {
         Self {
             path: directory.join("plugin-accounts.json"),
             accounts: None,
+            file_extra: Map::new(),
         }
     }
 
@@ -318,6 +341,7 @@ impl PluginAccountsStore {
         if !(1..=6).contains(&raw.version) {
             return Err("Plugin accounts file version is unsupported.".to_string());
         }
+        self.file_extra = raw.extra;
         let mut parsed = Vec::new();
         for entry in raw.accounts {
             if let Ok(acc) = serde_json::from_value::<PluginAccount>(entry) {
@@ -377,7 +401,7 @@ impl PluginAccountsStore {
             if let Some(ref br) = acc.bridge {
                 obj.insert("bridge".into(), json!(br));
             }
-            stored.push(Value::Object(obj));
+            stored.push(with_extra(Value::Object(obj), &acc.extra));
         }
 
         let version: u32 = if has_elevenlabs {
@@ -394,7 +418,7 @@ impl PluginAccountsStore {
             1
         };
 
-        let payload = json!({ "version": version, "accounts": stored });
+        let payload = with_extra(json!({ "version": version, "accounts": stored }), &self.file_extra);
         write_atomic_private_json_compact(&self.path, &payload)
             .map_err(|e| format!("Could not write plugin-accounts.json: {e}"))?;
         self.accounts = Some(accounts.to_vec());
@@ -499,7 +523,7 @@ impl PluginAccountsStore {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginUse {
     pub id: String,
     pub at: String,
@@ -510,6 +534,9 @@ pub struct PluginUse {
     pub tool: String,
     pub kind: String,
     pub outcome: String,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -528,11 +555,14 @@ pub struct PluginUseReport {
 struct PluginUseFileRaw {
     version: u32,
     uses: Vec<Value>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 pub struct PluginUseStore {
     path: PathBuf,
     uses: Option<Vec<PluginUse>>,
+    file_extra: Map<String, Value>,
     history_enabled: bool,
 }
 
@@ -541,6 +571,7 @@ impl PluginUseStore {
         Self {
             path: directory.join("plugin-use.json"),
             uses: None,
+            file_extra: Map::new(),
             history_enabled: true,
         }
     }
@@ -576,6 +607,7 @@ impl PluginUseStore {
                 tool: report.tool,
                 kind: report.kind,
                 outcome: report.outcome,
+                extra: Map::new(),
             },
         );
         next.truncate(PLUGIN_USE_KEPT);
@@ -624,6 +656,7 @@ impl PluginUseStore {
             if let Ok(text) = fs::read_to_string(&self.path) {
                 if let Ok(raw) = serde_json::from_str::<PluginUseFileRaw>(&text) {
                     if raw.version == 1 {
+                        self.file_extra = raw.extra;
                         for entry in raw.uses {
                             if let Ok(u) = serde_json::from_value::<PluginUse>(entry) {
                                 if Uuid::parse_str(&u.id).is_ok()
@@ -642,7 +675,7 @@ impl PluginUseStore {
     }
 
     fn write(&mut self, uses: &[PluginUse]) -> Result<(), String> {
-        let payload = json!({ "version": 1, "uses": uses });
+        let payload = with_extra(json!({ "version": 1, "uses": uses }), &self.file_extra);
         write_atomic_private_json_compact(&self.path, &payload)
             .map_err(|e| format!("Could not write plugin-use.json: {e}"))?;
         self.uses = Some(uses.to_vec());
@@ -655,11 +688,14 @@ impl PluginUseStore {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct MailGrant {
     pub thread_id: String,
     pub account_id: String,
     pub at: String,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -674,6 +710,8 @@ pub struct ThreadMailGrant {
 struct MailGrantsFileRaw {
     version: u32,
     grants: Vec<Value>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 pub fn mail_grants_shown(
@@ -700,6 +738,7 @@ pub fn mail_grants_shown(
 pub struct MailGrantsStore {
     path: PathBuf,
     grants: Option<Vec<MailGrant>>,
+    file_extra: Map<String, Value>,
     behind: bool,
     generations: HashMap<String, u64>,
 }
@@ -709,6 +748,7 @@ impl MailGrantsStore {
         Self {
             path: directory.join("plugin-mail-grants.json"),
             grants: None,
+            file_extra: Map::new(),
             behind: false,
             generations: HashMap::new(),
         }
@@ -767,6 +807,7 @@ impl MailGrantsStore {
             thread_id: thread_id.to_string(),
             account_id: account_id.to_string(),
             at: now_iso(),
+            extra: Map::new(),
         });
         if grants.len() > MAIL_GRANTS_MAX {
             let drain = grants.len() - MAIL_GRANTS_MAX;
@@ -831,6 +872,7 @@ impl MailGrantsStore {
             if let Ok(text) = fs::read_to_string(&self.path) {
                 if let Ok(raw) = serde_json::from_str::<MailGrantsFileRaw>(&text) {
                     if raw.version == 1 {
+                        self.file_extra = raw.extra;
                         for entry in raw.grants {
                             if let Ok(g) = serde_json::from_value::<MailGrant>(entry) {
                                 if !g.thread_id.is_empty()
@@ -850,7 +892,7 @@ impl MailGrantsStore {
     }
 
     fn write(&mut self, grants: &[MailGrant]) -> Result<(), String> {
-        let payload = json!({ "version": 1, "grants": grants });
+        let payload = with_extra(json!({ "version": 1, "grants": grants }), &self.file_extra);
         write_atomic_private_json_compact(&self.path, &payload)
             .map_err(|e| format!("Could not write plugin-mail-grants.json: {e}"))?;
         self.grants = Some(grants.to_vec());
@@ -864,11 +906,14 @@ impl MailGrantsStore {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct CopyChoicesFile {
     pub version: u32,
     pub copy_new: bool,
     pub choices: BTreeMap<String, BTreeMap<String, bool>>,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl Default for CopyChoicesFile {
@@ -877,6 +922,7 @@ impl Default for CopyChoicesFile {
             version: 1,
             copy_new: true,
             choices: BTreeMap::new(),
+            extra: Map::new(),
         }
     }
 }
@@ -1026,7 +1072,7 @@ pub struct SpendingReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct HeardSpendingEntry {
     pub month: String,
     pub credits: u64,
@@ -1035,13 +1081,18 @@ pub struct HeardSpendingEntry {
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<u64>,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct HeardSpendingFile {
     version: u32,
     heard: BTreeMap<String, BTreeMap<String, HeardSpendingEntry>>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1092,6 +1143,7 @@ impl HeardSpendingStore {
                 heard_at: now_iso(),
                 session: Some(report.session.clone()),
                 revision: Some(report.revision),
+                extra: Map::new(),
             };
             if let Some(ref prev) = before {
                 if report.month < prev.month {
@@ -1177,6 +1229,7 @@ impl HeardSpendingStore {
                 let empty = HeardSpendingFile {
                     version: 1,
                     heard: BTreeMap::new(),
+                    extra: Map::new(),
                 };
                 self.kept = Some(empty.clone());
                 return Ok(empty);
@@ -1203,9 +1256,15 @@ pub enum ModelSource {
     Words {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         words: Option<String>,
+        #[serde(flatten)]
+        extra: Map<String, Value>,
     },
     #[serde(rename_all = "camelCase")]
-    Photo { file_name: String },
+    Photo {
+        file_name: String,
+        #[serde(flatten)]
+        extra: Map<String, Value>,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1219,6 +1278,9 @@ pub struct MeshyJob {
     pub photo: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asking: Option<String>,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1248,14 +1310,19 @@ pub struct ModelRecord {
     pub failure: Option<String>,
     #[serde(default)]
     pub job: MeshyJob,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct ModelSpentEntry {
     account_id: String,
     asked_at: String,
     credits: u64,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1264,12 +1331,17 @@ struct ModelRecordsFileRaw {
     models: Vec<Value>,
     #[serde(default)]
     spent: Vec<Value>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 pub struct ModelRecordsStore {
     path: PathBuf,
     records: Option<Vec<ModelRecord>>,
     spent: Vec<ModelSpentEntry>,
+    file_extra: Map<String, Value>,
+    /// The file is there and could not be read now, so nothing is written over it until it is read again.
+    unreadable: bool,
     history_enabled: bool,
 }
 
@@ -1279,6 +1351,8 @@ impl ModelRecordsStore {
             path: directory.join("3d-models.json"),
             records: None,
             spent: Vec::new(),
+            file_extra: Map::new(),
+            unreadable: false,
             history_enabled: true,
         }
     }
@@ -1290,7 +1364,7 @@ impl ModelRecordsStore {
             let mut changed = false;
             if let Some(ref mut recs) = self.records {
                 for r in recs.iter_mut() {
-                    if let ModelSource::Words { ref mut words } = r.source {
+                    if let ModelSource::Words { ref mut words, .. } = r.source {
                         if words.is_some() {
                             *words = None;
                             changed = true;
@@ -1354,6 +1428,7 @@ impl ModelRecordsStore {
                         account_id: rec.account_id,
                         asked_at: rec.asked_at,
                         credits: rec.credits,
+                        extra: Map::new(),
                     });
                 }
             } else {
@@ -1386,18 +1461,29 @@ impl ModelRecordsStore {
     }
 
     fn load(&mut self) {
-        if self.records.is_some() {
+        if self.records.is_some() && !self.unreadable {
             return;
         }
         let mut recs = Vec::new();
         let mut spent = Vec::new();
-        if let Ok(text) = fs::read_to_string(&self.path) {
+        // A file that is there and cannot be read now is never written over with nothing, as in Node. One that does
+        // not parse starts over, as in Node.
+        self.unreadable = false;
+        let text = match fs::read_to_string(&self.path) {
+            Ok(text) => Some(text),
+            Err(e) => {
+                self.unreadable = e.kind() != std::io::ErrorKind::NotFound;
+                None
+            }
+        };
+        if let Some(text) = text {
             if let Ok(raw) = serde_json::from_str::<ModelRecordsFileRaw>(&text) {
                 if raw.version == 1 {
+                    self.file_extra = raw.extra;
                     for entry in raw.models {
                         if let Ok(mut r) = serde_json::from_value::<ModelRecord>(entry) {
                             if !self.history_enabled {
-                                if let ModelSource::Words { ref mut words } = r.source {
+                                if let ModelSource::Words { ref mut words, .. } = r.source {
                                     *words = None;
                                 }
                             }
@@ -1418,18 +1504,22 @@ impl ModelRecordsStore {
     }
 
     fn write(&mut self) -> Result<(), String> {
+        if self.unreadable {
+            return Err("3d-models.json could not be read, so it was kept unchanged.".into());
+        }
         let payload = if self.spent.is_empty() {
             json!({ "version": 1, "models": self.records.as_deref().unwrap_or(&[]) })
         } else {
             json!({ "version": 1, "models": self.records.as_deref().unwrap_or(&[]), "spent": self.spent })
         };
+        let payload = with_extra(payload, &self.file_extra);
         write_atomic_private_json_compact(&self.path, &payload)
             .map_err(|e| format!("Could not write 3d-models.json: {e}"))
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct SoundRecord {
     pub id: String,
     pub thread_id: String,
@@ -1452,16 +1542,21 @@ pub struct SoundRecord {
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<String>,
+    /// Fields Node wrote that this build does not know, kept as they were.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct SoundSpentEntry {
     account_id: String,
     asked_at: String,
     cost: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     id: Option<String>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1470,12 +1565,17 @@ struct SoundRecordsFileRaw {
     sounds: Vec<Value>,
     #[serde(default)]
     spent: Vec<Value>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
 }
 
 pub struct SoundRecordsStore {
     path: PathBuf,
     records: Option<Vec<SoundRecord>>,
     spent: Vec<SoundSpentEntry>,
+    file_extra: Map<String, Value>,
+    /// The file is there and could not be read, so nothing is written over it until it is read again.
+    unreadable: bool,
     history_enabled: bool,
 }
 
@@ -1485,6 +1585,8 @@ impl SoundRecordsStore {
             path: directory.join("sounds.json"),
             records: None,
             spent: Vec::new(),
+            file_extra: Map::new(),
+            unreadable: false,
             history_enabled: true,
         }
     }
@@ -1576,6 +1678,7 @@ impl SoundRecordsStore {
                         } else {
                             None
                         },
+                        extra: Map::new(),
                     });
                 }
             } else {
@@ -1600,14 +1703,25 @@ impl SoundRecordsStore {
     }
 
     fn load(&mut self) {
-        if self.records.is_some() {
+        if self.records.is_some() && !self.unreadable {
             return;
         }
         let mut recs = Vec::new();
         let mut spent = Vec::new();
-        if let Ok(text) = fs::read_to_string(&self.path) {
-            if let Ok(raw) = serde_json::from_str::<SoundRecordsFileRaw>(&text) {
-                if raw.version == 1 {
+        // A file that is there and cannot be read or parsed is never written over, as in Node: every change refuses
+        // until it can be read.
+        self.unreadable = false;
+        let text = match fs::read_to_string(&self.path) {
+            Ok(text) => Some(text),
+            Err(e) => {
+                self.unreadable = e.kind() != std::io::ErrorKind::NotFound;
+                None
+            }
+        };
+        if let Some(text) = text {
+            match serde_json::from_str::<SoundRecordsFileRaw>(&text) {
+                Ok(raw) if raw.version == 1 => {
+                    self.file_extra = raw.extra;
                     for entry in raw.sounds {
                         if let Ok(mut r) = serde_json::from_value::<SoundRecord>(entry) {
                             if !self.history_enabled {
@@ -1622,6 +1736,7 @@ impl SoundRecordsStore {
                         }
                     }
                 }
+                _ => self.unreadable = true,
             }
         }
         recs.truncate(SOUND_RECORDS_KEPT);
@@ -1630,11 +1745,15 @@ impl SoundRecordsStore {
     }
 
     fn write(&mut self) -> Result<(), String> {
+        if self.unreadable {
+            return Err("sounds.json could not be read, so it was kept unchanged.".into());
+        }
         let payload = if self.spent.is_empty() {
             json!({ "version": 1, "sounds": self.records.as_deref().unwrap_or(&[]) })
         } else {
             json!({ "version": 1, "sounds": self.records.as_deref().unwrap_or(&[]), "spent": self.spent })
         };
+        let payload = with_extra(payload, &self.file_extra);
         write_atomic_private_json_compact(&self.path, &payload)
             .map_err(|e| format!("Could not write sounds.json: {e}"))
     }
@@ -2140,6 +2259,198 @@ pub fn read_plugins_readonly(data_directory: &Path) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store_trip::{created, round_trip};
+
+    const ACCOUNT: &str = "0f8c1d2e-3b4a-4c5d-8e6f-001122334455";
+    const MAIL: &str = "1a9d2e3f-4c5b-4d6e-9f70-112233445566";
+    const PROTON: &str = "2b0e3f40-5d6c-4e7f-a081-223344556677";
+    const MESHY: &str = "3c1f4051-6e7d-4f80-b192-334455667788";
+    const SOUNDS: &str = "4d205162-7f8e-4091-82a3-445566778899";
+    const SESSION: &str = "5e316273-809f-41a2-93b4-5566778899aa";
+    const USE: &str = "6f427384-91a0-42b3-a4c5-66778899aabb";
+
+    fn node_accounts() -> Value {
+        json!({ "version": 6, "nodeOnlyField": "kept", "accounts": [
+            { "id": ACCOUNT, "plugin": "vercel", "name": "Personal", "savedAt": "2026-11-20T10:00:00.000Z", "signedInAs": "zach", "on": false, "projects": ["project-1"], "nodeOnlyField": "kept" },
+            { "id": MAIL, "plugin": "gmail", "name": "Work mail", "savedAt": "2026-11-20T10:01:00.000Z", "signedInAs": null, "address": "zach@example.com", "nodeOnlyField": "kept" },
+            { "id": PROTON, "plugin": "proton-mail", "name": "Proton", "savedAt": "2026-11-20T10:02:00.000Z", "signedInAs": null, "address": "zach@proton.me",
+              "bridge": { "imapPort": 1143, "smtpPort": 1025, "certificate": "ab".repeat(32), "nodeOnlyField": "kept" }, "nodeOnlyField": "kept" },
+            { "id": MESHY, "plugin": "meshy", "name": "Meshy", "savedAt": "2026-11-20T10:03:00.000Z", "signedInAs": null,
+              "spending": { "askBefore": false, "monthlyLimit": 500, "nodeOnlyField": "kept" }, "nodeOnlyField": "kept" },
+            { "id": SOUNDS, "plugin": "elevenlabs", "name": "Studio", "savedAt": "2026-11-20T10:04:00.000Z", "signedInAs": "studio",
+              "spending": { "askBefore": true, "monthlyLimit": 10 }, "nodeOnlyField": "kept" },
+        ] })
+    }
+
+    #[test]
+    fn node_plugin_accounts_survives_a_rust_load_and_save() {
+        round_trip("plugin-accounts.json", node_accounts, |dir| {
+            let mut store = PluginAccountsStore::new(dir);
+            let accounts = store.load(|_| true).unwrap();
+            assert_eq!(accounts.len(), 5);
+            store.write(&accounts).unwrap();
+        });
+    }
+
+    #[test]
+    fn node_plugin_use_survives_a_rust_load_and_save() {
+        round_trip(
+            "plugin-use.json",
+            || json!({ "version": 1, "nodeOnlyField": "kept", "uses": [
+                { "id": USE, "at": "2026-11-20T10:00:00.000Z", "threadId": "thread-1", "plugin": "gmail", "accountId": MAIL, "tool": "plugin_read", "kind": "mail-search", "outcome": "done", "nodeOnlyField": "kept" },
+                { "id": SESSION, "at": "2026-11-20T09:00:00.000Z", "threadId": "thread-2", "plugin": "github", "tool": "github_comment", "kind": "comment", "outcome": "denied" },
+            ] }),
+            |dir| {
+                let mut store = PluginUseStore::new(dir);
+                let uses = store.load().clone();
+                assert_eq!(uses.len(), 2);
+                store.write(&uses).unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn rust_created_plugin_use_reads_in_node() {
+        let written = created("plugin-use.json", |dir| {
+            let report = PluginUseReport { thread_id: "thread-1".into(), plugin: "meshy".into(), account_id: Some(MESHY.into()), tool: "make_3d_model".into(), kind: "3d-model".into(), outcome: "done".into() };
+            PluginUseStore::new(dir).add(report).unwrap();
+        });
+        assert_eq!(written["version"], 1);
+        assert_eq!(written["uses"][0]["accountId"], MESHY);
+    }
+
+    #[test]
+    fn node_plugin_mail_grants_survives_a_rust_load_and_save() {
+        round_trip(
+            "plugin-mail-grants.json",
+            || json!({ "version": 1, "nodeOnlyField": "kept", "grants": [
+                { "threadId": "thread-1", "accountId": MAIL, "at": "2026-11-20T10:00:00.000Z", "nodeOnlyField": "kept" },
+                { "threadId": "host-1:thread-2", "accountId": PROTON, "at": "2026-11-20T11:00:00.000Z" },
+            ] }),
+            |dir| {
+                let mut store = MailGrantsStore::new(dir);
+                let grants = store.load().clone();
+                assert_eq!(grants.len(), 2);
+                store.write(&grants).unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn rust_created_plugin_mail_grants_reads_in_node() {
+        let written = created("plugin-mail-grants.json", |dir| {
+            assert!(MailGrantsStore::new(dir).grant("thread-1", MAIL, true, None));
+        });
+        assert_eq!(written["grants"][0]["accountId"], MAIL);
+    }
+
+    #[test]
+    fn node_plugin_account_copy_choices_survives_a_rust_load_and_save() {
+        round_trip(
+            "plugin-account-copy-choices.json",
+            || json!({ "version": 1, "copyNew": false, "nodeOnlyField": "kept", "choices": { ACCOUNT: { "computer-1": true, "computer-2": false }, MESHY: { "computer-1": false } } }),
+            |dir| {
+                let mut store = PluginCopyChoicesStore::new(dir);
+                let choices = store.read().unwrap();
+                store.set_copy_new(choices.copy_new).unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn rust_created_plugin_account_copy_choices_reads_in_node() {
+        let written = created("plugin-account-copy-choices.json", |dir| {
+            PluginCopyChoicesStore::new(dir).set_copy(ACCOUNT, "computer-1", false).unwrap();
+        });
+        assert_eq!(written["copyNew"], true);
+        assert_eq!(written["choices"][ACCOUNT]["computer-1"], false);
+    }
+
+    fn node_heard_spending() -> Value {
+        json!({ "version": 1, "nodeOnlyField": "kept", "heard": {
+            "host-a": { MESHY: { "month": "2026-11", "credits": 60, "heardAt": "2026-11-20T10:00:00.000Z", "session": SESSION, "revision": 2, "nodeOnlyField": "kept" } },
+            "host-a#earlier": { MESHY: { "month": "2026-10", "credits": 40, "heardAt": "2026-10-30T10:00:00.000Z" } },
+        } })
+    }
+
+    fn heard_trip(file: &str) {
+        round_trip(file, node_heard_spending, |dir| {
+            let mut store = HeardSpendingStore::new(dir.join(file));
+            assert_eq!(store.total(MESHY, "2026-11", None).unwrap(), 60);
+            store.hear("host-a", &[]).unwrap();
+        });
+    }
+
+    #[test]
+    fn node_plugin_meshy_spending_survives_a_rust_load_and_save() {
+        heard_trip("plugin-meshy-spending.json");
+    }
+
+    #[test]
+    fn node_plugin_elevenlabs_spending_survives_a_rust_load_and_save() {
+        heard_trip("plugin-elevenlabs-spending.json");
+    }
+
+    #[test]
+    fn rust_created_plugin_meshy_spending_reads_in_node() {
+        let written = created("plugin-meshy-spending.json", |dir| {
+            let report = SpendingReport { account_id: MESHY.into(), month: "2026-11".into(), credits: 30, session: SESSION.into(), revision: 1 };
+            HeardSpendingStore::new(dir.join("plugin-meshy-spending.json")).hear("host-a", &[report]).unwrap();
+        });
+        assert_eq!(written["heard"]["host-a"][MESHY]["credits"], 30);
+    }
+
+    #[test]
+    fn node_3d_models_survives_a_rust_load_and_save() {
+        round_trip(
+            "3d-models.json",
+            || json!({ "version": 1, "nodeOnlyField": "kept", "models": [
+                { "id": "model-1", "threadId": "thread-1", "accountId": MESHY, "name": "Chair", "source": { "kind": "words", "words": "a wooden chair", "nodeOnlyField": "kept" },
+                  "root": "/home/zach/work", "folder": "/home/zach/work/models", "formats": ["glb", "usdz"], "triangles": 30000, "state": "making", "stage": "texture", "credits": 30,
+                  "askedAt": "2026-11-20T10:00:00.000Z", "files": [], "job": { "preview": "task-1", "refine": "task-2", "asking": "refine", "nodeOnlyField": "kept" }, "nodeOnlyField": "kept" },
+                { "id": "model-2", "threadId": "thread-2", "accountId": MESHY, "name": "Lamp", "source": { "kind": "photo", "fileName": "lamp.png" },
+                  "root": "/home/zach/work", "folder": "/home/zach/work/models", "formats": ["glb"], "state": "done", "credits": 20, "askedAt": "2026-11-19T10:00:00.000Z",
+                  "endedAt": "2026-11-19T10:05:00.000Z", "files": ["lamp.glb"], "still": "lamp-still.png", "job": { "photo": "task-3" } },
+                { "id": "model-3", "threadId": "thread-2", "accountId": MESHY, "name": "Vase", "source": { "kind": "words" }, "root": "/home/zach/work", "folder": "/home/zach/work/models",
+                  "formats": ["stl"], "state": "failed", "credits": 0, "askedAt": "2026-11-18T10:00:00.000Z", "endedAt": "2026-11-18T10:01:00.000Z", "files": [], "failure": "no-credits", "job": {} },
+            ], "spent": [{ "accountId": MESHY, "askedAt": "2026-11-17T10:00:00.000Z", "credits": 10, "nodeOnlyField": "kept" }] }),
+            |dir| {
+                let mut store = ModelRecordsStore::new(dir);
+                store.load();
+                assert_eq!(store.records.as_ref().unwrap().len(), 3);
+                store.write().unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn node_sounds_survives_a_rust_load_and_save() {
+        round_trip(
+            "sounds.json",
+            || json!({ "version": 1, "nodeOnlyField": "kept", "sounds": [
+                { "id": "sound-1", "threadId": "thread-1", "accountId": SOUNDS, "kind": "speech", "name": "Welcome", "words": "Hello there", "voice": "voice-1", "seconds": 2.5,
+                  "folder": "/home/zach/work/sounds", "fileName": "welcome.mp3", "bytes": 40000, "cost": 0.25, "askedAt": "2026-11-20T10:00:00.000Z", "state": "made", "nodeOnlyField": "kept" },
+                { "id": "sound-2", "threadId": "thread-2", "accountId": SOUNDS, "kind": "effect", "name": "Door", "folder": "/home/zach/work/sounds", "cost": 0.5,
+                  "askedAt": "2026-11-19T10:00:00.000Z", "state": "failed", "failure": "busy" },
+            ], "spent": [{ "accountId": SOUNDS, "askedAt": "2026-11-17T10:00:00.000Z", "cost": 0.75, "id": "sound-0", "nodeOnlyField": "kept" }] }),
+            |dir| {
+                let mut store = SoundRecordsStore::new(dir);
+                assert_eq!(store.list().len(), 2);
+                store.write().unwrap();
+            },
+        );
+    }
+
+    #[test]
+    fn a_sounds_file_that_does_not_parse_is_kept_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sounds.json");
+        fs::write(&path, "{ not json").unwrap();
+        let mut store = SoundRecordsStore::new(dir.path());
+        assert!(store.list().is_empty());
+        assert!(store.write().is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
+    }
 
     #[test]
     fn accounts_store_preserves_v1_to_v6_versioning_default_omission_and_corrupt_refusal() {
@@ -2160,6 +2471,7 @@ mod tests {
             projects: None,
             spending: None,
             bridge: None,
+            extra: Map::new(),
         };
         store.write(std::slice::from_ref(&acc1)).unwrap();
         let raw1: Value = serde_json::from_str(
@@ -2202,8 +2514,10 @@ mod tests {
             spending: Some(PluginSpending {
                 ask_before: true,
                 monthly_limit: 10,
+                extra: Map::new(),
             }),
             bridge: None,
+            extra: Map::new(),
         };
         store.write(&[acc1, acc2]).unwrap();
         let raw6: Value = serde_json::from_str(
@@ -2304,8 +2618,10 @@ mod tests {
                     spending: Some(PluginSpending {
                         ask_before: true,
                         monthly_limit: 1000,
+                        extra: Map::new(),
                     }),
                     bridge: None,
+                    extra: Map::new(),
                 },
                 PluginAccount {
                     id: acc_mail,
@@ -2318,6 +2634,7 @@ mod tests {
                     projects: None,
                     spending: None,
                     bridge: None,
+                    extra: Map::new(),
                 },
             ],
             &[CopyComputerView {

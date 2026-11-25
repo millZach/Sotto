@@ -9,6 +9,8 @@ const FILE = 'watcher-told.json'
 const KEPT_MAX = 200
 const fileSchema = z.object({ version: z.literal(1), events: z.array(watcherEventSchema).max(KEPT_MAX) }).strict()
 type File = z.infer<typeof fileSchema>
+/** Reads `watcher-told.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseWatcherToldFile = (input: unknown): File => fileSchema.parse(input)
 const empty = (): File => ({ version: 1, events: [] })
 
 /**
@@ -21,7 +23,7 @@ export class WatcherToldNews {
   private events: WatcherEvent[] = []
   private tail: Promise<unknown> = Promise.resolve()
   constructor(private readonly directory: string, private readonly historyEnabled: () => boolean) {
-    this.store = new AtomicJsonStore(join(directory, FILE), input => fileSchema.parse(input), empty)
+    this.store = new AtomicJsonStore(join(directory, FILE), parseWatcherToldFile, empty)
   }
   private inTurn<T>(work: () => Promise<T>): Promise<T> {
     const next = this.tail.catch(() => undefined).then(work)

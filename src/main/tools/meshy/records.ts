@@ -72,6 +72,11 @@ const fileSchema = z.object({ version: z.literal(1), models: z.array(z.unknown()
 
 /** A 3D model's record as this folder keeps it, with Meshy's task IDs. */
 export type ModelRecord = z.infer<typeof recordSchema>
+/** Reads `3d-models.json`: every record and forgotten cost this version can read, and a file it cannot read throws. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseModelRecords = (value: unknown): { models: ModelRecord[]; spent: Spent[] } => {
+  const file = fileSchema.parse(value)
+  return { models: file.models.flatMap(entry => { const record = recordSchema.safeParse(entry); return record.success ? [record.data] : [] }), spent: (file.spent ?? []).flatMap(entry => { const spent = spentSchema.safeParse(entry); return spent.success ? [spent.data] : [] }) }
+}
 export type MeshyJob = ModelRecord['job']
 /** A 3D model as the rest of Sotto sees it: the record without Meshy's task IDs. */
 export type ThreeDModel = Omit<ModelRecord, 'job'>

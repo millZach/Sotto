@@ -410,4 +410,41 @@ mod tests {
         assert!(reloaded.verify_token(&paired.token).is_none());
         assert!(reloaded.verify_session(&session.session).is_none());
     }
+
+    #[test]
+    fn node_paired_clients_survives_a_rust_load_and_save() {
+        // Node's schema is strict, as Rust's is, so neither side writes a field the other does not know.
+        let node = || {
+            serde_json::json!({
+                "secret": "A".repeat(43),
+                "clients": [
+                    { "clientId": "11111111-1111-4111-8111-111111111111", "name": "Zach's iPhone", "pairedAt": "2026-11-20T10:00:00.000Z", "tokenHash": "hash-1" },
+                    { "clientId": "22222222-2222-4222-8222-222222222222", "name": "Forge", "pairedAt": "2026-11-21T10:00:00.000Z", "tokenHash": "hash-2" },
+                ],
+            })
+        };
+        crate::store_trip::round_trip("paired-clients.json", node, |dir| {
+            PairedClients::load(dir).unwrap().save().unwrap();
+        });
+    }
+
+    #[test]
+    fn rust_created_paired_clients_reads_in_node() {
+        let written = crate::store_trip::created("paired-clients.json", |dir| {
+            let mut store = PairedClients::load(dir).unwrap();
+            let code = store.issue_pairing_code();
+            store.redeem_pairing_code(&code.code, "Zach's iPhone").unwrap();
+        });
+        assert_eq!(written["secret"].as_str().unwrap().len(), 43);
+        assert_eq!(written["clients"][0]["name"], "Zach's iPhone");
+    }
+
+    #[test]
+    fn a_paired_clients_file_that_does_not_read_is_kept_unchanged() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("paired-clients.json");
+        fs::write(&path, "{ not json").unwrap();
+        assert!(matches!(PairedClients::load(dir.path()), Err(PairingError::Corrupt(_))));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
+    }
 }

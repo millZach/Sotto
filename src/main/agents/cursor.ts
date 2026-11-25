@@ -6,7 +6,7 @@ import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -79,7 +79,7 @@ const aliasSchema = z.object({
 })
 type Alias = z.infer<typeof aliasSchema>
 /** Reads `cursor-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseCursorThreadStore = z.record(z.string(), aliasSchema).parse
+export const parseCursorThreadStore = parseEntries(aliasSchema)
 /**
  * How many answered request IDs a thread keeps. A request's ID carries the nonce of the process that asked, so one from
  * a process that has ended can never come again; the window covers every request a running process can hold open

@@ -91,6 +91,8 @@ const leadsQueue = (item: QueuedFollowup, threadId: string): boolean => waitingW
 const WAKE_UP_NOT_EDITABLE = "A wake-up is Sotto's own message and cannot be edited. Remove it if the thread should not get it."
 
 type Stored = z.infer<typeof storedSchema>
+/** Reads `followups.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseFollowupStore = (input: unknown): Stored => storedSchema.parse(withoutRetiredNews(input))
 /** A message moved from a replaced Watcher's queue (#1735): its draft, when it was queued and whether it may have arrived. */
 export interface MovedPrompt { readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }
 /** The durable queue as it stands, for reading only. */
@@ -108,7 +110,7 @@ export class FollowupStore {
   private tail: Promise<unknown> = Promise.resolve()
   private readonly store: AtomicJsonStore<Stored>
   constructor(private readonly directory: string, private readonly historyEnabled: () => boolean = () => true, private readonly isWatcherThread: (id: string) => boolean = () => false, private readonly watcherEnabled: () => boolean = () => true) {
-    this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), input => storedSchema.parse(withoutRetiredNews(input)), () => ({ items: [], receipts: [] }))
+    this.store = new AtomicJsonStore<Stored>(join(directory, 'followups.json'), parseFollowupStore, () => ({ items: [], receipts: [] }))
   }
   /**
    * Reads the queue, staging any image an older version kept inline. `kept` says whether a follow-up's content is

@@ -61,6 +61,11 @@ const SPENT_KEPT_MS = 62 * 24 * 60 * 60_000
 const fileSchema = z.object({ version: z.literal(1), sounds: z.array(z.unknown()), spent: z.array(z.unknown()).optional() })
 
 export type SoundRecord = z.infer<typeof recordSchema>
+/** Reads `sounds.json`: every record and forgotten cost this version can read, and a file it cannot read throws. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseSoundRecords = (value: unknown): { sounds: SoundRecord[]; spent: Spent[] } => {
+  const file = fileSchema.parse(value)
+  return { sounds: file.sounds.flatMap(entry => { const record = recordSchema.safeParse(entry); return record.success ? [record.data] : [] }), spent: (file.spent ?? []).flatMap(entry => { const spent = spentSchema.safeParse(entry); return spent.success ? [spent.data] : [] }) }
+}
 
 /**
  * The record of sounds made with ElevenLabs (ADR-0205, slice 12): one small file in Sotto's data folder, newest first,

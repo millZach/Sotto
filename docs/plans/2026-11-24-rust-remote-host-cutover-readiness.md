@@ -35,6 +35,8 @@ Issues: [#2876](https://github.com/millZach/Sotto/issues/2876) (commands and hel
 - The Rust hello lists the same `features` and capabilities as Node's for the same data folder.
 - **Rolling back to Node never loses or quarantines anything.** Every JSON store both hosts write survives Node → Rust → Node: the provider stores, which Gate 0 covers, and also `workspace.json`'s per-thread snapshot, `threads.json`'s bindings, `councils.json`, the plugin stores, `checkpoints.json`, `paired-clients.json` and `phone-access.json`. A record Rust creates passes Node's schema for its store, since today a thread started on Rust lacks `projectId`, `title` and `createdAt` and would make Node refuse the whole file. Node reads each provider store entry by entry, so an unreadable entry costs only itself. Claude's Rust-only `started` no longer turns a Node-created thread into a fresh session.
 
+Storage and rollback (#2880) is built in its pull request; see ADR-0214's November 25 amendment. Commands and hello (#2876) are next.
+
 **Done when:** a CI test fails on any command with no Rust handler, or a handler that is only an `InvalidRequest` stub, and on any hello feature difference; the test shows 0 of each. Every shared JSON store has a Node → Rust → Node round-trip test in CI, like `rustHostThreadStoreRollback.test.ts`, and a record Rust creates passes Node's schema.
 
 ## Gate 2: Node's black-box suites pass against Rust

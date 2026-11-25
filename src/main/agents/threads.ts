@@ -20,6 +20,8 @@ const bindingSchema = z.object({
 })
 export type ThreadBinding = z.infer<typeof bindingSchema>
 const registrySchema = z.object({ bindings: z.array(bindingSchema) })
+/** Reads `threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseThreadRegistry = registrySchema.parse
 
 function sessionKey(provider: string, sessionId: string): string { return JSON.stringify([provider, sessionId]) }
 

@@ -9,6 +9,8 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 const FILE = 'watcher-questions.json'
 const fileSchema = z.object({ version: z.literal(1), questions: z.array(watcherQuestionSchema).max(WATCHER_QUESTIONS_KEPT) }).strict()
 type File = z.infer<typeof fileSchema>
+/** Reads `watcher-questions.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseWatcherQuestionsFile = (input: unknown): File => fileSchema.parse(input)
 const empty = (): File => ({ version: 1, questions: [] })
 const sameTarget = (left: WatcherThreadTarget, right: WatcherThreadTarget): boolean => left.hostId === right.hostId && left.threadId === right.threadId
 const NONE: readonly WatcherQuestion[] = Object.freeze([])
@@ -24,7 +26,7 @@ export class WatcherQuestions {
   private questions: readonly WatcherQuestion[] = NONE
   private tail: Promise<unknown> = Promise.resolve()
   constructor(private readonly directory: string, private readonly historyEnabled: () => boolean, private readonly now: () => string = () => new Date().toISOString()) {
-    this.store = new AtomicJsonStore(join(directory, FILE), input => fileSchema.parse(input), empty)
+    this.store = new AtomicJsonStore(join(directory, FILE), parseWatcherQuestionsFile, empty)
   }
   private inTurn<T>(work: () => Promise<T>): Promise<T> {
     const next = this.tail.catch(() => undefined).then(work)

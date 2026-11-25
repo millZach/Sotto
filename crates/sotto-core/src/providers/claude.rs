@@ -37,6 +37,18 @@ pub struct ClaudeAdapterConfig {
     pub use_cli_lookup: bool,
 }
 
+/// Where Claude Code keeps its transcripts when Sotto names no other folder: `~/.claude` under the home folder Node's
+/// `os.homedir()` names, `USERPROFILE` first on Windows and `HOME` first elsewhere.
+fn default_claude_home() -> PathBuf {
+    let order: [&str; 2] = if cfg!(windows) { ["USERPROFILE", "HOME"] } else { ["HOME", "USERPROFILE"] };
+    order
+        .iter()
+        .find_map(|name| std::env::var_os(name).filter(|home| !home.is_empty()))
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join(".claude")
+}
+
 impl ClaudeAdapterConfig {
     pub fn native(data_directory: PathBuf) -> Self {
         Self {
@@ -83,6 +95,15 @@ pub(crate) struct ClaudeThreadRecord {
     /// `origins` and the rest), kept as they were so a rollback to Node finds its record whole (ADR-0214).
     #[serde(default, flatten)]
     extra: Map<String, Value>,
+}
+
+impl ClaudeThreadRecord {
+    /// Whether this thread's next start resumes its session rather than making it: when Claude Code has the session's
+    /// transcript, as Node decides, or when this host started it. `fallback_cwd` stands in for a record with no folder.
+    fn resumes(&self, claude_home: &Path, fallback_cwd: &str) -> bool {
+        let cwd = if self.cwd.is_empty() { fallback_cwd } else { self.cwd.as_str() };
+        self.started || crate::providers::claude_history::claude_session_exists(claude_home, cwd, &self.session_id)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -879,9 +900,25 @@ impl ClaudeAdapter {
             .unwrap()
             .get(&req.thread_id)
             .cloned();
+        // A session resumes when Claude Code has its transcript, as Node decides; a record Node wrote has no `started`,
+        // and reading its absence as a fresh session lost every Node thread's history (ADR-0214).
+        let claude_home = self.config.claude_home.clone().unwrap_or_else(default_claude_home);
         let (session_id, resume, extra) = match existing_record {
-            Some(rec) => (rec.session_id, rec.started, rec.extra),
-            None => (Uuid::new_v4().to_string(), false, Map::new()),
+            Some(rec) => {
+                let resume = rec.resumes(&claude_home, &req.cwd);
+                (rec.session_id, resume, rec.extra)
+            }
+            // A new record carries what Node's schema requires, so Node reads it after a rollback.
+            None => (
+                Uuid::new_v4().to_string(),
+                false,
+                crate::providers::node_record_fields(
+                    &self.shared.data_directory.join(CLAUDE_THREADS_FILE),
+                    &req.thread_id,
+                    &req.record_seed,
+                    &[],
+                ),
+            ),
         };
 
         let proc = ClaudeSessionProcess::spawn(
@@ -898,8 +935,7 @@ impl ClaudeAdapter {
         )?;
         proc.initialize(self.config.request_timeout_ms).await?;
 
-        self.shared.records.lock().unwrap().insert(
-            req.thread_id.clone(),
+        let record = crate::providers::with_node_fields(
             ClaudeThreadRecord {
                 session_id: session_id.clone(),
                 cwd: req.cwd.clone(),
@@ -907,9 +943,11 @@ impl ClaudeAdapter {
                 reasoning_effort: req.reasoning_effort.clone(),
                 runtime_mode: req.runtime_mode.clone(),
                 started: true,
-                extra,
+                extra: Map::new(),
             },
+            extra,
         );
+        self.shared.records.lock().unwrap().insert(req.thread_id.clone(), record);
         self.shared.save_records();
 
         map.insert(req.thread_id.clone(), Arc::clone(&proc));
@@ -1562,6 +1600,46 @@ fn build_claude_control_response(pending: &InboundClaudeRequest, req: &AnswerReq
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A record as Node writes it: no `started`, which only this host keeps.
+    fn node_record(cwd: &str) -> ClaudeThreadRecord {
+        crate::providers::parse_serde_record(&json!({
+            "sessionId": "1b4e28ba-2fa1-41d2-883f-0016d3cca427",
+            "projectId": "project-1",
+            "cwd": cwd,
+            "title": "Fix the build",
+            "modelId": "model-1",
+            "createdAt": "2026-11-20T10:00:00.000Z",
+        }))
+        .unwrap()
+    }
+
+    /// On forge every Claude thread Node had made started a fresh session on Rust, because Rust read the missing
+    /// `started` as a session never begun (ADR-0214). Node resumes whenever the transcript exists, and so does Rust.
+    #[test]
+    fn a_node_thread_resumes_its_session_when_claude_has_its_transcript() {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = "/home/zach/work";
+        let record = node_record(cwd);
+        assert!(!record.resumes(home.path(), cwd), "a session with no transcript is made, not resumed");
+
+        let folder = crate::providers::claude_history::claude_project_dir(home.path(), cwd);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("1b4e28ba-2fa1-41d2-883f-0016d3cca427.jsonl"), "{}\n").unwrap();
+        assert!(record.resumes(home.path(), cwd));
+    }
+
+    #[test]
+    fn a_long_folder_finds_its_transcript_the_way_node_does() {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = format!("/{}", "a".repeat(240));
+        let folder: String = cwd.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+        // Claude Code shortens a long folder name and adds its own suffix; Node matches the first 200 and a `-`.
+        let shortened = home.path().join("projects").join(format!("{}-1a2b3c", &folder[..200]));
+        std::fs::create_dir_all(&shortened).unwrap();
+        std::fs::write(shortened.join("1b4e28ba-2fa1-41d2-883f-0016d3cca427.jsonl"), "{}\n").unwrap();
+        assert!(node_record(&cwd).resumes(home.path(), &cwd));
+    }
 
     #[test]
     fn claude_control_responses_preserve_input_and_never_set_updated_permissions() {

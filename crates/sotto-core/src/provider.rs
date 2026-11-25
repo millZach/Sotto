@@ -17,6 +17,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[derive(Debug, Clone)]
 pub struct SendMessageRequest {
     pub thread_id: String,
+    /// What the provider's record for this thread carries for Node if this send creates one.
+    pub record_seed: ThreadRecordSeed,
     pub message_id: String,
     pub cwd: String,
     pub model_id: Option<String>,
@@ -26,6 +28,16 @@ pub struct SendMessageRequest {
     pub command_id: String,
     pub draft_id: String,
     pub attachments: Vec<StagedAttachmentEntry>,
+}
+
+/// The thread facts a provider record this host creates carries so Node can read it after a rollback (ADR-0214).
+/// Node's schema for every provider store requires `projectId`, `title` and `createdAt`, which a provider adapter has
+/// no other way to know.
+#[derive(Debug, Clone, Default)]
+pub struct ThreadRecordSeed {
+    pub project_id: String,
+    pub title: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone)]

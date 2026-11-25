@@ -222,6 +222,10 @@ pub struct AgentTurnRecord {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_id: Option<String>,
+    /// Every field Node's record has that this one does not model, kept as it was so a rollback to Node finds the
+    /// record whole (ADR-0214).
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -250,6 +254,10 @@ pub struct AgentThreadWorktree {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<Value>,
+    /// Every field Node's record has that this one does not model, kept as it was so a rollback to Node finds the
+    /// record whole (ADR-0214).
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 fn default_worktree_status() -> String {
@@ -1123,6 +1131,17 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         let _ = write!(&mut out, "{b:02x}");
     }
     out
+}
+
+/// Where a store this build cannot read is kept: `<name>.corrupt-<millis>` beside it, the name Node's `AtomicJsonStore`
+/// gives one, so a rollback finds it where Node would have put it (ADR-0214).
+pub(crate) fn corrupt_copy_path(path: &Path) -> std::path::PathBuf {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("store.json");
+    path.with_file_name(format!("{name}.corrupt-{millis}"))
 }
 
 pub fn write_atomic_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
