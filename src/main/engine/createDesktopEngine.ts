@@ -927,6 +927,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     requiresManagementUpdate: hostId => hostRouter.requiresManagementUpdate(hostId),
     hosts: {
       candidates: () => desktopHosts.updateCandidates(),
+      saved: id => desktopHosts.hasSaved(id),
       run: (id, operation, runOptions) => desktopHosts.runUpdate(id, operation, runOptions),
       restart: (id, version, restartOptions) => desktopHosts.restartForUpdate(id, version, restartOptions),
       subscribe: listener => desktopHosts.subscribe(() => listener()),

@@ -82,6 +82,8 @@ export interface HostUpdateSource {
   command(id: string, action: HostUpdateAction): Promise<void>
   /** Why another command on this saved host must wait for its update, or nothing when none is under way. */
   busy(id: string): string | undefined
+  /** Drops any update state kept for a saved host that has been forgotten. */
+  forget?(id: string): void
   subscribe(listener: () => void): () => void
 }
 /** What Settings > Hosts & phones asks of the start at boot changes (ADR-0054), which follow the saved hosts. */
@@ -198,6 +200,9 @@ export class DesktopHosts {
   private readonly live = new Map<string, LiveHost>()
   private readonly retries = new Map<string, Retry>()
   private readonly listeners = new Set<(state: HostsState) => void>()
+  private emitting = false
+  private emitAgain = false
+  private emitGeneration = 0
   /**
    * The host Add host is connecting to. Its status, connection and prompt are keyed by its ID like a saved
    * host's, and it joins the saved hosts only once the host answers and this computer pairs.
@@ -342,17 +347,19 @@ export class DesktopHosts {
   get(): HostsState {
     const state = this.options.router.shell(); const local = state.connections?.find(item => item.kind === 'local')
     const adding = this.adding ? this.status.get(this.adding.id) : undefined
-    const setup = this.setup?.state(), setupChoice = this.setup?.choice(), providerJob = this.providerJob?.state(), checks = this.updates?.checking?.() ?? []
+    const setup = this.setup?.state(), setupChoice = this.setup?.choice(), providerJob = this.providerJob?.state()
+    const saved = (id: string): boolean => this.saved.some(host => host.id === id)
+    const checks = (this.updates?.checking?.() ?? []).filter(saved)
     return { ...(state.hostId ? { activeHostId: state.hostId } : {}), ...(local ? { localHostId: local.hostId } : {}),
       hosts: this.saved.map(host => ({ ...this.status.get(host.id)!, ...this.fields(host), ...this.tailnetFields(host) })),
       ...(adding ? { adding: { ...adding, ...this.fields(this.adding!) } } : {}),
       ...(setup ? { setup } : {}), ...(setupChoice ? { setupChoice } : {}), ...(providerJob ? { providerJob } : {}),
-      ...(this.updates ? { updates: this.updates.state() } : {}),
-      ...(checks.length ? { updateChecks: checks } : {}),
       // A forgotten host's last answer is left out with its row.
-      ...(this.phones ? { phones: this.phones.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
+      ...(this.updates ? { updates: this.updates.state().filter(update => saved(update.id)) } : {}),
+      ...(checks.length ? { updateChecks: checks } : {}),
+      ...(this.phones ? { phones: this.phones.state().filter(view => saved(view.id)) } : {}),
       ...(this.forgotten.length ? { forgotten: [...this.forgotten] } : {}),
-      ...(this.boot ? { boot: this.boot.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
+      ...(this.boot ? { boot: this.boot.state().filter(view => saved(view.id)) } : {}),
       localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
   }
   /** Gives Settings > Hosts & phones the host setup: its state joins every published state, and its commands go to it. */
@@ -401,6 +408,10 @@ export class DesktopHosts {
         press: request => current() ? this.press(host, request) : Promise.reject(new Error(t`${{ host: host.name }} is not connected. Nothing was changed.`)),
         pressIfOpen: request => this.pressIfOpen(host, request) }] : []
     })
+  }
+  /** Whether a saved host ID is still saved. */
+  hasSaved(id: string): boolean {
+    return this.saved.some(host => host.id === id)
   }
   /** Saved hosts an update can reach now, with the Sotto version each said it runs (ADR-0040). */
   updateCandidates(): HostUpdateCandidate[] {
@@ -790,7 +801,26 @@ export class DesktopHosts {
   }
   private emit(): void {
     this.options.router.setUsageSavedHosts(this.saved.map(host => host.hostId ?? host.id))
-    const state = this.get(); for (const listener of this.listeners) listener(state)
+    this.emitGeneration += 1
+    if (this.emitting) {
+      this.emitAgain = true
+      return
+    }
+    this.emitting = true
+    try {
+      do {
+        this.emitAgain = false
+        const state = this.get()
+        for (const listener of [...this.listeners]) {
+          if (!this.listeners.has(listener)) continue
+          listener(state)
+          if (this.emitAgain) break
+        }
+      } while (this.emitAgain)
+    } finally {
+      this.emitting = false
+      this.emitAgain = false
+    }
   }
   private update(id: string, patch: Partial<HostStatus>): void { const current = this.status.get(id); if (current) { this.status.set(id, { ...current, ...patch }); this.emit() } }
   private save(): Promise<void> {
@@ -837,6 +867,7 @@ export class DesktopHosts {
     }
     if (command.type === 'host-update') {
       if (!this.updates) throw new Error(t`Hosts cannot be updated from this window. Nothing was changed.`)
+      if (!this.saved.some(host => host.id === command.id)) throw new Error(t`This host is no longer saved. Add it again in Settings > Hosts & phones.`)
       // An update waits for a start at boot change, as the launch script's update lock would make it.
       const busy = command.action === 'update' ? this.boot?.busy(command.id) : undefined
       if (busy) throw new Error(busy)
@@ -965,7 +996,9 @@ export class DesktopHosts {
       this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, ...(revoke ? { revoke } : {}), ...(unitLeft ? { bootCommand: bootRemovalCommand(host.installPath) } : {}) }]
     }
     this.nodePaths.delete(host.id); this.systems.delete(host.id)
-    this.emit()
+    const beforeEmit = this.emitGeneration
+    this.updates?.forget?.(host.id)
+    if (this.emitGeneration === beforeEmit) this.emit()
     return this.get()
   }
   /** The user stopped Forget's sign-in: nothing was sent, so the host stays saved and connects again if it is on. */

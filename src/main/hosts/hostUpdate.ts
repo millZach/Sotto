@@ -33,6 +33,8 @@ export interface HostUpdateCandidate {
 /** What an update needs of the saved hosts: `DesktopHosts`. */
 export interface HostUpdateHosts {
   candidates(): readonly HostUpdateCandidate[]
+  /** Whether a saved host ID is still saved. When absent, forgotten hosts are cleared through `forget()`. */
+  saved?(id: string): boolean
   /** One operation of the update, over the host's SSH connection. */
   run(id: string, operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
   /**
@@ -259,6 +261,14 @@ export class HostUpdates {
   busy(id: string): string | undefined {
     const entry = this.entries.get(id)
     return entry?.phase === 'updating' ? t`Sotto is updating the host on ${{ host: entry.name }}. Nothing was changed. Wait for the update to finish, then try again.` : undefined
+  }
+  /** Drops any update entry, hidden mark and learned system for a saved host that has been forgotten. */
+  forget(id: string): void {
+    const entry = this.entries.get(id)
+    const hadNotNow = this.notNow.delete(id)
+    this.systems.delete(id)
+    if (entry) this.dropEntry(id, entry)
+    if (entry || hadNotNow) this.sync()
   }
   /**
    * Why Sotto must not restart into its update now: a host update is under way, and the restart would close the SSH
@@ -645,6 +655,15 @@ export class HostUpdates {
     const order = compareToTarget(candidate.version, this.target(candidate))
     return order === -1 || order === 0 && this.options.requiresManagementUpdate?.(candidate.hostId) === true
   }
+  private dropEntry(id: string, entry: Entry): void {
+    const run = entry.run
+    delete entry.run
+    this.entries.delete(id)
+    this.notNow.delete(id)
+    this.systems.delete(id)
+    for (const look of [...this.restarts]) look()
+    run?.abort()
+  }
   /**
    * Follows the saved hosts and their threads: a host that answers with an older Sotto needs an update, one that no
    * longer does, or has gone, drops out unless its update is running or has something to say, and a host waiting for
@@ -655,11 +674,13 @@ export class HostUpdates {
     for (const look of [...this.restarts]) look()
     const candidates = this.options.hosts.candidates()
     const seen = new Set<string>()
+    const upToDateHostIds = new Set<string>()
     for (const candidate of candidates) {
       seen.add(candidate.id)
       // A host behind the waiting update is offered it once the releases page has its archive.
       if (this.waiting && behind(candidate.version, this.waiting)) this.checkArchive(this.waiting, candidate)
       const older = this.needsUpdate(candidate)
+      if (!older) upToDateHostIds.add(candidate.hostId)
       const entry = this.entries.get(candidate.id)
       if (!entry) {
         if (older) this.entries.set(candidate.id, { ...candidate, from: candidate.version, to: this.target(candidate), phase: 'needs' })
@@ -685,8 +706,16 @@ export class HostUpdates {
         else if (!this.workingNow(entry).length) { this.begin(entry); return }
       }
     }
+    const isSaved = this.options.hosts.saved
     for (const [id, entry] of this.entries) {
-      if (!seen.has(id) && (entry.phase === 'needs' || entry.phase === 'confirm' || entry.phase === 'waiting' || entry.held)) { entry.run?.abort(); this.entries.delete(id) }
+      if (seen.has(id)) continue
+      if (isSaved && !isSaved(id)) { this.dropEntry(id, entry); continue }
+      if ((entry.phase === 'failed' || entry.phase === 'done') && upToDateHostIds.has(entry.hostId)) { this.dropEntry(id, entry); continue }
+      if (entry.phase === 'needs' || entry.phase === 'confirm' || entry.phase === 'waiting' || entry.held) { entry.run?.abort(); this.entries.delete(id) }
+    }
+    if (isSaved) {
+      for (const id of this.notNow) if (!isSaved(id)) this.notNow.delete(id)
+      for (const id of this.systems.keys()) if (!isSaved(id)) this.systems.delete(id)
     }
     const next = JSON.stringify([this.state(), this.checking()])
     if (!changed && next === this.published) return

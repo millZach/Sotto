@@ -31,6 +31,7 @@ class Hosts implements HostUpdateHosts {
   }
   /** The version the host answers with once it has restarted; null when this computer does not reconnect. */
   after: string | null = DESKTOP
+  saved?: (id: string) => boolean
   candidates(): readonly HostUpdateCandidate[] { return this.list }
   async run(_id: string, operation: SshHostUpdateOperation, options: SshHostUpdateOptions = {}): Promise<SshHostUpdateResult> {
     this.operations.push(operation)
@@ -875,5 +876,99 @@ describe('whether the releases page has a file (Sotto Bug Bot, review)', () => {
     expect(publishedAnswer(302, '/errors/404')).toBeUndefined()
     expect(publishedAnswer(302, null)).toBeUndefined()
     expect(publishedAnswer(500, null)).toBeUndefined()
+  })
+})
+
+describe('forgetting a host and stale entries', () => {
+  it('clears failed, done, Not now and learned system on forget() while preserving failed entries across disconnects', async () => {
+    const { hosts, updates, seen, one, settled } = setup()
+    // Fail an update after learning a system from the archive name.
+    hosts.list = [forge({ system: undefined })]; hosts.emit()
+    hosts.steps['update-fetch'] = async () => ({ type: 'error', reason: 'checksum-mismatch', file: `Sotto-host-${DESKTOP}-darwin-arm64.tar.gz` })
+    await updates.command(ID, 'update')
+    await settled()
+    expect(one().phase).toBe('failed')
+
+    // Ordinary disconnect of a saved host keeps the failed entry.
+    hosts.list = []; hosts.emit()
+    expect(one().phase).toBe('failed')
+
+    // Forgetting the host clears the failed entry and notifies subscribers.
+    seen.length = 0
+    updates.forget(ID)
+    expect(updates.state()).toEqual([])
+    expect(seen.at(-1)).toEqual([])
+
+    // Done entries, Not now marks and learned systems are also cleared on forget().
+    const SECOND = '33333333-3333-4333-8333-333333333333'
+    const WAITING = '0.1.25'
+    const probe = vi.fn(async () => true)
+    const probedHosts = new Hosts(), probedThreads = new Threads()
+    probedHosts.list = [forge({ id: SECOND, system: undefined })]
+    probedHosts.steps['update-fetch'] = async () => ({ type: 'update-fetched', file: `Sotto-host-${DESKTOP}-darwin-arm64.tar.gz`, sha256: SUM })
+    const probedUpdates = new HostUpdates({ hosts: probedHosts, threads: probedThreads, version: DESKTOP, releasesUrl: 'https://releases.example/download', probe })
+    await probedUpdates.command(SECOND, 'update')
+    await vi.waitFor(() => expect(probedUpdates.state()).toMatchObject([{ id: SECOND, phase: 'done' }]))
+    await probedUpdates.command(SECOND, 'not-now')
+    expect(probedUpdates.state()).toEqual([])
+    probedHosts.list = []; probedHosts.emit()
+    probedUpdates.forget(SECOND)
+    // If the same ID were seen again without a launch-reported system, neither Not now nor the learned system remains.
+    probedHosts.list = [forge({ id: SECOND, version: '0.1.22', system: undefined })]; probedHosts.emit()
+    expect(probedUpdates.state()).toMatchObject([{ id: SECOND, phase: 'needs' }])
+    probedUpdates.pending(WAITING)
+    expect(probe).not.toHaveBeenCalled()
+    probedUpdates.dispose()
+    updates.dispose()
+  })
+
+  it('aborts an in-flight download when forget() is called', async () => {
+    const { hosts, updates } = setup()
+    let signal: AbortSignal | undefined
+    hosts.steps['update-fetch'] = (_operation, options) => {
+      signal = options.signal
+      return new Promise(() => undefined)
+    }
+    await updates.command(ID, 'update')
+    expect(updates.state()).toMatchObject([{ id: ID, phase: 'updating', step: 'download' }])
+    hosts.list = []
+    updates.forget(ID)
+    expect(signal?.aborted).toBe(true)
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('clears forgotten entries via hosts.saved() during sync while keeping disconnected saved hosts', async () => {
+    const savedIds = new Set([ID])
+    const hosts = new Hosts(), threads = new Threads()
+    hosts.saved = (id: string) => savedIds.has(id)
+    const updates = new HostUpdates({ hosts, threads, version: DESKTOP, releasesUrl: 'https://releases.example/download' })
+    hosts.steps['update-fetch'] = async () => ({ type: 'error', reason: 'checksum-mismatch', file: FILE })
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(updates.state()).toMatchObject([{ id: ID, phase: 'failed' }]))
+
+    // Disconnected while still saved: failure stays visible.
+    hosts.list = []; hosts.emit()
+    expect(updates.state()).toMatchObject([{ id: ID, phase: 'failed' }])
+
+    // Forgotten (removed from saved): sync drops the failed entry.
+    savedIds.delete(ID)
+    hosts.emit()
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('cleans up a stale disconnected failed entry when the same hostId reconnects up-to-date under a new saved ID', async () => {
+    const { hosts, updates, one, settled } = setup()
+    hosts.steps['update-fetch'] = async () => ({ type: 'error', reason: 'checksum-mismatch', file: FILE })
+    await updates.command(ID, 'update')
+    await settled()
+    expect(one().phase).toBe('failed')
+
+    // Old saved ID disconnects, then the same physical hostId connects up-to-date under a new saved ID.
+    const NEW_ID = '44444444-4444-4444-8444-444444444444'
+    hosts.list = [forge({ id: NEW_ID, hostId: HOST_ID, version: DESKTOP })]; hosts.emit()
+    expect(updates.state()).toEqual([])
+    updates.dispose()
   })
 })
