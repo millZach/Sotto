@@ -1747,7 +1747,7 @@ export class DesktopHosts {
     const owned = active.ssh ? active.ssh.owned === true : startedBySotto(hello.startedBy)
     // Start at boot comes with a launch; a tailnet connection has none, and shows what the last launch or boot change said.
     this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned, via: active.via,
-      phoneAccess: active.ssh ? undefined : hello.phoneAccess, bootStart: active.ssh ? active.ssh.bootStart : this.tailnet.get(host.id).bootStart })
+      phoneAccess: active.ssh ? undefined : hello.phoneAccess, ...(hello.hostProgram ? { runningRuntime: hello.hostProgram } : {}), bootStart: active.ssh ? active.ssh.bootStart : this.tailnet.get(host.id).bootStart })
   }
   /** Keeps the tailnet address a saved host reported in its hello, which follows Serve as it comes and goes. */
   private async learnAddress(host: SavedHost, about: Pick<HostHello, 'tailnetAddress'>): Promise<void> {
@@ -1970,12 +1970,16 @@ export class DesktopHosts {
    */
   private async setRuntime(host: SavedHost, runtime: HostRuntime): Promise<void> {
     if (this.options.rustHostChoice !== true) throw new Error(t`This version of Sotto runs every remote host on Node. Nothing was changed.`)
-    if ((host.runtime ?? 'node') === runtime) return
-    if (runtime === 'rust') host.runtime = 'rust'; else delete host.runtime
-    await this.save()
-    // An admin connection keeps the launcher it signed in with, which names the program chosen before.
-    await this.admins.close(host.id)
-    this.update(host.id, { runtime })
+    const before = this.status.get(host.id)
+    // The same choice again restarts a host that still runs the other program, as one Owl turned to Rust before the choice.
+    if ((host.runtime ?? 'node') === runtime && (before?.runningRuntime === undefined || before.runningRuntime === runtime)) return
+    if ((host.runtime ?? 'node') !== runtime) {
+      if (runtime === 'rust') host.runtime = 'rust'; else delete host.runtime
+      await this.save()
+      // An admin connection keeps the launcher it signed in with, which names the program chosen before.
+      await this.admins.close(host.id)
+      this.update(host.id, { runtime })
+    }
     const status = this.status.get(host.id)
     if (status?.phase !== 'connected' || status.owned !== true || !this.live.has(host.id) || !this.reachable(host.id)) return
     this.update(host.id, { switchingRuntime: true })
@@ -2133,7 +2137,7 @@ export class DesktopHosts {
     }
     const status = this.status.get(id)
     if (status) { delete status.prompt; delete status.adminSignIn; delete status.error; delete status.reconnecting; delete status.owned; delete status.step; delete status.tailscale; delete status.fix; delete status.reason; delete status.checked; delete status.version
-      delete status.bootStart; delete status.via; delete status.tailnetNote; delete status.phoneAccess; status.phase = 'disconnected'; this.emit() }
+      delete status.bootStart; delete status.via; delete status.tailnetNote; delete status.phoneAccess; delete status.runningRuntime; status.phase = 'disconnected'; this.emit() }
   }
   /**
    * Clears every pending retry first, including those for hosts whose connect failed and so are no longer

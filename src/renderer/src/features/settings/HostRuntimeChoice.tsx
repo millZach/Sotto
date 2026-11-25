@@ -1,6 +1,7 @@
 import React, { type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import type { HostRuntime, HostsCommand, HostStatus } from '../../../../shared/hosts'
+import { Button } from '../../components/Button'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { useOwlFeature } from '../../state/owlFeature'
 
@@ -21,10 +22,13 @@ export function HostRuntimeChoice({ host, onCommand }: {
     ? t({ message: 'Rust (preview)', comment: 'The Rust host program on a remote host, still a preview.' })
     : t({ message: 'Node', comment: 'The Node host program on a remote host.' })
   const busy = host.switchingRuntime === true || host.phase === 'connecting'
+  const mismatch = !host.switchingRuntime && host.phase === 'connected' && running !== undefined && running !== chosen
+  // A host Sotto started can be restarted on the program chosen now, as one Owl turned to Rust before the choice existed.
+  const restartable = mismatch && host.owned === true
   const note = host.switchingRuntime
     ? t`Restarting on ${programName(chosen)}…`
-    : host.phase === 'connected' && running !== undefined && running !== chosen
-      ? t`Runs ${programName(running)} now, and ${programName(chosen)} from its next start.`
+    : mismatch
+      ? restartable ? t`Runs ${programName(running)} now.` : t`Runs ${programName(running)} now, and ${programName(chosen)} from its next start.`
       : null
   return <div className="hosts-row__runtime">
     <span className="hosts-row__runtime-label" aria-hidden="true">{t({ message: 'Host program', comment: 'Label before a remote host’s Node | Rust choice.' })}</span>
@@ -36,5 +40,7 @@ export function HostRuntimeChoice({ host, onCommand }: {
       ]} />
     {chosen === 'rust' ? <span className="hosts-row__runtime-tag">{t({ message: 'Preview', comment: 'The Rust host program is still a preview.' })}</span> : null}
     {note ? <span className="hosts-row__runtime-note" role="status">{note}</span> : null}
+    {restartable ? <Button variant="secondary" onClick={() => void onCommand({ type: 'set-runtime', id: host.id, runtime: chosen })}>
+      {chosen === 'rust' ? t`Restart on Rust` : t`Restart on Node`}</Button> : null}
   </div>
 }

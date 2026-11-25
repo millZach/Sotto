@@ -4,7 +4,7 @@ import { hostProviderIdSchema, type HostOpenCodeAnswer, type HostOpenCodeCall, t
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
 import { hostBootCommandSchema, type BootStatus, type HostBootState } from './bootStart'
-import type { HostPhoneAccessSummary } from './hostProtocol'
+import { HOST_PROGRAMS, type HostPhoneAccessSummary, type HostProgram } from './hostProtocol'
 import { HOST_CONNECTIONS, type HostConnectionName } from './hostConnection'
 
 export const HOSTS_GET = 'hosts:get'
@@ -32,8 +32,8 @@ export type RemoteHost = z.infer<typeof remoteHostSchema>
  * The **host program** a remote host runs (ADR-0214): Node, the host Sotto has always run, or the Rust `sotto-host`, an Owl
  * preview the owner turns on host by host. A host nobody chose for runs Node.
  */
-export const HOST_RUNTIMES = ['node', 'rust'] as const
-export type HostRuntime = typeof HOST_RUNTIMES[number]
+export const HOST_RUNTIMES = HOST_PROGRAMS
+export type HostRuntime = HostProgram
 /**
  * The host setup checklist: the steps a connect goes through, in the order it meets them. Add host shows
  * them once pressed. `tailscale` appears only when Tailscale SSH holds the connection for the user's approval.

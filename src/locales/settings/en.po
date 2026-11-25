@@ -5972,6 +5972,14 @@ msgstr "Restart"
 msgid "Restart and install"
 msgstr "Restart and install"
 
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Restart on Node"
+msgstr "Restart on Node"
+
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Restart on Rust"
+msgstr "Restart on Rust"
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Restart Sotto"
 msgstr "Restart Sotto"
@@ -6064,6 +6072,11 @@ msgstr "run.cloud key"
 #: src/renderer/src/features/settings/HostRuntimeChoice.tsx
 msgid "Runs {0} now, and {1} from its next start."
 msgstr "Runs {0} now, and {1} from its next start."
+
+#. placeholder {0}: programName(running)
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Runs {0} now."
+msgstr "Runs {0} now."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Runs threads here as well as on remote hosts. Changes apply after a restart, and saved data stays."

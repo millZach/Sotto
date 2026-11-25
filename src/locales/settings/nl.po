@@ -5972,6 +5972,14 @@ msgstr ""
 msgid "Restart and install"
 msgstr ""
 
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Restart on Node"
+msgstr ""
+
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Restart on Rust"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Restart Sotto"
 msgstr ""
@@ -6063,6 +6071,11 @@ msgstr ""
 #. placeholder {1}: programName(chosen)
 #: src/renderer/src/features/settings/HostRuntimeChoice.tsx
 msgid "Runs {0} now, and {1} from its next start."
+msgstr ""
+
+#. placeholder {0}: programName(running)
+#: src/renderer/src/features/settings/HostRuntimeChoice.tsx
+msgid "Runs {0} now."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx

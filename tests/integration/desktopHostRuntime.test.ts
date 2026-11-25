@@ -19,9 +19,14 @@ describe('host program per remote host', () => {
     await fixture.manager.command({ type: 'set-runtime', id: remote.id, runtime: 'rust' })
     expect(stops).toEqual([fixture.reportedHostId])
     expect(launchRuntimes.at(-1)).toBe(true)
-    expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'connected', runtime: 'rust', runningRuntime: 'rust' })
+    // The fixture's host is the Node host, and its hello says so: the row learns what runs from the host itself.
+    expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'connected', runtime: 'rust', runningRuntime: 'node' })
     expect(fixture.manager.get().hosts[0]!.switchingRuntime).toBeUndefined()
     expect(await savedFile()).toMatchObject([{ id: remote.id, runtime: 'rust' }])
+
+    // Rust chosen again on a host that still runs Node, as Restart on Rust sends: it restarts again.
+    await fixture.manager.command({ type: 'set-runtime', id: remote.id, runtime: 'rust' })
+    expect(stops).toHaveLength(2)
 
     // The choice outlives a restart of Sotto, as it does an Owl update.
     await relaunch()
@@ -31,10 +36,16 @@ describe('host program per remote host', () => {
 
     // Back to Node: one press restarts the host on Node, and the saved host carries no choice again.
     await fixture.manager.command({ type: 'set-runtime', id: remote.id, runtime: 'node' })
-    expect(stops).toHaveLength(2)
+    expect(stops).toHaveLength(3)
     expect(launchRuntimes.at(-1)).toBe(false)
     expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'connected', runtime: 'node', runningRuntime: 'node' })
     expect((await savedFile())[0]).not.toHaveProperty('runtime')
+    // The same program again, on a host that already runs it, changes nothing.
+    await fixture.manager.command({ type: 'set-runtime', id: remote.id, runtime: 'node' })
+    expect(stops).toHaveLength(3)
+    // A host not connected says nothing of what it runs.
+    await fixture.manager.command({ type: 'disconnect', id: remote.id })
+    expect(fixture.manager.get().hosts[0]!.runningRuntime).toBeUndefined()
   })
 
   it('saves the choice for a host Sotto did not start without stopping it, for its next start', async () => {

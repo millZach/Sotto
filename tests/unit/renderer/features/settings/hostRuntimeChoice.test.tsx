@@ -38,6 +38,14 @@ it('marks Rust as a preview, says while it restarts, and says when the host runs
   expect(screen.queryByRole('status')).toBeNull()
 })
 
+it('offers Restart on Node for a host Sotto started that still runs Rust, as one Owl turned to Rust before the choice', async () => {
+  const onCommand = vi.fn(async () => true), user = userEvent.setup()
+  render(<HostRuntimeChoice host={forge({ runtime: 'node', runningRuntime: 'rust' })} onCommand={onCommand} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Runs Rust (preview) now.')
+  await user.click(screen.getByRole('button', { name: 'Restart on Node' }))
+  expect(onCommand).toHaveBeenCalledWith({ type: 'set-runtime', id: forge().id, runtime: 'node' })
+})
+
 it('shows nothing where the Owl feature is off or main offers no choice', () => {
   owl.on = false
   const { container, rerender } = render(<HostRuntimeChoice host={forge()} onCommand={async () => true} />)
