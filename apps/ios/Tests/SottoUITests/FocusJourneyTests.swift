@@ -2252,7 +2252,8 @@ import UIKit
             return
         }
         XCTAssertTrue(waitForReplyBox(small: true, words: reply), "A thread with content opens with the box small")
-        XCTAssertLessThan(abs(reply.frame.midY - plus.frame.midY), 2, "The prompt shares the row with the +")
+        // The + disc is drawn 34 points tall from its top; its 44-point press area reaches 10 points down (`rowPressArea`).
+        XCTAssertLessThan(abs(reply.frame.midY - (plus.frame.minY + 17)), 2, "The prompt shares the row with the +")
         XCTAssertLessThanOrEqual(plus.frame.maxX, reply.frame.minX + 1, "The + leads the row")
         XCTAssertLessThanOrEqual(reply.frame.maxX, mic.frame.minX + 1, "The prompt stops short of the mic")
         XCTAssertLessThan(mic.frame.maxX, send.frame.minX + 1, "Then Send")
