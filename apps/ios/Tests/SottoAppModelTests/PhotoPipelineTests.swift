@@ -140,8 +140,10 @@ final class PhotoPipelineTests: XCTestCase {
         XCTAssertGreaterThan(largePNG.count, ThumbnailDiskCache.directWriteBytes)
         let compactedData = await PhotoPipeline.thumbnailData(largePNG, edge: PhotoPipeline.thumbnailEdge)
         let compacted = try XCTUnwrap(compactedData)
-        XCTAssertLessThan(compacted.count, largePNG.count / 4, "Oversized full-res images are compacted before caching on disk")
+        XCTAssertLessThan(compacted.count, largePNG.count, "Oversized full-res images are compacted before caching on disk")
+        XCTAssertLessThanOrEqual(compacted.count, ThumbnailDiskCache.directWriteBytes, "Compacted thumbnail fits inside the direct-write cache budget")
         let decodedCompacted = await PhotoPipeline.image(compacted, edge: PhotoPipeline.thumbnailEdge)
-        XCTAssertNotNil(decodedCompacted)
+        let decodedImage = try XCTUnwrap(decodedCompacted)
+        XCTAssertEqual(max(decodedImage.width, decodedImage.height), PhotoPipeline.thumbnailEdge, "Compacted thumbnail is scaled down to the thumbnail edge")
     }
 }
