@@ -2856,7 +2856,15 @@ fn run_git_impl(
     if Instant::now() >= deadline {
         return Err(GitRunError::Failed("git timed out".into()));
     }
-    let mut cmd = Command::new("git");
+    let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+    let mut cmd = match crate::cli_lookup::resolve_tool_cli("git", &opts) {
+        Some(res) => {
+            let mut c = Command::new(&res.executable);
+            res.apply_std(&mut c);
+            c
+        }
+        None => Command::new("git"),
+    };
     cmd.args([
         "--no-optional-locks",
         "--literal-pathspecs",

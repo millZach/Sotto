@@ -3,12 +3,20 @@
 // Runs the compiled Rust `sotto-host` against Sotto's real `fakeCodexAppServer.mjs` and `fakeClaudeThread.mjs`
 // fixtures using the referee harness's wire client (`wire.ts`), client fold (`fold.ts`), and file-based
 // fake driver (`providers.ts`), asserting zero protocol violations and zero fake schema violations.
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { agentAttachmentHandleSchema, publicProviderEntityId } from '../../src/shared/agents'
+import { selectWatcherWorkerModels } from '../../src/main/agents/watcher'
+import {
+  agentAttachmentHandleSchema,
+  isThreadProviderConnected,
+  publicProviderEntityId,
+  type AgentHostSnapshot,
+  type AgentThread,
+} from '../../src/shared/agents'
 import { ClientFold, FOLDED_PUSHES } from '../referee/fold'
 import { drive, nativeSession, prepareFake, type RefereeProvider } from '../referee/providers'
 import { CLIENTS, PROFILES, THREAD, type ClientName } from '../referee/scenario'
@@ -426,4 +434,212 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host native Codex and Claude Code ad
       }
     }, 60_000)
   }
+
+  it('connects native providers under stripped bare PATH, populates workers/models, and completes send', async () => {
+    const binary = await findRustHostBinary()
+    const root = await mkdtemp(join(tmpdir(), 'sotto-rust-bare-path-'))
+    const fakeHome = join(root, 'home')
+    const dataDir = join(root, 'data')
+    await mkdir(fakeHome, { recursive: true })
+    await mkdir(dataDir, { recursive: true })
+
+    // Restrict startup to claude, codex, devin (installed in user dirs) + muse (intentionally missing)
+    // so developer-installed system binaries for other providers cannot interfere.
+    await writeFile(
+      join(dataDir, 'agents.json'),
+      JSON.stringify({
+        configuration: {
+          provider: 'codex',
+          disconnectedProviders: ['grok', 'opencode', 'cursor', 'hermes', 'antigravity'],
+        },
+      }),
+    )
+
+    const windows = process.platform === 'win32'
+    const fixtures = resolve('tests/fixtures')
+    const writeFakeBin = async (dir: string, name: string, fixtureFile: string, extraArgs = ''): Promise<void> => {
+      await mkdir(dir, { recursive: true })
+      const script = join(fixtures, fixtureFile)
+      if (windows) {
+        const file = join(dir, `${name}.cmd`)
+        const body = `@echo off\r\n"${process.execPath}" "${script}" "${dataDir}" ${extraArgs}%*\r\n`
+        await writeFile(file, body, 'utf8')
+      } else {
+        const file = join(dir, name)
+        const body = `#!/bin/sh\nexec "${process.execPath}" "${script}" "${dataDir}" ${extraArgs}"$@"\n`
+        await writeFile(file, body, { encoding: 'utf8', mode: 0o755 })
+        await chmod(file, 0o755)
+      }
+    }
+
+    // 1) Claude installed ONLY in $HOME/.local/bin
+    await writeFakeBin(join(fakeHome, '.local', 'bin'), 'claude', 'fakeClaudeThread.mjs')
+    // 2) Codex installed ONLY in mise installs (matching real forge layout)
+    const miseBase = windows
+      ? join(fakeHome, 'AppData', 'Local', 'mise')
+      : join(fakeHome, '.local', 'share', 'mise')
+    await writeFakeBin(
+      join(miseBase, 'installs', 'codex', 'latest', 'bin'),
+      'codex',
+      'fakeCodexAppServer.mjs',
+    )
+    // 3) Devin installed ONLY in mise shims (fallback coverage)
+    await writeFakeBin(join(miseBase, 'shims'), 'devin', 'fakeDevinAgent.mjs')
+
+    const strippedEnv: NodeJS.ProcessEnv = windows
+      ? {
+          PATH: process.env.SystemRoot ? `${process.env.SystemRoot}\\System32` : 'C:\\Windows\\System32',
+          SystemRoot: process.env.SystemRoot ?? 'C:\\Windows',
+          COMSPEC: process.env.COMSPEC ?? 'C:\\Windows\\System32\\cmd.exe',
+          USERPROFILE: fakeHome,
+          HOME: fakeHome,
+          LOCALAPPDATA: join(fakeHome, 'AppData', 'Local'),
+          APPDATA: join(fakeHome, 'AppData', 'Roaming'),
+          TEMP: root,
+          TMP: root,
+          SOTTO_HOST_ENABLE_PROVIDERS: '1',
+          SOTTO_HOST_STARTED_BY: 'launch-script',
+          SOTTO_FAKE_CLAUDE_HOME: join(dataDir, 'claude-home'),
+        }
+      : {
+          PATH: '/usr/local/bin:/usr/bin:/bin',
+          HOME: fakeHome,
+          SHELL: '/bin/sh',
+          XDG_DATA_HOME: join(fakeHome, '.local', 'share'),
+          MISE_DATA_DIR: miseBase,
+          TMPDIR: root,
+          SOTTO_HOST_ENABLE_PROVIDERS: '1',
+          SOTTO_HOST_STARTED_BY: 'launch-script',
+          SOTTO_FAKE_CLAUDE_HOME: join(dataDir, 'claude-home'),
+        }
+
+    const child = spawn(binary, ['--data', dataDir, '--port', '0'], {
+      env: strippedEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    let stderr = ''
+    child.stderr?.setEncoding('utf8').on('data', chunk => { stderr += chunk })
+
+    let client: TestClient | undefined
+    try {
+      const port = await new Promise<number>((resolvePort, rejectPort) => {
+        const timer = setTimeout(() => rejectPort(new Error(`sotto-host did not print ready line; stderr=${stderr}`)), 30_000)
+        let buf = ''
+        child.stdout?.setEncoding('utf8').on('data', chunk => {
+          buf += chunk
+          for (const line of buf.split('\n')) {
+            const trimmed = line.trim()
+            if (!trimmed.startsWith('{')) continue
+            try {
+              const parsed = JSON.parse(trimmed) as { port?: number }
+              if (typeof parsed.port === 'number' && parsed.port > 0) {
+                clearTimeout(timer)
+                resolvePort(parsed.port)
+                return
+              }
+            } catch {
+              // Wait for full JSON line.
+            }
+          }
+        })
+        child.once('exit', code => {
+          clearTimeout(timer)
+          rejectPort(new Error(`sotto-host exited early (${String(code)}); stderr=${stderr}`))
+        })
+      })
+
+      const paired = await pairClient(port, dataDir, 'Bare PATH Desktop')
+      const socket = await openSocket(port, paired.session, PROFILES.desktop.offer)
+      client = {
+        name: 'desktop',
+        session: paired.session,
+        socket,
+        fold: new ClientFold(),
+        read: 0,
+        next: 0,
+        pending: new Map(),
+      }
+      socket.onArrival(() => drain(client!))
+      const hello = await sendReq(client, { op: 'hello', ...PROFILES.desktop.hello })
+      expect(hello.ok).toBe(true)
+
+      await waitFor([client], () => {
+        const hostSnap = client!.fold.held.shell?.host as AgentHostSnapshot | undefined
+        const providers = hostSnap?.providers ?? []
+        return providers.some(p => p.id === 'claude' && p.connection === 'connected')
+          && providers.some(p => p.id === 'codex' && p.connection === 'connected')
+          && providers.some(p => p.id === 'devin' && p.connection === 'connected')
+      }, 'claude, codex, and devin connected under bare PATH', 20_000)
+
+      const hostSnap = client.fold.held.shell?.host as AgentHostSnapshot
+      expect(hostSnap.connected).toBe(true)
+
+      // Missing provider (`muse`) must record an error instead of silently staying disconnected.
+      const muse = hostSnap.providers?.find(p => p.id === 'muse')
+      expect(muse?.connection).toBe('error')
+      expect(typeof muse?.error).toBe('string')
+      expect((muse?.error ?? '').length).toBeGreaterThan(0)
+
+      // Watcher `list_projects` worker catalog must be populated with ready models for all 3 providers.
+      const workers = selectWatcherWorkerModels(hostSnap.models, 100)
+      expect(workers.length).toBeGreaterThan(0)
+      expect(workers.some(m => m.providerId === 'claude')).toBe(true)
+      expect(workers.some(m => m.providerId === 'codex')).toBe(true)
+      expect(workers.some(m => m.providerId === 'devin')).toBe(true)
+
+      // Create project + thread on Claude and verify Watcher's connected predicate + live send.
+      const projRes = await sendReq(client, {
+        op: 'command',
+        command: { type: 'create-project', provider: 'claude', title: 'Bare Path Repo', path: dataDir, useExisting: true },
+      })
+      expect(projRes.ok).toBe(true)
+      await waitFor([client], () => (((client!.fold.held.shell?.host as AgentHostSnapshot | undefined)?.projects) ?? []).length > 0, 'project created')
+      const projectId = ((client.fold.held.shell?.host as AgentHostSnapshot).projects[0]!).id
+
+      const threadId = '00000000-0000-4000-8000-0000000000f1'
+      const threadRes = await sendReq(client, {
+        op: 'command',
+        command: {
+          type: 'create-thread',
+          threadId,
+          projectId,
+          title: 'Bare Path Claude Thread',
+          titleSource: 'user',
+          modelId: publicProviderEntityId('claude', 'model', 'fixture-model'),
+          workingCopy: 'shared',
+          managed: false,
+        },
+      })
+      expect(threadRes.ok).toBe(true)
+      await sendReq(client, { op: 'observe', threadIds: [threadId] })
+
+      const latestHost = client.fold.held.shell?.host as AgentHostSnapshot
+      const createdThread = latestHost.threads.find(t => t.id === threadId) as AgentThread | undefined
+      expect(createdThread).toBeDefined()
+      expect(isThreadProviderConnected(latestHost, createdThread!)).toBe(true)
+
+      const sendRes = await sendReq(client, {
+        op: 'command',
+        command: { type: 'manual-send', threadId, text: 'Ping under bare PATH' },
+      })
+      expect(sendRes.ok).toBe(true)
+      await nativeSession(dataDir, 'claude', threadId, 10_000)
+      await drive(dataDir, 'claude', { type: 'complete', thread: threadId, text: 'Pong under bare PATH' })
+      await waitFor(
+        [client],
+        () => JSON.stringify(client!.fold.held.details[threadId]?.messages ?? []).includes('Pong under bare PATH'),
+        'bare-PATH Claude turn reply',
+      )
+      expect(client.fold.problems).toEqual([])
+    } finally {
+      client?.socket.close()
+      child.kill('SIGTERM')
+      await new Promise<void>(resolveExit => {
+        const force = setTimeout(() => { child.kill('SIGKILL'); resolveExit() }, 3_000)
+        child.once('exit', () => { clearTimeout(force); resolveExit() })
+      })
+      await rm(root, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }, 60_000)
 })

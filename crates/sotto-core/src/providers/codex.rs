@@ -33,6 +33,7 @@ pub struct CodexAdapterConfig {
     pub args: Vec<String>,
     pub codex_home: Option<PathBuf>,
     pub request_timeout_ms: u64,
+    pub use_cli_lookup: bool,
 }
 
 impl CodexAdapterConfig {
@@ -40,9 +41,10 @@ impl CodexAdapterConfig {
         Self {
             data_directory,
             executable: "codex".into(),
-            args: vec!["app-server".into()],
+            args: vec!["app-server".into(), "--stdio".into()],
             codex_home: None,
             request_timeout_ms: 30_000,
+            use_cli_lookup: true,
         }
     }
 
@@ -57,6 +59,7 @@ impl CodexAdapterConfig {
             ],
             codex_home: Some(codex_home),
             request_timeout_ms: 2_000,
+            use_cli_lookup: false,
         }
     }
 }
@@ -104,7 +107,26 @@ impl RpcProcess {
         shared: Arc<CodexSharedState>,
         owner_thread_id: Option<String>,
     ) -> Result<Arc<Self>, String> {
-        let mut cmd = Command::new(&config.executable);
+        let resolved = if config.use_cli_lookup {
+            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+            Some(
+                crate::cli_lookup::resolve_provider_cli("codex", &config.data_directory, &opts)
+                    .ok_or_else(|| {
+                        "Install Codex and sign in before connecting this provider.".to_string()
+                    })?,
+            )
+        } else {
+            None
+        };
+        let mut cmd = match &resolved {
+            Some(res) => {
+                let mut c = Command::new(&res.executable);
+                c.args(&res.prefix_args);
+                res.apply_tokio(&mut c);
+                c
+            }
+            None => Command::new(&config.executable),
+        };
         cmd.args(&config.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -122,7 +144,7 @@ impl RpcProcess {
 
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("Could not start Codex ({}): {e}", config.executable))?;
+            .map_err(|_| "Could not start Codex. Check its installation and try again.".to_string())?;
         let mut stdin = child
             .stdin
             .take()
@@ -819,8 +841,35 @@ impl ProviderAdapter for CodexAdapter {
             *self.shared.events_tx.lock().unwrap() = Some(events);
             let mut guard = self.control_proc.lock().await;
             if guard.is_none() {
-                let proc = RpcProcess::spawn(&self.config, Arc::clone(&self.shared), None)?;
-                let init = proc.initialize(self.config.request_timeout_ms).await?;
+                let record_err = |err: String| {
+                    let status = AgentProviderStatus {
+                        id: "codex".into(),
+                        name: "Codex".into(),
+                        connection: "error".into(),
+                        version: String::new(),
+                        capabilities: codex_capabilities(),
+                        error: Some(err.clone()),
+                    };
+                    *self.shared.status.lock().unwrap() = status.clone();
+                    let models = self.shared.models.lock().unwrap().clone();
+                    let upd = self.shared.client_update.lock().unwrap().clone();
+                    self.shared.emit(ProviderEvent::StatusChanged {
+                        provider_id: "codex".into(),
+                        status,
+                        models,
+                        client_update: upd,
+                    });
+                    err
+                };
+                let proc = RpcProcess::spawn(&self.config, Arc::clone(&self.shared), None)
+                    .map_err(record_err)?;
+                let init = match proc.initialize(self.config.request_timeout_ms).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        proc.shutdown().await;
+                        return Err(record_err(e));
+                    }
+                };
                 let version = init
                     .get("userAgent")
                     .and_then(Value::as_str)
@@ -838,9 +887,16 @@ impl ProviderAdapter for CodexAdapter {
                         Some(c) => json!({ "cursor": c }),
                         None => json!({}),
                     };
-                    let page = proc
+                    let page = match proc
                         .call("model/list", params, self.config.request_timeout_ms)
-                        .await?;
+                        .await
+                    {
+                        Ok(p) => p,
+                        Err(e) => {
+                            proc.shutdown().await;
+                            return Err(record_err(e));
+                        }
+                    };
                     if let Some(arr) = page.get("data").and_then(Value::as_array) {
                         for entry in arr {
                             let raw_model = entry
@@ -975,6 +1031,14 @@ impl ProviderAdapter for CodexAdapter {
                 .model_id
                 .as_deref()
                 .map(raw_codex_model)
+                .or_else(|| {
+                    self.shared
+                        .models
+                        .lock()
+                        .unwrap()
+                        .first()
+                        .map(|m| raw_codex_model(&m.id))
+                })
                 .unwrap_or_else(|| "fixture-model".to_string());
             let (approval_policy, sandbox) = map_codex_runtime_mode(req.runtime_mode.as_deref());
             let effort = req.reasoning_effort.clone().unwrap_or_else(|| "low".into());

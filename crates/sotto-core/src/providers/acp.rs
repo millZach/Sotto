@@ -86,7 +86,13 @@ impl AcpFlavor {
 
     pub fn default_args(self) -> Vec<String> {
         match self {
-            Self::Grok => vec!["agent".into(), "--no-leader".into(), "stdio".into()],
+            Self::Grok => vec![
+                "--permission-mode".into(),
+                "default".into(),
+                "agent".into(),
+                "--no-leader".into(),
+                "stdio".into(),
+            ],
             Self::Devin => vec!["acp".into()],
             Self::Cursor => vec!["acp".into()],
             Self::Antigravity => vec!["acp".into()],
@@ -102,16 +108,26 @@ pub struct AcpAdapterConfig {
     pub executable: String,
     pub args: Vec<String>,
     pub request_timeout_ms: u64,
+    pub use_cli_lookup: bool,
 }
 
 impl AcpAdapterConfig {
     pub fn native(flavor: AcpFlavor, data_directory: PathBuf) -> Self {
+        let mut args = flavor.default_args();
+        if flavor == AcpFlavor::Antigravity {
+            let gemini_dir = data_directory.join("antigravity").join("gemini");
+            args.push("--gemini-dir".into());
+            args.push(gemini_dir.to_string_lossy().into_owned());
+            args.push("--app-data-dir".into());
+            args.push("antigravity-acp".into());
+        }
         Self {
             flavor,
             data_directory,
             executable: flavor.default_executable().into(),
-            args: flavor.default_args(),
+            args,
             request_timeout_ms: 30_000,
+            use_cli_lookup: true,
         }
     }
 
@@ -129,6 +145,7 @@ impl AcpAdapterConfig {
             executable: std::env::var("SOTTO_NODE_BIN").unwrap_or_else(|_| "node".into()),
             args,
             request_timeout_ms: 5_000,
+            use_cli_lookup: false,
         }
     }
 }
@@ -157,24 +174,95 @@ impl AcpProcess {
         shared: Arc<AcpSharedState>,
         cwd: &Path,
     ) -> Result<Arc<Self>, String> {
-        let mut cmd = Command::new(&config.executable);
+        let resolved = if config.use_cli_lookup {
+            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+            Some(
+                crate::cli_lookup::resolve_provider_cli(
+                    config.flavor.id(),
+                    &config.data_directory,
+                    &opts,
+                )
+                .ok_or_else(|| {
+                    format!(
+                        "Install {} and sign in before connecting this provider.",
+                        config.flavor.name()
+                    )
+                })?,
+            )
+        } else {
+            None
+        };
+        let mut cmd = match &resolved {
+            Some(res) => {
+                let mut c = Command::new(&res.executable);
+                c.args(&res.prefix_args);
+                res.apply_tokio(&mut c);
+                c
+            }
+            None => Command::new(&config.executable),
+        };
         cmd.args(&config.args)
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        if config.use_cli_lookup {
+            match config.flavor {
+                AcpFlavor::Grok => {
+                    cmd.env("GROK_DISABLE_API_KEY_AUTH", "1");
+                    cmd.env("GROK_DISABLE_AUTOUPDATER", "1");
+                    cmd.env("GROK_DEFAULT_SELECTED_PERMISSION", "reject");
+                    cmd.env("GROK_REMEMBER_TOOL_APPROVALS", "0");
+                }
+                AcpFlavor::Cursor => {
+                    let cfg_dir = config.data_directory.join("cursor").join("config");
+                    let _ = fs::create_dir_all(&cfg_dir);
+                    cmd.env("CURSOR_CONFIG_DIR", cfg_dir);
+                    cmd.env("CURSOR_INVOKED_AS", "agent");
+                    cmd.env("NO_OPEN_BROWSER", "1");
+                }
+                AcpFlavor::Hermes => {
+                    let hermes_home = config.data_directory.join("hermes");
+                    let _ = fs::create_dir_all(&hermes_home);
+                    cmd.env("HERMES_HOME", hermes_home);
+                }
+                AcpFlavor::Antigravity => {
+                    let agy_root = config.data_directory.join("antigravity");
+                    let gemini_dir = agy_root.join("gemini");
+                    let tmp_dir = agy_root.join("tmp");
+                    let _ = fs::create_dir_all(&gemini_dir);
+                    let _ = fs::create_dir_all(&tmp_dir);
+                    cmd.env("GEMINI_HOME", &gemini_dir);
+                    cmd.env("AGY_ACP_FORCE_FILE_STORAGE", "1");
+                    cmd.env("AGY_CLI_DISABLE_AUTO_UPDATE", "1");
+                    cmd.env("PYTHONUNBUFFERED", "1");
+                    if std::env::var("SSH_CONNECTION").is_err() {
+                        cmd.env("SSH_CONNECTION", "127.0.0.1 0 127.0.0.1 0");
+                    }
+                    #[cfg(windows)]
+                    {
+                        cmd.env("TEMP", &tmp_dir);
+                        cmd.env("TMP", &tmp_dir);
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        cmd.env("TMPDIR", &tmp_dir);
+                    }
+                }
+                AcpFlavor::Devin => {}
+            }
+        }
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let mut child = cmd.spawn().map_err(|e| {
+        let mut child = cmd.spawn().map_err(|_| {
             format!(
-                "Could not start {} ({}): {e}",
-                config.flavor.name(),
-                config.executable
+                "Could not start {}. Check its installation and try again.",
+                config.flavor.name()
             )
         })?;
         let mut stdin = child
@@ -335,7 +423,11 @@ impl AcpProcess {
 
         if flavor == AcpFlavor::Grok {
             let _ = self
-                .call("authenticate", json!({ "methodId": "cached_token" }), timeout_ms)
+                .call(
+                    "authenticate",
+                    json!({ "methodId": "cached_token", "_meta": { "headless": true } }),
+                    timeout_ms,
+                )
                 .await;
         } else if flavor == AcpFlavor::Antigravity {
             let method = if std::env::var("GEMINI_API_KEY").is_ok() {
@@ -813,11 +905,32 @@ impl ProviderAdapter for AcpAdapter {
         Box::pin(async move {
             *self.shared.events_tx.lock().unwrap() = Some(events);
             let flavor = self.config.flavor;
+            let record_err = |err: String| {
+                let status = AgentProviderStatus {
+                    id: flavor.id().into(),
+                    name: flavor.name().into(),
+                    connection: "error".into(),
+                    version: String::new(),
+                    capabilities: acp_capabilities(),
+                    error: Some(err.clone()),
+                };
+                *self.shared.status.lock().unwrap() = status.clone();
+                let models = self.shared.models.lock().unwrap().clone();
+                let upd = self.shared.client_update.lock().unwrap().clone();
+                self.shared.emit(ProviderEvent::StatusChanged {
+                    provider_id: flavor.id().into(),
+                    status,
+                    models,
+                    client_update: upd,
+                });
+                err
+            };
             let probe = AcpProcess::spawn(
                 &self.config,
                 Arc::clone(&self.shared),
                 &self.config.data_directory,
-            )?;
+            )
+            .map_err(record_err)?;
             let init = probe
                 .initialize(flavor, self.config.request_timeout_ms)
                 .await;
@@ -825,7 +938,7 @@ impl ProviderAdapter for AcpAdapter {
                 Ok(v) => v,
                 Err(e) => {
                     probe.shutdown().await;
-                    return Err(e);
+                    return Err(record_err(e));
                 }
             };
 

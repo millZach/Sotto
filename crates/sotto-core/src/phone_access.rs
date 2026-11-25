@@ -428,7 +428,19 @@ fn run_tailscale_process(
     stop_on_consent: bool,
 ) -> std::io::Result<(Option<i32>, String, String)> {
     use std::io::Read;
-    let mut cmd = std::process::Command::new(executable);
+    let mut cmd = if executable == "tailscale" {
+        let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+        match crate::cli_lookup::resolve_tool_cli("tailscale", &opts) {
+            Some(res) => {
+                let mut c = std::process::Command::new(&res.executable);
+                res.apply_std(&mut c);
+                c
+            }
+            None => std::process::Command::new(executable),
+        }
+    } else {
+        std::process::Command::new(executable)
+    };
     cmd.args(args)
         .env("TAILSCALE_BE_CLI", "1")
         .stdin(Stdio::null())

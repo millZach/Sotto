@@ -408,6 +408,7 @@ impl Default for AgentConfiguration {
                 "opencode".into(),
                 "cursor".into(),
                 "hermes".into(),
+                "antigravity".into(),
             ],
             followup_limit: 5,
             grok_speech_voice: "altair".into(),

@@ -35,6 +35,7 @@ pub struct OpenCodeAdapterConfig {
     pub executable: String,
     pub args: Vec<String>,
     pub request_timeout_ms: u64,
+    pub use_cli_lookup: bool,
 }
 
 impl OpenCodeAdapterConfig {
@@ -42,8 +43,13 @@ impl OpenCodeAdapterConfig {
         Self {
             data_directory,
             executable: "opencode".into(),
-            args: vec!["serve".into(), "--port=0".into()],
+            args: vec![
+                "serve".into(),
+                "--hostname=127.0.0.1".into(),
+                "--port=0".into(),
+            ],
             request_timeout_ms: 30_000,
+            use_cli_lookup: true,
         }
     }
 
@@ -57,6 +63,7 @@ impl OpenCodeAdapterConfig {
                 "--port=0".into(),
             ],
             request_timeout_ms: 3_000,
+            use_cli_lookup: false,
         }
     }
 }
@@ -108,13 +115,48 @@ impl OpenCodeServerHandle {
             STANDARD.encode(format!("opencode:{password}").as_bytes())
         );
 
-        let xdg_data = config.data_directory.join("xdg-data");
-        let _ = fs::create_dir_all(&xdg_data);
-
-        let mut cmd = Command::new(&config.executable);
+        let resolved = if config.use_cli_lookup {
+            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+            Some(
+                crate::cli_lookup::resolve_provider_cli("opencode", &config.data_directory, &opts)
+                    .ok_or_else(|| {
+                        "Install OpenCode and sign in before connecting this provider.".to_string()
+                    })?,
+            )
+        } else {
+            None
+        };
+        let mut cmd = match &resolved {
+            Some(res) => {
+                let mut c = Command::new(&res.executable);
+                c.args(&res.prefix_args);
+                res.apply_tokio(&mut c);
+                c
+            }
+            None => Command::new(&config.executable),
+        };
+        if config.use_cli_lookup {
+            let oc_base = config.data_directory.join("opencode");
+            let oc_data = oc_base.join("data");
+            let oc_config = oc_base.join("config");
+            let oc_state = oc_base.join("state");
+            let oc_cache = oc_base.join("cache");
+            for d in [&oc_data, &oc_config, &oc_state, &oc_cache] {
+                let _ = fs::create_dir_all(d);
+            }
+            cmd.env("XDG_DATA_HOME", &oc_data)
+                .env("XDG_CONFIG_HOME", &oc_config)
+                .env("XDG_STATE_HOME", &oc_state)
+                .env("XDG_CACHE_HOME", &oc_cache)
+                .env("OPENCODE_CONFIG_CONTENT", r#"{"share":"disabled","update":"disable"}"#)
+                .env("OPENCODE_DISABLE_AUTOUPDATE", "1");
+        } else {
+            let xdg_data = config.data_directory.join("xdg-data");
+            let _ = fs::create_dir_all(&xdg_data);
+            cmd.env("XDG_DATA_HOME", &xdg_data);
+        }
         cmd.args(&config.args)
             .env("OPENCODE_PASSWORD", &password)
-            .env("XDG_DATA_HOME", &xdg_data)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -125,9 +167,9 @@ impl OpenCodeServerHandle {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Could not start OpenCode ({}): {e}", config.executable))?;
+        let mut child = cmd.spawn().map_err(|_| {
+            "Could not start OpenCode. Check its installation and try again.".to_string()
+        })?;
         let stdout = child
             .stdout
             .take()
@@ -579,18 +621,54 @@ impl ProviderAdapter for OpenCodeAdapter {
             *self.shared.events_tx.lock().unwrap() = Some(events);
             let mut guard = self.server.lock().await;
             if guard.is_none() {
-                let srv = OpenCodeServerHandle::start(&self.config, Arc::clone(&self.shared)).await?;
-                let (_, info) = srv
+                let record_err = |err: String| {
+                    let status = AgentProviderStatus {
+                        id: "opencode".into(),
+                        name: "OpenCode".into(),
+                        connection: "error".into(),
+                        version: String::new(),
+                        capabilities: opencode_capabilities(),
+                        error: Some(err.clone()),
+                    };
+                    *self.shared.status.lock().unwrap() = status.clone();
+                    let models = self.shared.models.lock().unwrap().clone();
+                    let upd = self.shared.client_update.lock().unwrap().clone();
+                    self.shared.emit(ProviderEvent::StatusChanged {
+                        provider_id: "opencode".into(),
+                        status,
+                        models,
+                        client_update: upd,
+                    });
+                    err
+                };
+                let srv = OpenCodeServerHandle::start(&self.config, Arc::clone(&self.shared))
+                    .await
+                    .map_err(record_err)?;
+                let (_, info) = match srv
                     .http_json("GET", "/api/info", None, self.config.request_timeout_ms)
-                    .await?;
+                    .await
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        srv.shutdown().await;
+                        return Err(record_err(e));
+                    }
+                };
                 let version = info
                     .get("version")
                     .and_then(Value::as_str)
                     .unwrap_or("2.0.31")
                     .to_string();
-                let (_, model_res) = srv
+                let (_, model_res) = match srv
                     .http_json("GET", "/api/model", None, self.config.request_timeout_ms)
-                    .await?;
+                    .await
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        srv.shutdown().await;
+                        return Err(record_err(e));
+                    }
+                };
 
                 let mut models = Vec::new();
                 if let Some(arr) = model_res.get("data").and_then(Value::as_array) {

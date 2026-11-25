@@ -916,20 +916,36 @@ impl CoordinatorActor {
             .unwrap_or_default()
             .into_iter()
             .collect();
-        let mut startup_connects: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+        let mut startup_connects: tokio::task::JoinSet<(String, Result<(), String>)> =
+            tokio::task::JoinSet::new();
         for (id, adapter) in &self.providers {
             if !adapter.is_held() && !disconnected.contains(id) {
+                let provider_id = id.clone();
                 let adapter = Arc::clone(adapter);
                 let tx = self.provider_events_tx.clone();
                 startup_connects.spawn(async move {
-                    let _ = adapter.connect(tx).await;
+                    let result = adapter.connect(tx).await;
+                    (provider_id, result)
                 });
             }
         }
+        let mut startup_errors: HashMap<String, String> = HashMap::new();
         let mut deferred_messages: VecDeque<ActorMessage> = VecDeque::new();
         while !startup_connects.is_empty() {
             tokio::select! {
-                _ = startup_connects.join_next() => {}
+                Some(joined) = startup_connects.join_next() => {
+                    if let Ok((provider_id, outcome)) = joined {
+                        match outcome {
+                            Ok(()) => {
+                                eprintln!("[Sotto] provider-connected provider={provider_id}");
+                            }
+                            Err(err) => {
+                                eprintln!("[Sotto] provider-connect-failed provider={provider_id}");
+                                startup_errors.insert(provider_id, err);
+                            }
+                        }
+                    }
+                }
                 Some(msg) = rx.recv() => {
                     match msg {
                         ActorMessage::Shutdown { reply } => {
@@ -948,10 +964,29 @@ impl CoordinatorActor {
             }
         }
         for (id, adapter) in &self.providers {
-            self.provider_statuses.insert(id.clone(), adapter.status());
+            let mut status = adapter.status();
+            if let Some(err) = startup_errors.get(id) {
+                if status.connection != "connected" {
+                    status.connection = "error".into();
+                    if status.error.is_none() {
+                        status.error = Some(err.clone());
+                    }
+                }
+            }
+            self.provider_statuses.insert(id.clone(), status);
         }
         while let Ok(ev) = provider_rx.try_recv() {
             self.handle_provider_event(ev);
+        }
+        for (id, err) in startup_errors {
+            if let Some(status) = self.provider_statuses.get_mut(&id) {
+                if status.connection != "connected" {
+                    status.connection = "error".into();
+                    if status.error.is_none() {
+                        status.error = Some(err);
+                    }
+                }
+            }
         }
         self.rebuild_catalog();
         for msg in deferred_messages {
@@ -2170,18 +2205,24 @@ impl CoordinatorActor {
                 let mut connected_name: Option<String> = None;
                 for (provider_id, result) in outcomes {
                     if let Some(adapter) = self.providers.get(&provider_id).cloned() {
-                        self.provider_statuses
-                            .insert(provider_id.clone(), adapter.status());
+                        let mut status = adapter.status();
                         match result {
                             Ok(()) => {
                                 connected_name = Some(adapter.name().to_string());
                             }
                             Err(err) => {
+                                if status.connection != "connected" {
+                                    status.connection = "error".into();
+                                    if status.error.is_none() {
+                                        status.error = Some(err.clone());
+                                    }
+                                }
                                 if first_error.is_none() {
                                     first_error = Some(err);
                                 }
                             }
                         }
+                        self.provider_statuses.insert(provider_id.clone(), status);
                     }
                 }
                 self.rebuild_catalog();
@@ -2588,10 +2629,16 @@ impl CoordinatorActor {
             created_dir = true;
         }
         if git_init {
-            let status = Command::new("git")
-                .args(["init"])
-                .current_dir(dir)
-                .output();
+            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+            let mut cmd = match crate::cli_lookup::resolve_tool_cli("git", &opts) {
+                Some(res) => {
+                    let mut c = Command::new(&res.executable);
+                    res.apply_std(&mut c);
+                    c
+                }
+                None => Command::new("git"),
+            };
+            let status = cmd.args(["init"]).current_dir(dir).output();
             let ok = status.is_ok_and(|o| o.status.success());
             if !ok {
                 if created_dir {
@@ -3191,17 +3238,50 @@ impl CoordinatorActor {
             .iter()
             .filter_map(|id| self.provider_statuses.get(*id))
             .collect();
+        let connected_providers: Vec<&AgentProviderStatus> = providers
+            .iter()
+            .copied()
+            .filter(|p| p.connection == "connected")
+            .collect();
+        let connected = !connected_providers.is_empty();
+        let mut capabilities = AgentCapabilities::none();
+        for p in &connected_providers {
+            let c = &p.capabilities;
+            if c.compact == Some(true) {
+                capabilities.compact = Some(true);
+            }
+            if c.configure_thread == Some(true) {
+                capabilities.configure_thread = Some(true);
+            }
+            capabilities.interrupt |= c.interrupt;
+            capabilities.message_origin |= c.message_origin;
+            capabilities.observe |= c.observe;
+            capabilities.permissions |= c.permissions;
+            capabilities.projects |= c.projects;
+            capabilities.questions |= c.questions;
+            capabilities.reconcile |= c.reconcile;
+            if c.skills == Some(true) {
+                capabilities.skills = Some(true);
+            }
+            if c.steer == Some(true) {
+                capabilities.steer = Some(true);
+            }
+            capabilities.submit |= c.submit;
+            capabilities.threads |= c.threads;
+        }
         let active_provider = self
             .provider_statuses
             .get(&self.configuration.provider)
-            .or_else(|| providers.iter().copied().find(|p| p.connection == "connected"));
-        let connected = active_provider
-            .map(|p| p.connection == "connected")
-            .unwrap_or(false);
-        let capabilities = active_provider
-            .map(|p| p.capabilities.clone())
-            .unwrap_or_else(AgentCapabilities::none);
-        let host_name = provider_label(&self.configuration.provider);
+            .filter(|p| p.connection == "connected")
+            .or_else(|| connected_providers.first().copied())
+            .or_else(|| self.provider_statuses.get(&self.configuration.provider));
+        let host_name = if connected_providers.len() == 1 {
+            connected_providers[0].name.as_str()
+        } else if connected_providers.len() > 1 {
+            "Native providers"
+        } else {
+            provider_label(&self.configuration.provider)
+        };
         let host_version = active_provider
             .map(|p| p.version.as_str())
             .filter(|v| !v.is_empty())
@@ -3579,7 +3659,15 @@ fn allocate_independent_worktree(
 }
 
 fn run_git_sync(folder: &str, args: &[&str]) -> Result<String, String> {
-    let mut cmd = Command::new("git");
+    let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+    let mut cmd = match crate::cli_lookup::resolve_tool_cli("git", &opts) {
+        Some(res) => {
+            let mut c = Command::new(&res.executable);
+            res.apply_std(&mut c);
+            c
+        }
+        None => Command::new("git"),
+    };
     cmd.args(args).current_dir(folder);
     #[cfg(windows)]
     {
@@ -4556,6 +4644,105 @@ mod tests {
         assert_eq!(after_all["notice"], "Sotto disconnected.");
         assert_eq!(after_all["configuration"]["enabled"], enabled_before);
         assert_eq!(after_all["configuration"]["enabledProviders"], json!([]));
+
+        coord.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn startup_connect_error_is_recorded_and_other_connected_provider_keeps_host_connected() {
+        struct FailingConnectAdapter;
+
+        impl ProviderAdapter for FailingConnectAdapter {
+            fn id(&self) -> &str {
+                "codex"
+            }
+            fn name(&self) -> &str {
+                "Codex"
+            }
+            fn status(&self) -> AgentProviderStatus {
+                AgentProviderStatus {
+                    id: "codex".into(),
+                    name: "Codex".into(),
+                    connection: "disconnected".into(),
+                    version: String::new(),
+                    capabilities: AgentCapabilities::none(),
+                    error: None,
+                }
+            }
+            fn models(&self) -> Vec<AgentModel> {
+                Vec::new()
+            }
+            fn connect(
+                &self,
+                _events: mpsc::UnboundedSender<ProviderEvent>,
+            ) -> BoxFuture<'_, Result<(), String>> {
+                Box::pin(async {
+                    Err("Install Codex and sign in before connecting this provider.".into())
+                })
+            }
+            fn disconnect(&self) -> BoxFuture<'_, Result<(), String>> {
+                Box::pin(async { Ok(()) })
+            }
+            fn create_thread(
+                &self,
+                _thread_id: String,
+                _cwd: String,
+                _model_id: Option<String>,
+                _runtime_mode: Option<String>,
+                _reasoning_effort: Option<String>,
+            ) -> BoxFuture<'_, Result<(), String>> {
+                Box::pin(async { Ok(()) })
+            }
+            fn send_message(
+                &self,
+                _req: SendMessageRequest,
+            ) -> BoxFuture<'_, Result<SendMessageAck, String>> {
+                Box::pin(async { Err("Not connected".into()) })
+            }
+            fn interrupt(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+                Box::pin(async { Ok(()) })
+            }
+            fn answer_request(&self, _input: AnswerRequestInput) -> BoxFuture<'_, Result<(), String>> {
+                Box::pin(async { Ok(()) })
+            }
+            fn compact(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let dir = tempdir().unwrap();
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(FailingConnectAdapter));
+        providers.insert("claude".into(), Arc::new(MockProviderAdapter::new("claude")));
+
+        let coord = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000009".into(),
+            false,
+            providers,
+        )
+        .unwrap();
+
+        let shell = coord.shell(true).await.unwrap();
+        // Default provider is "codex" (which failed), but "claude" connected: host must be connected.
+        assert_eq!(shell["connection"], "connected");
+        assert_eq!(shell["host"]["connected"], true);
+
+        let providers_arr = shell["host"]["providers"].as_array().unwrap();
+        let codex = providers_arr.iter().find(|p| p["id"] == "codex").unwrap();
+        assert_eq!(codex["connection"], "error");
+        assert_eq!(
+            codex["error"].as_str(),
+            Some("Install Codex and sign in before connecting this provider.")
+        );
+
+        let claude = providers_arr.iter().find(|p| p["id"] == "claude").unwrap();
+        assert_eq!(claude["connection"], "connected");
+        assert!(shell["host"]["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["providerId"] == "claude"));
 
         coord.shutdown().await;
     }
