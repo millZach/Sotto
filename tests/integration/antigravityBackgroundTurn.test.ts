@@ -264,6 +264,34 @@ rl.on('line', line => {
       }, 20)
       return
     }
+    if (promptText.includes('repeated-schedules-in-one-turn')) {
+      // A release watch held in one turn: set a short wakeup, let it fire into the running turn with the timer's own prompt
+      // (no "Task id … finished"), check, and set the next; the last wakeup is still pending when the turn ends.
+      const schedule = (i, seconds) => write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'watch-sched-' + i,
+        title: 'Run schedule',
+        status: 'completed',
+        rawInput: { DurationSeconds: seconds, Prompt: 'Check the Owl release ' + i },
+        rawOutput: { status: 'scheduled', taskId: 'conv-w/sched-' + i },
+      } } })
+      const wake = i => write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
+        sessionUpdate: 'user_message_chunk',
+        content: { type: 'text', text: '<SYSTEM_MESSAGE>\\n[Message] timestamp=2026-11-24T00:00:00Z priority=HIGH content=Check the Owl release ' + i + '\\n</SYSTEM_MESSAGE>' },
+      } } })
+      const step = i => {
+        if (i === 3) {
+          schedule(i, 600)
+          write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Still building; checking again later.' } } } })
+          write({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'end_turn' } })
+          return
+        }
+        schedule(i, 0.05)
+        setTimeout(() => { wake(i); step(i + 1) }, 120)
+      }
+      step(0)
+      return
+    }
     if (promptText.includes('overflow-schedules-with-os-child')) {
       for (let i = 0; i < 64; i++) {
         write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update: {
@@ -927,6 +955,30 @@ describe('Antigravity ACP background work, reactive continuations, worker questi
     expect(wakeupEvent.backgroundWorkCount).toBe(0)
     expect(wakeupDelivery.text).toContain('GPU DONE')
     expect((await host.snapshot()).threads.find(item => item.id === 't-colab')?.messages.some(m => m.role === 'user' && m.text.includes('<SYSTEM_MESSAGE>'))).toBe(false)
+  })
+
+  it('drops schedule timers that fire inside one long turn and holds the thread on the pending one as waited-on work, never as agents', async () => {
+    const { host } = await setup({ reactiveTurnSettleMs: 30, reactiveTurnWaitMs: 60, lookBeforeEndMs: 50 })
+    await host.execute({ type: 'create-thread', commandId: 'c-watch', projectId: 'proj-1', threadId: 't-watch', title: 'Release watch', modelId: 'gemini-3.1-pro' })
+
+    let mostWork = 0
+    const kinds = new Set<string>()
+    host.subscribe(snap => {
+      const work = snap.threads.find(item => item.id === 't-watch')?.backgroundWork ?? []
+      mostWork = Math.max(mostWork, work.length)
+      for (const item of work) kinds.add(item.type)
+    })
+
+    await host.execute({ type: 'send', threadId: 't-watch', commandId: 's-watch-1', messageId: 'm-watch-1', text: 'repeated-schedules-in-one-turn' })
+    await expect.poll(async () => (await host.snapshot()).threads.find(t => t.id === 't-watch')?.lastTurn, { timeout: 5_000 }).toEqual({ id: 'm-watch-1', status: 'completed' })
+    const thread = (await host.snapshot()).threads.find(t => t.id === 't-watch')!
+    // Three timers fired into the turn and went; only the one still pending holds the thread, as a wait.
+    expect(thread.backgroundWork?.map(item => [item.type, item.label])).toEqual([['command', 'Run schedule']])
+    expect(agentBackgroundWorkSchema.safeParse(thread.backgroundWork).success).toBe(true)
+    expect(mostWork).toBe(1)
+    expect([...kinds]).toEqual(['command'])
+    // The timer wakeups are the runtime's, not the user's.
+    expect(thread.messages.some(m => m.role === 'user' && m.text.includes('<SYSTEM_MESSAGE>'))).toBe(false)
   })
 
   it('settles tracked background work on mid-turn SYSTEM_MESSAGE wakeups without swallowing pasted user messages', async () => {

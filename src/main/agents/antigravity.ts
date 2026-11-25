@@ -1217,6 +1217,8 @@ export class AntigravityAcpHost implements ProviderHost {
         let settled = false
         const tasks = this.backgroundTasks.get(id)
         if (tasks) for (const taskId of wakeup.completedTaskIds) if (tasks.settleNativeTask(taskId)) settled = true
+        // A fired `schedule` wakes the running turn with its own prompt, naming no task: its time being up is what settles it.
+        if (tasks && turn && !turn.ended && !wakeup.completedTaskIds.length && tasks.settleFiredTimers()) settled = true
         if (settled && this.syncBackgroundWork(id)) this.emit()
         return
       }
