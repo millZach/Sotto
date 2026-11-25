@@ -5,8 +5,10 @@ import { version as packageVersion } from '../../package.json'
 import { startHeadlessHost } from '../../src/host'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { HostBootChanges } from '../../src/main/hosts/hostBootStart'
 import { HostUpdates } from '../../src/main/hosts/hostUpdate'
 import { SshFailure } from '../../src/main/hosts/sshLauncher'
+import type { HostsState } from '../../src/shared/hosts'
 import { useDesktopHostFixture } from '../fixtures/desktopHostFixture'
 
 const fixture = useDesktopHostFixture()
@@ -146,5 +148,129 @@ describe('updating a host from the Threads page (ADR-0040)', () => {
     const remote = await add()
     await expect(fixture.manager.restartForUpdate(remote.id, packageVersion)).rejects.toThrow('Sotto did not start the host on Forge fixture')
     expect(fixture.manager.get().hosts[0]!.phase).toBe('connected')
+  })
+
+  it('clears a failed host update when the host is forgotten and does not carry it over when re-added', async () => {
+    const remote = await add()
+    fixture.updateHost = async () => ({ type: 'error', reason: 'checksum-mismatch', file: `Sotto-host-${packageVersion}-linux-x64.tar.gz` })
+    const updates = new HostUpdates({
+      version: packageVersion,
+      releasesUrl: 'https://releases.example/download',
+      threads: { working: () => [], workingNow: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
+      hosts: {
+        candidates: () => fixture.manager.updateCandidates(),
+        saved: id => fixture.manager.hasSaved(id),
+        run: (id, operation, options) => fixture.manager.runUpdate(id, operation, options),
+        restart: (id, version, options) => fixture.manager.restartForUpdate(id, version, options),
+        subscribe: listener => fixture.manager.subscribe(() => listener()),
+      },
+    })
+    fixture.manager.useUpdates(updates)
+    const published: HostsState[] = []
+    const off = fixture.manager.subscribe(state => published.push(state))
+    try {
+      await fixture.manager.command({ type: 'host-update', id: remote.id, action: 'update' })
+      await vi.waitFor(() => expect(fixture.manager.get().updates).toMatchObject([{ id: remote.id, phase: 'failed' }]))
+
+      // Ordinary disconnect preserves the failed entry while the host remains saved.
+      await fixture.manager.command({ type: 'disconnect', id: remote.id })
+      expect(fixture.manager.get().updates).toMatchObject([{ id: remote.id, phase: 'failed' }])
+
+      // Forgetting the host removes the failed entry completely.
+      published.length = 0
+      const afterForget = await fixture.manager.command({ type: 'forget', id: remote.id })
+      expect(afterForget.updates).toEqual([])
+      expect(updates.state()).toEqual([])
+      expect(published.at(-1)?.updates).toEqual([])
+      await expect(fixture.manager.command({ type: 'host-update', id: remote.id, action: 'update' })).rejects.toThrow('This host is no longer saved.')
+
+      // Re-adding the same host gives it a fresh saved ID with no orphaned failed entry.
+      const readded = await add()
+      expect(readded.id).not.toBe(remote.id)
+      expect(fixture.manager.get().updates).toMatchObject([{ id: readded.id, phase: 'needs' }])
+      expect(fixture.manager.get().updates).toHaveLength(1)
+    } finally {
+      off()
+      updates.dispose()
+    }
+  })
+
+  it('filters updates and updateChecks against saved hosts as defense in depth', async () => {
+    const remote = await add()
+    const staleId = '99999999-9999-4999-8999-999999999999'
+    fixture.manager.useUpdates({
+      state: () => [
+        { id: remote.id, name: 'Forge fixture', from: '0.0.1', to: packageVersion, phase: 'needs', owned: true, working: 0, commands: '' },
+        { id: staleId, name: 'Forgotten', from: '0.0.1', to: packageVersion, phase: 'failed', owned: true, working: 0, commands: '' },
+      ],
+      checking: () => [remote.id, staleId],
+      command: async () => undefined,
+      busy: () => undefined,
+      subscribe: () => () => undefined,
+    })
+    const state = fixture.manager.get()
+    expect(state.updates?.map(item => item.id)).toEqual([remote.id])
+    expect(state.updateChecks).toEqual([remote.id])
+  })
+
+  it('never publishes a stale pre-sync snapshot after a re-entrant DesktopHosts.emit() from HostUpdates or HostBootChanges', async () => {
+    const remote = await add()
+    // Subscribe HostUpdates and HostBootChanges BEFORE the IPC-style listener, matching createDesktopEngine.ts.
+    const updates = new HostUpdates({
+      version: packageVersion,
+      releasesUrl: 'https://releases.example/download',
+      threads: { working: () => [], workingNow: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
+      hosts: {
+        candidates: () => fixture.manager.updateCandidates(),
+        saved: id => fixture.manager.hasSaved(id),
+        run: (id, operation, options) => fixture.manager.runUpdate(id, operation, options),
+        restart: (id, version, options) => fixture.manager.restartForUpdate(id, version, options),
+        subscribe: listener => fixture.manager.subscribe(() => listener()),
+      },
+    })
+    fixture.manager.useUpdates(updates)
+
+    let working = ['thread-1']
+    const boot = new HostBootChanges({
+      threads: { working: () => working, workingNow: () => working, interrupt: async () => undefined, subscribe: () => () => undefined },
+      hosts: {
+        candidate: id => fixture.manager.bootCandidate(id),
+        keeps: id => fixture.manager.bootKeeps(id),
+        setBootStart: (id, action) => fixture.manager.setBootStart(id, action),
+        subscribe: listener => fixture.manager.subscribe(() => listener()),
+      },
+    })
+    fixture.manager.useBoot(boot)
+
+    const published: HostsState[] = []
+    const off = fixture.manager.subscribe(state => published.push(state))
+    try {
+      expect(fixture.manager.get().updates).toMatchObject([{ id: remote.id, phase: 'needs' }])
+
+      // Disconnecting causes DesktopHosts.emit() -> HostUpdates.sync() deletes the 'needs' entry -> re-entrant emit().
+      // The IPC-style listener registered after HostUpdates must end with updates: [] (never overwritten by stale [needs]).
+      published.length = 0
+      await fixture.manager.command({ type: 'disconnect', id: remote.id })
+      expect(published.length).toBeGreaterThan(0)
+      expect(published.at(-1)?.updates).toEqual([])
+      expect(published.some(state => state.hosts[0]?.phase === 'disconnected' && (state.updates?.length ?? 0) > 0)).toBe(false)
+
+      // Also verify re-entrant HostBootChanges.sync() when switching off a host with a pending boot change.
+      fixture.bootStart = { supported: true, installed: false, enabled: false, active: false, linger: true, nodeDrift: false }
+      await fixture.manager.command({ type: 'connect', id: remote.id })
+      await fixture.manager.command({ type: 'host-boot', id: remote.id, action: 'install' })
+      expect(fixture.manager.get().boot).toMatchObject([{ id: remote.id, phase: 'confirm' }])
+
+      published.length = 0
+      await fixture.manager.command({ type: 'set-enabled', id: remote.id, enabled: false })
+      expect(published.length).toBeGreaterThan(0)
+      expect(published.at(-1)?.boot).toMatchObject([{ id: remote.id, phase: 'failed' }])
+      expect(published.some(state => state.hosts[0]?.enabled === false && state.boot?.[0]?.phase === 'confirm')).toBe(false)
+      working = []
+    } finally {
+      off()
+      boot.dispose()
+      updates.dispose()
+    }
   })
 })
