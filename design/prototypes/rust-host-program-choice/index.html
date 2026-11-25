@@ -1,0 +1,185 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. Question: how does a remote host's Node/Rust host program choice look in Settings > Hosts & phones?
+     Three variants on the Hosts card, switchable with ?variant=A|B|C and the bar at the bottom. Owl only; Node is the default. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · Host program choice (Node / Rust)</title>
+<style>
+  :root { --bg:#16171a; --card:#1f2024; --inset:#17181b; --text:#ececef; --muted:#a3a5ad; --quiet:#8a8c94; --border:#3a3c43; --accent:#8fb4ff; --accent-wash:rgba(143,180,255,.14); --overlay:#26272c; --warn:#e7c27a; --error:#ff9b9b;
+    font-family: Figtree, "Segoe UI", system-ui, sans-serif; color-scheme: dark; }
+  body { margin:0; background:var(--bg); color:var(--text); font-size:14px; }
+  .room { max-width: 760px; margin: 0 auto; padding: 32px 24px 120px; }
+  h1 { font-size: 20px; margin: 0 0 4px; } h3 { font-size: 16px; margin: 0; font-weight:600; }
+  p { margin: 6px 0 0; color: var(--muted); }
+  .heading { display:flex; justify-content:space-between; align-items:center; margin: 24px 0 10px; }
+  .card { background: var(--card); border-radius: 12px; padding: 2px 20px; }
+  .row { display:flex; flex-wrap:wrap; gap: 8px 14px; align-items:center; padding:16px 0; border-bottom:2px solid var(--inset); }
+  .row:last-child { border-bottom:0; }
+  .icon { width:34px; height:34px; border-radius:8px; background:var(--inset); display:grid; place-items:center; color:var(--accent); }
+  .info { flex:1 1 220px; min-width:0; }
+  .name { font-weight:600; }
+  .meta { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .meta .on { color:var(--text); }
+  .actions { display:flex; gap:6px; align-items:center; margin-left:auto; }
+  button { font: inherit; color: var(--text); background: #2b2d33; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor:pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); color:#0f1830; border-color: transparent; font-weight:600; }
+  button.ghost { background: transparent; border-color: transparent; }
+  .switch { display:inline-flex; align-items:center; gap:8px; color:var(--muted); font-size:12.5px; }
+  .track { width:36px; height:20px; border-radius:10px; background:var(--accent); position:relative; }
+  .track::after { content:''; position:absolute; top:3px; right:3px; width:14px; height:14px; border-radius:50%; background:#0f1830; }
+  .track.off { background:#3a3c43; } .track.off::after { left:3px; right:auto; background:var(--muted); }
+  .menu { position:relative; }
+  .menu-list { position:absolute; right:0; top:calc(100% + 4px); background:var(--overlay); border:1px solid var(--border); border-radius:10px; padding:4px; min-width:210px; z-index:5; display:grid; box-shadow: 0 12px 32px rgba(0,0,0,.4); }
+  .menu-list button { background:transparent; border:0; text-align:left; font-size:12.5px; padding:7px 10px; border-radius:6px; }
+  .menu-list button:hover { background: #33353b; }
+  .menu-list hr { border:0; border-top:1px solid var(--border); margin:4px 0; }
+  .tag { display:inline-block; font-size:11.5px; padding:1px 7px; border-radius:999px; background:var(--accent-wash); color:var(--accent); margin-left:6px; vertical-align: 1px; }
+  .tag.node { background:#2b2d33; color:var(--muted); }
+  .note { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .note.warn { color: var(--warn); }
+  /* dialog */
+  .scrim { position:fixed; inset:0; background:rgba(0,0,0,.55); display:grid; place-items:center; z-index:10; }
+  .dialog { width:min(480px, calc(100% - 32px)); background:var(--overlay); border:1px solid var(--border); border-radius:14px; padding:20px; max-height: calc(100vh - 32px); overflow:auto; }
+  .dialog h2 { font-size:17px; margin:0 0 4px; }
+  fieldset { border:1px solid var(--border); border-radius:10px; padding: 10px 12px 12px; margin: 14px 0 0; }
+  legend { padding: 0 6px; color: var(--muted); font-size: 12.5px; }
+  .choice { display:grid; grid-template-columns: 20px 1fr; gap: 2px 8px; padding: 8px; border-radius:8px; cursor:pointer; }
+  .choice[data-checked] { background: var(--accent-wash); }
+  .choice span.t { grid-column: 2; color: var(--muted); font-size: 12.5px; }
+  .field { display:grid; gap:5px; margin-top:12px; } .field input { background:#17181b; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px; font:inherit; }
+  .buttons { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .segment { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .segment button { border:0; border-radius:0; padding:5px 12px; background:transparent; font-size:12.5px; color: var(--muted); }
+  .segment button[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent); font-weight:600; }
+  /* bar */
+  .bar { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); display:flex; gap:10px; align-items:center; background:#0d0e10; border:1px solid var(--border); border-radius:999px; padding:6px 10px; z-index:20; font-size:12.5px; flex-wrap: wrap; justify-content:center; max-width: calc(100% - 24px); }
+  .bar button { padding:4px 10px; border-radius:999px; font-size:12.5px; }
+  .bar button[aria-pressed="true"] { background: var(--accent); color:#0f1830; border-color:transparent; font-weight:600; }
+  .bar .label { color: var(--muted); }
+  .state { margin-top: 18px; font: 12px ui-monospace, Consolas, monospace; color: var(--quiet); white-space: pre-wrap; background:#111214; border-radius:8px; padding:10px; }
+  .vtitle { color: var(--accent); font-size: 12.5px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="room">
+  <h1>Hosts &amp; phones</h1>
+  <p class="vtitle" id="vtitle"></p>
+  <div class="heading"><h3>Remote hosts</h3><button>+ Add host</button></div>
+  <div class="card" id="list"></div>
+  <div class="state" id="state"></div>
+</div>
+<div id="layer"></div>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <span class="label">Variant</span>
+  <button data-v="A">A · Edit connection</button><button data-v="B">B · Row menu</button><button data-v="C">C · Row control</button>
+  <span class="label">· forge</span>
+  <button id="toggleConnected"></button>
+  <button id="toggleOwned"></button>
+</div>
+<script>
+const params = new URLSearchParams(location.search)
+let variant = params.get('variant') || 'A'
+// What the desktop knows about forge. choice: saved per host (Node default). running: what the launch reported.
+const s = { choice: 'node', running: 'node', connected: true, owned: true, restarting: false, menu: false, dialog: null, pendingChoice: null }
+const TITLES = {
+  A: 'A — The choice lives in Edit connection as a "Host program" radio group. The row says "Rust preview" only when Rust runs.',
+  B: 'B — The row’s More menu has "Run on Rust (preview)" / "Run on Node"; a confirm explains the restart. The row always names the program.',
+  C: 'C — A Node | Rust segmented control right on the row, with the program on the meta line. One press switches and restarts.',
+}
+const esc = x => String(x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
+const progName = p => p === 'rust' ? 'Rust (preview)' : 'Node'
+function status() {
+  if (s.restarting) return `<span>Restarting on ${progName(s.choice)}…</span>`
+  if (!s.connected) return '<span>Not connected</span>'
+  return '<span class="on">Connected</span>'
+}
+function mismatchNote() {
+  if (s.restarting || !s.connected || s.choice === s.running) return ''
+  return `<p class="note warn">Runs on ${progName(s.running)} now. ${s.owned ? '' : 'Sotto did not start this host, so '}It switches to ${progName(s.choice)} when the host next starts.</p>`
+}
+function switchHtml() { return `<span class="switch"><span>On</span><span class="track" role="switch" aria-checked="true" aria-label="Keep forge connected"></span></span>` }
+function menuHtml(extra) {
+  return `<span class="menu"><button class="ghost" aria-haspopup="menu" aria-expanded="${s.menu}" onclick="s.menu=!s.menu;render()">⋯</button>${s.menu ? `<div class="menu-list" role="menu" aria-label="forge actions">
+    <button role="menuitem">Phones…</button><button role="menuitem">Start at boot</button>${extra || ''}
+    <button role="menuitem">Stop host</button><hr><button role="menuitem" onclick="openEdit()">Edit connection</button><button role="menuitem">Rename</button><button role="menuitem" style="color:var(--error)">Forget</button></div>` : ''}</span>`
+}
+function rowA() {
+  const tag = s.running === 'rust' && s.connected && !s.restarting ? ' · <span class="on">Rust preview</span>' : ''
+  return `<section class="row" aria-label="forge"><span class="icon">▤</span><div class="info"><div class="name">forge</div>
+    <p class="meta">Tailnet · ${status()}${tag} · Claude Code, Codex · 2 phones</p>${mismatchNote()}</div>
+    <div class="actions"><button>Disconnect</button>${menuHtml()}${switchHtml()}</div></section>`
+}
+function rowB() {
+  const item = s.choice === 'rust' ? `<button role="menuitem" onclick="ask('node')">Run on Node</button>` : `<button role="menuitem" onclick="ask('rust')">Run on Rust (preview)</button>`
+  const prog = s.connected && !s.restarting ? ` · ${s.running === 'rust' ? '<span class="on">Rust (preview)</span>' : 'Node'}` : ''
+  return `<section class="row" aria-label="forge"><span class="icon">▤</span><div class="info"><div class="name">forge</div>
+    <p class="meta">Tailnet · ${status()}${prog} · Claude Code, Codex · 2 phones</p>${mismatchNote()}</div>
+    <div class="actions"><button>Disconnect</button>${menuHtml(item + '<hr>')}${switchHtml()}</div></section>`
+}
+function rowC() {
+  const seg = p => `<button aria-pressed="${s.choice === p}" ${s.restarting ? 'disabled' : ''} onclick="pick('${p}')">${p === 'rust' ? 'Rust' : 'Node'}</button>`
+  return `<section class="row" aria-label="forge"><span class="icon">▤</span><div class="info"><div class="name">forge</div>
+    <p class="meta">Tailnet · ${status()} · Claude Code, Codex · 2 phones</p>
+    <p class="note">Host program: <span class="segment" role="group" aria-label="Host program on forge">${seg('node')}${seg('rust')}</span> ${s.choice === 'rust' ? '<span class="tag">preview</span>' : ''}</p>${mismatchNote()}</div>
+    <div class="actions"><button>Disconnect</button>${menuHtml()}${switchHtml()}</div></section>`
+}
+function otherRow() {
+  return `<section class="row" aria-label="studio-mac"><span class="icon">▤</span><div class="info"><div class="name">studio-mac</div>
+    <p class="meta">SSH · <span class="on">Connected</span>${variant === 'B' ? ' · Node' : ''} · Claude Code</p></div>
+    <div class="actions"><button>Disconnect</button><span class="menu"><button class="ghost">⋯</button></span>${switchHtml()}</div></section>`
+}
+function editDialog() {
+  const c = s.pendingChoice
+  const choice = (p, title, text) => `<label class="choice" ${c === p ? 'data-checked' : ''}><input type="radio" name="prog" ${c === p ? 'checked' : ''} onchange="s.pendingChoice='${p}';render()"><span>${title}</span><span class="t">${text}</span></label>`
+  const changed = c !== s.choice
+  return `<div class="scrim"><div class="dialog" role="dialog" aria-modal="true" aria-label="Edit connection to forge"><h2>Edit connection</h2>
+    <fieldset><legend>SSH (for setup, updates and phones)</legend>
+      <div class="field"><label>Connect to</label><input value="zach@forge"></div>
+      <div class="field"><label>Installation folder</label><input value="~/.local/share/sotto-host"></div></fieldset>
+    <fieldset><legend>How Sotto connects</legend><label class="choice" data-checked><input type="radio" checked><span>Over your tailnet, SSH when it can’t</span></label><label class="choice"><input type="radio"><span>SSH only</span></label></fieldset>
+    ${variant === 'A' ? `<fieldset><legend>Host program</legend>
+      ${choice('node', 'Node', 'The host Sotto has always run.')}
+      ${choice('rust', 'Rust (preview)', 'The new native host. Some commands are missing, and it is still being checked. Switch back to Node at any time.')}
+    </fieldset>${changed && s.connected && s.owned ? `<p class="note">Saving restarts the host on forge on ${progName(c)}. Its threads read Reconnecting for a moment and nothing is lost.</p>` : ''}
+      ${changed && (!s.connected || !s.owned) ? `<p class="note">forge switches to ${progName(c)} when its host next starts.</p>` : ''}` : ''}
+    <div class="buttons"><button onclick="s.dialog=null;render()">Cancel</button><button class="primary" onclick="saveEdit()">${variant === 'A' && changed && s.connected && s.owned ? 'Save and restart' : 'Save'}</button></div></div></div>`
+}
+function confirmDialog() {
+  const p = s.pendingChoice
+  const body = p === 'rust'
+    ? 'The Rust host is a preview: some commands are missing, and it is still being checked. Sotto restarts the host on forge now; its threads read Reconnecting for a moment and nothing is lost. You can run it on Node again from this menu.'
+    : 'Sotto restarts the host on forge on Node now. Its threads read Reconnecting for a moment and nothing is lost.'
+  return `<div class="scrim"><div class="dialog" role="alertdialog" aria-modal="true" aria-label="Run forge on ${progName(p)}"><h2>Run the host on forge on ${progName(p)}?</h2><p>${body}</p>
+    <div class="buttons"><button onclick="s.dialog=null;render()">Keep ${progName(s.choice)}</button><button class="primary" onclick="apply(s.pendingChoice)">Restart on ${p === 'rust' ? 'Rust' : 'Node'}</button></div></div></div>`
+}
+function openEdit() { s.menu = false; s.pendingChoice = s.choice; s.dialog = 'edit'; render() }
+function saveEdit() { s.dialog = null; apply(s.pendingChoice) }
+function ask(p) { s.menu = false; s.pendingChoice = p; s.dialog = 'confirm'; render() }
+function pick(p) { if (p !== s.choice) apply(p) }
+function apply(p) {
+  s.dialog = null
+  if (p === s.choice) { render(); return }
+  s.choice = p
+  if (s.connected && s.owned) { s.restarting = true; render(); setTimeout(() => { s.running = p; s.restarting = false; render() }, 1400) }
+  else render()
+}
+function render() {
+  document.getElementById('vtitle').textContent = TITLES[variant]
+  document.getElementById('list').innerHTML = (variant === 'A' ? rowA() : variant === 'B' ? rowB() : rowC()) + otherRow()
+  document.getElementById('layer').innerHTML = s.dialog === 'edit' ? editDialog() : s.dialog === 'confirm' ? confirmDialog() : ''
+  document.querySelectorAll('.bar [data-v]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === variant)))
+  document.getElementById('toggleConnected').textContent = s.connected ? 'Connected ✓' : 'Disconnected'
+  document.getElementById('toggleOwned').textContent = s.owned ? 'Sotto started it ✓' : 'Started by hand'
+  const { menu, dialog, pendingChoice, ...shown } = s
+  document.getElementById('state').textContent = 'PROTOTYPE state · ' + JSON.stringify({ variant, ...shown }, null, 0) + '\nTry: switch to Rust, then back to Node. Toggle Disconnected or "Started by hand" to see the "switches at next start" note.'
+}
+document.querySelectorAll('.bar [data-v]').forEach(b => b.onclick = () => { variant = b.dataset.v; history.replaceState(null, '', '?variant=' + variant); s.menu = false; s.dialog = null; render() })
+document.getElementById('toggleConnected').onclick = () => { s.connected = !s.connected; render() }
+document.getElementById('toggleOwned').onclick = () => { s.owned = !s.owned; render() }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { s.dialog = null; s.menu = false; render() } })
+render()
+</script>
+</body>
+</html>
