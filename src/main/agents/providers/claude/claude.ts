@@ -24,7 +24,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId, type SubscriptionAccount } from '../../../../shared/agents'
-import { AtomicJsonStore } from '../../../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../../../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from '../../host'
 import { watcherMayWrite } from '../../host'
@@ -100,7 +100,7 @@ const aliasSchema = z.object({ councilJudge: z.literal(true).optional(), session
   journalGeneration: z.number().int().nonnegative().optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 /** Reads `claude-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseClaudeThreadStore = preserveLegacyAliases(z.record(z.string(), aliasSchema).parse)
+export const parseClaudeThreadStore = preserveLegacyAliases(parseEntries(aliasSchema))
 /** One folder however it is spelled: resolved, and on Windows without regard to case. */
 const pathKey = (path: string): string => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
 /**

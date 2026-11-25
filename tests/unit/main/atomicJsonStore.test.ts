@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../../../src/main/storage/atomicJsonStore'
 
 const roots: string[] = []
 
@@ -555,5 +555,55 @@ describe('AtomicJsonStore', () => {
     await Promise.all([first, plain, last])
     await expect(after).resolves.toEqual({ value: 'plain' })
     await expect(store.read()).resolves.toEqual({ value: 'newest' })
+  })
+})
+
+describe('parseEntries', () => {
+  // On a remote host the Rust host program writes the same provider stores (ADR-0214); one record Node refused used to
+  // set every other thread in the file aside.
+  const entries = parseEntries(exampleSchema)
+
+  it('reads each entry on its own, so one it cannot read costs only itself', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'threads.json')
+    await writeFile(filePath, JSON.stringify({ a: { value: 'kept' }, b: { value: 7 }, c: { value: 'also kept' } }))
+    const store = new AtomicJsonStore(filePath, entries, () => ({}), () => 1000, () => 'aside')
+
+    await expect(store.read()).resolves.toEqual({ a: { value: 'kept' }, c: { value: 'also kept' } })
+    expect((await readdir(root)).sort()).toEqual(['threads.json', 'threads.json.unreadable-1000-aside'])
+    expect(JSON.parse(await readFile(join(root, 'threads.json.unreadable-1000-aside'), 'utf8'))).toEqual({ b: { value: 7 } })
+  })
+
+  it('sets an unreadable entry aside once, however often the store is read before it is saved', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'threads.json')
+    await writeFile(filePath, JSON.stringify({ a: { value: 'kept' }, b: { value: 7 } }))
+    let id = 0
+    const store = new AtomicJsonStore(filePath, entries, () => ({}), () => 1000, () => `aside-${++id}`)
+
+    await store.read()
+    await store.read()
+    await store.peek()
+    expect((await readdir(root)).sort()).toEqual(['threads.json', 'threads.json.unreadable-1000-aside-1'])
+  })
+
+  it('leaves the file as it was when it only peeks', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'threads.json')
+    await writeFile(filePath, JSON.stringify({ b: { value: 7 } }))
+    const store = new AtomicJsonStore(filePath, entries, () => ({}))
+
+    await expect(store.peek()).resolves.toEqual({})
+    expect(await readdir(root)).toEqual(['threads.json'])
+  })
+
+  it('still finds a store that is not an object unreadable as a whole', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'threads.json')
+    await writeFile(filePath, '[]')
+    const store = new AtomicJsonStore(filePath, entries, () => ({}), () => 1000, () => 'corrupt')
+
+    await expect(store.read()).resolves.toEqual({})
+    expect(await readdir(root)).toEqual(['threads.json.corrupt-1000-corrupt'])
   })
 })

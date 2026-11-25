@@ -8,7 +8,7 @@ import { mergeAgentActivities, settleSubagentSteps, type AgentActivity } from '.
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../shared/agentMonitoring'
 import { compactionPending, idleMark } from '../../shared/compaction'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import { antigravityActivities, antigravityReadCallInfo, antigravityReadImagePath, antigravityToolCallSignal, antigravityToolId, ANTIGRAVITY_THINKING_ID_PREFIX, parseAntigravitySystemWakeup, type AntigravityReadCallInfo } from './antigravityActivity'
@@ -105,9 +105,8 @@ const aliasSchema = z.object({
   childWatches: z.array(childWatchSchema).max(64).default([]),
 })
 type Alias = z.infer<typeof aliasSchema>
-const aliasesSchema = z.record(z.string(), aliasSchema)
 /** Reads `antigravity-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseAntigravityThreadStore = aliasesSchema.parse
+export const parseAntigravityThreadStore = parseEntries(aliasSchema)
 const projectsSchema = z.array(agentProjectSchema)
 /** How many origins and answered request IDs a thread keeps: enough for every retry and every open request, no more. */
 const KEPT = 128
@@ -199,7 +198,7 @@ function serializeChildWatch(watch: ChildWatch): SavedChildWatch | undefined {
     ...(watch.answeredAt ? { answeredAt: watch.answeredAt.slice(0, 64) } : {}),
     ...(watch.answerDigest ? { answerDigest: watch.answerDigest.slice(0, 64) } : {}),
   }
-  // Never persist anything aliasesSchema would refuse to reload on the next startup.
+  // Never persist anything aliasSchema would refuse to reload on the next startup.
   const parsed = childWatchSchema.safeParse(candidate)
   return parsed.success ? parsed.data : undefined
 }

@@ -25,7 +25,7 @@ import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchem
 import { resolveModel } from '../../../../shared/modelCatalog'
 import { markLegacyModels } from '../../../../shared/modelLineup'
 import { orderReasoningEfforts } from '../../../../shared/reasoningEfforts'
-import { AtomicJsonStore } from '../../../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../../../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../../shared/agentSkills'
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
 import type { AgentFileReference } from '../../../../shared/agentFiles'
@@ -125,11 +125,10 @@ const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().
   speed: agentSpeedSchema.nullable().optional(),
   fastMode: z.boolean().optional(),
   messageIdentities: z.array(codexTurnIdentitySchema).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A project thread requires its project; a personal chat cannot have one.')
-const aliasesSchema = z.record(z.string(), aliasSchema)
 
 type Alias = z.infer<typeof aliasSchema>
 /** Reads `codex-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseCodexThreadStore = preserveLegacyAliases(aliasesSchema.parse)
+export const parseCodexThreadStore = preserveLegacyAliases(parseEntries(aliasSchema))
 type Origin = z.infer<typeof originSchema>
 /** The text parts of a user message's content, the only shape of it Sotto reads. */
 const userContent = z.array(z.object({ type: z.string(), text: z.string().optional() })).optional()

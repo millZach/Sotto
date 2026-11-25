@@ -12,7 +12,7 @@ import { defaultModelEffort, orderReasoningEfforts } from '../../shared/reasonin
 import { OWN_SERVER_ID_PREFIX, ownServerTurnText, type OwnServer } from '../../shared/ownModelServers'
 import { isHeaderTimeout, ownServerTurnFailure } from '../ownModelServers/turnFailure'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../storage/atomicJsonStore'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -148,7 +148,7 @@ const aliasSchema = z.object({
 })
 type Alias = z.infer<typeof aliasSchema>
 /** Reads `opencode-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseOpenCodeThreadStore = z.record(z.string(), aliasSchema).parse
+export const parseOpenCodeThreadStore = parseEntries(aliasSchema)
 
 const infoSchema = z.looseObject({ version: z.string().min(1).max(64) })
 const modelSchema = z.looseObject({

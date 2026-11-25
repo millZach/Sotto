@@ -21,6 +21,37 @@ export interface AtomicJsonRecoveryEvent {
   readonly kind: 'corrupt-json-recovered'
 }
 
+/** Where `parseEntries` leaves the entries it could not read, for the store to set aside. */
+const UNREADABLE_ENTRIES = Symbol('unreadable entries')
+type EntrySchema<T> = { safeParse(value: unknown): { success: true; data: T } | { success: false } }
+
+/**
+ * Reads a store of records keyed by ID one entry at a time, so an entry this build cannot read costs only itself
+ * rather than the whole file. On a remote host the Rust host program writes the same stores (ADR-0214), and before
+ * this one record Node refused set every other thread in the file aside. A store reading with this sets each entry it
+ * could not read aside in `<file>.unreadable-<time>-<id>` before anything is written over it. Input that is not an
+ * object is still unreadable as a whole.
+ */
+export function parseEntries<T>(entry: EntrySchema<T>): (input: unknown) => Record<string, T> {
+  return input => {
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new Error('The store is not a JSON object')
+    const readable: Record<string, T> = {}
+    const unreadable: Record<string, unknown> = {}
+    for (const [id, value] of Object.entries(input)) {
+      const parsed = id === '__proto__' ? { success: false as const } : entry.safeParse(value)
+      if (parsed.success) readable[id] = parsed.data
+      else unreadable[id] = value
+    }
+    Object.defineProperty(readable, UNREADABLE_ENTRIES, { value: unreadable, enumerable: false })
+    return readable
+  }
+}
+
+/** The entries `parseEntries` could not read in what it returned, which a caller that keeps one anyway deletes from. */
+export function unreadableEntries(parsed: object): Record<string, unknown> | undefined {
+  return (parsed as { [UNREADABLE_ENTRIES]?: Record<string, unknown> })[UNREADABLE_ENTRIES]
+}
+
 /**
  * How a store lays its JSON out. `pretty` indents it for a person reading the file; `compact` is for the large
  * stores rewritten around a send and while a reply streams, where indentation only adds bytes to serialize and
@@ -32,6 +63,8 @@ export class AtomicJsonStore<T> {
   private operationTail: Promise<void> = Promise.resolve()
   /** The `writeLatest` write that is queued and has not started yet, which later calls share. */
   private queuedLatest: { latest: () => T; promise: Promise<void> } | undefined
+  /** Each unreadable entry this store has set aside already, as its ID and JSON, so a read again does not repeat it. */
+  private readonly setAside = new Set<string>()
 
   constructor(
     private readonly filePath: string,
@@ -109,6 +142,7 @@ export class AtomicJsonStore<T> {
     const result = await this.readValue()
 
     if (result.status === 'valid') {
+      if (recover) await this.setAsideUnreadableEntries(result.value)
       return result.value
     }
     if (result.status === 'invalid' && recover) {
@@ -256,6 +290,26 @@ export class AtomicJsonStore<T> {
     throw new Error(
       `Could not preserve corrupt JSON after ${MAX_CORRUPT_BACKUP_ATTEMPTS} backup attempts`,
     )
+  }
+
+  /** Copies the entries `parseEntries` could not read into a file of their own, once each, before a save drops them. */
+  private async setAsideUnreadableEntries(value: T): Promise<void> {
+    if (value === null || typeof value !== 'object') return
+    const unreadable = unreadableEntries(value)
+    if (!unreadable) return
+    const fresh = Object.entries(unreadable).filter(([id, entry]) => !this.setAside.has(`${id}\n${JSON.stringify(entry)}`))
+    if (!fresh.length) return
+    const contents = `${JSON.stringify(Object.fromEntries(fresh), null, 2)}\n`
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const handle = await open(`${this.filePath}.unreadable-${this.now()}-${this.createId()}`, 'wx', 0o600)
+        try { await handle.writeFile(contents, 'utf8'); await handle.sync() } finally { await handle.close() }
+        break
+      } catch (error) {
+        if (!hasErrorCode(error, 'EEXIST') || attempt + 1 >= MAX_CORRUPT_BACKUP_ATTEMPTS) throw error
+      }
+    }
+    for (const [id, entry] of fresh) this.setAside.add(`${id}\n${JSON.stringify(entry)}`)
   }
 
   private async corruptSourceStillExists(): Promise<boolean> {

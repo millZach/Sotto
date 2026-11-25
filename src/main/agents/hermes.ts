@@ -9,7 +9,7 @@ import { mergeAgentActivities, type OwnServerTurn } from '../../shared/agentActi
 import type { MediaCapture } from './threadMedia'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
-import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { AtomicJsonStore, parseEntries } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -66,9 +66,8 @@ const aliasSchema = z.object({
   origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
 })
 type Alias = z.infer<typeof aliasSchema>
-const aliasStoreSchema = z.record(z.string(), aliasSchema)
 /** Reads `hermes-threads.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
-export const parseHermesThreadStore = aliasStoreSchema.parse
+export const parseHermesThreadStore = parseEntries(aliasSchema)
 const projectStoreSchema = z.array(agentProjectSchema)
 const ANSWERED_KEPT = 128
 /** A thread's saved origins and answered requests, indexed from its record once, the way Cursor's are. */
