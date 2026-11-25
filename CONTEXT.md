@@ -422,7 +422,7 @@ Sotto is a desktop dictation app with manual coding threads across native provid
 
 Both terminals, the Tools panel's and the Terminal drawer's, choose the same shell: `pwsh.exe` on Windows PATH, else Windows PowerShell; `SHELL` elsewhere, else zsh on macOS or sh on Linux. Their shells share 32 slots across every thread, ended shells included; restored running records have no output and say so.
 
-**Thread binding.** The durable relationship between a Sotto thread, its provider session and its project. Historical bindings survive a provider's retirement and never grant a replacement provider authority over that thread.
+**Thread binding.** The durable relationship between a Sotto thread, its provider session and its project. Historical bindings survive a provider's retirement and never grant a replacement provider authority over that thread. A provider adapter keys its own records by the binding's session, not the Sotto thread ID, and both host programs read them that way (ADR-0214).
 
 **Provider retirement.** An upgrade that stops using an old thread provider while retaining recovery evidence and the user's draft. Old assignments, answers and uncertain actions are not transferred or replayed through a native client.
 
