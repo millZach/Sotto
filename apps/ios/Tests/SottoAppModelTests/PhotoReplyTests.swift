@@ -357,4 +357,59 @@ final class PhotoReplyTests: XCTestCase {
         XCTAssertEqual(model.pending, [marker], "Nothing settles a reply the provider never took, and nothing is resent")
         XCTAssertEqual(HostConnection.instances.last?.operations.filter { $0 == "command" }.count, 1)
     }
+
+    @MainActor func testThumbnailsReuseDiskCacheAcrossReconnectsWhileFullSizeStaysUnresized() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sotto-photo-bytes-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cache = ThumbnailDiskCache(directory: dir)
+        let features = ["host-folders", "attachment-staging", Photos.threadMediaFeature, Photos.edgeFeature]
+        let (firstModel, ref) = try await fixture(features: features)
+        firstModel.phase(.background)
+
+        let model1 = AppModel(keychain: TestKeychain.store,
+                              preparePhoto: { _, name in PreparedPhoto(name: name + ".jpg", mimeType: "image/jpeg", base64: "/9j/AA==", byteCount: 4, dimensions: nil, thumbnail: nil) },
+                              receiptSleep: { _ in },
+                              photoLoadLimit: { try await HostConnection.photoLoadLimit() },
+                              thumbnailCache: cache)
+        model1.phase(.active); await model1.waitForActivation()
+        defer { model1.phase(.background) }
+
+        let thumbBytes = Data([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4])
+        let fullBytes = Data([0x89, 0x50, 0x4e, 0x47, 5, 6, 7, 8, 9, 10])
+        var requestedEdges: [Int?] = []
+        HostConnection.previewHandler = { request in
+            let edge: Int?
+            if case .number(let value) = request["edge"] { edge = Int(value) } else { edge = nil }
+            requestedEdges.append(edge)
+            let bytes = edge == nil ? fullBytes : thumbBytes
+            let mime = edge == nil ? "image/png" : "image/jpeg"
+            return .object(["dataUrl": .string("data:\(mime);base64,\(bytes.base64EncodedString())")])
+        }
+
+        let digest = String(repeating: "e", count: 64)
+        let fetched = await model1.photoBytes(ref, messageID: "act-1", attachmentID: "m0", activityID: "act-1",
+                                              edge: PhotoPipeline.thumbnailEdge, digest: digest, wanted: { true })
+        XCTAssertEqual(fetched, thumbBytes)
+        XCTAssertEqual(requestedEdges, [PhotoPipeline.thumbnailEdge])
+
+        // Simulate a reconnect / fresh AppModel sharing the same bounded disk cache: zero network calls for the same (digest, edge).
+        let model2 = AppModel(keychain: TestKeychain.store,
+                              preparePhoto: { _, name in PreparedPhoto(name: name + ".jpg", mimeType: "image/jpeg", base64: "/9j/AA==", byteCount: 4, dimensions: nil, thumbnail: nil) },
+                              receiptSleep: { _ in },
+                              photoLoadLimit: { try await HostConnection.photoLoadLimit() },
+                              thumbnailCache: cache)
+        model2.phase(.active); await model2.waitForActivation()
+        defer { model2.phase(.background) }
+
+        let replayed = await model2.photoBytes(ref, messageID: "act-1", attachmentID: "m0", activityID: "act-1",
+                                               edge: PhotoPipeline.thumbnailEdge, digest: digest, wanted: { true })
+        XCTAssertEqual(replayed, thumbBytes)
+        XCTAssertEqual(requestedEdges, [PhotoPipeline.thumbnailEdge], "Disk cache hit avoids re-downloading the thumbnail after reconnect")
+
+        // A full-resolution viewer request (edge: nil) bypasses the 640px thumbnail cache and fetches unresized bytes.
+        let full = await model2.photoBytes(ref, messageID: "act-1", attachmentID: "m0", activityID: "act-1",
+                                           edge: nil, digest: digest, wanted: { true })
+        XCTAssertEqual(full, fullBytes)
+        XCTAssertEqual(requestedEdges, [PhotoPipeline.thumbnailEdge, nil])
+    }
 }

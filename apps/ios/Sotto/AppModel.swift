@@ -1635,6 +1635,7 @@ struct RailAsk: Equatable {
     /// Waits out how long a video may take to arrive, from iCloud for one not on this iPhone: ten minutes.
     private let videoArrivalLimit: @Sendable () async throws -> Void
     private let readVideoFrame: @Sendable (URL) async -> VideoFrame
+    let thumbnailCache: ThumbnailDiskCache
     /// Each video's frame and length, for the tiles of the videos this iPhone sent.
     let videoFrames = VideoFrames()
     /// The last upload queued for each computer, which keeps one upload for this client.
@@ -3238,7 +3239,8 @@ struct RailAsk: Equatable {
          receiptSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) },
          photoLoadLimit: @escaping @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 120_000_000_000) },
          videoArrivalLimit: @escaping @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: UInt64(VideoLimits.arrivalLimit * 1_000_000_000)) },
-         readVideoFrame: @escaping @Sendable (URL) async -> VideoFrame = { await PhotoPipeline.videoFrame($0) }) {
+         readVideoFrame: @escaping @Sendable (URL) async -> VideoFrame = { await PhotoPipeline.videoFrame($0) },
+         thumbnailCache: ThumbnailDiskCache = .shared) {
         self.keychain = keychain
         self.retrySleep = retrySleep
         self.retryJitter = retryJitter
@@ -3247,6 +3249,7 @@ struct RailAsk: Equatable {
         self.photoLoadLimit = photoLoadLimit
         self.videoArrivalLimit = videoArrivalLimit
         self.readVideoFrame = readVideoFrame
+        self.thumbnailCache = thumbnailCache
         // A video's temporary copy that a crash or a force quit left is removed at launch.
         videoCopies.removeAll()
         #if DEBUG && os(iOS)
@@ -4590,19 +4593,33 @@ struct RailAsk: Equatable {
     /// its agents' pictures. It takes the key's parts, not the view's key type, since the model compiles without the views.
     /// `edge`, for a thumbnail, asks a computer that lists `thread-media-edge` for a copy no larger than that on its longest
     /// side (ADR-0170, November 10 amendment); any other computer, and a request without it, sends the whole picture.
-    func photoBytes(_ ref: ThreadRef, messageID: String, attachmentID: String, activityID: String?, edge: Int? = nil, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+    func photoBytes(_ ref: ThreadRef, messageID: String, attachmentID: String, activityID: String?, edge: Int? = nil, digest: String? = nil, wanted: @escaping @MainActor () -> Bool) async -> Data? {
         #if DEBUG && os(iOS)
         if isUIFixture { return await fixturePicture(photo: activityID == nil, wanted: wanted) }
         #endif
+        let diskDigest: String? = edge != nil
+            ? (digest ?? ThumbnailDiskCache.fallbackDigest(hostID: ref.hostID, threadID: ref.threadID, messageID: messageID, activityID: activityID, attachmentID: attachmentID))
+            : nil
+        if let edge, let diskDigest, let cached = await thumbnailCache.read(digest: diskDigest, edge: edge) {
+            return cached
+        }
         let pictureEdge = live[ref.hostID]?.features.contains(Photos.edgeFeature) == true ? edge : nil
-        guard let activityID else { return await sentPhoto(ref, messageID: messageID, attachmentID: attachmentID, edge: pictureEdge, wanted: wanted) }
-        guard live[ref.hostID]?.features.contains(Photos.threadMediaFeature) == true else { return nil }
-        let operation = Photos.threadMedia(threadID: ref.threadID, activityID: activityID, mediaID: attachmentID, edge: pictureEdge)
-        guard let url = try? await largeRequest(on: ref.hostID, { connection -> String? in
-            guard wanted() else { return nil }
-            return try await connection.call(operation, as: Optional<PhotoPreview>.self)?.dataUrl
-        }) else { return nil }
-        return await Photos.bytes(fromDataURL: url)
+        let bytes: Data?
+        if let activityID {
+            guard live[ref.hostID]?.features.contains(Photos.threadMediaFeature) == true else { return nil }
+            let operation = Photos.threadMedia(threadID: ref.threadID, activityID: activityID, mediaID: attachmentID, edge: pictureEdge)
+            guard let url = try? await largeRequest(on: ref.hostID, { connection -> String? in
+                guard wanted() else { return nil }
+                return try await connection.call(operation, as: Optional<PhotoPreview>.self)?.dataUrl
+            }) else { return nil }
+            bytes = await Photos.bytes(fromDataURL: url)
+        } else {
+            bytes = await sentPhoto(ref, messageID: messageID, attachmentID: attachmentID, edge: pictureEdge, wanted: wanted)
+        }
+        if let edge, let diskDigest, let bytes, let compact = await PhotoPipeline.thumbnailData(bytes, edge: edge) {
+            await thumbnailCache.write(compact, digest: diskDigest, edge: edge)
+        }
+        return bytes
     }
     /// A video an agent wrote, from the computer that runs its thread (ADR-0170, part 4): part by part, each waiting its
     /// turn behind other large requests to that computer and none asked for once nothing `wanted` it, written to a file

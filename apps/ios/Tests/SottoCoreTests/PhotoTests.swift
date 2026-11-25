@@ -178,4 +178,11 @@ final class PhotoTests: XCTestCase {
         XCTAssertEqual(LivenessProgress.requestTimeout(operation: "stage-attachment"), 120)
         XCTAssertEqual(LivenessProgress.requestTimeout(operation: "preview"), 120)
     }
+    func testActivityMediaDecodesDigestWhenPresentAndDefaultsToNil() throws {
+        let digest = String(repeating: "a", count: 64)
+        let withDigest = try decode(Activity.Media.self, #"{"id":"m0","digest":"\#(digest)","kind":"image","mimeType":"image/png","sizeBytes":100,"name":"Shot","source":"tool"}"#)
+        XCTAssertEqual(withDigest.digest, digest)
+        let withoutDigest = try decode(Activity.Media.self, #"{"id":"m1","kind":"image","mimeType":"image/png","sizeBytes":100,"name":"Legacy","source":"tool"}"#)
+        XCTAssertNil(withoutDigest.digest)
+    }
 }

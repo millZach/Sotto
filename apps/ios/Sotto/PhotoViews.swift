@@ -9,17 +9,21 @@ import SottoCore
 
 // MARK: Sent photos
 
-/// Sent photos as a thread draws them: fetched from their computer when first shown, made small, and kept in
-/// memory while the app runs. Nothing is written to disk. A photo that has scrolled away before its turn on
-/// the computer comes is never fetched.
+/// Sent photos and agent pictures as a thread draws them: fetched from their computer when in view, kept in memory while
+/// the app runs, and backed by `ThumbnailDiskCache` in `Caches` keyed by `(digest, edge)` so reconnects reuse unchanged
+/// thumbnails. A tile that scrolls away before its turn is never fetched.
 @MainActor final class PhotoPreviews: ObservableObject {
     /// A sent photo by its message and attachment; an agent's picture (ADR-0170) by its step, with `attachmentID` its
-    /// handle's ID and `messageID` the step's.
-    struct Key: Hashable { let ref: ThreadRef; let messageID: String; let attachmentID: String; var activityID: String? = nil }
+    /// handle's ID and `messageID` the step's. `digest` carries the content SHA-256 when known for disk thumbnail caching.
+    struct Key: Hashable { let ref: ThreadRef; let messageID: String; let attachmentID: String; var activityID: String? = nil; var digest: String? = nil }
     private final class Box { let image: CGImage; init(_ image: CGImage) { self.image = image } }
     private let thumbnails: NSCache<NSString, Box> = {
         let cache = NSCache<NSString, Box>(); cache.countLimit = 150; cache.totalCostLimit = 64 * 1024 * 1024; return cache
     }()
+    /// Bounds concurrent thumbnail load/decode pipelines so fast scrolling never piles up off-screen fetches.
+    private static let maxConcurrentThumbnails = 4
+    private var activeThumbnails = 0
+    private var thumbnailWaiters: [(key: Key, continuation: CheckedContinuation<Bool, Never>)] = []
     private var loading: [Key: Task<CGImage?, Never>] = [:]
     /// How many thumbnails, and separately how many open viewers, show each photo now.
     private var shown: [Key: Int] = [:]
@@ -41,22 +45,60 @@ import SottoCore
         }
     }
     func appeared(_ key: Key) { shown[key, default: 0] += 1 }
-    func disappeared(_ key: Key) { shown[key] = (shown[key] ?? 1) > 1 ? shown[key]! - 1 : nil }
+    func disappeared(_ key: Key) {
+        shown[key] = (shown[key] ?? 1) > 1 ? shown[key]! - 1 : nil
+        if (shown[key] ?? 0) == 0 { dropThumbnailWaiters(for: key) }
+    }
     /// A closed viewer's full-size photo is never fetched, even while its thumbnail is still in the thread.
     func viewerOpened(_ key: Key) { viewed[key, default: 0] += 1 }
     func viewerClosed(_ key: Key) { viewed[key] = (viewed[key] ?? 1) > 1 ? viewed[key]! - 1 : nil }
+    private func dropThumbnailWaiters(for key: Key) {
+        var kept: [(key: Key, continuation: CheckedContinuation<Bool, Never>)] = []
+        for waiter in thumbnailWaiters {
+            if waiter.key == key { waiter.continuation.resume(returning: false) }
+            else { kept.append(waiter) }
+        }
+        thumbnailWaiters = kept
+    }
+    private func acquireThumbnailSlot(for key: Key) async -> Bool {
+        guard (shown[key] ?? 0) > 0, !Task.isCancelled else { return false }
+        if activeThumbnails < Self.maxConcurrentThumbnails {
+            activeThumbnails += 1
+            return true
+        }
+        return await withCheckedContinuation { continuation in
+            thumbnailWaiters.append((key: key, continuation: continuation))
+        }
+    }
+    private func releaseThumbnailSlot() {
+        while !thumbnailWaiters.isEmpty {
+            let next = thumbnailWaiters.removeFirst()
+            if (shown[next.key] ?? 0) > 0 {
+                next.continuation.resume(returning: true)
+                return
+            }
+            next.continuation.resume(returning: false)
+        }
+        activeThumbnails = max(0, activeThumbnails - 1)
+    }
     func thumbnail(_ key: Key, model: AppModel) async -> CGImage? {
         if let hit = cached(key) { return hit }
         if let running = loading[key] { return await running.value }
+        guard (shown[key] ?? 0) > 0 else { return nil }
         let task = Task { [weak self] () -> CGImage? in
-            // At the thumbnail's own edge, from a computer that makes the copy (ADR-0170, November 10 amendment).
+            guard let self else { return nil }
+            guard await self.acquireThumbnailSlot(for: key) else { return nil }
+            defer { self.releaseThumbnailSlot() }
+            guard !Task.isCancelled, (self.shown[key] ?? 0) > 0 else { return nil }
+            // At the thumbnail's own edge, from disk cache or a computer that makes the copy (ADR-0170, November 10 amendment).
             let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID,
-                                              edge: PhotoPipeline.thumbnailEdge) {
-                (self?.shown[key] ?? 0) > 0
+                                              edge: PhotoPipeline.thumbnailEdge, digest: key.digest) {
+                (self.shown[key] ?? 0) > 0
             }
-            guard let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }
+            guard !Task.isCancelled, (self.shown[key] ?? 0) > 0,
+                  let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }
             BenchProbe.count("pictures.decoded")
-            self?.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID, activityID: key.activityID), cost: image.bytesPerRow * image.height)
+            self.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID, activityID: key.activityID), cost: image.bytesPerRow * image.height)
             return image
         }
         loading[key] = task
@@ -93,7 +135,7 @@ struct SentPhotoButtons: View {
     var body: some View {
         ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
             Button { open(OpenPhotos(ref: ref, messageID: messageID, photos: photos, index: index)) } label: {
-                SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: photo.id), name: photo.name)
+                SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: photo.id, digest: photo.digest), name: photo.name)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open photo \(photo.name)")
@@ -114,7 +156,7 @@ struct OpenPhotos: Identifiable {
     let ref: ThreadRef; let id: String; let items: [Item]; var index: Int
     init(ref: ThreadRef, messageID: String, photos: [Attachment], index: Int) {
         self.ref = ref; self.id = messageID; self.index = index
-        self.items = photos.map { Item(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: $0.id), name: $0.name) }
+        self.items = photos.map { Item(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: $0.id, digest: $0.digest), name: $0.name) }
     }
     init(ref: ThreadRef, id: String, items: [Item], index: Int) { self.ref = ref; self.id = id; self.items = items; self.index = index }
 }
@@ -191,7 +233,7 @@ struct PhotoViewer: View {
             }
             TabView(selection: $opened.index) {
                 ForEach(Array(opened.items.enumerated()), id: \.element.id) { index, item in
-                    FullPhoto(key: item.key, name: item.name, callouts: item.callouts) { shown[item.key] = $0 }.tag(index)
+                    FullPhoto(key: item.key, name: item.name, callouts: item.callouts, isSelected: index == opened.index) { shown[item.key] = $0 }.tag(index)
                 }
             }.tabViewStyle(.page(indexDisplayMode: opened.items.count > 1 ? .always : .never))
             Text(opened.items[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
@@ -241,16 +283,21 @@ private struct FullPhoto: View {
     let name: String
     /// The agent's callouts on it (part 6), drawn over the picture where it sits.
     var callouts: [Activity.Media.Callout] = []
+    /// Only the active page in `TabView` fetches unresized full-resolution bytes (`edge: nil`); off-screen pages show
+    /// any already-cached thumbnail without triggering full-resolution network downloads.
+    let isSelected: Bool
     /// Tells the viewer which image this page shows, and nil once it goes.
     var showing: (CGImage?) -> Void = { _ in }
     @Environment(\.sottoTheme) private var theme
     @State private var image: CGImage?
     @State private var missing = false
+    @State private var viewingActive = false
     var body: some View {
+        let shownImage = image ?? previews.cached(key)
         ZStack {
-            if let image {
-                Image(image, scale: 1, label: Text("Photo: \(name)")).resizable().scaledToFit()
-                    .overlay { if !callouts.isEmpty { CalloutLayer(callouts: callouts, image: image, fills: false, theme: theme) } }
+            if let shownImage {
+                Image(shownImage, scale: 1, label: Text("Photo: \(name)")).resizable().scaledToFit()
+                    .overlay { if !callouts.isEmpty { CalloutLayer(callouts: callouts, image: shownImage, fills: false, theme: theme) } }
             } else if missing {
                 Text("This photo couldn’t be loaded from \(model.name(key.ref.hostID)). Nothing was lost. Try again when it’s connected.", comment: "%@ is the computer’s name.")
                     .multilineTextAlignment(.center).foregroundStyle(Palette.muted).padding(32)
@@ -258,9 +305,25 @@ private struct FullPhoto: View {
             } else { ProgressView() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { previews.viewerOpened(key) }
-        .onDisappear { previews.viewerClosed(key); showing(nil) }
-        .task(id: key) { image = await previews.full(key, model: model); missing = image == nil && !Task.isCancelled; showing(image) }
+        .onAppear { setViewing(isSelected) }
+        .onChange(of: isSelected) { _, selected in setViewing(selected) }
+        .onDisappear { setViewing(false); showing(nil) }
+        .task(id: isSelected ? key : nil) {
+            guard isSelected else { return }
+            setViewing(true)
+            if let image { showing(image); return }
+            missing = false
+            let loaded = await previews.full(key, model: model)
+            guard !Task.isCancelled, isSelected else { return }
+            image = loaded
+            missing = loaded == nil
+            showing(loaded)
+        }
+    }
+    private func setViewing(_ active: Bool) {
+        guard active != viewingActive else { return }
+        viewingActive = active
+        if active { previews.viewerOpened(key) } else { previews.viewerClosed(key) }
     }
 }
 
@@ -818,7 +881,7 @@ struct AgentPictures: View {
     }
     /// One of a step's pictures as the viewer shows it: read by its handle, named by its step, with its callouts and size.
     static func viewed(ref: ThreadRef, step: Activity, picture: Activity.Media, by: String?) -> OpenPhotos.Item {
-        OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: title(of: step),
+        OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id, digest: picture.digest), name: title(of: step),
                         callouts: picture.callouts ?? [], size: picture.width.flatMap { width in picture.height.map { MarkupSize(width: Double(width), height: Double($0)) } }, by: by)
     }
     /// The GIFs among the pictures, by their key's ID: each plays in its tile when asked.
@@ -919,7 +982,7 @@ struct StepPictureStrip: View {
         .accessibilityElement(children: .contain)
     }
     private func key(_ item: StepPictures.Item) -> PhotoPreviews.Key {
-        PhotoPreviews.Key(ref: ref, messageID: item.step.id, attachmentID: item.media.id, activityID: item.step.id)
+        PhotoPreviews.Key(ref: ref, messageID: item.step.id, attachmentID: item.media.id, activityID: item.step.id, digest: item.media.digest)
     }
     /// Plays a video under the line, or takes it away when it is the one playing.
     private func play(_ item: StepPictures.Item) { playing = playing == item.id ? nil : item.id }
@@ -989,7 +1052,23 @@ private struct TwoAcross: Layout {
         return CGSize(width: width, height: max(0, rows * (width - Space.s2) / 2 / 1.5 + max(0, rows - 1) * Space.s2))
     }
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: nil))
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+}
+
+/// Tracks whether a tile is actually inside the enclosing scroll view's visible viewport (iOS 18+), falling back to
+/// `onAppear`/`onDisappear` on iOS 17. Prevents off-screen tiles inside fixed-height `TwoAcross` grids from starting
+/// eager thumbnail downloads.
+private struct ScrollVisibilityModifier: ViewModifier {
+    let changed: (Bool) -> Void
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollVisibilityChange(threshold: 0.01) { changed($0) }
+        } else {
+            content
+                .onAppear { changed(true) }
+                .onDisappear { changed(false) }
+        }
     }
 }
 
@@ -1164,6 +1243,7 @@ private struct AgentPictureTile: View {
     @Environment(\.sottoTheme) private var theme
     @State private var image: CGImage?
     @State private var missing = false
+    @State private var inViewport = false
     @State private var frames: GIFFrames?
     @State private var began = Date()
     var body: some View {
@@ -1194,15 +1274,24 @@ private struct AgentPictureTile: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .onAppear { previews.appeared(key) }
-            // A tile that scrolls away lets go of its picture; the shared cache keeps the thumbnail for its return.
-            .onDisappear { previews.disappeared(key); image = nil }
-            .task(id: key) {
+            .modifier(ScrollVisibilityModifier { setVisible($0) })
+            .onChange(of: key) { oldKey, newKey in
+                if inViewport {
+                    previews.disappeared(oldKey)
+                    previews.appeared(newKey)
+                }
+                image = nil
+                missing = false
+            }
+            // A tile that leaves view lets go of its picture; the memory and disk caches keep the thumbnail for its return.
+            .onDisappear { setVisible(false) }
+            .task(id: inViewport ? key : nil) {
+                guard inViewport else { return }
                 if image == nil { image = previews.cached(key) }
                 guard image == nil else { return }
                 let read = await previews.thumbnail(key, model: model)
                 // A read that ends after the tile left draws nothing into it.
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, inViewport else { return }
                 image = read; missing = read == nil
             }
             .task(id: playing) {
@@ -1213,6 +1302,16 @@ private struct AgentPictureTile: View {
                 guard !Task.isCancelled, playing else { return }
                 began = Date(); frames = decoded
             }
+    }
+    private func setVisible(_ now: Bool) {
+        guard now != inViewport else { return }
+        inViewport = now
+        if now {
+            previews.appeared(key)
+        } else {
+            previews.disappeared(key)
+            image = nil
+        }
     }
 }
 

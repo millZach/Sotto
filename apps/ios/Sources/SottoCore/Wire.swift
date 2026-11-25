@@ -477,6 +477,8 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public struct Media: Decodable, Identifiable, Equatable, Sendable {
         public let id: String; public let kind: String; public let mimeType: String
         public let width: Int?; public let height: Int?; public let name: String; public let source: String
+        /// Content SHA-256 hex digest from the host, used to key the on-disk thumbnail cache across reconnects.
+        public var digest: String? = nil
         /// Its size in bytes; a video's decides whether this iPhone fetches it to play (`AgentVideos.playsHere`).
         public let sizeBytes: Int?
         /// The numbered boxes with notes the agent placed on this picture when it showed it (ADR-0170, part 6).
@@ -528,6 +530,8 @@ extension Message {
 public struct Attachment: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let name: String; public let mimeType: String?; public let sizeBytes: Int?
     public let preview: Preview?
+    /// Content SHA-256 hex digest when supplied by the host, used to key the on-disk thumbnail cache.
+    public var digest: String? = nil
     /// Only the marker is read: the computer never puts a preview's bytes in a thread it sends a client.
     public struct Preview: Decodable, Equatable, Sendable { public let available: Bool? }
     public var hasPreview: Bool { preview != nil }
