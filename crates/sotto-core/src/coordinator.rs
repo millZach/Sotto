@@ -18,6 +18,7 @@ use crate::provider::{
 use crate::remote_commands::validate_remote_command;
 use crate::stores::{
     StoredMessage, StoredThreadEvent, ThreadEvent, ThreadEventAttribution, ThreadStore,
+    MAX_AGENT_ACTIVITIES,
 };
 use crate::workspace::{
     now_iso, parse_public_provider_entity_id, provider_label, summarize_thread, write_atomic_json,
@@ -3083,7 +3084,7 @@ impl CoordinatorActor {
         let now = now_iso();
         if let Some(detail) = self.details.get_mut(thread_id) {
             let mut changed = false;
-            for (idx, act) in detail.activities.iter_mut().enumerate() {
+            for act in detail.activities.iter_mut() {
                 if act.get("kind").and_then(Value::as_str) == Some("turn")
                     && act.get("status").and_then(Value::as_str) == Some("running")
                 {
@@ -3098,7 +3099,7 @@ impl CoordinatorActor {
                         obj.insert("title".into(), Value::String(title.into()));
                         changed = true;
                     }
-                    let _ = self.thread_store.upsert_activity(thread_id, idx as i64, act);
+                    let _ = self.thread_store.upsert_activity(thread_id, act);
                 }
             }
             if changed {
@@ -3188,10 +3189,15 @@ impl CoordinatorActor {
             detail.activities.len() - 1
         };
         detail.revision += 1;
-        // O(1) incremental upsert: never rewrite all past activity rows on every update.
+        // O(1) incremental upsert: never rewrite all past activity rows on every update. The store keeps the newest
+        // MAX_AGENT_ACTIVITIES and so does the detail, which Node's protocol schemas refuse past that many.
         let _ = self
             .thread_store
-            .upsert_activity(thread_id, position as i64, &detail.activities[position]);
+            .upsert_activity(thread_id, &detail.activities[position]);
+        if detail.activities.len() > MAX_AGENT_ACTIVITIES {
+            let excess = detail.activities.len() - MAX_AGENT_ACTIVITIES;
+            detail.activities.drain(..excess);
+        }
         self.dirty_details.insert(thread_id.to_string());
     }
 
