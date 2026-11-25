@@ -1133,6 +1133,17 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
+/// Where a store this build cannot read is kept: `<name>.corrupt-<millis>` beside it, the name Node's `AtomicJsonStore`
+/// gives one, so a rollback finds it where Node would have put it (ADR-0214).
+pub(crate) fn corrupt_copy_path(path: &Path) -> std::path::PathBuf {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("store.json");
+    path.with_file_name(format!("{name}.corrupt-{millis}"))
+}
+
 pub fn write_atomic_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

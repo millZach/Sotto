@@ -4,13 +4,12 @@
 // file, set it aside as .corrupt-*, and every Claude thread there lost its resume. Here Node's own parsers check each
 // store before and after a Rust load and save, which must change nothing Node reads. Runs when `SOTTO_TEST_RUST_HOST=1`
 // (the Rust host CI job, and locally after a `cargo build`).
-import { execFileSync } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { unreadableEntries } from '../../src/main/storage/atomicJsonStore'
-import { NODE_THREAD_STORES } from './rustHostNodeStores'
+import { NODE_THREAD_STORES, runRustStoreTest } from './rustHostNodeStores'
 
 const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
 const THREAD = '6f1c2d3e-4b5a-4c6d-8e7f-001122334455', WAITING = '7a2b3c4d-5e6f-4a7b-9c8d-112233445566'
@@ -58,9 +57,7 @@ describe.skipIf(!RUN_RUST_HOST)('provider stores across a Rust host and a rollba
       before.set(file, parse(store))
       await writeFile(join(dir, file), JSON.stringify(store, null, 2))
     }
-    execFileSync('cargo', ['test', '-p', 'sotto-core', '--lib', '--locked', 'providers::tests::node_thread_stores_survive_a_rust_load_and_save', '--', '--exact'], {
-      stdio: 'inherit', env: { ...process.env, SOTTO_SHARED_THREAD_STORES_DIR: dir },
-    })
+    runRustStoreTest('providers::tests::node_thread_stores_survive_a_rust_load_and_save', dir)
   }, 600_000)
 
   afterAll(async () => { if (dir) await rm(dir, { recursive: true, force: true }) })
@@ -76,9 +73,7 @@ describe.skipIf(!RUN_RUST_HOST)('provider records a Rust host makes', () => {
   let dir: string
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'sotto-rust-created-records-'))
-    execFileSync('cargo', ['test', '-p', 'sotto-core', '--lib', '--locked', 'providers::tests::rust_created_acp_records_carry_what_node_requires', '--', '--exact'], {
-      stdio: 'inherit', env: { ...process.env, SOTTO_SHARED_STORES_DIR: dir },
-    })
+    runRustStoreTest('providers::tests::rust_created_acp_records_carry_what_node_requires', dir)
   }, 600_000)
   afterAll(async () => { if (dir) await rm(dir, { recursive: true, force: true }) })
 

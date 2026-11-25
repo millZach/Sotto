@@ -4,7 +4,6 @@
 // `reclaimedAt` and the rest. Here Node's own parsers read each store before and after a Rust host's start and stop,
 // and read the stores a Rust host writes for a thread it made. Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job,
 // and locally after a `cargo build`).
-import { execFileSync } from 'node:child_process'
 import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -12,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { parseSavedAgents } from '../../src/main/agents/control'
 import { parseThreadRegistry } from '../../src/main/agents/threads'
 import { parseWorkspaceFile } from '../../src/main/agents/workspace'
+import { runRustStoreTest } from './rustHostNodeStores'
 
 const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
 const FIXTURES = resolve('tests/fixtures/nodeHostStores')
@@ -28,11 +28,7 @@ const STORES: readonly { file: string; read: (value: unknown) => unknown }[] = [
   { file: 'agents.json', read: parseSavedAgents },
 ]
 
-function rustTest(name: string, dir: string): void {
-  execFileSync('cargo', ['test', '-p', 'sotto-core', '--lib', '--locked', `coordinator::tests::${name}`, '--', '--exact'], {
-    stdio: 'inherit', env: { ...process.env, SOTTO_SHARED_STORES_DIR: dir },
-  })
-}
+const rustTest = (name: string, dir: string): void => runRustStoreTest(`coordinator::tests::${name}`, dir)
 
 describe.skipIf(!RUN_RUST_HOST)('coordinator stores across a Rust host and a rollback to Node', () => {
   let dir: string

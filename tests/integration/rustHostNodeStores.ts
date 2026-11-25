@@ -1,5 +1,6 @@
 // What Node reads of a provider store the Rust host wrote (ADR-0214). A thread started on a Rust host gets its record
 // from Rust; after a rollback Node must read it with its own parser, and must not set it aside as unreadable.
+import { execFileSync } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect } from 'vitest'
@@ -13,6 +14,16 @@ import { parseOpenCodeThreadStore } from '../../src/main/agents/opencode'
 import { parseClaudeThreadStore } from '../../src/main/agents/providers/claude/claude'
 import { parseCodexThreadStore } from '../../src/main/agents/providers/codex/codex'
 import { unreadableEntries } from '../../src/main/storage/atomicJsonStore'
+
+/**
+ * Runs one Rust round-trip test (`module::tests::name`) on the stores in `dir`, which the Rust test reads as the ones
+ * Node wrote, or writes what Rust made into (`SOTTO_SHARED_STORES_DIR`, `crates/sotto-core/src/store_trip.rs`).
+ */
+export function runRustStoreTest(test: string, dir: string): void {
+  execFileSync('cargo', ['test', '-p', 'sotto-core', '--lib', '--locked', test, '--', '--exact'], {
+    stdio: 'inherit', env: { ...process.env, SOTTO_SHARED_STORES_DIR: dir },
+  })
+}
 
 /** Each provider store the Rust host shares with Node, and Node's own parser for it. */
 export const NODE_THREAD_STORES = {

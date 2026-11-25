@@ -717,9 +717,7 @@ fn write_atomic_compact(path: &Path, text: &str) -> Result<(), String> {
 /// Moves a store this build cannot read aside as `<name>.corrupt-<millis>`, as Node's `AtomicJsonStore` does, so the
 /// next save does not write over what was in it (ADR-0214).
 fn set_aside_unreadable(path: &Path) {
-    let millis = Utc::now().timestamp_millis();
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("store.json");
-    let _ = fs::rename(path, path.with_file_name(format!("{name}.corrupt-{millis}")));
+    let _ = fs::rename(path, crate::workspace::corrupt_copy_path(path));
 }
 
 fn remove_file_and_backups(directory: &Path, base_name: &str) -> Result<(), String> {

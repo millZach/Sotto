@@ -1299,9 +1299,7 @@ type PhoneAccessChangeCallback = Arc<dyn Fn(PhoneAccessBrief, PhonesState) + Sen
 /// Copies a store this build cannot read to `<name>.corrupt-<millis>` beside it, as Node's `AtomicJsonStore` does before
 /// it starts over, so the next save does not lose what was in it (ADR-0214). The file itself stays where it is.
 fn keep_unreadable_copy(path: &Path) {
-    let millis = Utc::now().timestamp_millis();
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("store.json");
-    let _ = fs::copy(path, path.with_file_name(format!("{name}.corrupt-{millis}")));
+    let _ = fs::copy(path, crate::workspace::corrupt_copy_path(path));
 }
 
 /// Reads `phone-access.json` as Node's schema does, or none when it is not there or does not read. One that does not

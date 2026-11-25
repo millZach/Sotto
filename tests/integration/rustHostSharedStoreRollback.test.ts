@@ -5,7 +5,6 @@
 // reads. Each store a Rust host creates records in is also read here, which Node must accept. Each store gets its own
 // folder and its own Rust test. Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a
 // `cargo build`).
-import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -29,6 +28,7 @@ import { parseCheckpointStorage } from '../../src/main/tools/checkpointStore'
 import { parseSoundRecords } from '../../src/main/tools/elevenlabs/records'
 import { parseModelRecords } from '../../src/main/tools/meshy/records'
 import { KEEP_WATCHING, SETTLE_IT } from '../../src/shared/watcherQuestions'
+import { runRustStoreTest } from './rustHostNodeStores'
 
 const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
 const TIME = '2026-11-20T10:00:00.000Z', DIGEST = '0000000000000000000000000000000000000000000000000000000000000abc'
@@ -224,9 +224,7 @@ const CREATED: readonly { file: string; rust: string; parse: (value: unknown) =>
 describe.skipIf(!RUN_RUST_HOST)('shared stores across a Rust host and a rollback to Node', () => {
   const dirs: string[] = []
   const folder = async () => { const dir = await mkdtemp(join(tmpdir(), 'sotto-rust-shared-stores-')); dirs.push(dir); return dir }
-  const runRust = (test: string, dir: string) => execFileSync('cargo', ['test', '-p', 'sotto-core', '--lib', '--locked', test, '--', '--exact'], {
-    stdio: 'inherit', env: { ...process.env, SOTTO_SHARED_STORES_DIR: dir },
-  })
+  const runRust = runRustStoreTest
   const read = async (dir: string, file: string) => JSON.parse(await readFile(join(dir, file), 'utf8')) as unknown
 
   afterAll(async () => { await Promise.all(dirs.map(dir => rm(dir, { recursive: true, force: true }))) })

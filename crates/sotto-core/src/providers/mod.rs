@@ -97,12 +97,7 @@ pub(crate) fn load_thread_records<T>(path: &std::path::Path, parse: impl Fn(&ser
             }
         }
         _ => {
-            let millis = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0);
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("threads.json");
-            let _ = std::fs::rename(path, path.with_file_name(format!("{name}.corrupt-{millis}")));
+            let _ = std::fs::rename(path, crate::workspace::corrupt_copy_path(path));
         }
     }
     out
@@ -257,12 +252,12 @@ mod tests {
     /// Node -> Rust -> Node for every shared provider store (ADR-0214): a Rust host's load and save keeps every field of
     /// every record Node wrote, and every entry it cannot read, so a rollback to Node never quarantines a store. On forge a
     /// Rust save once stripped 208 Claude records to six fields, and Node then refused the whole file. With
-    /// `SOTTO_SHARED_THREAD_STORES_DIR` set, the stores in that folder are the ones Node wrote, for
+    /// `SOTTO_SHARED_STORES_DIR` set, the stores in that folder are the ones Node wrote, for
     /// `tests/integration/rustHostThreadStoreRollback.test.ts` to read back with Node's own parsers.
     #[test]
     fn node_thread_stores_survive_a_rust_load_and_save() {
         let dir = tempfile::tempdir().unwrap();
-        let shared = std::env::var_os("SOTTO_SHARED_THREAD_STORES_DIR").map(std::path::PathBuf::from);
+        let shared = crate::store_trip::shared_dir();
         let base = shared.clone().unwrap_or_else(|| dir.path().to_path_buf());
         for (file, session_field, trip) in stores() {
             let path = base.join(file);
