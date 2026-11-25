@@ -1,0 +1,561 @@
+{
+  "features": {
+    "desktop": {
+      "missing": [
+        "activity-bodies",
+        "agents-view",
+        "answer-check",
+        "answer-receipts",
+        "atomic-send",
+        "attachment-files",
+        "background-refresh",
+        "branch-moves",
+        "bring-changes-back",
+        "browser",
+        "check-queue-views",
+        "client-update-not-listed",
+        "client-update-outcomes",
+        "client-updates",
+        "delegation-branch-starts",
+        "delegation-relay",
+        "delegation-relay-send",
+        "delegation-remote",
+        "delegation-views",
+        "detached-runs-elsewhere",
+        "draft-revisions",
+        "every-agent-picture",
+        "failure-seen",
+        "git-pull-request",
+        "git-pull-request-list",
+        "host-delegation",
+        "next-prompts",
+        "owlets",
+        "plugin-account-copies",
+        "plugin-elevenlabs-copies",
+        "plugin-elevenlabs-sounds",
+        "plugin-elevenlabs-spending",
+        "plugin-github-sign-in",
+        "plugin-mail-copies",
+        "plugin-meshy-copies",
+        "plugin-meshy-models",
+        "plugin-meshy-phone",
+        "plugin-meshy-spending",
+        "project-setup",
+        "provider-deepseek",
+        "provider-mode-lists",
+        "provider-sign-in",
+        "pull-request-confirmation",
+        "pull-request-view",
+        "settle-worktree-cleanup",
+        "settled-threads-on-request",
+        "step-window",
+        "thread-coordination-relay",
+        "thread-coordination-views",
+        "thread-delete",
+        "thread-file-links",
+        "thread-linked-files",
+        "thread-media",
+        "thread-media-video",
+        "thread-move",
+        "thread-move-keep",
+        "thread-move-source",
+        "thread-prompts",
+        "thread-snooze",
+        "thread-starts",
+        "usable-models",
+        "usage-background-refresh",
+        "video-staging",
+        "watcher-ready",
+        "watcher-tell",
+        "worker-swarms"
+      ],
+      "extra": []
+    },
+    "phone": {
+      "missing": [
+        "activity-bodies",
+        "agents-view",
+        "answer-check",
+        "answer-receipts",
+        "atomic-send",
+        "attachment-files",
+        "background-refresh",
+        "bring-changes-back",
+        "browser",
+        "client-update-not-listed",
+        "client-update-outcomes",
+        "client-updates",
+        "draft-revisions",
+        "failure-seen",
+        "git-pull-request",
+        "git-pull-request-list",
+        "next-prompts",
+        "owlets",
+        "plugin-meshy-phone",
+        "project-origins",
+        "project-setup",
+        "provider-deepseek",
+        "provider-mode-lists",
+        "provider-sign-in",
+        "pull-request-confirmation",
+        "pull-request-view",
+        "settle-worktree-cleanup",
+        "settled-threads-on-request",
+        "step-window",
+        "thread-delete",
+        "thread-file-links",
+        "thread-linked-files",
+        "thread-media",
+        "thread-media-video",
+        "thread-prompts",
+        "thread-snooze",
+        "thread-starts",
+        "usable-models",
+        "usage-background-refresh",
+        "video-staging",
+        "worker-swarms"
+      ],
+      "extra": []
+    }
+  },
+  "commands": {
+    "babysit-pull-request": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "bring-changes-back": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "cancel-client-updates": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "cancel-draft": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "cancel-restart": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "check-client-updates": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "compact-thread": {
+      "node": "ok",
+      "rust": "unavailable"
+    },
+    "compose": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "configure-thread-working-copy": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "continue-agent": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "create-owlet": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "delete-thread": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "dismiss-client-updates": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "dismiss-failures": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "edit-followup": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "fork-thread": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-action": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-checkout-pull-request": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-init": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-link-pull-request": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-publish": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-pull": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-pull-request-action": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-switch-branch": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-unlink-pull-request": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "interrupt": {
+      "node": "ok",
+      "rust": "unavailable"
+    },
+    "load-earlier-messages": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "preview-delete-thread": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "preview-reclaim-thread-worktree": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "queue-client-updates": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "reclaim-thread-worktree": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "recover-draft": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "refresh-thread-skills": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "refresh-thread-worktree": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "regenerate-thread-title": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "remove-followup": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "reorder-followups": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "restore-project": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "restore-thread-branch": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "resume-followups": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "retry-thread-worktree": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "save-thread-draft": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "select-thread": {
+      "node": "unavailable",
+      "rust": "ok"
+    },
+    "send": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "set-owlet": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "settle-project": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "snooze-thread": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "start-thread-session": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "steer-followup": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "stop-babysitting": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "stop-detached-run": {
+      "node": "ok",
+      "rust": "invalid_request"
+    }
+  },
+  "operations": {
+    "attachment-file": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "branch-move": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "browser": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "check-answer": {
+      "node": "stale_request",
+      "rust": "invalid_request"
+    },
+    "coordination-relay-answer": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "coordination-relay-news": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "coordination-remote-ask": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "coordination-reply": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "coordination-views": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "delegation-brief": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "delegation-relay-answer": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "delegation-relay-name": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "delegation-relay-news": {
+      "node": "unavailable",
+      "rust": "invalid_request"
+    },
+    "delegation-remote-ask": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "delegation-views": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "desktop-defaults": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "detached-run-elsewhere-stop": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "detached-runs-look": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "earlier-steps": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "file-upload-progress": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "git-changed-files": {
+      "node": "unavailable",
+      "rust": "ok"
+    },
+    "git-pull-request": {
+      "node": "unavailable",
+      "rust": "invalid_request"
+    },
+    "git-pull-request-list": {
+      "node": "unavailable",
+      "rust": "invalid_request"
+    },
+    "git-refs": {
+      "node": "unavailable",
+      "rust": "ok"
+    },
+    "hermes-sign-out": {
+      "node": "unavailable",
+      "rust": "invalid_request"
+    },
+    "next-prompts-wanted": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-account-copies": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-account-copy": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-account-copy-remove": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-elevenlabs-sound": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-elevenlabs-sound-bytes": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-elevenlabs-spending": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-github-sign-in": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-meshy-model": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-meshy-model-bytes": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-meshy-model-remove": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-meshy-models": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "plugin-meshy-spending": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "preview": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "project-setup": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "pull-request-confirmation": {
+      "node": "forbidden",
+      "rust": "invalid_request"
+    },
+    "receipt": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "settled-threads": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "sign-in-cancel": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "sign-in-code": {
+      "node": "unavailable",
+      "rust": "invalid_request"
+    },
+    "sign-in-read": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "sign-in-start": {
+      "node": "unavailable",
+      "rust": "invalid_request"
+    },
+    "start-handover": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "subagent-assignments": {
+      "node": "unavailable",
+      "rust": "ok"
+    },
+    "subagent-page": {
+      "node": "unavailable",
+      "rust": "ok"
+    },
+    "thread-delegations": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "thread-file-link": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "thread-linked-file": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "thread-media": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "thread-media-part": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "thread-move": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "thread-prompts": {
+      "node": "ok",
+      "rust": "invalid_request"
+    },
+    "watcher-tell-answer": {
+      "node": "ok",
+      "rust": "invalid_request"
+    }
+  }
+}

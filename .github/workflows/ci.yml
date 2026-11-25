@@ -59,8 +59,9 @@ jobs:
         run: |
           # The iOS job reads only the native client, the host protocol its wire types mirror and this file.
           ios_paths='^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)'
-          # The Rust host job reads the Cargo workspace, its dependency policy, its parity/launch/engine tests, launch script, build/release wiring and this file.
-          rust_paths='^(crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|tests/integration/rust(Host|LocalEngine)[^/]*\.test\.ts$|src/main/hosts/launchScript\.ts$|src/main/agents/threadStore\.ts$|src/main/storage/atomicJsonStore\.ts$|src/main/agents/legacyAliases\.ts$|tests/integration/rustHostNodeStores\.ts$|tests/fixtures/nodeHostStores/|src/main/agents/(antigravity|cursor|devin|grok|hermes|muse|opencode)\.ts$|src/main/agents/providers/(claude/claude|codex/codex)\.ts$|scripts/build-rust-host\.mjs$|\.github/workflows/rust-host-release\.yml$|\.github/workflows/ci\.yml$)'
+          # The Rust host job reads the Cargo workspace, its dependency policy, its parity/launch/engine tests, launch script, build/release wiring and this file,
+          # and the Node host, protocol, referee harness and gap list its command and hello parity test compares the Rust host with (#2876).
+          rust_paths='^(crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|tests/integration/rust(Host|LocalEngine)[^/]*\.test\.ts$|src/main/hosts/launchScript\.ts$|src/main/agents/threadStore\.ts$|src/main/storage/atomicJsonStore\.ts$|src/main/agents/legacyAliases\.ts$|tests/integration/rustHostNodeStores\.ts$|tests/integration/rustHostParityProbes\.ts$|tests/fixtures/nodeHostStores/|tests/fixtures/rustHostParityGaps\.json$|src/host/|src/shared/(hostProtocol|agents)\.ts$|tests/referee/|src/main/agents/(antigravity|cursor|devin|grok|hermes|muse|opencode)\.ts$|src/main/agents/providers/(claude/claude|codex/codex)\.ts$|scripts/build-rust-host\.mjs$|\.github/workflows/rust-host-release\.yml$|\.github/workflows/ci\.yml$)'
           # The Core ML speech helper job reads only the Swift helper, its build script and this file.
           coreml_paths='^(native/coreml-asr/|scripts/build-coreml-asr\.mjs$|\.github/workflows/ci\.yml$)'
           if [ "$EVENT" = "push" ]; then
@@ -613,7 +614,7 @@ jobs:
       - name: Cross-language parity test
         env:
           SOTTO_TEST_RUST_HOST: '1'
-        run: npx vitest run tests/integration/rustHostFoundation.test.ts tests/integration/rustHostProviders.test.ts tests/integration/rustHostAllProviders.test.ts tests/integration/rustHostLaunchScript.test.ts tests/integration/rustLocalEngine.test.ts tests/integration/rustHostActivityCap.test.ts tests/integration/rustHostThreadStoreRollback.test.ts tests/integration/rustHostSharedStoreRollback.test.ts tests/integration/rustHostWorkspaceStoreRollback.test.ts
+        run: npx vitest run tests/integration/rustHostFoundation.test.ts tests/integration/rustHostProviders.test.ts tests/integration/rustHostAllProviders.test.ts tests/integration/rustHostLaunchScript.test.ts tests/integration/rustLocalEngine.test.ts tests/integration/rustHostActivityCap.test.ts tests/integration/rustHostThreadStoreRollback.test.ts tests/integration/rustHostSharedStoreRollback.test.ts tests/integration/rustHostWorkspaceStoreRollback.test.ts tests/integration/rustHostParity.test.ts
       - name: Check crate licenses and sources
         if: matrix.label == 'Linux'
         uses: EmbarkStudios/cargo-deny-action@v2
