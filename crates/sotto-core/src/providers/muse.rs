@@ -32,6 +32,7 @@ pub struct MuseAdapterConfig {
     pub executable: String,
     pub args: Vec<String>,
     pub request_timeout_ms: u64,
+    pub use_cli_lookup: bool,
 }
 
 impl MuseAdapterConfig {
@@ -41,6 +42,7 @@ impl MuseAdapterConfig {
             executable: "muse".into(),
             args: vec!["serve".into()],
             request_timeout_ms: 30_000,
+            use_cli_lookup: true,
         }
     }
 
@@ -53,6 +55,7 @@ impl MuseAdapterConfig {
                 data_directory.to_string_lossy().into_owned(),
             ],
             request_timeout_ms: 2_000,
+            use_cli_lookup: false,
         }
     }
 }
@@ -112,7 +115,26 @@ impl MspProcess {
         if ephemeral {
             args.push("--no-session-log".into());
         }
-        let mut cmd = Command::new(&config.executable);
+        let resolved = if config.use_cli_lookup {
+            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+            Some(
+                crate::cli_lookup::resolve_provider_cli("muse", &config.data_directory, &opts)
+                    .ok_or_else(|| {
+                        "Install Muse and sign in before connecting this provider.".to_string()
+                    })?,
+            )
+        } else {
+            None
+        };
+        let mut cmd = match &resolved {
+            Some(res) => {
+                let mut c = Command::new(&res.executable);
+                c.args(&res.prefix_args);
+                res.apply_tokio(&mut c);
+                c
+            }
+            None => Command::new(&config.executable),
+        };
         cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -126,7 +148,7 @@ impl MspProcess {
 
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("Could not start Muse ({}): {e}", config.executable))?;
+            .map_err(|_| "Could not start Muse. Check its installation and try again.".to_string())?;
         let mut stdin = child
             .stdin
             .take()
@@ -697,13 +719,34 @@ impl ProviderAdapter for MuseAdapter {
     fn connect(&self, events: mpsc::UnboundedSender<ProviderEvent>) -> BoxFuture<'_, Result<(), String>> {
         Box::pin(async move {
             *self.shared.events_tx.lock().unwrap() = Some(events);
-            let probe = MspProcess::spawn(&self.config, Arc::clone(&self.shared), true)?;
+            let record_err = |err: String| {
+                let status = AgentProviderStatus {
+                    id: "muse".into(),
+                    name: "Muse".into(),
+                    connection: "error".into(),
+                    version: String::new(),
+                    capabilities: muse_capabilities(),
+                    error: Some(err.clone()),
+                };
+                *self.shared.status.lock().unwrap() = status.clone();
+                let models = self.shared.models.lock().unwrap().clone();
+                let upd = self.shared.client_update.lock().unwrap().clone();
+                self.shared.emit(ProviderEvent::StatusChanged {
+                    provider_id: "muse".into(),
+                    status,
+                    models,
+                    client_update: upd,
+                });
+                err
+            };
+            let probe = MspProcess::spawn(&self.config, Arc::clone(&self.shared), true)
+                .map_err(record_err)?;
             let init = probe.initialize(self.config.request_timeout_ms).await;
             let init = match init {
                 Ok(v) => v,
                 Err(e) => {
                     probe.shutdown().await;
-                    return Err(e);
+                    return Err(record_err(e));
                 }
             };
             let version = init

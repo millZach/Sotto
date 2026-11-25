@@ -1,4 +1,5 @@
 pub mod checkpoints;
+pub mod cli_lookup;
 pub mod coordinator;
 pub mod council;
 pub mod credentials;
@@ -28,6 +29,10 @@ pub use checkpoints::{
     read_verified_blob, CheckpointBlobPair, CheckpointChangeEntry, CheckpointError,
     CheckpointManager, CheckpointPatch, CheckpointRecord, CheckpointSnapshot, CheckpointStatus,
     CheckpointStore, CheckpointThreadInfo, SnapshotFile,
+};
+pub use cli_lookup::{
+    augment_current_process_path, build_augmented_path, find_cli, resolve_provider_cli,
+    resolve_tool_cli, CliLookupOptions, CliSpec, ResolvedCli, NATIVE_PROVIDER_IDS,
 };
 pub use coordinator::{ClientContext, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle};
 pub use council::{

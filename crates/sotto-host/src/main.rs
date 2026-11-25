@@ -159,9 +159,11 @@ fn main() -> ExitCode {
         }
     };
     // Clear launch-ownership and provider-enable markers before starting worker threads or
-    // spawning provider child processes (matching `src/host/index.ts`).
+    // spawning provider child processes (matching `src/host/index.ts`), and augment PATH so
+    // non-login SSH / systemd launches can always reach user-installed providers and tools.
     std::env::remove_var("SOTTO_HOST_STARTED_BY");
     std::env::remove_var("SOTTO_HOST_ENABLE_PROVIDERS");
+    sotto_core::augment_current_process_path();
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()

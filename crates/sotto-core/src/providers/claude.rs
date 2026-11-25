@@ -34,6 +34,7 @@ pub struct ClaudeAdapterConfig {
     pub prefix_args: Vec<String>,
     pub claude_home: Option<PathBuf>,
     pub request_timeout_ms: u64,
+    pub use_cli_lookup: bool,
 }
 
 impl ClaudeAdapterConfig {
@@ -44,6 +45,7 @@ impl ClaudeAdapterConfig {
             prefix_args: Vec::new(),
             claude_home: None,
             request_timeout_ms: 30_000,
+            use_cli_lookup: true,
         }
     }
 
@@ -58,6 +60,7 @@ impl ClaudeAdapterConfig {
             ],
             claude_home: Some(claude_home),
             request_timeout_ms: 2_000,
+            use_cli_lookup: false,
         }
     }
 }
@@ -132,17 +135,25 @@ impl ClaudeSessionProcess {
         metadata_only: bool,
     ) -> Result<Arc<Self>, String> {
         let mut args = config.prefix_args.clone();
-        args.push("--input-format".into());
-        args.push("stream-json".into());
-        args.push("--output-format".into());
-        args.push("stream-json".into());
-        args.push("--verbose".into());
-
+        args.push("--print".into());
         if metadata_only {
+            args.push("--safe-mode".into());
+            args.push("--tools".into());
+            args.push(String::new());
+            args.push("--permission-prompts".into());
+            args.push("none".into());
             args.push("--no-session-persistence".into());
-            args.push("--model".into());
-            args.push(model.into());
+            args.push("--input-format".into());
+            args.push("stream-json".into());
+            args.push("--output-format".into());
+            args.push("stream-json".into());
+            args.push("--verbose".into());
         } else {
+            args.push("--input-format".into());
+            args.push("stream-json".into());
+            args.push("--output-format".into());
+            args.push("stream-json".into());
+            args.push("--verbose".into());
             let perm_mode = map_claude_permission_mode(runtime_mode);
             args.push("--permission-prompts".into());
             args.push("host".into());
@@ -160,8 +171,10 @@ impl ClaudeSessionProcess {
                 args.push("--session-id".into());
                 args.push(session_id.clone());
             }
-            args.push("--model".into());
-            args.push(model.into());
+            if !model.is_empty() {
+                args.push("--model".into());
+                args.push(model.into());
+            }
             if let Some(eff) = effort {
                 if !eff.is_empty() && eff != "ultracode" {
                     args.push("--effort".into());
@@ -170,9 +183,30 @@ impl ClaudeSessionProcess {
             }
         }
 
-        let mut cmd = Command::new(&config.executable);
+        let resolved = if config.use_cli_lookup {
+            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+            Some(
+                crate::cli_lookup::resolve_provider_cli("claude", &config.data_directory, &opts)
+                    .ok_or_else(|| {
+                        "Install Claude Code and sign in before connecting this provider."
+                            .to_string()
+                    })?,
+            )
+        } else {
+            None
+        };
+        let mut cmd = match &resolved {
+            Some(res) => {
+                let mut c = Command::new(&res.executable);
+                c.args(&res.prefix_args);
+                res.apply_tokio(&mut c);
+                c
+            }
+            None => Command::new(&config.executable),
+        };
         cmd.args(&args)
             .current_dir(cwd)
+            .env("NO_COLOR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -187,9 +221,9 @@ impl ClaudeSessionProcess {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Could not start Claude Code ({}): {e}", config.executable))?;
+        let mut child = cmd.spawn().map_err(|_| {
+            "Could not start Claude Code. Check its installation and try again.".to_string()
+        })?;
         let mut stdin = child
             .stdin
             .take()
@@ -347,6 +381,8 @@ impl ClaudeSessionProcess {
             json!({
                 "subtype": "initialize",
                 "hooks": {},
+                "sdkMcpServers": [],
+                "promptSuggestions": false,
             }),
             timeout_ms,
         )
@@ -807,7 +843,15 @@ impl ClaudeAdapter {
             .model_id
             .as_deref()
             .map(raw_claude_model)
-            .unwrap_or_else(|| "fixture-model".to_string());
+            .or_else(|| {
+                self.shared
+                    .models
+                    .lock()
+                    .unwrap()
+                    .first()
+                    .map(|m| raw_claude_model(&m.id))
+            })
+            .unwrap_or_else(|| "default".to_string());
         let mut map = self.sessions.lock().await;
         if let Some(existing) = map.get(&req.thread_id) {
             if existing.is_alive()
@@ -889,21 +933,63 @@ impl ProviderAdapter for ClaudeAdapter {
         Box::pin(async move {
             *self.shared.events_tx.lock().unwrap() = Some(events);
             let cwd = self.config.data_directory.to_string_lossy().into_owned();
-            let probe = ClaudeSessionProcess::spawn(
+            let probe = match ClaudeSessionProcess::spawn(
                 &self.config,
                 Arc::clone(&self.shared),
                 None,
                 "metadata".into(),
                 &cwd,
-                "fixture-model",
+                "",
                 None,
                 None,
                 false,
                 true,
-            )?;
+            ) {
+                Ok(p) => p,
+                Err(err) => {
+                    let status = AgentProviderStatus {
+                        id: "claude".into(),
+                        name: "Claude Code".into(),
+                        connection: "error".into(),
+                        version: String::new(),
+                        capabilities: claude_capabilities(),
+                        error: Some(err.clone()),
+                    };
+                    *self.shared.status.lock().unwrap() = status.clone();
+                    let models = self.shared.models.lock().unwrap().clone();
+                    self.shared.emit(ProviderEvent::StatusChanged {
+                        provider_id: "claude".into(),
+                        status,
+                        models,
+                        client_update: None,
+                    });
+                    return Err(err);
+                }
+            };
             let init = probe.initialize(self.config.request_timeout_ms).await;
             probe.shutdown().await;
-            let init = init?;
+            let init = match init {
+                Ok(v) => v,
+                Err(err) => {
+                    let status = AgentProviderStatus {
+                        id: "claude".into(),
+                        name: "Claude Code".into(),
+                        connection: "error".into(),
+                        version: String::new(),
+                        capabilities: claude_capabilities(),
+                        error: Some(err.clone()),
+                    };
+                    *self.shared.status.lock().unwrap() = status.clone();
+                    let models = self.shared.models.lock().unwrap().clone();
+                    self.shared.emit(ProviderEvent::StatusChanged {
+                        provider_id: "claude".into(),
+                        status,
+                        models,
+                        client_update: None,
+                    });
+                    return Err(err);
+                }
+            };
 
             let version = init
                 .get("claude_code_version")
