@@ -157,6 +157,60 @@ it('migrates watches, requests, operations, and replacement watermarks across de
   expect(masters.find(item => item.masterHostId === DESKTOP_A)?.clientId).toBe('client-new')
 })
 
+// #2873: replacing Watcher (New Watcher or a provider change) gives the desktop a new Watcher conversation, and the standing watches it made on a paired
+// host stay bound to the old one until the host hears from the new one. On reconnect the desktop reads with the new
+// Watcher, `adopt` and its standing watches (`reconcileRemoteNow`), and that read must re-bind every watch of this
+// desktop, even when the desktop also re-paired in between and the host hears it under a new clientId.
+it.each([
+  { label: 'the same pairing', repair: false },
+  { label: 'a re-pair in between', repair: true },
+])('re-binds standing watches to a new Watcher after a replacement and reconnect with $label, so its sends go (#2873)', async ({ repair }) => {
+  const h = await hostFixture()
+  const DESKTOP_A = randomUUID(), guard = () => undefined, mayAnswer = () => true
+  const before = makeMaster(DESKTOP_A, '2026-11-22T00:00:00.000Z')
+  const after = makeMaster(DESKTOP_A, '2026-11-25T02:24:27.772Z')
+  const watch = { id: randomUUID(), target: { hostId: h.hostId, threadId: h.threadId }, createdAt: '2026-11-22T00:00:01.000Z', generation: 0 }
+
+  // A pairing from before desktop-identities.json existed, as forge's was.
+  await writeFile(join(h.root, DESKTOP_CLIENTS_FILE), JSON.stringify(['client-old']))
+  await h.desktops.refresh()
+  expect(await h.watcher.readRemote({ master: before, adopt: true, standingWatches: [watch] }, 'client-old', guard, mayAnswer))
+    .toMatchObject({ standingWatches: [expect.objectContaining({ id: watch.id })] })
+  expect(await h.watcher.admitRemote(sendPacket(h.hostId, h.threadId, before, watch.id, 0, 'Before the replacement'), 'client-old', guard, mayAnswer))
+    .toMatchObject({ status: 'ok' })
+  h.finishTurns()
+  await expect.poll(() => h.control.watcherSnapshot().threads.find(item => item.id === h.threadId)?.status).toBe('idle')
+
+  // Watcher is replaced, and for the second case a re-pair the launch script records over SSH.
+  const client = repair ? 'client-new' : 'client-old'
+  if (repair) await writeIdentities(h.root, h.desktops, ['client-new'], { 'client-new': DESKTOP_A })
+
+  // Until the host has heard from the new Watcher, its watch is the old one's, and a send under the new one is refused.
+  // Only without a re-pair: admission migrates a re-paired desktop's records before it refuses, so a send here would
+  // leave the reconnect read below nothing to migrate.
+  if (!repair) {
+    expect(await h.watcher.admitRemote(sendPacket(h.hostId, h.threadId, after, watch.id, 0, 'Too early'), client, guard, mayAnswer))
+      .toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  } else {
+    expect(h.control.watcherRecords.copy().watches?.find(item => item.id === watch.id)?.remoteOrigin)
+      .toMatchObject({ clientId: 'client-old', masterCreationOperationId: before.creationOperationId })
+  }
+
+  // The desktop's reconnect read under the new Watcher migrates and re-binds the watch to it.
+  expect(await h.watcher.readRemote({ master: after, adopt: true, standingWatches: [watch] }, client, guard, mayAnswer)).toMatchObject({
+    standingWatches: [expect.objectContaining({ id: watch.id,
+      remoteOrigin: expect.objectContaining({ clientId: client, masterCreationOperationId: after.creationOperationId, masterCreatedAt: after.createdAt }) })],
+  })
+
+  // Watcher's next send on the watched thread goes, and the replaced Watcher stays refused.
+  expect(await h.watcher.admitRemote(sendPacket(h.hostId, h.threadId, after, watch.id, 0, 'After the replacement'), client, guard, mayAnswer))
+    .toMatchObject({ status: 'ok' })
+  expect(await h.watcher.admitRemote(sendPacket(h.hostId, h.threadId, before, watch.id, 0, 'From the replaced Watcher'), client, guard, mayAnswer))
+    .toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  expect(h.control.watcherRecords.copy().remoteMasters?.filter(item => item.masterHostId === DESKTOP_A))
+    .toEqual([expect.objectContaining({ clientId: client, creationOperationId: after.creationOperationId })])
+})
+
 it('refuses cross-desktop masterHostId spoofing from both bound and unbound desktops (#2863)', async () => {
   const h = await hostFixture()
   const DESKTOP_A = randomUUID(), DESKTOP_B = randomUUID(), guard = () => undefined, mayAnswer = () => true

@@ -7039,4 +7039,226 @@ mod tests {
 
         coordinator.shutdown().await;
     }
+
+    /// #2873: replacing Watcher (New Watcher or a provider change) gives the desktop a new Watcher conversation, and its standing watches here stay bound
+    /// to the old one until the desktop's reconnect read (the new Watcher, `adopt` and its standing watches) re-binds
+    /// them, including when the desktop re-paired in between and is heard under a new `clientId`.
+    async fn replace_watcher_reconnect_then_send(repair: bool) {
+        let (dir, host_id, mock, coordinator, watcher) = setup_service().await;
+        let desktops = Arc::new(Mutex::new(DesktopClients::new(dir.path())));
+        let watcher = watcher.with_desktops(Arc::clone(&desktops));
+
+        let project_dir = TempDir::new().unwrap();
+        let mut create_proj = Map::new();
+        create_proj.insert("type".into(), json!("create-project"));
+        create_proj.insert("title".into(), json!("Repo"));
+        create_proj.insert(
+            "path".into(),
+            json!(project_dir.path().to_string_lossy().to_string()),
+        );
+        let client = ClientContext {
+            client_id: "client-old".into(),
+            user: "Desktop A".into(),
+            may_answer: true,
+        };
+        let shell = coordinator.run_command(client.clone(), create_proj).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let model_id = shell["host"]["models"][0]["id"].as_str().unwrap().to_string();
+        let tid = Uuid::new_v4().to_string();
+        let mut create_t = Map::new();
+        create_t.insert("type".into(), json!("create-thread"));
+        create_t.insert("threadId".into(), json!(tid));
+        create_t.insert("projectId".into(), json!(project_id));
+        create_t.insert("modelId".into(), json!(model_id));
+        create_t.insert("title".into(), json!("Watched Worker"));
+        create_t.insert("workingCopy".into(), json!("shared"));
+        let shell = coordinator.run_command(client, create_t).await.unwrap();
+        watcher.observe_shell(&shell);
+
+        let desktop_a = Uuid::new_v4().to_string();
+        let identity = |thread: &str, created_at: &str| WatcherIdentity {
+            target: WatcherThreadTarget::new(&desktop_a, thread),
+            project_id: "watcher-proj".into(),
+            provider: "codex".into(),
+            creation_operation_id: Uuid::new_v4().to_string(),
+            created_at: created_at.into(),
+        };
+        let before = identity("w-before", "2026-11-22T00:00:00.000Z");
+        let after = identity("w-after", "2026-11-25T02:24:27.772Z");
+        let watch_id = Uuid::new_v4().to_string();
+        let watch = json!([{
+            "id": watch_id,
+            "target": { "hostId": host_id, "threadId": tid },
+            "createdAt": "2026-11-22T00:00:01.000Z",
+            "generation": 0
+        }]);
+        let make_send = |master: &WatcherIdentity, text: &str| {
+            let req_id = Uuid::new_v4().to_string();
+            let root_msg_id = Uuid::new_v4().to_string();
+            let input = SendToThreadInput {
+                request_id: req_id.clone(),
+                retry_key: Uuid::new_v4().to_string(),
+                target: WatcherThreadTarget::new(&host_id, &tid),
+                text: text.into(),
+                delivery: Some("now".into()),
+                expected_last_user_message_id: None,
+                expected_turn_id: None,
+                go_merge: None,
+            };
+            let digest = WatcherControlCall::SendToThread(input.clone()).digest();
+            let ts = now_iso();
+            json!({
+                "master": master,
+                "request": {
+                    "id": req_id,
+                    "watcher": master.target,
+                    "rootUserMessageId": root_msg_id,
+                    "createdAt": ts,
+                    "standingWatchId": watch_id,
+                },
+                "ceiling": "full-access",
+                "operation": {
+                    "id": Uuid::new_v4().to_string(),
+                    "requestId": req_id,
+                    "retryKey": input.retry_key,
+                    "digest": digest,
+                    "action": "send",
+                    "target": { "hostId": host_id, "threadId": tid },
+                    "standingWatchId": watch_id,
+                    "generation": 0,
+                    "delivery": "now",
+                    "deliveryState": "queued",
+                    "createdAt": ts,
+                    "updatedAt": ts,
+                    "receiptId": Uuid::new_v4().to_string(),
+                    "cardId": Uuid::new_v4().to_string(),
+                    "draftId": Uuid::new_v4().to_string(),
+                    "messageId": Uuid::new_v4().to_string(),
+                    "anchorMessageId": root_msg_id,
+                },
+                "call": { "name": "send_to_thread", "input": input },
+            })
+        };
+
+        // A pairing from before desktop-identities.json existed, as forge's was.
+        std::fs::write(
+            dir.path().join(crate::desktop_clients::DESKTOP_CLIENTS_FILE),
+            serde_json::to_string(&["client-old"]).unwrap(),
+        )
+        .unwrap();
+        desktops.lock().unwrap().refresh();
+        let synced = watcher
+            .read_remote(
+                json!({ "master": before, "adopt": true, "standingWatches": watch }),
+                "client-old",
+                true,
+            )
+            .await;
+        assert_eq!(synced["standingWatches"].as_array().unwrap().len(), 1, "{synced}");
+        let sent = watcher
+            .admit_remote(make_send(&before, "Before the replacement"), "client-old", "Desktop A", true)
+            .await;
+        assert_eq!(sent["status"], "ok", "send before the replacement failed: {sent}");
+        mock.complete_turn(&tid, "Done");
+        let mut idle = false;
+        for _ in 0..250 {
+            let s = coordinator.shell(true).await.unwrap();
+            watcher.observe_shell(&s);
+            if s["host"]["threads"][0]["status"] == "idle" {
+                idle = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(idle, "the watched thread's turn should finish");
+
+        // Watcher is replaced, and for the re-pair case the launch script's SSH-recorded new pairing.
+        let client_id = if repair { "client-new" } else { "client-old" };
+        if repair {
+            std::fs::write(
+                dir.path().join(crate::desktop_clients::DESKTOP_CLIENTS_FILE),
+                serde_json::to_string(&["client-new"]).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.path().join(crate::desktop_clients::DESKTOP_IDENTITIES_FILE),
+                serde_json::to_string(&json!({ "version": 1, "desktops": { "client-new": desktop_a } }))
+                    .unwrap(),
+            )
+            .unwrap();
+            desktops.lock().unwrap().refresh();
+        }
+
+        // Until the host hears from the new Watcher, the watch is the old one's. A send shows it only without a re-pair:
+        // admission migrates a re-paired desktop's records before it refuses, leaving the reconnect read nothing to migrate.
+        if !repair {
+            let early = watcher
+                .admit_remote(make_send(&after, "Too early"), client_id, "Desktop A", true)
+                .await;
+            assert_eq!(early["status"], "refused", "{early}");
+            assert_eq!(early["code"], "REQUEST_NOT_ACTIVE");
+        } else {
+            let snap = watcher.record_snapshot();
+            let origin = snap
+                .watches
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .find(|w| w.id == watch_id)
+                .and_then(|w| w.remote_origin.clone())
+                .expect("the watch is still installed");
+            assert_eq!(origin.client_id, "client-old");
+            assert_eq!(
+                origin.master_creation_operation_id.as_deref(),
+                Some(before.creation_operation_id.as_str())
+            );
+        }
+
+        // The desktop's reconnect read under the new Watcher migrates and re-binds the watch to it.
+        let reconnected = watcher
+            .read_remote(
+                json!({ "master": after, "adopt": true, "standingWatches": watch }),
+                client_id,
+                true,
+            )
+            .await;
+        let origin = &reconnected["standingWatches"][0]["remoteOrigin"];
+        assert_eq!(origin["clientId"], client_id, "{reconnected}");
+        assert_eq!(origin["masterCreationOperationId"], after.creation_operation_id.as_str());
+        assert_eq!(origin["masterCreatedAt"], after.created_at.as_str());
+
+        // Watcher's next send on the watched thread goes, and the replaced Watcher stays refused.
+        let sent = watcher
+            .admit_remote(make_send(&after, "After the replacement"), client_id, "Desktop A", true)
+            .await;
+        assert_eq!(sent["status"], "ok", "send after the replacement failed: {sent}");
+        let stale = watcher
+            .admit_remote(make_send(&before, "From the replaced Watcher"), client_id, "Desktop A", true)
+            .await;
+        assert_eq!(stale["status"], "refused", "{stale}");
+        assert_eq!(stale["code"], "NOT_CURRENT_WATCHER");
+        let snap = watcher.record_snapshot();
+        let masters: Vec<&Value> = snap
+            .remote_masters
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .filter(|m| m.get("masterHostId").and_then(Value::as_str) == Some(desktop_a.as_str()))
+            .collect();
+        assert_eq!(masters.len(), 1);
+        assert_eq!(masters[0]["clientId"], client_id);
+        assert_eq!(masters[0]["creationOperationId"], after.creation_operation_id.as_str());
+
+        coordinator.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn new_watcher_then_reconnect_rebinds_watches_so_sends_go() {
+        replace_watcher_reconnect_then_send(false).await;
+    }
+
+    #[tokio::test]
+    async fn new_watcher_then_repair_and_reconnect_rebinds_watches_so_sends_go() {
+        replace_watcher_reconnect_then_send(true).await;
+    }
 }
