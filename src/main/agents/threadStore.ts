@@ -186,7 +186,7 @@ interface ActivityState {
 }
 
 /** The newest `MAX_AGENT_ACTIVITIES` of rows read in position order: a list over the limit on disk reads as its newest records. */
-function newestActivityRows<T>(rows: T[]): T[] {
+function newestActivityRows<T>(rows: readonly T[]): readonly T[] {
   return rows.length > MAX_AGENT_ACTIVITIES ? rows.slice(-MAX_AGENT_ACTIVITIES) : rows
 }
 
@@ -638,7 +638,7 @@ export class ThreadStore {
         const activity = ownBuiltActivity(storedActivity(row))
         records.set(activity.id, { position: Number(row.position), activity })
       }
-      // More rows than the limit, as another engine's writes once left (ADR-0214): the newest are held, the rest go at the next save.
+      // More rows than the limit, as the Rust host program's writes once left (ADR-0214): the newest are held, the rest go at the next save.
       const overflow = all.length > rows.length ? all.slice(0, all.length - rows.length).map(row => String(row.activity_id)) : undefined
       state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records, ...(overflow ? { overflow } : {}) }
       this.activityStates.set(threadId, state)
@@ -805,7 +805,7 @@ export class ThreadStore {
   /** What one thread's list changes in the store, worked out without writing; undefined when nothing does. */
   private planActivitySync(threadId: string, given: readonly AgentActivity[], epoch: string | undefined): ActivitySyncPlan | undefined {
     // A list over the limit keeps its newest records rather than failing this save and every save after it.
-    const activities = given.length > MAX_AGENT_ACTIVITIES ? given.slice(-MAX_AGENT_ACTIVITIES) : given
+    const activities = newestActivityRows(given)
     const previous = this.activityState(threadId)
     const resetSequence = this.readMessageEpoch(threadId)?.sequence ?? 0
     const reset = previous.epoch !== epoch || (previous.resetSequence !== undefined && previous.resetSequence !== resetSequence)

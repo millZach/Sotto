@@ -1369,7 +1369,7 @@ export class DesktopHosts {
       if (this.live.get(host.id) !== active) { await ssh.close(); return }
       if (ssh.node) this.nodePaths.set(host.id, ssh.node)
       if (ssh.system) void this.rememberSystem(host.id, ssh.system)
-      this.update(host.id, { step: 'pair', runningRuntime: ssh.runtime })
+      this.update(host.id, { step: 'pair', ...(this.options.rustHostChoice === true ? { runningRuntime: ssh.runtime } : {}) })
       if (host.hostId && host.hostId !== ssh.hostId) throw new FinalHostError(CONNECT_FAILURES.identityChanged())
       const same = adding ? this.saved.find(item => item.hostId === ssh.hostId) : undefined
       if (same) throw new FinalHostError(CONNECT_FAILURES.sameHost(same.name))
@@ -1747,7 +1747,7 @@ export class DesktopHosts {
     const owned = active.ssh ? active.ssh.owned === true : startedBySotto(hello.startedBy)
     // Start at boot comes with a launch; a tailnet connection has none, and shows what the last launch or boot change said.
     this.update(host.id, { phase: 'connected', reconnecting: false, hostId: hello.hostId, clientId: hello.clientId, owned, via: active.via,
-      phoneAccess: active.ssh ? undefined : hello.phoneAccess, ...(hello.hostProgram ? { runningRuntime: hello.hostProgram } : {}), bootStart: active.ssh ? active.ssh.bootStart : this.tailnet.get(host.id).bootStart })
+      phoneAccess: active.ssh ? undefined : hello.phoneAccess, ...(this.options.rustHostChoice === true && hello.hostProgram ? { runningRuntime: hello.hostProgram } : {}), bootStart: active.ssh ? active.ssh.bootStart : this.tailnet.get(host.id).bootStart })
   }
   /** Keeps the tailnet address a saved host reported in its hello, which follows Serve as it comes and goes. */
   private async learnAddress(host: SavedHost, about: Pick<HostHello, 'tailnetAddress'>): Promise<void> {
@@ -1957,19 +1957,13 @@ export class DesktopHosts {
     } catch { return undefined }
   }
   /**
-   * How Sotto connects (ADR-0053, Edit connection): the owner's choice, and the host's own tailnet connections setting,
-   * set over the SSH connection or an admin connection so the press is the owner's consent to that Serve setting. The
-   * choice is written first, so a drop the host's change causes reconnects the way the owner chose; a press that does not
-   * reach the host puts it back, and nothing is changed.
-   */
-  /**
    * The row's Node | Rust control (ADR-0214; Owl only). Saves the host program for this host, and for a host Sotto started
    * that this computer is connected to, stops it and connects again over SSH: that launch starts the program chosen, and
    * sets or clears the host's `use-rust-host` marker. Any other host takes the program at its next launch from here; a host
    * this computer did not start keeps running what it runs until it next starts.
    */
   private async setRuntime(host: SavedHost, runtime: HostRuntime): Promise<void> {
-    if (this.options.rustHostChoice !== true) throw new Error(t`This version of Sotto runs every remote host on Node. Nothing was changed.`)
+    if (this.options.rustHostChoice !== true) throw new Error(t`Only Sotto Owl offers a choice of host program, and this Sotto leaves each host running what it runs. Nothing was changed.`)
     const before = this.status.get(host.id)
     // The same choice again restarts a host that still runs the other program, as one Owl turned to Rust before the choice.
     if ((host.runtime ?? 'node') === runtime && (before?.runningRuntime === undefined || before.runningRuntime === runtime)) return
@@ -1985,12 +1979,19 @@ export class DesktopHosts {
     this.update(host.id, { switchingRuntime: true })
     let stopped: boolean
     try {
+      // Connect again over SSH first, as after Edit connection's save, since only a launch starts the program chosen.
       stopped = await this.press(host, connection => this.restartOnPurpose(host, () => this.stopOwnedHost(connection), done => !done, () => ({ edited: true })))
     } finally { this.update(host.id, { switchingRuntime: undefined }) }
     if (!stopped) throw new Error(runtime === 'rust'
       ? t`Rust is saved for ${{ host: host.name }}, but its host could not be restarted. It runs Rust from its next start.`
       : t`Node is saved for ${{ host: host.name }}, but its host could not be restarted. It runs Node from its next start.`)
   }
+  /**
+   * How Sotto connects (ADR-0053, Edit connection): the owner's choice, and the host's own tailnet connections setting,
+   * set over the SSH connection or an admin connection so the press is the owner's consent to that Serve setting. The
+   * choice is written first, so a drop the host's change causes reconnects the way the owner chose; a press that does not
+   * reach the host puts it back, and nothing is changed.
+   */
   private async setConnection(host: SavedHost, prefer: HostConnectionPreference): Promise<void> {
     if (!host.hostId) throw new Error(t`Connect to ${{ host: host.name }} over SSH once before choosing how Sotto connects. Nothing was changed.`)
     const before = this.tailnet.get(host.id).prefer

@@ -1280,6 +1280,10 @@ msgstr ""
 msgid "Only an allowed action can be granted for the whole thread. Answer this one once."
 msgstr ""
 
+#: src/main/hosts/desktopHosts.ts
+msgid "Only Sotto Owl offers a choice of host program, and this Sotto leaves each host running what it runs. Nothing was changed."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Only the latest completed checkpoint with unchanged native history can be reverted."
 msgstr ""
@@ -3651,10 +3655,6 @@ msgstr ""
 
 #: src/main/tools/ipc.ts
 msgid "This version of Sotto doesn't show a host's browser. Nothing was changed."
-msgstr ""
-
-#: src/main/hosts/desktopHosts.ts
-msgid "This version of Sotto runs every remote host on Node. Nothing was changed."
 msgstr ""
 
 #: src/main/agents/delegationIpc.ts

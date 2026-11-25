@@ -574,7 +574,8 @@ const launch = async () => {
   // A found host reports start at boot as a started one does, and counts as Sotto's when this installation's unit runs it.
   const ready = found ? { type: 'ready', ...found, owned: await sottoStarted(found), bootStart: await bootStatus(await unitProperties()) } : await start();
   const token = await adminToken(ready);
-  const runtime = await runtimeOf(ready.pid);
+  // Only a launch that names a program, an Owl desktop's, asks which one runs.
+  const runtime = typeof cfg.useRustHost === 'boolean' ? await runtimeOf(ready.pid) : undefined;
   // The system names the host archive an update downloads, as archiveName does, so Sotto can ask for it before an update.
   // The runtime is the program the host runs, Node or Rust, for the row's host program control (ADR-0214).
   return finish({ ...ready, node: process.execPath, system: process.platform + '-' + process.arch, ...(token ? { adminToken: token } : {}), ...(runtime ? { runtime } : {}) });

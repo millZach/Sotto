@@ -65,7 +65,7 @@ describe.skipIf(!RUN_RUST_HOST)('provider stores across a Rust host and a rollba
       await writeFile(join(dir, file), JSON.stringify(store, null, 2))
     }
     execFileSync('cargo', ['test', '-p', 'sotto-core', '--lib', '--locked', 'providers::tests::node_thread_stores_survive_a_rust_load_and_save', '--', '--exact'], {
-      stdio: 'inherit', env: { ...process.env, SOTTO_CROSS_ENGINE_THREADS_DIR: dir },
+      stdio: 'inherit', env: { ...process.env, SOTTO_SHARED_THREAD_STORES_DIR: dir },
     })
   }, 600_000)
 

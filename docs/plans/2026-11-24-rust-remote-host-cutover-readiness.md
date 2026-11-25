@@ -21,7 +21,7 @@ Built in #2874's pull request.
 - The row shows the program chosen, marks Rust as a preview, and says when the host runs the other program until its next start. The program the host runs comes from its launch (Linux and macOS).
 - One press switches back. For a host Sotto started that this computer is connected to, the press restarts it on Node, and that launch clears `use-rust-host`. Any other host clears it at its next launch from an Owl desktop.
 - Every launch, boot change and update from an Owl desktop names the program: `useRustHost: true` or `false`. Stable names none and leaves the host as it is.
-- Both engines keep a thread's newest 2,000 activity records (`MAX_AGENT_ACTIVITIES`). Node reads and saves a longer list as its newest records instead of throwing. Rust writes at most 2,000 rows per thread, each at its own position. `tests/integration/rustHostActivityCap.test.ts` opens a database Rust wrote in Node's store.
+- Both host programs keep a thread's newest 2,000 activity records (`MAX_AGENT_ACTIVITIES`). Node reads and saves a longer list as its newest records instead of throwing. Rust writes at most 2,000 rows per thread, each at its own position. `tests/integration/rustHostActivityCap.test.ts` opens a database Rust wrote in Node's store.
 - Every Rust provider store keeps what Node wrote: Claude, Codex, Muse, OpenCode, and the ACP stores for Grok, Devin, Cursor, Antigravity and Hermes. Each record keeps the fields Rust does not model, and an entry Rust cannot read stays on disk as it was. A store that is not a JSON object is moved aside as `.corrupt-*`, as Node does, never overwritten. `tests/integration/rustHostThreadStoreRollback.test.ts` checks all nine with Node's own parsers before and after a Rust load and save.
 - The host's hello names its program (`hostProgram`), so the row knows what runs over the tailnet too. A host Sotto started that runs the other program offers **Restart on Node** or **Restart on Rust**.
 
@@ -42,7 +42,7 @@ Issues: [#2876](https://github.com/millZach/Sotto/issues/2876) (commands and hel
 Issue: [#2878](https://github.com/millZach/Sotto/issues/2878).
 
 - `npm run test:referee`, `socketHostContract` and `hostServiceContract`, the remote drafts and reconnect suites, Watcher's remote-host tests, and the E2E specs that drive a remote host all run against the Rust `sotto-host` in CI.
-- Cross-engine SQLite round trips (Node writes, Rust reads and writes, Node reads) cover `threads.sqlite`, `subagents.sqlite`, `usage.sqlite` and `memory.sqlite`.
+- SQLite round trips across the two host programs (Node writes, Rust reads and writes, Node reads) cover `threads.sqlite`, `subagents.sqlite`, `usage.sqlite` and `memory.sqlite`.
 
 **Done when:** all of them pass against Rust in CI on Linux and macOS, and Windows wherever the suite runs on Windows today.
 

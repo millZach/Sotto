@@ -52,7 +52,7 @@ describe('thread activity store', () => {
     const { store, path } = await fixture()
     store.syncActivities('thread', [activity('seed')])
     store.close()
-    // Another engine's writes left more rows than the limit, as the Rust host did on forge with 2,001.
+    // The other host program's writes left more rows than the limit, as the Rust host did on forge with 2,001.
     const db = inspect(path)
     db.exec('DELETE FROM activities')
     const insert = db.prepare('INSERT INTO activities (thread_id, activity_id, position, payload) VALUES (?, ?, ?, ?)')

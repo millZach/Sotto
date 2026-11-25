@@ -60,7 +60,7 @@ jobs:
           # The iOS job reads only the native client, the host protocol its wire types mirror and this file.
           ios_paths='^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)'
           # The Rust host job reads the Cargo workspace, its dependency policy, its parity/launch/engine tests, launch script, build/release wiring and this file.
-          rust_paths='^(crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|tests/integration/rust(Host|LocalEngine)[^/]*\.test\.ts$|src/main/hosts/launchScript\.ts$|scripts/build-rust-host\.mjs$|\.github/workflows/rust-host-release\.yml$|\.github/workflows/ci\.yml$)'
+          rust_paths='^(crates/|Cargo\.toml$|Cargo\.lock$|deny\.toml$|tests/integration/rust(Host|LocalEngine)[^/]*\.test\.ts$|src/main/hosts/launchScript\.ts$|src/main/agents/threadStore\.ts$|src/main/agents/(antigravity|cursor|devin|grok|hermes|muse|opencode)\.ts$|src/main/agents/providers/(claude/claude|codex/codex)\.ts$|scripts/build-rust-host\.mjs$|\.github/workflows/rust-host-release\.yml$|\.github/workflows/ci\.yml$)'
           # The Core ML speech helper job reads only the Swift helper, its build script and this file.
           coreml_paths='^(native/coreml-asr/|scripts/build-coreml-asr\.mjs$|\.github/workflows/ci\.yml$)'
           if [ "$EVENT" = "push" ]; then

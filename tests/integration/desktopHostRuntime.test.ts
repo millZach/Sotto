@@ -62,8 +62,9 @@ describe('host program per remote host', () => {
   it('offers no choice and names no program where the Owl feature is off, as on stable', async () => {
     const remote = await add()
     expect(fixture.manager.get().hosts[0]!.runtime).toBeUndefined()
+    expect(fixture.manager.get().hosts[0]!.runningRuntime).toBeUndefined()
     expect(launchRuntimes).toEqual([undefined])
-    await expect(fixture.manager.command({ type: 'set-runtime', id: remote.id, runtime: 'rust' })).rejects.toThrow('runs every remote host on Node')
+    await expect(fixture.manager.command({ type: 'set-runtime', id: remote.id, runtime: 'rust' })).rejects.toThrow('Only Sotto Owl offers a choice of host program')
     expect(stops).toEqual([])
     expect((await savedFile())[0]).not.toHaveProperty('runtime')
   })

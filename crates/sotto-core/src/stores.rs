@@ -1456,12 +1456,12 @@ mod tests {
     }
 
     /// Rust activity writes never leave a table Node's `ThreadStore` refuses (ADR-0214): no thread over
-    /// MAX_AGENT_ACTIVITIES rows and every position unique. With `SOTTO_CROSS_ENGINE_ACTIVITIES_DB` set, the database
+    /// MAX_AGENT_ACTIVITIES rows and every position unique. With `SOTTO_SHARED_ACTIVITIES_DB` set, the database
     /// is written there for `tests/integration/rustHostActivityCap.test.ts` to open with Node's store.
     #[test]
     fn activity_writes_stay_within_node_limits() {
         let dir = tempdir().unwrap();
-        let path = std::env::var_os("SOTTO_CROSS_ENGINE_ACTIVITIES_DB")
+        let path = std::env::var_os("SOTTO_SHARED_ACTIVITIES_DB")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| dir.path().join("threads.sqlite"));
         let store = ThreadStore::open(&path).unwrap();

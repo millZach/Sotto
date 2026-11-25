@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Cross-engine activity limit (ADR-0214): a threads.sqlite written by the Rust host's own store opens in Node's
+// The activity limit across both host programs (ADR-0214): a threads.sqlite written by the Rust host's own store opens in Node's
 // ThreadStore, which reads, saves and reads again every thread without refusing it. The Rust host on forge once left a
 // thread with 2,001 rows, and Node's next save of it threw "Too many thread activities". Runs when
 // `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a `cargo build`).
@@ -23,7 +23,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust host activity writes read in Node', () => 
     path = join(dir, 'threads.sqlite')
     // The Rust test writes past the limit through upsert_activity and save_activities, into this database.
     execFileSync('cargo', ['test', '-p', 'sotto-core', '--lib', '--locked', 'stores::tests::activity_writes_stay_within_node_limits', '--', '--exact'], {
-      stdio: 'inherit', env: { ...process.env, SOTTO_CROSS_ENGINE_ACTIVITIES_DB: path },
+      stdio: 'inherit', env: { ...process.env, SOTTO_SHARED_ACTIVITIES_DB: path },
     })
   }, 600_000)
 

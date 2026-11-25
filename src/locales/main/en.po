@@ -1281,6 +1281,10 @@ msgstr "Only a PNG image up to 10 MiB can be pasted into a terminal."
 msgid "Only an allowed action can be granted for the whole thread. Answer this one once."
 msgstr "Only an allowed action can be granted for the whole thread. Answer this one once."
 
+#: src/main/hosts/desktopHosts.ts
+msgid "Only Sotto Owl offers a choice of host program, and this Sotto leaves each host running what it runs. Nothing was changed."
+msgstr "Only Sotto Owl offers a choice of host program, and this Sotto leaves each host running what it runs. Nothing was changed."
+
 #: src/main/tools/checkpoints.ts
 msgid "Only the latest completed checkpoint with unchanged native history can be reverted."
 msgstr "Only the latest completed checkpoint with unchanged native history can be reverted."
@@ -3653,10 +3657,6 @@ msgstr "This turn changed Git history or staging. Review and restore it with Git
 #: src/main/tools/ipc.ts
 msgid "This version of Sotto doesn't show a host's browser. Nothing was changed."
 msgstr "This version of Sotto doesn't show a host's browser. Nothing was changed."
-
-#: src/main/hosts/desktopHosts.ts
-msgid "This version of Sotto runs every remote host on Node. Nothing was changed."
-msgstr "This version of Sotto runs every remote host on Node. Nothing was changed."
 
 #: src/main/agents/delegationIpc.ts
 msgid "This worker's brief is too long to hand on with a note about the move. Ask the overseer in a message to give the piece to {model}. Nothing was started."
