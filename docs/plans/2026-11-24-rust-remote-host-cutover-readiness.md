@@ -8,7 +8,8 @@ Owl turned the Rust `sotto-host` on for every remote host at once, though ADR-02
 
 - refused about 50 commands it does not implement, with `InvalidRequest`;
 - held 888 MB RSS at startup against a 628 MB `threads.sqlite`, where Node runs at about 500 MB;
-- left one thread with 2,001 activity rows. Node's store then threw `Too many thread activities` on every save of that thread, after the switch back to Node.
+- left one thread with 2,001 activity rows. Node's store then threw `Too many thread activities` on every save of that thread, after the switch back to Node;
+- stripped all 208 Claude records in `claude-threads.json` down to six fields. On the rollback, Node refused the file, set it aside as `.corrupt-*` and started with none, so every Claude thread on forge lost its resume ("thread doesn't exist anymore").
 
 Rust becomes the default **host program** on Owl only after all five gates below pass, in order. A gate is passed when its "done when" is true on `main` with CI green. Nobody's sense that it is ready counts. Nothing here changes stable: `rust-remote-host` stays `sentToStable: false` throughout.
 
@@ -21,17 +22,20 @@ Built in #2874's pull request.
 - One press switches back. For a host Sotto started that this computer is connected to, the press restarts it on Node, and that launch clears `use-rust-host`. Any other host clears it at its next launch from an Owl desktop.
 - Every launch, boot change and update from an Owl desktop names the program: `useRustHost: true` or `false`. Stable names none and leaves the host as it is.
 - Both engines keep a thread's newest 2,000 activity records (`MAX_AGENT_ACTIVITIES`). Node reads and saves a longer list as its newest records instead of throwing. Rust writes at most 2,000 rows per thread, each at its own position. `tests/integration/rustHostActivityCap.test.ts` opens a database Rust wrote in Node's store.
+- Every Rust provider store keeps what Node wrote: Claude, Codex, Muse, OpenCode, and the ACP stores for Grok, Devin, Cursor, Antigravity and Hermes. Each record keeps the fields Rust does not model, and an entry Rust cannot read stays on disk as it was. A store that is not a JSON object is moved aside as `.corrupt-*`, as Node does, never overwritten. `tests/integration/rustHostThreadStoreRollback.test.ts` checks all nine with Node's own parsers before and after a Rust load and save.
+- The host's hello names its program (`hostProgram`), so the row knows what runs over the tailnet too. A host Sotto started that runs the other program offers **Restart on Node** or **Restart on Rust**.
 
 **Done when:** the pull request for #2874 is merged and CI is green.
 
-## Gate 1: every remote command and hello feature, enforced in CI
+## Gate 1: command, hello and storage parity, with rollback safety
 
-Issue: [#2876](https://github.com/millZach/Sotto/issues/2876).
+Issues: [#2876](https://github.com/millZach/Sotto/issues/2876) (commands and hello) and [#2880](https://github.com/millZach/Sotto/issues/2880) (storage and rollback).
 
 - `coordinator.rs::dispatch_command()` handles every `REMOTE_COMMANDS` entry (`src/host/remoteCommands.ts`) and every v1 remote operation, with Node's behaviour. A rough name match on November 24 found 32 of 46 `REMOTE_COMMANDS` entries with no match.
 - The Rust hello lists the same `features` and capabilities as Node's for the same data folder.
+- **Rolling back to Node never loses or quarantines anything.** Every JSON store both hosts write survives Node → Rust → Node: the provider stores, which Gate 0 covers, and also `workspace.json`'s per-thread snapshot, `threads.json`'s bindings, `councils.json`, the plugin stores, `checkpoints.json`, `paired-clients.json` and `phone-access.json`. A record Rust creates passes Node's schema for its store, since today a thread started on Rust lacks `projectId`, `title` and `createdAt` and would make Node refuse the whole file. Node reads each provider store entry by entry, so an unreadable entry costs only itself. Claude's Rust-only `started` no longer turns a Node-created thread into a fresh session.
 
-**Done when:** a CI test fails on any command with no Rust handler, or a handler that is only an `InvalidRequest` stub, and on any hello feature difference. The test shows 0 of each.
+**Done when:** a CI test fails on any command with no Rust handler, or a handler that is only an `InvalidRequest` stub, and on any hello feature difference; the test shows 0 of each. Every shared JSON store has a Node → Rust → Node round-trip test in CI, like `rustHostThreadStoreRollback.test.ts`, and a record Rust creates passes Node's schema.
 
 ## Gate 2: Node's black-box suites pass against Rust
 
