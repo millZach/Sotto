@@ -1252,10 +1252,11 @@ mod tests {
         }
     }
 
-    fn bare_path_options(home: &Path, windows: bool) -> CliLookupOptions {
+    fn bare_path_options(home: &Path, bare_sys_bin: &Path, windows: bool) -> CliLookupOptions {
+        fs::create_dir_all(bare_sys_bin).unwrap();
         let mut env = HashMap::new();
+        env.insert("PATH".into(), bare_sys_bin.to_string_lossy().into_owned());
         if windows {
-            env.insert("PATH".into(), r"C:\Windows\System32".into());
             env.insert("USERPROFILE".into(), home.to_string_lossy().into_owned());
             env.insert(
                 "LOCALAPPDATA".into(),
@@ -1266,7 +1267,6 @@ mod tests {
                 home.join("AppData").join("Roaming").to_string_lossy().into_owned(),
             );
         } else {
-            env.insert("PATH".into(), "/usr/local/bin:/usr/bin:/bin".into());
             env.insert("HOME".into(), home.to_string_lossy().into_owned());
         }
         CliLookupOptions {
@@ -1283,11 +1283,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let home = dir.path().join("home");
         let data = dir.path().join("data");
+        let bare_sys_bin = dir.path().join("sysbin");
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&data).unwrap();
         let windows = cfg!(windows);
         let ext = if windows { ".exe" } else { "" };
-        let opts = bare_path_options(&home, windows);
+        let opts = bare_path_options(&home, &bare_sys_bin, windows);
 
         // Place each provider in a realistic user install location outside bare PATH.
         make_fake_executable(
@@ -1355,11 +1356,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let home = dir.path().join("home");
         let data = dir.path().join("data");
+        let bare_sys_bin = dir.path().join("sysbin");
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&data).unwrap();
         let windows = cfg!(windows);
         let ext = if windows { ".cmd" } else { "" };
-        let opts = bare_path_options(&home, windows);
+        let opts = bare_path_options(&home, &bare_sys_bin, windows);
 
         // Exact forge layout: ~/.local/bin/claude wraps `mise x`, real binary is in mise/installs.
         let wrapper = home.join(".local/bin").join(format!("claude{ext}"));
@@ -1396,10 +1398,11 @@ mod tests {
     fn resolves_gh_in_unpacked_mise_release_folder_and_cargo_and_npm_global() {
         let dir = tempdir().unwrap();
         let home = dir.path().join("home");
+        let bare_sys_bin = dir.path().join("sysbin");
         fs::create_dir_all(&home).unwrap();
         let windows = cfg!(windows);
         let ext = if windows { ".exe" } else { "" };
-        let opts = bare_path_options(&home, windows);
+        let opts = bare_path_options(&home, &bare_sys_bin, windows);
 
         let unpacked_gh = home
             .join(if windows {
@@ -1412,10 +1415,21 @@ mod tests {
         let resolved_gh = resolve_tool_cli("gh", &opts).unwrap();
         assert_eq!(resolved_gh.executable, unpacked_gh);
 
-        let cargo_tool = home.join(".cargo/bin").join(format!("rg{ext}"));
-        make_fake_executable(&cargo_tool, "#!/bin/sh\necho rg\n");
-        let resolved_cargo = resolve_tool_cli("rg", &opts).unwrap();
+        let cargo_tool = home.join(".cargo/bin").join(format!("sotto-cargo-tool{ext}"));
+        make_fake_executable(&cargo_tool, "#!/bin/sh\necho cargo\n");
+        let resolved_cargo = resolve_tool_cli("sotto-cargo-tool", &opts).unwrap();
         assert_eq!(resolved_cargo.executable, cargo_tool);
+
+        let npm_tool = home
+            .join(if windows {
+                "AppData/Roaming/npm"
+            } else {
+                ".npm-global/bin"
+            })
+            .join(format!("sotto-npm-tool{ext}"));
+        make_fake_executable(&npm_tool, "#!/bin/sh\necho npm\n");
+        let resolved_npm = resolve_tool_cli("sotto-npm-tool", &opts).unwrap();
+        assert_eq!(resolved_npm.executable, npm_tool);
     }
 
     #[test]
