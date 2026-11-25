@@ -143,14 +143,15 @@ final class FocusThreadsTests: XCTestCase {
     private func ask(_ kind: String, _ id: String = "r") -> String {
         #"[{"id":"\#(id)","kind":"\#(kind)","text":"\#(kind) from \#(id)","options":[]}]"#
     }
-    func testDelegatedThreadsLeaveTheListAtBothLevels() throws {
+    func testDelegatedThreadsLeaveTheListAtBothLevelsAndRollUpWorking() throws {
         let top = try thread("top")
         let child = try thread("child", #", "delegatedBy":"top", "backgroundWork":[{"type":"subagent"}]"#)
         let grandchild = try thread("grandchild", #", "delegatedBy":"child", "finishedUnread":true"#)
         let computers = [ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, child, grandchild])]
         let rows = FocusThreads(computers)
-        XCTAssertEqual(rows.recent.map(\.id), ["h/top"])
-        XCTAssertTrue(rows.working.isEmpty)
+        XCTAssertTrue(rows.recent.isEmpty)
+        XCTAssertEqual(rows.working.map(\.id), ["h/top"])
+        XCTAssertEqual(rows.workingIn["h/top"]?.id, "h/child")
         XCTAssertTrue(rows.questions.isEmpty)
         // Counts leave hidden threads out: the grandchild's finish is not the Threads tab's to count.
         XCTAssertEqual(rows.unreadFinishedCount, 0)
@@ -159,25 +160,164 @@ final class FocusThreadsTests: XCTestCase {
         XCTAssertEqual(ThreadGroups.delegationTops(ThreadGroups.merged(computers)), ["h/child": "h/top", "h/grandchild": "h/top"])
         XCTAssertEqual(child.delegatedBy, "top")
         XCTAssertNil(top.delegatedBy)
+        // Once every delegated thread is idle, the top returns to Recent.
+        let idleChild = try thread("child", #", "delegatedBy":"top""#)
+        let idle = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, idleChild, grandchild])])
+        XCTAssertEqual(idle.recent.map(\.id), ["h/top"])
+        XCTAssertTrue(idle.working.isEmpty)
+        XCTAssertTrue(idle.workingIn.isEmpty)
     }
-    func testADelegatedThreadWhoseDelegatingThreadIsNotListedKeepsItsRow() throws {
-        let orphan = try thread("orphan", #", "delegatedBy":"gone""#)
-        // The same thread ID on another computer is another thread, so it delegated nothing here.
+    func testADelegatedThreadWhoseDelegatingThreadIsNotListedNeverLeaksUnlessItWaitsOnYou() throws {
+        let orphan = try thread("orphan", #", "delegatedBy":"gone", "finishedUnread":true"#)
+        let workingOrphan = try thread("working-orphan", #", "delegatedBy":"gone""#, status: "running")
+        // The same thread ID on another computer is another thread, so a bare link names nothing here.
         let elsewhere = try thread("top")
         let other = try thread("other", #", "delegatedBy":"top""#)
         let first = try thread("first", #", "delegatedBy":"second""#)
         let second = try thread("second", #", "delegatedBy":"first""#)
-        let rows = FocusThreads([ComputerThreads(hostID: "one", name: "Laptop", status: .online, threads: [elsewhere]),
-                                 ComputerThreads(hostID: "two", name: "Forge", status: .online, threads: [orphan, other, first, second])])
-        XCTAssertEqual(Set(rows.recent.map(\.id)), ["one/top", "two/orphan", "two/other", "two/first", "two/second"])
+        // An owlet lives on the Owlets tab, so its delegated thread has no Threads parent row.
+        let owlet = try thread("owlet", #", "owlet":{"name":"Scout","role":"Watch builds"}"#)
+        let owletChild = try thread("owlet-child", #", "delegatedBy":"owlet""#, status: "running")
+        let rows = FocusThreads([ComputerThreads(hostID: "one", name: "Laptop", status: .online, threads: [elsewhere, owlet, owletChild]),
+                                 ComputerThreads(hostID: "two", name: "Forge", status: .online, threads: [orphan, workingOrphan, other, first, second])])
+        XCTAssertEqual(rows.recent.map(\.id), ["one/top"])
+        XCTAssertTrue(rows.working.isEmpty)
+        XCTAssertTrue(rows.questions.isEmpty)
+        XCTAssertTrue(rows.settled.isEmpty)
+        XCTAssertEqual(rows.unreadFinishedCount, 0)
+        XCTAssertTrue(FocusThreads([ComputerThreads(hostID: "two", name: "Forge", status: .online, threads: [orphan])], query: "orphan").isEmpty)
+        // When a delegated thread whose parent is missing or held back waits on the user, it falls back into Needs you so
+        // its request remains reachable and answerable (ADR-0081).
+        let askingOrphan = try thread("asking-orphan", #", "delegatedBy":"held-back-parent""#, requests: ask("permission", "p"))
+        let fallback = FocusThreads([ComputerThreads(hostID: "two", name: "Forge", status: .online, threads: [orphan, askingOrphan])])
+        XCTAssertEqual(fallback.questions.map(\.id), ["two/asking-orphan"])
+        XCTAssertEqual(fallback.requestCount, 1)
+        XCTAssertEqual(fallback.asking(fallback.questions[0]).id, "two/asking-orphan")
+        XCTAssertTrue(fallback.recent.isEmpty)
+        // An unreachable asking orphan claims no live request and still never leaks into Recent.
+        let offlineFallback = FocusThreads([ComputerThreads(hostID: "two", name: "Forge", status: .unreachable, threads: [orphan, askingOrphan])])
+        XCTAssertTrue(offlineFallback.questions.isEmpty)
+        XCTAssertTrue(offlineFallback.recent.isEmpty)
     }
-    func testAnOpenDelegatedThreadUnderASettledOneKeepsItsRow() throws {
+    func testAnOpenDelegatedThreadUnderASettledOrArchivedParentFoldsUnderIt() throws {
         let top = try thread("top", #", "workspaceSettledAt":"2026-10-21""#)
         let open = try thread("open", #", "delegatedBy":"top""#)
+        let working = try thread("working", #", "delegatedBy":"top""#, status: "running")
         let settled = try thread("settled", #", "delegatedBy":"top", "workspaceSettledAt":"2026-10-21""#)
-        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, open, settled])])
-        XCTAssertEqual(rows.recent.map(\.id), ["h/open"])
-        XCTAssertEqual(rows.settled.map(\.id), ["h/top"])
+        let archived = try thread("archived", #", "archivedAt":"2026-10-21""#)
+        let underArchived = try thread("under-archived", #", "delegatedBy":"archived""#)
+        let rows = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, open, working, settled, archived, underArchived])])
+        XCTAssertTrue(rows.recent.isEmpty)
+        XCTAssertTrue(rows.working.isEmpty, "Settled is quiet: a working delegated thread never moves a settled parent to Working now")
+        XCTAssertEqual(Set(rows.settled.map(\.id)), ["h/top", "h/archived"])
+        // An open delegated thread waiting on the user lifts its settled parent into Needs you.
+        let asking = try thread("asking", #", "delegatedBy":"top""#, requests: ask("question", "q"))
+        let needs = FocusThreads([ComputerThreads(hostID: "h", name: "Laptop", status: .online, threads: [top, asking])])
+        XCTAssertEqual(needs.questions.map(\.id), ["h/top"])
+        XCTAssertEqual(needs.asking(needs.questions[0]).id, "h/asking")
+        XCTAssertTrue(needs.settled.isEmpty)
+        XCTAssertTrue(needs.recent.isEmpty)
+    }
+    func testCrossComputerDelegatedThreadsFoldAndRollUpAcrossHostAndRelayLinks() throws {
+        let laptopID = "5b0445e9-b649-4480-86fb-ce0a61de1c30"
+        let forgeID = "62c79358-687d-4274-a876-1a0d79e1c195"
+        let unpairedID = "99999999-9999-4999-8999-999999999999"
+        let cutover = try thread("C449D630-6C48-4F71-B1ED-FFB6392BB404")
+        let persistentParent = try thread("persistent-parent")
+        let hillclimb = try thread("hillclimb")
+        // Desktop child delegated by a forge parent (`host:<forgeID>:<id>`), with its own local grandchild.
+        let baselines = try thread("baselines", #", "delegatedBy":"host:\#(forgeID):hillclimb""#)
+        let baselinesReview = try thread("baselines-review", #", "delegatedBy":"baselines""#, status: "running")
+        // Forge child delegated by a laptop parent via legacy `relay:<client>:<caller>` and its own forge grandchild.
+        let onForge = try thread("on-forge", #", "delegatedBy":"relay:client-1:C449D630-6C48-4F71-B1ED-FFB6392BB404""#, status: "running")
+        let forgeReview = try thread("forge-review", #", "delegatedBy":"on-forge", "finishedUnread":true"#)
+        // Forge child delegated via PR #2865 persistent `relay:<client>:host:<desktopHostId>:<callerId>`.
+        let persistentChild = try thread("persistent-child", #", "delegatedBy":"relay:old-client:host:\#(laptopID):persistent-parent""#)
+        // Unpaired desktop's thread: never leaks into Recent or Working.
+        let stranger = try thread("stranger", #", "delegatedBy":"relay:other:host:\#(unpairedID):missing""#, status: "running")
+
+        let computers = [
+            ComputerThreads(hostID: laptopID, name: "Laptop", status: .online, threads: [cutover, persistentParent, baselines, baselinesReview]),
+            ComputerThreads(hostID: forgeID, name: "Forge", status: .online, threads: [hillclimb, onForge, forgeReview, persistentChild, stranger]),
+        ]
+        let groups = FocusThreads(computers)
+        XCTAssertTrue(groups.questions.isEmpty)
+        XCTAssertEqual(Set(groups.working.map(\.id)), ["\(laptopID)/\(cutover.id)", "\(forgeID)/hillclimb"])
+        XCTAssertEqual(groups.workingIn["\(laptopID)/\(cutover.id)"]?.id, "\(forgeID)/on-forge")
+        XCTAssertEqual(groups.workingIn["\(forgeID)/hillclimb"]?.id, "\(laptopID)/baselines-review")
+        XCTAssertEqual(groups.recent.map(\.id), ["\(laptopID)/persistent-parent"])
+        XCTAssertEqual(groups.unreadFinishedCount, 0)
+        XCTAssertEqual(groups.rowID(for: ThreadRef(hostID: forgeID, threadID: "forge-review")), "\(laptopID)/\(cutover.id)")
+        XCTAssertEqual(groups.rowID(for: ThreadRef(hostID: forgeID, threadID: "persistent-child")), "\(laptopID)/persistent-parent")
+        XCTAssertEqual(groups.rowID(for: ThreadRef(hostID: laptopID, threadID: "baselines-review")), "\(forgeID)/hillclimb")
+        XCTAssertTrue(FocusThreads(computers, query: "forge-review").isEmpty)
+        XCTAssertTrue(FocusThreads(computers, query: "stranger").isEmpty)
+
+        // When forge is unreachable, its delegated threads still fold and never claim live work on laptop's parent.
+        let forgeOffline = FocusThreads([
+            ComputerThreads(hostID: laptopID, name: "Laptop", status: .online, threads: [cutover]),
+            ComputerThreads(hostID: forgeID, name: "Forge", status: .unreachable, threads: [onForge, forgeReview]),
+        ])
+        XCTAssertTrue(forgeOffline.working.isEmpty)
+        XCTAssertEqual(forgeOffline.recent.map(\.id), ["\(laptopID)/\(cutover.id)"])
+    }
+    func testCrossComputerNeedsYouRollUpAndComputerFilterFallback() throws {
+        let laptopID = "5b0445e9-b649-4480-86fb-ce0a61de1c30"
+        let forgeID = "62c79358-687d-4274-a876-1a0d79e1c195"
+        let parent = try thread("parent")
+        let child = try thread("child", #", "delegatedBy":"relay:client-1:host:\#(laptopID):parent""#, requests: ask("question", "q"))
+        let grandchild = try thread("grandchild", #", "delegatedBy":"child""#, requests: ask("permission", "p"))
+        let computers = [
+            ComputerThreads(hostID: laptopID, name: "Laptop", status: .online, threads: [parent]),
+            ComputerThreads(hostID: forgeID, name: "Forge", status: .online, threads: [child, grandchild]),
+        ]
+        // All computers: laptop parent stands in Needs you for forge's permission ahead of question.
+        let all = FocusThreads(computers)
+        XCTAssertEqual(all.questions.map(\.id), ["\(laptopID)/parent"])
+        XCTAssertEqual(all.asking(all.questions[0]).id, "\(forgeID)/grandchild")
+        XCTAssertEqual(all.requestCount, 1)
+        XCTAssertTrue(all.recent.isEmpty)
+        XCTAssertEqual(all.asked(all.questions[0]), AskedRequest(thread: ThreadRef(hostID: forgeID, threadID: "grandchild"), requestID: "p"))
+
+        // Even if laptop is unreachable, forge's reachable asking child still rolls up onto laptop's row.
+        let laptopOffline = FocusThreads([
+            ComputerThreads(hostID: laptopID, name: "Laptop", status: .unreachable, threads: [parent]),
+            ComputerThreads(hostID: forgeID, name: "Forge", status: .online, threads: [child, grandchild]),
+        ])
+        XCTAssertEqual(laptopOffline.questions.map(\.id), ["\(laptopID)/parent"])
+        XCTAssertEqual(laptopOffline.asking(laptopOffline.questions[0]).id, "\(forgeID)/grandchild")
+
+        // Filtering to laptop keeps parent and still rolls up forge's asking child.
+        let onlyLaptop = FocusThreads(computers, show: .only(laptopID))
+        XCTAssertEqual(onlyLaptop.questions.map(\.id), ["\(laptopID)/parent"])
+        XCTAssertEqual(onlyLaptop.asking(onlyLaptop.questions[0]).id, "\(forgeID)/grandchild")
+
+        // Filtering to forge hides non-asking delegated rows, while keeping asking children reachable in Needs you.
+        let runningChild = try thread("child", #", "delegatedBy":"relay:client-1:host:\#(laptopID):parent""#, status: "running")
+        let onlyForge = FocusThreads([
+            ComputerThreads(hostID: laptopID, name: "Laptop", status: .online, threads: [parent]),
+            ComputerThreads(hostID: forgeID, name: "Forge", status: .online, threads: [runningChild, grandchild]),
+        ], show: .only(forgeID))
+        XCTAssertTrue(onlyForge.recent.isEmpty)
+        XCTAssertTrue(onlyForge.working.isEmpty)
+        XCTAssertEqual(onlyForge.questions.map(\.id), ["\(forgeID)/grandchild"])
+    }
+    func testAmbiguousRelayLinkNeverLeaksUnlessWaitingOnYou() throws {
+        let laptopA = "11111111-1111-4111-8111-111111111111"
+        let laptopB = "22222222-2222-4222-8222-222222222222"
+        let forgeID = "62c79358-687d-4274-a876-1a0d79e1c195"
+        let parentA = try thread("shared")
+        let parentB = try thread("shared")
+        let idle = try thread("ambiguous-idle", #", "delegatedBy":"relay:c:shared""#, status: "running")
+        let asking = try thread("ambiguous-asking", #", "delegatedBy":"relay:c:shared""#, requests: ask("question", "q"))
+        let groups = FocusThreads([
+            ComputerThreads(hostID: laptopA, name: "Laptop A", status: .online, threads: [parentA]),
+            ComputerThreads(hostID: laptopB, name: "Laptop B", status: .online, threads: [parentB]),
+            ComputerThreads(hostID: forgeID, name: "Forge", status: .online, threads: [idle, asking]),
+        ])
+        XCTAssertEqual(Set(groups.recent.map(\.id)), ["\(laptopA)/shared", "\(laptopB)/shared"])
+        XCTAssertTrue(groups.working.isEmpty)
+        XCTAssertEqual(groups.questions.map(\.id), ["\(forgeID)/ambiguous-asking"])
     }
     func testADelegatedThreadWaitingOnYouPutsItsTopInNeedsYou() throws {
         let top = try thread("top", #", "backgroundWork":[{"type":"subagent"}]"#)

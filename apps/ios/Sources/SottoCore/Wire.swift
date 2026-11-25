@@ -299,8 +299,9 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public var watchedByWatcher: Bool? = nil
     /// `default` while the thread keeps the name it opened with, `user` or `generated` once renamed. Older computers may not send it.
     public var titleSource: String? = nil
-    /// The thread on the same computer that delegated to this one, by its Sotto thread ID (ADR-0081). Only a computer
-    /// with delegation on sends it, and never for a delegating thread this iPhone can't read.
+    /// The thread that delegated to this one (ADR-0081): a bare Sotto thread ID on the same computer,
+    /// `host:<hostId>:<id>`, or `relay:<client>:<caller>` (including `relay:<client>:host:<hostId>:<id>`). Only a
+    /// computer with delegation on sends it, and never for a delegating thread this iPhone can't read.
     public var delegatedBy: String? = nil
     /// The thread is an owlet (ADR-0213): its name and role. Only a computer that makes owlets sends it, and only to an
     /// iPhone whose hello accepts `owlets`. Its thread lists on the Owlets tab, never on Threads.

@@ -445,7 +445,7 @@ struct ThreadsView: View, Equatable {
         let workingColumn = VStack(alignment: .leading, spacing: 0) {
             SectionHeading(String(localized: "Working now"), count: working.count, light: .accent)
             VStack(spacing: Space.s3) {
-                ForEach(working) { row in WorkingCard(row: row, quote: groups.quote(row)) }
+                ForEach(working) { row in WorkingCard(row: row, working: groups.workingIn[row.id], quote: groups.quote(row)) }
             }
         }
         // Held sideways, Settled is the Recent card's last row, inside the card, where it stood alone under the card with the
@@ -932,7 +932,7 @@ private struct RequestCard: View {
         if !request.supported {
             reviewOnly(String(localized: "Answer this one in the thread."))
         } else if !model.mayAnswer(asking.ref.hostID) {
-            reviewOnly(DuoWords.cantAnswerHere(computer: row.computer, onDuo: duo != .none))
+            reviewOnly(DuoWords.cantAnswerHere(computer: asking.computer, onDuo: duo != .none))
         } else if isPermission {
             permissionActions(enabled: ready)
         } else if let options = request.oneTapOptions {
@@ -1131,9 +1131,14 @@ private struct WorkingCard: View {
     /// The height of the name's first line, which the light and the time centre on when they stand on its row.
     @ScaledMetric(relativeTo: .body) private var titleLine: CGFloat = TextScale.lead.size * 1.2
     let row: HostedThread
+    /// The delegated thread whose work puts an otherwise idle row in Working now.
+    var working: HostedThread? = nil
     /// What was said in the thread, when Threads' search found it only by that.
     var quote: ThreadWordQuote? = nil
     private var state: ThreadState { ThreadState(row.thread) }
+    private var displayState: ThreadState { state.workInProgress ? state : .working }
+    private var runningSince: String? { row.thread.summary?.runningTurnStartedAt ?? working?.thread.summary?.runningTurnStartedAt }
+    private var startedISO: String? { runningSince ?? row.thread.summary?.lastMessageAt }
     var body: some View {
         Group {
             if model.offersWatch(row) || model.shelfAction(row.ref) != nil {
@@ -1163,17 +1168,17 @@ private struct WorkingCard: View {
                     HStack(alignment: .top, spacing: Space.s2) {
                         Light(tone: .accent, breathing: true).frame(height: titleLine)
                         CardTitle(title: row.thread.title).frame(maxWidth: .infinity, alignment: .leading)
-                        ShortAge(iso: row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
+                        ShortAge(iso: startedISO)
                             .frame(height: titleLine)
                     }
                 } else {
                     HStack(spacing: Space.s2) {
                         Light(tone: .accent, breathing: true)
-                        Text(state.words).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.accentText)
+                        Text(displayState.words).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.accentText)
                         Spacer(minLength: Space.s2)
                         if duo != .none {
-                            ShortAge(iso: row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
-                        } else if let since = Words.date(row.thread.summary?.runningTurnStartedAt) {
+                            ShortAge(iso: startedISO)
+                        } else if let since = Words.date(runningSince) {
                             ElapsedText(since: since).font(.sotto(.caption, .semibold).monospacedDigit()).foregroundStyle(Palette.muted)
                         } else if let ago = Words.ago(row.thread.summary?.lastMessageAt) {
                             Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
@@ -1213,7 +1218,7 @@ private struct WorkingCard: View {
     }
     /// The card as VoiceOver reads it.
     private var spokenLabel: String {
-        let label = SaidQuote.heard("\(row.thread.title), \(state.words), \(place)", quote, provider: Words.provider(row.thread.providerId))
+        let label = SaidQuote.heard("\(row.thread.title), \(displayState.words), \(place)", quote, provider: Words.provider(row.thread.providerId))
         return model.watchedByWatcher(row.ref)
             ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.")
             : label

@@ -969,7 +969,9 @@ struct ThreadListSections: View, Equatable {
             section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
                 rowView(row, .needs, asking: groups.asking(row))
             }
-            section(String(localized: "Working now"), "working", groups.working) { row in rowView(row, .working) }
+            section(String(localized: "Working now"), "working", groups.working) { row in
+                rowView(row, .working, working: groups.workingIn[row.id])
+            }
             section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
                 rowView(row, .recent(unread: groups.isUnreadFinish(row)))
             }
@@ -979,12 +981,12 @@ struct ThreadListSections: View, Equatable {
     }
     /// A Needs you row can stand for a delegated thread that asks (ADR-0081): a press opens the row's thread and then
     /// the one that asks, so its question opens there and Back returns to the thread that delegated it.
-    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, asking: HostedThread? = nil) -> some View {
+    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, asking: HostedThread? = nil, working: HostedThread? = nil) -> some View {
         let isWatched = watch.watched.contains(row.id)
         let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
         // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
         let marked = chosen.map { groups.rowID(for: $0) == row.id } ?? false
-        return ThreadListRow(row: row, kind: kind, asking: delegated, quote: groups.quote(row), watched: isWatched, chosen: marked,
+        return ThreadListRow(row: row, kind: kind, asking: delegated, working: working, quote: groups.quote(row), watched: isWatched, chosen: marked,
                              canWatch: watch.changeable.contains(row.id), shelf: shelfOffers[row.id], identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
                              setWatched: { on in setWatched(row, on) },
@@ -1005,11 +1007,13 @@ struct ThreadListSections: View, Equatable {
             rows.map { row in
                 let thread = row.thread
                 let asking = groups.asking(row)
+                let working = groups.workingIn[row.id]
                 let said = groups.quote(row).map { "\($0.match.role.rawValue)|\($0.match.more)|\($0.query)|\($0.match.quote)" } ?? ""
                 return [section, row.id, thread.title, thread.status, ThreadState(thread).rawValue, "\(thread.requests.count)", said,
                         thread.providerId ?? "", row.project ?? "", row.computer, "\(row.status)",
                         thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "", thread.snoozedUntil ?? "", thread.updatedAt ?? "",
                         asking.id, asking.thread.title, ThreadState(asking.thread).rawValue,
+                        working?.id ?? "", working?.thread.summary?.runningTurnStartedAt ?? "",
                         "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
             }
         }
@@ -1090,6 +1094,8 @@ struct ThreadListRow: View, Equatable {
     let kind: Kind
     /// The delegated thread whose request a Needs you row stands for, when it isn't the row's own.
     var asking: HostedThread? = nil
+    /// The delegated thread whose work puts an otherwise idle row in Working now.
+    var working: HostedThread? = nil
     /// What was said in the thread, when Threads' search found it only by that: a quote of it under the name.
     var quote: ThreadWordQuote? = nil
     let watched: Bool
@@ -1106,10 +1112,12 @@ struct ThreadListRow: View, Equatable {
     /// What the row draws: the thread's title, state, place and times, its section, light and chip, and a quote of what was
     /// said in it.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
-        lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.quote == rhs.quote && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
+        lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.working?.id == rhs.working?.id
+            && lhs.quote == rhs.quote && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
             && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier
             && lhs.words(duo: false) == rhs.words(duo: false) && lhs.words(duo: true) == rhs.words(duo: true) && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
+            && lhs.working?.thread.summary?.runningTurnStartedAt == rhs.working?.thread.summary?.runningTurnStartedAt
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
     }
     private var state: ThreadState { ThreadState(row.thread) }
@@ -1165,7 +1173,7 @@ struct ThreadListRow: View, Equatable {
         let spoken: String
         switch kind {
         case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in words(duo: false) } ?? place)"
-        case .working: spoken = "\(row.thread.title), \(state.words), \(place)"
+        case .working: spoken = "\(row.thread.title), \((state.workInProgress ? state : .working).words), \(place)"
         case .snoozed: spoken = "\(row.thread.title), \(wakeTime ?? ""), \(place)"
         case .recent(let unread):
             if unread {
@@ -1216,8 +1224,8 @@ struct ThreadListRow: View, Equatable {
         // A thread waiting on the user gives the time it last changed, when it asked, as its Needs you card does; one at
         // work gives how long its turn has run. A waiting row once said "22m" beside its card's "3m" (the Duo design
         // climb's round 6). On the Duo alone.
-        let started = kind == .needs && duo != .none ? row.thread.summary?.lastMessageAt
-            : row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
+        let started = kind == .needs && duo != .none ? (asking ?? row).thread.summary?.lastMessageAt
+            : row.thread.summary?.runningTurnStartedAt ?? working?.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
         // On the Duo every row gives one short time, "2m", as the sidebar and the overview's cards do (round 4's pick B).
         let ago = wakeTime ?? (side || duo != .none ? Words.agoShort(started) : Words.ago(started))
         return Button(action: open) {

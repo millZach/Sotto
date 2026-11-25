@@ -421,11 +421,14 @@ public enum AgentsRoster {
     }
     /// The thread a `delegatedBy` link names, by the computer that holds it; `holders` lists each thread ID's computers.
     static func delegatingRef(_ link: String, on hostID: String, holders: [String: [String]]) -> ThreadRef? {
+        let link = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !link.isEmpty else { return nil }
         if let keyed = hostKeyed(link) { return keyed }
         guard link.hasPrefix("relay:") else { return ThreadRef(hostID: hostID, threadID: link) }
         let rest = link.dropFirst("relay:".count)
         guard let colon = rest.firstIndex(of: ":") else { return nil }
         let caller = String(rest[rest.index(after: colon)...])
+        guard !caller.isEmpty else { return nil }
         if let keyed = hostKeyed(caller) { return keyed }
         // A thread is its computer and its ID: held by two other computers, the ID alone does not say which, so it names no one.
         let others = (holders[caller] ?? []).filter { $0 != hostID }

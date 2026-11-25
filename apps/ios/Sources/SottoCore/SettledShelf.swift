@@ -61,8 +61,8 @@ public extension ThreadGroups {
             guard let threads = read[computer.hostID], !threads.isEmpty else { return [] }
             let listed = Set(computer.threads.map(\.id))
             let projects = Dictionary(computer.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            // An owlet lists on the Owlets tab, never on Threads' shelf (ADR-0213).
-            return threads.filter { !listed.contains($0.id) && $0.owlet == nil }.map { thread in
+            // An owlet lists on the Owlets tab, and a delegated thread lives under its delegating thread (ADR-0081, ADR-0213).
+            return threads.filter { !listed.contains($0.id) && $0.owlet == nil && !isDelegated($0) }.map { thread in
                 HostedThread(ref: ThreadRef(hostID: computer.hostID, threadID: thread.id), computer: computer.name, status: computer.status,
                              project: projects[thread.projectId]?.title, thread: thread, settled: true)
             }

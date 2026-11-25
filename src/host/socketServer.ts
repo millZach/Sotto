@@ -917,13 +917,17 @@ export async function startSocketServer(options: SocketServerOptions) {
    * own sets about each thread rather than copying them, since what it has listed only grows while it stays connected.
    */
   const heldBack = (peer: Peer, state: AgentState): Set<string> => heldBackSettled(state.host.threads, state.host.projects,
-    id => peer.observed.has(id) || id === peer.selectedThreadId || (peer.listed?.has(id) ?? false))
+    id => peer.observed.has(id) || id === peer.selectedThreadId || (peer.listed?.has(id) ?? false), hostId)
   /** `state` with its settled threads left out of its list, and how many were left out. What it lists stays listed. */
   const withoutHeldBack = <State extends AgentState>(peer: Peer, state: State): State & { settledHeldBack: number } => {
     const held = heldBack(peer, state), listed = peer.listed ??= new Set()
     const threads = held.size ? state.host.threads.filter(thread => !held.has(thread.id)) : state.host.threads
     for (const thread of threads) listed.add(thread.id)
-    return { ...state, host: { ...state.host, threads }, settledHeldBack: held.size }
+    // Delegated threads live under their delegating thread, not on the Settled shelf (ADR-0081), so the shelf's
+    // count and pages leave them out while the live list still holds them back.
+    let settledHeldBack = 0
+    if (held.size) for (const thread of state.host.threads) if (held.has(thread.id) && !thread.delegatedBy) settledHeldBack++
+    return { ...state, host: { ...state.host, threads }, settledHeldBack }
   }
   /**
    * The catalog revisions this listener names to peers that accept `model-catalog-revision`. A peer that does not know a
@@ -2138,7 +2142,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         // A search also finds the settled threads whose words hold it, for a phone that accepted thread-words and can quote them.
         const said = request.query?.trim() && peer.threadWords ? await threadWordsFor(request.query) : null
         const found = said ? new Set(said.found.map(match => match.threadId)) : undefined
-        return settledPage(whole.host.threads.filter(thread => held.has(thread.id)), whole.host.projects, { ...request, found }) satisfies HostSettledThreadsPage
+        return settledPage(whole.host.threads.filter(thread => held.has(thread.id) && !thread.delegatedBy), whole.host.projects, { ...request, found }) satisfies HostSettledThreadsPage
       }
       case 'detail': return windowedFor(peer, request.threadId, service.threadDetail(request.threadId))
       // Another `STEP_WINDOW_STEPS` steps above this client's window (ADR-0194). The thread's own window is widened first when
