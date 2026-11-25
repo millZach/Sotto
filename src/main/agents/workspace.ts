@@ -366,6 +366,8 @@ const workspaceSchema = z.object({
   }).strict()).max(10_000).optional(),
 })
 type Workspace = z.infer<typeof workspaceSchema>
+/** Reads `workspace.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseWorkspaceFile = workspaceSchema.parse
 
 /** Construction policies, read once; omitted choices keep the existing workspace defaults. */
 export interface WorkspaceOptions {

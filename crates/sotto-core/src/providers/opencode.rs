@@ -68,6 +68,17 @@ impl OpenCodeAdapterConfig {
     }
 }
 
+/// What Node's `opencode-threads.json` requires of a record beyond the thread's own facts (ADR-0214): a `createToken`,
+/// which Node uses only to find a session whose creation answer was lost, and the thread's permission mode where Node
+/// allows it.
+fn opencode_node_record_defaults(runtime_mode: Option<&str>) -> Vec<(&'static str, Value)> {
+    let mut defaults = vec![("createToken", Value::String(Uuid::new_v4().to_string()))];
+    if let Some(mode) = runtime_mode.filter(|mode| ["approval-required", "auto-accept-edits", "full-access"].contains(mode)) {
+        defaults.push(("runtimeMode", Value::String(mode.to_string())));
+    }
+    defaults
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OpenCodeThreadRecord {
@@ -851,18 +862,26 @@ impl ProviderAdapter for OpenCodeAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| "OpenCode session.create returned no id.".to_string())?
                         .to_string();
-                    // A record this thread already had keeps the fields it carries for Node.
-                    let kept = self.shared.records.lock().unwrap().get(&req.thread_id).map(|r| r.extra.clone()).unwrap_or_default();
-                    self.shared.records.lock().unwrap().insert(
-                        req.thread_id.clone(),
+                    // The record carries what Node's schema requires, so Node reads it after a rollback (ADR-0214).
+                    // OpenCode chose this session's ID itself, so Node finds it confirmed and never looks for it by token.
+                    let fields = crate::providers::node_record_fields(
+                        &self.shared.data_directory.join(OPENCODE_THREADS_FILE),
+                        &req.thread_id,
+                        &req.record_seed,
+                        &opencode_node_record_defaults(req.runtime_mode.as_deref()),
+                    );
+                    let mut record = crate::providers::with_node_fields(
                         OpenCodeThreadRecord {
                             session_id: sid.clone(),
                             cwd: req.cwd.clone(),
                             model_id: Some(raw_model.clone()),
                             reasoning_effort: req.reasoning_effort.clone(),
-                            extra: kept,
+                            extra: Map::new(),
                         },
+                        fields,
                     );
+                    record.extra.insert("sessionConfirmed".into(), Value::Bool(true));
+                    self.shared.records.lock().unwrap().insert(req.thread_id.clone(), record);
                     self.shared
                         .native_to_sotto
                         .lock()

@@ -24,10 +24,60 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
-/// Reads a provider's `*-threads.json` the way Node's `AtomicJsonStore` writes it (ADR-0214): one record per Sotto
-/// thread ID, which the Node host and this one share over the same data folder. Each entry is read on its own, so one
-/// this build cannot read costs only that entry, and `save_thread_records` writes it back untouched. A file that is not
-/// a JSON object is moved aside as `<name>.corrupt-<millis>`, as Node does, rather than overwritten by the next save.
+/// Node's key for each thread in one provider's store, where it is not the thread's Sotto ID (ADR-0002, ADR-0214).
+/// Node's `ThreadRegistry` binds each Sotto thread to the provider adapter's own ID for it, and the adapter keys its
+/// `<provider>-threads.json` by that ID; `threads.json` beside the store holds the bindings. This host keys its records
+/// by the Sotto thread ID, so a thread Node made is read and written under Node's key. A thread this host made is bound
+/// to its own ID and needs nothing.
+#[derive(Default)]
+pub(crate) struct StoreKeys {
+    to_disk: std::collections::HashMap<String, String>,
+    to_sotto: std::collections::HashMap<String, String>,
+}
+
+impl StoreKeys {
+    pub(crate) fn of(path: &std::path::Path) -> Self {
+        use serde_json::Value;
+        let mut keys = Self::default();
+        let Some(provider) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix("-threads.json")) else {
+            return keys;
+        };
+        let Some(registry) = std::fs::read_to_string(path.with_file_name("threads.json"))
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        else {
+            return keys;
+        };
+        for binding in registry.get("bindings").and_then(Value::as_array).into_iter().flatten() {
+            let text = |key: &str| binding.get(key).and_then(Value::as_str);
+            let (Some(thread_id), Some(session_id)) = (text("threadId"), text("sessionId")) else { continue };
+            // Node keeps the first of two rows for one thread or one session, and so does this host.
+            if text("provider") != Some(provider) || thread_id == session_id
+                || keys.to_disk.contains_key(thread_id) || keys.to_sotto.contains_key(session_id) {
+                continue;
+            }
+            keys.to_disk.insert(thread_id.to_string(), session_id.to_string());
+            keys.to_sotto.insert(session_id.to_string(), thread_id.to_string());
+        }
+        keys
+    }
+
+    /// The key a thread's record has on disk.
+    pub(crate) fn disk<'a>(&'a self, sotto_id: &'a str) -> &'a str {
+        self.to_disk.get(sotto_id).map_or(sotto_id, String::as_str)
+    }
+
+    /// The Sotto thread a key on disk is the record of.
+    pub(crate) fn sotto<'a>(&'a self, disk_key: &'a str) -> &'a str {
+        self.to_sotto.get(disk_key).map_or(disk_key, String::as_str)
+    }
+}
+
+/// Reads a provider's `*-threads.json` the way Node's `AtomicJsonStore` writes it (ADR-0214): one record per provider
+/// thread, which the Node host and this one share over the same data folder, returned by Sotto thread ID (`StoreKeys`).
+/// Each entry is read on its own, so one this build cannot read costs only that entry, and `save_thread_records` writes
+/// it back untouched. A file that is not a JSON object is moved aside as `<name>.corrupt-<millis>`, as Node does, rather
+/// than overwritten by the next save.
 pub(crate) fn load_thread_records<T>(path: &std::path::Path, parse: impl Fn(&serde_json::Value) -> Option<T>) -> std::collections::HashMap<String, T> {
     let mut out = std::collections::HashMap::new();
     let Ok(raw) = std::fs::read_to_string(path) else {
@@ -35,9 +85,14 @@ pub(crate) fn load_thread_records<T>(path: &std::path::Path, parse: impl Fn(&ser
     };
     match serde_json::from_str::<serde_json::Value>(&raw) {
         Ok(serde_json::Value::Object(map)) => {
-            for (sotto_id, value) in &map {
-                if let Some(record) = parse(value) {
-                    out.insert(sotto_id.clone(), record);
+            let keys = StoreKeys::of(path);
+            for (disk_key, value) in &map {
+                let Some(record) = parse(value) else { continue };
+                let sotto_id = keys.sotto(disk_key);
+                // A record under the thread's own ID beside the one under Node's key for it is a stray an earlier build
+                // made; the thread is the one Node bound.
+                if keys.disk(sotto_id) == disk_key || !out.contains_key(sotto_id) {
+                    out.insert(sotto_id.to_string(), record);
                 }
             }
         }
@@ -53,29 +108,75 @@ pub(crate) fn load_thread_records<T>(path: &std::path::Path, parse: impl Fn(&ser
     out
 }
 
-/// Writes a provider's `*-threads.json` whole: every record this host holds, encoded with every field it read, and every
-/// entry on disk it could not read and does not hold, as it was, so a Node record this build does not understand
-/// survives a Rust host and a rollback to Node (ADR-0214).
+/// Writes a provider's `*-threads.json` whole: every record this host holds, under its key on disk (`StoreKeys`) and
+/// encoded with every field it read, and every entry on disk it could not read or does not write, as it was, so a Node
+/// record this build does not understand survives a Rust host and a rollback to Node (ADR-0214). A record it can read
+/// and no longer holds is one it removed, and is not written.
 pub(crate) fn save_thread_records<T>(
     path: &std::path::Path,
     records: &std::collections::HashMap<String, T>,
     parse: impl Fn(&serde_json::Value) -> Option<T>,
     encode: impl Fn(&T) -> serde_json::Value,
 ) {
+    let keys = StoreKeys::of(path);
     let mut out = serde_json::Map::new();
     if let Ok(raw) = std::fs::read_to_string(path) {
         if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&raw) {
-            for (sotto_id, value) in map {
-                if !records.contains_key(&sotto_id) && parse(&value).is_none() {
-                    out.insert(sotto_id, value);
+            for (disk_key, value) in map {
+                let sotto_id = keys.sotto(&disk_key);
+                let stray = records.contains_key(sotto_id) && keys.disk(sotto_id) != disk_key;
+                if stray || (!records.contains_key(sotto_id) && parse(&value).is_none()) {
+                    out.insert(disk_key, value);
                 }
             }
         }
     }
     for (sotto_id, record) in records {
-        out.insert(sotto_id.clone(), encode(record));
+        out.insert(keys.disk(sotto_id).to_string(), encode(record));
     }
     let _ = crate::workspace::write_atomic_json(path, &serde_json::Value::Object(out));
+}
+
+/// The fields a record this host creates for `thread_id` starts from, so Node reads it after a rollback (ADR-0214). An
+/// entry already on disk for the thread is kept whole: a Node record with no session yet, which this host cannot read.
+/// What Node's schema requires and the entry lacks comes from the thread (`projectId`, `title`, `createdAt`, no
+/// `origins`) and then from `defaults`, the provider's own fields with the value Node gives a session this host made.
+pub(crate) fn node_record_fields(
+    path: &std::path::Path,
+    thread_id: &str,
+    seed: &crate::provider::ThreadRecordSeed,
+    defaults: &[(&str, serde_json::Value)],
+) -> serde_json::Map<String, serde_json::Value> {
+    use serde_json::Value;
+    let keys = StoreKeys::of(path);
+    let mut fields = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|store| store.get(keys.disk(thread_id)).and_then(Value::as_object).cloned())
+        .unwrap_or_default();
+    if fields.get("kind").and_then(Value::as_str) != Some("personal") && !seed.project_id.is_empty() {
+        fields.entry("projectId").or_insert_with(|| Value::String(seed.project_id.clone()));
+    }
+    fields.entry("title").or_insert_with(|| Value::String(seed.title.clone()));
+    let created_at = if seed.created_at.is_empty() { crate::workspace::now_iso() } else { seed.created_at.clone() };
+    fields.entry("createdAt").or_insert(Value::String(created_at));
+    fields.entry("origins").or_insert_with(|| Value::Array(Vec::new()));
+    for (key, value) in defaults {
+        fields.entry(key.to_string()).or_insert_with(|| value.clone());
+    }
+    fields
+}
+
+/// `record` with Node's `fields` under it: what `record` sets wins, and the rest land in its flattened `extra`, so
+/// nothing it models is written twice.
+pub(crate) fn with_node_fields<T: serde::Serialize + serde::de::DeserializeOwned>(
+    record: T,
+    mut fields: serde_json::Map<String, serde_json::Value>,
+) -> T {
+    if let Ok(serde_json::Value::Object(own)) = serde_json::to_value(&record) {
+        fields.extend(own);
+    }
+    parse_serde_record(&serde_json::Value::Object(fields)).unwrap_or(record)
 }
 
 /// The serde form of `load_thread_records` and `save_thread_records`' record functions, for a record that derives serde.
@@ -173,6 +274,118 @@ mod tests {
             let after: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             assert!(holds(&after, &before), "{file} lost a field Node wrote:\nbefore {before}\nafter {after}");
         }
+    }
+
+    fn seed() -> crate::provider::ThreadRecordSeed {
+        crate::provider::ThreadRecordSeed {
+            project_id: "project-1".into(),
+            title: "Fix the build".into(),
+            created_at: "2026-11-20T10:00:00.000Z".into(),
+        }
+    }
+
+    /// A send that makes a thread's session, as the coordinator asks for it.
+    fn send(thread_id: &str) -> crate::provider::SendMessageRequest {
+        crate::provider::SendMessageRequest {
+            thread_id: thread_id.into(),
+            record_seed: seed(),
+            message_id: "m-1".into(),
+            cwd: "/home/zach/work".into(),
+            model_id: Some("model-1".into()),
+            reasoning_effort: None,
+            runtime_mode: Some("approval-required".into()),
+            text: "Hello".into(),
+            command_id: "c-1".into(),
+            draft_id: "d-1".into(),
+            attachments: Vec::new(),
+        }
+    }
+
+    /// A thread Node made and never sent to has a record with no session, which this host cannot read. The record this
+    /// host makes when it starts the session keeps that one whole and adds only what it lacks.
+    #[test]
+    fn a_node_record_with_no_session_yet_is_kept_whole_when_this_host_starts_its_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("opencode-threads.json");
+        let waiting = json!({ "projectId": "project-node", "cwd": "/w", "title": "Named in Node", "modelId": "model-1",
+            "createdAt": "2026-11-19T10:00:00.000Z", "createToken": "token-node", "origins": [{ "messageId": "m-0" }] });
+        std::fs::write(&path, json!({ "t-1": waiting }).to_string()).unwrap();
+
+        let fields = node_record_fields(&path, "t-1", &seed(), &[("createToken", json!("token-rust")), ("sessionConfirmed", json!(false))]);
+        assert!(crate::store_trip::holds(&Value::Object(fields.clone()), &waiting), "lost what Node wrote: {fields:?}");
+        assert_eq!(fields["sessionConfirmed"], false);
+
+        let fresh = node_record_fields(&path, "t-2", &seed(), &[]);
+        assert_eq!(Value::Object(fresh), json!({ "projectId": "project-1", "title": "Fix the build", "createdAt": "2026-11-20T10:00:00.000Z", "origins": [] }));
+    }
+
+    #[test]
+    fn a_record_with_node_fields_writes_each_field_once_with_its_own_value() {
+        let record: codex::CodexThreadRecord = parse_serde_record(&json!({ "codexThreadId": "t", "cwd": "/w", "modelId": "new" })).unwrap();
+        let mut fields = serde_json::Map::new();
+        fields.insert("modelId".into(), json!("old"));
+        fields.insert("projectId".into(), json!("project-1"));
+        let merged = with_node_fields(record, fields);
+        let encoded = encode_serde_record(&merged);
+        assert_eq!(encoded["modelId"], "new");
+        assert_eq!(encoded["projectId"], "project-1");
+        assert_eq!(serde_json::to_string(&merged).unwrap().matches("modelId").count(), 1);
+    }
+
+    /// The record this host makes for each ACP provider carries what Node's schema requires. With
+    /// `SOTTO_SHARED_STORES_DIR` set, the stores are written there for `rustHostThreadStoreRollback.test.ts` to read
+    /// with Node's own parsers; Hermes has no fake to drive, so this is where its record is checked.
+    #[test]
+    fn rust_created_acp_records_carry_what_node_requires() {
+        let own = tempfile::tempdir().unwrap();
+        let dir = crate::store_trip::shared_dir().unwrap_or_else(|| own.path().to_path_buf());
+        for flavor in [AcpFlavor::Grok, AcpFlavor::Devin, AcpFlavor::Cursor, AcpFlavor::Antigravity, AcpFlavor::Hermes] {
+            let thread = "6f1c2d3e-4b5a-4c6d-8e7f-001122334455";
+            let record = acp::AcpThreadRecord::created(flavor, &dir, &send(thread), "1b4e28ba-2fa1-41d2-883f-0016d3cca427".into());
+            let path = dir.join(flavor.threads_file());
+            let parse = |value: &Value| acp::AcpThreadRecord::parse(flavor, value);
+            save_thread_records(&path, &std::collections::HashMap::from([(thread.to_string(), record)]), parse, |r| r.encode(flavor));
+            let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let entry = &saved[thread];
+            for key in ["projectId", "title", "createdAt", "origins", "modelId", "cwd", flavor.session_id_field()] {
+                assert!(entry.get(key).is_some(), "{} record has no {key}: {entry}", flavor.threads_file());
+            }
+        }
+    }
+
+    /// Node keys a provider store by the adapter's own ID for each thread, which `threads.json` binds to the Sotto thread.
+    /// On forge none of Node's threads matched a Rust lookup by Sotto ID, so every send there began a fresh session.
+    #[test]
+    fn a_thread_node_made_is_read_and_written_under_nodes_key_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (thread, node_key, rust_thread) = ("sotto-thread-1", "adapter-key-1", "sotto-thread-2");
+        std::fs::write(dir.path().join("threads.json"), json!({ "bindings": [
+            { "threadId": thread, "provider": "codex", "sessionId": node_key, "projectId": "p", "createdAt": "2026-11-20T10:00:00.000Z" },
+            { "threadId": "sotto-thread-3", "provider": "claude", "sessionId": "claude-key", "projectId": "p", "createdAt": "2026-11-20T10:00:00.000Z" },
+            { "threadId": rust_thread, "provider": "codex", "sessionId": rust_thread, "projectId": "p", "createdAt": "2026-11-20T10:00:00.000Z" },
+        ] }).to_string()).unwrap();
+        let path = dir.path().join("codex-threads.json");
+        let node = json!({ "codexThreadId": "native-1", "cwd": "/w", "modelId": "m", "projectId": "p", "title": "Node's", "createdAt": "2026-11-20T10:00:00.000Z" });
+        let rust = json!({ "codexThreadId": "native-2", "cwd": "/w", "modelId": "m", "projectId": "p", "title": "Rust's", "createdAt": "2026-11-21T10:00:00.000Z" });
+        // A record an earlier build made under the Sotto ID of a thread Node had bound to another key.
+        let stray = json!({ "codexThreadId": "native-stray", "cwd": "/w", "modelId": "m" });
+        std::fs::write(&path, json!({ node_key: node, rust_thread: rust, thread: stray }).to_string()).unwrap();
+
+        let records = load_thread_records(&path, parse_serde_record::<codex::CodexThreadRecord>);
+        assert_eq!(encode_serde_record(&records[thread])["codexThreadId"], "native-1");
+        assert_eq!(encode_serde_record(&records[rust_thread])["codexThreadId"], "native-2");
+        assert_eq!(records.len(), 2);
+
+        save_thread_records(&path, &records, parse_serde_record::<codex::CodexThreadRecord>, encode_serde_record);
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved, json!({ node_key: node, rust_thread: rust, thread: stray }));
+
+        let waiting = dir.path().join("devin-threads.json");
+        std::fs::write(dir.path().join("threads.json"), json!({ "bindings": [
+            { "threadId": thread, "provider": "devin", "sessionId": node_key, "projectId": "p", "createdAt": "2026-11-20T10:00:00.000Z" },
+        ] }).to_string()).unwrap();
+        std::fs::write(&waiting, json!({ node_key: { "projectId": "p", "title": "Named in Node", "settingsConfirmed": false } }).to_string()).unwrap();
+        assert_eq!(node_record_fields(&waiting, thread, &seed(), &[])["title"], "Named in Node");
     }
 
     #[test]

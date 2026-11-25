@@ -11,6 +11,7 @@ import { publicProviderEntityId } from '../../src/shared/agents'
 import { ClientFold, FOLDED_PUSHES } from '../referee/fold'
 import { drive, nativeSession, type RefereeProvider } from '../referee/providers'
 import { CLIENTS, PROFILES, THREAD, type ClientName } from '../referee/scenario'
+import { expectNodeReadsRustRecord } from './rustHostNodeStores'
 import { openSocket, pairClient, startHost, type Socket } from '../referee/wire'
 
 const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
@@ -265,6 +266,9 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host Phase 3.4a all remaining provid
           command: { type: 'interrupt', threadId: THREAD },
         })).ok).toBe(true)
         await waitFor(clients, () => clients.every(c => threadOf(c)?.status === 'idle'), 'turn four interrupted')
+
+        // The record this host made for the thread reads in Node after a rollback (ADR-0214).
+        await expectNodeReadsRustRecord(dataDir, provider, THREAD, { projectId, title: `Rust ${provider} thread` })
 
         for (const c of clients) {
           expect(c.fold.problems, `${c.name} ClientFold problems on ${provider}`).toEqual([])

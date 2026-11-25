@@ -13,7 +13,7 @@ use crate::ops::ThreadWorkspace;
 use crate::protocol::HostErrorCode;
 use crate::provider::{
     AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageAck,
-    SendMessageRequest,
+    SendMessageRequest, ThreadRecordSeed,
 };
 use crate::remote_commands::validate_remote_command;
 use crate::stores::{
@@ -2001,6 +2001,11 @@ impl CoordinatorActor {
             let result = adapter
                 .send_message(SendMessageRequest {
                     thread_id: tid.clone(),
+                    record_seed: ThreadRecordSeed {
+                        project_id: thread.project_id.clone(),
+                        title: thread.title.clone(),
+                        created_at: thread.created_at.clone(),
+                    },
                     message_id,
                     cwd,
                     model_id: model_opt,
@@ -2355,6 +2360,7 @@ impl CoordinatorActor {
                         if let Some(done_status) = turn_already_completed {
                             if t.last_turn.is_none() {
                                 t.last_turn = Some(AgentTurnRecord {
+                                    extra: Map::new(),
                                     id: ack.turn_id.clone(),
                                     status: done_status,
                                     message_id: Some(message_id.clone()),
@@ -2363,6 +2369,7 @@ impl CoordinatorActor {
                         } else {
                             t.status = "running".into();
                             t.last_turn = Some(AgentTurnRecord {
+                                extra: Map::new(),
                                 id: ack.turn_id.clone(),
                                 status: "running".into(),
                                 message_id: Some(message_id.clone()),
@@ -2748,6 +2755,7 @@ impl CoordinatorActor {
                 }
                 (
                     AgentThreadWorktree {
+                        extra: Map::new(),
                         mode: "independent".into(),
                         status: "ready".into(),
                         path: Some(existing.clone()),
@@ -2768,6 +2776,7 @@ impl CoordinatorActor {
                 // never silently reusing the shared checkout.
                 (
                     AgentThreadWorktree {
+                        extra: Map::new(),
                         mode: "independent".into(),
                         status: "pending".into(),
                         path: None,
@@ -2787,6 +2796,7 @@ impl CoordinatorActor {
         } else {
             (
                 AgentThreadWorktree {
+                    extra: Map::new(),
                     mode: "shared".into(),
                     status: "ready".into(),
                     path: Some(project.path.clone()),
@@ -2924,6 +2934,7 @@ impl CoordinatorActor {
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                     thread.status = "running".into();
                     thread.last_turn = Some(AgentTurnRecord {
+                        extra: Map::new(),
                         id: turn_id,
                         status: "running".into(),
                         message_id: after_message_id.or(flushed_id),
@@ -3376,6 +3387,14 @@ impl CoordinatorActor {
                 if let Some(obj) = val.as_object_mut() {
                     obj.insert("messages".into(), Value::Array(Vec::new()));
                     obj.remove("summary");
+                    // A default this host fills in on reading is not written, so a thread Node wrote without the
+                    // field reads in Node after a rollback as it did before (ADR-0214).
+                    for key in ["activities", "createdAt", "updatedAt"] {
+                        let empty = obj.get(key).is_some_and(|v| v.as_array().is_some_and(Vec::is_empty) || v.as_str() == Some(""));
+                        if empty {
+                            obj.remove(key);
+                        }
+                    }
                 }
                 val
             })
@@ -3649,6 +3668,7 @@ fn allocate_independent_worktree(
         .map_err(|e| format!("Could not create separate Git worktree: {e}"))?;
 
     Ok(AgentThreadWorktree {
+        extra: Map::new(),
         mode: "independent".into(),
         status: "ready".into(),
         path: Some(wt_str),
@@ -3868,6 +3888,74 @@ mod tests {
         .unwrap();
         assert_eq!(tb_raw["bindings"][0]["provider"], "codex");
         assert!(tb_raw["bindings"][0]["createdAt"].is_string());
+    }
+
+    /// The coordinator's stores as Node writes them, which `tests/integration/rustHostWorkspaceStoreRollback.test.ts`
+    /// reads with Node's own parsers before and after this host's load and save (ADR-0214).
+    const NODE_HOST_STORES: [(&str, &str); 3] = [
+        ("workspace.json", include_str!("../../../tests/fixtures/nodeHostStores/workspace.json")),
+        ("threads.json", include_str!("../../../tests/fixtures/nodeHostStores/threads.json")),
+        ("agents.json", include_str!("../../../tests/fixtures/nodeHostStores/agents.json")),
+    ];
+
+    fn mock_providers() -> BTreeMap<String, Arc<dyn ProviderAdapter>> {
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        for id in ["codex", "claude"] {
+            providers.insert(id.into(), Arc::new(MockProviderAdapter::new(id)));
+        }
+        providers
+    }
+
+    /// Node -> Rust -> Node for `workspace.json`, `threads.json` and `agents.json`: a Rust host's start and stop keeps
+    /// every field of every record Node wrote, so a rollback to Node finds them whole. With `SOTTO_SHARED_STORES_DIR`
+    /// set, the stores in that folder are the ones Node wrote.
+    #[tokio::test]
+    async fn node_host_stores_survive_a_rust_load_and_save() {
+        let own = tempdir().unwrap();
+        let shared = crate::store_trip::shared_dir();
+        let dir = shared.clone().unwrap_or_else(|| own.path().to_path_buf());
+        let mut before = Vec::new();
+        for (file, node) in NODE_HOST_STORES {
+            if shared.is_none() {
+                std::fs::write(dir.join(file), node).unwrap();
+            }
+            let mut node: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(file)).unwrap()).unwrap();
+            // What the running host is, which each host program writes afresh at every save, Node as much as this one.
+            if let Some(snapshot) = node.get_mut("snapshot").and_then(Value::as_object_mut) {
+                for live in ["connected", "name", "version", "capabilities", "models"] {
+                    snapshot.remove(live);
+                }
+            }
+            before.push((file, node));
+        }
+        let coord = CoordinatorHandle::spawn(dir.clone(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        coord.shutdown().await;
+        for (file, before) in before {
+            let after: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(file)).unwrap()).unwrap();
+            let lost = crate::store_trip::missing(&after, &before, "");
+            assert!(lost.is_empty(), "{file} lost something Node wrote:\n{}", lost.join("\n"));
+        }
+    }
+
+    /// A project, a thread and a send made on a Rust host, written where `rustHostWorkspaceStoreRollback.test.ts` reads
+    /// them with Node's parsers: a thread Rust made must read in Node after a rollback (ADR-0214).
+    #[tokio::test]
+    async fn a_thread_made_here_is_written_the_way_node_reads_it() {
+        let own = tempdir().unwrap();
+        let dir = crate::store_trip::shared_dir().unwrap_or_else(|| own.path().to_path_buf());
+        let project_dir = dir.join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let coord = CoordinatorHandle::spawn(dir.clone(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "Made on Rust", "path": project_dir.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        run(json!({ "type": "create-thread", "threadId": "00000000-0000-4000-8000-00000000000a", "projectId": project_id, "title": "Made on Rust",
+            "titleSource": "user", "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await.unwrap();
+        run(json!({ "type": "manual-send", "threadId": "00000000-0000-4000-8000-00000000000a", "text": "Hello" })).await.unwrap();
+        coord.shutdown().await;
+        let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("workspace.json")).unwrap()).unwrap();
+        assert_eq!(workspace["snapshot"]["threads"][0]["title"], "Made on Rust");
     }
 
     #[test]

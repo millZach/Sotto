@@ -229,6 +229,8 @@ const savedSchema = z.object({
   })),
 })
 type Saved = z.infer<typeof savedSchema>
+/** Reads `agents.json`. Exported for the cross-engine rollback test, which proves a Rust host's save of it reads here (ADR-0214). */
+export const parseSavedAgents = (input: unknown): Saved => savedSchema.parse(withoutLegacyManagement(input))
 /** What `agents.json` holds: the saved state but Watcher's record, which has a file of its own (`WATCHER_RECORD_FILE`). */
 type SavedRest = Omit<Saved, 'watcher'>
 /** Watcher's own file, `{ "watcher": record }`, its record checked once by `migrateWatcherRecord`. */

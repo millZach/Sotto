@@ -1080,19 +1080,25 @@ impl ProviderAdapter for CodexAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| "Codex thread/start returned no thread ID.".to_string())?
                         .to_string();
-                    // A record this thread already had keeps the fields it carries for Node.
-                    let kept = self.shared.records.lock().unwrap().get(&req.thread_id).map(|r| r.extra.clone()).unwrap_or_default();
-                    self.shared.records.lock().unwrap().insert(
-                        req.thread_id.clone(),
+                    // The record carries what Node's schema requires, so Node reads it after a rollback (ADR-0214).
+                    let fields = crate::providers::node_record_fields(
+                        &self.shared.data_directory.join(CODEX_THREADS_FILE),
+                        &req.thread_id,
+                        &req.record_seed,
+                        &[],
+                    );
+                    let record = crate::providers::with_node_fields(
                         CodexThreadRecord {
                             codex_thread_id: native_id.clone(),
                             cwd: req.cwd.clone(),
                             model_id: Some(raw_model),
                             reasoning_effort: Some(effort),
                             runtime_mode: req.runtime_mode.clone(),
-                            extra: kept,
+                            extra: Map::new(),
                         },
+                        fields,
                     );
+                    self.shared.records.lock().unwrap().insert(req.thread_id.clone(), record);
                     self.shared
                         .native_to_sotto
                         .lock()

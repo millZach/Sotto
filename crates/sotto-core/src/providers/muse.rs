@@ -894,18 +894,29 @@ impl ProviderAdapter for MuseAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| "Muse session/start returned no sessionId.".to_string())?
                         .to_string();
-                    // A record this thread already had keeps the fields it carries for Node.
-                    let kept = self.shared.records.lock().unwrap().get(&req.thread_id).map(|r| r.extra.clone()).unwrap_or_default();
-                    self.shared.records.lock().unwrap().insert(
-                        req.thread_id.clone(),
+                    // The record carries what Node's schema requires, so Node reads it after a rollback (ADR-0214).
+                    // Node confirms the settings again when it next loads the session.
+                    let fields = crate::providers::node_record_fields(
+                        &self.shared.data_directory.join(MUSE_THREADS_FILE),
+                        &req.thread_id,
+                        &req.record_seed,
+                        &[("settingsConfirmed", Value::Bool(false))],
+                    );
+                    let record = crate::providers::with_node_fields(
                         MuseThreadRecord {
                             muse_session_id: sid.clone(),
                             cwd: req.cwd.clone(),
                             model_id: Some(raw_model.clone()),
-                            runtime_mode: req.runtime_mode.clone(),
-                            extra: kept,
+                            // Node's store has no other mode, so another is left to Node's default.
+                            runtime_mode: req
+                                .runtime_mode
+                                .clone()
+                                .filter(|mode| ["approval-required", "auto", "full-access"].contains(&mode.as_str())),
+                            extra: Map::new(),
                         },
+                        fields,
                     );
+                    self.shared.records.lock().unwrap().insert(req.thread_id.clone(), record);
                     self.shared
                         .native_to_sotto
                         .lock()

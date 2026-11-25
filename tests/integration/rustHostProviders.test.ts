@@ -21,6 +21,7 @@ import { ClientFold, FOLDED_PUSHES } from '../referee/fold'
 import { drive, nativeSession, prepareFake, type RefereeProvider } from '../referee/providers'
 import { CLIENTS, PROFILES, THREAD, type ClientName } from '../referee/scenario'
 import { openSocket, pairClient, startHost, type Socket } from '../referee/wire'
+import { expectNodeReadsRustRecord } from './rustHostNodeStores'
 
 const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
 const PIXEL_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
@@ -316,6 +317,9 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host native Codex and Claude Code ad
 
         const violations = await readFile(join(dataDir, 'violations.jsonl'), 'utf8').catch(() => '')
         expect(violations, `${provider} fake reported schema/protocol violations`).toBe('')
+
+        // The record this host made for the thread reads in Node after a rollback (ADR-0214).
+        await expectNodeReadsRustRecord(dataDir, provider, THREAD, { projectId, title: 'Rust Test Thread' })
       } finally {
         for (const c of clients) c.socket.close()
         await host.stop()

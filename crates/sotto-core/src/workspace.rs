@@ -222,6 +222,10 @@ pub struct AgentTurnRecord {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_id: Option<String>,
+    /// Every field Node's record has that this one does not model, kept as it was so a rollback to Node finds the
+    /// record whole (ADR-0214).
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -250,6 +254,10 @@ pub struct AgentThreadWorktree {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git: Option<Value>,
+    /// Every field Node's record has that this one does not model, kept as it was so a rollback to Node finds the
+    /// record whole (ADR-0214).
+    #[serde(default, flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 fn default_worktree_status() -> String {

@@ -59,6 +59,25 @@ impl AcpFlavor {
         }
     }
 
+    /// What Node's schema for this provider's store requires of a record beyond the thread's own facts, with the value
+    /// Node gives a session this host made (ADR-0214). Node confirms the model and settings again when it next loads the
+    /// session. The thread's permission mode is kept where Node's store allows it; elsewhere Node's default applies.
+    pub(crate) fn node_record_defaults(self, model_id: String, runtime_mode: Option<&str>) -> Vec<(&'static str, Value)> {
+        let mut defaults = vec![("modelId", Value::String(model_id))];
+        let modes: &[&str] = match self {
+            Self::Grok | Self::Cursor => &["approval-required", "auto", "full-access"],
+            Self::Antigravity => &["approval-required", "auto-accept-edits", "auto", "full-access"],
+            Self::Devin | Self::Hermes => &[],
+        };
+        if let Some(mode) = runtime_mode.filter(|mode| modes.contains(mode)) {
+            defaults.push(("runtimeMode", Value::String(mode.to_string())));
+        }
+        if matches!(self, Self::Grok | Self::Devin) {
+            defaults.push(("settingsConfirmed", Value::Bool(false)));
+        }
+        defaults
+    }
+
     pub fn session_id_field(self) -> &'static str {
         match self {
             Self::Grok => "grokSessionId",
@@ -473,6 +492,28 @@ impl AcpThreadRecord {
             reasoning_effort: text("reasoningEffort"),
             extra: obj.clone(),
         })
+    }
+
+    /// The record for a session this host just made for `req`'s thread. It carries what Node's schema for the store
+    /// requires, so Node reads it after a rollback (ADR-0214); the model is the one the thread asked for, which Node
+    /// confirms again when it next loads the session.
+    pub(crate) fn created(flavor: AcpFlavor, data_directory: &std::path::Path, req: &SendMessageRequest, session_id: String) -> Self {
+        let requested_model = req
+            .model_id
+            .as_deref()
+            .map(|m| {
+                crate::workspace::parse_public_provider_entity_id(m)
+                    .map(|(_, _, raw)| raw.to_string())
+                    .unwrap_or_else(|| m.to_string())
+            })
+            .unwrap_or_default();
+        let extra = crate::providers::node_record_fields(
+            &data_directory.join(flavor.threads_file()),
+            &req.thread_id,
+            &req.record_seed,
+            &flavor.node_record_defaults(requested_model, req.runtime_mode.as_deref()),
+        );
+        Self { session_id, cwd: req.cwd.clone(), model_id: None, reasoning_effort: None, extra }
     }
 
     pub(crate) fn encode(&self, flavor: AcpFlavor) -> Value {
@@ -1115,18 +1156,10 @@ impl ProviderAdapter for AcpAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| format!("{} session/new returned no sessionId.", flavor.name()))?
                         .to_string();
-                    // A record this thread already had keeps the fields it carries for Node.
-                    let kept = self.shared.records.lock().unwrap().get(&req.thread_id).map(|r| r.extra.clone()).unwrap_or_default();
-                    self.shared.records.lock().unwrap().insert(
-                        req.thread_id.clone(),
-                        AcpThreadRecord {
-                            session_id: sid.clone(),
-                            cwd: req.cwd.clone(),
-                            model_id: None,
-                            reasoning_effort: None,
-                            extra: kept,
-                        },
-                    );
+                    // The record carries what Node's schema requires, so Node reads it after a rollback (ADR-0214).
+                    // The model is the one the thread asked for; Node confirms it again when it next loads the session.
+                    let record = AcpThreadRecord::created(flavor, &self.shared.data_directory, &req, sid.clone());
+                    self.shared.records.lock().unwrap().insert(req.thread_id.clone(), record);
                     self.shared
                         .native_to_sotto
                         .lock()

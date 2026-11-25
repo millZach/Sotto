@@ -1,0 +1,24 @@
+{
+  "watcher": { "version": 1, "current": null, "creation": null, "history": [], "requests": [], "operations": [], "reservations": [], "reads": [] },
+  "providerUpgrade": null,
+  "configuration": {
+    "provider": "codex",
+    "enabledProviders": ["codex", "claude"],
+    "disconnectedProviders": ["grok"],
+    "enabled": true,
+    "projectsDirectory": "/home/zach/work",
+    "defaultModelId": "native:codex:model:gpt-5",
+    "reasoningEffort": "high",
+    "newThreadModelId": "native:claude:model:opus",
+    "newThreadReasoningEffort": "high",
+    "newThreadRuntimeMode": "approval-required"
+  },
+  "activeThreadId": "6f1c2d3e-4b5a-4c6d-8e7f-001122334455",
+  "activeProjectId": "project-1",
+  "draft": "Half a thought",
+  "draftThreadId": "6f1c2d3e-4b5a-4c6d-8e7f-001122334455",
+  "finishedUnread": ["7a2b3c4d-5e6f-4a7b-9c8d-112233445566"],
+  "threadSnoozes": { "7a2b3c4d-5e6f-4a7b-9c8d-112233445566": "2026-11-26T09:00:00.000Z" },
+  "composing": false,
+  "outbox": []
+}

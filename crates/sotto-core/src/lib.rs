@@ -20,6 +20,8 @@ pub mod provider;
 pub mod providers;
 pub mod remote_commands;
 pub mod stores;
+#[cfg(test)]
+pub(crate) mod store_trip;
 pub mod watcher;
 pub mod watcher_host;
 pub mod workspace;
@@ -116,7 +118,7 @@ pub use protocol::{
 };
 pub use provider::{
     AnswerRequestInput, BoxFuture, HeldProviderAdapter, MockProviderAdapter, ProviderAdapter,
-    ProviderEvent, SendMessageAck, SendMessageRequest,
+    ProviderEvent, SendMessageAck, SendMessageRequest, ThreadRecordSeed,
 };
 pub use providers::{
     claude_project_dir, fork_claude_session, read_claude_session_transcript, AcpAdapter,

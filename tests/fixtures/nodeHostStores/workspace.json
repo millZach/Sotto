@@ -1,0 +1,82 @@
+{
+  "snapshot": {
+    "hostId": "00000000-0000-4000-8000-000000000001",
+    "connected": false,
+    "name": "Codex",
+    "version": "1.0.0",
+    "capabilities": { "interrupt": true, "messageOrigin": true, "observe": true, "permissions": true, "projects": true, "questions": true, "reconcile": true, "submit": true, "threads": true },
+    "providers": [],
+    "models": [],
+    "projects": [
+      { "id": "project-1", "title": "Sotto", "path": "/home/zach/work", "providerId": "codex", "hostId": "00000000-0000-4000-8000-000000000001", "workspaceSettledAt": "2026-11-20T10:00:00.000Z" }
+    ],
+    "threads": [
+      {
+        "id": "6f1c2d3e-4b5a-4c6d-8e7f-001122334455",
+        "projectId": "project-1",
+        "providerId": "codex",
+        "hostId": "00000000-0000-4000-8000-000000000001",
+        "kind": "project",
+        "title": "Fix the build",
+        "titleSource": "user",
+        "titledFromFirstMessage": true,
+        "workingDirectory": "/home/zach/work/.worktrees/fix",
+        "modelId": "native:codex:model:gpt-5",
+        "runtimeMode": "approval-required",
+        "reasoningEffort": "high",
+        "speed": "fast",
+        "status": "idle",
+        "messages": [],
+        "requests": [],
+        "nativeSessionStarted": true,
+        "workspaceSettledAt": "2026-11-20T10:00:00.000Z",
+        "manualCompactionSupported": true,
+        "resumeCompactionDismissed": true,
+        "delegatedBy": "7a2b3c4d-5e6f-4a7b-9c8d-112233445566",
+        "lastTurn": { "id": "turn-1", "status": "completed", "messageId": "m-1" },
+        "worktree": {
+          "mode": "independent",
+          "status": "ready",
+          "path": "/home/zach/work/.worktrees/fix",
+          "repositoryRoot": "/home/zach/work",
+          "branch": "fix/build",
+          "baseBranch": "main",
+          "baseCommit": "0123456789abcdef0123456789abcdef01234567",
+          "temporaryBranch": false,
+          "projectRelativePath": "",
+          "sentBranch": "fix/build",
+          "dirty": false,
+          "reclaimedAt": "2026-11-21T10:00:00.000Z",
+          "detachedCommit": "89abcdef0123456789abcdef0123456789abcdef"
+        },
+        "usage": {
+          "partial": false,
+          "rateVersions": [],
+          "updatedAt": "2026-11-20T10:00:00.000Z"
+        },
+        "continuedFrom": { "threadId": "2c5f39cb-3a52-42e3-994e-1127e4ddb538", "provider": "claude", "at": "2026-11-19T10:00:00.000Z", "handover": "summary" },
+        "wakeUpMessageIds": ["m-2"],
+        "pullRequests": []
+      },
+      {
+        "id": "7a2b3c4d-5e6f-4a7b-9c8d-112233445566",
+        "projectId": "project-1",
+        "providerId": "claude",
+        "hostId": "00000000-0000-4000-8000-000000000001",
+        "kind": "project",
+        "title": "Plan the release",
+        "modelId": "native:claude:model:opus",
+        "runtimeMode": "full-access",
+        "status": "idle",
+        "messages": [],
+        "requests": [],
+        "nativeSessionStarted": true,
+        "workspaceSettledAt": "2026-11-20T10:00:00.000Z",
+        "worktree": { "mode": "shared", "status": "ready", "path": "/home/zach/work" }
+      }
+    ]
+  },
+  "projectAliases": [{ "providerProjectId": "codex-project-1", "projectId": "project-1" }],
+  "creations": [{ "threadId": "6f1c2d3e-4b5a-4c6d-8e7f-001122334455", "projectId": "project-1", "commandId": "c-1", "phase": "started" }],
+  "clearedThreadIds": ["9c4d5e6f-7a8b-4c9d-8e0f-334455667788"]
+}
