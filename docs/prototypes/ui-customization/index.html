@@ -1,0 +1,487 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Question: how does a Sotto user change anything in the window, the way T3 Code's custom CSS and
+     Claude Code's mods allow? Three variants on one page, ?variant=A|B|C, switched from the bar at the bottom.
+     Nothing is saved, and no thread really runs: "asking a thread" picks one of a few canned mods. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: make Sotto yours</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url('figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; src: url('spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* Sotto's own palette, both halves (src/shared/themes/palettes.ts). */
+:root, [data-half='dark'] {
+  --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265);
+  --overlay: oklch(0.215 0.008 265); --text: oklch(0.985 0.005 280); --muted: oklch(0.72 0.014 265);
+  --accent: oklch(0.714 0.104 183); --accent-fg: oklch(0.16 0.012 190); --accent-surface: oklch(0.32 0.05 185);
+  --sunken: oklch(0.13 0.008 265); --card: oklch(0.16 0.008 265); --inset: oklch(0.19 0.008 265); --hairline: oklch(0.26 0.012 265);
+  --warn: oklch(0.8 0.13 75); color-scheme: dark;
+}
+[data-half='light'] {
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.955 0.006 85);
+  --overlay: oklch(0.945 0.007 85); --text: oklch(0.235 0.014 75); --muted: oklch(0.5 0.014 75);
+  --accent: oklch(0.53 0.095 186); --accent-fg: oklch(0.99 0.003 85); --accent-surface: oklch(0.92 0.03 186);
+  --sunken: oklch(0.95 0.006 85); --card: oklch(0.995 0.002 85); --inset: oklch(0.96 0.005 85); --hairline: oklch(0.9 0.008 80);
+  --warn: oklch(0.5 0.12 60); color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--canvas); color: var(--text); font-family: 'Figtree', system-ui, sans-serif; font-size: 14px; }
+body { padding: 16px 16px 110px; }
+button, input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: 'Spline Sans Mono', monospace; font-size: 12px; }
+
+.page { max-width: 1320px; margin: 0 auto; }
+.page > header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+.page > header p { margin: 0 0 14px; color: var(--muted); line-height: 1.5; max-width: 80ch; }
+.variant-head { margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; background: var(--accent-surface); line-height: 1.5; }
+.variant-head b { display: block; font-size: 15px; margin-bottom: 2px; }
+.layout { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr); gap: 18px; align-items: start; }
+.layout__preview { position: sticky; top: 12px; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .layout__preview { position: sticky; top: 0; z-index: 3; order: -1; margin: 0 -16px; padding: 0 16px 8px; background: var(--canvas); } .layout__preview .room { height: 300px; } .layout__preview .state { display: none; } }
+
+.card { background: var(--card); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+.card > h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.card > .lead { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.card--ghost { opacity: 0.5; padding: 12px 18px; }
+.card--ghost h3 { font-size: 13px; color: var(--muted); }
+.btn { min-height: 34px; padding: 6px 14px; border: 0; border-radius: 6px; background: var(--inset); cursor: pointer; }
+.btn--accent { background: var(--accent); color: var(--accent-fg); }
+.btn--quiet { background: none; color: var(--muted); }
+.btn--quiet:hover { color: var(--text); background: var(--inset); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.chips button { border: 0; border-radius: 4px; padding: 4px 9px; background: var(--inset); color: var(--muted); cursor: pointer; font-size: 12.5px; }
+.chips button:hover { color: var(--text); }
+.ask { display: grid; gap: 8px; }
+.ask textarea { width: 100%; min-height: 64px; resize: vertical; padding: 10px 12px; border-radius: 10px; border: 0; background: var(--inset); line-height: 1.45; }
+.ask__row { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.ask__where { color: var(--muted); font-size: 12.5px; }
+.working { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--inset); color: var(--muted); font-size: 13px; margin-top: 8px; }
+.working[hidden] { display: none; }
+.working .spin { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: pulse 0.9s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 0.3; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .working .spin { animation: none; } }
+.status { min-height: 1.4em; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.status--warn { color: var(--warn); }
+.limits { margin: 0; padding: 0 0 0 18px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+
+/* A: theme editor with a Custom CSS tab */
+.themes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.theme { padding: 8px 12px; border-radius: 8px; background: var(--inset); border: 0; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+.theme[aria-pressed='true'] { box-shadow: inset 0 0 0 2px var(--accent); }
+.theme i { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+.tabs { display: inline-flex; padding: 3px; gap: 2px; border-radius: 6px; background: var(--sunken); margin-bottom: 10px; }
+.tabs button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
+.tabs button[aria-selected='true'] { background: var(--overlay); color: var(--text); }
+.css-editor { width: 100%; min-height: 190px; padding: 10px 12px; border-radius: 10px; border: 0; background: var(--sunken); font-family: 'Spline Sans Mono', monospace; font-size: 12px; line-height: 1.55; resize: vertical; white-space: pre; }
+.parts-list { columns: 2; margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.parts-list code { color: var(--text); }
+
+/* B: Mods page inside Settings */
+.settings { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; }
+@media (max-width: 560px) { .settings { grid-template-columns: 1fr; } .subnav { display: flex; overflow-x: auto; } }
+.subnav { display: grid; align-content: start; gap: 2px; }
+.subnav span { padding: 8px 10px; border-radius: 8px; color: var(--muted); font-size: 13.5px; white-space: nowrap; }
+.subnav span[aria-current] { background: var(--raised); color: var(--text); }
+.mods { display: grid; gap: 0; }
+.mod { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 0; border-top: 1px solid var(--hairline); align-items: center; }
+.mod:first-child { border-top: 0; }
+.mod__name { font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tag { font-size: 11.5px; padding: 1px 7px; border-radius: 4px; background: var(--inset); color: var(--muted); }
+.tag--part { background: var(--accent-surface); color: var(--text); }
+.mod__desc { grid-column: 1; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.mod__controls { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 4px; align-items: center; }
+.switch { width: 38px; height: 22px; border-radius: 11px; border: 0; background: var(--hairline); position: relative; cursor: pointer; padding: 0; }
+.switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--text); transition: transform 120ms ease; }
+.switch[aria-checked='true'] { background: var(--accent); }
+.switch[aria-checked='true']::after { transform: translateX(16px); background: var(--accent-fg); }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+.menu { position: relative; }
+.menu__list { position: absolute; right: 0; top: 34px; z-index: 5; min-width: 200px; padding: 4px; border-radius: 10px; background: var(--overlay); box-shadow: 0 10px 30px oklch(0 0 0 / 0.35); display: grid; }
+.menu__list[hidden] { display: none; }
+.menu__list button { text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.menu__list button:hover { background: var(--inset); }
+.source { margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--sunken); font-family: 'Spline Sans Mono', monospace; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; grid-column: 1 / -1; }
+.source[hidden] { display: none; }
+.footer-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--hairline); margin-top: 6px; }
+
+/* C: customize in place */
+.pick-panel h4 { margin: 0 0 2px; font-size: 15px; }
+.pick-panel .lead { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+.pick-row { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 0; font-size: 13.5px; }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.swatches button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.swatches button[aria-pressed='true'] { border-color: var(--text); }
+.changes { margin: 0; padding: 0; list-style: none; }
+.changes li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--hairline); font-size: 13px; }
+.changes li:first-child { border-top: 0; }
+.empty { color: var(--muted); font-size: 13px; margin: 0; }
+
+/* The preview: a mock of Sotto's window. Every part carries data-part, the name a mod targets. */
+.preview { background: var(--card); border-radius: 14px; padding: 12px; }
+.preview__bar { display: flex; justify-content: space-between; align-items: center; margin: 0 2px 10px; gap: 8px; flex-wrap: wrap; }
+.preview__bar h3 { margin: 0; font-size: 14px; color: var(--muted); font-weight: 600; }
+.room { position: relative; height: 540px; overflow: hidden; border-radius: 10px; background: var(--canvas); display: grid; grid-template-rows: 30px minmax(0, 1fr); font-family: 'Figtree', system-ui, sans-serif; }
+[data-part='strip'] { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 12px; color: var(--muted); }
+[data-part='strip'] .dots { display: flex; gap: 6px; }
+[data-part='strip'] .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--hairline); }
+.room__body { display: grid; grid-template-columns: minmax(118px, 0.32fr) minmax(0, 1fr) auto; min-height: 0; }
+[data-part='sidebar'] { background: var(--surface); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.brand { font-size: 17px; font-weight: 600; padding: 2px 8px 10px; display: flex; gap: 8px; align-items: center; }
+.brand::before { content: ''; width: 15px; height: 15px; border-radius: 4px; background: var(--accent); }
+.group { font-size: 12px; color: var(--muted); padding: 8px 8px 4px; }
+[data-part='sidebar-row'] { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 8px; font-size: 13.5px; white-space: nowrap; overflow: hidden; }
+[data-part='sidebar-row'][aria-current] { background: var(--raised); }
+[data-part='sidebar-row'] .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--hairline); flex: none; }
+[data-part='sidebar-row'] .dot--on { background: var(--accent); }
+[data-part='row-time'] { margin-left: auto; color: var(--muted); font-size: 12px; }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.room__body { overflow: hidden; }
+.head { padding: 10px 16px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.head b { font-weight: 600; }
+.head .tag { background: var(--accent-surface); color: var(--text); }
+[data-part='thread'] { flex: 1; overflow: hidden; padding: 0 16px; display: flex; flex-direction: column; gap: 12px; }
+[data-part='message'] { font-size: 15.5px; line-height: 1.55; max-width: 62ch; margin: 0; }
+[data-part='message'].you { align-self: flex-end; background: var(--raised); padding: 8px 12px; border-radius: 14px; max-width: 80%; }
+[data-part='message'] code { background: var(--inset); padding: 1px 5px; border-radius: 4px; }
+.step { font-size: 13px; color: var(--muted); }
+.step::before { content: '✓ '; color: var(--accent); }
+[data-part='band'] { margin: 10px 16px 0; padding: 8px 12px; border-radius: 10px; background: var(--inset); font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+[data-part='band'] .ok { color: var(--accent); }
+/* The composer: no border or outline (Zach's rule), only its fill. */
+[data-part='composer'] { margin: 10px 16px 16px; background: var(--surface); border-radius: 14px; padding: 10px 12px; display: grid; gap: 8px; }
+.composer__text { font-size: 15px; color: var(--muted); min-height: 1.5em; }
+.composer__chips { display: flex; gap: 6px; align-items: center; }
+.chip { font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--inset); color: var(--muted); }
+[data-part='send'] { margin-left: auto; width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: 13px; }
+[data-part='pane'] { width: 168px; background: var(--surface); padding: 12px; font-size: 13px; overflow: hidden; }
+[data-part='pane'] h5 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+[data-part='pane'] .big { font-size: 24px; font-weight: 600; margin: 0 0 8px; }
+[data-part='pane'] .line { display: flex; justify-content: space-between; padding: 4px 0; color: var(--muted); font-size: 12.5px; }
+@media (max-width: 560px) { .room__body { grid-template-columns: 92px minmax(0, 1fr) auto; } .brand { font-size: 14px; } .group { display: none; } [data-part='sidebar-row'] { font-size: 12px; min-height: 28px; text-overflow: ellipsis; } [data-part='row-time'] { display: none; } [data-part='pane'] { width: 112px; padding: 8px; } [data-part='message'] { font-size: 13.5px; } .head { font-size: 13px; padding: 8px 12px; } [data-part='thread'] { padding: 0 12px; } [data-part='composer'] { margin: 8px 12px 10px; } [data-part='band'] { margin: 8px 12px 0; font-size: 12px; } }
+
+/* Pick mode (variant C): parts light up under the pointer and say their name. */
+.room[data-picking] [data-part]:not([data-part='row-time']) { cursor: crosshair; }
+.room[data-picking] [data-part]:hover:not(:has([data-part]:hover)), .room [data-part][data-picked] { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The composer never takes a ring (no composer border or outline): picked, it only lightens. */
+.room[data-picking] [data-part='composer']:hover:not(:has([data-part]:hover)), .room [data-part='composer'][data-picked] { outline: 0; filter: brightness(1.25); }
+.part-label { position: absolute; z-index: 4; pointer-events: none; padding: 2px 7px; border-radius: 4px; background: var(--accent); color: var(--accent-fg); font-size: 11.5px; }
+.part-label[hidden] { display: none; }
+
+.state { margin-top: 10px; font-family: 'Spline Sans Mono', monospace; font-size: 11px; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+.switcher { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9; display: flex; gap: 4px; align-items: center; padding: 6px; border-radius: 14px; background: var(--overlay); box-shadow: 0 10px 30px oklch(0 0 0 / 0.35); max-width: calc(100vw - 20px); }
+.switcher button { border: 0; background: none; cursor: pointer; padding: 8px 12px; border-radius: 9px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.switcher button[aria-pressed='true'] { background: var(--accent); color: var(--accent-fg); }
+.switcher .sep { width: 1px; height: 22px; background: var(--hairline); margin: 0 4px; }
+@media (max-width: 560px) { .switcher button span { display: none; } }
+</style>
+<style id="mod-css"></style>
+</head>
+<body data-half="dark">
+<div class="page">
+  <header>
+    <h1>Make Sotto yours: change anything in the window</h1>
+    <p>T3 Code lets you write CSS for any part of its window, and lets an agent do it for you. Claude Code goes further with mods: code
+    that restyles it and adds parts of its own (a pane, a band above the prompt, a status line, a menu row). These three
+    variants show how Sotto could do the same. The window on the right is a mock. Every change paints it live, and nothing is saved.
+    “Ask a thread” is simulated: it knows <i>oak sidebar</i>, <i>roomy composer</i>, <i>no times</i>, <i>checks above the composer</i>,
+    <i>today’s spend</i> and <i>clock in the strip</i>.</p>
+  </header>
+  <div id="variant-head"></div>
+  <div class="layout">
+    <div id="controls"></div>
+    <div class="layout__preview">
+      <div class="preview">
+        <div class="preview__bar"><h3>Sotto’s window</h3><span id="preview-tools"></span></div>
+        <div class="room" id="room">
+          <div data-part="strip"><span class="dots"><i></i><i></i><i></i></span><span data-slot="status"></span></div>
+          <div class="room__body">
+            <aside data-part="sidebar">
+              <div class="brand">Sotto</div>
+              <div class="group">Needs you</div>
+              <div data-part="sidebar-row"><span class="dot dot--on"></span>Fix the release check<span data-part="row-time">2m</span></div>
+              <div class="group">Recent</div>
+              <div data-part="sidebar-row" aria-current="true"><span class="dot dot--on"></span>Let users restyle Sotto<span data-part="row-time">now</span></div>
+              <div data-part="sidebar-row"><span class="dot"></span>iPhone history paging<span data-part="row-time">1h</span></div>
+              <div data-part="sidebar-row"><span class="dot"></span>Merge train receipt<span data-part="row-time">3h</span></div>
+              <div data-part="sidebar-row"><span class="dot"></span>Council over MCP<span data-part="row-time">1d</span></div>
+            </aside>
+            <section class="main">
+              <div class="head"><b>Let users restyle Sotto</b><span class="tag">Claude</span></div>
+              <div data-part="thread">
+                <p data-part="message" class="you">Give the sidebar an oak look.</p>
+                <div class="step">Wrote <code>oak-sidebar.css</code></div>
+                <p data-part="message">Done. It targets <code>[data-part="sidebar"]</code>, so it survives Sotto’s updates. Turn it off in Settings › Mods.</p>
+              </div>
+              <div data-slot="band"></div>
+              <div data-part="composer">
+                <div class="composer__text">Ask Claude to change something…</div>
+                <div class="composer__chips"><span class="chip">Opus 5.5</span><span class="chip">High</span><span data-part="send">↑</span></div>
+              </div>
+            </section>
+            <div data-slot="pane"></div>
+          </div>
+          <span class="part-label" id="part-label" hidden></span>
+        </div>
+        <div class="state" id="state"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="switcher" aria-label="Prototype variants">
+  <button data-variant="A"><b>A</b><span> · CSS in the theme</span></button>
+  <button data-variant="B"><b>B</b><span> · Mods page</span></button>
+  <button data-variant="C"><b>C</b><span> · Customize in place</span></button>
+  <span class="sep"></span>
+  <button id="half" aria-label="Show the light half">Light</button>
+</nav>
+
+<script>
+/* ---------- The canned mods a simulated thread can make ---------- */
+const CATALOG = {
+  oak: { name: 'Oak sidebar', kind: 'look', where: 'Sidebar', words: /oak|wood/i,
+    css: `[data-part="sidebar"] {\n  background: linear-gradient(180deg, oklch(0.34 0.05 60), oklch(0.25 0.04 48));\n  color: oklch(0.94 0.03 80);\n}\n[data-part="sidebar-row"][aria-current] { background: oklch(0.42 0.06 60); }\n[data-part="row-time"] { color: oklch(0.8 0.04 70); }` },
+  roomy: { name: 'Roomy composer', kind: 'look', where: 'Composer', words: /roomy|roomier|big(ger)? composer/i,
+    css: `[data-part="composer"] { padding: 16px 18px; border-radius: 20px; }\n[data-part="composer"] .composer__text { font-size: 18px; min-height: 3em; }` },
+  times: { name: 'No times in the sidebar', kind: 'look', where: 'Sidebar rows', words: /time/i,
+    css: `[data-part="row-time"] { display: none; }` },
+  checks: { name: 'Checks above the composer', kind: 'part', where: 'Above the composer', words: /check|ci\b|gates/i,
+    slot: 'band', html: `<div data-part="band"><b>main</b><span class="ok">● Gates passed</span><span>◐ Package running</span><span>○ Desktop queued</span></div>`,
+    code: `export const register = on => {\n  on('ui.render', { part: 'above-composer' }, ($, e) =>\n    <Band>{$.git.checks(e.thread).map(c => <Check {...c} />)}</Band>)\n}` },
+  spend: { name: 'Today’s spend', kind: 'part', where: 'A pane beside the thread', words: /spend|cost|money/i,
+    slot: 'pane', html: `<aside data-part="pane"><h5>Today</h5><p class="big">$4.12</p><div class="line"><span>Restyle Sotto</span><span>$1.80</span></div><div class="line"><span>Release check</span><span>$1.31</span></div><div class="line"><span>4 others</span><span>$1.01</span></div></aside>`,
+    code: `export const register = on => {\n  on('ui.render', { part: 'pane', id: 'spend' }, ($) =>\n    <Pane title="Today">{$.usage.today().map(row => <Line {...row} />)}</Pane>)\n}` },
+  clock: { name: 'Clock in the strip', kind: 'part', where: 'The strip', words: /clock|status|strip/i,
+    slot: 'status', html: `<span>18:42 · 3 threads working</span>`,
+    code: `export const register = on => {\n  on('clock.minute', $ => $.ui.status(\`\${$.clock.time()} · \${$.threads.working().length} threads working\`))\n}` },
+}
+const room = document.getElementById('room')
+const modCss = document.getElementById('mod-css')
+let variant = new URLSearchParams(location.search).get('variant') || 'B'
+if (!['A', 'B', 'C'].includes(variant)) variant = 'B'
+
+/* Installed mods (B), the theme's CSS (A), and the in-place changes (C). */
+let mods = [{ id: 'oak', on: true }, { id: 'checks', on: true }]
+let themeCss = ''
+let picks = [] // { part, prop, label, css }
+let picked = null
+
+function scoped(css) { return css.trim() ? `.room {\n${css}\n}` : '' }
+
+function paint() {
+  let css = '', slots = { band: '', pane: '', status: '' }
+  if (variant === 'A') css = themeCss
+  if (variant === 'B') for (const m of mods.filter(m => m.on)) { const d = CATALOG[m.id]; if (d.css) css += d.css + '\n'; if (d.slot) slots[d.slot] += d.html }
+  if (variant === 'C') { css = picks.map(p => p.css).join('\n'); for (const p of picks.filter(p => p.slot)) slots[p.slot] += p.html }
+  modCss.textContent = scoped(css)
+  for (const [slot, html] of Object.entries(slots)) room.querySelector(`[data-slot="${slot}"]`).innerHTML = html
+  const shown = variant === 'A' ? { theme: 'Sotto (mine)', customCss: themeCss ? `${themeCss.split('\n').length} lines` : 'none' }
+    : variant === 'B' ? { mods: mods.map(m => `${CATALOG[m.id].name}: ${m.on ? 'on' : 'off'}`) }
+    : { myChanges: picks.map(p => p.label) }
+  document.getElementById('state').textContent = 'What would be saved: ' + JSON.stringify(shown)
+}
+
+function say(text, warn = false) { const s = document.getElementById('status'); if (!s) return; s.textContent = text; s.classList.toggle('status--warn', warn) }
+
+/* A simulated thread: a pause, then the matching canned mod. */
+function askThread(text, done) {
+  const hit = Object.entries(CATALOG).find(([, d]) => d.words.test(text))
+  const working = document.getElementById('working')
+  if (!hit) { say('In the real app a thread would write this. The prototype only knows the six asks listed at the top.', true); return }
+  working.hidden = false; working.querySelector('span:last-child').textContent = `A thread is making “${hit[1].name}”…`
+  setTimeout(() => { working.hidden = true; done(hit[0], hit[1]) }, 1100)
+}
+const suggestions = ['Give the sidebar an oak look', 'Make the composer roomier', 'Hide the times in the sidebar', 'Show the checks above the composer', 'A pane with today’s spend', 'Put a clock in the strip']
+function chips(target) { return `<div class="chips">${suggestions.map(s => `<button type="button" data-fill="${target}">${s}</button>`).join('')}</div>` }
+
+/* ---------- A: Custom CSS in the theme (T3 Code's way) ---------- */
+const A = {
+  head: '<b>A · CSS in the theme (T3 Code’s way)</b>The theme editor gains a Custom CSS tab, saved and exported with the theme. You can write it, or ask a thread to. It only changes how parts look: it cannot add a pane or a band. If it hides something you need, Ctrl+Alt+A puts a built-in theme back.',
+  render: () => `
+    <section class="card card--ghost"><h3>Settings › Appearance › Theme</h3></section>
+    <section class="card">
+      <div class="themes"><button class="theme" aria-pressed="false"><i></i>Sotto</button><button class="theme" aria-pressed="false"><i style="background:oklch(0.7 0.1 300)"></i>Hush</button><button class="theme" aria-pressed="true"><i></i>Sotto (mine)</button></div>
+      <h3>Edit Sotto (mine)</h3>
+      <p class="lead">A theme of your own. Its colours and its CSS paint the whole window.</p>
+      <div class="tabs" role="tablist"><button role="tab" aria-selected="false">Colors</button><button role="tab" aria-selected="true">Custom CSS</button></div>
+      <textarea class="css-editor" id="css-editor" spellcheck="false" aria-label="Custom CSS" placeholder="[data-part=&quot;sidebar&quot;] { … }"></textarea>
+      <p class="lead" style="margin:8px 0 4px">Parts you can target. These names hold across Sotto’s updates; class names do not.</p>
+      <ul class="parts-list">${['strip', 'sidebar', 'sidebar-row', 'row-time', 'thread', 'message', 'composer', 'send'].map(p => `<li><code>[data-part="${p}"]</code></li>`).join('')}</ul>
+      <div class="footer-row"><button class="btn btn--quiet" id="clear-css">Clear CSS</button><span class="ask__where">Links to other sites are removed: no <code>url()</code> or <code>@import</code>.</span></div>
+    </section>
+    <section class="card">
+      <h3>Ask a thread to restyle Sotto</h3>
+      <p class="lead">A thread writes the CSS into this theme. You see it here, and can change or clear it.</p>
+      <div class="ask"><textarea id="ask" placeholder="Give the sidebar an oak look"></textarea>${chips('ask')}
+        <div class="ask__row"><span class="ask__where">Starts a thread in this project</span><button class="btn btn--accent" id="ask-go">Ask</button></div></div>
+      <div class="working" id="working" hidden><span class="spin"></span><span></span></div>
+      <p class="status" role="status" id="status"></p>
+    </section>`,
+  wire: () => {
+    const editor = document.getElementById('css-editor')
+    editor.value = themeCss
+    editor.addEventListener('input', () => { themeCss = editor.value.replace(/@import[^;]*;?|url\([^)]*\)/gi, ''); paint() })
+    document.getElementById('clear-css').addEventListener('click', () => { themeCss = ''; editor.value = ''; paint(); say('Custom CSS cleared.') })
+    document.getElementById('ask-go').addEventListener('click', () => askThread(document.getElementById('ask').value, (id, d) => {
+      if (d.kind === 'part') { say(`“${d.name}” adds a part to the window, which CSS cannot do. Only the looks can be made here.`, true); return }
+      themeCss = (themeCss ? themeCss + '\n' : '') + `/* ${d.name} */\n` + d.css; editor.value = themeCss; paint(); say(`${d.name} added to the theme’s CSS.`)
+    }))
+  },
+}
+
+/* ---------- B: a Mods page (Claude Code's way) ---------- */
+const B = {
+  head: '<b>B · A Mods page (Claude Code’s way)</b>A new Settings page lists your mods. A mod can restyle any part, or add one: a pane, a band above the composer, a line in the strip. You make one by asking a thread, which writes it into Sotto’s mods folder, and it loads at once. Each mod has its own switch.',
+  render: () => `
+    <div class="settings">
+      <nav class="subnav" aria-label="Settings pages"><span>General</span><span>Appearance</span><span aria-current="page">Mods</span><span>Plugins</span><span>Threads</span></nav>
+      <div>
+        <section class="card">
+          <h3>Make a mod</h3>
+          <p class="lead">Say what to change or add. A thread writes the mod, Sotto loads it, and it shows up below.</p>
+          <div class="ask"><textarea id="ask" placeholder="Show the checks above the composer"></textarea>${chips('ask')}
+            <div class="ask__row"><span class="ask__where">Starts a thread in Sotto’s mods folder</span><button class="btn btn--accent" id="ask-go">Start a thread</button></div></div>
+          <div class="working" id="working" hidden><span class="spin"></span><span></span></div>
+          <p class="status" role="status" id="status"></p>
+        </section>
+        <section class="card">
+          <h3>Your mods</h3>
+          <div class="mods" id="mods"></div>
+          <div class="footer-row"><button class="btn" id="all-off">Turn off every mod</button><span class="ask__where">Or hold Shift as Sotto opens to start without mods.</span></div>
+        </section>
+        <section class="card">
+          <h3>What a mod cannot do</h3>
+          <ul class="limits"><li>Answer a permission or a question for you.</li><li>Reach the internet, or send anything anywhere.</li><li>Read your keys, or the words of a thread it was not shown.</li></ul>
+        </section>
+      </div>
+    </div>`,
+  wire: () => {
+    const list = document.getElementById('mods')
+    const draw = () => {
+      list.innerHTML = mods.length ? mods.map((m, i) => { const d = CATALOG[m.id]; return `<div class="mod">
+        <div class="mod__name">${d.name}<span class="tag ${d.kind === 'part' ? 'tag--part' : ''}">${d.kind === 'part' ? 'Adds a part' : 'Look'}</span></div>
+        <div class="mod__desc">${d.where}</div>
+        <div class="mod__controls"><button class="switch" role="switch" aria-checked="${m.on}" aria-label="${d.name}" data-toggle="${i}"></button>
+          <span class="menu"><button class="btn btn--quiet" aria-label="More for ${d.name}" data-more="${i}">•••</button>
+          <span class="menu__list" hidden data-menu="${i}"><button data-view="${i}">View its code</button><button data-change="${i}">Change it in a thread</button><button data-export="${i}">Export…</button><button data-remove="${i}">Remove</button></span></span></div>
+        <pre class="source" hidden data-source="${i}">${(d.css || d.code).replace(/</g, '&lt;')}</pre></div>` }).join('') : '<p class="empty">No mods yet.</p>'
+    }
+    draw()
+    list.addEventListener('click', e => {
+      const t = e.target.closest('button'); if (!t) return
+      const at = k => +t.dataset[k]
+      if ('toggle' in t.dataset) { const m = mods[at('toggle')]; m.on = !m.on; draw(); paint(); say(`${CATALOG[m.id].name} ${m.on ? 'on' : 'off'}.`) }
+      if ('more' in t.dataset) { const menu = list.querySelector(`[data-menu="${at('more')}"]`); menu.hidden = !menu.hidden }
+      if ('view' in t.dataset) { const s = list.querySelector(`[data-source="${at('view')}"]`); s.hidden = !s.hidden; list.querySelector(`[data-menu="${at('view')}"]`).hidden = true }
+      if ('change' in t.dataset) { document.getElementById('ask').value = `Change “${CATALOG[mods[at('change')].id].name}”: `; document.getElementById('ask').focus(); list.querySelector(`[data-menu="${at('change')}"]`).hidden = true }
+      if ('export' in t.dataset) { say(`${CATALOG[mods[at('export')].id].name} would be saved as a file you can share.`); list.querySelector(`[data-menu="${at('export')}"]`).hidden = true }
+      if ('remove' in t.dataset) { const [m] = mods.splice(at('remove'), 1); draw(); paint(); say(`${CATALOG[m.id].name} removed.`) }
+    })
+    document.getElementById('all-off').addEventListener('click', () => { mods.forEach(m => { m.on = false }); draw(); paint(); say('Every mod is off. Their files are kept.') })
+    document.getElementById('ask-go').addEventListener('click', () => askThread(document.getElementById('ask').value, (id, d) => {
+      const had = mods.find(m => m.id === id)
+      if (had) had.on = true; else mods.push({ id, on: true })
+      draw(); paint(); say(`${d.name} made and turned on.`)
+    }))
+  },
+}
+
+/* ---------- C: customize in place ---------- */
+const PART_NAMES = { strip: 'The strip', sidebar: 'Sidebar', 'sidebar-row': 'A sidebar row', thread: 'The thread', message: 'A message', composer: 'Composer', send: 'Send button', band: 'Checks band', pane: 'Spend pane' }
+const SWATCHES = [['Surface', 'var(--surface)'], ['Raised', 'var(--raised)'], ['Accent surface', 'var(--accent-surface)'], ['Oak', 'oklch(0.32 0.05 58)'], ['Night', 'oklch(0.2 0.04 270)']]
+const C = {
+  head: '<b>C · Customize in place</b>Press Customize, then press any part of the window. Each part names itself and offers what can change there: hide it, its size, its colour from the theme, its corners. Or ask a thread to change that part, with the part already named. Everything you change is kept together as one mod, “My changes”, with Undo for each.',
+  render: () => `
+    <section class="card">
+      <h3>Customize</h3>
+      <p class="lead">Press Customize, then a part of the window on the right. Escape leaves.</p>
+      <button class="btn btn--accent" id="pick-toggle" aria-pressed="false">Customize</button>
+      <div id="pick-panel" class="pick-panel" style="margin-top:14px"></div>
+      <div class="working" id="working" hidden><span class="spin"></span><span></span></div>
+      <p class="status" role="status" id="status"></p>
+    </section>
+    <section class="card">
+      <h3>My changes</h3>
+      <p class="lead">Kept as one mod. Turn it off, export it or remove it from Settings › Mods.</p>
+      <ul class="changes" id="changes"></ul>
+    </section>`,
+  wire: () => {
+    const toggle = document.getElementById('pick-toggle')
+    const label = document.getElementById('part-label')
+    const setPicking = on => { if (on) room.setAttribute('data-picking', ''); else { room.removeAttribute('data-picking'); label.hidden = true }; toggle.setAttribute('aria-pressed', String(on)); toggle.textContent = on ? 'Done' : 'Customize' }
+    toggle.addEventListener('click', () => setPicking(!room.hasAttribute('data-picking')))
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') setPicking(false) })
+    room.onmousemove = e => {
+      if (!room.hasAttribute('data-picking')) return
+      const part = e.target.closest('[data-part]'); if (!part || part.dataset.part === 'row-time') { label.hidden = true; return }
+      const r = part.getBoundingClientRect(), base = room.getBoundingClientRect()
+      label.hidden = false; label.textContent = PART_NAMES[part.dataset.part] || part.dataset.part
+      label.style.left = `${Math.max(4, r.left - base.left + 4)}px`; label.style.top = `${Math.max(4, r.top - base.top + 4)}px`
+    }
+    room.onclick = e => {
+      if (!room.hasAttribute('data-picking')) return
+      const part = e.target.closest('[data-part]'); if (!part) return
+      e.preventDefault()
+      room.querySelectorAll('[data-picked]').forEach(p => p.removeAttribute('data-picked'))
+      part.setAttribute('data-picked', ''); picked = part.dataset.part === 'row-time' ? 'sidebar-row' : part.dataset.part
+      drawPanel()
+    }
+    const drawPanel = () => {
+      const panel = document.getElementById('pick-panel')
+      if (!picked) { panel.innerHTML = ''; return }
+      const name = PART_NAMES[picked] || picked
+      panel.innerHTML = `<h4>${name}</h4><p class="lead">Changes show at once and are kept in My changes.</p>
+        <div class="pick-row"><span>Show</span><span><button class="btn" data-act="hide">Hide ${name.toLowerCase()}</button></span></div>
+        <div class="pick-row"><span>Text size</span><input type="range" min="80" max="140" step="10" value="100" data-act="size" aria-label="${name} text size"></div>
+        <div class="pick-row"><span>Colour</span><span class="swatches">${SWATCHES.map(([n, c]) => `<button style="background:${c}" aria-label="${n}" title="${n}" data-act="color" data-color="${c}" data-name="${n}"></button>`).join('')}</span></div>
+        <div class="pick-row"><span>Corners</span><input type="range" min="0" max="24" step="2" value="10" data-act="radius" aria-label="${name} corners"></div>
+        <div class="ask" style="margin-top:8px"><textarea id="ask" placeholder="Ask a thread to change ${name.toLowerCase()}…"></textarea>
+          <div class="ask__row"><span class="ask__where">The thread is told which part you picked</span><button class="btn btn--accent" id="ask-go">Ask</button></div></div>`
+      const sel = `[data-part="${picked}"]`
+      const upsert = (prop, label, css) => { picks = picks.filter(p => !(p.part === picked && p.prop === prop)); picks.push({ part: picked, prop, label, css }); paint(); drawChanges() }
+      panel.querySelector('[data-act=hide]').addEventListener('click', () => { upsert('hide', `Hid ${name.toLowerCase()}`, `${sel} { display: none; }`); say(`${name} hidden. Undo it in My changes.`) })
+      panel.querySelector('[data-act=size]').addEventListener('input', e => upsert('size', `${name}: text ${e.target.value}%`, `${sel} { font-size: ${e.target.value}%; } ${sel} * { font-size: inherit; }`))
+      panel.querySelectorAll('[data-act=color]').forEach(b => b.addEventListener('click', () => upsert('color', `${name}: ${b.dataset.name}`, `${sel} { background: ${b.dataset.color}; }`)))
+      panel.querySelector('[data-act=radius]').addEventListener('input', e => upsert('radius', `${name}: corners ${e.target.value} px`, `${sel} { border-radius: ${e.target.value}px; }`))
+      document.getElementById('ask-go').addEventListener('click', () => askThread(document.getElementById('ask').value || name, (id, d) => {
+        picks.push({ part: picked, prop: 'thread-' + id, label: `${d.name} (by a thread)`, css: d.css || '', slot: d.slot, html: d.html }); paint(); drawChanges(); say(`${d.name} added to My changes.`)
+      }))
+    }
+    const drawChanges = () => {
+      const ul = document.getElementById('changes')
+      ul.innerHTML = picks.length ? picks.map((p, i) => `<li><span>${p.label}</span><button class="btn btn--quiet" data-undo="${i}">Undo</button></li>`).join('') : '<li class="empty">Nothing changed yet.</li>'
+      ul.querySelectorAll('[data-undo]').forEach(b => b.addEventListener('click', () => { picks.splice(+b.dataset.undo, 1); paint(); drawChanges() }))
+    }
+    drawPanel(); drawChanges()
+  },
+}
+
+const VARIANTS = { A, B, C }
+function render() {
+  room.removeAttribute('data-picking'); room.onmousemove = null; room.onclick = null
+  room.querySelectorAll('[data-picked]').forEach(p => p.removeAttribute('data-picked')); picked = null
+  document.getElementById('part-label').hidden = true
+  document.getElementById('variant-head').innerHTML = `<div class="variant-head">${VARIANTS[variant].head}</div>`
+  document.getElementById('controls').innerHTML = VARIANTS[variant].render()
+  document.querySelectorAll('[data-fill]').forEach(b => b.addEventListener('click', () => { const t = document.getElementById(b.dataset.fill); t.value = b.textContent; t.focus() }))
+  VARIANTS[variant].wire()
+  document.querySelectorAll('.switcher [data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
+  paint()
+}
+document.querySelectorAll('.switcher [data-variant]').forEach(b => b.addEventListener('click', () => {
+  variant = b.dataset.variant
+  const url = new URL(location.href); url.searchParams.set('variant', variant); history.replaceState(null, '', url)
+  render()
+}))
+document.getElementById('half').addEventListener('click', e => {
+  const light = document.body.dataset.half === 'dark'
+  document.body.dataset.half = light ? 'light' : 'dark'
+  e.currentTarget.textContent = light ? 'Dark' : 'Light'
+})
+render()
+</script>
+</body>
+</html>

@@ -1,0 +1,413 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Question: what beyond colour should Sotto let a user change, and where on Settings > Appearance
+     does it live? Three variants on one page, switched with ?variant=A|B|C and the bar at the bottom. Nothing saves. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: changing how Sotto looks</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url('figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-weight: 200 800; src: url('manrope-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; src: url('spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* Sotto's own palette, dark and light halves, from src/shared/themes/palettes.ts. */
+:root, [data-half='dark'] {
+  --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265);
+  --overlay: oklch(0.215 0.008 265); --text: oklch(0.985 0.005 280); --muted: oklch(0.72 0.014 265);
+  --border: oklch(0.305 0.02 265); --accent: oklch(0.714 0.104 183); --accent-fg: oklch(0.16 0.012 190);
+  --accent-surface: oklch(0.32 0.05 185); --sunken: oklch(0.13 0.008 265); --card: oklch(0.16 0.008 265);
+  --inset: oklch(0.19 0.008 265); --hairline: oklch(0.26 0.012 265);
+  color-scheme: dark;
+}
+[data-half='light'] {
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.955 0.006 85);
+  --overlay: oklch(0.945 0.007 85); --text: oklch(0.235 0.014 75); --muted: oklch(0.5 0.014 75);
+  --border: oklch(0.86 0.012 80); --accent: oklch(0.53 0.095 186); --accent-fg: oklch(0.99 0.003 85);
+  --accent-surface: oklch(0.92 0.03 186); --sunken: oklch(0.95 0.006 85); --card: oklch(0.995 0.002 85);
+  --inset: oklch(0.96 0.005 85); --hairline: oklch(0.9 0.008 80);
+  color-scheme: light;
+}
+
+/* The knobs. Each control writes one of these on .room, the way appearance.ts writes --theme-* on the root. */
+.room {
+  --text-scale: 1; --space: 1; --corner: 1;
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --font-code: 'Spline Sans Mono', ui-monospace, Menlo, Consolas, monospace;
+  --t-caption: calc(12px * var(--text-scale)); --t-small: calc(13px * var(--text-scale));
+  --t-body: calc(14px * var(--text-scale)); --t-reading: calc(15px * var(--text-scale));
+  --t-lead: calc(16px * var(--text-scale)); --t-heading: calc(18px * var(--text-scale));
+  --r-tag: calc(4px * var(--corner)); --r-control: calc(6px * var(--corner)); --r-row: calc(8px * var(--corner));
+  --r-inset: calc(10px * var(--corner)); --r-card: calc(14px * var(--corner)); --r-overlay: calc(20px * var(--corner));
+  --gap: calc(12px * var(--space)); --pad: calc(16px * var(--space)); --row-h: calc(34px * var(--space));
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--canvas); color: var(--text); font-family: 'Figtree', system-ui, sans-serif; font-size: 14px; }
+body { padding: 16px 16px 110px; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.page { max-width: 1180px; margin: 0 auto; }
+.page > header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+.page > header p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; max-width: 70ch; }
+.page > header code { font-family: 'Spline Sans Mono', monospace; font-size: 12px; }
+
+/* Settings > Appearance as a studio: cards beside a preview that stays in view. */
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 18px; align-items: start; }
+.studio__preview { position: sticky; top: 12px; }
+@media (max-width: 860px) { .studio { grid-template-columns: 1fr; } .studio__preview { position: static; order: -1; } }
+
+.card { background: var(--card); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; }
+.card > h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); letter-spacing: 0.01em; }
+.card--ghost { opacity: 0.55; }
+.card--ghost p { margin: 0; color: var(--muted); font-size: 13px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--hairline); }
+.row:first-of-type { border-top: 0; }
+.row__label { font-size: 15px; display: flex; align-items: center; gap: 6px; }
+.row__desc { grid-column: 1; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.row__control { grid-column: 2; grid-row: 1 / span 2; justify-self: end; display: flex; align-items: center; gap: 6px; }
+.row--stack { grid-template-columns: 1fr; }
+.row--stack .row__control { grid-column: 1; grid-row: auto; justify-self: stretch; }
+@media (max-width: 520px) { .row { grid-template-columns: 1fr; } .row__control { grid-column: 1; grid-row: auto; justify-self: start; flex-wrap: wrap; } }
+
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 6px; background: var(--sunken); flex-wrap: wrap; }
+.seg button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.seg button[aria-pressed='true'] { background: var(--overlay); color: var(--text); }
+select { min-height: 34px; padding: 4px 10px; border-radius: 6px; border: 1px solid transparent; background: var(--inset); }
+input[type='range'] { width: 180px; accent-color: var(--accent); }
+.reset { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.reset:hover { color: var(--text); background: var(--inset); }
+.reset[hidden] { display: none; }
+.value { font-family: 'Spline Sans Mono', monospace; font-size: 12px; color: var(--muted); min-width: 3.5em; text-align: right; }
+.btn { min-height: 34px; padding: 6px 14px; border: 0; border-radius: 6px; background: var(--inset); cursor: pointer; }
+.btn--accent { background: var(--accent); color: var(--accent-fg); }
+.status { min-height: 1.4em; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+.note { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 10px 0 0; }
+.guard { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+.guard b { font-family: 'Spline Sans Mono', monospace; font-weight: 500; color: var(--text); }
+
+/* Variant B: looks as cards. */
+.looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.look { text-align: left; padding: 10px; border-radius: 10px; border: 0; background: var(--inset); cursor: pointer; display: grid; gap: 8px; }
+.look[aria-pressed='true'] { box-shadow: inset 0 0 0 2px var(--accent); }
+.look__thumb { height: 64px; border-radius: calc(8px * var(--c)); background: var(--surface); padding: calc(7px * var(--g)); display: grid; align-content: start; gap: calc(5px * var(--g)); overflow: hidden; }
+.look__thumb i { display: block; height: calc(5px * var(--s)); border-radius: calc(3px * var(--c)); background: var(--hairline); }
+.look__thumb i:first-child { background: var(--accent); width: 30% !important; }
+.look__name { font-size: 14px; font-weight: 600; }
+.look__desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+details.tune > summary { cursor: pointer; padding: 10px 0 2px; color: var(--muted); font-size: 14px; list-style: none; }
+details.tune > summary::before { content: '▸ '; }
+details.tune[open] > summary::before { content: '▾ '; }
+
+/* Variant C: one Text card, T3's set, with typed sizes. */
+.fontfield { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.fontfield input[type='text'] { min-height: 34px; width: 190px; padding: 4px 10px; border-radius: 6px; border: 1px solid transparent; background: var(--inset); }
+.fontfield input[type='number'] { min-height: 34px; width: 70px; padding: 4px 8px; border-radius: 6px; border: 1px solid transparent; background: var(--inset); font-family: 'Spline Sans Mono', monospace; }
+.fontfield input[aria-invalid='true'] { border-color: oklch(0.65 0.18 25); }
+.fieldnote { grid-column: 1 / -1; font-size: 12px; color: oklch(0.75 0.14 60); margin: 2px 0 0; }
+[data-half='light'] .fieldnote { color: oklch(0.5 0.14 50); }
+
+/* The preview: a small Sotto window, painted only by the knobs above. */
+.preview { background: var(--card); border-radius: 14px; padding: 12px; }
+.preview__bar { display: flex; justify-content: space-between; align-items: center; margin: 0 2px 10px; gap: 8px; flex-wrap: wrap; }
+.preview__bar h3 { margin: 0; font-size: 14px; color: var(--muted); font-weight: 600; }
+.room { display: grid; grid-template-columns: minmax(120px, 0.34fr) 1fr; height: 470px; overflow: hidden; border-radius: 10px; background: var(--canvas); font-family: var(--font-ui); }
+.room__side { background: var(--surface); padding: calc(10px * var(--space)) calc(8px * var(--space)); display: flex; flex-direction: column; gap: calc(2px * var(--space)); overflow: hidden; }
+.room__brand { font-size: var(--t-heading); font-weight: 600; padding: 4px 8px calc(10px * var(--space)); display: flex; align-items: center; gap: 8px; }
+.room__brand::before { content: ''; width: 16px; height: 16px; border-radius: var(--r-tag); background: var(--accent); }
+.room__group { font-size: var(--t-caption); color: var(--muted); padding: calc(8px * var(--space)) 8px 4px; }
+.room__row { display: flex; align-items: center; gap: 8px; min-height: var(--row-h); padding: 0 8px; border-radius: var(--r-row); font-size: var(--t-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room__row small { margin-left: auto; color: var(--muted); font-size: var(--t-caption); }
+.room__row--on { background: var(--raised); }
+.room__row .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+.room__row .dot--idle { background: var(--hairline); }
+.room__main { display: flex; flex-direction: column; min-width: 0; }
+.room__head { padding: calc(10px * var(--space)) var(--pad); font-size: var(--t-body); color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.room__head b { color: var(--text); font-weight: 600; }
+.room__head .tag { font-size: var(--t-caption); padding: 1px 7px; border-radius: var(--r-tag); background: var(--accent-surface); color: var(--text); }
+.room__thread { flex: 1; overflow: hidden; padding: 0 var(--pad); display: flex; flex-direction: column; gap: var(--gap); }
+.msg { font-size: var(--t-lead); line-height: 1.55; max-width: var(--chat-max, 62ch); }
+.msg--you { align-self: flex-end; background: var(--raised); padding: calc(8px * var(--space)) calc(12px * var(--space)); border-radius: var(--r-card); max-width: 80%; }
+.msg p { margin: 0 0 calc(6px * var(--space)); }
+.msg code { font-family: var(--font-code); font-size: 0.88em; background: var(--inset); padding: 1px 5px; border-radius: var(--r-tag); }
+.step { font-size: var(--t-small); color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.step::before { content: '✓'; color: var(--accent); }
+pre.code { margin: 0; font-family: var(--font-code); font-size: var(--t-small); line-height: 1.55; background: var(--surface); padding: calc(10px * var(--space)) calc(12px * var(--space)); border-radius: var(--r-inset); overflow: hidden; white-space: pre; }
+pre.code .k { color: var(--accent); }
+pre.code .c { color: var(--muted); }
+/* The composer: no border or outline (Zach's rule), only its fill. */
+.composer { margin: var(--gap) var(--pad) var(--pad); background: var(--surface); border-radius: var(--r-card); padding: calc(10px * var(--space)) calc(12px * var(--space)); display: grid; gap: calc(8px * var(--space)); }
+.composer__text { font-family: var(--font-composer, inherit); font-size: var(--t-composer, var(--t-reading)); color: var(--muted); min-height: 1.5em; }
+.composer__chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.chip { font-size: var(--t-caption); padding: 3px 9px; border-radius: var(--r-control); background: var(--inset); color: var(--muted); }
+.send { margin-left: auto; width: calc(28px * var(--text-scale)); height: calc(28px * var(--text-scale)); border-radius: var(--r-row); background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-size: var(--t-small); }
+
+@media (max-width: 520px) { .room { grid-template-columns: 1fr; height: 520px; } .room__side { display: none; } }
+
+/* Floating variant bar. */
+.switcher { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9; display: flex; gap: 4px; align-items: center; padding: 6px; border-radius: 14px; background: var(--overlay); box-shadow: 0 10px 30px oklch(0 0 0 / 0.35); max-width: calc(100vw - 20px); }
+.switcher button { border: 0; background: none; cursor: pointer; padding: 8px 12px; border-radius: 9px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.switcher button[aria-pressed='true'] { background: var(--accent); color: var(--accent-fg); }
+.switcher .sep { width: 1px; height: 22px; background: var(--hairline); margin: 0 4px; }
+@media (max-width: 520px) { .switcher button span { display: none; } }
+.variant-head { margin: 0 0 12px; padding: 12px 14px; border-radius: 10px; background: var(--accent-surface); line-height: 1.5; font-size: 14px; }
+.variant-head b { display: block; font-size: 15px; margin-bottom: 2px; }
+.state { margin-top: 10px; font-family: 'Spline Sans Mono', monospace; font-size: 11.5px; color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body data-half="dark">
+<div class="page">
+  <header>
+    <h1>Changing how Sotto looks, beyond colour</h1>
+    <p>Settings › Appearance already has themes, a theme editor, VS Code import and Contrast. T3 Code also lets you change
+    the type. These three variants show different amounts of that and different places for it. Everything paints the
+    preview live; nothing is saved. Switch variants at the bottom, and try the light half.</p>
+  </header>
+  <div id="variant-head"></div>
+  <div class="studio">
+    <div class="studio__cards" id="cards"></div>
+    <div class="studio__preview">
+      <div class="preview">
+        <div class="preview__bar">
+          <h3>Preview</h3>
+          <span class="guard" id="guard"></span>
+        </div>
+        <div class="room" id="room">
+          <aside class="room__side">
+            <div class="room__brand">Sotto</div>
+            <div class="room__group">Needs you</div>
+            <div class="room__row"><span class="dot"></span>Fix the release check<small>2m</small></div>
+            <div class="room__group">Recent</div>
+            <div class="room__row room__row--on"><span class="dot"></span>Let users change the type<small>now</small></div>
+            <div class="room__row"><span class="dot dot--idle"></span>iPhone history paging<small>1h</small></div>
+            <div class="room__row"><span class="dot dot--idle"></span>Merge train receipt<small>3h</small></div>
+            <div class="room__row"><span class="dot dot--idle"></span>Council over MCP<small>1d</small></div>
+          </aside>
+          <section class="room__main">
+            <div class="room__head"><b>Let users change the type</b><span class="tag">Claude</span></div>
+            <div class="room__thread">
+              <div class="msg msg--you"><p>Add a text size to Appearance.</p></div>
+              <div class="step">Read <code style="font-family:var(--font-code)">tokens.css</code> and 3 more</div>
+              <div class="msg"><p>Every size in the window is a <code>--tt-type-*</code> step, so one multiplier on the
+              root moves all of them together.</p></div>
+              <pre class="code"><span class="c">/* tokens.css */</span>
+<span class="k">--tt-type-body</span>: calc(14px * var(--scale));
+<span class="k">--tt-type-lead</span>: calc(16px * var(--scale));</pre>
+              <div class="msg"><p>The terminal keeps its own size.</p></div>
+            </div>
+            <div class="composer">
+              <div class="composer__text">Ask Claude to change something…</div>
+              <div class="composer__chips"><span class="chip">Opus 5.5</span><span class="chip">High</span><span class="chip">main</span><span class="send">↑</span></div>
+            </div>
+          </section>
+        </div>
+        <div class="state" id="state"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="switcher" aria-label="Prototype variants">
+  <button data-variant="A"><b>A</b><span> · One more card</span></button>
+  <button data-variant="B"><b>B</b><span> · Looks first</span></button>
+  <button data-variant="C"><b>C</b><span> · T3’s typography</span></button>
+  <span class="sep"></span>
+  <button id="half" aria-label="Show the light half">Light</button>
+</nav>
+
+<script>
+const DEFAULTS = { textSize: 100, uiFont: 'figtree', codeFont: 'spline', density: 'comfortable', corners: 100, uiFontCustom: '', composerFontCustom: '', codeFontCustom: '', uiPx: 14, composerPx: 15, codePx: 13, chatWidth: 'comfortable' }
+const state = { ...DEFAULTS }
+const UI_FONTS = { figtree: ['Figtree', "'Figtree', ui-sans-serif, system-ui, sans-serif"], manrope: ['Manrope', "'Manrope', ui-sans-serif, system-ui, sans-serif"], system: ['This computer’s', "system-ui, -apple-system, 'Segoe UI', sans-serif"] }
+const CODE_FONTS = { spline: ['Spline Sans Mono', "'Spline Sans Mono', ui-monospace, monospace"], system: ['This computer’s', "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace"] }
+const DENSITY = { compact: ['Compact', 0.78], comfortable: ['Comfortable', 1], roomy: ['Roomy', 1.22] }
+const SIZES = [[90, 'Smaller'], [100, 'Default'], [110, 'Larger'], [125, 'Largest']]
+const room = document.getElementById('room')
+let variant = new URLSearchParams(location.search).get('variant') || 'A'
+if (!['A', 'B', 'C'].includes(variant)) variant = 'A'
+
+function cssFamily(custom, fallback) {
+  // T3-style free text: a family name only. Anything with url(, ;, { or quotes beyond a name is refused.
+  const name = custom.trim()
+  if (!name) return null
+  if (!/^[\p{L}\p{N} _\-,]{1,64}$/u.test(name)) return false
+  return `'${name.split(',')[0].trim()}', ${fallback}`
+}
+
+function installed(name) {
+  const c = document.createElement('canvas').getContext('2d')
+  const sample = 'mmmmmmmmmmlli WWW 0O1l'
+  return ['monospace', 'serif', 'sans-serif'].some(base => {
+    c.font = `72px ${base}`; const w0 = c.measureText(sample).width
+    c.font = `72px '${name}', ${base}`; return c.measureText(sample).width !== w0
+  })
+}
+function isMono(name) {
+  const c = document.createElement('canvas').getContext('2d'); c.font = `40px '${name}', monospace`
+  return Math.abs(c.measureText('iiiii').width - c.measureText('WWWWW').width) < 0.5
+}
+
+function rgbOf(color) {
+  const c = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+  c.fillStyle = color; c.fillRect(0, 0, 1, 1)
+  return [...c.getImageData(0, 0, 1, 1).data].slice(0, 3).map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 })
+}
+function contrastOf(fgEl, bgEl) {
+  const lum = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+  const a = lum(rgbOf(getComputedStyle(fgEl).color)), b = lum(rgbOf(getComputedStyle(bgEl).backgroundColor))
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+
+function paint() {
+  let ui = UI_FONTS[state.uiFont][1], code = CODE_FONTS[state.codeFont][1], scale = state.textSize / 100
+  room.style.removeProperty('--font-composer'); room.style.removeProperty('--t-composer'); room.style.removeProperty('--chat-max')
+  if (variant === 'C') {
+    const u = cssFamily(state.uiFontCustom, UI_FONTS.figtree[1]); if (u) ui = u
+    const c = cssFamily(state.codeFontCustom, CODE_FONTS.spline[1]); if (c) code = c
+    const p = cssFamily(state.composerFontCustom, 'var(--font-ui)'); if (p) room.style.setProperty('--font-composer', p)
+    scale = state.uiPx / 14
+    room.style.setProperty('--t-composer', `${state.composerPx}px`)
+    room.style.setProperty('--chat-max', { comfortable: '62ch', wide: '84ch', full: 'none' }[state.chatWidth])
+  }
+  room.style.setProperty('--text-scale', scale)
+  room.style.setProperty('--space', variant === 'C' ? 1 : DENSITY[state.density][1])
+  room.style.setProperty('--corner', variant === 'C' ? 1 : state.corners / 100)
+  room.style.setProperty('--font-ui', ui)
+  room.style.setProperty('--font-code', code)
+  room.querySelector('pre.code').style.fontSize = variant === 'C' ? `${state.codePx}px` : ''
+  // Contrast guard: smallest text drawn, measured against the 4.5:1 line Sotto already keeps.
+  const smallest = Math.round(12 * scale * 10) / 10
+  const ratio = contrastOf(room.querySelector('.room__group'), room.querySelector('.room__side'))
+  document.getElementById('guard').innerHTML = `Smallest text <b>${smallest}px</b> · muted text <b>${ratio.toFixed(1)}:1</b> ${ratio >= 4.5 ? '✓' : '✗ under 4.5:1'}`
+  const shown = variant === 'C'
+    ? { interfaceFont: state.uiFontCustom || 'Figtree', interfacePx: state.uiPx, composerFont: state.composerFontCustom || 'Figtree', composerPx: state.composerPx, codeFont: state.codeFontCustom || 'Spline Sans Mono', codePx: state.codePx, messageWidth: state.chatWidth }
+    : { textSize: state.textSize + '%', uiFont: UI_FONTS[state.uiFont][0], codeFont: CODE_FONTS[state.codeFont][0], ...(variant === 'A' || tuneOpen ? { density: state.density, corners: state.corners + '%' } : { density: state.density, corners: state.corners + '%' }) }
+  document.getElementById('state').textContent = 'What would be saved: ' + JSON.stringify(shown)
+  document.querySelectorAll('[data-reset]').forEach(b => { b.hidden = String(state[b.dataset.reset]) === String(DEFAULTS[b.dataset.reset]) })
+  document.querySelectorAll('[data-seg]').forEach(group => group.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(String(state[group.dataset.seg]) === b.dataset.value))))
+  document.querySelectorAll('select[data-key]').forEach(s => { s.value = state[s.dataset.key] })
+  document.querySelectorAll('select[data-num]').forEach(s => { s.value = state[s.dataset.num] })
+  document.querySelectorAll('input[type=range][data-key]').forEach(r => { r.value = state[r.dataset.key]; const out = r.parentElement.querySelector('.value'); if (out) out.textContent = r.value + '%' })
+  document.querySelectorAll('.look').forEach(b => b.setAttribute('aria-pressed', String(lookMatches(b.dataset.look))))
+  const all = document.getElementById('reset-all'); if (all) all.hidden = Object.keys(DEFAULTS).every(k => String(state[k]) === String(DEFAULTS[k]))
+}
+
+let tuneOpen = false
+function set(key, value, words) { state[key] = value; paint(); say(words) }
+function say(words) { const s = document.getElementById('status'); if (s && words) s.textContent = words }
+function resetBtn(key, label) { return `<button class="reset" data-reset="${key}" aria-label="Reset ${label}" hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>` }
+function seg(key, options, label) { return `<div class="seg" role="group" aria-label="${label}" data-seg="${key}">${options.map(([v, l]) => `<button data-value="${v}">${l}</button>`).join('')}</div>` }
+
+const rows = {
+  textSize: () => `<div class="row"><div class="row__label">Text size</div><div class="row__desc">Every word in the window: threads, sidebar, Settings. The terminal keeps its own size.</div>
+    <div class="row__control">${resetBtn('textSize', 'text size')}${seg('textSize', SIZES, 'Text size')}</div></div>`,
+  uiFont: () => `<div class="row"><div class="row__label">Interface font</div><div class="row__desc">Figtree and Manrope ship with Sotto. This computer’s uses the system font.</div>
+    <div class="row__control">${resetBtn('uiFont', 'interface font')}<select data-key="uiFont" aria-label="Interface font">${Object.entries(UI_FONTS).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}</select></div></div>`,
+  codeFont: () => `<div class="row"><div class="row__label">Code font</div><div class="row__desc">Code blocks, paths, diffs and Changes.</div>
+    <div class="row__control">${resetBtn('codeFont', 'code font')}<select data-key="codeFont" aria-label="Code font">${Object.entries(CODE_FONTS).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}</select></div></div>`,
+  density: () => `<div class="row"><div class="row__label">Spacing</div><div class="row__desc">Room between rows, messages and controls. Text size stays as set.</div>
+    <div class="row__control">${resetBtn('density', 'spacing')}${seg('density', Object.entries(DENSITY).map(([k, [l]]) => [k, l]), 'Spacing')}</div></div>`,
+  corners: () => `<div class="row"><div class="row__label">Corners</div><div class="row__desc">How round cards, fields and buttons are. Dots stay circles.</div>
+    <div class="row__control">${resetBtn('corners', 'corners')}<input type="range" min="0" max="150" step="25" data-key="corners" aria-label="Corners"><span class="value"></span></div></div>`,
+}
+const ghostCards = `<section class="card card--ghost" aria-hidden="true"><h3>Theme</h3><p>Light and dark columns, editor, Add theme… (unchanged)</p></section>
+  <section class="card card--ghost" aria-hidden="true"><h3>Details</h3><p>Effort color, creature, Watcher scene, Contrast (unchanged)</p></section>`
+const motionGhost = `<section class="card card--ghost" aria-hidden="true"><h3>Motion</h3><p>Reduced motion, click effect (unchanged)</p></section>`
+
+const LOOKS = {
+  sotto: ['Sotto', 'As it ships.', { textSize: 100, density: 'comfortable', corners: 100, uiFont: 'figtree', codeFont: 'spline' }],
+  dense: ['Dense', 'More threads and more of each on screen.', { textSize: 90, density: 'compact', corners: 75, uiFont: 'figtree', codeFont: 'spline' }],
+  large: ['Large print', 'Bigger words, more room round them.', { textSize: 125, density: 'roomy', corners: 100, uiFont: 'figtree', codeFont: 'spline' }],
+  square: ['Square', 'Sharp corners, the system’s own fonts.', { textSize: 100, density: 'comfortable', corners: 0, uiFont: 'system', codeFont: 'system' }],
+}
+function thumbStyle(l) { return `--s:${l.textSize / 100};--g:${DENSITY[l.density][1] ** 2};--c:${l.corners / 100}` }
+function lookMatches(id) { const l = LOOKS[id]; return l && Object.entries(l[2]).every(([k, v]) => String(state[k]) === String(v)) }
+
+function fontRow(key, px, label, placeholder, desc, sizes, mono = false) {
+  return `<div class="row row--stack"><div class="row__label">${label} font</div><div class="row__desc">${desc} Empty is ${placeholder}.</div>
+    <div class="row__control fontfield">${resetBtn(key, label.toLowerCase() + ' font')}<input type="text" data-text="${key}" ${mono ? 'data-mono="true"' : ''} placeholder="${placeholder}" aria-label="${label} font name">
+    <select data-num="${px}" aria-label="${label} text size">${sizes.map(n => `<option value="${n}">${n} px</option>`).join('')}</select></div>
+    <p class="fieldnote" id="${key}-note" hidden></p></div>`
+}
+
+const VARIANTS = {
+  A: {
+    head: '<b>A · One more card: Text & spacing</b>Five rows in a new card between Details and Motion. Each row has its own reset arrow once it moves off the default, and the card has Reset text & spacing.',
+    cards: () => `${ghostCards}<section class="card" aria-labelledby="ts"><h3 id="ts">Text &amp; spacing</h3>
+      ${rows.textSize()}${rows.uiFont()}${rows.codeFont()}${rows.density()}${rows.corners()}
+      <div style="display:flex;gap:8px;align-items:center;padding-top:8px"><button class="btn" id="reset-all" hidden>Reset text &amp; spacing</button></div>
+      <p class="status" role="status" id="status"></p></section>${motionGhost}`,
+  },
+  B: {
+    head: '<b>B · Looks first</b>Four ready-made looks as cards, one press each. Fine-tune opens the same five rows as A for anyone who wants them. A change made by hand leaves no look marked.',
+    cards: () => `${ghostCards}<section class="card" aria-labelledby="lk"><h3 id="lk">Look</h3>
+      <div class="looks">${Object.entries(LOOKS).map(([id, [name, desc]]) => `<button class="look" data-look="${id}" aria-pressed="false"><span class="look__thumb" aria-hidden="true" style="${thumbStyle(LOOKS[id][2])}"><i style="width:60%"></i><i style="width:85%"></i><i style="width:40%"></i><i style="width:70%"></i><i style="width:55%"></i></span><span class="look__name">${name}</span><span class="look__desc">${desc}</span></button>`).join('')}</div>
+      <details class="tune"${tuneOpen ? ' open' : ''}><summary>Fine-tune</summary>${rows.textSize()}${rows.uiFont()}${rows.codeFont()}${rows.density()}${rows.corners()}</details>
+      <p class="status" role="status" id="status"></p></section>${motionGhost}`,
+  },
+  C: {
+    head: '<b>C · T3’s typography</b>What T3 Code offers, in Sotto’s words: a font and a size for the interface, the composer and code, and how wide messages run. Type the name of any font on this computer; a name it lacks, or a code font that is not monospaced, is refused and says why. No spacing or corners (T3 has none). Each row has its own reset arrow; there is no reset for the card, as in T3.',
+    cards: () => `${ghostCards}<section class="card" aria-labelledby="tx"><h3 id="tx">Text</h3>
+      ${fontRow('uiFontCustom', 'uiPx', 'Interface', 'Figtree', 'Sidebar, menus, Settings and messages.', [12, 13, 14, 15, 16, 18, 20])}
+      ${fontRow('composerFontCustom', 'composerPx', 'Composer', 'Figtree', 'What you type, before it is sent.', [12, 13, 14, 15, 16, 18, 20])}
+      ${fontRow('codeFontCustom', 'codePx', 'Code', 'Spline Sans Mono', 'Code blocks, paths and diffs. Must be monospaced.', [10, 11, 12, 13, 14, 16, 18], true)}
+      <div class="row"><div class="row__label">Message width</div><div class="row__desc">How far a thread’s messages run across a wide window.</div>
+        <div class="row__control">${resetBtn('chatWidth', 'message width')}${seg('chatWidth', [['comfortable', 'Comfortable'], ['wide', 'Wide'], ['full', 'Full']], 'Message width')}</div></div>
+      <p class="note">Try “DejaVu Serif”, “Noto Sans” or “Liberation Mono”, then a name this computer lacks. T3 also has a terminal font and custom CSS per theme; they are left out here.</p>
+      <p class="status" role="status" id="status"></p></section>${motionGhost}`,
+  },
+}
+
+function render() {
+  document.getElementById('variant-head').innerHTML = `<div class="variant-head">${VARIANTS[variant].head}</div>`
+  document.getElementById('cards').innerHTML = VARIANTS[variant].cards()
+  document.querySelectorAll('.switcher [data-variant]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.variant === variant)))
+  const cards = document.getElementById('cards')
+  cards.querySelectorAll('[data-seg]').forEach(g => g.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const raw = b.dataset.value; set(g.dataset.seg, isNaN(+raw) ? raw : +raw, `${g.getAttribute('aria-label')} saved.`) }))
+  cards.querySelectorAll('select[data-key]').forEach(s => s.addEventListener('change', () => set(s.dataset.key, s.value, `${s.getAttribute('aria-label')} saved.`)))
+  cards.querySelectorAll('input[type=range][data-key]').forEach(r => r.addEventListener('input', () => set(r.dataset.key, +r.value, 'Corners saved.')))
+  cards.querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', () => { const box = cards.querySelector(`input[data-text="${b.dataset.reset}"]`); if (box) box.value = ''; const px = { uiFontCustom: 'uiPx', composerFontCustom: 'composerPx', codeFontCustom: 'codePx' }[b.dataset.reset]; if (px) state[px] = DEFAULTS[px] }))
+  cards.querySelectorAll('[data-reset]').forEach(b => b.addEventListener('click', () => set(b.dataset.reset, DEFAULTS[b.dataset.reset], b.getAttribute('aria-label').replace('Reset', 'Reset:') )))
+  cards.querySelectorAll('.look').forEach(b => b.addEventListener('click', () => { Object.assign(state, LOOKS[b.dataset.look][2]); paint(); say(`${LOOKS[b.dataset.look][0]} look saved.`) }))
+  const tune = cards.querySelector('details.tune'); if (tune) tune.addEventListener('toggle', () => { tuneOpen = tune.open })
+  const all = document.getElementById('reset-all'); if (all) all.addEventListener('click', () => { Object.assign(state, DEFAULTS); paint(); say('Text and spacing reset.') })
+  cards.querySelectorAll('input[data-text]').forEach(input => {
+    input.value = state[input.dataset.text]
+    let timer = null
+    input.addEventListener('input', () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const name = input.value.trim()
+        const note = document.getElementById(`${input.dataset.text}-note`)
+        let problem = ''
+        if (name && cssFamily(name, '') === false) problem = 'Use a font’s name only: letters, digits, spaces and dashes.'
+        else if (name && !installed(name)) problem = `This computer has no font called ${name}.`
+        else if (name && input.dataset.mono && !isMono(name)) problem = `${name} is not monospaced, so code would not line up.`
+        input.setAttribute('aria-invalid', String(problem !== '')); note.hidden = problem === ''
+        note.textContent = problem ? `${problem} The font is unchanged.` : ''
+        if (!problem) set(input.dataset.text, name, `${input.getAttribute('aria-label').replace(' name', '')} saved.`)
+      }, 400)
+    })
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') { clearTimeout(timer); input.value = state[input.dataset.text]; input.removeAttribute('aria-invalid'); document.getElementById(`${input.dataset.text}-note`).hidden = true } })
+  })
+  cards.querySelectorAll('select[data-num]').forEach(sel => sel.addEventListener('change', () => set(sel.dataset.num, +sel.value, `${sel.getAttribute('aria-label')} saved.`)))
+  paint()
+}
+
+document.querySelectorAll('.switcher [data-variant]').forEach(b => b.addEventListener('click', () => {
+  variant = b.dataset.variant
+  const url = new URL(location.href); url.searchParams.set('variant', variant); history.replaceState(null, '', url)
+  render()
+}))
+document.getElementById('half').addEventListener('click', e => {
+  const light = document.body.dataset.half === 'dark'
+  document.body.dataset.half = light ? 'light' : 'dark'
+  e.currentTarget.textContent = light ? 'Dark' : 'Light'
+  e.currentTarget.setAttribute('aria-label', light ? 'Show the dark half' : 'Show the light half')
+  paint()
+})
+render()
+</script>
+</body>
+</html>
