@@ -153,6 +153,18 @@ async function hello(client: Client, kind: ClientKind): Promise<Hello> {
   return { features: [...result.features].sort(), capabilities: result.capabilities }
 }
 
+/** Waits until the host's state shows the fake Codex connected and no provider still connecting. */
+async function providerConnected(client: Client, label: string): Promise<void> {
+  const deadline = Date.now() + ANSWER_DEADLINE_MS * 2
+  for (;;) {
+    const answer = await request(client, { op: 'shell' })
+    const providers = (answer?.result as { host?: { providers?: { id: string; connection?: string }[] } } | undefined)?.host?.providers ?? []
+    if (providers.some(row => row.id === 'codex' && row.connection === 'connected') && providers.every(row => row.connection !== 'connecting')) return
+    expect(Date.now() < deadline, `${label} never connected the fake Codex: ${JSON.stringify(providers)}`).toBe(true)
+    await new Promise(resolveWait => setTimeout(resolveWait, 100))
+  }
+}
+
 async function startUnderTest(command: readonly string[], label: string): Promise<HostUnderTest> {
   const data = await mkdtemp(join(tmpdir(), `sotto-parity-${label}-`))
   await prepareFake(data, 'codex')
@@ -163,6 +175,9 @@ async function startUnderTest(command: readonly string[], label: string): Promis
   await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([desktop.clientId]))
   const clients = { desktop: desktop.client, unrecorded: unrecorded.client }
   const hellos = { desktop: await hello(clients.desktop, 'desktop'), unrecorded: await hello(clients.unrecorded, 'unrecorded') }
+  // A host connects its providers after it says it is ready, so it may take no project until the fake's is connected, as
+  // the referee's own start-up waits (`started` in tests/referee/scenario.ts).
+  await providerConnected(clients.desktop, label)
   const folder = join(data, 'probe-project')
   await mkdir(folder, { recursive: true })
   const created = await request(clients.desktop, { op: 'command', command: { type: 'create-project', title: 'Parity project', path: folder, useExisting: true } })
