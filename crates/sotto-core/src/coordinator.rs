@@ -3881,6 +3881,7 @@ impl CoordinatorActor {
         self.creations.retain(|item| item.get("threadId").and_then(Value::as_str).is_none_or(|id| !gone.contains(id)));
         self.cleared_thread_ids.extend(ids.iter().cloned());
         self.cleared.extend(ids.iter().cloned());
+        forget_unlinked_pull_requests(&mut self.file_extra, |id| gone.contains(id));
         // The adapter's alias record goes with it; Node also has each adapter forget what it holds in memory.
         self.thread_bindings.retain(|id, _| !gone.contains(id));
         self.details.retain(|id, _| !gone.contains(id));
@@ -5434,7 +5435,7 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
             .map_err(|err| format!("Saved workspace.json has invalid projects: {err}"))?,
         None => Vec::new(),
     };
-    let threads: Vec<AgentThread> = match snapshot.remove("threads") {
+    let mut threads: Vec<AgentThread> = match snapshot.remove("threads") {
         Some(v) => serde_json::from_value(v)
             .map_err(|err| format!("Saved workspace.json has invalid threads: {err}"))?,
         None => Vec::new(),
@@ -5451,6 +5452,14 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
         .remove("clearedThreadIds")
         .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
         .unwrap_or_default();
+    // A cleared thread stays cleared (ADR-0140 decision 6): Node's workspace drops one its saved snapshot still holds as
+    // it loads, and the pull requests it kept unlinked (`initialize`). It leaves the creations as they are, and so does
+    // this host.
+    if !cleared_thread_ids.is_empty() {
+        let cleared: HashSet<&str> = cleared_thread_ids.iter().map(String::as_str).collect();
+        threads.retain(|thread| !cleared.contains(thread.id.as_str()));
+        forget_unlinked_pull_requests(&mut root, |id| cleared.contains(id));
+    }
     let workspace_configuration = root
         .remove("configuration")
         .and_then(|v| serde_json::from_value::<AgentConfiguration>(v).ok());
@@ -5472,6 +5481,18 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
         had_saved_configuration,
         configuration,
     })
+}
+
+/// Takes threads' entries out of the pull requests Node's workspace keeps unlinked (`unlinkedPullRequests` in
+/// `workspace.json`), which this host carries as they were, as Node's workspace lets a deleted or cleared thread's go:
+/// a list left empty goes too, as Node's `syncUnlinkedPullRequestsState` deletes one.
+fn forget_unlinked_pull_requests(workspace: &mut Map<String, Value>, gone: impl Fn(&str) -> bool) {
+    let Some(Value::Array(entries)) = workspace.get_mut("unlinkedPullRequests") else { return };
+    let before = entries.len();
+    entries.retain(|entry| entry.get("threadId").and_then(Value::as_str).is_none_or(|id| !gone(id)));
+    if entries.is_empty() && before > 0 {
+        workspace.remove("unlinkedPullRequests");
+    }
 }
 
 /// Reads `threads.json`. One that is there and does not read is moved aside as `.corrupt-<millis>`, as Node's registry
@@ -6229,6 +6250,38 @@ mod tests {
         coord.shutdown().await;
         let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
         assert!(store.read_messages(&thread_id).unwrap().is_empty(), "nothing it reported reached the store");
+    }
+
+    /// A workspace.json that still holds a cleared thread, as one saved mid-delete or by an older build can, is read as
+    /// Node's workspace reads it: the thread and the pull requests it kept unlinked are dropped as it loads, and its
+    /// creation record stays, as Node leaves the creations alone.
+    #[tokio::test]
+    async fn a_cleared_thread_is_dropped_as_the_workspace_loads() {
+        let dir = tempdir().unwrap();
+        let (coord, _client, project_id, thread_id) = organized_workspace(dir.path()).await;
+        coord.shutdown().await;
+        let path = dir.path().join("workspace.json");
+        let mut workspace: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let other = "00000000-0000-4000-8000-0000000000aa";
+        let fields = workspace.as_object_mut().unwrap();
+        fields.insert("clearedThreadIds".into(), json!([thread_id]));
+        fields.insert("creations".into(), json!([{ "threadId": thread_id, "projectId": project_id, "commandId": "c1", "phase": "started" }]));
+        fields.insert("unlinkedPullRequests".into(), json!([{ "threadId": thread_id, "keys": ["github.com/o/r/1"] }, { "threadId": other, "keys": ["github.com/o/r/2"] }]));
+        std::fs::write(&path, serde_json::to_string(&workspace).unwrap()).unwrap();
+
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let shell = coord.shell(true).await.unwrap();
+        assert!(!shell["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id.as_str()), "a cleared thread is not read back");
+        assert!(coord.detail(thread_id.clone()).await.unwrap().is_none());
+        // A save writes what was read.
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        coord.run_command(client, json!({ "type": "settle-project", "projectId": project_id }).as_object().unwrap().clone()).await.unwrap();
+        coord.shutdown().await;
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(saved["snapshot"]["threads"].as_array().unwrap().is_empty());
+        assert_eq!(saved["clearedThreadIds"], json!([thread_id]));
+        assert_eq!(saved["unlinkedPullRequests"], json!([{ "threadId": other, "keys": ["github.com/o/r/2"] }]));
+        assert_eq!(saved["creations"].as_array().unwrap().len(), 1, "Node leaves the creations as they are");
     }
 
     /// `load-earlier-messages` as Node answers it: this host sends a thread's whole history, so a thread it holds has
