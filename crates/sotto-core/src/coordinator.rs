@@ -596,6 +596,11 @@ enum ActorMessage {
         watched: Vec<(String, AnswerTarget)>,
         reply: oneshot::Sender<Vec<String>>,
     },
+    RequestWaiting {
+        thread_id: String,
+        request_id: String,
+        reply: oneshot::Sender<bool>,
+    },
     AsyncCommandDone {
         lane: Option<String>,
         client: ClientContext,
@@ -954,6 +959,18 @@ impl CoordinatorHandle {
         reply_rx
             .await
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+    }
+
+    /// Whether a thread still waits on a request, as Node's socket server asks before it keeps an answer's receipt: an
+    /// answer to a request that is not waiting is refused stale and keeps none.
+    pub async fn request_waiting(&self, thread_id: String, request_id: String) -> Result<bool, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::RequestWaiting { thread_id, request_id, reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
     }
 
     /// The command IDs, of those a client watches, whose exact answers a provider took under that client's decision IDs.
@@ -1967,6 +1984,12 @@ impl CoordinatorActor {
                     .map(|(command_id, _)| command_id)
                     .collect();
                 let _ = reply.send(accepted);
+            }
+            ActorMessage::RequestWaiting { thread_id, request_id, reply } => {
+                let waiting = self.threads.iter().find(|thread| thread.id == thread_id).is_some_and(|thread| {
+                    thread.requests.iter().any(|request| request.get("id").and_then(Value::as_str) == Some(request_id.as_str()))
+                });
+                let _ = reply.send(waiting);
             }
             ActorMessage::FollowupSent { item_id, draft_id, outcome } => self.followup_sent(&item_id, &draft_id, outcome),
             ActorMessage::AsyncCommandDone {

@@ -24,7 +24,8 @@ use sotto_core::workspace::now_ms;
 use sotto_core::linked_files::LinkRequest;
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::answered_requests::{answer_decision_id, AnswerTarget};
-use sotto_core::command_receipts::{ended_receipt, keeps_receipt, unknown_receipt, CommandReceipts};
+use sotto_core::command_receipts::{ended_receipt, keeps_receipt, unknown_receipt, CommandReceipts, Receipt};
+use sotto_core::remote_commands::validate_remote_command;
 use sotto_core::protocol_fields::protocol_id;
 use sotto_core::workspace::sha256_hex;
 use sotto_core::thread_media::MediaRequest;
@@ -1913,6 +1914,77 @@ async fn handle_websocket_upgrade(
     Ok(())
 }
 
+/// One paired client's command under its own request ID, as Node's socket server keeps its receipt (`CommandReceipts`):
+/// a command sent again under that ID is answered from its first run, and one that passed every check is kept while it
+/// runs and once it ended. The digest is of the command alone, kept in memory only.
+struct CommandReceipt<'a> {
+    state: &'a HostState,
+    client_id: &'a str,
+    request_id: String,
+    digest: String,
+}
+
+impl<'a> CommandReceipt<'a> {
+    fn new(state: &'a HostState, client_id: &'a str, request_id: &str, command: &serde_json::Map<String, Value>) -> Self {
+        let digest = sha256_hex(serde_json::to_string(command).unwrap_or_default().as_bytes());
+        Self { state, client_id, request_id: request_id.to_string(), digest }
+    }
+
+    /// The answer to a command this client already sent under this request ID, before any other check, as Node answers
+    /// it: refused if it says something else, waited on while it runs, and then answered as it ended, a failure in its
+    /// code's own words. None when this client sent no command under the ID, or none the host still keeps.
+    async fn replay(&self, wire: &mut ClientWireState, may_answer: bool) -> Option<HostResponseEnvelope> {
+        let previous = self.state.receipts.lock().unwrap().get(self.client_id, &self.request_id)?;
+        let id = self.request_id.clone();
+        if previous.digest != self.digest {
+            return Some(HostResponseEnvelope::err(id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message()));
+        }
+        Some(match previous.settled().await {
+            None => HostResponseEnvelope::err(id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
+            Some(Receipt { error: Some(code), .. }) => HostResponseEnvelope::err(id, code, code.default_message()),
+            Some(_) => match self.state.coordinator.shell(may_answer).await {
+                Ok(raw_shell) => HostResponseEnvelope::ok(id, wire.encode_command_shell(raw_shell)),
+                Err(err) => HostResponseEnvelope::err(id, err.code, err.message),
+            },
+        })
+    }
+
+    /// Runs a command that passed every check, its receipt kept first, as Node keeps one only after every refusal: busy
+    /// when the store is full of pending work. The command runs to its end and settles its receipt whether or not the
+    /// socket stays to hear it.
+    async fn run(self, client: ClientContext, command: serde_json::Map<String, Value>, wire: &mut ClientWireState) -> HostResponseEnvelope {
+        let CommandReceipt { state, client_id, request_id, digest } = self;
+        {
+            // Only pending work is busy: settled receipts make room.
+            let mut receipts = state.receipts.lock().unwrap();
+            if !receipts.make_room() {
+                return HostResponseEnvelope::err(request_id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
+            }
+            receipts.record(client_id, &request_id, digest);
+        }
+        let is_answer = command.get("type").and_then(Value::as_str) == Some("answer");
+        // An answer is given under this client's own decision ID, so its receipt can say whether it was taken.
+        let decision_id = is_answer.then(|| answer_decision_id(client_id, &request_id));
+        let queued = state.coordinator.enqueue_command_deciding(client, command, decision_id);
+        let receipts = Arc::clone(&state.receipts);
+        let (client_key, request_key) = (client_id.to_string(), request_id.clone());
+        let (ended_tx, ended_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let outcome = match queued {
+                Ok(reply) => reply.await.unwrap_or_else(|_| Err(sotto_core::CoordinatorError::unavailable("Host coordinator stopped."))),
+                Err(err) => Err(err),
+            };
+            receipts.lock().unwrap().settle(&client_key, &request_key, ended_receipt(is_answer, &outcome));
+            let _ = ended_tx.send(outcome);
+        });
+        match ended_rx.await {
+            Ok(Ok(raw_shell)) => HostResponseEnvelope::ok(request_id, wire.encode_command_shell(raw_shell)),
+            Ok(Err(err)) => HostResponseEnvelope::err(request_id, err.code, err.message),
+            Err(_) => HostResponseEnvelope::err(request_id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
+        }
+    }
+}
+
 /// Tells a client that takes `answer-receipts` of each answer it watches that a provider has now taken, as Node's
 /// socket server does on each of the host's publications, and stops watching each one it was told of. False when the
 /// socket is gone.
@@ -2361,25 +2433,10 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
-            // A command sent again under the same request ID is answered from its first run, as Node's socket server
-            // answers it, before any other check: refused if it says something else, waited on while it runs, and then
-            // answered as it ended. The digest is of the command alone, kept in memory only.
-            let digest = sha256_hex(serde_json::to_string(cmd).unwrap_or_default().as_bytes());
-            let previous = state.receipts.lock().unwrap().get(client_id, &req.id);
-            if let Some(previous) = previous {
-                if previous.digest != digest {
-                    return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
-                }
-                return match previous.settled().await {
-                    None => HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
-                    Some(receipt) => match receipt.error {
-                        Some((code, message)) => HostResponseEnvelope::err(req.id, code, message),
-                        None => match state.coordinator.shell(may_answer).await {
-                            Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
-                            Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
-                        },
-                    },
-                };
+            // A command sent again under the same request ID is answered from its first run, before any other check.
+            let receipt = CommandReceipt::new(state, client_id, &req.id, cmd);
+            if let Some(reply) = receipt.replay(wire, may_answer).await {
+                return reply;
             }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
@@ -2421,43 +2478,30 @@ async fn handle_ws_request(
                 may_answer,
             };
             let kind = cmd.get("type").and_then(Value::as_str).unwrap_or_default();
-            let is_answer = kind == "answer";
             if !keeps_receipt(kind) {
                 return match state.coordinator.run_command(client, cmd.clone()).await {
                     Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
                     Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
                 };
             }
-            // Only pending work is busy: settled receipts make room.
-            if !state.receipts.lock().unwrap().make_room() {
-                return HostResponseEnvelope::err(req.id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
+            // What the coordinator turns down before acting (the allow-list, its fields and ADR-0004's answer policy) is
+            // turned down here before a receipt is kept, as Node's socket server refuses a management command and
+            // `remoteCommandRefusal`'s before it keeps one.
+            if let Err(refusal) = validate_remote_command(cmd, may_answer) {
+                let message = refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string());
+                return HostResponseEnvelope::err(req.id, refusal.code, message);
             }
-            state.receipts.lock().unwrap().record(client_id, &req.id, digest);
-            // An answer is given under this client's own decision ID, so its receipt can say whether it was taken.
-            let decision_id = is_answer.then(|| answer_decision_id(client_id, &req.id));
-            let queued = state.coordinator.enqueue_command_deciding(client, cmd.clone(), decision_id);
-            // The command runs to its end and settles its receipt whether or not this socket stays to hear it.
-            let receipts = Arc::clone(&state.receipts);
-            let (client_key, request_key) = (client_id.to_string(), req.id.clone());
-            let (ended_tx, ended_rx) = tokio::sync::oneshot::channel();
-            tokio::spawn(async move {
-                let outcome = match queued {
-                    Ok(reply) => reply.await.unwrap_or_else(|_| Err(sotto_core::CoordinatorError::unavailable("Host coordinator stopped."))),
-                    Err(err) => Err(err),
-                };
-                let mut receipts = receipts.lock().unwrap();
-                match ended_receipt(is_answer, &outcome) {
-                    Some(receipt) => receipts.settle(&client_key, &request_key, receipt),
-                    None => receipts.forget(&client_key, &request_key),
+            // An answer to a request its thread no longer waits on is stale and keeps no receipt, as Node refuses it.
+            if kind == "answer" {
+                if let (Some(thread_id), Some(request_id)) = (cmd.get("threadId").and_then(Value::as_str), cmd.get("requestId").and_then(Value::as_str)) {
+                    match state.coordinator.request_waiting(thread_id.to_string(), request_id.to_string()).await {
+                        Ok(true) => {}
+                        Ok(false) => return HostResponseEnvelope::err(req.id, HostErrorCode::StaleRequest, HostErrorCode::StaleRequest.default_message()),
+                        Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+                    }
                 }
-                drop(receipts);
-                let _ = ended_tx.send(outcome);
-            });
-            match ended_rx.await {
-                Ok(Ok(raw_shell)) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
-                Ok(Err(err)) => HostResponseEnvelope::err(req.id, err.code, err.message),
-                Err(_) => HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
             }
+            receipt.run(client, cmd.clone(), wire).await
         }
         "receipt" => {
             // What became of one of this client's commands, as Node's socket server answers it. With an answer named,
@@ -3824,6 +3868,48 @@ mod tests {
         let (refused, ()) = tokio::join!(host.ask(&mut connection, check), revoke);
         assert_eq!(refused["error"]["code"], "unauthenticated", "{refused}");
         assert_eq!(refused["error"]["message"], HostErrorCode::Unauthenticated.default_message());
+        host.server.close().await;
+    }
+
+    /// A command turned down before it acts keeps no receipt, as Node turns each one down before `receipts.record`: one
+    /// the allow-list refuses, a save naming a revision from a client without `draft-revisions`, and an answer to a
+    /// question no longer waiting. A receipt of a command that failed says only the host's `unavailable`, and a retry
+    /// is answered in those words alone.
+    #[tokio::test]
+    async fn refused_commands_keep_no_receipt_and_a_receipt_keeps_only_the_hosts_words() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&["answer-receipts"]).await;
+        let command = |id: &str, command: Value| json!({ "v": 1, "id": id, "op": "command", "command": command });
+        let receipt = |id: &str| json!({ "v": 1, "id": format!("read-{id}"), "op": "receipt", "commandId": id });
+
+        let refusals = [
+            ("cmd-fields", json!({ "type": "rename-thread", "threadId": ASKING_THREAD, "title": "X", "later": 1 }), "invalid_request"),
+            ("cmd-revision", json!({ "type": "save-thread-draft", "threadId": ASKING_THREAD, "text": "Hi", "expectedDraftId": "d" }), "invalid_request"),
+            ("cmd-stale", json!({ "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-9", "answer": "Blue" }), "stale_request"),
+        ];
+        for (id, refused, code) in refusals {
+            let reply = host.ask(&mut connection, command(id, refused)).await;
+            assert_eq!(reply["error"]["code"], code, "{id}: {reply}");
+            assert_eq!(host.ask(&mut connection, receipt(id)).await["result"], json!({ "status": "unknown" }), "{id} kept no receipt");
+        }
+        // With no receipt kept, the same ID may carry another command, which runs.
+        let renamed = host.ask(&mut connection, command("cmd-fields", json!({ "type": "rename-thread", "threadId": ASKING_THREAD, "title": "Renamed" }))).await;
+        assert_eq!(renamed["ok"], true, "{renamed}");
+        assert_eq!(host.ask(&mut connection, receipt("cmd-fields")).await["result"], json!({ "status": "completed" }));
+
+        // The coordinator's own words answer the command, but its receipt and any retry say only the host's.
+        let unknown = command("cmd-unknown", json!({ "type": "rename-thread", "threadId": "00000000-0000-4000-8000-0000000000ff", "title": "X" }));
+        let first = host.ask(&mut connection, unknown.clone()).await;
+        assert_eq!(first["ok"], false, "{first}");
+        let words = HostErrorCode::Unavailable.default_message();
+        let kept = host.ask(&mut connection, receipt("cmd-unknown")).await;
+        assert_eq!(kept["result"], json!({ "status": "completed", "error": { "code": "unavailable", "message": words } }));
+        let again = host.ask(&mut connection, unknown).await;
+        assert_eq!(again["error"], json!({ "code": "unavailable", "message": words }));
+
+        let answered = host.ask(&mut connection, command("cmd-answer", json!({ "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-1", "answer": "Blue" }))).await;
+        assert_eq!(answered["ok"], true, "{answered}");
+        assert_eq!(host.ask(&mut connection, receipt("cmd-answer")).await["result"], json!({ "status": "completed", "answerDelivered": true }));
         host.server.close().await;
     }
 

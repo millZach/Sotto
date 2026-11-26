@@ -3,8 +3,8 @@
 //! twice, and a client that lost a command's acknowledgement can ask what became of it (`receipt`). Both of a host's
 //! listeners share one, so a desktop that moves between them is answered from here (ADR-0053).
 //!
-//! A receipt is pending while its command runs and completed once it ends, with its error when it was refused, and for
-//! an answer whether the answer was delivered. A settled receipt is kept for five minutes, which covers a reconnect after
+//! A receipt is pending while its command runs and completed once it ends, with Node's fixed `unavailable` error when
+//! it failed, and for an answer whether the answer was delivered. A settled receipt is kept for five minutes, which covers a reconnect after
 //! a lost acknowledgement, and then dropped, so a host that runs for weeks never fills up. Only pending work is busy.
 //! Receipts live in memory only and hold no command text: a digest of the command, its outcome and nothing else.
 
@@ -16,7 +16,6 @@ use tokio::sync::watch;
 use crate::answered_requests::AnswerTarget;
 use crate::coordinator::CoordinatorError;
 use crate::protocol::HostErrorCode;
-use crate::workspace::clip_utf16;
 
 /// How long a settled receipt answers a retried command, as Node's `RECEIPT_LIFETIME_MS`.
 pub const RECEIPT_LIFETIME_MS: i64 = 5 * 60_000;
@@ -24,8 +23,6 @@ pub const RECEIPT_LIFETIME_MS: i64 = 5 * 60_000;
 pub const RECEIPT_LIMIT: usize = 10_000;
 /// How many answers one connection waits to hear were accepted, oldest dropped first, as Node's socket server keeps them.
 pub const ANSWER_WATCHES_MAX: usize = 512;
-/// The longest message Node's `hostProtocolErrorSchema` reads, in UTF-16 code units.
-const ERROR_MESSAGE_MAX: usize = 1000;
 
 /// The commands that keep no receipt: selecting and observing only move one client's own view, and repeating one is
 /// harmless, as Node's `UNRECEIPTED` names them.
@@ -43,8 +40,9 @@ pub enum ReceiptStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Receipt {
     pub status: ReceiptStatus,
-    /// The refusal the command was answered with.
-    pub error: Option<(HostErrorCode, String)>,
+    /// The code a command that failed is answered with again, always with that code's own words: a receipt never keeps
+    /// what an adapter or the coordinator said, so no such words reach another reply.
+    pub error: Option<HostErrorCode>,
     /// For an answer, whether the provider took it.
     pub answer_delivered: Option<bool>,
 }
@@ -58,10 +56,9 @@ impl Receipt {
         Self { status: ReceiptStatus::Completed, error: None, answer_delivered: None }
     }
 
-    /// A command that ended refused, its words as a host error carries them: never empty and at most 1000 code units.
-    pub fn refused(code: HostErrorCode, message: &str) -> Self {
-        let message = if message.is_empty() { code.default_message().to_string() } else { clip_utf16(message, ERROR_MESSAGE_MAX).to_string() };
-        Self { status: ReceiptStatus::Completed, error: Some((code, message)), answer_delivered: None }
+    /// A command that failed, as Node records every one: `unavailable`, in its fixed words.
+    pub fn unavailable() -> Self {
+        Self { status: ReceiptStatus::Completed, error: Some(HostErrorCode::Unavailable), answer_delivered: None }
     }
 
     /// The receipt as Node's `hostReceiptSchema` reads it.
@@ -71,8 +68,8 @@ impl Receipt {
             ReceiptStatus::Completed => "completed",
         };
         let mut value = json!({ "status": status });
-        if let Some((code, message)) = &self.error {
-            value["error"] = json!({ "code": code.as_str(), "message": message });
+        if let Some(code) = self.error {
+            value["error"] = json!({ "code": code.as_str(), "message": code.default_message() });
         }
         if let Some(delivered) = self.answer_delivered {
             value["answerDelivered"] = json!(delivered);
@@ -81,16 +78,12 @@ impl Receipt {
     }
 }
 
-/// What a command's receipt says once it ended, as Node's socket server writes it: completed, with its refusal when it
-/// was refused, and for an answer whether the provider took it. None for an answer to a question no longer waiting,
-/// which Node turns down before it keeps a receipt.
-pub fn ended_receipt(is_answer: bool, outcome: &Result<Value, CoordinatorError>) -> Option<Receipt> {
-    let delivered = is_answer.then_some(outcome.is_ok());
-    match outcome {
-        Ok(_) => Some(Receipt { answer_delivered: delivered, ..Receipt::completed() }),
-        Err(err) if is_answer && err.code == HostErrorCode::StaleRequest => None,
-        Err(err) => Some(Receipt { answer_delivered: delivered, ..Receipt::refused(err.code, &err.message) }),
-    }
+/// What a command's receipt says once it ended, as Node's socket server writes it: completed, `unavailable` in its fixed
+/// words when it failed however it failed, and for an answer whether the provider took it. A command turned down before
+/// it acted keeps no receipt at all: the socket server refuses it before one is made.
+pub fn ended_receipt(is_answer: bool, outcome: &Result<Value, CoordinatorError>) -> Receipt {
+    let ended = if outcome.is_ok() { Receipt::completed() } else { Receipt::unavailable() };
+    Receipt { answer_delivered: is_answer.then_some(outcome.is_ok()), ..ended }
 }
 
 /// The receipt of a command this host does not hold, or no longer does.
@@ -254,15 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_says_whether_it_was_delivered_and_a_refusal_its_error() {
+    fn an_answer_says_whether_it_was_delivered_and_a_failure_is_unavailable() {
         let delivered = Receipt { answer_delivered: Some(true), ..Receipt::completed() };
         assert_eq!(delivered.to_value(), json!({ "status": "completed", "answerDelivered": true }));
-        let undelivered = Receipt { answer_delivered: Some(false), ..Receipt::refused(HostErrorCode::Unavailable, "The provider could not take it.") };
-        assert_eq!(undelivered.to_value(), json!({ "status": "completed", "error": { "code": "unavailable", "message": "The provider could not take it." }, "answerDelivered": false }));
-        let refused = Receipt::refused(HostErrorCode::Forbidden, "");
-        assert_eq!(refused.to_value()["error"]["message"], HostErrorCode::Forbidden.default_message(), "a host error's words are never empty");
-        let long = Receipt::refused(HostErrorCode::InvalidRequest, &"x".repeat(1500));
-        assert_eq!(long.to_value()["error"]["message"].as_str().unwrap().len(), 1000);
+        let undelivered = Receipt { answer_delivered: Some(false), ..Receipt::unavailable() };
+        let words = HostErrorCode::Unavailable.default_message();
+        assert_eq!(undelivered.to_value(), json!({ "status": "completed", "error": { "code": "unavailable", "message": words }, "answerDelivered": false }));
     }
 
     #[tokio::test]
@@ -273,9 +263,9 @@ mod tests {
         let retry = tokio::spawn(waiting.settled());
         tokio::task::yield_now().await;
         assert!(!retry.is_finished());
-        store.settle("c", "cmd", Receipt::refused(HostErrorCode::StaleRequest, "Gone."));
+        store.settle("c", "cmd", Receipt::unavailable());
         let ended = retry.await.unwrap().unwrap();
-        assert_eq!(ended.error, Some((HostErrorCode::StaleRequest, "Gone.".into())));
+        assert_eq!(ended.error, Some(HostErrorCode::Unavailable));
         // One let go before it ended is not waited on for good.
         store.record("c", "other", "d".into());
         let waiting = store.get("c", "other").unwrap();
@@ -315,18 +305,20 @@ mod tests {
         assert!(store.receipt("c", "first").is_none() && store.receipt("c", "second").is_some());
     }
 
+    /// A receipt keeps only Node's fixed `unavailable` error, whatever the command failed with, so what an adapter or the
+    /// coordinator said never reaches another reply.
     #[test]
-    fn a_receipt_says_how_its_command_ended() {
+    fn a_receipt_says_how_its_command_ended_in_the_hosts_words_alone() {
         let shell = Ok(json!({ "threads": [] }));
-        assert_eq!(ended_receipt(false, &shell), Some(Receipt::completed()));
-        assert_eq!(ended_receipt(true, &shell).unwrap().to_value(), json!({ "status": "completed", "answerDelivered": true }));
-        let refused = Err(CoordinatorError::unavailable("The provider could not take it."));
-        assert_eq!(ended_receipt(true, &refused).unwrap().to_value(),
-            json!({ "status": "completed", "error": { "code": "unavailable", "message": "The provider could not take it." }, "answerDelivered": false }));
-        assert_eq!(ended_receipt(false, &Err(CoordinatorError::forbidden("No."))).unwrap().to_value(),
-            json!({ "status": "completed", "error": { "code": "forbidden", "message": "No." } }));
-        assert_eq!(ended_receipt(true, &Err(CoordinatorError::stale("Gone."))), None, "Node keeps no receipt for a question no longer waiting");
-        assert!(ended_receipt(false, &Err(CoordinatorError::stale("Gone."))).is_some());
+        assert_eq!(ended_receipt(false, &shell), Receipt::completed());
+        assert_eq!(ended_receipt(true, &shell).to_value(), json!({ "status": "completed", "answerDelivered": true }));
+        let words = HostErrorCode::Unavailable.default_message();
+        let failed = Err(CoordinatorError::unavailable("codex: connection reset by peer at /home/someone/project"));
+        assert_eq!(ended_receipt(true, &failed).to_value(),
+            json!({ "status": "completed", "error": { "code": "unavailable", "message": words }, "answerDelivered": false }));
+        for failed in [CoordinatorError::forbidden("No."), CoordinatorError::invalid("Unknown thread."), CoordinatorError::stale("Gone.")] {
+            assert_eq!(ended_receipt(false, &Err(failed)).to_value(), json!({ "status": "completed", "error": { "code": "unavailable", "message": words } }));
+        }
     }
 
     #[test]
