@@ -7,15 +7,15 @@
 .mods-make__foot > span { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .mods-status { min-height: 1.5em; margin: 8px 0 0; color: var(--tt-text-2); font-size: var(--tt-type-small); }
 .mods-status:empty { display: none; }
-.mods-status--error { color: var(--tt-danger); }
-.mods-status__link { padding: 0; border: 0; background: none; color: var(--tt-accent-text); font: inherit; text-decoration: underline; cursor: pointer; }
+.mods-status--error { color: var(--tt-error-text); }
+.mods-status__link { padding: 0; border: 0; background: none; color: var(--tt-accent-text); font: inherit; text-decoration: underline; }
 .mods-list { display: grid; padding: 4px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
 .mods-empty { margin: 0; padding: 14px 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .mods-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; align-items: start; padding: 12px 0; border-top: 1px solid var(--tt-hairline); }
 .mods-row:first-child { border-top: 0; }
 .mods-row__main { min-width: 0; }
 .mods-row__main .tt-toggle { width: 100%; }
-.mods-row[data-problem] .tt-field__description { color: var(--tt-danger); }
+.mods-row[data-problem] .tt-field__description { color: var(--tt-error-text); }
 .mods-row__code { grid-column: 1 / -1; max-height: 280px; margin: 10px 0 0; padding: 10px 12px; overflow: auto; border-radius: var(--tt-radius-inset); background: var(--tt-card-inset); color: var(--tt-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mods-foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .mods-foot .tt-button { display: inline-flex; align-items: center; gap: 6px; }

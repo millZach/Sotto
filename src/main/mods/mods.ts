@@ -101,7 +101,7 @@ ${parts}
 Sotto's colours come from the user's theme as CSS variables. Use them where a mod should follow the theme, light and
 dark: \`--tt-canvas\`, \`--tt-surface\`, \`--tt-card\`, \`--tt-card-inset\`, \`--tt-field\`, \`--tt-sidebar\`,
 \`--tt-text\`, \`--tt-text-2\`, \`--tt-text-muted\`, \`--tt-accent\`, \`--tt-accent-text\`, \`--tt-hairline\`,
-\`--tt-danger\`, \`--tt-success\`. Fonts are \`--tt-font-ui\` and \`--tt-font-mono\`; corners \`--tt-radius-control\` and
+\`--tt-error-text\`, \`--tt-success\`. Fonts are \`--tt-font-ui\` and \`--tt-font-mono\`; corners \`--tt-radius-control\` and
 \`--tt-radius-card\`.
 
 A mod's rules come after Sotto's, so they win a tie. Where Sotto's own rule is more specific, add \`!important\`.
