@@ -76,6 +76,7 @@ pub fn advertised_features() -> Vec<String> {
         "project-origins".into(),
         "project-git-init".into(),
         "thread-words".into(),
+        "thread-prompts".into(),
         "subagents".into(),
         "usage-dashboard".into(),
         "usage-history".into(),
@@ -97,6 +98,39 @@ pub fn advertised_features() -> Vec<String> {
     ]
 }
 
+/// The longest ID Node's protocol reads (`id` in `src/shared/agents.ts`), in UTF-16 code units as zod counts.
+const ID_MAX: usize = 512;
+
+/// An ID as Node's schema reads one: not empty and at most `ID_MAX` UTF-16 code units.
+fn protocol_id(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty() && id.encode_utf16().count() <= ID_MAX)
+        .map(ToString::to_string)
+}
+
+/// The features a tailnet listener offers only to a client the launch script recorded as a desktop, as Node's
+/// `HOST_DESKTOP_FEATURES` (`src/shared/hostProtocol.ts`, ADR-0053). The loopback listener offers them to every client.
+const HOST_DESKTOP_FEATURES: &[&str] = &[
+    "detached-runs-elsewhere", "thread-file-links", "thread-linked-files", "provider-sign-in", "client-updates",
+    "client-update-outcomes", "client-update-not-listed", "watcher-control", "watcher-reads", "watcher-standing-watch",
+    "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "watcher-cursor", "watcher-antigravity",
+    "host-update", "opencode-sign-in", "activity-bodies", "thread-prompts", "project-origins", "host-delegation",
+    "delegation-views", "branch-moves", "delegation-relay", "check-queue-views", "project-setup", "delegation-relay-send",
+    "delegation-remote", "delegation-branch-starts", "watcher-new-owner", "thread-move", "worker-swarms",
+    "every-agent-picture", "thread-move-source", "thread-move-keep", "next-prompts", "watcher-tell", "watcher-ready",
+    "browser", "plugin-account-copies", "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies",
+    "watcher-progress", "plugin-meshy-spending", "plugin-meshy-models", "plugin-elevenlabs-copies",
+    "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds", "detail-read-held", "thread-coordination-views",
+    "thread-coordination-relay",
+];
+
+/// Whether this listener counts a client as a desktop, as Node's socket server does: every client on the loopback
+/// listener, and on a tailnet listener only one the launch script recorded.
+fn desktop_on_listener(mode: &ListenerMode, recorded: bool) -> bool {
+    matches!(mode, ListenerMode::Admin) || recorded
+}
+
 /// The threads an `observe-threads` command names, as Node's schema reads them: at most 100 thread IDs and nothing else.
 fn observed_thread_ids(command: &serde_json::Map<String, Value>) -> Option<Vec<String>> {
     if command.keys().any(|key| key != "type" && key != "threadIds") {
@@ -108,16 +142,21 @@ fn observed_thread_ids(command: &serde_json::Map<String, Value>) -> Option<Vec<S
     }
     items
         .iter()
-        .map(|item| item.as_str().filter(|id| !id.is_empty() && id.chars().count() <= 512).map(ToString::to_string))
+        .map(|item| protocol_id(Some(item)))
         .collect()
 }
 
 /// Filters host-advertised features per authenticated client: `watcher-*` (non-phone) and
 /// `project-origins` are offered ONLY to authenticated paired desktops recorded in
 /// `desktop-clients.json` (ADR-0073, ADR-0082).
-fn features_for_client(features: &[String], is_desktop: bool) -> Vec<String> {
+fn features_for_client(features: &[String], is_desktop: bool, desktop_on_listener: bool) -> Vec<String> {
+    let features: Vec<String> = features
+        .iter()
+        .filter(|feat| desktop_on_listener || !HOST_DESKTOP_FEATURES.contains(&feat.as_str()))
+        .cloned()
+        .collect();
     if is_desktop {
-        return features.to_vec();
+        return features;
     }
     features
         .iter()
@@ -1618,7 +1657,7 @@ async fn handle_ws_request(
                 desktops.refresh();
                 desktops.has(client_id)
             };
-            let client_features = features_for_client(&state.features, is_desktop);
+            let client_features = features_for_client(&state.features, is_desktop, desktop_on_listener(mode, is_desktop));
             let advertised: std::collections::HashSet<&str> =
                 client_features.iter().map(String::as_str).collect();
             let accepts: Vec<String> = req
@@ -1962,6 +2001,19 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            // A command for a thread of a provider this client does not know is not this client's to send, as Node's
+            // socket server refuses it.
+            if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
+                if let Ok(Some(provider)) = state.coordinator.thread_provider(thread_id.to_string()).await {
+                    if wire.hides_provider(&provider) {
+                        return HostResponseEnvelope::err(
+                            req.id,
+                            HostErrorCode::Forbidden,
+                            HostErrorCode::Forbidden.default_message(),
+                        );
+                    }
+                }
+            }
             // A socket client's own `observe-threads` is what its connection observes, as an `observe` is, and goes with
             // the connection (`src/host/socketServer.ts`).
             if cmd.get("type").and_then(Value::as_str) == Some("observe-threads") {
@@ -2279,6 +2331,42 @@ async fn handle_ws_request(
             .await
             .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read review."));
             HostResponseEnvelope::ok(req.id, res)
+        }
+        "thread-prompts" => {
+            // The prompts above a pane's window for the message scrubber (ADR-0109), as Node's host answers them.
+            // Offered to a desktop alone (`HOST_DESKTOP_FEATURES`), and its request is refused for any other client.
+            let recorded = state.desktops.lock().unwrap().has(client_id);
+            let strict = req.fields.keys().all(|key| key == "threadId" || key == "beforeMessageId");
+            let ids = (protocol_id(req.fields.get("threadId")), protocol_id(req.fields.get("beforeMessageId")));
+            let (true, true, Some(thread_id), Some(before)) = (desktop_on_listener(mode, recorded), strict, ids.0, ids.1) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let provider = match state.coordinator.thread_provider(thread_id.clone()).await {
+                Ok(provider) => provider,
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+            };
+            // A thread the host does not hold has no prompts it can say; one of a provider this client does not know is
+            // not this client's to read.
+            let Some(provider) = provider else {
+                return HostResponseEnvelope::ok(req.id, Value::Null);
+            };
+            if wire.hides_provider(&provider) {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            let dir = state.data_directory.clone();
+            let prompts = tokio::task::spawn_blocking(move || sotto_core::ops::thread_prompts(&dir, &thread_id, &before))
+                .await
+                .ok()
+                .flatten();
+            HostResponseEnvelope::ok(req.id, prompts.unwrap_or(Value::Null))
         }
         "thread-words" => {
             let Some(query) = req
@@ -2790,6 +2878,23 @@ async fn send_http_error(
 mod tests {
     use super::*;
 
+    /// A tailnet listener offers Node's desktop-only features to a recorded desktop alone, as Node's `featuresFor`; the
+    /// loopback listener counts every client as a desktop.
+    #[test]
+    fn a_tailnet_phone_is_not_offered_the_desktop_features() {
+        let all = advertised_features();
+        assert!(all.iter().any(|f| f == "thread-prompts"));
+        let phone = features_for_client(&all, false, desktop_on_listener(&ListenerMode::Admin, false));
+        assert!(phone.iter().any(|f| f == "thread-prompts"), "on loopback every client is a desktop");
+        let tailnet_phone = features_for_client(&all, false, false);
+        for desktop_only in ["thread-prompts", "host-facts", "detail-read-held"] {
+            assert!(!tailnet_phone.iter().any(|f| f == desktop_only), "{desktop_only} went to a tailnet phone");
+        }
+        assert!(tailnet_phone.iter().any(|f| f == "thread-snooze"), "a feature for every client still goes");
+        let tailnet_desktop = features_for_client(&all, true, true);
+        assert!(tailnet_desktop.iter().any(|f| f == "thread-prompts"));
+    }
+
     #[test]
     fn advertised_features_truthfully_match_implemented_watcher_ops() {
         let feats = advertised_features();
@@ -2826,13 +2931,13 @@ mod tests {
     #[test]
     fn non_desktop_clients_receive_zero_watcher_or_project_origins_features() {
         let all = advertised_features();
-        let non_desktop = features_for_client(&all, false);
+        let non_desktop = features_for_client(&all, false, true);
         assert!(!non_desktop.iter().any(|f| f.starts_with("watcher-")));
         assert!(!non_desktop.iter().any(|f| f == "project-origins"));
         // Normal non-watcher features remain available.
         assert!(non_desktop.iter().any(|f| f == "detail-delta"));
 
-        let desktop = features_for_client(&all, true);
+        let desktop = features_for_client(&all, true, true);
         assert!(desktop.iter().any(|f| f == "watcher-control"));
         assert!(desktop.iter().any(|f| f == "watcher-reads"));
         assert!(desktop.iter().any(|f| f == "project-origins"));

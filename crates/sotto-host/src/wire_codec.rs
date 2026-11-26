@@ -71,6 +71,11 @@ impl ClientWireState {
         self.observed = next;
     }
 
+    /// Whether this client is not sent threads of `provider`, since its hello does not accept that provider's feature.
+    pub fn hides_provider(&self, provider: &str) -> bool {
+        self.hidden_providers().contains(provider)
+    }
+
     fn hidden_providers(&self) -> HashSet<&'static str> {
         GATED_PROVIDERS
             .iter()

@@ -150,7 +150,7 @@ fn thread_provider_connected(statuses: &BTreeMap<String, AgentProviderStatus>, t
     statuses.get(&thread.provider_id).is_some_and(|status| status.connection == "connected")
 }
 
-/// The longest thread ID Node's command schema reads (`id` in `src/shared/agents.ts`).
+/// The longest thread ID Node's command schema reads (`id` in `src/shared/agents.ts`), in UTF-16 code units as zod counts.
 const THREAD_ID_MAX: usize = 512;
 /// The longest project or other provider entity ID Node's command schema reads (`providerEntityId`).
 const PROVIDER_ENTITY_ID_MAX: usize = 6_144;
@@ -158,7 +158,7 @@ const PROVIDER_ENTITY_ID_MAX: usize = 6_144;
 /// A command's ID field, refused as Node's schema refuses it when it is missing, empty or longer than `max`.
 fn required_id<'a>(command: &'a Map<String, Value>, key: &str, max: usize) -> Result<&'a str, CoordinatorError> {
     match command.get(key).and_then(Value::as_str) {
-        Some(id) if !id.is_empty() && id.chars().count() <= max => Ok(id),
+        Some(id) if !id.is_empty() && id.encode_utf16().count() <= max => Ok(id),
         _ => Err(CoordinatorError::invalid(format!("{key} must be an ID."))),
     }
 }
@@ -247,6 +247,10 @@ enum ActorMessage {
     GetThreadWorkspace {
         thread_id: String,
         reply: oneshot::Sender<Option<ThreadWorkspace>>,
+    },
+    GetThreadProvider {
+        thread_id: String,
+        reply: oneshot::Sender<Option<String>>,
     },
     GetRunningThreadsCount {
         reply: oneshot::Sender<usize>,
@@ -445,6 +449,17 @@ impl CoordinatorHandle {
                 thread_id,
                 reply: reply_tx,
             })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    /// The provider of a thread this host holds, or `None` when it holds no such thread.
+    pub async fn thread_provider(&self, thread_id: String) -> Result<Option<String>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetThreadProvider { thread_id, reply: reply_tx })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
         reply_rx
             .await
@@ -1153,6 +1168,10 @@ impl CoordinatorActor {
                 let ws = self.resolve_thread_workspace(&thread_id);
                 let _ = reply.send(ws);
             }
+            ActorMessage::GetThreadProvider { thread_id, reply } => {
+                let provider = self.threads.iter().find(|t| t.id == thread_id).map(|t| t.provider_id.clone());
+                let _ = reply.send(provider);
+            }
             ActorMessage::GetRunningThreadsCount { reply } => {
                 let count = self.threads.iter().filter(|t| t.status == "running").count();
                 let _ = reply.send(count);
@@ -1659,6 +1678,10 @@ impl CoordinatorActor {
             }
             "rename-thread" => {
                 let res = self.cmd_rename_thread(&command);
+                self.finish_sync_command(lane, &client, res, reply);
+            }
+            "load-earlier-messages" => {
+                let res = self.cmd_load_earlier_messages(&command);
                 self.finish_sync_command(lane, &client, res, reply);
             }
             "settle-thread" | "restore-thread" | "settle-project" | "restore-project" => {
@@ -3045,12 +3068,32 @@ impl CoordinatorActor {
                 self.error = None;
                 self.notice = if settle { "Moved to Settled." } else { "Restored." }.into();
             }
-            Err(words) => {
-                self.notice = words.clone();
-                self.error = Some(words);
-            }
+            Err(words) => self.command_refused(words),
         }
         Ok(())
+    }
+
+    /// Widens a thread's window back for a pane that asked for earlier messages, as Node's `load-earlier-messages`. This
+    /// host sends every client a thread's whole history, so there is nothing earlier to load, and the answer is the host's
+    /// state as it stands. A thread the host does not hold is turned down in the host's state, as Node's command path
+    /// turns down every failure.
+    fn cmd_load_earlier_messages(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+        let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?;
+        if command.get("throughMessageId").is_some() {
+            required_id(command, "throughMessageId", THREAD_ID_MAX)?;
+        }
+        if self.threads.iter().any(|t| t.id == thread_id) {
+            self.error = None;
+        } else {
+            self.command_refused("This thread is not known to Sotto. Refresh and select it again.".into());
+        }
+        Ok(())
+    }
+
+    /// A command turned down as Node's command path turns one down: its words are both the host's error and its notice.
+    fn command_refused(&mut self, words: String) {
+        self.notice = words.clone();
+        self.error = Some(words);
     }
 
     /// Settles or restores a thread or a project in Sotto's workspace, as Node's `setWorkspaceSettled`
@@ -4320,6 +4363,24 @@ mod tests {
         coord.shutdown().await;
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
         assert!(workspace["snapshot"]["projects"][0].get("workspaceSettledAt").is_none());
+    }
+
+    /// `load-earlier-messages` as Node answers it: this host sends a thread's whole history, so a thread it holds has
+    /// nothing earlier to load and the answer is its state; one it does not hold is turned down in that state, and an ID
+    /// Node's schema would refuse is refused.
+    #[tokio::test]
+    async fn loads_earlier_messages_as_node_does() {
+        let dir = tempdir().unwrap();
+        let (coord, client, _project_id, thread_id) = organized_workspace(dir.path()).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "load-earlier-messages", "threadId": "00000000-0000-4000-8000-0000000000ff" })).await.unwrap();
+        assert_eq!(shell["error"], "This thread is not known to Sotto. Refresh and select it again.");
+        assert_eq!(shell["notice"], shell["error"]);
+        let shell = run(json!({ "type": "load-earlier-messages", "threadId": thread_id, "throughMessageId": "m1" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        let refused = run(json!({ "type": "load-earlier-messages", "threadId": thread_id, "throughMessageId": "" })).await.unwrap_err();
+        assert_eq!(refused.code, HostErrorCode::InvalidRequest);
+        coord.shutdown().await;
     }
 
     /// Snooze as Node's `snooze-thread` (ADR-0175): every thread is published with `snoozedUntil`, the record is

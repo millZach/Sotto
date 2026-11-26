@@ -1171,6 +1171,19 @@ pub fn write_atomic_json<T: Serialize>(path: &Path, value: &T) -> std::io::Resul
     res
 }
 
+/// The longest start of `text` that is at most `max` UTF-16 code units, as JavaScript's `slice(0, max)` keeps and Node's
+/// `clipText` cuts it: never inside a character.
+pub fn clip_utf16(text: &str, max: usize) -> &str {
+    let mut units = 0;
+    for (at, character) in text.char_indices() {
+        units += character.len_utf16();
+        if units > max {
+            return &text[..at];
+        }
+    }
+    text
+}
+
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }

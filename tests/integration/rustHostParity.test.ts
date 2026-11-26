@@ -8,7 +8,8 @@
 // Rust host gains handlers. #2876 is done when it is empty.
 //
 // An answer's kind is compared, not its contents: each command's own behaviour is its handler's own test. What only the
-// socket server can show, across clients, is compared whole: which threads count as shown, which sees a failure (ADR-0092).
+// socket server can show, across clients, is compared whole: which threads count as shown, which sees a failure (ADR-0092),
+// and the prompts the message scrubber reads from each host's thread store (ADR-0109).
 // Both clients use the loopback listener, where Node counts every client as a desktop; a phone over a tailnet listener is
 // not compared here.
 // Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a `cargo build`).
@@ -152,6 +153,18 @@ async function hello(client: Client, kind: ClientKind): Promise<Hello> {
   return { features: [...result.features].sort(), capabilities: result.capabilities }
 }
 
+/** Waits until the host's state shows the fake Codex connected and no provider still connecting. */
+async function providerConnected(client: Client, label: string): Promise<void> {
+  const deadline = Date.now() + ANSWER_DEADLINE_MS * 2
+  for (;;) {
+    const answer = await request(client, { op: 'shell' })
+    const providers = (answer?.result as { host?: { providers?: { id: string; connection?: string }[] } } | undefined)?.host?.providers ?? []
+    if (providers.some(row => row.id === 'codex' && row.connection === 'connected') && providers.every(row => row.connection !== 'connecting')) return
+    expect(Date.now() < deadline, `${label} never connected the fake Codex: ${JSON.stringify(providers)}`).toBe(true)
+    await new Promise(resolveWait => setTimeout(resolveWait, 100))
+  }
+}
+
 async function startUnderTest(command: readonly string[], label: string): Promise<HostUnderTest> {
   const data = await mkdtemp(join(tmpdir(), `sotto-parity-${label}-`))
   await prepareFake(data, 'codex')
@@ -162,6 +175,9 @@ async function startUnderTest(command: readonly string[], label: string): Promis
   await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([desktop.clientId]))
   const clients = { desktop: desktop.client, unrecorded: unrecorded.client }
   const hellos = { desktop: await hello(clients.desktop, 'desktop'), unrecorded: await hello(clients.unrecorded, 'unrecorded') }
+  // A host connects its providers after it says it is ready, so it may take no project until the fake's is connected, as
+  // the referee's own start-up waits (`started` in tests/referee/scenario.ts).
+  await providerConnected(clients.desktop, label)
   const folder = join(data, 'probe-project')
   await mkdir(folder, { recursive: true })
   const created = await request(clients.desktop, { op: 'command', command: { type: 'create-project', title: 'Parity project', path: folder, useExisting: true } })
@@ -283,6 +299,13 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
       .map(([op, probe]) => [op, (ids: ProbeIds) => probe(ids) as Record<string, unknown>] as const), found.operations)
   }, 600_000)
 
+  /** Lays `value` over the fake Codex's script on one host, so its next turns go as `value` says. */
+  async function scriptTheFake(under: HostUnderTest, value: Record<string, unknown>): Promise<void> {
+    const script = join(under.data, 'script.json')
+    const current = JSON.parse(await readFile(script, 'utf8').catch(() => '{}')) as Record<string, unknown>
+    await writeFile(script, JSON.stringify({ ...current, ...value }))
+  }
+
   /** The thread as the host's state now shows it, read with a `shell` request. */
   async function shownThread(client: Client, threadId: string): Promise<{ status?: string; failureId?: string; failureSeen?: boolean } | undefined> {
     const answer = await request(client, { op: 'shell' })
@@ -311,9 +334,7 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
   it('sees a failure when a client shows its thread, as Node does', async () => {
     const steps = async (under: HostUnderTest): Promise<Record<string, boolean>> => {
       const { threadId } = await probeIds(under, randomUUID(), 'the probes')
-      const script = join(under.data, 'script.json')
-      const current = JSON.parse(await readFile(script, 'utf8').catch(() => '{}')) as Record<string, unknown>
-      await writeFile(script, JSON.stringify({ ...current, fail: true }))
+      await scriptTheFake(under, { fail: true })
       const seen = async (): Promise<boolean> => (await shownThread(under.clients.desktop, threadId))?.failureSeen === true
       const first = await failATurn(under, threadId, undefined)
       const unshown = await seen()
@@ -332,6 +353,40 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
     }
     const [onNode, onRust] = await Promise.all([steps(node), steps(rust)])
     expect(onNode).toEqual({ unshown: false, behind: false, shown: true, afterGone: false })
+    expect(onRust).toEqual(onNode)
+  }, 120_000)
+
+  /**
+   * The message scrubber's prompts (ADR-0109), read on both hosts from their own thread stores after the same three
+   * prompts: the two before the last, oldest first, each with its turn's reply. IDs and times are each host's own.
+   */
+  it('reads the prompts above a window as Node does', async () => {
+    const prompts = async (under: HostUnderTest): Promise<unknown> => {
+      const { threadId } = await probeIds(under, randomUUID(), 'the probes')
+      await scriptTheFake(under, { fail: false, reply: 'Answered' })
+      // A host's detail holds a thread's messages while a client observes it.
+      await request(under.clients.desktop, { op: 'observe', threadIds: [threadId] })
+      type Detail = { messages?: { id: string; role: string; text: string }[] }
+      const detail = async (): Promise<Detail | undefined> => (await request(under.clients.desktop, { op: 'detail', threadId }))?.result as Detail | undefined
+      for (const [index, text] of ['First prompt', 'Second prompt', 'Third prompt'].entries()) {
+        const sent = await request(under.clients.desktop, { op: 'command', command: { type: 'manual-send', threadId, text, draftId: randomUUID() } })
+        expect(sent?.ok, `${under.label} took no prompt: ${JSON.stringify(sent?.error)}`).toBe(true)
+        const deadline = Date.now() + ANSWER_DEADLINE_MS
+        while (((await detail())?.messages ?? []).filter(message => message.role === 'assistant').length <= index
+          || (await shownThread(under.clients.desktop, threadId))?.status === 'running') {
+          expect(Date.now() < deadline, `${under.label} never answered ${text}`).toBe(true)
+          await new Promise(resolveWait => setTimeout(resolveWait, 100))
+        }
+      }
+      const last = (await detail())?.messages?.filter(message => message.role === 'user').at(-1)
+      expect(last?.text, `${under.label} holds no third prompt`).toBe('Third prompt')
+      const answer = await request(under.clients.desktop, { op: 'thread-prompts', threadId, beforeMessageId: last!.id })
+      expect(answer?.ok, `${under.label} read no prompts: ${JSON.stringify(answer?.error)}`).toBe(true)
+      const read = answer!.result as { prompts: { text: string; attachments?: number; reply?: { text: string } }[]; next?: string }
+      return { prompts: read.prompts.map(prompt => ({ text: prompt.text, attachments: prompt.attachments, reply: prompt.reply?.text })), next: read.next }
+    }
+    const [onNode, onRust] = await Promise.all([prompts(node), prompts(rust)])
+    expect(onNode).toEqual({ prompts: [{ text: 'First prompt', attachments: undefined, reply: 'Answered' }, { text: 'Second prompt', attachments: undefined, reply: 'Answered' }], next: undefined })
     expect(onRust).toEqual(onNode)
   }, 120_000)
 
