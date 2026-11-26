@@ -20,6 +20,7 @@ pub mod provider;
 pub mod providers;
 pub mod remote_commands;
 pub mod stores;
+pub mod thread_snoozes;
 #[cfg(test)]
 pub(crate) mod store_trip;
 pub mod watcher;

@@ -16,6 +16,7 @@ use crate::provider::{
     SendMessageRequest, ThreadRecordSeed,
 };
 use crate::remote_commands::validate_remote_command;
+use crate::thread_snoozes::{parse_until, ThreadSnoozes, SAVED_KEY as THREAD_SNOOZES_KEY};
 use crate::stores::{
     StoredMessage, StoredThreadEvent, ThreadEvent, ThreadEventAttribution, ThreadStore,
     MAX_AGENT_ACTIVITIES,
@@ -775,6 +776,7 @@ struct CoordinatorActor {
     thread_queues: HashMap<String, VecDeque<PendingCommand>>,
     in_flight_sends: HashMap<String, InFlightSend>,
     queued_followups: Vec<QueuedThreadFollowup>,
+    thread_snoozes: ThreadSnoozes,
     staged: StagedAttachments,
 
     shell_dirty: bool,
@@ -851,6 +853,8 @@ impl CoordinatorActor {
         }
 
         let staged = StagedAttachments::new(&data_directory);
+        let mut agents_json_extra = persisted.agents_json_extra;
+        let thread_snoozes = ThreadSnoozes::take_saved(&mut agents_json_extra);
         Self {
             data_directory,
             host_id,
@@ -870,7 +874,7 @@ impl CoordinatorActor {
             cleared_thread_ids: persisted.cleared_thread_ids,
             snapshot_extra: persisted.snapshot_extra,
             file_extra: persisted.file_extra,
-            agents_json_extra: persisted.agents_json_extra,
+            agents_json_extra,
             agents_config_extra: persisted.agents_config_extra,
             thread_bindings,
             details,
@@ -888,6 +892,7 @@ impl CoordinatorActor {
             thread_queues: HashMap::new(),
             in_flight_sends: HashMap::new(),
             queued_followups: Vec::new(),
+            thread_snoozes,
             staged,
             shell_dirty: false,
             dirty_details: HashSet::new(),
@@ -1018,6 +1023,10 @@ impl CoordinatorActor {
                     self.handle_provider_event(ev);
                 }
                 _ = flush_tick.tick() => {
+                    if self.thread_snoozes.expire(chrono::Utc::now()) {
+                        self.shell_dirty = true;
+                        self.save_workspace();
+                    }
                     self.flush_dirty();
                 }
             }
@@ -1365,9 +1374,9 @@ impl CoordinatorActor {
                 settle,
                 reply,
             } => {
-                let mut cmd = Map::new();
-                cmd.insert("threadId".into(), Value::String(thread_id));
-                let res = self.cmd_settle_thread(&cmd, settle);
+                let res = self
+                    .set_workspace_settled(false, &thread_id, settle)
+                    .map_err(CoordinatorError::invalid);
                 if res.is_ok() {
                     self.shell_dirty = true;
                     self.flush_dirty();
@@ -1542,13 +1551,13 @@ impl CoordinatorActor {
                 let res = self.cmd_rename_thread(&command);
                 self.finish_sync_command(lane, &client, res, reply);
             }
-            "settle-thread" => {
-                let res = self.cmd_settle_thread(&command, true);
+            "settle-thread" | "restore-thread" | "settle-project" | "restore-project" => {
+                let res = self.cmd_set_workspace_settled(&command, cmd_type);
                 self.finish_sync_command(lane, &client, res, reply);
             }
-            "restore-thread" => {
-                let res = self.cmd_settle_thread(&command, false);
-                self.finish_sync_command(lane, &client, res, reply);
+            "snooze-thread" => {
+                let res = self.cmd_snooze_thread(&command);
+                self.finish_sync_reply(lane, &client, res, reply);
             }
             "observe-threads" => {
                 self.finish_sync_command(lane, &client, Ok(()), reply);
@@ -1632,13 +1641,31 @@ impl CoordinatorActor {
         outcome: Result<(), CoordinatorError>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
+        self.finish_sync_reply(lane, client, outcome.map(|()| None), reply);
+    }
+
+    /// Ends a command whose answer may turn it down in the state it sends back, as Node answers some commands: `Some`
+    /// words are that answer's `error`, and the host's own error stays as it was.
+    fn finish_sync_reply(
+        &mut self,
+        lane: Option<String>,
+        client: &ClientContext,
+        outcome: Result<Option<String>, CoordinatorError>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
         if let Some(ref tid) = lane {
             self.busy_thread_ids.remove(tid);
         } else {
             self.global_lane_busy = false;
         }
         self.shell_dirty = true;
-        let res = outcome.map(|()| self.build_shell(client.may_answer));
+        let res = outcome.map(|refusal| {
+            let mut shell = self.build_shell(client.may_answer);
+            if let (Some(words), Some(obj)) = (refusal, shell.as_object_mut()) {
+                obj.insert("error".into(), Value::String(words));
+            }
+            shell
+        });
         let _ = reply.send(res);
         self.flush_dirty();
         self.drain_lane(lane);
@@ -2886,23 +2913,60 @@ impl CoordinatorActor {
         Ok(())
     }
 
-    fn cmd_settle_thread(
-        &mut self,
-        command: &Map<String, Value>,
-        settle: bool,
-    ) -> Result<(), CoordinatorError> {
+    /// Settles or restores a thread or a project from a command. One that is not there is turned down in the host's
+    /// state, as Node's command path turns down every failure, and the next command clears it.
+    fn cmd_set_workspace_settled(&mut self, command: &Map<String, Value>, cmd_type: &str) -> Result<(), CoordinatorError> {
+        let project = cmd_type.ends_with("-project");
+        let key = if project { "projectId" } else { "threadId" };
+        let Some(id) = command.get(key).and_then(Value::as_str) else {
+            return Err(CoordinatorError::invalid(format!("{key} is required.")));
+        };
+        let settle = cmd_type.starts_with("settle-");
+        match self.set_workspace_settled(project, id, settle) {
+            Ok(()) => {
+                self.error = None;
+                self.notice = if settle { "Moved to Settled." } else { "Restored." }.into();
+            }
+            Err(words) => self.error = Some(words),
+        }
+        Ok(())
+    }
+
+    /// Settles or restores a thread or a project in Sotto's workspace, as Node's `setWorkspaceSettled`
+    /// (`src/main/agents/workspace.ts`). Only the workspace's own mark moves: a thread's `settledAt` is its provider's.
+    /// Settling one already settled keeps the time it was settled. `Err` holds Node's words for one that is not there.
+    fn set_workspace_settled(&mut self, project: bool, id: &str, settle: bool) -> Result<(), String> {
+        let mark = if project {
+            self.projects.iter_mut().find(|p| p.id == id).map(|p| &mut p.workspace_settled_at)
+        } else {
+            self.threads.iter_mut().find(|t| t.id == id).map(|t| &mut t.workspace_settled_at)
+        };
+        let Some(mark) = mark else {
+            return Err(if project { "That project is unavailable." } else { "That thread is unavailable." }.into());
+        };
+        *mark = if settle { Some(mark.take().unwrap_or_else(now_iso)) } else { None };
+        self.save_workspace();
+        Ok(())
+    }
+
+    /// Snoozes a thread until a time or ends its snooze, as Node's `snooze-thread` (ADR-0175). A thread that is not
+    /// there is turned down in this answer alone, as Node does.
+    fn cmd_snooze_thread(&mut self, command: &Map<String, Value>) -> Result<Option<String>, CoordinatorError> {
         let Some(tid) = command.get("threadId").and_then(Value::as_str) else {
             return Err(CoordinatorError::invalid("threadId is required."));
         };
-        let Some(thread) = self.threads.iter_mut().find(|t| t.id == tid) else {
-            return Err(CoordinatorError::invalid("Unknown thread."));
+        let until = match command.get("until") {
+            Some(Value::Null) => None,
+            Some(Value::String(time)) if parse_until(time).is_some() => Some(time.as_str()),
+            _ => return Err(CoordinatorError::invalid("until must be a time or null.")),
         };
-        let ts = settle.then(now_iso);
-        thread.settled_at = ts.clone();
-        thread.workspace_settled_at = ts;
-        thread.updated_at = now_iso();
+        if !self.threads.iter().any(|t| t.id == tid) {
+            return Ok(Some("That thread is unavailable. Nothing changed.".into()));
+        }
+        self.thread_snoozes.set(tid, until);
+        self.thread_snoozes.track(&self.threads, &self.projects);
         self.save_workspace();
-        Ok(())
+        Ok(None)
     }
 
     fn handle_provider_event(&mut self, event: ProviderEvent) {
@@ -3245,6 +3309,10 @@ impl CoordinatorActor {
         }
         if self.shell_dirty {
             self.shell_dirty = false;
+            // A thread that changed may now need the user, which ends its snooze before any client is shown it.
+            if self.thread_snoozes.track(&self.threads, &self.projects) {
+                self.save_workspace();
+            }
             let shell = self.build_shell(false);
             let _ = self.broadcast_tx.send(CoordinatorBroadcast::Shell(shell));
         }
@@ -3305,6 +3373,18 @@ impl CoordinatorActor {
             .unwrap_or(HOST_VERSION);
 
         let busy_ids: Vec<&String> = self.busy_thread_ids.iter().collect();
+        // Each thread is published with its snooze, null when it has none, which tells a client this host keeps them.
+        let threads: Vec<Value> = self
+            .threads
+            .iter()
+            .map(|t| {
+                let mut val = serde_json::to_value(t).unwrap_or_else(|_| json!({}));
+                if let Some(obj) = val.as_object_mut() {
+                    obj.insert("snoozedUntil".into(), self.thread_snoozes.published(&t.id));
+                }
+                val
+            })
+            .collect();
 
         json!({
             "activeProjectId": self.active_project_id,
@@ -3343,7 +3423,7 @@ impl CoordinatorActor {
                 "name": host_name,
                 "projects": self.projects,
                 "providers": providers,
-                "threads": self.threads,
+                "threads": threads,
                 "version": host_version,
             },
             "membership": { "status": "beta", "label": "", "expiresAt": null },
@@ -3464,6 +3544,7 @@ impl CoordinatorActor {
         agents_obj
             .entry("outbox".to_string())
             .or_insert_with(|| Value::Array(Vec::new()));
+        agents_obj.insert(THREAD_SNOOZES_KEY.into(), self.thread_snoozes.saved());
         let _ = write_atomic_json(&self.data_directory.join("agents.json"), &Value::Object(agents_obj));
     }
 }
@@ -3963,6 +4044,117 @@ mod tests {
         coord.shutdown().await;
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("workspace.json")).unwrap()).unwrap();
         assert_eq!(workspace["snapshot"]["threads"][0]["title"], "Made on Rust");
+    }
+
+    /// A project and a thread made on a Rust host, for the commands that organize them.
+    async fn organized_workspace(dir: &Path) -> (CoordinatorHandle, ClientContext, String, String) {
+        let project_dir = dir.join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let coord = CoordinatorHandle::spawn(dir.to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let shell = coord.run_command(client.clone(), json!({ "type": "create-project", "provider": "codex", "title": "Organized",
+            "path": project_dir.to_string_lossy(), "useExisting": true }).as_object().unwrap().clone()).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let thread_id = "00000000-0000-4000-8000-00000000000b".to_string();
+        coord.run_command(client.clone(), json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Organized",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
+        (coord, client, project_id, thread_id)
+    }
+
+    /// Settle and Restore move only the workspace's mark, as Node's `setWorkspaceSettled`: a project or thread settled
+    /// again keeps the time it was first settled, a thread's provider `settledAt` is left alone, and one that is not
+    /// there is turned down in the answer's state.
+    #[tokio::test]
+    async fn settles_and_restores_projects_and_threads_as_node_does() {
+        let dir = tempdir().unwrap();
+        let (coord, client, project_id, thread_id) = organized_workspace(dir.path()).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+
+        let shell = run(json!({ "type": "settle-project", "projectId": project_id })).await.unwrap();
+        let settled_at = shell["host"]["projects"][0]["workspaceSettledAt"].as_str().unwrap().to_string();
+        assert_eq!(shell["notice"], "Moved to Settled.");
+        assert_eq!(shell["error"], Value::Null);
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let shell = run(json!({ "type": "settle-project", "projectId": project_id })).await.unwrap();
+        assert_eq!(shell["host"]["projects"][0]["workspaceSettledAt"], settled_at.as_str());
+        let shell = run(json!({ "type": "restore-project", "projectId": project_id })).await.unwrap();
+        assert!(shell["host"]["projects"][0].get("workspaceSettledAt").is_none());
+        assert_eq!(shell["notice"], "Restored.");
+
+        let shell = run(json!({ "type": "settle-thread", "threadId": thread_id })).await.unwrap();
+        let thread = &shell["host"]["threads"][0];
+        assert!(thread["workspaceSettledAt"].is_string());
+        assert!(thread.get("settledAt").is_none(), "settling in the workspace leaves the provider's settledAt alone");
+
+        let shell = run(json!({ "type": "settle-project", "projectId": "00000000-0000-4000-8000-0000000000ff" })).await.unwrap();
+        assert_eq!(shell["error"], "That project is unavailable.");
+        let shell = run(json!({ "type": "restore-thread", "threadId": "00000000-0000-4000-8000-0000000000ff" })).await.unwrap();
+        assert_eq!(shell["error"], "That thread is unavailable.");
+        // The next command that goes through clears it, as Node's command path does.
+        let shell = run(json!({ "type": "restore-thread", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert!(shell["host"]["threads"][0].get("workspaceSettledAt").is_none());
+
+        coord.shutdown().await;
+        let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
+        assert!(workspace["snapshot"]["projects"][0].get("workspaceSettledAt").is_none());
+    }
+
+    /// Snooze as Node's `snooze-thread` (ADR-0175): every thread is published with `snoozedUntil`, the record is
+    /// `agents.json`'s `threadSnoozes` and survives a restart, a time Node would not read is refused, and a thread that
+    /// is not there is turned down in that answer alone.
+    #[tokio::test]
+    async fn snoozes_a_thread_as_node_does() {
+        let dir = tempdir().unwrap();
+        let (coord, client, _project_id, thread_id) = organized_workspace(dir.path()).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+
+        let shell = run(json!({ "type": "snooze-thread", "threadId": thread_id, "until": null })).await.unwrap();
+        assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], Value::Null);
+        let later = "2099-01-01T09:00:00.000Z";
+        let shell = run(json!({ "type": "snooze-thread", "threadId": thread_id, "until": later })).await.unwrap();
+        assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], later);
+        assert_eq!(shell["error"], Value::Null);
+
+        let refused = run(json!({ "type": "snooze-thread", "threadId": thread_id, "until": "2099-01-01T09:00:00+01:00" })).await.unwrap_err();
+        assert_eq!(refused.code, HostErrorCode::InvalidRequest);
+        let gone = run(json!({ "type": "snooze-thread", "threadId": "00000000-0000-4000-8000-0000000000ff", "until": later })).await.unwrap();
+        assert_eq!(gone["error"], "That thread is unavailable. Nothing changed.");
+        assert_eq!(coord.shell(true).await.unwrap()["error"], Value::Null, "the refusal is that answer's alone");
+        coord.shutdown().await;
+
+        let agents: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
+        assert_eq!(agents["threadSnoozes"], json!({ thread_id.as_str(): later }));
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        assert_eq!(coord.shell(true).await.unwrap()["host"]["threads"][0]["snoozedUntil"], later);
+        let shell = coord.run_command(client.clone(), json!({ "type": "snooze-thread", "threadId": thread_id, "until": null }).as_object().unwrap().clone()).await.unwrap();
+        assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], Value::Null);
+        coord.shutdown().await;
+        let agents: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
+        assert_eq!(agents["threadSnoozes"], json!({}));
+    }
+
+    /// A snooze whose time has come ends without a command, and every client is told.
+    #[tokio::test]
+    async fn a_snooze_ends_at_its_time() {
+        let dir = tempdir().unwrap();
+        let (coord, client, _project_id, thread_id) = organized_workspace(dir.path()).await;
+        let mut shells = coord.subscribe();
+        let soon = (chrono::Utc::now() + chrono::Duration::milliseconds(200)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        coord.run_command(client.clone(), json!({ "type": "snooze-thread", "threadId": thread_id, "until": soon }).as_object().unwrap().clone()).await.unwrap();
+        let woke = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Ok(CoordinatorBroadcast::Shell(shell)) = shells.recv().await {
+                    if shell["host"]["threads"][0]["snoozedUntil"] == Value::Null && shell["host"]["threads"][0]["id"] == thread_id.as_str() {
+                        return;
+                    }
+                }
+            }
+        }).await;
+        assert!(woke.is_ok(), "the snooze never ended");
+        coord.shutdown().await;
+        let agents: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
+        assert_eq!(agents["threadSnoozes"], json!({}));
     }
 
     #[test]

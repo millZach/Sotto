@@ -5469,9 +5469,9 @@ fn is_thread_provider_connected(snapshot: Option<&Value>, thread: &Value) -> boo
 }
 
 fn is_thread_settled(snapshot: Option<&Value>, thread: &Value) -> bool {
-    if thread.get("settledAt").and_then(Value::as_str).is_some()
-        || thread.get("archivedAt").and_then(Value::as_str).is_some()
-    {
+    // Settled in Sotto's workspace, by itself or its project, as Node's Watcher reads it (`isWorkspaceThreadSettled`
+    // in `src/main/agents/watcher.ts`). A provider's own `settledAt` is not the workspace's.
+    if thread.get("workspaceSettledAt").and_then(Value::as_str).is_some() {
         return true;
     }
     let Some(project_id) = thread.get("projectId").and_then(Value::as_str) else {

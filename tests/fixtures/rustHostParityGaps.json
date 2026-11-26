@@ -60,7 +60,6 @@
         "thread-move-keep",
         "thread-move-source",
         "thread-prompts",
-        "thread-snooze",
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
@@ -108,7 +107,6 @@
         "thread-media",
         "thread-media-video",
         "thread-prompts",
-        "thread-snooze",
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
@@ -286,10 +284,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "restore-project": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "restore-thread-branch": {
       "node": "refused",
       "rust": "invalid_request"
@@ -312,14 +306,6 @@
     },
     "set-owlet": {
       "node": "refused",
-      "rust": "invalid_request"
-    },
-    "settle-project": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "snooze-thread": {
-      "node": "ok",
       "rust": "invalid_request"
     },
     "start-thread-session": {
