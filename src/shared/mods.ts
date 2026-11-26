@@ -40,8 +40,6 @@ export const modListedSchema = z.object({
 export type ModListed = z.infer<typeof modListedSchema>
 
 export const modsListSchema = z.object({
-  /** The mods folder on this computer, shown on the page. */
-  folder: z.string(),
   mods: z.array(modListedSchema).max(MOD_LIMIT),
 })
 export type ModsList = z.infer<typeof modsListSchema>
@@ -90,7 +88,7 @@ export interface ModsBridge {
 function cssAsRead(css: string): string {
   return css
     .replace(/\/\*[\s\S]*?(\*\/|$)/g, ' ')
-    .replace(/\\([0-9a-fA-F]{1,6})[ \t\n\r\f]?/g, (_, hex: string) => {
+    .replace(/\\([0-9a-fA-F]{1,6})(?:\r\n|[ \t\n\r\f])?/g, (_, hex: string) => {
       const code = Number.parseInt(hex, 16)
       return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '�'
     })

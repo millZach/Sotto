@@ -38,6 +38,8 @@ const MENU_OWNER_NAMES: Readonly<Record<string, MessageDescriptor>> = {
   'mod+w': msg`Close the window`,
   'ctrl+0': msg`Actual size`,
   'mod+0': msg`Actual size`,
+  'ctrl+alt+shift+m': msg`Turn off every mod`,
+  'mod+alt+shift+m': msg`Turn off every mod`,
 }
 
 interface RowCopy { readonly id: ThreadShortcutId; readonly label: MessageDescriptor; readonly description: MessageDescriptor }
@@ -101,6 +103,8 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
   const { t, i18n } = useLingui()
   const recorder = useChordRecorder(platform, false)
   const popupOn = useOwlFeature('popup') && settings.popupEnabled
+  // Turn off every mod's keys are the View menu's while mods are on (ADR-0217).
+  const modsOn = useOwlFeature('mods')
   const [filter, setFilter] = useState('')
   const [target, setTarget] = useState<ThreadShortcutId | null>(null)
   const [message, setMessage] = useState<RowMessage | null>(null)
@@ -169,7 +173,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
       return msg`Show or hide the sidebar already uses ${keys}. Pick other keys.`
     }
     // The application menu sees its accelerators before the window does, so these keys would never arrive.
-    const menuOwned = menuOwnedChord(chord, platform)
+    const menuOwned = menuOwnedChord(chord, platform, modsOn)
     if (menuOwned !== null) {
       const name = i18n._(MENU_OWNER_NAMES[menuOwned] ?? msg`Sotto’s menu`)
       return msg`${name} already uses ${keys}. Pick other keys.`

@@ -52,8 +52,8 @@ export function fixedKeyFree(settings: ThreadShortcutSettings | null | undefined
  * application menu does not take them first. Settings refuses the match, so a shortcut can never be
  * recorded onto keys its press would never reach.
  */
-export function menuOwnedChord(chord: string, platform: SottoPlatform): string | null {
-  return menuOwnedChords(platform).find(owned => sameThreadKeys(chord, owned, platform)) ?? null
+export function menuOwnedChord(chord: string, platform: SottoPlatform, modsOn = false): string | null {
+  return menuOwnedChords(platform, modsOn).find(owned => sameThreadKeys(chord, owned, platform)) ?? null
 }
 
 /**

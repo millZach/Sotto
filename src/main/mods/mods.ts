@@ -31,7 +31,10 @@ async function readCapped(path: string, limit: number): Promise<{ text: string; 
     const buffer = Buffer.alloc(limit + 1)
     const { bytesRead } = await handle.read(buffer, 0, limit + 1, 0)
     return { text: buffer.subarray(0, Math.min(bytesRead, limit)).toString('utf8'), longer: bytesRead > limit }
-  } finally { await handle.close() }
+  } catch {
+    // A folder by that name opens on Linux and fails on the read: it is no file, so the mod reads as unreadable alone.
+    return null
+  } finally { await handle.close().catch(() => undefined) }
 }
 
 /** One mod's folder, read and checked. A mod that cannot be read is still listed, with why, and paints nothing. */
@@ -60,9 +63,9 @@ export async function readMod(folder: string, id: string): Promise<ModListed> {
 /** Every mod in the folder, by id, at most `MOD_LIMIT`. A missing folder has none. */
 export async function readMods(folder: string): Promise<ModsList> {
   let entries
-  try { entries = await readdir(folder, { withFileTypes: true }) } catch { return { folder, mods: [] } }
+  try { entries = await readdir(folder, { withFileTypes: true }) } catch { return { mods: [] } }
   const ids = entries.filter(entry => entry.isDirectory() && MOD_ID_PATTERN.test(entry.name)).map(entry => entry.name).sort().slice(0, MOD_LIMIT)
-  return { folder, mods: await Promise.all(ids.map(id => readMod(folder, id))) }
+  return { mods: await Promise.all(ids.map(id => readMod(folder, id))) }
 }
 
 /**

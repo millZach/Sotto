@@ -9,7 +9,7 @@ import { PaneMenu } from '../../agents/PaneMenu'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
 import { useOptionalApp } from '../../state/AppContext'
-import { modsBridge, useModsList } from '../../state/mods'
+import { modsBridge, nextModsOff, useModsList } from '../../state/mods'
 import { SettingsGroup } from './SettingsGroup'
 import './mods.css'
 
@@ -65,15 +65,13 @@ export function ModsSettings({ settings, onUpdateSettings, shown }: {
   }
 
   const setOn = (mod: ModListed, on: boolean): void => {
-    const next = on ? off.filter(id => id !== mod.id) : [...new Set([...off, mod.id])]
-    void onUpdateSettings({ modsOff: next }).then(saved => setStatus(saved
+    void onUpdateSettings({ modsOff: nextModsOff(off, mods, { id: mod.id, on }) }).then(saved => setStatus(saved
       ? { text: on ? t`${mod.name} is on.` : t`${mod.name} is off.`, error: false }
       : { text: t`${mod.name} could not be switched. Nothing was changed. Try again.`, error: true }))
   }
 
   const allOff = (): void => {
-    const next = [...new Set([...off, ...mods.map(mod => mod.id)])]
-    void onUpdateSettings({ modsOff: next }).then(saved => setStatus(saved
+    void onUpdateSettings({ modsOff: nextModsOff(off, mods, 'all-off') }).then(saved => setStatus(saved
       ? { text: t`Every mod is off. Their files are kept.`, error: false }
       : { text: t`The mods could not be switched off. Nothing was changed. Try again.`, error: true }))
   }

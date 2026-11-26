@@ -1,3 +1,4 @@
+import { modsOffKeysTaken } from '../shared/threadShortcuts'
 import { createDictationTiming } from './performance/dictationTiming'
 import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
 import { t } from '@lingui/core/macro'
@@ -1119,7 +1120,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
       onShowTurnRecords: showTurnRecords,
       // Turn off every mod answers from the menu's key even when a mod's look hides the window's own controls.
-      ...(owlFeatures.mods ? { onTurnOffMods: () => { windows.sendToMain(MODS_ALL_OFF, null) } } : {}),
+      ...(owlFeatures.mods ? { onTurnOffMods: () => { windows.sendToMain(MODS_ALL_OFF, null) },
+        // A dictation shortcut on the same keys keeps them: its global shortcut takes them first anyway.
+        modsOffKeysTaken: modsOffKeysTaken([startupSettings.hotkey, ...startupSettings.pressShortcuts, ...startupSettings.holdShortcuts], platform) } : {}),
     })
     // Every platform installs Sotto's own menu, so Electron's default one, with its reload and developer-tool keys,
     // never reaches a shipped build (#1825). The window on Windows and Linux never shows it; it is there for its keys.

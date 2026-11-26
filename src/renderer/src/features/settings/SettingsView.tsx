@@ -487,7 +487,7 @@ export function SettingsView({
       <SettingsLayout>
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
         {/* Settings' two regions for F6 (ADR-0164): its column, entered at the open page's tab, and the page itself. */}
-        <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'} data-region="sidebar">
+        <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'} data-region="sidebar" data-part={modPart('sidebar')}>
           <SidebarTop platform={platform} />
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}><Trans comment="The Settings page's heading, at the top of its rail.">Settings</Trans></h1>

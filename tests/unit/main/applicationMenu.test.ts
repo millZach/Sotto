@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 
+import { modsOffKeysTaken } from '../../../src/shared/threadShortcuts'
+
 import {
   buildApplicationMenuTemplate,
   type ApplicationMenuItem,
@@ -175,5 +177,21 @@ describe('buildApplicationMenuTemplate', () => {
       expect(onTurnOffMods).toHaveBeenCalledOnce()
       expect(entries(submenu(template({ platform }), 'View'))).not.toContain('Turn off every mod')
     })
+
+    it('leaves its keys to a dictation shortcut that already has them', () => {
+      const item = submenu(template({ platform, onTurnOffMods: () => undefined, modsOffKeysTaken: true }), 'View').find((entry) => entry.label === 'Turn off every mod')
+      expect(item).toBeDefined()
+      expect(item?.accelerator).toBeUndefined()
+    })
+  })
+})
+
+describe('modsOffKeysTaken (ADR-0217)', () => {
+  it('reads the keys as the platform does, whatever the spelling', () => {
+    expect(modsOffKeysTaken(['Ctrl+Alt+Shift+M'], 'win32')).toBe(true)
+    expect(modsOffKeysTaken(['Shift+Control+Alt+m'], 'linux')).toBe(true)
+    expect(modsOffKeysTaken(['Command+Option+Shift+M'], 'darwin')).toBe(true)
+    expect(modsOffKeysTaken(['Ctrl+Alt+Shift+M'], 'darwin')).toBe(false)
+    expect(modsOffKeysTaken(['Ctrl+Alt+M', undefined], 'win32')).toBe(false)
   })
 })

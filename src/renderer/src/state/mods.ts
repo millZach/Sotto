@@ -23,6 +23,17 @@ export function useModsList(reading: boolean, bridge: ModsBridge | undefined = m
   return list
 }
 
+/**
+ * The switched-off ids with one mod's switch changed, or every mod off, keeping only ids of mods still in the folder: a
+ * mod's folder removed by hand takes its id with it, so `modsOff` never fills past its limit with mods that have gone.
+ */
+export function nextModsOff(off: readonly string[], mods: readonly ModListed[], change: { readonly id: string; readonly on: boolean } | 'all-off'): string[] {
+  const present = mods.map(mod => mod.id)
+  if (change === 'all-off') return present
+  const kept = off.filter(id => present.includes(id) && id !== change.id)
+  return change.on ? kept : [...kept, change.id]
+}
+
 /** Whether a mod paints: it is switched on and its look passed main's check. */
 export const modPaints = (mod: ModListed, off: readonly string[]): boolean => mod.problem === undefined && !off.includes(mod.id) && mod.look.trim() !== ''
 
@@ -67,8 +78,10 @@ export function useModLooks(on: boolean, off: readonly string[] | undefined, sav
   useEffect(() => {
     if (!bridge) return
     return bridge.onAllOff(() => {
-      const ids = list?.mods.map(mod => mod.id) ?? []
-      save([...new Set([...(off ?? []), ...ids])])
+      // Before the list or the settings have loaded there is nothing to switch off, and saving now would clear the
+      // switches already saved.
+      if (!list || !off) return
+      save(nextModsOff(off, list.mods, 'all-off'))
     })
   }, [bridge, list, off, save])
 }

@@ -46,7 +46,7 @@ async function launch(enabled: boolean): Promise<LaunchedSotto & { readonly mods
 const sidebarBackground = (page: Page): Promise<string> =>
   page.locator('[data-part="sidebar"]').first().evaluate(element => getComputedStyle(element).backgroundColor)
 
-const LOOKS = [[1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark'], [820, 560, 'light']] as const
+const LOOKS = [[1600, 1000, 'dark'], [1600, 1000, 'light'], [1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark'], [820, 560, 'light']] as const
 
 /** The window at each size and half, captured once two frames have painted what changed. */
 async function shoot(sotto: LaunchedSotto, name: string, looks: readonly (readonly [number, number, 'dark' | 'light'])[] = LOOKS): Promise<void> {
@@ -85,6 +85,11 @@ test('an Owl build paints a mod, switches it from Settings › Mods and the View
     const oak = mods.getByRole('switch', { name: 'Oak sidebar' })
     await expect(oak).toHaveAttribute('aria-checked', 'true')
     await shoot(sotto, 'settings-mods')
+    // Reduced motion: the page has no motion of its own, and its switches take the window's 1 ms transitions.
+    await page.evaluate(async () => { await window.sotto!.updateSettings({ reducedMotion: 'on' }) })
+    await expect.poll(() => oak.locator('.tt-toggle__thumb').evaluate(thumb => getComputedStyle(thumb).transitionDuration)).toBe('0.001s')
+    await shoot(sotto, 'settings-mods-reduced-motion', [[1280, 800, 'dark']])
+    await page.evaluate(async () => { await window.sotto!.updateSettings({ reducedMotion: 'system' }) })
     await oak.click()
     await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).modsOff).toEqual(['oak-sidebar'])
     await openThreads(page)

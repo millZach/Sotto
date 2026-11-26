@@ -1,3 +1,4 @@
+import { modPart } from '../../../../shared/modParts'
 import React, { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { Pencil, Plus } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -145,7 +146,7 @@ function OwletPane({ row, state, command, store, error, now, onEdit }: {
   const owlet = row.thread.owlet!
   const name = owlet.name
   const folder = owletFolderLabel(row.project?.title ?? name)
-  return <section id={OWLET_PANE_ID} className="thread-pane owlet-pane" data-region="pane" data-thread-id={row.thread.id} data-focused="" data-under-controls="" role="region" aria-label={name}>
+  return <section id={OWLET_PANE_ID} className="thread-pane owlet-pane" data-part={modPart('thread')} data-region="pane" data-thread-id={row.thread.id} data-focused="" data-under-controls="" role="region" aria-label={name}>
     <ThreadPane row={row} state={state} command={command} store={store} focused promptId={OWLET_PROMPT_ID} error={error} now={now}
       actions={<button type="button" className="pane-action tt-focusable" aria-label={t`Edit ${name}`} title={t`Edit owlet`} onClick={onEdit}><Pencil size={16} aria-hidden="true" /></button>}
       notice={<p className="owlet-pane__facts tt-paragraph">

@@ -26,6 +26,8 @@ describe('modLookReachesOutside (ADR-0217)', () => {
     expect(modLookReachesOutside('[data-part="sidebar"] { background: \\75 rl(https://example.com/x.png); }')).toBe(true)
     expect(modLookReachesOutside('[data-part="sidebar"] { background: u\\rl(https://example.com/x.png); }')).toBe(true)
     expect(modLookReachesOutside('@\\69mport "https://example.com/x.css";')).toBe(true)
+    // A hex escape ends at one white space, and CSS counts a Windows line break as one.
+    expect(modLookReachesOutside('[data-part="sidebar"] { background: \\75\r\nrl(https://example.com/x.png); }')).toBe(true)
   })
 
   it('ignores what a comment says', () => {

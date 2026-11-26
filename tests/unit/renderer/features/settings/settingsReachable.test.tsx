@@ -40,7 +40,7 @@ function withMain(): void {
   const popup: PopupShortcutBridge = { state: vi.fn(async () => ({ status: 'on' as const, chord: 'Alt+Shift+Space' })), onState: () => () => undefined,
     replace: vi.fn(async () => ({ ok: true as const })), onOpened: () => () => undefined }
   // Settings › Mods (ADR-0217) shows only with its bridge.
-  const mods: ModsBridge = { list: vi.fn(async () => ({ folder: '/mods', mods: [] })), make: vi.fn(), openFolder: vi.fn(), reveal: vi.fn(), remove: vi.fn(),
+  const mods: ModsBridge = { list: vi.fn(async () => ({ mods: [] })), make: vi.fn(), openFolder: vi.fn(), reveal: vi.fn(), remove: vi.fn(),
     onChanged: () => () => undefined, onAllOff: () => () => undefined }
   vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers, popup, mods })
 }

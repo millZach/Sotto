@@ -369,7 +369,7 @@ export function ThemeTileWindow({ theme, halves }: { readonly theme: ThemeDefini
     <span className="theme-tile__window" data-halves={halves} aria-hidden="true">
       {drawn.map(half => (
         <span key={half} className="theme-tile__half" data-half={half} style={tileStyle(theme, half)}>
-          <i data-part="sidebar" /><i data-part="row" /><i data-part="bubble" /><i data-part="text" /><i data-part="composer" /><i data-part="send" />
+          <i data-swatch="sidebar" /><i data-swatch="row" /><i data-swatch="bubble" /><i data-swatch="text" /><i data-swatch="composer" /><i data-swatch="send" />
         </span>
       ))}
     </span>

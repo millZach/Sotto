@@ -8481,6 +8481,7 @@ msgstr "Turn {mainKeys} back on"
 
 #: src/renderer/src/features/settings/ModsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Turn off every mod"
 msgstr "Turn off every mod"
 

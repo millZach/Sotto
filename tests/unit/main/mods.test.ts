@@ -22,7 +22,7 @@ describe('readMods (ADR-0217)', () => {
   it('lists each mod by its folder, with its name, description and look', async () => {
     await mod('oak-sidebar', { 'mod.json': '{ "name": "Oak sidebar", "description": "Warm wood." }', 'look.css': '[data-part="sidebar"] { color: red; }' })
     await mod('quiet', { 'mod.json': '\uFEFF{ "name": "Quiet" }' })
-    expect(await readMods(folder)).toEqual({ folder, mods: [
+    expect(await readMods(folder)).toEqual({ mods: [
       { id: 'oak-sidebar', name: 'Oak sidebar', description: 'Warm wood.', look: '[data-part="sidebar"] { color: red; }' },
       { id: 'quiet', name: 'Quiet', look: '' },
     ] })
@@ -40,12 +40,18 @@ describe('readMods (ADR-0217)', () => {
     expect(mods.find(item => item.id === 'outside')?.look).toContain('url(')
   })
 
+  it('lists a mod whose mod.json is a folder as unreadable, and the others as they are', async () => {
+    await mkdir(join(folder, 'odd', 'mod.json'), { recursive: true })
+    await mod('fine', { 'mod.json': '{ "name": "Fine" }' })
+    expect((await readMods(folder)).mods.map(item => [item.id, item.problem])).toEqual([['fine', undefined], ['odd', 'manifest']])
+  })
+
   it('leaves out files and folders whose names are not mod ids, and has none when the folder is missing', async () => {
     await mod('Has Spaces', { 'mod.json': '{ "name": "x" }' })
     await mod('.hidden', { 'mod.json': '{ "name": "x" }' })
     await writeFile(join(folder, 'AGENTS.md'), 'guide', 'utf8')
     expect((await readMods(folder)).mods).toEqual([])
-    expect(await readMods(join(folder, 'missing'))).toEqual({ folder: join(folder, 'missing'), mods: [] })
+    expect(await readMods(join(folder, 'missing'))).toEqual({ mods: [] })
   })
 })
 
