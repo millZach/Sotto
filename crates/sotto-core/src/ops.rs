@@ -154,6 +154,12 @@ pub fn is_valid_relative_path(path: &str) -> bool {
                 | "lpt7"
                 | "lpt8"
                 | "lpt9"
+                | "com¹"
+                | "com²"
+                | "com³"
+                | "lpt¹"
+                | "lpt²"
+                | "lpt³"
         ) {
             return false;
         }
@@ -1896,14 +1902,14 @@ fn open_contained_dir(path: &Path) -> std::io::Result<fs::File> {
 }
 
 #[cfg(target_os = "linux")]
-fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
     use std::os::fd::AsRawFd;
     let fd_path = format!("/proc/self/fd/{}", file.as_raw_fd());
     fs::canonicalize(fd_path).is_ok_and(|p| p.starts_with(canon_root))
 }
 
 #[cfg(target_os = "macos")]
-fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
     use std::ffi::CStr;
     use std::os::fd::AsRawFd;
     const F_GETPATH: i32 = 50;
@@ -1925,7 +1931,7 @@ fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
 }
 
 #[cfg(windows)]
-fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::AsRawHandle;
     #[link(name = "kernel32")]
@@ -1955,11 +1961,11 @@ fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-fn verify_open_handle_inside(_canon_root: &Path, _file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(_canon_root: &Path, _file: &fs::File) -> bool {
     true
 }
 
-fn open_preview_file(path: &Path) -> std::io::Result<fs::File> {
+pub(crate) fn open_preview_file(path: &Path) -> std::io::Result<fs::File> {
     let mut opts = fs::OpenOptions::new();
     opts.read(true);
     #[cfg(unix)]
@@ -2091,7 +2097,47 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
         .filter(|s| !s.is_empty())
         .unwrap_or(rel_path);
 
-    if let Some(image) = detect_raster_image(&bytes) {
+    match preview_content(&bytes, rel_path) {
+        Ok(content) => tools_ok(json!({
+            "workspace": workspace,
+            "path": rel_path,
+            "name": name,
+            "size": bytes.len(),
+            "content": content,
+        })),
+        Err(refused) => refused,
+    }
+}
+
+/// Whether a name ends as a Markdown file's does, as Node's `isMarkdownFileName` (`src/shared/files.ts`) reads it.
+pub fn is_markdown_file_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".md", ".markdown", ".mdown"].iter().any(|ending| lower.ends_with(ending))
+}
+
+/// UTF-8 text, or the refusal for anything that reads as binary, as Node's `textOf` (`src/main/files/service.ts`).
+pub(crate) fn text_of(bytes: &[u8]) -> Result<String, Value> {
+    let Ok(raw_text) = std::str::from_utf8(bytes) else {
+        return Err(tools_err(
+            "binary",
+            "This file is not supported UTF-8 text or a raster image.",
+        ));
+    };
+    // Match `new TextDecoder('utf-8', { fatal: true })`, which strips a leading UTF-8 BOM.
+    let text = raw_text.strip_prefix('\u{feff}').unwrap_or(raw_text);
+    if text
+        .bytes()
+        .any(|b| matches!(b, 0x00..=0x08 | 0x0b | 0x0e..=0x1f | 0x7f))
+    {
+        return Err(tools_err("binary", "Binary files cannot be previewed as text."));
+    }
+    Ok(text.to_string())
+}
+
+/// What a preview shows of a file's bytes, as Node's `previewContent` (`src/main/files/service.ts`): a raster picture
+/// found by its first bytes (never by its name), or text within the text limit, Markdown when `name` ends as Markdown.
+pub(crate) fn preview_content(bytes: &[u8], name: &str) -> Result<Value, Value> {
+    if let Some(image) = detect_raster_image(bytes) {
         let pixels = (image.width as u64).saturating_mul(image.height as u64);
         if image.width == 0
             || image.height == 0
@@ -2099,63 +2145,20 @@ pub fn thread_file_preview(workspace: &ThreadWorkspace, rel_path: &str) -> Value
             || image.height > 16_384
             || pixels > 40_000_000
         {
-            return tools_err("too-large", "This image exceeds the preview dimensions limit.");
+            return Err(tools_err("too-large", "This image exceeds the preview dimensions limit."));
         }
-        let data_url = format!("data:{};base64,{}", image.mime, STANDARD.encode(&bytes));
-        return tools_ok(json!({
-            "workspace": workspace,
-            "path": rel_path,
-            "name": name,
-            "size": bytes.len(),
-            "content": {
-                "kind": "image",
-                "mime": image.mime,
-                "dataUrl": data_url,
-            },
-        }));
+        let data_url = format!("data:{};base64,{}", image.mime, STANDARD.encode(bytes));
+        return Ok(json!({ "kind": "image", "mime": image.mime, "dataUrl": data_url }));
     }
-
     if bytes.len() > MAX_TEXT_PREVIEW_BYTES {
-        return tools_err("too-large", "Text previews are limited to 512 KiB.");
+        return Err(tools_err("too-large", "Text previews are limited to 512 KiB."));
     }
-    let Ok(raw_text) = std::str::from_utf8(&bytes) else {
-        return tools_err(
-            "binary",
-            "This file is not supported UTF-8 text or a raster image.",
-        );
-    };
-    // Match `new TextDecoder('utf-8', { fatal: true })`, which strips a leading UTF-8 BOM.
-    let text = raw_text.strip_prefix('\u{feff}').unwrap_or(raw_text);
+    let text = text_of(bytes)?;
     if text.encode_utf16().count() > MAX_TEXT_PREVIEW_BYTES {
-        return tools_err("too-large", "Text previews are limited to 512 KiB.");
+        return Err(tools_err("too-large", "Text previews are limited to 512 KiB."));
     }
-    if text
-        .bytes()
-        .any(|b| matches!(b, 0x00..=0x08 | 0x0b | 0x0e..=0x1f | 0x7f))
-    {
-        return tools_err("binary", "Binary files cannot be previewed as text.");
-    }
-    // Check the requested workspace path's extension (not a symlink target's) matching `FilesService.preview`.
-    let ext = Path::new(rel_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let content_kind = if matches!(ext.as_str(), "md" | "markdown" | "mdown") {
-        "markdown"
-    } else {
-        "text"
-    };
-    tools_ok(json!({
-        "workspace": workspace,
-        "path": rel_path,
-        "name": name,
-        "size": bytes.len(),
-        "content": {
-            "kind": content_kind,
-            "text": text,
-        },
-    }))
+    let kind = if is_markdown_file_name(name) { "markdown" } else { "text" };
+    Ok(json!({ "kind": kind, "text": text }))
 }
 
 /// Reports machine facts matching `hostMachineReportSchema` (`src/shared/hostFacts.ts`).
@@ -3164,6 +3167,17 @@ fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    /// `fileRelativePathSchema` (`src/shared/files.ts`) refuses the superscript device names Windows keeps, as a whole
+    /// name or before an ending.
+    #[test]
+    fn refuses_the_superscript_device_names_as_files_ts_does() {
+        for path in ["com¹", "com²", "com³", "lpt¹", "lpt²", "lpt³", "COM¹.txt", "docs/lpt³.md"] {
+            assert!(!super::is_valid_relative_path(path), "{path}");
+        }
+        assert!(super::is_valid_relative_path("com¹x.txt"));
+        assert!(super::is_valid_relative_path("docs/com10"));
+    }
+
     use super::*;
 
     /// A thread store as Node and this host share it, holding `rows` of one thread: role, text, attachments.

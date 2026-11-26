@@ -12,6 +12,7 @@ pub mod git_review;
 pub mod host_facts;
 pub mod host_router;
 pub mod identity;
+pub mod linked_files;
 pub mod lock;
 pub mod ops;
 pub mod phone_access;
