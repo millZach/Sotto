@@ -49,8 +49,6 @@
         "thread-coordination-relay",
         "thread-coordination-views",
         "thread-delete",
-        "thread-media",
-        "thread-media-video",
         "thread-move",
         "thread-move-keep",
         "thread-move-source",
@@ -93,8 +91,6 @@
         "settled-threads-on-request",
         "step-window",
         "thread-delete",
-        "thread-media",
-        "thread-media-video",
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
@@ -387,14 +383,6 @@
       "rust": "invalid_request"
     },
     "thread-delegations": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "thread-media": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "thread-media-part": {
       "node": "ok",
       "rust": "invalid_request"
     },

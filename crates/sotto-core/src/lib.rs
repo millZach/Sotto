@@ -26,6 +26,7 @@ pub mod remote_commands;
 pub mod stores;
 pub mod thread_lifecycle;
 pub mod thread_drafts;
+pub mod thread_media;
 pub mod thread_snoozes;
 #[cfg(test)]
 pub(crate) mod store_trip;
