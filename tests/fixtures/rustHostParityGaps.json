@@ -334,10 +334,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "preview": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "project-setup": {
       "node": "ok",
       "rust": "invalid_request"

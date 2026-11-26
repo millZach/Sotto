@@ -19,7 +19,7 @@ use base64::Engine;
 use serde_json::{json, Map, Value};
 
 use crate::attachment_store::{image_extension, read_checked, ReadFailed};
-use crate::protocol_fields::{is_digest, on_network, protocol_id, utf16_len, whole_number};
+use crate::protocol_fields::{is_digest, on_network, picture_edge, protocol_id, utf16_len, whole_number};
 
 /// The largest picture Sotto keeps or shows, as Node's `AGENT_MAX_IMAGE_BYTES`.
 pub const AGENT_MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
@@ -29,9 +29,6 @@ pub const AGENT_VIDEO_MAX_BYTES: u64 = 200 * 1024 * 1024;
 pub const AGENT_VIDEO_PART_BYTES: u64 = 8 * 1024 * 1024;
 /// The most parts a video takes, as Node's `AGENT_VIDEO_PARTS_MAX`.
 pub const AGENT_VIDEO_PARTS_MAX: u64 = AGENT_VIDEO_MAX_BYTES.div_ceil(AGENT_VIDEO_PART_BYTES);
-/// The longest edges a client may ask a picture at, as Node's `HOST_PICTURE_EDGES`.
-const HOST_PICTURE_EDGES: [u64; 3] = [320, 640, 1280];
-
 /// The folder under the data folder Node's store keeps pictures in, and the index beside it that remembers videos.
 const MEDIA_FOLDER: &str = "thread-media";
 const MEDIA_INDEX: &str = "thread-media.json";
@@ -93,7 +90,7 @@ pub fn media_request(op: &str, value: Option<&Value>) -> Option<MediaRequest> {
         let edge = match fields.get("edge") {
             None => false,
             Some(edge) => {
-                whole_number(edge).filter(|edge| HOST_PICTURE_EDGES.contains(edge))?;
+                picture_edge(edge)?;
                 true
             }
         };

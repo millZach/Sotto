@@ -16,7 +16,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
 use sotto_core::attachment_files::AttachmentFileRequest;
-use sotto_core::attachment_files::FilePartRead;
+use sotto_core::attachment_files::{SentAttachment, SentRead};
+use sotto_core::attachment_previews::{PreviewRequest, Wanted};
 use sotto_core::attachment_store::AttachmentError;
 use sotto_core::file_uploads::{FilePart, FileUploads, PartTaken, Received, HOST_CANNOT_STAGE_VIDEOS};
 use sotto_core::workspace::now_ms;
@@ -143,10 +144,11 @@ fn thread_read_ids(fields: &serde_json::Map<String, Value>, other: &str) -> Opti
 }
 
 /// A read of one thread's files or media that Node's socket server checks before it reads anything: the thread it names,
-/// the feature the host offers for it, and whether it is refused even where that feature is offered.
+/// the feature the host offers for it, if it has one, and whether it is refused even where that feature is offered.
 trait ThreadRead {
     fn thread_id(&self) -> &str;
-    fn feature(&self) -> &'static str;
+    /// The feature this read needs, or none for one every host answers, as `preview`.
+    fn feature(&self) -> Option<&'static str>;
     /// Refused once offered: a picture at a longest edge. This host offers no picture edges, since it has no picture
     /// maker (ADR-0203), so no client of it accepted `thread-media-edge`, and Node refuses an edge from such a client.
     fn refused_when_offered(&self) -> bool {
@@ -158,8 +160,8 @@ impl ThreadRead for LinkRequest {
     fn thread_id(&self) -> &str {
         &self.thread_id
     }
-    fn feature(&self) -> &'static str {
-        self.read.feature()
+    fn feature(&self) -> Option<&'static str> {
+        Some(self.read.feature())
     }
 }
 
@@ -167,8 +169,8 @@ impl ThreadRead for MediaRequest {
     fn thread_id(&self) -> &str {
         &self.thread_id
     }
-    fn feature(&self) -> &'static str {
-        MediaRequest::feature(self)
+    fn feature(&self) -> Option<&'static str> {
+        Some(MediaRequest::feature(self))
     }
     fn refused_when_offered(&self) -> bool {
         self.edge
@@ -179,8 +181,50 @@ impl ThreadRead for AttachmentFileRequest {
     fn thread_id(&self) -> &str {
         &self.thread_id
     }
-    fn feature(&self) -> &'static str {
-        AttachmentFileRequest::feature(self)
+    fn feature(&self) -> Option<&'static str> {
+        Some(AttachmentFileRequest::feature(self))
+    }
+}
+
+impl ThreadRead for PreviewRequest {
+    fn thread_id(&self) -> &str {
+        &self.thread_id
+    }
+    fn feature(&self) -> Option<&'static str> {
+        None
+    }
+    fn refused_when_offered(&self) -> bool {
+        self.edge
+    }
+}
+
+/// A read of a sent attachment (`preview` or `attachment-file`) once its request is checked: the attachment the
+/// message's preview entry names as `wanted`, null when it names none, then `read` on a blocking task from where the
+/// store keeps its content, answering the picture or the part, or null. Content found gone or no longer its digest is
+/// let go, as Node's read lets it go, and answers null; a failure to read content the store keeps is the host's.
+async fn read_sent_attachment(
+    state: &HostState,
+    id: String,
+    (thread_id, message_id, attachment_id): (String, String, String),
+    wanted: Wanted,
+    read: impl FnOnce(Option<&Path>, &SentAttachment) -> Result<SentRead, sotto_core::attachment_store::ReadFailed> + Send + 'static,
+) -> HostResponseEnvelope {
+    let found = match state.coordinator.sent_attachment(thread_id, message_id, attachment_id, wanted).await {
+        Ok(found) => found,
+        Err(err) => return HostResponseEnvelope::err(id, err.code, err.message),
+    };
+    let Some((attachment, path)) = found else {
+        return HostResponseEnvelope::ok(id, Value::Null);
+    };
+    let digest = attachment.digest.clone();
+    match tokio::task::spawn_blocking(move || read(path.as_deref(), &attachment)).await {
+        Ok(Ok(SentRead::Answer(answer))) => HostResponseEnvelope::ok(id, answer),
+        Ok(Ok(SentRead::Nothing)) => HostResponseEnvelope::ok(id, Value::Null),
+        Ok(Ok(SentRead::Gone)) => {
+            state.coordinator.forget_unreadable(digest);
+            HostResponseEnvelope::ok(id, Value::Null)
+        }
+        _ => HostResponseEnvelope::err(id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
     }
 }
 
@@ -293,7 +337,7 @@ async fn checked_thread_read<Request: ThreadRead, Hidden: std::future::Future<Ou
     if hidden(request.thread_id().to_string()).await {
         return Err(HostErrorCode::Forbidden);
     }
-    if !offered(request.feature()) || request.refused_when_offered() {
+    if request.feature().is_some_and(|feature| !offered(feature)) || request.refused_when_offered() {
         return Err(HostErrorCode::InvalidRequest);
     }
     Ok(request)
@@ -2227,26 +2271,21 @@ async fn handle_ws_request(
             let Some(_reading) = FileRead::start(state, client_id) else {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
             };
-            let found = match state.coordinator.sent_file(request.thread_id.clone(), request.message_id.clone(), request.attachment_id.clone()).await {
-                Ok(found) => found,
-                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
-            };
-            let Some((file, path)) = found else {
-                return HostResponseEnvelope::ok(req.id, Value::Null);
-            };
             let part = request.part;
-            let digest = file.digest.clone();
-            let read = tokio::task::spawn_blocking(move || sotto_core::attachment_files::read_part(path.as_deref(), &file, part)).await;
-            match read {
-                Ok(Ok(FilePartRead::Part(answer))) => HostResponseEnvelope::ok(req.id, answer),
-                Ok(Ok(FilePartRead::Nothing)) => HostResponseEnvelope::ok(req.id, Value::Null),
-                // Content that is gone or no longer its digest is let go, as Node's read lets it go, and answers null.
-                Ok(Ok(FilePartRead::Gone)) => {
-                    state.coordinator.forget_unreadable(digest);
-                    HostResponseEnvelope::ok(req.id, Value::Null)
-                }
-                _ => HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
-            }
+            let named = (request.thread_id, request.message_id, request.attachment_id);
+            read_sent_attachment(state, req.id, named, Wanted::File, move |path, file| sotto_core::attachment_files::read_part(path, file, part)).await
+        }
+        // A picture a sent message carries, as Node's host answers `preview` (ADR-0031): only one that user message's
+        // preview entry names and the store still keeps, as a data URL. An edge is refused, since this host offers no
+        // picture edges. Node reads one at a time per socket, which this host does by answering a socket's requests in turn.
+        "preview" => {
+            let checked = offered_thread_read(state, mode, client_id, wire, &req.fields, sotto_core::attachment_previews::preview_request).await;
+            let request = match checked {
+                Ok(request) => request,
+                Err(code) => return HostResponseEnvelope::err(req.id, code, code.default_message()),
+            };
+            let named = (request.thread_id, request.message_id, request.attachment_id);
+            read_sent_attachment(state, req.id, named, Wanted::Picture, sotto_core::attachment_previews::read_preview).await
         }
         "command" => {
             let Some(cmd) = req.fields.get("command").and_then(Value::as_object) else {
@@ -3357,6 +3396,47 @@ mod tests {
             assert!(offered.iter().any(|f| f == "thread-media") && offered.iter().any(|f| f == "thread-media-video"));
             assert!(!offered.iter().any(|f| f == "thread-media-edge"));
         }
+    }
+
+    /// A preview is refused as Node's socket server refuses it, and in its order: a malformed request before the thread is
+    /// looked at, a hidden provider's thread before anything else, and then an edge, which no client of this host accepted.
+    /// No feature is asked of a preview: every host answers one.
+    #[tokio::test]
+    async fn a_preview_is_checked_in_nodes_order() {
+        use std::cell::Cell;
+        let fields = |value: Value| value.as_object().unwrap().clone();
+        let parse = sotto_core::attachment_previews::preview_request;
+        let good = json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a" } });
+        let edge = json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a", "edge": 640 } });
+        let asked = Cell::new(false);
+        let hidden = |answer: bool| {
+            let asked = &asked;
+            move |_: String| {
+                asked.set(true);
+                async move { answer }
+            }
+        };
+        for malformed in [
+            json!({ "request": { "threadId": "t", "messageId": "m" } }),
+            json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a", "edge": 500 } }),
+            json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a", "part": 0 } }),
+            json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a" }, "more": 1 }),
+        ] {
+            assert_eq!(checked_thread_read(&fields(malformed), parse, hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        }
+        assert!(!asked.get(), "a malformed request is refused before its thread is looked at");
+        assert_eq!(checked_thread_read(&fields(edge.clone()), parse, hidden(true), |_| true).await, Err(HostErrorCode::Forbidden));
+        assert!(asked.get());
+        assert_eq!(checked_thread_read(&fields(edge), parse, hidden(false), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        let mut named = None;
+        let request = checked_thread_read(&fields(good), parse, hidden(false), |feature: &str| {
+            named = Some(feature.to_string());
+            false
+        })
+        .await
+        .unwrap();
+        assert_eq!(named, None, "a preview needs no feature");
+        assert_eq!((request.message_id.as_str(), request.attachment_id.as_str(), request.edge), ("m", "a", false));
     }
 
     /// A sent file's part is refused as Node's socket server refuses it, and in its order: a malformed request before the
