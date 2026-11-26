@@ -24,12 +24,13 @@ use crate::attachment_previews::{AttachmentPreviews, Wanted};
 use crate::attachment_store::AttachmentError;
 use crate::file_uploads::Received;
 use crate::remote_commands::validate_remote_command;
+use crate::thread_clearing::{clear_hold, deletion_hold, own_worktree, unlink_from, ClearFacts, KeptReason};
 use crate::thread_drafts::{DraftFacts, DraftSave, DraftSaved, SeenRevision, ThreadDrafts};
 use crate::thread_lifecycle::{has_time, is_closed, SettledIn};
 use crate::thread_snoozes::{SnoozeUntil, ThreadSnoozes, SAVED_KEY as THREAD_SNOOZES_KEY};
 use crate::watcher::{FollowupStore, QueuedFollowup};
 use crate::stores::{
-    StoredMessage, StoredThreadEvent, ThreadEvent, ThreadEventAttribution, ThreadStore,
+    StoredMessage, StoredThreadEvent, SubagentStore, ThreadEvent, ThreadEventAttribution, ThreadStore,
     MAX_AGENT_ACTIVITIES,
 };
 use crate::workspace::{
@@ -424,6 +425,39 @@ fn required_id<'a>(command: &'a Map<String, Value>, key: &str, max: usize) -> Re
     }
 }
 
+/// The threads on this host Watcher watches, asked as a thread is checked for deleting (ADR-0140 decision 3), as Node's
+/// coordinator asks its Watcher hooks' `watchedThreadIds`.
+pub type WatchedThreads = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
+
+/// What a failed erase adds about folders, as Node's `DELETION_FOLDERS_WORDS` (`src/main/agents/workspace.ts`).
+const DELETION_FOLDERS_WORDS: &str = "Worktree folders it already removed stay removed; their branches and commits stay.";
+/// A thread's title as Node's clearing names it, cut at 512 UTF-16 code units as `title.slice(0, 512)` cuts it.
+fn clear_title(title: &str) -> String {
+    let mut units = 0;
+    title
+        .chars()
+        .take_while(|c| {
+            units += c.len_utf16();
+            units <= 512
+        })
+        .collect()
+}
+
+/// The thread a provider event is about, if it is about one.
+fn event_thread_id(event: &ProviderEvent) -> Option<&str> {
+    match event {
+        ProviderEvent::StatusChanged { .. } => None,
+        ProviderEvent::TurnStarted { thread_id, .. }
+        | ProviderEvent::MessageAdded { thread_id, .. }
+        | ProviderEvent::MessageTextAppended { thread_id, .. }
+        | ProviderEvent::MessageReplaced { thread_id, .. }
+        | ProviderEvent::ActivityUpserted { thread_id, .. }
+        | ProviderEvent::RequestOpened { thread_id, .. }
+        | ProviderEvent::RequestCleared { thread_id, .. }
+        | ProviderEvent::TurnCompleted { thread_id, .. } => Some(thread_id),
+    }
+}
+
 /// What Settle and Restore act on, as Node's `setWorkspaceSettled` names it.
 #[derive(Debug, Clone, Copy)]
 enum SettledTarget {
@@ -550,6 +584,9 @@ enum ActorMessage {
     },
     ForgetObserver {
         observer: Observer,
+    },
+    SetWatchedThreads {
+        source: WatchedThreads,
     },
     StageImage {
         name: String,
@@ -1162,6 +1199,12 @@ impl CoordinatorHandle {
         let _ = self.tx.send(ActorMessage::ForgetObserver { observer });
     }
 
+    /// Where the coordinator asks which of this host's threads Watcher watches, as Node's coordinator is given its
+    /// Watcher hooks: a watched thread is kept back from deleting (ADR-0140 decision 3).
+    pub fn set_watched_threads(&self, source: WatchedThreads) {
+        let _ = self.tx.send(ActorMessage::SetWatchedThreads { source });
+    }
+
     pub async fn shutdown(&self) {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self.tx.send(ActorMessage::Shutdown { reply: reply_tx }).is_ok() {
@@ -1215,7 +1258,11 @@ struct CoordinatorActor {
     threads: Vec<AgentThread>,
     project_aliases: Vec<Value>,
     creations: Vec<Value>,
+    /// The cleared threads' IDs in the order `workspace.json` keeps them (ADR-0140 decision 6).
     cleared_thread_ids: Vec<String>,
+    /// The same IDs as a set, as Node's `clearedIds`: every provider event asks it, so asking costs the same however
+    /// many threads were cleared.
+    cleared: HashSet<String>,
     snapshot_extra: Map<String, Value>,
     file_extra: Map<String, Value>,
     agents_json_extra: Map<String, Value>,
@@ -1258,6 +1305,8 @@ struct CoordinatorActor {
 
     shell_dirty: bool,
     dirty_details: HashSet<String>,
+    /// Which of this host's threads Watcher watches, once the host has said where to ask.
+    watched_threads: Option<WatchedThreads>,
 }
 
 impl CoordinatorActor {
@@ -1370,6 +1419,7 @@ impl CoordinatorActor {
             threads: persisted.threads,
             project_aliases: persisted.project_aliases,
             creations: persisted.creations,
+            cleared: persisted.cleared_thread_ids.iter().cloned().collect(),
             cleared_thread_ids: persisted.cleared_thread_ids,
             snapshot_extra: persisted.snapshot_extra,
             file_extra: persisted.file_extra,
@@ -1403,6 +1453,7 @@ impl CoordinatorActor {
             previews,
             shell_dirty: false,
             dirty_details: HashSet::new(),
+            watched_threads: None,
         }
     }
 
@@ -1650,6 +1701,7 @@ impl CoordinatorActor {
                     self.show_threads();
                 }
             }
+            ActorMessage::SetWatchedThreads { source } => self.watched_threads = Some(source),
             ActorMessage::ObserveThreads { observer, thread_ids, shown, reply } => {
                 self.set_observation(observer, &thread_ids, shown.then(|| thread_ids.clone()));
                 let mut out = Vec::with_capacity(thread_ids.len());
@@ -2062,6 +2114,28 @@ impl CoordinatorActor {
             self.pump_followups();
             return;
         }
+        // Node checks what keeps a thread back before it waits on the thread's lane, and answers a preview at once when
+        // something does (`clearCommand`); only one that could go is checked again in its lane.
+        if unlaned == Some("preview-delete-thread") {
+            let checked = validate_remote_command(&pending.command, pending.client.may_answer)
+                .map_err(|refusal| CoordinatorError {
+                    code: refusal.code,
+                    message: refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string()),
+                })
+                .and_then(|_| required_id(&pending.command, "threadId", THREAD_ID_MAX).map(ToString::to_string));
+            match checked {
+                Err(err) => {
+                    let _ = pending.reply.send(Err(err));
+                    return;
+                }
+                Ok(thread_id) => {
+                    if let Some(kept) = self.clear_hold(&thread_id) {
+                        let PendingCommand { client, reply, .. } = pending;
+                        return self.answer_delete_preview(&client, &thread_id, Some(kept), reply);
+                    }
+                }
+            }
+        }
         let lane = pending
             .command
             .get("threadId")
@@ -2165,6 +2239,25 @@ impl CoordinatorActor {
             "settle-thread" | "restore-thread" | "settle-project" | "restore-project" => {
                 let target = if cmd_type.ends_with("-project") { SettledTarget::Project } else { SettledTarget::Thread };
                 let res = self.cmd_set_workspace_settled(&command, target, cmd_type.starts_with("settle-"));
+                self.finish_sync_command(lane, &client, res, reply);
+            }
+            // Deleting a settled thread (ADR-0140) is checked again in the thread's own lane, as Node's workspace checks
+            // it, and goes there: nothing of it waits on a provider.
+            "preview-delete-thread" => {
+                let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
+                let kept = self.threads.iter().find(|t| t.id == thread_id).map_or(Some(KeptReason::Hidden), |thread| {
+                    deletion_hold(thread).or_else(|| own_worktree(thread).map(|path| self.worktree_deletion_hold(&thread.id, path)))
+                });
+                if let Some(ref tid) = lane {
+                    self.busy_thread_ids.remove(tid);
+                } else {
+                    self.global_lane_busy = false;
+                }
+                self.answer_delete_preview(&client, &thread_id, kept, reply);
+                self.drain_lane(lane);
+            }
+            "delete-thread" => {
+                let res = self.cmd_delete_thread(&command);
                 self.finish_sync_command(lane, &client, res, reply);
             }
 
@@ -3692,6 +3785,172 @@ impl CoordinatorActor {
         Ok(())
     }
 
+    /// Whether something is queued or on its way for a thread, or an action of its has an unknown result, as Node's
+    /// clearing asks `hasPendingThreadWork` and its outbox: a prompt in its queue other than a wake-up still waiting, a
+    /// delivery not yet confirmed, or a send on its way. After a switch from Node, its own outbox and deliveries are in
+    /// the agents.json records this host carries as they were, and count as Node counts them: any outbox item of the
+    /// thread's, and any delivery the user has not released (`setAside` with `updatesResumed`) that is unconfirmed,
+    /// queued or submitting, or set aside with its updates still held.
+    fn pending_thread_work(&self, thread_id: &str) -> bool {
+        let named = |item: &Value| item.get("threadId").and_then(Value::as_str) == Some(thread_id);
+        let flag = |item: &Value, key: &str| item.get(key) == Some(&Value::Bool(true));
+        let node_list = |key: &str| self.agents_json_extra.get(key).and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
+        let node_delivery_pending = |item: &Value| {
+            let released = flag(item, "setAside") && flag(item, "updatesResumed");
+            let held = flag(item, "setAside") && !flag(item, "updatesResumed");
+            !released && (matches!(item.get("status").and_then(Value::as_str), Some("uncertain" | "queued" | "submitting")) || held)
+        };
+        self.followups.holds_prompts(thread_id)
+            || self.deliveries.iter().any(|d| d.thread_id == thread_id && matches!(d.status.as_str(), "uncertain" | "queued" | "submitting"))
+            || self.in_flight_sends.contains_key(thread_id)
+            || node_list("outbox").iter().any(named)
+            || node_list("deliveries").iter().any(|item| named(item) && node_delivery_pending(item))
+    }
+
+    /// Why the coordinator keeps this thread back from deleting now, or `None` (ADR-0140 decision 3), as Node's
+    /// `clearHold`: what Watcher watches is asked once for the check.
+    fn clear_hold(&self, thread_id: &str) -> Option<KeptReason> {
+        let watched: HashSet<String> = self.watched_threads.as_ref().map(|source| source().into_iter().collect()).unwrap_or_default();
+        let pending = |id: &str| self.pending_thread_work(id);
+        let facts = ClearFacts { threads: &self.threads, projects: &self.projects, pending: &pending, watched: &watched };
+        clear_hold(self.threads.iter().find(|t| t.id == thread_id), &facts)
+    }
+
+    /// Why a thread's own worktree folder keeps it, as Node's `worktreeDeletionHold` reads it from the folder: one another
+    /// thread also works in is in use. Node then reads the folder's facts and removes it under ADR-0041's guards; this
+    /// host reads no such facts yet, so the folder is kept as Node keeps one whose facts it could not read.
+    fn worktree_deletion_hold(&self, thread_id: &str, path: &str) -> KeptReason {
+        let same = |other: &AgentThread| other.worktree.as_ref().and_then(|w| w.path.as_deref()).is_some_and(|p| Path::new(p) == Path::new(path));
+        if self.threads.iter().any(|other| other.id != thread_id && same(other)) {
+            KeptReason::WorktreeInUse
+        } else {
+            KeptReason::WorktreeError
+        }
+    }
+
+    /// Answers `preview-delete-thread` with the host's state, `error: null` and what deleting would do, as Node's
+    /// `clearCommand` answers it: why the thread is kept, or null, and its own worktree's facts, which this host reads
+    /// none of.
+    fn answer_delete_preview(&mut self, client: &ClientContext, thread_id: &str, kept: Option<KeptReason>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        let mut shell = self.build_shell(client.may_answer);
+        if let Some(obj) = shell.as_object_mut() {
+            obj.insert("error".into(), Value::Null);
+            obj.insert("threadDeletePreview".into(), json!({ "threadId": thread_id, "kept": kept.map(KeptReason::code), "worktree": null }));
+        }
+        let _ = reply.send(Ok(shell));
+    }
+
+    /// Deletes one settled thread from Delete thread…, as Node's `clearCommand` does. Its outcome is told as Node tells it:
+    /// the notice on a deletion, and otherwise words on the coordinator's own answer alone, which Node's socket server does
+    /// not send a paired client, so the host's error stays as it was.
+    fn cmd_delete_thread(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+        let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?.to_string();
+        if !crate::thread_clearing::delete_command_shape(command) {
+            return Err(CoordinatorError::invalid("The confirmed worktree items must be what the folder's check listed."));
+        }
+        let title = self.threads.iter().find(|t| t.id == thread_id).map(|t| clear_title(&t.title)).unwrap_or_default();
+        if self.delete_thread(&thread_id, &title).is_ok() {
+            eprintln!("[Sotto] threads-cleared 1");
+            self.notice = format!("Deleted “{title}”.");
+        }
+        self.shell_dirty = true;
+        Ok(())
+    }
+
+    /// Deletes a thread, finally (ADR-0140 decision 4), as Node's workspace `deleteThreads` and coordinator
+    /// `forgetDeletedThreads` do for one: checked again, its sub-agent rosters and then its history erased, its record,
+    /// creation record and alias gone, other threads' links to it gone, its ID on the cleared list, and what the coordinator
+    /// kept of it let go. Its branch and the provider's own transcript are kept. `Err` holds Node's words for why not.
+    fn delete_thread(&mut self, thread_id: &str, title: &str) -> Result<(), String> {
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id).filter(|_| !self.cleared.contains(thread_id)) else {
+            return Err(format!("Sotto could not find “{title}”. Nothing was deleted."));
+        };
+        let kept = self
+            .clear_hold(thread_id)
+            .or_else(|| deletion_hold(thread))
+            .or_else(|| own_worktree(thread).map(|path| self.worktree_deletion_hold(thread_id, path)));
+        if let Some(kept) = kept {
+            eprintln!("[Sotto] thread-clear-kept {}", kept.code());
+            self.shell_dirty = true;
+            return Err(format!("“{title}” was not deleted: {}. Nothing was deleted.", kept.words()));
+        }
+        let ids = vec![thread_id.to_string()];
+        // A store that did not open cannot erase a word, so nothing is deleted (ADR-0140 decision 4).
+        let subagents = SubagentStore::open(&self.data_directory.join("subagents.sqlite"))
+            .map_err(|_| "Sotto could not open its thread history, so it deleted nothing. Restart Sotto and try again.".to_string())?;
+        // Each store erases in one transaction, the sub-agent lists first, so a failure loses at most those lists.
+        subagents
+            .forget_many(&ids)
+            .map_err(|_| format!("Sotto could not erase these threads' history, so it kept them. {DELETION_FOLDERS_WORDS} Restore access to local storage and try again."))?;
+        drop(subagents);
+        self.thread_store.forget_many(&ids).map_err(|_| {
+            format!("Sotto could not erase these threads' history, so it kept them, but their sub-agent lists are gone. {DELETION_FOLDERS_WORDS} Restore access to local storage and try again.")
+        })?;
+        let gone: HashSet<String> = ids.iter().cloned().collect();
+        self.threads.retain(|t| !gone.contains(&t.id));
+        for other in &mut self.threads {
+            unlink_from(other, &gone);
+        }
+        self.creations.retain(|item| item.get("threadId").and_then(Value::as_str).is_none_or(|id| !gone.contains(id)));
+        // The thread's own provider forgets its alias record, as Node's `ThreadRegistry.forgetThread` asks the adapter its
+        // binding names, while threads.json still binds the thread to the key its record has on disk.
+        for id in &ids {
+            if let Some(adapter) = self.thread_bindings.get(id).and_then(|binding| self.providers.get(&binding.provider)) {
+                adapter.forget_thread(id);
+            }
+        }
+        self.cleared_thread_ids.extend(ids.iter().cloned());
+        self.cleared.extend(ids.iter().cloned());
+        forget_unlinked_pull_requests(&mut self.file_extra, |id| gone.contains(id));
+        // The adapter's alias record goes with it; Node also has each adapter forget what it holds in memory.
+        self.thread_bindings.retain(|id, _| !gone.contains(id));
+        self.details.retain(|id, _| !gone.contains(id));
+        self.dirty_details.retain(|id| !gone.contains(id));
+        self.answers_in_flight.retain(|id, _| !gone.contains(id));
+        self.answer_revisions.retain(|id, _| !gone.contains(id));
+        // What the coordinator kept of it: its drafts, delivery receipts, queued prompts and their receipts, attachment
+        // previews, and being the active or a shown thread.
+        self.thread_drafts.forget_threads(&gone);
+        self.deliveries.retain(|d| !gone.contains(&d.thread_id));
+        self.forget_saved_agents_records(&gone);
+        let watchers = watcher_thread_ids(&self.threads);
+        let _ = self.followups.forget_threads(&gone, &watchers);
+        self.previews.forget_threads(&gone);
+        if self.active_thread_id.as_ref().is_some_and(|id| gone.contains(id)) {
+            self.active_thread_id = None;
+        }
+        for shown in self.observations.values_mut() {
+            shown.retain(|id| !gone.contains(id));
+        }
+        self.save_workspace();
+        self.shell_dirty = true;
+        Ok(())
+    }
+
+    /// What deleted threads left in the records of Node's `agents.json` this host carries as they were, cleared as Node's
+    /// `forgetDeletedThreads` clears them: their deliveries and delivered prompt digests, the composer's draft, its
+    /// words, images and binding, when it was theirs (`clearDraft`), and the active thread when it was one of them.
+    fn forget_saved_agents_records(&mut self, gone: &HashSet<String>) {
+        let extra = &mut self.agents_json_extra;
+        let theirs = |value: Option<&Value>| value.and_then(Value::as_str).is_some_and(|id| gone.contains(id));
+        for key in ["deliveries", "deliveredPromptDigests"] {
+            if let Some(Value::Array(items)) = extra.get_mut(key) {
+                items.retain(|item| !theirs(item.get("threadId")));
+            }
+        }
+        if theirs(extra.get("draftThreadId")) {
+            extra.insert("draft".into(), Value::String(String::new()));
+            extra.insert("draftAttachments".into(), Value::Array(Vec::new()));
+            extra.insert("draftThreadId".into(), Value::Null);
+            extra.insert("draftRequestId".into(), Value::Null);
+            extra.insert("manualDraftId".into(), Value::Null);
+            extra.insert("composing".into(), Value::Bool(false));
+        }
+        if theirs(extra.get("activeThreadId")) {
+            extra.insert("activeThreadId".into(), Value::Null);
+        }
+    }
+
     /// Settles or restores a thread or a project from a command. One that is not there is turned down in the host's
     /// state, as Node's command path turns down every failure, and the next command clears it.
     fn cmd_set_workspace_settled(&mut self, command: &Map<String, Value>, target: SettledTarget, settle: bool) -> Result<(), CoordinatorError> {
@@ -4482,6 +4741,10 @@ impl CoordinatorActor {
     }
 
     fn handle_provider_event(&mut self, event: ProviderEvent) {
+        // A cleared thread stays cleared (ADR-0140 decision 6): nothing a provider still reports of one brings it back.
+        if event_thread_id(&event).is_some_and(|id| self.cleared.contains(id)) {
+            return;
+        }
         match event {
             ProviderEvent::StatusChanged {
                 provider_id,
@@ -5192,7 +5455,7 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
             .map_err(|err| format!("Saved workspace.json has invalid projects: {err}"))?,
         None => Vec::new(),
     };
-    let threads: Vec<AgentThread> = match snapshot.remove("threads") {
+    let mut threads: Vec<AgentThread> = match snapshot.remove("threads") {
         Some(v) => serde_json::from_value(v)
             .map_err(|err| format!("Saved workspace.json has invalid threads: {err}"))?,
         None => Vec::new(),
@@ -5209,6 +5472,14 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
         .remove("clearedThreadIds")
         .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
         .unwrap_or_default();
+    // A cleared thread stays cleared (ADR-0140 decision 6): Node's workspace drops one its saved snapshot still holds as
+    // it loads, and the pull requests it kept unlinked (`initialize`). It leaves the creations as they are, and so does
+    // this host.
+    if !cleared_thread_ids.is_empty() {
+        let cleared: HashSet<&str> = cleared_thread_ids.iter().map(String::as_str).collect();
+        threads.retain(|thread| !cleared.contains(thread.id.as_str()));
+        forget_unlinked_pull_requests(&mut root, |id| cleared.contains(id));
+    }
     let workspace_configuration = root
         .remove("configuration")
         .and_then(|v| serde_json::from_value::<AgentConfiguration>(v).ok());
@@ -5230,6 +5501,18 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
         had_saved_configuration,
         configuration,
     })
+}
+
+/// Takes threads' entries out of the pull requests Node's workspace keeps unlinked (`unlinkedPullRequests` in
+/// `workspace.json`), which this host carries as they were, as Node's workspace lets a deleted or cleared thread's go:
+/// a list left empty goes too, as Node's `syncUnlinkedPullRequestsState` deletes one.
+fn forget_unlinked_pull_requests(workspace: &mut Map<String, Value>, gone: impl Fn(&str) -> bool) {
+    let Some(Value::Array(entries)) = workspace.get_mut("unlinkedPullRequests") else { return };
+    let before = entries.len();
+    entries.retain(|entry| entry.get("threadId").and_then(Value::as_str).is_none_or(|id| !gone(id)));
+    if entries.is_empty() && before > 0 {
+        workspace.remove("unlinkedPullRequests");
+    }
 }
 
 /// Reads `threads.json`. One that is there and does not read is moved aside as `.corrupt-<millis>`, as Node's registry
@@ -5851,6 +6134,228 @@ mod tests {
         coord.shutdown().await;
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
         assert!(workspace["snapshot"]["projects"][0].get("workspaceSettledAt").is_none());
+    }
+
+    /// Delete thread… as Node's `clearCommand` and workspace `deleteThreads` do it (ADR-0140). A preview says why a thread
+    /// is kept; a thread kept back stays whole, and the answer is the host's state with its error as it was, since Node's
+    /// socket server sends a paired client none of the coordinator's own words. A settled thread goes with its history's
+    /// words, its sub-agent rosters, its record, its alias and its draft; its ID joins the cleared list, a thread it
+    /// delegated to loses only the link, and what a provider still reports of it brings nothing back.
+    #[tokio::test]
+    async fn deletes_a_settled_thread_as_node_does() {
+        let dir = tempdir().unwrap();
+        let (coord, client, project_id, thread_id) = organized_workspace(dir.path()).await;
+        let child = "00000000-0000-4000-8000-00000000000c";
+        coord.run_command(client.clone(), json!({ "type": "create-thread", "threadId": child, "projectId": project_id, "title": "Delegated",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
+        coord.set_thread_delegated_by(child.into(), thread_id.clone()).await.unwrap();
+        let saved = coord.run_command(client.clone(), json!({ "type": "save-thread-draft", "threadId": thread_id,
+            "draftId": "00000000-0000-4000-8000-0000000000d1", "text": "Drafted" }).as_object().unwrap().clone()).await.unwrap();
+        assert_eq!(saved["error"], Value::Null);
+        coord.shutdown().await;
+        // Its history and its sub-agents' rosters, as the stores hold them.
+        {
+            let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
+            let message = StoredMessage { id: "m1".into(), role: "user".into(), text: "Secret words".into(), created_at: "2026-11-26T10:00:00.000Z".into(),
+                command_id: None, turn_message_id: None, attachments: None, watcher_own_change: None, watcher_observed_changes: None, provider_error: None };
+            store.append_event(&thread_id, &ThreadEvent::MessageAdded { at: message.created_at.clone(), message, redacted: None }).unwrap();
+            store.upsert_activity(&thread_id, &json!({ "id": "a1", "kind": "tool", "summary": "Secret tool" })).unwrap();
+            drop(SubagentStore::open(&dir.path().join("subagents.sqlite")).unwrap());
+            let subagents = rusqlite::Connection::open(dir.path().join("subagents.sqlite")).unwrap();
+            subagents.execute("INSERT INTO subagent_rows (thread_id, agent_id, sequence, status, value) VALUES (?1, 'agent-1', 1, 'done', '{}')", [&thread_id]).unwrap();
+            subagents.execute("INSERT INTO subagent_assignments (thread_id, agent_id, assignment_id, sequence, value, fingerprint, observed_at) VALUES (?1, 'agent-1', 'task-1', 1, '{}', 'f', 'o')", [&thread_id]).unwrap();
+        }
+        // What Node's coordinator left in agents.json for it, which this host carries as it was: the composer's draft,
+        // the active thread, a delivery receipt and a delivered prompt's digest, beside the delegated thread's own receipt.
+        {
+            let path = dir.path().join("agents.json");
+            let mut agents: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let delivery = |thread: &str, draft: &str| json!({ "commandId": format!("command-{draft}"), "draftId": draft, "threadId": thread,
+                "status": "delivered", "createdAt": "2026-11-26T10:00:00.000Z", "updatedAt": "2026-11-26T10:00:01.000Z" });
+            let fields = agents.as_object_mut().unwrap();
+            fields.insert("draft".into(), json!("Secret composer words"));
+            fields.insert("draftThreadId".into(), json!(thread_id));
+            fields.insert("draftRequestId".into(), json!("request-1"));
+            fields.insert("composing".into(), json!(true));
+            fields.insert("activeThreadId".into(), json!(thread_id));
+            fields.insert("deliveries".into(), json!([delivery(&thread_id, "00000000-0000-4000-8000-0000000000e1"), delivery(child, "00000000-0000-4000-8000-0000000000e2")]));
+            fields.insert("deliveredPromptDigests".into(), json!([{ "threadId": thread_id, "draftId": "00000000-0000-4000-8000-0000000000e1", "digest": "Secret digest" }]));
+            std::fs::write(&path, serde_json::to_string(&agents).unwrap()).unwrap();
+        }
+        let codex = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers = mock_providers();
+        providers.insert("codex".into(), codex.clone());
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let preview = |id: &str| run(json!({ "type": "preview-delete-thread", "threadId": id }));
+
+        let shell = preview(&thread_id).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert_eq!(shell["threadDeletePreview"], json!({ "threadId": thread_id, "kept": "not-settled", "worktree": null }));
+        let shell = preview("00000000-0000-4000-8000-0000000000ff").await.unwrap();
+        assert_eq!(shell["threadDeletePreview"]["kept"], "hidden", "a thread the host does not hold");
+        let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null, "Node's refusal words stay on the coordinator's own answer");
+        assert!(shell["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id.as_str()), "a thread not settled is kept");
+        let refused = run(json!({ "type": "delete-thread", "threadId": thread_id, "confirmedItems": [{ "path": "a", "fileCount": -1 }] })).await.unwrap_err();
+        assert_eq!(refused.code, HostErrorCode::InvalidRequest, "confirmations are read as Node's schema reads them");
+
+        run(json!({ "type": "settle-thread", "threadId": thread_id })).await.unwrap();
+        assert_eq!(preview(&thread_id).await.unwrap()["threadDeletePreview"]["kept"], Value::Null);
+        // A thread Watcher watches is kept, as Node asks its Watcher hooks.
+        let watched = thread_id.clone();
+        coord.set_watched_threads(Arc::new(move || vec![watched.clone()]));
+        assert_eq!(preview(&thread_id).await.unwrap()["threadDeletePreview"]["kept"], "watched");
+        run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
+        coord.set_watched_threads(Arc::new(Vec::new));
+
+        let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["notice"], "Deleted “Organized”.");
+        assert_eq!(shell["error"], Value::Null);
+        let threads = shell["host"]["threads"].as_array().unwrap();
+        assert!(!threads.iter().any(|t| t["id"] == thread_id.as_str()));
+        let delegated = threads.iter().find(|t| t["id"] == child).unwrap();
+        assert!(delegated.get("delegatedBy").is_none(), "the thread it delegated to loses only the link");
+        assert!(!shell["threadDrafts"].as_array().unwrap().iter().any(|d| d["threadId"] == thread_id.as_str()));
+        assert_eq!(codex.forgotten(), std::slice::from_ref(&thread_id), "the thread's own provider forgets its alias");
+        let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["notice"], "Deleted “Organized”.", "one already gone changes nothing");
+        assert_eq!(codex.forgotten().len(), 1);
+        coord.shutdown().await;
+
+        let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
+        assert_eq!(workspace["clearedThreadIds"], json!([thread_id]));
+        let registry = std::fs::read_to_string(dir.path().join("threads.json")).unwrap();
+        assert!(!registry.contains(&thread_id), "its alias record goes");
+        let agents = std::fs::read_to_string(dir.path().join("agents.json")).unwrap();
+        assert!(!agents.contains("Drafted"), "its draft goes");
+        assert!(!agents.contains("Secret") && !agents.contains(&thread_id), "nothing of it stays in agents.json: {agents}");
+        let agents: Value = serde_json::from_str(&agents).unwrap();
+        assert_eq!((&agents["draft"], &agents["draftThreadId"], &agents["draftRequestId"], &agents["composing"]), (&json!(""), &Value::Null, &Value::Null, &json!(false)));
+        assert_eq!(agents["activeThreadId"], Value::Null);
+        assert_eq!(agents["deliveries"].as_array().unwrap().len(), 1, "the delegated thread keeps its own receipt");
+        let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
+        assert!(store.read_messages(&thread_id).unwrap().is_empty());
+        assert!(store.read_activities(&thread_id).unwrap().is_empty());
+        let threads_db = rusqlite::Connection::open(dir.path().join("threads.sqlite")).unwrap();
+        let payload: String = threads_db.query_row("SELECT payload FROM events WHERE thread_id = ?1", [&thread_id], |row| row.get(0)).unwrap();
+        assert!(!payload.contains("Secret") && payload.contains("\"redacted\":true"), "the event keeps only that it happened: {payload}");
+        let hash: String = threads_db.query_row("SELECT identity_hash FROM activity_redactions", [], |row| row.get(0)).unwrap();
+        assert_eq!(hash, crate::thread_clearing::activity_identity_hash(&thread_id, "a1"));
+        let subagents = rusqlite::Connection::open(dir.path().join("subagents.sqlite")).unwrap();
+        let rows: i64 = subagents.query_row("SELECT (SELECT COUNT(*) FROM subagent_rows) + (SELECT COUNT(*) FROM subagent_assignments)", [], |row| row.get(0)).unwrap();
+        assert_eq!(rows, 0);
+        let erased: i64 = subagents.query_row("SELECT COUNT(*) FROM subagent_redactions", [], |row| row.get(0)).unwrap();
+        assert_eq!(erased, 2, "the agent and its assignment are remembered as erased");
+        drop((store, threads_db, subagents));
+
+        // A provider that still reports it brings nothing back (ADR-0140 decision 6). Its events and then the delegated
+        // thread's go down one channel in order, so once the delegated thread's reply is published, the deleted one's
+        // report was read before it.
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        coord.run_command(client.clone(), json!({ "type": "connect", "provider": "codex" }).as_object().unwrap().clone()).await.unwrap();
+        let mut published = coord.subscribe();
+        mock.complete_turn(&thread_id, "Back from the cleared list");
+        mock.complete_turn(child, "Still here");
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Ok(CoordinatorBroadcast::Detail(detail)) = published.recv().await {
+                    if detail.thread_id == child && detail.messages.iter().any(|m| m.text == "Still here") {
+                        return;
+                    }
+                }
+            }
+        }).await.expect("the delegated thread's reply was never published");
+        assert!(coord.detail(thread_id.clone()).await.unwrap().is_none());
+        let shell = coord.shell(true).await.unwrap();
+        assert!(!shell["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id.as_str()));
+        coord.shutdown().await;
+        let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
+        assert!(store.read_messages(&thread_id).unwrap().is_empty(), "nothing it reported reached the store");
+    }
+
+    /// What Node's outbox and deliveries still hold for a thread keeps it back from deleting after a switch from Node, as
+    /// Node's clearing counts them (`clearFacts`, `pendingThreadWorkReason`): an outbox item, an unconfirmed delivery, and
+    /// one set aside with its updates held. A delivery the user released and a delivered one hold nothing.
+    #[tokio::test]
+    async fn nodes_outbox_and_deliveries_keep_a_thread_back() {
+        let dir = tempdir().unwrap();
+        let (coord, client, project_id, outboxed) = organized_workspace(dir.path()).await;
+        let ids = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2", "00000000-0000-4000-8000-0000000000c3", "00000000-0000-4000-8000-0000000000c4"];
+        for id in ids {
+            coord.run_command(client.clone(), json!({ "type": "create-thread", "threadId": id, "projectId": project_id, "title": "Held",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
+        }
+        coord.run_command(client.clone(), json!({ "type": "settle-project", "projectId": project_id }).as_object().unwrap().clone()).await.unwrap();
+        coord.shutdown().await;
+        let [uncertain, set_aside, released, delivered] = ids;
+        let path = dir.path().join("agents.json");
+        let mut agents: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let delivery = |thread: &str, status: &str, extra: Value| {
+            let mut item = json!({ "commandId": format!("command-{thread}"), "draftId": "00000000-0000-4000-8000-0000000000e1", "threadId": thread,
+                "status": status, "createdAt": "2026-11-26T10:00:00.000Z", "updatedAt": "2026-11-26T10:00:01.000Z" });
+            item.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            item
+        };
+        let fields = agents.as_object_mut().unwrap();
+        fields.insert("outbox".into(), json!([{ "id": "o1", "type": "send", "threadId": outboxed }]));
+        fields.insert("deliveries".into(), json!([
+            delivery(uncertain, "uncertain", json!({})),
+            delivery(set_aside, "delivered", json!({ "setAside": true })),
+            delivery(released, "uncertain", json!({ "setAside": true, "updatesResumed": true })),
+            delivery(delivered, "delivered", json!({})),
+        ]));
+        std::fs::write(&path, serde_json::to_string(&agents).unwrap()).unwrap();
+
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let kept = |id: String| {
+            let coord = &coord;
+            let client = client.clone();
+            async move {
+                coord.run_command(client, json!({ "type": "preview-delete-thread", "threadId": id }).as_object().unwrap().clone()).await.unwrap()["threadDeletePreview"]["kept"].clone()
+            }
+        };
+        assert_eq!(kept(outboxed.clone()).await, "queued", "an outbox item");
+        assert_eq!(kept(uncertain.into()).await, "queued", "an unconfirmed delivery");
+        assert_eq!(kept(set_aside.into()).await, "queued", "set aside with its updates held");
+        assert_eq!(kept(released.into()).await, Value::Null, "released by the user");
+        assert_eq!(kept(delivered.into()).await, Value::Null, "delivered");
+        coord.shutdown().await;
+    }
+
+    /// A workspace.json that still holds a cleared thread, as one saved mid-delete or by an older build can, is read as
+    /// Node's workspace reads it: the thread and the pull requests it kept unlinked are dropped as it loads, and its
+    /// creation record stays, as Node leaves the creations alone.
+    #[tokio::test]
+    async fn a_cleared_thread_is_dropped_as_the_workspace_loads() {
+        let dir = tempdir().unwrap();
+        let (coord, _client, project_id, thread_id) = organized_workspace(dir.path()).await;
+        coord.shutdown().await;
+        let path = dir.path().join("workspace.json");
+        let mut workspace: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let other = "00000000-0000-4000-8000-0000000000aa";
+        let fields = workspace.as_object_mut().unwrap();
+        fields.insert("clearedThreadIds".into(), json!([thread_id]));
+        fields.insert("creations".into(), json!([{ "threadId": thread_id, "projectId": project_id, "commandId": "c1", "phase": "started" }]));
+        fields.insert("unlinkedPullRequests".into(), json!([{ "threadId": thread_id, "keys": ["github.com/o/r/1"] }, { "threadId": other, "keys": ["github.com/o/r/2"] }]));
+        std::fs::write(&path, serde_json::to_string(&workspace).unwrap()).unwrap();
+
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let shell = coord.shell(true).await.unwrap();
+        assert!(!shell["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id.as_str()), "a cleared thread is not read back");
+        assert!(coord.detail(thread_id.clone()).await.unwrap().is_none());
+        // A save writes what was read.
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        coord.run_command(client, json!({ "type": "settle-project", "projectId": project_id }).as_object().unwrap().clone()).await.unwrap();
+        coord.shutdown().await;
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(saved["snapshot"]["threads"].as_array().unwrap().is_empty());
+        assert_eq!(saved["clearedThreadIds"], json!([thread_id]));
+        assert_eq!(saved["unlinkedPullRequests"], json!([{ "threadId": other, "keys": ["github.com/o/r/2"] }]));
+        assert_eq!(saved["creations"].as_array().unwrap().len(), 1, "Node leaves the creations as they are");
     }
 
     /// `load-earlier-messages` as Node answers it: this host sends a thread's whole history, so a thread it holds has

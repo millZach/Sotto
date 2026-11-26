@@ -326,6 +326,16 @@ impl FollowupStore {
         Ok(removed)
     }
 
+    /// Deleted threads' queued prompts and receipts go, in one change, as Node's `forgetThreads` (ADR-0140).
+    pub fn forget_threads(&mut self, gone: &HashSet<String>, watcher_thread_ids: &HashSet<String>) -> Result<(), String> {
+        self.change(watcher_thread_ids, |items, receipts| {
+            let before = (items.len(), receipts.len());
+            items.retain(|item| !gone.contains(&item.thread_id));
+            receipts.retain(|receipt| !gone.contains(&receipt.thread_id));
+            Ok(before != (items.len(), receipts.len()))
+        })
+    }
+
     /// Whether a thread's queue holds anything of the user's or Watcher's, rather than only Sotto's waiting wake-ups.
     pub fn holds_prompts(&self, thread_id: &str) -> bool {
         self.items.iter().any(|item| item.thread_id == thread_id && !is_waiting_wake_up(item))

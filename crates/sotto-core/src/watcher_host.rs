@@ -1151,6 +1151,33 @@ impl WatcherHostService {
         self.record_store.lock().unwrap().view().clone()
     }
 
+    /// The threads on this host Watcher watches, as Node's `watchedThreadIds` reads them from its record: under a
+    /// standing watch, or taking part in an active request a remote desktop began. Node also counts the threads its own
+    /// wake-ups watch, which this host keeps none of.
+    pub fn watched_local_thread_ids(&self) -> Vec<String> {
+        let Ok(store) = self.record_store.lock() else { return Vec::new() };
+        let record = store.view();
+        let mut watched: Vec<String> = Vec::new();
+        let mut add = |thread_id: &str| {
+            if !watched.iter().any(|id| id == thread_id) {
+                watched.push(thread_id.to_string());
+            }
+        };
+        for watch in record.watches.as_deref().unwrap_or(&[]) {
+            if watch.target.host_id == self.host_id {
+                add(&watch.target.thread_id);
+            }
+        }
+        for request in record.requests.iter().filter(|request| request.remote_origin.is_some() && request.state == "active") {
+            for participant in &request.participants {
+                if participant.target.host_id == self.host_id && participant.state == "participating" && participant.automation_stopped != Some(true) {
+                    add(&participant.target.thread_id);
+                }
+            }
+        }
+        watched
+    }
+
     fn notify(&self) {
         let _ = self.notify_tx.send(());
     }

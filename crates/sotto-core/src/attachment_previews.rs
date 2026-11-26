@@ -20,6 +20,7 @@
 //! digests, each picture with `preview: { available: true }`, as Node's `decorate` places them on an outbound copy, and
 //! any `preview` a provider's message carries comes off. Nothing in the thread store ever carries one.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -278,6 +279,16 @@ impl AttachmentPreviews {
             return Err(NotRecorded);
         }
         Ok(self.live(thread_id, message_id, now).is_some())
+    }
+
+    /// Deleted threads' entries go, and the file is written again when any did, as Node's `forgetThreads` (ADR-0140). An
+    /// entry this host cannot read is Node's to keep or let go.
+    pub fn forget_threads(&mut self, gone: &HashSet<String>) {
+        let before = self.items.len();
+        self.items.retain(|item| item.entry.as_ref().is_none_or(|entry| !gone.contains(&entry.thread_id)));
+        if self.items.len() != before {
+            let _ = self.write();
+        }
     }
 
     /// Lets go of entries past their seven days, and of the oldest while the pictures they name hold more than 100 MiB,

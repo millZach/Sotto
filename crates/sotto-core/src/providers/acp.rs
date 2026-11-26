@@ -590,10 +590,11 @@ impl AcpSharedState {
     }
 
     fn save_records(&self) {
-        let records = self.records.lock().unwrap().clone();
+        // Held while the file is written, so a record `forget_thread` let go is never written back from an earlier copy.
+        let records = self.records.lock().unwrap();
         let flavor = self.flavor;
         let path = self.data_directory.join(flavor.threads_file());
-        crate::providers::save_thread_records(&path, &records, |value| AcpThreadRecord::parse(flavor, value), |record| record.encode(flavor));
+        crate::providers::save_thread_records(&path, &*records, |value| AcpThreadRecord::parse(flavor, value), |record| record.encode(flavor));
     }
 
     fn resolve_sotto_thread(&self, native_session_id: &str) -> Option<String> {
@@ -944,6 +945,18 @@ impl AcpAdapter {
 }
 
 impl ProviderAdapter for AcpAdapter {
+    /// Lets go of a deleted thread's alias record (ADR-0140 decision 4), as Node's adapter `forgetThread` removes it:
+    /// its entry in this provider's `*-threads.json` goes, under the records lock so no save from an earlier copy
+    /// writes it back, and so does the adapter's own map to it.
+    fn forget_thread(&self, thread_id: &str) {
+        let shared = &self.shared;
+        let mut records = shared.records.lock().unwrap();
+        records.remove(thread_id);
+        crate::providers::forget_thread_record(&shared.data_directory.join(shared.flavor.threads_file()), thread_id);
+        drop(records);
+        shared.native_to_sotto.lock().unwrap().retain(|_, sotto| sotto != thread_id);
+    }
+
     fn id(&self) -> &str {
         self.config.flavor.id()
     }

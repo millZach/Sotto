@@ -4,7 +4,7 @@
 //! remembered as obsolete, so a late save of it never brings it back; a revision that was sent is never kept as a draft
 //! again.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -157,6 +157,15 @@ impl ThreadDrafts {
         let before = self.drafts.len();
         self.drafts.retain(|d| !sent(&d.thread_id, &d.draft_id));
         before != self.drafts.len()
+    }
+
+    /// What deleted threads kept here goes (ADR-0140 decision 4), as Node's `forgetDeletedThreads` filters its drafts,
+    /// their empty revisions and their delivered and obsolete ones.
+    pub fn forget_threads(&mut self, gone: &HashSet<String>) {
+        self.drafts.retain(|d| !gone.contains(&d.thread_id));
+        self.empty.retain(|thread, _| !gone.contains(thread));
+        self.obsolete.retain(|d| !gone.contains(&d.thread_id));
+        self.delivered.retain(|d| !gone.contains(&d.thread_id));
     }
 
     /// Writes them back into `agents.json`, as Node's `savedSchema` keeps them.
