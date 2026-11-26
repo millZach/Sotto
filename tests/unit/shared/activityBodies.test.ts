@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ACTIVITY_BODY_LIMIT, activityBodySize, CutBodies, cutActivityBodies, cutText, utf8Bytes } from '../../../src/shared/activityBodies'
 import { agentActivitySchema, type AgentActivity } from '../../../src/shared/agentActivity'
@@ -181,5 +182,17 @@ describe('cut bodies', () => {
     expect(agentActivitySchema.safeParse(record({ cut: { diffs: [{ index: 200, bytes: 1 }] } })).success).toBe(false)
     expect(agentActivitySchema.safeParse(record({ cut: { output: -1 } })).success).toBe(false)
     expect(agentActivitySchema.parse(record({ cut: { output: 5000, diffs: [{ index: 0, bytes: 9000 }] } })).cut).toEqual({ output: 5000, diffs: [{ index: 0, bytes: 9000 }] })
+  })
+})
+
+/**
+ * The cases the Rust host's cut is held to (`crates/sotto-core/src/activity_bodies.rs`): each record and what Node sends
+ * a desktop that accepts `activity-bodies`. This keeps the fixture true to Node's own cut, so a change to it here fails
+ * until the fixture, and with it the Rust host, follows (ADR-0214).
+ */
+describe('the cut bodies fixture the Rust host is held to', () => {
+  const cases = JSON.parse(readFileSync('tests/fixtures/activityBodies.json', 'utf8')) as { name: string; record: AgentActivity; sent: AgentActivity }[]
+  it.each(cases.map(item => [item.name, item] as const))('%s', (_name, item) => {
+    expect(cutActivityBodies(item.record)).toEqual(item.sent)
   })
 })

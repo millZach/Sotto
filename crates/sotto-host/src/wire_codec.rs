@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde_json::{json, Map, Value};
 
+use sotto_core::activity_bodies::{cut_activity_bodies, ACTIVITY_BODY_LIMIT};
 use sotto_core::{
     diff_thread_detail, summarize_activity_for_wire, AgentThreadDetail, Observer, HOST_PROTOCOL_VERSION,
 };
@@ -294,8 +295,25 @@ impl ClientWireState {
         formatted
     }
 
-    /// Formats a thread detail for a direct `detail` read (applying `activity-summaries` if active).
+    /// Whether this client is sent records with cut bodies: a desktop that accepts `activity-bodies` and not summaries
+    /// (ADR-0025, October 18 amendment), as Node's socket server decides at hello.
+    pub fn takes_cut_bodies(&self) -> bool {
+        self.has("activity-bodies") && !self.has("activity-summaries")
+    }
+
+    /// Formats a thread detail for this client: summaries when it accepts `activity-summaries`, records with cut bodies
+    /// when it accepts `activity-bodies`, and the records whole otherwise.
     pub fn format_detail(&self, detail: &AgentThreadDetail) -> AgentThreadDetail {
+        if self.takes_cut_bodies() {
+            return AgentThreadDetail {
+                activities: detail
+                    .activities
+                    .iter()
+                    .map(|record| cut_activity_bodies(record, ACTIVITY_BODY_LIMIT))
+                    .collect(),
+                ..detail.clone()
+            };
+        }
         if !self.has("activity-summaries") {
             return detail.clone();
         }
@@ -504,4 +522,40 @@ fn elide_kept_parts(
         top.insert("host".into(), Value::Object(host));
     }
     Value::Object(top)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn detail() -> AgentThreadDetail {
+        let output: String = (0..400).map(|line| format!("out {line:04}\n")).collect();
+        AgentThreadDetail {
+            thread_id: "t".into(),
+            revision: 1,
+            messages: Vec::new(),
+            activities: vec![json!({ "id": "a", "kind": "command", "title": "Ran it", "output": output })],
+            earlier_available: None,
+        }
+    }
+
+    fn client(accepts: &[&str]) -> ClientWireState {
+        let mut wire = ClientWireState::default();
+        wire.apply_hello(accepts.iter().map(ToString::to_string));
+        wire
+    }
+
+    /// A desktop that accepts `activity-bodies` and not summaries is sent cut bodies; one that accepts summaries is sent
+    /// summaries; any other client is sent the records whole, as Node's socket server decides (ADR-0025).
+    #[test]
+    fn each_client_is_sent_the_records_its_hello_accepts() {
+        let whole = detail();
+        let cut = client(&["activity-bodies"]).format_detail(&whole);
+        assert!(cut.activities[0]["cut"]["output"].is_number());
+        assert!(cut.activities[0]["output"].as_str().unwrap().len() <= sotto_core::activity_bodies::ACTIVITY_BODY_LIMIT);
+        let summaries = client(&["activity-bodies", "activity-summaries"]).format_detail(&whole);
+        assert!(summaries.activities[0].get("output").is_none() && summaries.activities[0].get("cut").is_none());
+        assert_eq!(client(&[]).format_detail(&whole).activities, whole.activities);
+    }
 }

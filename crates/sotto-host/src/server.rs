@@ -77,6 +77,7 @@ pub fn advertised_features() -> Vec<String> {
         "project-git-init".into(),
         "thread-words".into(),
         "thread-prompts".into(),
+        "activity-bodies".into(),
         "subagents".into(),
         "usage-dashboard".into(),
         "usage-history".into(),
@@ -2331,6 +2332,38 @@ async fn handle_ws_request(
             .await
             .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read review."));
             HostResponseEnvelope::ok(req.id, res)
+        }
+        "activity-body" => {
+            // One record whole, for the row a desktop opened (ADR-0025, October 18 amendment), as Node's host answers it.
+            let strict = req.fields.keys().all(|key| key == "threadId" || key == "activityId");
+            let ids = (protocol_id(req.fields.get("threadId")), protocol_id(req.fields.get("activityId")));
+            let (true, true, Some(thread_id), Some(activity_id)) = (wire.takes_cut_bodies(), strict, ids.0, ids.1) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            if let Ok(Some(provider)) = state.coordinator.thread_provider(thread_id.clone()).await {
+                if wire.hides_provider(&provider) {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::Forbidden,
+                        HostErrorCode::Forbidden.default_message(),
+                    );
+                }
+            }
+            let record = match state.coordinator.detail(thread_id).await {
+                Ok(detail) => detail.and_then(|detail| {
+                    detail
+                        .activities
+                        .iter()
+                        .find(|record| record.get("id").and_then(Value::as_str) == Some(activity_id.as_str()))
+                        .map(sotto_core::activity_bodies::strip_agent_steps)
+                }),
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+            };
+            HostResponseEnvelope::ok(req.id, record.unwrap_or(Value::Null))
         }
         "thread-prompts" => {
             // The prompts above a pane's window for the message scrubber (ADR-0109), as Node's host answers them.
