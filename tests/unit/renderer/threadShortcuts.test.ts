@@ -37,6 +37,10 @@ describe('thread shortcut choices (ADR-0133)', () => {
     // Close pane's shifted W is not the menu's Close, on any platform.
     expect(menuOwnedChord('mod+shift+w', 'win32')).toBeNull()
     expect(menuOwnedChord('mod+shift+r', 'darwin')).toBeNull()
+    // Turn off every mod's keys are the View menu's only while mods are on (ADR-0217).
+    expect(menuOwnedChord('mod+alt+shift+m', 'win32')).toBeNull()
+    expect(menuOwnedChord('mod+alt+shift+m', 'win32', true)).toBe('ctrl+alt+shift+m')
+    expect(menuOwnedChord('mod+alt+shift+m', 'darwin', true)).toBe('mod+alt+shift+m')
   })
 
   it('claims a chord unless the dictation hotkey already means it, on the platform it runs on', () => {

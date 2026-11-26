@@ -152,6 +152,9 @@
   "src/main/hosts/tailnetStore.ts": {
     "structuredClone(": 1
   },
+  "src/main/mods/mods.ts": {
+    "shell()": 2
+  },
   "src/main/omarchy/setup.ts": {
     "structuredClone(": 3
   },

@@ -169,6 +169,8 @@ export async function startOutOfProcessEngine(
         return shellBridge.openExternal(args[0] as string)
       case 'shell:openPath':
         return shellBridge.openPath(args[0] as string)
+      case 'shell:trashItem':
+        return shellBridge.trashItem?.(args[0] as string)
       case 'shell:clipboardWrite':
         return shellBridge.clipboardWrite(args[0] as string)
       case 'shell:endHostTerminals':

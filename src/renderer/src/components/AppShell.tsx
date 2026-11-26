@@ -1,3 +1,4 @@
+import { modPart } from '../../../shared/modParts'
 import React, { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { MessagesSquare, Mic } from 'lucide-react'
 import { i18n as interfaceI18n, type MessageDescriptor } from '@lingui/core'
@@ -240,10 +241,10 @@ export function AppShell({
   const beside = layout === 'sidebar'
   const shellClass = page ? 'app-shell app-shell--page' : beside ? 'app-shell app-shell--sidebar' : management ? 'app-shell' : 'app-shell app-shell--bare'
   return (
-    <div className={shellClass} data-platform={platform} data-click-effect={clickEffect || undefined}>
+    <div className={shellClass} data-part={modPart('window')} data-platform={platform} data-click-effect={clickEffect || undefined}>
       {clickEffect ? <ClickEffect /> : null}
       {page || beside ? null : (
-        <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
+        <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'} data-part={modPart('strip')}>
           {nativeWindowControls ? <span /> : owl ? (
             <div className="app-mark" role="img" aria-label={releaseTrackName('owl')}>
               <SottoMark className="app-mark__tile" />
@@ -255,7 +256,7 @@ export function AppShell({
             </div>
           )}
           {management && rooms.length > 1 ? (
-            <div ref={roomSwitch.ref} className="app-switch" role="tablist" aria-label={t({ message: 'Mode', comment: 'The room switch between Dictate, Watcher and Threads' })}>
+            <div ref={roomSwitch.ref} className="app-switch" data-part={modPart('room-switch')} role="tablist" aria-label={t({ message: 'Mode', comment: 'The room switch between Dictate, Watcher and Threads' })}>
               {rooms.map((target, index) => (
                 <button
                   key={target.id}

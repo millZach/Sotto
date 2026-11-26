@@ -1,3 +1,4 @@
+import { modPart } from '../../../shared/modParts'
 import React, { createContext, useContext, useEffect, useMemo, useLayoutEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -404,7 +405,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const chordTitle = (name: string): string => chord === undefined ? name : `${name} ${chord.label.suffix}`
   const railOn = useOwlFeature('sidebar-rail')
   // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
-  return <aside ref={aside} className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
+  return <aside ref={aside} className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-part={modPart('sidebar')} data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     data-sky={sky || undefined} data-over={over || undefined} style={{ width: size.collapsed ? railWidth(mac, railOn) : size.width }}>
     {/* A press beside the sidebar over the thread puts it away, and the thread under it has not moved. */}
     {over ? <div className="thread-nav__scrim" aria-hidden="true" onMouseDown={event => event.preventDefault()} onClick={closeOver} /> : null}

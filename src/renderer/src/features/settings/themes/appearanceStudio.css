@@ -63,12 +63,12 @@
 /* Both halves: light above the diagonal, dark below it. */
 .theme-tile__window[data-halves='both'] .theme-tile__half[data-half='dark'] { clip-path: polygon(62% 0, 100% 0, 100% 100%, 38% 100%); }
 .theme-tile__half > i { position: absolute; display: block; }
-.theme-tile__half > i[data-part='sidebar'] { top: 0; bottom: 0; left: 0; width: 30%; background: var(--tile-sidebar); }
-.theme-tile__half > i[data-part='row'] { top: 30%; left: 4%; width: 22%; height: 11%; border-radius: var(--tt-radius-mark); background: var(--tile-row); }
-.theme-tile__half > i[data-part='bubble'] { top: 16%; right: 9%; width: 40%; height: 15%; border-radius: var(--tt-radius-mark); background: var(--tile-bubble); }
-.theme-tile__half > i[data-part='text'] { top: 44%; left: 38%; width: 44%; height: 5%; border-radius: var(--tt-radius-mark); background: var(--tile-text); opacity: .7; }
-.theme-tile__half > i[data-part='composer'] { right: 7%; bottom: 10%; left: 37%; height: 22%; border-radius: var(--tt-radius-mark); background: var(--tile-card); }
-.theme-tile__half > i[data-part='send'] { right: 10%; bottom: 14%; width: 9%; aspect-ratio: 1; border-radius: 50%; background: var(--tile-accent); }
+.theme-tile__half > i[data-swatch='sidebar'] { top: 0; bottom: 0; left: 0; width: 30%; background: var(--tile-sidebar); }
+.theme-tile__half > i[data-swatch='row'] { top: 30%; left: 4%; width: 22%; height: 11%; border-radius: var(--tt-radius-mark); background: var(--tile-row); }
+.theme-tile__half > i[data-swatch='bubble'] { top: 16%; right: 9%; width: 40%; height: 15%; border-radius: var(--tt-radius-mark); background: var(--tile-bubble); }
+.theme-tile__half > i[data-swatch='text'] { top: 44%; left: 38%; width: 44%; height: 5%; border-radius: var(--tt-radius-mark); background: var(--tile-text); opacity: .7; }
+.theme-tile__half > i[data-swatch='composer'] { right: 7%; bottom: 10%; left: 37%; height: 22%; border-radius: var(--tt-radius-mark); background: var(--tile-card); }
+.theme-tile__half > i[data-swatch='send'] { right: 10%; bottom: 14%; width: 9%; aspect-ratio: 1; border-radius: 50%; background: var(--tile-accent); }
 
 .appearance-themes__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 8px 0 10px; border-top: 2px solid var(--tt-card-inset); }
 .appearance-themes__foot .tt-button { min-height: 32px; padding: 4px 8px; font-size: var(--tt-type-body); }

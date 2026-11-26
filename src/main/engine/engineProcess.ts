@@ -206,6 +206,7 @@ export function attachEngineProcessServer(
         openExternal: url => connection.request<void>('shell:openExternal', [url]),
         openPath: path => connection.request<string>('shell:openPath', [path]),
         revealInFolder: path => { connection.sendPush('shell:revealInFolder', path) },
+        trashItem: path => connection.request<void>('shell:trashItem', [path]),
         clipboardWrite: text => connection.request<void>('shell:clipboardWrite', [text]),
         credentials: {
           available: () => cache.available(),

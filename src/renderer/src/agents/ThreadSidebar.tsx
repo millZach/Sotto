@@ -1,3 +1,4 @@
+import { modPart } from '../../../shared/modParts'
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ThreadWordQuotesContext, useThreadWordQuote, type ThreadWords } from './useThreadWords'
 import { threadWordHit, type ThreadWordMatch } from '../../../shared/threadWords'
@@ -267,13 +268,13 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // stays its tooltip and its spoken name. The look names what sets the name's weight, so a change of weight measures again.
   const titleBox = useRef<HTMLSpanElement>(null)
   const shownTitle = useWordCut(titleBox, title, renaming ? null : [resting ? 'resting' : 'live', current && 'current', inQueue && 'queued'].filter(Boolean).join(' '))
-  if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
+  if (renaming) return <><li className="thread-nav__row" data-part={modPart('sidebar-row')} data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={t`Rename ${title}`} className="thread-nav__rename tt-focusable"
         onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
     </span>
   </li>{swarm}</>
-  return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
+  return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-part={modPart('sidebar-row')} data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
     data-steps-back={stepsBack || undefined} data-in-queue={inQueue ? id : undefined} data-quoted={wordQuote ? true : undefined}
     onContextMenu={event => { event.preventDefault(); rowButton.current?.focus(); setMenu(rowMenuPlace(event)) }}>
     <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[...wordQuote ? [quoteId] : [], statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable

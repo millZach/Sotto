@@ -81,8 +81,30 @@ export const DEFAULT_THREAD_SHORTCUTS: Readonly<Record<ThreadShortcutId, string>
  * zoom keys (Ctrl+=/-), Settings (Ctrl+, or Cmd+,) and a Mac's full screen cannot end a thread chord, so
  * they need no entry.
  */
-export function menuOwnedChords(platform: SottoPlatform): readonly string[] {
-  return platform === 'darwin' ? ['mod+w', 'mod+0'] : ['ctrl+r', 'ctrl+shift+i', 'ctrl+w', 'ctrl+0']
+export function menuOwnedChords(platform: SottoPlatform, modsOn = false): readonly string[] {
+  const own = platform === 'darwin' ? ['mod+w', 'mod+0'] : ['ctrl+r', 'ctrl+shift+i', 'ctrl+w', 'ctrl+0']
+  // Turn off every mod (ADR-0217), only while the `mods` Owl feature puts it in the View menu.
+  return modsOn ? [...own, platform === 'darwin' ? MODS_OFF_CHORD : 'ctrl+alt+shift+m'] : own
+}
+
+/** The View menu's Turn off every mod (ADR-0217): Ctrl+Alt+Shift+M, or Cmd+Option+Shift+M on a Mac. */
+export const MODS_OFF_CHORD = 'mod+alt+shift+m'
+/** The same keys as the menu's accelerator. */
+export const MODS_OFF_ACCELERATOR = 'CommandOrControl+Alt+Shift+M'
+
+/**
+ * Whether a dictation accelerator is the same keys as Turn off every mod's, so the menu leaves the keys to dictation,
+ * whose global shortcut would take them first anyway. Spellings differ (Ctrl, Control, CommandOrControl), so the
+ * modifiers are compared as the platform reads them.
+ */
+export function modsOffKeysTaken(accelerators: readonly (string | undefined)[], platform: SottoPlatform): boolean {
+  const keys = (accelerator: string): string => accelerator.toLowerCase().split('+').map(part => part.trim()).map(part =>
+    ['commandorcontrol', 'cmdorctrl'].includes(part) ? (platform === 'darwin' ? 'meta' : 'ctrl')
+      : ['control', 'ctrl'].includes(part) ? 'ctrl'
+        : ['command', 'cmd', 'super', 'meta'].includes(part) ? 'meta'
+          : part === 'option' ? 'alt' : part).sort().join('+')
+  const own = keys(MODS_OFF_ACCELERATOR)
+  return accelerators.some(accelerator => accelerator !== undefined && keys(accelerator) === own)
 }
 
 /** The modifier spellings `parseChord` (renderer) understands, so a hand-written chord classifies the same way here. */

@@ -40,6 +40,7 @@ const customSettings = {
   watcherScene: 'harbour',
   creature: 'claude',
   showCreature: false,
+  modsOff: ['oak-sidebar'],
   interfaceLanguage: 'ja',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
@@ -330,10 +331,10 @@ describe('settings', () => {
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'showCreature', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'showCreature', 'modsOff', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', showCreature: true, customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', showCreature: true, modsOff: [], customThemes: [] })
     }
   })
 
@@ -500,6 +501,7 @@ describe('settings', () => {
       watcherScene: 'night-wood',
       creature: 'sotto',
       showCreature: true,
+      modsOff: [],
       interfaceLanguage: 'system',
       customThemes: [],
       reducedMotion: 'system',

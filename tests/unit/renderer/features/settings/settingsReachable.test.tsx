@@ -1,3 +1,4 @@
+import type { ModsBridge } from '../../../../../src/shared/mods'
 import { threadsStateFixture } from '../../../../fixtures/agentState'
 import { phonesBridgeFixture } from '../../../../fixtures/renderer/hostBridges'
 import { baseProps, settingsTab } from '../../../../fixtures/renderer/settingsViewHarness'
@@ -38,7 +39,10 @@ function withMain(): void {
   // The popup's shortcut row (ADR-0181) shows only with its bridge.
   const popup: PopupShortcutBridge = { state: vi.fn(async () => ({ status: 'on' as const, chord: 'Alt+Shift+Space' })), onState: () => () => undefined,
     replace: vi.fn(async () => ({ ok: true as const })), onOpened: () => () => undefined }
-  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers, popup })
+  // Settings › Mods (ADR-0217) shows only with its bridge.
+  const mods: ModsBridge = { list: vi.fn(async () => ({ mods: [] })), make: vi.fn(), openFolder: vi.fn(), reveal: vi.fn(), remove: vi.fn(),
+    onChanged: () => () => undefined, onAllOff: () => () => undefined }
+  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers, popup, mods })
 }
 
 function withAgents(): void {

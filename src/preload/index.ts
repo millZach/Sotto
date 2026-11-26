@@ -35,6 +35,10 @@ import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageR
 import { CHECK_QUEUES_CHANGED, CHECK_QUEUES_READ, checkQueuesViewSchema, type CheckQueuesBridge } from '../shared/checkQueue'
 import { DELEGATION_BRIEF_READ, DELEGATION_CHECK_REPLY_READ, DELEGATION_GIVE, delegationGiveRequestSchema, delegationGiveResultSchema, DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationBriefRequestSchema, delegationBriefSchema, delegationCheckReplyRequestSchema, delegationCheckReplySchema,
   delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
+import {
+  MODS_ALL_OFF, MODS_CHANGED, MODS_LIST, MODS_MAKE, MODS_OPEN_FOLDER, MODS_RENDERER_ARGUMENT, MODS_REMOVE, MODS_REVEAL, modIdRequestSchema,
+  modMakeRequestSchema, modMakeResultSchema, modRemoveResultSchema, modsAllOffSchema, modsListSchema, type ModsBridge,
+} from '../shared/mods'
 import { COORDINATION_CHANGED, COORDINATION_READ, COORDINATION_RENDERER_ARGUMENT, COORDINATION_REPLY_READ, coordinationChangedSchema, coordinationReadRequestSchema,
   coordinationReadSchema, coordinationReplyRequestSchema, coordinationReplySchema, type CoordinationBridge } from '../shared/threadCoordination'
 import {
@@ -512,6 +516,8 @@ export function createSottoBridge(
   dynamicThreadsEnabled = false,
   /** Parent-to-parent thread coordination views (ADR-0216): only while the `parent-thread-coordination` Owl feature is on. */
   parentCoordinationEnabled = false,
+  /** Mods (ADR-0217): only while the `mods` Owl feature is on. */
+  modsEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -590,6 +596,16 @@ export function createSottoBridge(
       read: async request => invokeParsed(renderer, COORDINATION_READ, coordinationReadSchema, coordinationReadRequestSchema.parse(request)),
       reply: async request => invokeParsed(renderer, COORDINATION_REPLY_READ, coordinationReplySchema, coordinationReplyRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, COORDINATION_CHANGED, coordinationChangedSchema, listener),
+    }) } : {}),
+    // Mods (ADR-0217): only while its Owl feature is on, so stable's window has no such bridge.
+    ...(modsEnabled ? { mods: Object.freeze<ModsBridge>({
+      list: async () => invokeParsed(renderer, MODS_LIST, modsListSchema),
+      make: async request => invokeParsed(renderer, MODS_MAKE, modMakeResultSchema, modMakeRequestSchema.parse(request)),
+      openFolder: async () => { await renderer.invoke(MODS_OPEN_FOLDER) },
+      reveal: async id => { await renderer.invoke(MODS_REVEAL, modIdRequestSchema.parse({ id })) },
+      remove: async id => invokeParsed(renderer, MODS_REMOVE, modRemoveResultSchema, modIdRequestSchema.parse({ id })),
+      onChanged: listener => subscribe(renderer, MODS_CHANGED, modsListSchema, listener),
+      onAllOff: listener => subscribe(renderer, MODS_ALL_OFF, modsAllOffSchema, () => listener()),
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
     // once and nothing returned carries one.
@@ -1066,7 +1082,7 @@ export function exposeRendererBridge(
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
       parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
-      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(COORDINATION_RENDERER_ARGUMENT)))
+      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(COORDINATION_RENDERER_ARGUMENT), arguments_.includes(MODS_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {
