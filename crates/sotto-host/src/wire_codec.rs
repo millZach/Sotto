@@ -3,6 +3,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde_json::{json, Map, Value};
 
 use sotto_core::activity_bodies::{cut_activity_bodies, strip_agent_steps, ACTIVITY_BODY_LIMIT};
+
+/// The parts of the host's state no phone reads, as Node's `PHONE_UNREAD_SHELL_PARTS`.
+const PHONE_UNREAD_SHELL_PARTS: &[&str] = &["skillCatalogs", "obsoleteDrafts", "clientUpdates", "threadDrafts", "threadDraftPersistence"];
 use sotto_core::{
     diff_thread_detail, summarize_activity_for_wire, AgentThreadDetail, Observer, HOST_PROTOCOL_VERSION,
 };
@@ -90,6 +93,13 @@ impl ClientWireState {
     fn filter_shell(&mut self, mut shell: Value, may_omit_catalog: bool) -> Value {
         let hidden = self.hidden_providers();
         if let Some(obj) = shell.as_object_mut() {
+            // A phone, which says so by accepting activity summaries, is sent none of the parts no phone reads
+            // (`PHONE_UNREAD_SHELL_PARTS` in `src/shared/hostProtocol.ts`).
+            if self.has("activity-summaries") {
+                for part in PHONE_UNREAD_SHELL_PARTS {
+                    obj.remove(*part);
+                }
+            }
             if !hidden.is_empty() {
                 if let Some(updates) = obj.get_mut("clientUpdates").and_then(Value::as_array_mut) {
                     updates.retain(|u| {

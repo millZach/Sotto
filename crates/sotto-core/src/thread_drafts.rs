@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::coordinator::NO_THREAD;
 use crate::workspace::DeliveredDraft;
 
 /// The keys `agents.json` keeps them under, as Node's `savedSchema` names them.
@@ -45,13 +46,40 @@ pub struct ThreadDraft {
     pub extra: Map<String, Value>,
 }
 
+/// The revision a save says its client last saw (`expectedDraftId`, `draft-revisions`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SeenRevision {
+    /// The save names none, so it is not checked against the host's.
+    #[default]
+    Unsaid,
+    /// The client saw no draft.
+    NoDraft,
+    /// The client saw this revision.
+    Revision(String),
+}
+
+impl SeenRevision {
+    fn id(&self) -> Option<&str> {
+        match self {
+            Self::Revision(id) => Some(id),
+            Self::Unsaid | Self::NoDraft => None,
+        }
+    }
+}
+
+/// A thread's draft cleared to nothing: kept only as its revision and the question it answered, in memory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EmptyRevision {
+    draft_id: String,
+    request_id: Option<String>,
+}
+
 /// A save of a thread's draft, as `save-thread-draft` names it.
 #[derive(Debug, Clone, Default)]
 pub struct DraftSave {
     pub thread_id: String,
     pub draft_id: String,
-    /// The revision the client last saw, when it names one (`expectedDraftId`, `draft-revisions`): `Some(None)` is none.
-    pub expected: Option<Option<String>>,
+    pub seen: SeenRevision,
     pub text: String,
     pub attachments: Vec<Value>,
     pub skills: Option<Vec<Value>>,
@@ -64,12 +92,12 @@ pub struct DraftSave {
 pub struct DraftFacts {
     /// The thread is one the host holds.
     pub thread_known: bool,
-    /// This revision was queued or delivered on this thread: it is a prompt, not a draft.
-    pub sent: bool,
+    /// This revision was queued on this thread: it is a prompt, not a draft.
+    pub queued: bool,
     /// This revision was submitted and not refused.
     pub submitted: bool,
-    /// This revision's ID is already another thread's sent prompt.
-    pub elsewhere: bool,
+    /// This revision's ID is already another thread's queued prompt.
+    pub queued_elsewhere: bool,
 }
 
 /// What a save did.
@@ -84,28 +112,80 @@ pub enum DraftSaved {
 #[derive(Debug, Default)]
 pub struct ThreadDrafts {
     drafts: Vec<ThreadDraft>,
-    /// A thread's empty revision, kept in memory only, as Node's `emptyDraftRevisions`: a draft cleared to nothing.
-    empty: HashMap<String, (String, Option<String>)>,
+    /// Each thread's empty revision, as Node's `emptyDraftRevisions`.
+    empty: HashMap<String, EmptyRevision>,
     obsolete: Vec<DeliveredDraft>,
+    /// The revisions delivered as prompts, as Node's `deliveredDrafts`.
+    delivered: Vec<DeliveredDraft>,
+}
+
+/// One list `agents.json` keeps, with whatever of it reads.
+fn read_saved<T: serde::de::DeserializeOwned>(agents_json: &mut Map<String, Value>, key: &str) -> Vec<T> {
+    let items = agents_json.remove(key).and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    items.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect()
 }
 
 impl ThreadDrafts {
     /// Takes the drafts, the obsolete revisions and the delivered ones out of `agents.json`, keeping whatever of
     /// each reads.
-    pub fn take_saved(agents_json: &mut Map<String, Value>) -> (Self, Vec<DeliveredDraft>) {
-        let read = |value: Option<Value>| -> Vec<Value> { value.and_then(|v| v.as_array().cloned()).unwrap_or_default() };
-        let drafts = read(agents_json.remove(DRAFTS_KEY)).into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect();
-        let obsolete = read(agents_json.remove(OBSOLETE_KEY)).into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect();
-        let delivered = read(agents_json.remove(DELIVERED_KEY)).into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect();
-        (Self { drafts, empty: HashMap::new(), obsolete }, delivered)
+    pub fn take_saved(agents_json: &mut Map<String, Value>) -> Self {
+        let mut obsolete = read_saved(agents_json, OBSOLETE_KEY);
+        let mut delivered = read_saved(agents_json, DELIVERED_KEY);
+        // Node's file may hold twice the limit; a client is sent no more than it (`MAX_DELIVERED_DRAFTS`).
+        keep_newest(&mut obsolete);
+        keep_newest(&mut delivered);
+        Self { drafts: read_saved(agents_json, DRAFTS_KEY), empty: HashMap::new(), obsolete, delivered }
+    }
+
+    /// Each thread's draft revision and whether it is saved, as Node's `draftPersistence` says it. This host saves a
+    /// draft before it answers the save, so every revision it holds is saved.
+    pub fn persistence(&self) -> Value {
+        let mut revisions: Vec<(&str, &str)> = self.empty.iter().map(|(thread, e)| (thread.as_str(), e.draft_id.as_str())).collect();
+        revisions.retain(|(thread, _)| !self.drafts.iter().any(|d| d.thread_id == *thread));
+        revisions.extend(self.drafts.iter().map(|d| (d.thread_id.as_str(), d.draft_id.as_str())));
+        Value::Array(revisions.into_iter().map(|(thread_id, draft_id)| serde_json::json!({ "threadId": thread_id, "draftId": draft_id, "status": "saved" })).collect())
+    }
+
+    /// Whether a thread's draft answers a question, which a queued prompt may not go past (`followupCommand`).
+    pub fn answers(&self, thread_id: &str) -> bool {
+        self.drafts.iter().any(|d| d.thread_id == thread_id && d.request_id.is_some())
+    }
+
+    /// Lets go of every draft whose revision went as a prompt by another store's record, as Node's start reconciles a
+    /// crash between `agents.json` and the queue (`syncFollowups`). Answers whether any went.
+    pub fn forget_sent(&mut self, sent: impl Fn(&str, &str) -> bool) -> bool {
+        let before = self.drafts.len();
+        self.drafts.retain(|d| !sent(&d.thread_id, &d.draft_id));
+        before != self.drafts.len()
     }
 
     /// Writes them back into `agents.json`, as Node's `savedSchema` keeps them.
-    pub fn save_into(&self, agents_json: &mut Map<String, Value>, delivered: &[DeliveredDraft]) {
+    pub fn save_into(&self, agents_json: &mut Map<String, Value>) {
         let list = |items: &[DeliveredDraft]| serde_json::to_value(items).unwrap_or(Value::Array(Vec::new()));
         agents_json.insert(DRAFTS_KEY.into(), serde_json::to_value(&self.drafts).unwrap_or(Value::Array(Vec::new())));
         agents_json.insert(OBSOLETE_KEY.into(), list(&self.obsolete));
-        agents_json.insert(DELIVERED_KEY.into(), list(delivered));
+        agents_json.insert(DELIVERED_KEY.into(), list(&self.delivered));
+    }
+
+    /// The revisions delivered as prompts, as a client is shown them.
+    pub fn delivered(&self) -> &[DeliveredDraft] {
+        &self.delivered
+    }
+
+    /// Whether this revision was delivered on this thread.
+    pub fn was_delivered(&self, thread_id: &str, draft_id: &str) -> bool {
+        self.delivered.iter().any(|d| d.thread_id == thread_id && d.draft_id == draft_id)
+    }
+
+    /// Records a revision delivered as a prompt: it is no longer the thread's draft, and it is never one again.
+    pub fn deliver(&mut self, thread_id: &str, draft_id: &str) {
+        self.sent(thread_id, draft_id);
+        // A revision is a UUID in Node's record, and is recorded once.
+        if uuid::Uuid::parse_str(draft_id).is_err() || self.was_delivered(thread_id, draft_id) {
+            return;
+        }
+        self.delivered.push(DeliveredDraft { draft_id: draft_id.to_string(), thread_id: thread_id.to_string() });
+        keep_newest(&mut self.delivered);
     }
 
     /// The drafts as a client is shown them.
@@ -121,7 +201,7 @@ impl ThreadDrafts {
     /// The revision a thread's draft stands at, or its empty revision.
     fn current_id(&self, thread_id: &str) -> Option<&str> {
         self.drafts.iter().find(|d| d.thread_id == thread_id).map(|d| d.draft_id.as_str())
-            .or_else(|| self.empty.get(thread_id).map(|(id, _)| id.as_str()))
+            .or_else(|| self.empty.get(thread_id).map(|empty| empty.draft_id.as_str()))
     }
 
     /// Saves a thread's draft, as Node's `stageThreadDraft`: checked against the revision the client saw, against
@@ -136,26 +216,28 @@ impl ThreadDrafts {
         };
         let same_revision = match (&previous, &empty) {
             (Some(d), _) => d.draft_id == save.draft_id && d.text == save.text && d.request_id == save.request_id && digest_matches(d),
-            (None, Some((id, request))) => *id == save.draft_id && *request == save.request_id && save.text.is_empty() && save.attachments.is_empty(),
+            (None, Some(empty)) => empty.draft_id == save.draft_id && empty.request_id == save.request_id && save.text.is_empty() && save.attachments.is_empty(),
             (None, None) => false,
         };
-        if let Some(expected) = &save.expected {
-            if self.current_id(&save.thread_id) != expected.as_deref() && !same_revision {
+        if save.seen != SeenRevision::Unsaid {
+            if self.current_id(&save.thread_id) != save.seen.id() && !same_revision {
                 return Err(CHANGED_ON_HOST.into());
             }
-            let elsewhere = facts.elsewhere
+            let other_thread = |d: &DeliveredDraft| d.draft_id == save.draft_id && d.thread_id != save.thread_id;
+            let elsewhere = facts.queued_elsewhere
                 || self.drafts.iter().any(|d| d.draft_id == save.draft_id && d.thread_id != save.thread_id)
-                || self.empty.iter().any(|(owner, (id, _))| *id == save.draft_id && *owner != save.thread_id)
-                || self.obsolete.iter().any(|d| d.draft_id == save.draft_id && d.thread_id != save.thread_id);
-            let reused = previous.as_ref().is_some_and(|d| d.draft_id == save.draft_id) || empty.as_ref().is_some_and(|(id, _)| *id == save.draft_id);
+                || self.empty.iter().any(|(owner, e)| e.draft_id == save.draft_id && *owner != save.thread_id)
+                || self.obsolete.iter().any(other_thread)
+                || self.delivered.iter().any(other_thread);
+            let reused = previous.as_ref().is_some_and(|d| d.draft_id == save.draft_id) || empty.as_ref().is_some_and(|e| e.draft_id == save.draft_id);
             if elsewhere || reused && !same_revision {
                 return Err(OTHER_CONTENT.into());
             }
         }
         if previous.is_none() && !facts.thread_known {
-            return Err("Select an available thread first.".into());
+            return Err(NO_THREAD.into());
         }
-        if facts.sent {
+        if facts.queued || self.was_delivered(&save.thread_id, &save.draft_id) {
             return Ok(DraftSaved::AlreadySent);
         }
         if self.obsolete.iter().any(|d| d.thread_id == save.thread_id && d.draft_id == save.draft_id) {
@@ -169,6 +251,7 @@ impl ThreadDrafts {
                 return Err(ANSWER_HELD.into());
             }
         }
+        let extra = previous.filter(|d| d.draft_id == save.draft_id).map(|d| d.extra).unwrap_or_default();
         self.put(ThreadDraft {
             thread_id: save.thread_id,
             draft_id: save.draft_id,
@@ -178,7 +261,8 @@ impl ThreadDrafts {
             files: save.files,
             request_id: save.request_id,
             updated_at,
-            extra: previous.map(|d| d.extra).unwrap_or_default(),
+            // Fields a later build kept stay with their own revision, never a new one.
+            extra,
         });
         Ok(DraftSaved::Kept)
     }
@@ -193,7 +277,7 @@ impl ThreadDrafts {
         }
         self.drafts.retain(|d| d.thread_id != draft.thread_id);
         if draft.text.is_empty() && draft.attachments.is_empty() {
-            self.empty.insert(draft.thread_id.clone(), (draft.draft_id, draft.request_id));
+            self.empty.insert(draft.thread_id.clone(), EmptyRevision { draft_id: draft.draft_id, request_id: draft.request_id });
         } else {
             self.empty.remove(&draft.thread_id);
             self.drafts.push(draft);
@@ -201,6 +285,10 @@ impl ThreadDrafts {
     }
 
     fn make_obsolete(&mut self, thread_id: &str, draft_id: &str) {
+        // A revision delivered is a prompt, never a cleared draft (`obsoleteDraft`).
+        if self.was_delivered(thread_id, draft_id) {
+            return;
+        }
         self.obsolete.retain(|d| d.thread_id != thread_id || d.draft_id != draft_id);
         self.obsolete.push(DeliveredDraft { draft_id: draft_id.to_string(), thread_id: thread_id.to_string() });
         keep_newest(&mut self.obsolete);
@@ -216,7 +304,7 @@ impl ThreadDrafts {
 }
 
 /// Keeps the newest receipts, as many as `agents.json` holds (`trimReceipts`).
-pub fn keep_newest(receipts: &mut Vec<DeliveredDraft>) {
+fn keep_newest(receipts: &mut Vec<DeliveredDraft>) {
     if receipts.len() > RECEIPTS_KEPT {
         receipts.drain(..receipts.len() - RECEIPTS_KEPT);
     }
@@ -255,14 +343,14 @@ mod tests {
     fn a_save_naming_its_revision_is_checked_against_the_host() {
         let mut drafts = ThreadDrafts::default();
         drafts.save(save("a", "One"), known(), "t1".into()).unwrap();
-        let stale = DraftSave { expected: Some(None), ..save("b", "Two") };
+        let stale = DraftSave { seen: SeenRevision::NoDraft, ..save("b", "Two") };
         assert_eq!(drafts.save(stale, known(), "t2".into()).unwrap_err(), CHANGED_ON_HOST);
-        let current = DraftSave { expected: Some(Some("a".into())), ..save("b", "Two") };
+        let current = DraftSave { seen: SeenRevision::Revision("a".into()), ..save("b", "Two") };
         assert_eq!(drafts.save(current, known(), "t2".into()), Ok(DraftSaved::Kept));
-        let reused = DraftSave { expected: Some(Some("b".into())), ..save("b", "Other words") };
+        let reused = DraftSave { seen: SeenRevision::Revision("b".into()), ..save("b", "Other words") };
         assert_eq!(drafts.save(reused, known(), "t3".into()).unwrap_err(), OTHER_CONTENT);
-        let taken = DraftSave { expected: Some(Some("b".into())), ..save("x", "Elsewhere") };
-        assert_eq!(drafts.save(taken, DraftFacts { elsewhere: true, ..known() }, "t4".into()).unwrap_err(), OTHER_CONTENT);
+        let taken = DraftSave { seen: SeenRevision::Revision("b".into()), ..save("x", "Elsewhere") };
+        assert_eq!(drafts.save(taken, DraftFacts { queued_elsewhere: true, ..known() }, "t4".into()).unwrap_err(), OTHER_CONTENT);
     }
 
     /// A revision already sent changes nothing, a submitted one is refused, an unknown thread is refused, and a draft
@@ -270,14 +358,34 @@ mod tests {
     #[test]
     fn sent_submitted_and_answering_drafts_are_kept_as_node_keeps_them() {
         let mut drafts = ThreadDrafts::default();
-        assert_eq!(drafts.save(save("a", "Sent"), DraftFacts { sent: true, ..known() }, "t1".into()), Ok(DraftSaved::AlreadySent));
+        assert_eq!(drafts.save(save("a", "Sent"), DraftFacts { queued: true, ..known() }, "t1".into()), Ok(DraftSaved::AlreadySent));
+        let delivered = "00000000-0000-4000-8000-0000000000d1";
+        drafts.deliver("t", delivered);
+        assert_eq!(drafts.save(save(delivered, "Delivered"), known(), "t1".into()), Ok(DraftSaved::AlreadySent));
         assert_eq!(drafts.save(save("a", "Sent"), DraftFacts { submitted: true, ..known() }, "t1".into()).unwrap_err(), SUBMITTED);
         assert!(drafts.save(save("a", "Gone"), DraftFacts::default(), "t1".into()).is_err());
         let answer = DraftSave { request_id: Some("q".into()), ..save("b", "Yes") };
         drafts.save(answer, known(), "t2".into()).unwrap();
         assert_eq!(drafts.save(save("c", "Something else"), known(), "t3".into()).unwrap_err(), ANSWER_HELD);
+        assert!(drafts.answers("t"));
         assert!(drafts.sent("t", "b"));
         assert_eq!(drafts.published(), json!([]));
+        assert!(!drafts.answers("t"));
+    }
+
+    /// Every revision this host holds is reported saved, an empty one too, and a draft a queue already took is let go.
+    #[test]
+    fn revisions_are_reported_saved_and_queued_ones_let_go() {
+        let mut drafts = ThreadDrafts::default();
+        drafts.save(save("a", "Kept"), known(), "t1".into()).unwrap();
+        drafts.save(DraftSave { thread_id: "u".into(), ..save("b", "") }, known(), "t1".into()).unwrap();
+        let mut statuses = drafts.persistence().as_array().unwrap().clone();
+        statuses.sort_by_key(|s| s["threadId"].as_str().unwrap().to_string());
+        assert_eq!(statuses, [json!({ "threadId": "t", "draftId": "a", "status": "saved" }), json!({ "threadId": "u", "draftId": "b", "status": "saved" })]);
+        assert!(drafts.forget_sent(|thread, draft| thread == "t" && draft == "a"));
+        assert_eq!(drafts.published(), json!([]));
+        drafts.deliver("t", "not-a-uuid");
+        assert!(drafts.delivered().is_empty(), "a revision Node's schema would refuse is not recorded");
     }
 
     /// Drafts, obsolete revisions and delivered ones read back from `agents.json` as they were written, unknown fields
@@ -290,10 +398,10 @@ mod tests {
             "deliveredDrafts": [{ "threadId": "t", "draftId": "y" }],
             "other": true,
         }).as_object().unwrap().clone();
-        let (drafts, delivered) = ThreadDrafts::take_saved(&mut agents);
-        assert_eq!(delivered.len(), 1);
+        let drafts = ThreadDrafts::take_saved(&mut agents);
+        assert_eq!(drafts.delivered().len(), 1);
         assert_eq!(agents.keys().collect::<Vec<_>>(), ["other"]);
-        drafts.save_into(&mut agents, &delivered);
+        drafts.save_into(&mut agents);
         assert_eq!(agents["threadDrafts"][0]["later"], 1);
         assert_eq!(agents["threadDrafts"][0]["requestId"], Value::Null);
         assert_eq!((agents["obsoleteDrafts"][0]["draftId"].clone(), agents["deliveredDrafts"][0]["draftId"].clone()), (json!("z"), json!("y")));

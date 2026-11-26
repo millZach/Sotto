@@ -18,7 +18,7 @@ use crate::provider::{
     SendMessageRequest, ThreadRecordSeed,
 };
 use crate::remote_commands::validate_remote_command;
-use crate::thread_drafts::{keep_newest, DraftFacts, DraftSave, DraftSaved, ThreadDrafts};
+use crate::thread_drafts::{DraftFacts, DraftSave, DraftSaved, SeenRevision, ThreadDrafts};
 use crate::thread_lifecycle::{has_time, is_closed, SettledIn};
 use crate::thread_snoozes::{SnoozeUntil, ThreadSnoozes, SAVED_KEY as THREAD_SNOOZES_KEY};
 use crate::watcher::{FollowupStore, QueuedFollowup};
@@ -30,7 +30,7 @@ use crate::workspace::{
     now_iso, parse_public_provider_entity_id, provider_label, public_provider_entity_id, summarize_thread, write_atomic_json,
     AgentCapabilities, AgentConfiguration, AgentDelivery, AgentModel, AgentProject,
     AgentProviderStatus, AgentThread, AgentThreadDetail, AgentThreadWorktree, AgentTurnRecord,
-    ClientUpdateRow, DeliveredDraft, StagedAttachmentEntry, StagedAttachmentHandle,
+    ClientUpdateRow, StagedAttachmentEntry, StagedAttachmentHandle,
     StagedAttachments, ACTIVE_PROVIDERS, ALL_PROVIDER_IDS,
 };
 
@@ -136,7 +136,7 @@ fn turn_running(thread: &AgentThread) -> bool {
 }
 
 /// Node's words for a command about a thread this host does not hold (`thread` in `control.ts`).
-const NO_THREAD: &str = "Select an available thread first.";
+pub(crate) const NO_THREAD: &str = "Select an available thread first.";
 /// The longest prompt Node's command schema reads (`AGENT_TEXT_MAX`), in UTF-16 code units as zod counts.
 const AGENT_TEXT_MAX: usize = 100_000;
 /// The most attachments one prompt may carry (`AGENT_MAX_ATTACHMENTS`).
@@ -1115,8 +1115,7 @@ struct CoordinatorActor {
     thread_bindings: HashMap<String, ThreadBindingRecord>,
     details: HashMap<String, AgentThreadDetail>,
     deliveries: Vec<AgentDelivery>,
-    delivered_drafts: Vec<DeliveredDraft>,
-    /// Each thread's draft revision, kept in `agents.json` as Node keeps `threadDrafts`.
+    /// Each thread's draft revision and the revisions delivered as prompts, kept in `agents.json` as Node keeps them.
     thread_drafts: ThreadDrafts,
     provider_statuses: BTreeMap<String, AgentProviderStatus>,
     models: Vec<AgentModel>,
@@ -1225,7 +1224,12 @@ impl CoordinatorActor {
         let mut agents_json_extra = persisted.agents_json_extra;
         let thread_snoozes = ThreadSnoozes::take_saved(&mut agents_json_extra);
         let failures_seen = FailuresSeen::take_saved(&mut agents_json_extra);
-        let (thread_drafts, delivered_drafts) = ThreadDrafts::take_saved(&mut agents_json_extra);
+        let mut thread_drafts = ThreadDrafts::take_saved(&mut agents_json_extra);
+        // A crash between `agents.json` and the queue leaves both copies; the queue's ownership wins (`syncFollowups`).
+        thread_drafts.forget_sent(|thread, draft| {
+            followups.receipts().iter().any(|r| r.thread_id == thread && r.draft_id == draft)
+                || followups.items().iter().any(|i| i.thread_id == thread && i.draft_id == draft)
+        });
         Self {
             data_directory,
             host_id,
@@ -1250,7 +1254,6 @@ impl CoordinatorActor {
             thread_bindings,
             details,
             deliveries: Vec::new(),
-            delivered_drafts,
             thread_drafts,
             provider_statuses,
             models,
@@ -1870,7 +1873,11 @@ impl CoordinatorActor {
                 Ok("dismiss-failures") => self.cmd_dismiss_failures(&command),
                 Ok("observe-threads") => self.cmd_observe_threads(&client, &command),
                 Ok("queue-followup") => self.cmd_queue_followup(&client, &command).map(|()| None),
-                Ok("save-thread-draft") => self.cmd_save_thread_draft(&command),
+                Ok("save-thread-draft") => {
+                    // A socket client's save hears its own outcome alone, null when it went (`saveThreadDraft`).
+                    let outcome = self.cmd_save_thread_draft(&command);
+                    return self.answer_privately(&client, outcome, reply);
+                }
                 Ok(kind) => self.cmd_change_followups(kind, &command).map(|()| None),
                 Err(refusal) => Err(CoordinatorError {
                     code: refusal.code,
@@ -2006,6 +2013,9 @@ impl CoordinatorActor {
             // A recovered draft is what a provider upgrade left unbound (`providerUpgrade`); this host makes none, so
             // there is never one to use, as Node answers with none.
             "recover-draft" => {
+                if let Err(err) = required_id(&command, "threadId", THREAD_ID_MAX) {
+                    return self.finish_sync_command(lane, &client, Err(err), reply);
+                }
                 self.error = None;
                 let words = if self.host_connected() { "There is no unbound recovered draft to use.".to_string() } else { format!("{NO_PROVIDER_ON_HOST}{DRAFT_KEPT}") };
                 self.refuse_sync_command(lane, &client, words, reply);
@@ -2065,6 +2075,26 @@ impl CoordinatorActor {
         }
         self.answer_with_shell(client, outcome, reply);
         self.drain_lane(lane);
+    }
+
+    /// Answers a command with the host's state and this command's own outcome as its `error`, null when it went, as
+    /// Node answers a socket client's draft save, and tells every client.
+    fn answer_privately(
+        &mut self,
+        client: &ClientContext,
+        outcome: Result<Option<String>, CoordinatorError>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        self.shell_dirty = true;
+        let res = outcome.map(|refusal| {
+            let mut shell = self.build_shell(client.may_answer);
+            if let Some(obj) = shell.as_object_mut() {
+                obj.insert("error".into(), refusal.map_or(Value::Null, Value::String));
+            }
+            shell
+        });
+        let _ = reply.send(res);
+        self.flush_dirty();
     }
 
     /// Answers a command with the host's state as the command left it, and tells every client. A thread the command
@@ -2862,13 +2892,7 @@ impl CoordinatorActor {
                     local_feedback_ms: Some(elapsed_ms),
                     provider_latency_ms: is_accepted.then_some(ack.provider_latency_ms),
                 });
-                // The revision went as a prompt, so it is no longer the thread's draft.
-                self.thread_drafts.sent(&thread_id, &draft_id);
-                self.delivered_drafts.push(DeliveredDraft {
-                    draft_id,
-                    thread_id,
-                });
-                keep_newest(&mut self.delivered_drafts);
+                self.thread_drafts.deliver(&thread_id, &draft_id);
                 self.save_workspace();
             }
             AsyncCommandOutcome::Answer {
@@ -3508,16 +3532,22 @@ impl CoordinatorActor {
     fn cmd_save_thread_draft(&mut self, command: &Map<String, Value>) -> Result<Option<String>, CoordinatorError> {
         let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?.to_string();
         let draft_id = required_uuid(command, "draftId")?;
-        let refused = |key: &str| CoordinatorError::invalid(format!("{key} must be an ID."));
-        let expected = match command.get("expectedDraftId") {
-            None => None,
-            Some(Value::Null) => Some(None),
-            Some(_) => Some(Some(required_uuid(command, "expectedDraftId")?)),
+        let seen = match command.get("expectedDraftId") {
+            None => SeenRevision::Unsaid,
+            Some(Value::Null) => SeenRevision::NoDraft,
+            Some(_) => SeenRevision::Revision(required_uuid(command, "expectedDraftId")?),
         };
         let request_id = match command.get("requestId") {
             None | Some(Value::Null) => None,
-            Some(value) => Some(value.as_str().filter(|id| !id.is_empty() && id.encode_utf16().count() <= THREAD_ID_MAX).ok_or_else(|| refused("requestId"))?.to_string()),
+            Some(_) => Some(required_id(command, "requestId", THREAD_ID_MAX)?.to_string()),
         };
+        // Node's schema: a form digest only with the question it was made for, and only the manual composer.
+        let digest_read = command.get("questionsDigest").is_none_or(|d| {
+            d.as_str().is_some_and(|d| d.len() == 64 && d.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())) && request_id.is_some()
+        });
+        if !digest_read || command.get("composer").is_some_and(|c| c != "manual") {
+            return Err(CoordinatorError::invalid("Use the original question ID with its form digest."));
+        }
         let text = command
             .get("text")
             .and_then(Value::as_str)
@@ -3536,14 +3566,13 @@ impl CoordinatorActor {
                 None => lost_image = true,
             }
         }
-        let save = DraftSave { thread_id, draft_id, expected, text, attachments, skills: skill_references(command)?, files: file_references(command)?, request_id };
+        let save = DraftSave { thread_id, draft_id, seen, text, attachments, skills: skill_references(command)?, files: file_references(command)?, request_id };
         let same = |t: &str, d: &str| t == save.thread_id && d == save.draft_id;
         let facts = DraftFacts {
             thread_known: self.threads.iter().any(|t| t.id == save.thread_id),
-            sent: self.followups.receipts().iter().any(|r| same(&r.thread_id, &r.draft_id)) || self.delivered_drafts.iter().any(|d| same(&d.thread_id, &d.draft_id)),
+            queued: self.followups.receipts().iter().any(|r| same(&r.thread_id, &r.draft_id)),
             submitted: self.deliveries.iter().any(|d| same(&d.thread_id, &d.draft_id) && d.status != "failed"),
-            elsewhere: self.delivered_drafts.iter().any(|d| d.draft_id == save.draft_id && d.thread_id != save.thread_id)
-                || self.followups.receipts().iter().any(|r| r.draft_id == save.draft_id && r.thread_id != save.thread_id),
+            queued_elsewhere: self.followups.receipts().iter().any(|r| r.draft_id == save.draft_id && r.thread_id != save.thread_id),
         };
         match self.thread_drafts.save(save, facts, now_iso()) {
             Ok(DraftSaved::Kept) => {
@@ -3589,6 +3618,9 @@ impl CoordinatorActor {
         }
         if has_time(thread.extra.get("archivedAt").and_then(Value::as_str)) {
             return Err("This thread is archived. Reopen it before queuing a prompt.".into());
+        }
+        if self.thread_drafts.answers(&prompt.thread_id) {
+            return Err("Send or clear the existing answer before queuing a prompt.".into());
         }
         // A prompt queued while its thread rests follows the turn it rests on, so it goes without a review.
         if thread.status == "idle" && thread.requests.is_empty() {
@@ -3771,7 +3803,7 @@ impl CoordinatorActor {
         // A draft already delivered is not sent again, whichever way its retry would go (`deliveredDrafts`).
         let draft_id = command.get("draftId").and_then(Value::as_str);
         self.error = None;
-        if draft_id.is_some_and(|draft| self.delivered_drafts.iter().any(|d| d.thread_id == thread_id && d.draft_id == draft)) {
+        if draft_id.is_some_and(|draft| self.thread_drafts.was_delivered(&thread_id, draft)) {
             return self.finish_sync_command(lane, &client, Ok(()), reply);
         }
         let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
@@ -4571,9 +4603,10 @@ impl CoordinatorActor {
                 "reasoning": false,
                 "secure": self.credentials_secure,
             },
-            "deliveredDrafts": self.delivered_drafts,
+            "deliveredDrafts": self.thread_drafts.delivered(),
             "obsoleteDrafts": self.thread_drafts.published_obsolete(),
             "threadDrafts": self.thread_drafts.published(),
+            "threadDraftPersistence": self.thread_drafts.persistence(),
             "deliveries": self.deliveries,
             "draft": "",
             "draftAttachments": [],
@@ -4717,7 +4750,7 @@ impl CoordinatorActor {
             .or_insert_with(|| Value::Array(Vec::new()));
         agents_obj.insert(THREAD_SNOOZES_KEY.into(), self.thread_snoozes.saved());
         agents_obj.insert(FAILURES_SEEN_KEY.into(), self.failures_seen.saved());
-        self.thread_drafts.save_into(&mut agents_obj, &self.delivered_drafts);
+        self.thread_drafts.save_into(&mut agents_obj);
         let _ = write_atomic_json(&self.data_directory.join("agents.json"), &Value::Object(agents_obj));
     }
 }
@@ -5214,6 +5247,10 @@ mod tests {
         run(json!({ "type": "create-thread", "threadId": "00000000-0000-4000-8000-00000000000a", "projectId": project_id, "title": "Made on Rust",
             "titleSource": "user", "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await.unwrap();
         run(json!({ "type": "manual-send", "threadId": "00000000-0000-4000-8000-00000000000a", "text": "Hello" })).await.unwrap();
+        // A draft saved here, which Node's `savedSchema` reads back after a rollback.
+        let saved = run(json!({ "type": "save-thread-draft", "threadId": "00000000-0000-4000-8000-00000000000a",
+            "draftId": "00000000-0000-4000-8000-0000000000d1", "text": "Drafted on Rust" })).await.unwrap();
+        assert_eq!(saved["error"], Value::Null);
         coord.shutdown().await;
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("workspace.json")).unwrap()).unwrap();
         assert_eq!(workspace["snapshot"]["threads"][0]["title"], "Made on Rust");
