@@ -18,17 +18,28 @@ pub const SAVED_KEY: &str = "threadSnoozes";
 
 #[derive(Debug, Default)]
 pub struct ThreadSnoozes {
-    until: BTreeMap<String, String>,
+    until: BTreeMap<String, SnoozeUntil>,
 }
 
-/// Reads a time as Node's `z.string().datetime()` accepts it: RFC 3339 in UTC with a `Z`, seconds required, any
-/// fraction of a second. Anything else is no time at all.
-pub fn parse_until(value: &str) -> Option<DateTime<Utc>> {
-    let bytes = value.as_bytes();
-    if bytes.len() < 20 || bytes[10] != b'T' || !value.ends_with('Z') {
-        return None;
+/// The time a snooze ends: the words a client sent, kept as they were for `agents.json` and every client, and the
+/// time they name, read once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnoozeUntil {
+    words: String,
+    at: DateTime<Utc>,
+}
+
+impl SnoozeUntil {
+    /// Reads a time as Node's `z.string().datetime()` accepts it: RFC 3339 in UTC with a `Z`, seconds required, any
+    /// fraction of a second. Anything else is no time at all.
+    pub fn parse(words: &str) -> Option<Self> {
+        let bytes = words.as_bytes();
+        if bytes.len() < 20 || bytes[10] != b'T' || !words.ends_with('Z') {
+            return None;
+        }
+        let at = DateTime::parse_from_rfc3339(words).ok()?.with_timezone(&Utc);
+        Some(Self { words: words.to_string(), at })
     }
-    DateTime::parse_from_rfc3339(value).ok().map(|time| time.with_timezone(&Utc))
 }
 
 impl ThreadSnoozes {
@@ -38,8 +49,8 @@ impl ThreadSnoozes {
         let mut until = BTreeMap::new();
         if let Some(Value::Object(saved)) = agents_json.remove(SAVED_KEY) {
             for (id, time) in saved {
-                if let Some(time) = time.as_str().filter(|time| parse_until(time).is_some()) {
-                    until.insert(id, time.to_string());
+                if let Some(time) = time.as_str().and_then(SnoozeUntil::parse) {
+                    until.insert(id, time);
                 }
             }
         }
@@ -48,14 +59,14 @@ impl ThreadSnoozes {
 
     /// The record as `agents.json` keeps it.
     pub fn saved(&self) -> Value {
-        Value::Object(self.until.iter().map(|(id, time)| (id.clone(), Value::String(time.clone()))).collect())
+        Value::Object(self.until.iter().map(|(id, time)| (id.clone(), Value::String(time.words.clone()))).collect())
     }
 
     /// Snoozes a thread until a time, or ends its snooze with `None`.
-    pub fn set(&mut self, thread_id: &str, until: Option<&str>) {
+    pub fn set(&mut self, thread_id: &str, until: Option<SnoozeUntil>) {
         match until {
             Some(time) => {
-                self.until.insert(thread_id.to_string(), time.to_string());
+                self.until.insert(thread_id.to_string(), time);
             }
             None => {
                 self.until.remove(thread_id);
@@ -65,13 +76,13 @@ impl ThreadSnoozes {
 
     /// What a client is shown for a thread: the time it wakes, or null when it is not snoozed.
     pub fn published(&self, thread_id: &str) -> Value {
-        self.until.get(thread_id).map_or(Value::Null, |time| Value::String(time.clone()))
+        self.until.get(thread_id).map_or(Value::Null, |time| Value::String(time.words.clone()))
     }
 
     /// Ends every snooze whose time has come; true when one ended.
     pub fn expire(&mut self, now: DateTime<Utc>) -> bool {
         let before = self.until.len();
-        self.until.retain(|_, time| parse_until(time).is_some_and(|time| time > now));
+        self.until.retain(|_, time| time.at > now);
         self.until.len() != before
     }
 
@@ -158,12 +169,16 @@ mod tests {
 
     const LATER: &str = "2099-01-01T00:00:00Z";
 
+    fn at(words: &str) -> Option<SnoozeUntil> {
+        Some(SnoozeUntil::parse(words).unwrap())
+    }
+
     #[test]
     fn reads_only_the_times_node_reads() {
-        assert!(parse_until("2026-11-25T10:00:00Z").is_some());
-        assert!(parse_until("2026-11-25T10:00:00.123456Z").is_some());
+        assert!(SnoozeUntil::parse("2026-11-25T10:00:00Z").is_some());
+        assert!(SnoozeUntil::parse("2026-11-25T10:00:00.123456Z").is_some());
         for refused in ["2026-11-25T10:00Z", "2026-11-25T10:00:00+01:00", "2026-11-25T10:00:00", "2026-02-30T10:00:00Z", "2026-11-25 10:00:00Z", "soon"] {
-            assert!(parse_until(refused).is_none(), "{refused}");
+            assert!(SnoozeUntil::parse(refused).is_none(), "{refused}");
         }
     }
 
@@ -181,8 +196,8 @@ mod tests {
     #[test]
     fn a_snooze_ends_at_its_time() {
         let mut snoozes = ThreadSnoozes::default();
-        snoozes.set("a", Some("2026-11-25T10:00:00Z"));
-        snoozes.set("b", Some(LATER));
+        snoozes.set("a", at("2026-11-25T10:00:00Z"));
+        snoozes.set("b", at(LATER));
         assert!(!snoozes.expire("2026-11-25T09:59:59Z".parse().unwrap()));
         assert!(snoozes.expire("2026-11-25T10:00:00Z".parse().unwrap()));
         assert_eq!(snoozes.saved(), json!({ "b": LATER }));
@@ -199,7 +214,7 @@ mod tests {
         let other = thread("other", "idle");
         let mut snoozes = ThreadSnoozes::default();
         for id in ["parent", "child", "other"] {
-            snoozes.set(id, Some(LATER));
+            snoozes.set(id, at(LATER));
         }
         assert!(snoozes.track(&[parent.clone(), child.clone(), other.clone()], &[project(None)]));
         assert_eq!(snoozes.saved(), json!({ "other": LATER }));
@@ -207,8 +222,8 @@ mod tests {
         // A settled thread stops the walk: the one that delegated to it stays snoozed.
         parent.workspace_settled_at = None;
         child.workspace_settled_at = Some("2026-11-25T09:00:00.000Z".into());
-        snoozes.set("parent", Some(LATER));
-        snoozes.set("child", Some(LATER));
+        snoozes.set("parent", at(LATER));
+        snoozes.set("child", at(LATER));
         assert!(snoozes.track(&[parent, child], &[project(None)]));
         assert_eq!(snoozes.saved(), json!({ "other": LATER, "parent": LATER }));
     }
@@ -217,7 +232,7 @@ mod tests {
     fn an_unseen_failure_wakes_an_open_thread_only() {
         let failed = thread("failed", "error");
         let mut snoozes = ThreadSnoozes::default();
-        snoozes.set("failed", Some(LATER));
+        snoozes.set("failed", at(LATER));
         // In a settled project the failure is quiet.
         assert!(!snoozes.track(std::slice::from_ref(&failed), &[project(Some("2026-11-25T09:00:00.000Z"))]));
         let mut seen = failed.clone();

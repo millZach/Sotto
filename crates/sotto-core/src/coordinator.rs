@@ -16,7 +16,7 @@ use crate::provider::{
     SendMessageRequest, ThreadRecordSeed,
 };
 use crate::remote_commands::validate_remote_command;
-use crate::thread_snoozes::{parse_until, ThreadSnoozes, SAVED_KEY as THREAD_SNOOZES_KEY};
+use crate::thread_snoozes::{SnoozeUntil, ThreadSnoozes, SAVED_KEY as THREAD_SNOOZES_KEY};
 use crate::stores::{
     StoredMessage, StoredThreadEvent, ThreadEvent, ThreadEventAttribution, ThreadStore,
     MAX_AGENT_ACTIVITIES,
@@ -108,6 +108,26 @@ struct QueuedThreadFollowup {
     updated_at: String,
     #[serde(skip_serializing)]
     client: ClientContext,
+}
+
+/// The longest thread ID Node's command schema reads (`id` in `src/shared/agents.ts`).
+const THREAD_ID_MAX: usize = 512;
+/// The longest project or other provider entity ID Node's command schema reads (`providerEntityId`).
+const PROVIDER_ENTITY_ID_MAX: usize = 6_144;
+
+/// A command's ID field, refused as Node's schema refuses it when it is missing, empty or longer than `max`.
+fn required_id<'a>(command: &'a Map<String, Value>, key: &str, max: usize) -> Result<&'a str, CoordinatorError> {
+    match command.get(key).and_then(Value::as_str) {
+        Some(id) if !id.is_empty() && id.chars().count() <= max => Ok(id),
+        _ => Err(CoordinatorError::invalid(format!("{key} must be an ID."))),
+    }
+}
+
+/// What Settle and Restore act on, as Node's `setWorkspaceSettled` names it.
+#[derive(Debug, Clone, Copy)]
+enum SettledTarget {
+    Project,
+    Thread,
 }
 
 struct PendingCommand {
@@ -1375,7 +1395,7 @@ impl CoordinatorActor {
                 reply,
             } => {
                 let res = self
-                    .set_workspace_settled(false, &thread_id, settle)
+                    .set_workspace_settled(SettledTarget::Thread, &thread_id, settle)
                     .map_err(CoordinatorError::invalid);
                 if res.is_ok() {
                     self.shell_dirty = true;
@@ -1456,6 +1476,19 @@ impl CoordinatorActor {
     }
 
     fn enqueue_or_dispatch(&mut self, pending: PendingCommand) {
+        // Node answers a snooze before any lane (`control.ts`), so it never waits behind a thread's send.
+        if pending.command.get("type").and_then(Value::as_str) == Some("snooze-thread") {
+            let PendingCommand { client, command, reply } = pending;
+            let outcome = match validate_remote_command(&command, client.may_answer) {
+                Ok(_) => self.cmd_snooze_thread(&command),
+                Err(refusal) => Err(CoordinatorError {
+                    code: refusal.code,
+                    message: refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string()),
+                }),
+            };
+            self.answer_with_shell(&client, outcome, reply);
+            return;
+        }
         let lane = pending
             .command
             .get("threadId")
@@ -1552,12 +1585,9 @@ impl CoordinatorActor {
                 self.finish_sync_command(lane, &client, res, reply);
             }
             "settle-thread" | "restore-thread" | "settle-project" | "restore-project" => {
-                let res = self.cmd_set_workspace_settled(&command, cmd_type);
+                let target = if cmd_type.ends_with("-project") { SettledTarget::Project } else { SettledTarget::Thread };
+                let res = self.cmd_set_workspace_settled(&command, target, cmd_type.starts_with("settle-"));
                 self.finish_sync_command(lane, &client, res, reply);
-            }
-            "snooze-thread" => {
-                let res = self.cmd_snooze_thread(&command);
-                self.finish_sync_reply(lane, &client, res, reply);
             }
             "observe-threads" => {
                 self.finish_sync_command(lane, &client, Ok(()), reply);
@@ -1641,12 +1671,13 @@ impl CoordinatorActor {
         outcome: Result<(), CoordinatorError>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
-        self.finish_sync_reply(lane, client, outcome.map(|()| None), reply);
+        self.finish_sync_with_refusal(lane, client, outcome.map(|()| None), reply);
     }
 
-    /// Ends a command whose answer may turn it down in the state it sends back, as Node answers some commands: `Some`
-    /// words are that answer's `error`, and the host's own error stays as it was.
-    fn finish_sync_reply(
+    /// Ends a command whose answer may turn it down in the state it sends back, as Node answers some commands:
+    /// `Ok(Some(words))` is a refusal, its words that answer's `error` alone, and the host's own error stays as it was;
+    /// `Ok(None)` is done.
+    fn finish_sync_with_refusal(
         &mut self,
         lane: Option<String>,
         client: &ClientContext,
@@ -1658,6 +1689,21 @@ impl CoordinatorActor {
         } else {
             self.global_lane_busy = false;
         }
+        self.answer_with_shell(client, outcome, reply);
+        self.drain_lane(lane);
+    }
+
+    /// Answers a command with the host's state as the command left it, and tells every client. A thread the command
+    /// left needing the user has its snooze ended first, as Node's `acceptSnapshot` does before it answers.
+    fn answer_with_shell(
+        &mut self,
+        client: &ClientContext,
+        outcome: Result<Option<String>, CoordinatorError>,
+        reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    ) {
+        if self.thread_snoozes.track(&self.threads, &self.projects) {
+            self.save_workspace();
+        }
         self.shell_dirty = true;
         let res = outcome.map(|refusal| {
             let mut shell = self.build_shell(client.may_answer);
@@ -1668,7 +1714,6 @@ impl CoordinatorActor {
         });
         let _ = reply.send(res);
         self.flush_dirty();
-        self.drain_lane(lane);
     }
 
     fn spawn_cmd_connect(
@@ -2915,19 +2960,21 @@ impl CoordinatorActor {
 
     /// Settles or restores a thread or a project from a command. One that is not there is turned down in the host's
     /// state, as Node's command path turns down every failure, and the next command clears it.
-    fn cmd_set_workspace_settled(&mut self, command: &Map<String, Value>, cmd_type: &str) -> Result<(), CoordinatorError> {
-        let project = cmd_type.ends_with("-project");
-        let key = if project { "projectId" } else { "threadId" };
-        let Some(id) = command.get(key).and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid(format!("{key} is required.")));
+    fn cmd_set_workspace_settled(&mut self, command: &Map<String, Value>, target: SettledTarget, settle: bool) -> Result<(), CoordinatorError> {
+        let id = match target {
+            SettledTarget::Project => required_id(command, "projectId", PROVIDER_ENTITY_ID_MAX)?,
+            SettledTarget::Thread => required_id(command, "threadId", THREAD_ID_MAX)?,
         };
-        let settle = cmd_type.starts_with("settle-");
-        match self.set_workspace_settled(project, id, settle) {
+        // As Node's command path: the error clears as the command starts, and a failure is both the error and the notice.
+        match self.set_workspace_settled(target, id, settle) {
             Ok(()) => {
                 self.error = None;
                 self.notice = if settle { "Moved to Settled." } else { "Restored." }.into();
             }
-            Err(words) => self.error = Some(words),
+            Err(words) => {
+                self.notice = words.clone();
+                self.error = Some(words);
+            }
         }
         Ok(())
     }
@@ -2935,14 +2982,19 @@ impl CoordinatorActor {
     /// Settles or restores a thread or a project in Sotto's workspace, as Node's `setWorkspaceSettled`
     /// (`src/main/agents/workspace.ts`). Only the workspace's own mark moves: a thread's `settledAt` is its provider's.
     /// Settling one already settled keeps the time it was settled. `Err` holds Node's words for one that is not there.
-    fn set_workspace_settled(&mut self, project: bool, id: &str, settle: bool) -> Result<(), String> {
-        let mark = if project {
-            self.projects.iter_mut().find(|p| p.id == id).map(|p| &mut p.workspace_settled_at)
-        } else {
-            self.threads.iter_mut().find(|t| t.id == id).map(|t| &mut t.workspace_settled_at)
+    fn set_workspace_settled(&mut self, target: SettledTarget, id: &str, settle: bool) -> Result<(), String> {
+        let (mark, missing) = match target {
+            SettledTarget::Project => (
+                self.projects.iter_mut().find(|p| p.id == id).map(|p| &mut p.workspace_settled_at),
+                "That project is unavailable.",
+            ),
+            SettledTarget::Thread => (
+                self.threads.iter_mut().find(|t| t.id == id).map(|t| &mut t.workspace_settled_at),
+                "That thread is unavailable.",
+            ),
         };
         let Some(mark) = mark else {
-            return Err(if project { "That project is unavailable." } else { "That thread is unavailable." }.into());
+            return Err(missing.into());
         };
         *mark = if settle { Some(mark.take().unwrap_or_else(now_iso)) } else { None };
         self.save_workspace();
@@ -2952,12 +3004,13 @@ impl CoordinatorActor {
     /// Snoozes a thread until a time or ends its snooze, as Node's `snooze-thread` (ADR-0175). A thread that is not
     /// there is turned down in this answer alone, as Node does.
     fn cmd_snooze_thread(&mut self, command: &Map<String, Value>) -> Result<Option<String>, CoordinatorError> {
-        let Some(tid) = command.get("threadId").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("threadId is required."));
-        };
+        let tid = required_id(command, "threadId", THREAD_ID_MAX)?;
         let until = match command.get("until") {
             Some(Value::Null) => None,
-            Some(Value::String(time)) if parse_until(time).is_some() => Some(time.as_str()),
+            Some(Value::String(time)) => match SnoozeUntil::parse(time) {
+                Some(time) => Some(time),
+                None => return Err(CoordinatorError::invalid("until must be a time or null.")),
+            },
             _ => return Err(CoordinatorError::invalid("until must be a time or null.")),
         };
         if !self.threads.iter().any(|t| t.id == tid) {
@@ -4088,6 +4141,10 @@ mod tests {
 
         let shell = run(json!({ "type": "settle-project", "projectId": "00000000-0000-4000-8000-0000000000ff" })).await.unwrap();
         assert_eq!(shell["error"], "That project is unavailable.");
+        assert_eq!(shell["notice"], "That project is unavailable.", "a failure is the notice too, as on Node");
+        for empty in [json!({ "type": "settle-project", "projectId": "" }), json!({ "type": "snooze-thread", "threadId": "", "until": null })] {
+            assert_eq!(run(empty).await.unwrap_err().code, HostErrorCode::InvalidRequest, "an empty ID is refused as Node's schema refuses it");
+        }
         let shell = run(json!({ "type": "restore-thread", "threadId": "00000000-0000-4000-8000-0000000000ff" })).await.unwrap();
         assert_eq!(shell["error"], "That thread is unavailable.");
         // The next command that goes through clears it, as Node's command path does.
@@ -4132,6 +4189,81 @@ mod tests {
         coord.shutdown().await;
         let agents: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
         assert_eq!(agents["threadSnoozes"], json!({}));
+    }
+
+    /// A snooze is answered before any lane, as Node answers it, so it never waits behind a send on its thread.
+    #[tokio::test]
+    async fn a_snooze_does_not_wait_behind_a_send() {
+        use crate::provider::BoxFuture;
+
+        struct HeldSendAdapter {
+            inner: MockProviderAdapter,
+            release: Arc<tokio::sync::Notify>,
+        }
+
+        impl ProviderAdapter for HeldSendAdapter {
+            fn id(&self) -> &str { self.inner.id() }
+            fn name(&self) -> &str { self.inner.name() }
+            fn status(&self) -> AgentProviderStatus { self.inner.status() }
+            fn models(&self) -> Vec<AgentModel> { self.inner.models() }
+            fn connect(&self, tx: mpsc::UnboundedSender<ProviderEvent>) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.connect(tx)
+            }
+            fn disconnect(&self) -> BoxFuture<'_, Result<(), String>> { self.inner.disconnect() }
+            fn create_thread(
+                &self,
+                thread_id: String,
+                cwd: String,
+                model_id: Option<String>,
+                runtime_mode: Option<String>,
+                reasoning_effort: Option<String>,
+            ) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.create_thread(thread_id, cwd, model_id, runtime_mode, reasoning_effort)
+            }
+            fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
+                let release = Arc::clone(&self.release);
+                Box::pin(async move {
+                    release.notified().await;
+                    self.inner.send_message(req).await
+                })
+            }
+            fn answer_request(&self, input: AnswerRequestInput) -> BoxFuture<'_, Result<(), String>> {
+                self.inner.answer_request(input)
+            }
+            fn interrupt(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>> { self.inner.interrupt(thread_id) }
+            fn compact(&self, thread_id: String) -> BoxFuture<'_, Result<(), String>> { self.inner.compact(thread_id) }
+        }
+
+        let dir = tempdir().unwrap();
+        let project_dir = dir.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(HeldSendAdapter { inner: MockProviderAdapter::new("codex"), release: Arc::clone(&release) }));
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "Held", "path": project_dir.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let thread_id = "00000000-0000-4000-8000-00000000000c";
+        run(json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Held",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" })).await.unwrap();
+
+        let send = run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Hello" }));
+        let snooze = async {
+            // The send holds the thread's lane while its provider has not answered.
+            while !coord.shell(true).await.unwrap()["busyThreadIds"].as_array().unwrap().iter().any(|id| id == thread_id) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            let shell = tokio::time::timeout(Duration::from_secs(5),
+                run(json!({ "type": "snooze-thread", "threadId": thread_id, "until": "2099-01-01T09:00:00.000Z" }))).await
+                .expect("the snooze waited behind the send").unwrap();
+            assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], "2099-01-01T09:00:00.000Z");
+            release.notify_one();
+        };
+        let (sent, ()) = tokio::join!(send, snooze);
+        sent.unwrap();
+        coord.shutdown().await;
     }
 
     /// A snooze whose time has come ends without a command, and every client is told.
