@@ -2492,135 +2492,28 @@ impl FollowupStore {
         &self.receipts
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn enqueue(
-        &mut self,
-        thread_id: &str,
-        draft_id: &str,
-        text: &str,
-        attachments: Vec<Value>,
-        watcher_operation_id: Option<String>,
-        watcher_thread_ids: &HashSet<String>,
-    ) -> Result<QueuedFollowup, String> {
-        let digest = followup_digest(text, &attachments, None, None);
-        if let Some(existing_r) = self
-            .receipts
-            .iter()
-            .find(|r| r.thread_id == thread_id && r.draft_id == draft_id)
-        {
-            if existing_r.digest.as_deref() != Some(digest.as_str()) {
-                return Err(
-                    "This revision already belongs to a submitted prompt. Use a new draft revision for different content."
-                        .into(),
-                );
-            }
-            if let Some(existing) = self
-                .items
-                .iter()
-                .find(|i| i.thread_id == thread_id && i.draft_id == draft_id)
-            {
-                return Ok(existing.clone());
-            }
-        }
-        if let Some(existing) = self
-            .items
-            .iter()
-            .find(|i| i.thread_id == thread_id && i.draft_id == draft_id)
-        {
-            let existing_digest = followup_digest(
-                &existing.text,
-                &existing.attachments,
-                existing.skills.as_deref(),
-                existing.files.as_deref(),
-            );
-            if existing_digest != digest {
-                return Err(
-                    "This revision already belongs to a submitted prompt. Use a new draft revision for different content."
-                        .into(),
-                );
-            }
-            return Ok(existing.clone());
-        }
-        let thread_count = self
-            .items
-            .iter()
-            .filter(|i| i.thread_id == thread_id)
-            .count();
-        if thread_count >= FOLLOWUPS_PER_THREAD_MAX {
-            return Err(
-                "This thread already has 100 follow-ups. Remove or send some first.".into(),
-            );
-        }
-        let now = now_iso();
-        let item = QueuedFollowup {
-            id: Uuid::new_v4().to_string(),
-            thread_id: thread_id.to_string(),
-            draft_id: draft_id.to_string(),
-            text: text.to_string(),
-            attachments,
-            skills: None,
-            files: None,
-            status: "queued".into(),
-            created_at: now.clone(),
-            updated_at: now,
-            error: None,
-            paused_by: None,
-            wake_up: None,
-            resume_after_turn_id: None,
-            watcher_operation_id,
-            message_id: None,
-            news: None,
-            phone_origin: None,
-            command_id: None,
-            extra: Map::new(),
-        };
-        // User follow-ups go ahead of non-leading waiting wake-ups.
-        let insert_at = self
-            .items
-            .iter()
-            .position(|i| {
-                i.thread_id == thread_id
-                    && is_waiting_wake_up(i)
-                    && !i
-                        .news
-                        .as_deref()
-                        .unwrap_or(&[])
-                        .iter()
-                        .any(is_any_restart_news)
-            })
-            .unwrap_or(self.items.len());
-        self.items.insert(insert_at, item.clone());
-        self.receipts.push(FollowupReceipt {
-            thread_id: thread_id.to_string(),
-            draft_id: draft_id.to_string(),
-            digest: Some(digest),
-            extra: Map::new(),
-        });
-        if self.receipts.len() > FOLLOWUPS_RECEIPTS_MAX {
-            let drain = self.receipts.len() - FOLLOWUPS_RECEIPTS_MAX;
-            self.receipts.drain(0..drain);
-        }
-        self.save(watcher_thread_ids)?;
-        Ok(item)
-    }
-
-    /// Reads the file again as it stands, before Watcher changes it: the engine's coordinator keeps the user's queue in
-    /// the same file, so a change made to the copy read at start would write over every follow-up queued since.
-    fn refresh(&mut self) {
-        match fs::read_to_string(self.path()) {
-            Ok(text) => {
-                if let Ok(parsed) = serde_json::from_str::<FollowupFile>(&text) {
+    /// Reads the file again as it stands, before a change: in the local engine the coordinator and Watcher each keep a
+    /// copy of this store over the same file, so a change made to a copy read earlier would write over the other's. A
+    /// file this build cannot parse is set aside, as at start, and the copy held here is written in its place; one that
+    /// cannot be read at all refuses the change.
+    pub(crate) fn refresh(&mut self) -> Result<(), String> {
+        let path = self.path();
+        match fs::read_to_string(&path) {
+            Ok(text) => match serde_json::from_str::<FollowupFile>(&text) {
+                Ok(parsed) => {
                     self.items = strip_retired_news(parsed.items);
                     self.receipts = parsed.receipts;
                     self.extra = parsed.extra;
                 }
-            }
+                Err(_) => set_aside_unreadable(&path),
+            },
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 self.items.clear();
                 self.receipts.clear();
             }
-            Err(_) => {}
+            Err(err) => return Err(format!("Could not read followups.json: {err}")),
         }
+        Ok(())
     }
 
     pub fn cancel_watcher(
@@ -2628,16 +2521,14 @@ impl FollowupStore {
         operation_ids: &HashSet<String>,
         watcher_thread_ids: &HashSet<String>,
     ) -> Result<Vec<String>, String> {
-        self.refresh();
+        self.refresh()?;
         let mut failed = Vec::new();
         let before = self.items.len();
         self.items.retain(|item| {
             let Some(ref op_id) = item.watcher_operation_id else {
                 return true;
             };
-            if !operation_ids.contains(op_id)
-                || matches!(item.status.as_str(), "dispatching" | "uncertain")
-            {
+            if !operation_ids.contains(op_id) || crate::followup_queue::is_in_flight(item) {
                 return true;
             }
             if item.status == "failed" {
@@ -2656,7 +2547,7 @@ impl FollowupStore {
         enabled: bool,
         watcher_thread_ids: &HashSet<String>,
     ) -> Result<(), String> {
-        self.refresh();
+        self.refresh()?;
         self.history_enabled = enabled;
         self.save(watcher_thread_ids)
     }
@@ -5819,16 +5710,14 @@ mod tests {
         let mut followups = FollowupStore::new(dir.path(), true);
         let op_id = Uuid::new_v4().to_string();
         let draft_id = Uuid::new_v4().to_string();
-        followups
-            .enqueue(
-                "t-1",
-                &draft_id,
-                "Check build",
-                vec![],
-                Some(op_id.clone()),
-                &HashSet::new(),
-            )
-            .unwrap();
+        let prompt = crate::followup_queue::FollowupPrompt {
+            thread_id: "t-1".into(),
+            draft_id: draft_id.clone(),
+            text: "Check build".into(),
+            watcher_operation_id: Some(op_id.clone()),
+            ..Default::default()
+        };
+        followups.enqueue_prompt(prompt, &HashSet::new()).unwrap();
         assert_eq!(followups.items().len(), 1);
         let cancel_set: HashSet<String> = [op_id].into_iter().collect();
         followups
@@ -6102,7 +5991,9 @@ mod tests {
         let written = crate::store_trip::created(FOLLOWUPS_FILE, |dir| {
             let mut store = FollowupStore::new(dir, true);
             store.load(&HashSet::new()).unwrap();
-            store.enqueue("t-1", "4a93fa0b-3ae2-4cf3-8e05-b3c4d5e6f708", "Next, run the tests", Vec::new(), None, &HashSet::new()).unwrap();
+            let prompt = crate::followup_queue::FollowupPrompt { thread_id: "t-1".into(), draft_id: "4a93fa0b-3ae2-4cf3-8e05-b3c4d5e6f708".into(),
+                text: "Next, run the tests".into(), ..Default::default() };
+            store.enqueue_prompt(prompt, &HashSet::new()).unwrap();
         });
         assert_eq!(written["items"][0]["status"], "queued");
     }

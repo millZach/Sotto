@@ -123,18 +123,86 @@ fn turn_running(thread: &AgentThread) -> bool {
 
 /// Node's words for a command about a thread this host does not hold (`thread` in `control.ts`).
 const NO_THREAD: &str = "Select an available thread first.";
+/// The longest prompt Node's command schema reads (`AGENT_TEXT_MAX`), in UTF-16 code units as zod counts.
+const AGENT_TEXT_MAX: usize = 100_000;
+/// The most attachments one prompt may carry (`AGENT_MAX_ATTACHMENTS`).
+const AGENT_MAX_ATTACHMENTS: usize = 8;
+/// The most skills or file mentions one prompt may carry, as Node's reference schemas allow.
+const PROMPT_REFERENCES_MAX: usize = 32;
+/// Node's words for a thread whose provider is not connected (`assertCanAct`).
+const RECONNECT_PROVIDER: &str = "Reconnect this thread provider before sending. Your draft is saved.";
+/// Node's words for a host with no provider connected (`noProviderRefusal` on a host).
+const NO_PROVIDER: &str = "No provider is connected on this host. Connect one in Settings > Hosts & phones. Your draft is saved.";
+
+/// A prompt's parts, read and checked as Node's command schema reads them (`prompt_parts`).
+struct PromptParts {
+    text: String,
+    attachments: Option<Vec<Value>>,
+    skills: Option<Vec<Value>>,
+    files: Option<Vec<Value>>,
+}
+
+/// A UUID field, refused as Node's `z.uuid()` refuses one that is missing or malformed.
+fn required_uuid(command: &Map<String, Value>, key: &str) -> Result<String, CoordinatorError> {
+    command
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|id| Uuid::parse_str(id).is_ok() && id.len() == 36)
+        .map(ToString::to_string)
+        .ok_or_else(|| CoordinatorError::invalid(format!("{key} must be an ID.")))
+}
+
+/// A prompt's skills as Node's `agentSkillReferencesSchema` reads them: each its name and path alone, each once.
+fn skill_references(command: &Map<String, Value>) -> Result<Option<Vec<Value>>, CoordinatorError> {
+    let Some(list) = command.get("skills") else {
+        return Ok(None);
+    };
+    let refused = || CoordinatorError::invalid("skills must each name a skill once.");
+    let list = list.as_array().filter(|list| list.len() <= PROMPT_REFERENCES_MAX).ok_or_else(refused)?;
+    let mut seen = HashSet::new();
+    for skill in list {
+        let fields = skill.as_object().filter(|fields| fields.len() == 2).ok_or_else(refused)?;
+        let part = |key: &str, max: usize| fields.get(key).and_then(Value::as_str).filter(|v| !v.is_empty() && v.encode_utf16().count() <= max);
+        let (Some(name), Some(path)) = (part("name", 512), part("path", 4_096)) else {
+            return Err(refused());
+        };
+        if !seen.insert((name, path)) {
+            return Err(refused());
+        }
+    }
+    Ok(Some(list.clone()))
+}
+
+/// A prompt's file mentions as Node's `agentFileReferencesSchema` reads them: each a relative path in the working copy
+/// with no space in it, each once.
+fn file_references(command: &Map<String, Value>) -> Result<Option<Vec<Value>>, CoordinatorError> {
+    let Some(list) = command.get("files") else {
+        return Ok(None);
+    };
+    let refused = || CoordinatorError::invalid("files must each mention a file in the working copy once.");
+    let list = list.as_array().filter(|list| list.len() <= PROMPT_REFERENCES_MAX).ok_or_else(refused)?;
+    let mut seen = HashSet::new();
+    for file in list {
+        let path = file
+            .as_object()
+            .filter(|fields| fields.len() == 1)
+            .and_then(|fields| fields.get("path"))
+            .and_then(Value::as_str)
+            .filter(|path| !path.is_empty() && !path.chars().any(char::is_whitespace) && crate::ops::is_valid_relative_path(path))
+            .ok_or_else(refused)?;
+        if !seen.insert(path) {
+            return Err(refused());
+        }
+    }
+    Ok(Some(list.clone()))
+}
+
+/// Node's words for a follow-up with neither text nor an image.
+const NO_PROMPT: &str = "There is no prompt to queue.";
 /// The most follow-ups one order may name, as Node's `reorder-followups` schema allows.
 const FOLLOWUP_ORDER_MAX: usize = 100;
 /// Why a queue waits after a turn that did not finish, in Node's words (`pumpFollowups`).
 const QUEUE_UNREVIEWED: &str = "The last turn did not confirm completion. Review the thread and resume its queue when ready.";
-
-fn command_text(command: &Map<String, Value>) -> String {
-    command.get("text").and_then(Value::as_str).unwrap_or("").to_string()
-}
-
-fn command_list(command: &Map<String, Value>, key: &str) -> Option<Vec<Value>> {
-    command.get(key).and_then(Value::as_array).cloned()
-}
 
 /// An order's item IDs, refused as Node's schema refuses one that is not a list of at most a hundred IDs.
 fn order_ids(command: &Map<String, Value>) -> Result<Vec<String>, CoordinatorError> {
@@ -1616,19 +1684,28 @@ impl CoordinatorActor {
     fn enqueue_or_dispatch(&mut self, pending: PendingCommand) {
         // Node answers these before any lane (`control.ts`): each is Sotto's own record of what the user has seen or put
         // aside, so none waits behind a thread's send or another client's action.
+        // The follow-up queue is Sotto's own record too, so changing it waits on no send (`followupCommand`); the queue
+        // sends on its own once the thread is ready. Steering one into a running turn waits on the thread's lane.
         let unlaned = pending.command.get("type").and_then(Value::as_str);
-        if matches!(unlaned, Some("snooze-thread" | "dismiss-failures" | "observe-threads")) {
+        if matches!(
+            unlaned,
+            Some("snooze-thread" | "dismiss-failures" | "observe-threads" | "queue-followup" | "edit-followup" | "remove-followup"
+                | "reorder-followups" | "resume-followups")
+        ) {
             let PendingCommand { client, command, reply } = pending;
             let outcome = match validate_remote_command(&command, client.may_answer) {
                 Ok("snooze-thread") => self.cmd_snooze_thread(&command),
                 Ok("dismiss-failures") => self.cmd_dismiss_failures(&command),
-                Ok(_) => self.cmd_observe_threads(&client, &command),
+                Ok("observe-threads") => self.cmd_observe_threads(&client, &command),
+                Ok("queue-followup") => self.cmd_queue_followup(&client, &command).map(|()| None),
+                Ok(kind) => self.cmd_change_followups(kind, &command).map(|()| None),
                 Err(refusal) => Err(CoordinatorError {
                     code: refusal.code,
                     message: refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string()),
                 }),
             };
             self.answer_with_shell(&client, outcome, reply);
+            self.pump_followups();
             return;
         }
         let lane = pending
@@ -1744,13 +1821,7 @@ impl CoordinatorActor {
             "manual-send" | "steer" => {
                 self.spawn_cmd_manual_send(lane, client, &command, None, reply)
             }
-            // The queue answers at once and sends on its own once the thread is ready, as Node's `followupCommand` does.
-            "queue-followup" => {
-                let res = self.cmd_queue_followup(&client, &command);
-                self.finish_sync_command(lane, &client, res, reply);
-                self.pump_followups();
-            }
-            "edit-followup" | "remove-followup" | "reorder-followups" | "resume-followups" | "steer-followup" => {
+            "steer-followup" => {
                 let res = self.cmd_change_followups(cmd_type, &command);
                 self.finish_sync_command(lane, &client, res, reply);
                 self.pump_followups();
@@ -3103,14 +3174,17 @@ impl CoordinatorActor {
     /// Queues a prompt, as Node's `followupCommand` queues one: the queue sends it once the thread is ready, at once when
     /// it already is. A prompt the queue turns down is turned down in the host's state.
     fn cmd_queue_followup(&mut self, client: &ClientContext, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+        let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?.to_string();
+        let draft_id = required_uuid(command, "draftId")?;
+        let parts = self.prompt_parts(command)?;
         let prompt = FollowupPrompt {
-            thread_id: required_id(command, "threadId", THREAD_ID_MAX)?.to_string(),
-            draft_id: required_id(command, "draftId", THREAD_ID_MAX)?.to_string(),
-            text: command_text(command),
-            attachments: command_list(command, "attachments").unwrap_or_default(),
-            skills: command_list(command, "skills"),
-            files: command_list(command, "files"),
-            resume_after_turn_id: None,
+            thread_id,
+            draft_id,
+            text: parts.text,
+            attachments: parts.attachments.unwrap_or_default(),
+            skills: parts.skills,
+            files: parts.files,
+            ..FollowupPrompt::default()
         };
         self.error = None;
         match self.queue_followup(prompt) {
@@ -3126,7 +3200,7 @@ impl CoordinatorActor {
     fn queue_followup(&mut self, mut prompt: FollowupPrompt) -> Result<Option<String>, String> {
         let thread = self.threads.iter().find(|t| t.id == prompt.thread_id).ok_or(NO_THREAD)?;
         if prompt.text.trim().is_empty() && prompt.attachments.is_empty() {
-            return Err("There is no prompt to queue.".into());
+            return Err(NO_PROMPT.into());
         }
         if has_time(thread.extra.get("archivedAt").and_then(Value::as_str)) {
             return Err("This thread is archived. Reopen it before queuing a prompt.".into());
@@ -3145,18 +3219,27 @@ impl CoordinatorActor {
     /// every failure.
     fn cmd_change_followups(&mut self, kind: &str, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
         let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?;
-        let item_id = match kind {
-            "reorder-followups" | "resume-followups" => "",
-            _ => required_id(command, "itemId", THREAD_ID_MAX)?,
-        };
-        let order = if kind == "reorder-followups" { order_ids(command)? } else { Vec::new() };
-        self.error = None;
+        let item_id = || required_uuid(command, "itemId");
+        let watchers = watcher_thread_ids(&self.threads);
         let outcome = match kind {
-            "steer-followup" => self.steer_followup(thread_id, item_id),
-            "reorder-followups" => self.threads_has(thread_id).and_then(|()| self.followups.reorder(thread_id, &order, &watcher_thread_ids(&self.threads))),
+            "reorder-followups" => {
+                let order = order_ids(command)?;
+                self.threads_has(thread_id).and_then(|()| self.followups.reorder(thread_id, &order, &watchers))
+            }
             "resume-followups" => self.resume_followups(thread_id),
-            _ => self.edit_followup(thread_id, item_id, (kind == "edit-followup").then_some(command)),
+            "steer-followup" => self.steer_followup(thread_id, &item_id()?),
+            "edit-followup" => {
+                let item_id = item_id()?;
+                let parts = self.prompt_parts(command)?;
+                self.edit_followup(thread_id, &item_id, parts)
+            }
+            _ => {
+                let item_id = item_id()?;
+                self.threads_has(thread_id).and_then(|()| self.followups.remove_item(thread_id, &item_id, &watchers))
+            }
         };
+        // Each change clears the host's error first, as Node's command path does; none of them sets it.
+        self.error = None;
         if let Err(words) = outcome {
             self.command_refused(words);
         }
@@ -3168,27 +3251,52 @@ impl CoordinatorActor {
         self.threads.iter().any(|t| t.id == thread_id).then_some(()).ok_or_else(|| NO_THREAD.into())
     }
 
-    /// Edits a queued prompt with what `edit` gives, keeping what it leaves out, or removes the prompt without one.
-    fn edit_followup(&mut self, thread_id: &str, item_id: &str, edit: Option<&Map<String, Value>>) -> Result<(), String> {
+    /// Edits a queued prompt with what the command gives, keeping what it leaves out, as Node's `edit-followup`.
+    fn edit_followup(&mut self, thread_id: &str, item_id: &str, parts: PromptParts) -> Result<(), String> {
         self.threads_has(thread_id)?;
-        let update = match edit {
-            None => None,
-            Some(command) => {
-                let existing = self.followups.items().iter().find(|i| i.thread_id == thread_id && i.id == item_id);
-                let attachments = command_list(command, "attachments").or_else(|| existing.map(|i| i.attachments.clone())).unwrap_or_default();
-                let text = command_text(command);
-                if text.trim().is_empty() && attachments.is_empty() {
-                    return Err("There is no prompt to queue.".into());
-                }
-                Some(FollowupEdit {
-                    text,
-                    attachments,
-                    skills: command_list(command, "skills").or_else(|| existing.and_then(|i| i.skills.clone())),
-                    files: command_list(command, "files").or_else(|| existing.and_then(|i| i.files.clone())),
-                })
-            }
+        let existing = self.followups.items().iter().find(|i| i.thread_id == thread_id && i.id == item_id);
+        let attachments = parts.attachments.or_else(|| existing.map(|i| i.attachments.clone())).unwrap_or_default();
+        if parts.text.trim().is_empty() && attachments.is_empty() {
+            return Err(NO_PROMPT.into());
+        }
+        let update = FollowupEdit {
+            text: parts.text,
+            attachments,
+            skills: parts.skills.or_else(|| existing.and_then(|i| i.skills.clone())),
+            files: parts.files.or_else(|| existing.and_then(|i| i.files.clone())),
         };
         self.followups.edit_item(thread_id, item_id, update, &watcher_thread_ids(&self.threads))
+    }
+
+    /// A prompt's parts as Node's command schema reads them, refused as it refuses them: its text, the images and files
+    /// it attaches, its skills and its file mentions. Each attachment must be one this host staged, and is kept as the
+    /// host's own record of it, so `followups.json` holds only what Node's schema reads back.
+    fn prompt_parts(&self, command: &Map<String, Value>) -> Result<PromptParts, CoordinatorError> {
+        let text = command
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|text| text.encode_utf16().count() <= AGENT_TEXT_MAX)
+            .ok_or_else(|| CoordinatorError::invalid("text must be the prompt's words."))?
+            .to_string();
+        let attachments = match command.get("attachments") {
+            None => None,
+            Some(list) => {
+                let refused = || CoordinatorError::invalid("attachments must be files staged on this host.");
+                let list = list.as_array().filter(|list| list.len() <= AGENT_MAX_ATTACHMENTS).ok_or_else(refused)?;
+                let mut handles = Vec::with_capacity(list.len());
+                for item in list {
+                    let id = item.get("id").and_then(Value::as_str).ok_or_else(refused)?;
+                    let entry = self.staged.get(id).ok_or_else(refused)?;
+                    let handle = serde_json::to_value(&entry.handle).map_err(|_| refused())?;
+                    if handles.contains(&handle) {
+                        return Err(refused());
+                    }
+                    handles.push(handle);
+                }
+                Some(handles)
+            }
+        };
+        Ok(PromptParts { text, attachments, skills: skill_references(command)?, files: file_references(command)? })
     }
 
     /// Sends a thread's paused and failed follow-ups again, as the user's review of the turn the thread rests on.
@@ -3197,6 +3305,7 @@ impl CoordinatorActor {
         if is_closed(thread) || SettledIn::new(&self.projects).settled(thread) {
             return Err("Restore this thread and project before resuming queued follow-ups.".into());
         }
+        self.can_act(thread_id)?;
         // A turn still running is no turn to review yet: the queue then follows none.
         let turn = thread.last_turn.as_ref().filter(|_| !turn_running(thread)).map_or(UNKNOWN_TURN, |turn| turn.id.as_str()).to_string();
         self.followups.resume(thread_id, Some(&turn), &watcher_thread_ids(&self.threads))
@@ -3212,8 +3321,21 @@ impl CoordinatorActor {
         if item.wake_up == Some(true) {
             return Err("A wake-up goes when the thread is ready for it, never into a running turn. It is still queued.".into());
         }
-        self.threads_has(thread_id)?;
+        self.can_act(thread_id)?;
         Err("This provider does not support native steering. Leave the message queued instead.".into())
+    }
+
+    /// Whether the host may act on a thread now, as Node's `assertCanAct` asks: a provider connected on the host, the
+    /// thread there, and its own provider connected.
+    fn can_act(&self, thread_id: &str) -> Result<(), String> {
+        if !self.provider_statuses.values().any(|status| status.connection == "connected") {
+            return Err(NO_PROVIDER.into());
+        }
+        let thread = self.threads.iter().find(|t| t.id == thread_id).ok_or(NO_THREAD)?;
+        if !thread_provider_connected(&self.provider_statuses, thread) {
+            return Err(RECONNECT_PROVIDER.into());
+        }
+        Ok(())
     }
 
     /// Sends each thread's next queued follow-up once the thread is ready for it, as Node's `pumpFollowups` sends the
@@ -3245,7 +3367,10 @@ impl CoordinatorActor {
             }
             let rests_on = thread.last_turn.as_ref().map_or(UNKNOWN_TURN, |turn| turn.id.as_str());
             let reviewed = head.resume_after_turn_id.as_deref() == Some(rests_on);
-            let finished = thread.last_turn.as_ref().is_some_and(|turn| turn.status == "completed");
+            // A compaction that failed is a turn that did not finish, though the thread rests on the turn before it.
+            let compaction_failed = thread.status == "error"
+                && thread.extra.get("compaction").and_then(|c| c.get("status")).and_then(Value::as_str) == Some("failed");
+            let finished = thread.last_turn.as_ref().is_some_and(|turn| turn.status == "completed") && !compaction_failed;
             // Node's review: the turn the thread rests on finished, or the user resumed the queue after it.
             if !finished && !reviewed {
                 if self.followups.pause(&thread_id, QUEUE_UNREVIEWED, &watchers).is_err() {
@@ -3257,6 +3382,7 @@ impl CoordinatorActor {
             let ready = thread_provider_connected(&self.provider_statuses, thread)
                 && (thread.status == "idle" || thread.status == "error" && reviewed)
                 && (!thread.native_session_started || finished || reviewed)
+                && thread.extra.get("historyStatus").and_then(Value::as_str).is_none_or(|status| status == "ready")
                 && !is_closed(thread)
                 && !SettledIn::new(&self.projects).settled(thread);
             if !ready {
@@ -3282,6 +3408,11 @@ impl CoordinatorActor {
         command.insert("text".into(), json!(item.text.trim()));
         command.insert("draftId".into(), json!(item.draft_id));
         command.insert("attachments".into(), Value::Array(item.attachments));
+        for (key, list) in [("skills", item.skills), ("files", item.files)] {
+            if let Some(list) = list {
+                command.insert(key.into(), Value::Array(list));
+            }
+        }
         let (reply, answered) = oneshot::channel();
         let self_tx = self.self_tx.clone();
         let (item_id, draft_id) = (item.id, item.draft_id);
@@ -3590,6 +3721,8 @@ impl CoordinatorActor {
                     thread.updated_at = now_iso();
                     self.shell_dirty = true;
                 }
+                // A queue waiting on the thread's question goes once it is answered.
+                self.pump_followups();
             }
             ProviderEvent::TurnCompleted {
                 thread_id,
@@ -4701,6 +4834,16 @@ mod tests {
         assert_eq!(refused["error"], "This provider does not support native steering. Leave the message queued instead.");
         let refused = run(json!({ "type": "queue-followup", "threadId": thread_id, "draftId": Uuid::new_v4().to_string(), "text": " " })).await.unwrap();
         assert_eq!(refused["error"], "There is no prompt to queue.");
+        // What Node's schema refuses is refused, so followups.json holds only what Node reads back.
+        let draft = || Uuid::new_v4().to_string();
+        for unread in [json!({ "draftId": "not-a-draft" }), json!({ "draftId": draft(), "attachments": [{ "id": "never-staged" }] }),
+            json!({ "draftId": draft(), "files": [{ "path": "/outside" }] }), json!({ "draftId": draft(), "files": [{ "path": "a b.txt" }] }),
+            json!({ "draftId": draft(), "skills": [{ "name": "Only a name" }] }), json!({ "draftId": draft(), "text": "x".repeat(100_001) })] {
+            let mut command = json!({ "type": "queue-followup", "threadId": thread_id, "text": "Refused" });
+            command.as_object_mut().unwrap().extend(unread.as_object().unwrap().clone());
+            assert_eq!(run(command.clone()).await.unwrap_err().code, HostErrorCode::InvalidRequest, "{command}");
+        }
+        assert_eq!(queued_followups(&coord).await.len(), 2);
 
         mock.complete_turn(&thread_id, "Done");
         wait_for_queue(&coord, "the head never went", |queue, thread| queue.len() == 1 && thread["status"] == "running").await;
@@ -4773,9 +4916,10 @@ mod tests {
         coord.shutdown().await;
     }
 
-    /// A snooze is answered before any lane, as Node answers it, so it never waits behind a send on its thread.
+    /// A snooze and a queued follow-up are answered before any lane, as Node answers them, so neither waits behind a
+    /// send on its thread.
     #[tokio::test]
-    async fn a_snooze_does_not_wait_behind_a_send() {
+    async fn a_snooze_or_a_follow_up_does_not_wait_behind_a_send() {
         use crate::provider::BoxFuture;
 
         struct HeldSendAdapter {
@@ -4841,6 +4985,10 @@ mod tests {
                 run(json!({ "type": "snooze-thread", "threadId": thread_id, "until": "2099-01-01T09:00:00.000Z" }))).await
                 .expect("the snooze waited behind the send").unwrap();
             assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], "2099-01-01T09:00:00.000Z");
+            let shell = tokio::time::timeout(Duration::from_secs(5),
+                run(json!({ "type": "queue-followup", "threadId": thread_id, "draftId": Uuid::new_v4().to_string(), "text": "Next" }))).await
+                .expect("the follow-up waited behind the send").unwrap();
+            assert_eq!(shell["followups"][0]["text"], "Next");
             release.notify_one();
         };
         let (sent, ()) = tokio::join!(send, snooze);

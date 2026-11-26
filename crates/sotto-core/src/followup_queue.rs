@@ -37,6 +37,8 @@ pub struct FollowupPrompt {
     pub files: Option<Vec<Value>>,
     /// The turn this prompt follows, so it goes after that turn without a review (`resumeAfterTurnId`).
     pub resume_after_turn_id: Option<String>,
+    /// The Watcher operation that queued it, so Watcher's cancel takes it back (`watcherOperationId`).
+    pub watcher_operation_id: Option<String>,
 }
 
 /// What an edit sets on a queued prompt, each field as given.
@@ -76,18 +78,24 @@ fn waiting_wake_up(item: &QueuedFollowup, thread_id: &str) -> bool {
     item.thread_id == thread_id && is_waiting_wake_up(item)
 }
 
+/// An item whose send has started and may have gone, which nothing may change until it is reconciled.
+pub(crate) fn is_in_flight(item: &QueuedFollowup) -> bool {
+    matches!(item.status.as_str(), "dispatching" | "uncertain")
+}
+
 fn digest_of(item: &QueuedFollowup) -> String {
     followup_digest(&item.text, &item.attachments, item.skills.as_deref(), item.files.as_deref())
 }
 
 impl FollowupStore {
-    /// Makes `update` on a copy of the queue and keeps it once saved, as Node's `change`. `Ok(false)` from the update
-    /// changed nothing and writes nothing.
+    /// Makes `update` on a copy of the queue as the file holds it and keeps it once saved, as Node's `change`.
+    /// `Ok(false)` from the update changed nothing and writes nothing.
     fn change(
         &mut self,
         watcher_thread_ids: &HashSet<String>,
         update: impl FnOnce(&mut Vec<QueuedFollowup>, &mut Vec<FollowupReceipt>) -> Result<bool, String>,
     ) -> Result<(), String> {
+        self.refresh().map_err(|_| SAVE_FAILED.to_string())?;
         let (mut items, mut receipts) = (self.items.clone(), self.receipts.clone());
         if !update(&mut items, &mut receipts)? {
             return Ok(());
@@ -142,7 +150,7 @@ impl FollowupStore {
                 paused_by: None,
                 wake_up: None,
                 resume_after_turn_id: prompt.resume_after_turn_id.clone(),
-                watcher_operation_id: None,
+                watcher_operation_id: prompt.watcher_operation_id.clone(),
                 message_id: None,
                 news: None,
                 phone_origin: None,
@@ -157,13 +165,22 @@ impl FollowupStore {
         Ok(queued)
     }
 
-    /// Edits a queued prompt with `update`, or removes it without one, as Node's `edit`.
-    pub fn edit_item(&mut self, thread_id: &str, item_id: &str, update: Option<FollowupEdit>, watcher_thread_ids: &HashSet<String>) -> Result<(), String> {
+    /// Edits a queued prompt, as Node's `edit` with an update.
+    pub fn edit_item(&mut self, thread_id: &str, item_id: &str, update: FollowupEdit, watcher_thread_ids: &HashSet<String>) -> Result<(), String> {
+        self.change_item(thread_id, item_id, Some(update), watcher_thread_ids)
+    }
+
+    /// Takes a queued item out of the queue, as Node's `edit` without one.
+    pub fn remove_item(&mut self, thread_id: &str, item_id: &str, watcher_thread_ids: &HashSet<String>) -> Result<(), String> {
+        self.change_item(thread_id, item_id, None, watcher_thread_ids)
+    }
+
+    fn change_item(&mut self, thread_id: &str, item_id: &str, update: Option<FollowupEdit>, watcher_thread_ids: &HashSet<String>) -> Result<(), String> {
         self.change(watcher_thread_ids, |items, _| {
             let Some(at) = items.iter().position(|i| i.thread_id == thread_id && i.id == item_id) else {
                 return Err(NO_LONGER_QUEUED.into());
             };
-            if matches!(items[at].status.as_str(), "dispatching" | "uncertain") {
+            if is_in_flight(&items[at]) {
                 return Err(MAYBE_SENT.into());
             }
             match update {
@@ -191,7 +208,7 @@ impl FollowupStore {
         self.change(watcher_thread_ids, |items, _| {
             let (thread_items, others): (Vec<QueuedFollowup>, Vec<QueuedFollowup>) =
                 std::mem::take(items).into_iter().partition(|i| i.thread_id == thread_id);
-            if thread_items.iter().any(|i| matches!(i.status.as_str(), "dispatching" | "uncertain")) {
+            if thread_items.iter().any(is_in_flight) {
                 return Err(DELIVERY_PENDING.into());
             }
             let (hidden, shown): (Vec<QueuedFollowup>, Vec<QueuedFollowup>) =
@@ -286,7 +303,7 @@ impl FollowupStore {
         let mut removed = 0;
         self.change(watcher_thread_ids, |items, _| {
             let before = items.len();
-            items.retain(|i| !draft_ids.contains(&i.draft_id) || matches!(i.status.as_str(), "dispatching" | "uncertain"));
+            items.retain(|i| !draft_ids.contains(&i.draft_id) || is_in_flight(i));
             removed = before - items.len();
             Ok(removed > 0)
         })?;
@@ -373,6 +390,7 @@ mod tests {
     fn prompts_queue_between_a_resume_note_and_a_wake_up() {
         let (_dir, mut store) = store();
         store.items = vec![wake_up("t", "babysit"), wake_up("t", "restart")];
+        store.save(&none()).unwrap();
         store.enqueue_prompt(prompt("t", "Mine"), &none()).unwrap();
         store.reorder("t", &store.items.iter().map(|i| i.id.clone()).collect::<Vec<_>>(), &none()).unwrap();
         assert_eq!(texts(&store, "t"), ["restart", "Mine", "babysit"]);
@@ -389,6 +407,7 @@ mod tests {
         let a = store.enqueue_prompt(prompt("t", "A"), &none()).unwrap().unwrap();
         let b = store.enqueue_prompt(prompt("t", "B"), &none()).unwrap().unwrap();
         store.items.push(wake_up("t", "watcher"));
+        store.save(&none()).unwrap();
         store.reorder("t", &[b.clone(), a.clone()], &none()).unwrap();
         assert_eq!(texts(&store, "t"), ["B", "A", "watcher"]);
         for refused in [vec![a.clone()], vec![a.clone(), a.clone()], vec![a.clone(), b.clone(), "x".into()]] {
@@ -402,16 +421,17 @@ mod tests {
     fn an_edit_or_remove_is_refused_where_node_refuses_it() {
         let (_dir, mut store) = store();
         let id = store.enqueue_prompt(prompt("t", "Before"), &none()).unwrap().unwrap();
-        let edit = || Some(FollowupEdit { text: "After".into(), ..FollowupEdit::default() });
+        let edit = || FollowupEdit { text: "After".into(), ..FollowupEdit::default() };
         store.edit_item("t", &id, edit(), &none()).unwrap();
         assert_eq!(texts(&store, "t"), ["After"]);
         assert_eq!(store.edit_item("t", "gone", edit(), &none()).unwrap_err(), NO_LONGER_QUEUED);
         store.items.push(wake_up("t", "babysit"));
+        store.save(&none()).unwrap();
         let news = store.items[1].id.clone();
         assert_eq!(store.edit_item("t", &news, edit(), &none()).unwrap_err(), WAKE_UP_NOT_EDITABLE);
-        store.edit_item("t", &news, None, &none()).unwrap();
+        store.remove_item("t", &news, &none()).unwrap();
         store.claim(&id, |_| false, &none()).unwrap();
-        assert_eq!(store.edit_item("t", &id, None, &none()).unwrap_err(), MAYBE_SENT);
+        assert_eq!(store.remove_item("t", &id, &none()).unwrap_err(), MAYBE_SENT);
         assert_eq!(store.reorder("t", &[id], &none()).unwrap_err(), DELIVERY_PENDING);
     }
 
@@ -439,6 +459,7 @@ mod tests {
         let (_dir, mut store) = store();
         store.enqueue_prompt(prompt("t", "Mine"), &none()).unwrap();
         store.items.push(wake_up("t", "delegation"));
+        store.save(&none()).unwrap();
         store.pause("t", "Review it.", &none()).unwrap();
         assert_eq!(store.items.iter().map(|i| i.status.as_str()).collect::<Vec<_>>(), ["paused", "queued"]);
         assert_eq!(store.published().len(), 1);
@@ -462,19 +483,24 @@ mod tests {
         assert!(store.published().iter().all(|item| item["text"] != "News"));
     }
 
-    /// Watcher's own copy of the file, read at start, writes over nothing the coordinator queued since.
+    /// Two copies of the store over one file, as the local engine's coordinator and Watcher keep: neither writes over
+    /// what the other changed since it read the file.
     #[test]
-    fn watchers_copy_keeps_what_was_queued_since() {
+    fn two_copies_write_over_nothing_of_each_other() {
         let dir = tempfile::tempdir().unwrap();
         let mut watcher = FollowupStore::new(dir.path(), true);
         watcher.load(&none()).unwrap();
         let mut queue = FollowupStore::new(dir.path(), true);
+        queue.load(&none()).unwrap();
         queue.enqueue_prompt(prompt("t", "Queued since"), &none()).unwrap();
+        let operation = FollowupPrompt { watcher_operation_id: Some("op".into()), ..prompt("t", "Watcher's") };
+        queue.enqueue_prompt(operation, &none()).unwrap();
         watcher.set_history_enabled(true, &none()).unwrap();
         watcher.cancel_watcher(&HashSet::from(["op".to_string()]), &none()).unwrap();
+        queue.enqueue_prompt(prompt("t", "Queued after"), &none()).unwrap();
         let mut reread = FollowupStore::new(dir.path(), true);
         reread.load(&none()).unwrap();
-        assert_eq!(texts(&reread, "t"), ["Queued since"]);
+        assert_eq!(texts(&reread, "t"), ["Queued since", "Queued after"]);
     }
 
     /// A save that fails changes nothing in the queue.
