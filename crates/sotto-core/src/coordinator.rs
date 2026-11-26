@@ -503,6 +503,11 @@ enum ActorMessage {
         thread_id: String,
         reply: oneshot::Sender<Option<ThreadWorkspace>>,
     },
+    GetThreadActivity {
+        thread_id: String,
+        activity_id: String,
+        reply: oneshot::Sender<Option<Value>>,
+    },
     GetThreadProvider {
         thread_id: String,
         reply: oneshot::Sender<Option<String>>,
@@ -694,6 +699,18 @@ impl CoordinatorHandle {
                 thread_id,
                 reply: reply_tx,
             })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    /// One activity record of a thread this host holds, as Node's `AgentControl.threadActivity` reads it: none for a
+    /// thread the coordinator does not hold, whatever rows `threads.sqlite` still keeps for it.
+    pub async fn thread_activity(&self, thread_id: String, activity_id: String) -> Result<Option<Value>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetThreadActivity { thread_id, activity_id, reply: reply_tx })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
         reply_rx
             .await
@@ -1461,6 +1478,22 @@ impl CoordinatorActor {
             ActorMessage::GetThreadWorkspace { thread_id, reply } => {
                 let ws = self.resolve_thread_workspace(&thread_id);
                 let _ = reply.send(ws);
+            }
+            ActorMessage::GetThreadActivity { thread_id, activity_id, reply } => {
+                let named = |record: &Value| record.get("id").and_then(Value::as_str) == Some(activity_id.as_str());
+                let record = if !self.threads.iter().any(|thread| thread.id == thread_id) {
+                    None
+                } else if let Some(detail) = self.details.get(&thread_id) {
+                    detail.activities.iter().find(|record| named(record)).cloned()
+                } else {
+                    self.thread_store
+                        .read_activities(&thread_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|stored| stored.payload)
+                        .find(|record| named(record))
+                };
+                let _ = reply.send(record);
             }
             ActorMessage::GetThreadProvider { thread_id, reply } => {
                 let provider = self.threads.iter().find(|t| t.id == thread_id).map(|t| t.provider_id.clone());
@@ -6055,11 +6088,38 @@ mod tests {
             detail.activities[0]["afterMessageId"].as_str(),
             Some(detail.messages[0].id.as_str())
         );
+        let activity_id = detail.activities[0]["id"].as_str().unwrap().to_string();
+        assert_eq!(
+            coord.thread_activity(thread_id.into(), activity_id.clone()).await.unwrap().as_ref(),
+            Some(&detail.activities[0])
+        );
+        assert_eq!(coord.thread_activity(thread_id.into(), "not-a-record".into()).await.unwrap(), None);
         assert_eq!(
             shell["host"]["threads"][0]["lastTurn"]["messageId"].as_str(),
             Some(detail.messages[0].id.as_str())
         );
 
+        coord.shutdown().await;
+    }
+
+    /// Rows `threads.sqlite` keeps for a thread the coordinator does not hold read as no record, as Node's
+    /// `threadActivity` answers for a thread it does not hold, though `detail` still reads them.
+    #[tokio::test]
+    async fn a_thread_the_host_does_not_hold_has_no_activity_record() {
+        let dir = tempdir().unwrap();
+        let orphan = "00000000-0000-4000-8000-0000000000ff";
+        let record = json!({ "id": "activity-orphan", "kind": "tool", "title": "Kept", "status": "completed" });
+        {
+            let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
+            store.save_activities(orphan, None, None, std::slice::from_ref(&record)).unwrap();
+        }
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000004".into(), false, providers).unwrap();
+
+        assert_eq!(coord.thread_provider(orphan.into()).await.unwrap(), None);
+        assert!(coord.detail(orphan.into()).await.unwrap().is_some(), "the orphaned rows are still there");
+        assert_eq!(coord.thread_activity(orphan.into(), "activity-orphan".into()).await.unwrap(), None);
         coord.shutdown().await;
     }
 

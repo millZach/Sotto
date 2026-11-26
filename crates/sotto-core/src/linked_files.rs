@@ -19,11 +19,10 @@ use crate::ops::{
     is_markdown_file_name, is_valid_relative_path, open_preview_file, preview_content, text_of, tools_err, tools_ok,
     verify_open_handle_inside, ThreadWorkspace, MAX_IMAGE_PREVIEW_BYTES, MAX_TEXT_PREVIEW_BYTES,
 };
+use crate::protocol_fields::{hex, is_digest, on_network, protocol_id, utf16_len, whole_number};
 
 /// One part of a linked file a host sends for a download, as Node's `FILES_DOWNLOAD_PART_BYTES`.
 pub const FILES_DOWNLOAD_PART_BYTES: usize = 4 * 1024 * 1024;
-/// The largest integer Node's schema takes for an offset (`Number.MAX_SAFE_INTEGER`).
-const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
 const NOT_HERE: &str = "This file is not on the computer this thread runs on, or it has moved. Nothing was opened.";
 const OUTSIDE: &str = "This link points outside the thread\u{2019}s folder. Nothing was opened.";
@@ -71,10 +70,6 @@ pub struct LinkRequest {
     pub read: LinkRead,
 }
 
-fn utf16_len(value: &str) -> usize {
-    value.encode_utf16().count()
-}
-
 /// A path as Node's `fileLinkPathSchema` takes one: never a network share or device path (`\\host\share`, `//host`,
 /// `\\?\`), whose resolving reaches the network, nor a drive-relative `C:file`.
 fn is_link_path(path: &str) -> bool {
@@ -82,7 +77,7 @@ fn is_link_path(path: &str) -> bool {
     let bytes = path.as_bytes();
     (1..=4096).contains(&len)
         && !path.chars().any(|c| matches!(c, '\x00'..='\x1f' | '\x7f'))
-        && !(bytes.len() >= 2 && matches!(bytes[0], b'\\' | b'/') && matches!(bytes[1], b'\\' | b'/'))
+        && !on_network(path)
         && !(bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && !matches!(bytes.get(2), Some(b'\\' | b'/')))
 }
 
@@ -92,18 +87,9 @@ fn link_fields<'a>(value: Option<&'a Value>, allowed: &[&str]) -> Option<(&'a se
     if fields.keys().any(|key| key != "threadId" && key != "path" && !allowed.contains(&key.as_str())) {
         return None;
     }
-    let thread_id = fields.get("threadId")?.as_str().filter(|id| (1..=512).contains(&utf16_len(id)))?;
+    let thread_id = protocol_id(fields.get("threadId"))?;
     let path = fields.get("path")?.as_str().filter(|path| is_link_path(path))?;
-    Some((fields, thread_id.to_string(), path.to_string()))
-}
-
-/// A whole non-negative number no larger than `Number.MAX_SAFE_INTEGER`, as `z.number().int().nonnegative()` takes one.
-fn safe_offset(value: &Value) -> Option<u64> {
-    if let Some(whole) = value.as_u64() {
-        return (whole <= MAX_SAFE_INTEGER).then_some(whole);
-    }
-    let number = value.as_f64()?;
-    (number.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER as f64).contains(&number)).then_some(number as u64)
+    Some((fields, thread_id, path.to_string()))
 }
 
 /// What a `thread-linked-file` request asks for (`linkedFileRequestSchema`), or `None` when Node's schema refuses it.
@@ -113,14 +99,11 @@ fn linked_want(fields: &serde_json::Map<String, Value>) -> Option<LinkedWant> {
         "place" => Some(LinkedWant::Place),
         "preview" => Some(LinkedWant::Preview),
         "part" => {
-            let offset = safe_offset(fields.get("offset")?)?;
+            let offset = whole_number(fields.get("offset")?)?;
             let revision = match fields.get("revision") {
                 None => None,
                 Some(revision) => Some(
-                    revision
-                        .as_str()
-                        .filter(|r| r.len() == 64 && r.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))?
-                        .to_string(),
+                    revision.as_str().filter(|r| is_digest(r))?.to_string(),
                 ),
             };
             Some(LinkedWant::Part { offset, revision })
@@ -382,7 +365,7 @@ impl Revision {
     /// The download's revision: sha256 of `dev:ino:birthtimeNs:size:mtimeNs:ctimeNs`, as Node's `linkedFile` names it.
     fn hash(&self) -> String {
         let words = format!("{}:{}:{}:{}:{}:{}", self.dev, self.ino, self.birth, self.size, self.mtime, self.ctime);
-        Sha256::digest(words.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+        hex(&Sha256::digest(words.as_bytes()))
     }
 }
 

@@ -20,12 +20,14 @@ pub mod plugins;
 pub mod usage_ops;
 pub mod pairing;
 pub mod protocol;
+pub mod protocol_fields;
 pub mod provider;
 pub mod providers;
 pub mod remote_commands;
 pub mod stores;
 pub mod thread_lifecycle;
 pub mod thread_drafts;
+pub mod thread_media;
 pub mod thread_snoozes;
 #[cfg(test)]
 pub(crate) mod store_trip;
