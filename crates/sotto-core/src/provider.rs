@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::stores::StoredMessage;
@@ -148,6 +148,13 @@ pub trait ProviderAdapter: Send + Sync {
     ) -> BoxFuture<'_, Result<(), String>> {
         Box::pin(async { Ok(()) })
     }
+
+    /// Reads a thread's waiting questions and permissions from the provider again, as Node's host `refreshThread` reads a
+    /// thread for an answer check (ADR-0025). `None` when the adapter has no read of its own: the questions it last
+    /// reported are what it holds, so they stand. A failure's words are the adapter's and go no further than the host.
+    fn read_thread_requests(&self, _thread_id: String) -> BoxFuture<'_, ThreadRequestsRead> {
+        Box::pin(async { Ok(None) })
+    }
 }
 
 /// Stand-in adapter for providers held by an Owl feature gate or inactive during a referee run.
@@ -236,6 +243,20 @@ pub struct MockProviderAdapter {
     connected: Arc<Mutex<bool>>,
     events_tx: Arc<Mutex<Option<mpsc::UnboundedSender<ProviderEvent>>>>,
     active_turns: Arc<Mutex<std::collections::HashMap<String, String>>>,
+    /// The next thread read, held until a test answers it.
+    held_read: Arc<Mutex<Option<HeldReadEnds>>>,
+}
+
+/// The adapter's ends of a held read: it tells the test the read began, and waits for what the read returns.
+type HeldReadEnds = (oneshot::Sender<()>, oneshot::Receiver<ThreadRequestsRead>);
+
+/// What a provider's read of a thread's waiting requests returns.
+pub type ThreadRequestsRead = Result<Option<Vec<Value>>, String>;
+
+/// A mock thread read a test holds: `started` is told once the host asks, and the read returns what `finish` sends.
+pub struct HeldThreadRead {
+    pub started: oneshot::Receiver<()>,
+    pub finish: oneshot::Sender<ThreadRequestsRead>,
 }
 
 impl MockProviderAdapter {
@@ -247,7 +268,16 @@ impl MockProviderAdapter {
             connected: Arc::new(Mutex::new(false)),
             events_tx: Arc::new(Mutex::new(None)),
             active_turns: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            held_read: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Holds the next `read_thread_requests` until the test sends what it returns.
+    pub fn hold_next_thread_read(&self) -> HeldThreadRead {
+        let (started_tx, started) = oneshot::channel();
+        let (finish, finish_rx) = oneshot::channel();
+        *self.held_read.lock().unwrap() = Some((started_tx, finish_rx));
+        HeldThreadRead { started, finish }
     }
 
     pub fn complete_turn(&self, thread_id: &str, reply_text: &str) {
@@ -470,5 +500,16 @@ impl ProviderAdapter for MockProviderAdapter {
 
     fn compact(&self, _thread_id: String) -> BoxFuture<'_, Result<(), String>> {
         Box::pin(async { Ok(()) })
+    }
+
+    fn read_thread_requests(&self, _thread_id: String) -> BoxFuture<'_, ThreadRequestsRead> {
+        let held = self.held_read.lock().unwrap().take();
+        Box::pin(async move {
+            let Some((started, finish)) = held else {
+                return Ok(None);
+            };
+            let _ = started.send(());
+            finish.await.unwrap_or(Ok(None))
+        })
     }
 }

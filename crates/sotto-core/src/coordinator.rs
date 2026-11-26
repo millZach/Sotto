@@ -9,13 +9,14 @@ use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
+use crate::answered_requests::{answer_decision_id, request_questions_digest, AnswerTarget, AnsweredRequest, AnsweredRequests, SAVED_KEY as ANSWERED_REQUESTS_KEY};
 use crate::failures_seen::{FailuresSeen, ThreadsView, SAVED_KEY as FAILURES_SEEN_KEY};
 use crate::followup_queue::{FollowupEdit, FollowupPrompt, FollowupSettle, UNKNOWN_TURN};
 use crate::ops::ThreadWorkspace;
 use crate::protocol::HostErrorCode;
 use crate::provider::{
     AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageAck,
-    SendMessageRequest, ThreadRecordSeed,
+    SendMessageRequest, ThreadRecordSeed, ThreadRequestsRead,
 };
 use crate::attachment_files::SentAttachment;
 use crate::attachment_store::AGENT_MAX_ATTACHMENTS;
@@ -87,6 +88,11 @@ impl CoordinatorError {
         }
     }
 }
+
+/// What a client is told when it may not do something here, as Node's `REMOTE_PERMISSION_DENIED`.
+const REMOTE_PERMISSION_DENIED: &str = "This action is not allowed from this device. Check its permission policy or complete the action on the host.";
+/// What an answer check's refusal adds when the client's saved answer stays, as Node's `requestAnswerCheckRefusals` say.
+const ANSWER_KEPT: &str = " Your saved answer is kept.";
 
 #[derive(Debug, Clone)]
 pub enum CoordinatorBroadcast {
@@ -428,6 +434,8 @@ enum SettledTarget {
 struct PendingCommand {
     client: ClientContext,
     command: Map<String, Value>,
+    /// The decision ID an answer is given under: a socket client's own, or a new one.
+    decision_id: Option<String>,
     reply: oneshot::Sender<Result<Value, CoordinatorError>>,
 }
 
@@ -475,6 +483,9 @@ enum AsyncCommandOutcome {
     Answer {
         thread_id: String,
         request_id: String,
+        provider_id: String,
+        questions_digest: Option<String>,
+        decision_id: String,
         title: String,
         approved: Option<bool>,
         permission_choice: Option<String>,
@@ -564,7 +575,31 @@ enum ActorMessage {
     RunCommand {
         client: ClientContext,
         command: Map<String, Value>,
+        decision_id: Option<String>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    },
+    CheckRequestAnswer {
+        client: ClientContext,
+        target: AnswerTarget,
+        reply: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    /// The provider's read for an answer check came back.
+    RequestAnswerRead {
+        client: ClientContext,
+        target: AnswerTarget,
+        revision: u64,
+        read: ThreadRequestsRead,
+        reply: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    AcceptedAnswers {
+        client_id: String,
+        watched: Vec<(String, AnswerTarget)>,
+        reply: oneshot::Sender<Vec<String>>,
+    },
+    RequestWaiting {
+        thread_id: String,
+        request_id: String,
+        reply: oneshot::Sender<bool>,
     },
     AsyncCommandDone {
         lane: Option<String>,
@@ -890,15 +925,63 @@ impl CoordinatorHandle {
         client: ClientContext,
         command: Map<String, Value>,
     ) -> Result<oneshot::Receiver<Result<Value, CoordinatorError>>, CoordinatorError> {
+        self.enqueue_command_deciding(client, command, None)
+    }
+
+    /// Queues a command whose answer, if it is one, is given under `decision_id`, as Node's socket server gives a
+    /// client's answer under `answerDecisionId`, so the client can later ask whether that exact answer was taken.
+    pub fn enqueue_command_deciding(
+        &self,
+        client: ClientContext,
+        command: Map<String, Value>,
+        decision_id: Option<String>,
+    ) -> Result<oneshot::Receiver<Result<Value, CoordinatorError>>, CoordinatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(ActorMessage::RunCommand {
                 client,
                 command,
+                decision_id,
                 reply: reply_tx,
             })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
         Ok(reply_rx)
+    }
+
+    /// Checks that a question a client holds an answer for is still waiting as it was asked, as Node's
+    /// `checkRequestAnswer`: refused with Node's words when the client may not answer, when the question changed or
+    /// went, while an answer to the thread is on its way, or while its provider is not connected.
+    pub async fn check_request_answer(&self, client: ClientContext, target: AnswerTarget) -> Result<(), CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::CheckRequestAnswer { client, target, reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+    }
+
+    /// Whether a thread still waits on a request, as Node's socket server asks before it keeps an answer's receipt: an
+    /// answer to a request that is not waiting is refused stale and keeps none.
+    pub async fn request_waiting(&self, thread_id: String, request_id: String) -> Result<bool, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::RequestWaiting { thread_id, request_id, reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    /// The command IDs, of those a client watches, whose exact answers a provider took under that client's decision IDs.
+    pub async fn accepted_answers(&self, client_id: String, watched: Vec<(String, AnswerTarget)>) -> Result<Vec<String>, CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::AcceptedAnswers { client_id, watched, reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
     }
 
     pub async fn run_command(
@@ -1161,6 +1244,13 @@ struct CoordinatorActor {
     followup_answers: HashMap<String, FollowupAnswer>,
     thread_snoozes: ThreadSnoozes,
     failures_seen: FailuresSeen,
+    /// The answers providers took, kept in `agents.json` as Node keeps them (`answeredRequests`).
+    answered_requests: AnsweredRequests,
+    /// How many answers each thread has on their way to its provider, as Node's `answerActivities` counts them.
+    answers_in_flight: HashMap<String, usize>,
+    /// How many answers each thread has ever started, as Node's `answerActivities` revision counts them, so a check can
+    /// tell that another answer started while the provider read the thread.
+    answer_revisions: HashMap<String, u64>,
     /// Each client's shown threads, by the name it observes under.
     observations: HashMap<Observer, Vec<String>>,
     staged: StagedAttachments,
@@ -1257,6 +1347,7 @@ impl CoordinatorActor {
         let mut agents_json_extra = persisted.agents_json_extra;
         let thread_snoozes = ThreadSnoozes::take_saved(&mut agents_json_extra);
         let failures_seen = FailuresSeen::take_saved(&mut agents_json_extra);
+        let answered_requests = AnsweredRequests::take_saved(&mut agents_json_extra);
         let mut thread_drafts = ThreadDrafts::take_saved(&mut agents_json_extra);
         // A crash between `agents.json` and the queue leaves both copies; the queue's ownership wins (`syncFollowups`).
         thread_drafts.forget_sent(|thread, draft| {
@@ -1304,6 +1395,9 @@ impl CoordinatorActor {
             followup_answers: HashMap::new(),
             thread_snoozes,
             failures_seen,
+            answered_requests,
+            answers_in_flight: HashMap::new(),
+            answer_revisions: HashMap::new(),
             observations: HashMap::new(),
             staged,
             previews,
@@ -1869,13 +1963,33 @@ impl CoordinatorActor {
             ActorMessage::RunCommand {
                 client,
                 command,
+                decision_id,
                 reply,
             } => {
                 self.enqueue_or_dispatch(PendingCommand {
                     client,
                     command,
+                    decision_id,
                     reply,
                 });
+            }
+            ActorMessage::CheckRequestAnswer { client, target, reply } => self.start_request_answer_check(client, target, reply),
+            ActorMessage::RequestAnswerRead { client, target, revision, read, reply } => {
+                let _ = reply.send(self.finish_request_answer_check(&client, &target, revision, read));
+            }
+            ActorMessage::AcceptedAnswers { client_id, watched, reply } => {
+                let accepted = watched
+                    .into_iter()
+                    .filter(|(command_id, target)| self.answered_requests.accepted(target, &answer_decision_id(&client_id, command_id)))
+                    .map(|(command_id, _)| command_id)
+                    .collect();
+                let _ = reply.send(accepted);
+            }
+            ActorMessage::RequestWaiting { thread_id, request_id, reply } => {
+                let waiting = self.threads.iter().find(|thread| thread.id == thread_id).is_some_and(|thread| {
+                    thread.requests.iter().any(|request| request.get("id").and_then(Value::as_str) == Some(request_id.as_str()))
+                });
+                let _ = reply.send(waiting);
             }
             ActorMessage::FollowupSent { item_id, draft_id, outcome } => self.followup_sent(&item_id, &draft_id, outcome),
             ActorMessage::AsyncCommandDone {
@@ -1927,7 +2041,7 @@ impl CoordinatorActor {
             Some("snooze-thread" | "dismiss-failures" | "observe-threads" | "queue-followup" | "edit-followup" | "remove-followup"
                 | "reorder-followups" | "resume-followups" | "save-thread-draft")
         ) {
-            let PendingCommand { client, command, reply } = pending;
+            let PendingCommand { client, command, reply, .. } = pending;
             let outcome = match validate_remote_command(&command, client.may_answer) {
                 Ok("snooze-thread") => self.cmd_snooze_thread(&command),
                 Ok("dismiss-failures") => self.cmd_dismiss_failures(&command),
@@ -1987,6 +2101,7 @@ impl CoordinatorActor {
         let PendingCommand {
             client,
             command,
+            decision_id,
             reply,
         } = pending;
 
@@ -2080,7 +2195,7 @@ impl CoordinatorActor {
                 let words = if self.host_connected() { "There is no unbound recovered draft to use.".to_string() } else { format!("{NO_PROVIDER_ON_HOST}{DRAFT_KEPT}") };
                 self.refuse_sync_command(lane, &client, words, reply);
             }
-            "answer" => self.spawn_cmd_answer(lane, client, &command, reply),
+            "answer" => self.spawn_cmd_answer(lane, client, &command, decision_id, reply),
             "interrupt" => self.cmd_interrupt(lane, client, &command, reply),
             "compact-thread" => {
                 self.error = None;
@@ -2577,6 +2692,7 @@ impl CoordinatorActor {
         lane: Option<String>,
         client: ClientContext,
         command: &Map<String, Value>,
+        decision_id: Option<String>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
         let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
@@ -2600,16 +2716,16 @@ impl CoordinatorActor {
         let question_answers = command.get("questionAnswers").cloned();
         let skipped = command.get("skipped").and_then(Value::as_bool);
 
-        let (provider_id, title) = {
+        let (provider_id, title, questions_digest) = {
             let Some(thread) = self.threads.iter().find(|t| t.id == tid) else {
                 self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid("Unknown thread.")), reply);
                 return;
             };
-            let has_req = thread
+            let request = thread
                 .requests
                 .iter()
-                .any(|r| r.get("id").and_then(Value::as_str) == Some(request_id.as_str()));
-            if !has_req {
+                .find(|r| r.get("id").and_then(Value::as_str) == Some(request_id.as_str()));
+            let Some(request) = request else {
                 self.finish_sync_command(
                     lane,
                     &client,
@@ -2617,8 +2733,10 @@ impl CoordinatorActor {
                     reply,
                 );
                 return;
-            }
-            (thread.provider_id.clone(), thread.title.clone())
+            };
+            // The questions this answer is for, as Node's answer intent keeps them (`questionsDigest`), so the record
+            // of what was answered names them and never their words.
+            (thread.provider_id.clone(), thread.title.clone(), request_questions_digest(request))
         };
 
         let Some(adapter) = self.providers.get(&provider_id).cloned() else {
@@ -2626,6 +2744,9 @@ impl CoordinatorActor {
             return;
         };
 
+        let decision_id = decision_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        *self.answers_in_flight.entry(tid.clone()).or_default() += 1;
+        *self.answer_revisions.entry(tid.clone()).or_default() += 1;
         let self_tx = self.self_tx.clone();
         let answer_client = client.clone();
         tokio::spawn(async move {
@@ -2646,6 +2767,9 @@ impl CoordinatorActor {
                 outcome: Box::new(AsyncCommandOutcome::Answer {
                     thread_id: tid,
                     request_id,
+                    provider_id,
+                    questions_digest,
+                    decision_id,
                     title,
                     approved,
                     permission_choice,
@@ -2959,13 +3083,29 @@ impl CoordinatorActor {
             AsyncCommandOutcome::Answer {
                 thread_id,
                 request_id,
+                provider_id,
+                questions_digest,
+                decision_id,
                 title,
                 approved,
                 permission_choice,
                 client: answer_client,
                 result,
             } => {
+                self.answer_ended(&thread_id);
                 result.map_err(CoordinatorError::unavailable)?;
+                // The provider took this answer to these questions: kept, as Node's `recordAnsweredRequest` keeps it,
+                // before any client is told, so a client asking for its receipt hears it was given.
+                if let Some(questions_digest) = questions_digest {
+                    self.answered_requests.record(AnsweredRequest {
+                        thread_id: thread_id.clone(),
+                        provider: provider_id,
+                        request_id: request_id.clone(),
+                        questions_digest,
+                        decision_id: Some(decision_id),
+                    });
+                    self.save_workspace();
+                }
                 let _ = self.thread_store.append_event(
                     &thread_id,
                     &ThreadEvent::AnswerGiven {
@@ -3334,7 +3474,7 @@ impl CoordinatorActor {
         let grants = runtime_mode.is_some_and(|mode| mode != "approval-required")
             || provider_mode.is_some_and(|mode| mode_of(mode).and_then(|m| m.get("allows")).and_then(Value::as_str) != Some("nothing"));
         if grants && !client.may_answer {
-            return Err("This action is not allowed from this device. Check its permission policy or complete the action on the host.".into());
+            return Err(REMOTE_PERMISSION_DENIED.into());
         }
         Ok(())
     }
@@ -3970,6 +4110,103 @@ impl CoordinatorActor {
 
     fn host_connected(&self) -> bool {
         self.provider_statuses.values().any(|status| status.connection == "connected")
+    }
+
+    fn answer_ended(&mut self, thread_id: &str) {
+        if let Some(count) = self.answers_in_flight.get_mut(thread_id) {
+            *count -= 1;
+            if *count == 0 {
+                self.answers_in_flight.remove(thread_id);
+            }
+        }
+    }
+
+    /// Node's `checkRequestAnswer` up to the provider's read, in its order: the question is checked, the thread's answer
+    /// revision is noted, an answer on its way or a provider not connected is refused, and then the provider reads the
+    /// thread again. The read runs outside the actor and holds no lane, as Node's "A native read owns no command lane":
+    /// one provider never holds other threads.
+    fn start_request_answer_check(&mut self, client: ClientContext, target: AnswerTarget, reply: oneshot::Sender<Result<(), CoordinatorError>>) {
+        if let Err(err) = self.validate_request_answer(&client, &target) {
+            let _ = reply.send(Err(err));
+            return;
+        }
+        let revision = self.answer_revisions.get(&target.thread_id).copied().unwrap_or(0);
+        if let Err(err) = self.answer_unchanged(&target.thread_id, revision) {
+            let _ = reply.send(Err(err));
+            return;
+        }
+        let adapter = self
+            .threads
+            .iter()
+            .find(|thread| thread.id == target.thread_id)
+            .filter(|thread| thread_provider_connected(&self.provider_statuses, thread))
+            .and_then(|thread| self.providers.get(&thread.provider_id).cloned());
+        let Some(adapter) = adapter else {
+            let _ = reply.send(Err(CoordinatorError::unavailable("Reconnect the original provider before checking this answer.")));
+            return;
+        };
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let read = adapter.read_thread_requests(target.thread_id.clone()).await;
+            let _ = self_tx.send(ActorMessage::RequestAnswerRead { client, target, revision, read, reply });
+        });
+    }
+
+    /// The rest of Node's `checkRequestAnswer` once the provider has read the thread: a failed read is the host's failure
+    /// to check, in the host's words and never the adapter's; another answer started meanwhile is refused; then what the
+    /// provider read stands for the thread's waiting questions, the question is checked again, and the host saves and
+    /// publishes. Node then lets Claude and Grok answers marked ready to retry go from its outbox; this host keeps no
+    /// outbox of uncertain answers, so there is nothing to let go.
+    fn finish_request_answer_check(&mut self, client: &ClientContext, target: &AnswerTarget, revision: u64, read: ThreadRequestsRead) -> Result<(), CoordinatorError> {
+        let Ok(requests) = read else {
+            return Err(CoordinatorError::unavailable(HostErrorCode::Unavailable.default_message()));
+        };
+        self.answer_unchanged(&target.thread_id, revision)?;
+        if let Some(requests) = requests {
+            if let Some(thread) = self.threads.iter_mut().find(|thread| thread.id == target.thread_id) {
+                thread.requests = requests;
+                thread.updated_at = now_iso();
+            }
+        }
+        self.validate_request_answer(client, target)?;
+        self.save_workspace();
+        self.shell_dirty = true;
+        self.flush_dirty();
+        Ok(())
+    }
+
+    /// Node's `validate` in `checkRequestAnswer`: the client may answer, and the question is still waiting as the client
+    /// holds it, on the thread and provider it names.
+    fn validate_request_answer(&self, client: &ClientContext, target: &AnswerTarget) -> Result<(), CoordinatorError> {
+        if !client.may_answer {
+            return Err(CoordinatorError::forbidden(format!("{REMOTE_PERMISSION_DENIED}{ANSWER_KEPT}")));
+        }
+        let thread = self
+            .threads
+            .iter()
+            .find(|thread| thread.id == target.thread_id)
+            .filter(|thread| !is_closed(thread) && thread.provider_id == target.provider_id);
+        let waiting = thread.and_then(|thread| {
+            thread.requests.iter().find(|request| request.get("id").and_then(Value::as_str) == Some(target.request_id.as_str()))
+        });
+        if waiting.and_then(request_questions_digest).as_deref() != Some(target.questions_digest.as_str()) {
+            return Err(CoordinatorError::stale(format!("The original question changed or is no longer pending.{ANSWER_KEPT}")));
+        }
+        Ok(())
+    }
+
+    /// Node's `unchanged` in `readRequestDraft`: no answer to the thread is on its way, and none started since `revision`.
+    fn answer_unchanged(&self, thread_id: &str, revision: u64) -> Result<(), CoordinatorError> {
+        if self.answers_in_flight.contains_key(thread_id) {
+            return Err(CoordinatorError {
+                code: HostErrorCode::Busy,
+                message: format!("This answer is still being sent. Wait for it to finish before checking it again.{ANSWER_KEPT}"),
+            });
+        }
+        if self.answer_revisions.get(thread_id).copied().unwrap_or(0) != revision {
+            return Err(CoordinatorError::stale(format!("Another answer started during this check. Check again.{ANSWER_KEPT}")));
+        }
+        Ok(())
     }
 
     /// Whether the host may act on a thread now, as Node's `assertCanAct` asks: a provider connected on the host, the
@@ -4835,6 +5072,7 @@ impl CoordinatorActor {
             .or_insert_with(|| Value::Array(Vec::new()));
         agents_obj.insert(THREAD_SNOOZES_KEY.into(), self.thread_snoozes.saved());
         agents_obj.insert(FAILURES_SEEN_KEY.into(), self.failures_seen.saved());
+        agents_obj.insert(ANSWERED_REQUESTS_KEY.into(), self.answered_requests.saved());
         self.thread_drafts.save_into(&mut agents_obj);
         let _ = write_atomic_json(&self.data_directory.join("agents.json"), &Value::Object(agents_obj));
     }
@@ -5195,6 +5433,154 @@ mod tests {
         assert!(coord.sent_attachment(thread_id.into(), sent.clone(), "another".into(), Wanted::File).await.unwrap().is_none());
         assert!(coord.sent_attachment(thread_id.into(), "another".into(), file.id.clone(), Wanted::File).await.unwrap().is_none());
         assert!(coord.sent_attachment("00000000-0000-4000-8000-00000000000c".into(), sent, file.id, Wanted::File).await.unwrap().is_none());
+    }
+
+    const CHECKED_THREAD: &str = "00000000-0000-4000-8000-00000000000a";
+
+    fn checked_question(text: &str) -> Value {
+        json!({ "id": "req-1", "kind": "question", "text": text, "options": [{ "id": "blue", "label": "Blue" }] })
+    }
+
+    fn answer_target_for(question: &Value) -> AnswerTarget {
+        let questions_digest = request_questions_digest(question).unwrap();
+        AnswerTarget { thread_id: CHECKED_THREAD.into(), provider_id: "codex".into(), request_id: "req-1".into(), questions_digest }
+    }
+
+    /// A Codex thread on a mock provider, sent a prompt, whose provider then asks `question`, once the host has published it.
+    async fn thread_asking(dir: &Path, question: &Value) -> (CoordinatorHandle, Arc<MockProviderAdapter>, ClientContext) {
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(dir.to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "P", "path": dir.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        run(json!({ "type": "create-thread", "threadId": CHECKED_THREAD, "projectId": project_id, "title": "T", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await.unwrap();
+        run(json!({ "type": "manual-send", "threadId": CHECKED_THREAD, "text": "Go" })).await.unwrap();
+        let mut published = coord.subscribe();
+        mock.emit_request(CHECKED_THREAD, question.clone());
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Ok(CoordinatorBroadcast::Shell(shell)) = published.recv().await {
+                    let asks = shell["host"]["threads"].as_array().into_iter().flatten().any(|thread| {
+                        thread["id"] == CHECKED_THREAD && thread["requests"].as_array().is_some_and(|requests| requests.contains(question))
+                    });
+                    if asks {
+                        return;
+                    }
+                }
+            }
+        }).await.expect("the question was never published");
+        (coord, mock, client)
+    }
+
+    /// A held answer's question is checked as Node's `checkRequestAnswer` checks it, and an answer the provider took is
+    /// kept under its decision ID in `agents.json`, as Node keeps `answeredRequests`, so a restart still knows it.
+    #[tokio::test]
+    async fn checks_a_held_answer_and_keeps_the_answers_given() {
+        let dir = tempdir().unwrap();
+        let question = checked_question("Which colour?");
+        let (coord, _mock, client) = thread_asking(dir.path(), &question).await;
+        let start = || {
+            let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+            providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+            CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap()
+        };
+        let thread_id = CHECKED_THREAD;
+        let target = answer_target_for(&question);
+        let digest = target.questions_digest.clone();
+
+        coord.check_request_answer(client.clone(), target.clone()).await.expect("still waiting as it was asked");
+        let refused = |result: Result<(), CoordinatorError>| result.unwrap_err();
+        let not_allowed = refused(coord.check_request_answer(ClientContext { may_answer: false, ..client.clone() }, target.clone()).await);
+        assert_eq!(not_allowed.code, HostErrorCode::Forbidden);
+        assert_eq!(not_allowed.message, format!("{REMOTE_PERMISSION_DENIED} Your saved answer is kept."));
+        for (wrong, what) in [
+            (AnswerTarget { questions_digest: "f".repeat(64), ..target.clone() }, "a changed questions digest"),
+            (AnswerTarget { request_id: "req-9".into(), ..target.clone() }, "an unknown request"),
+            (AnswerTarget { provider_id: "claude".into(), ..target.clone() }, "another provider"),
+            (AnswerTarget { thread_id: "00000000-0000-4000-8000-00000000000b".into(), ..target.clone() }, "an unknown thread"),
+        ] {
+            let stale = refused(coord.check_request_answer(client.clone(), wrong).await);
+            assert_eq!(stale.code, HostErrorCode::StaleRequest, "{what}");
+            assert_eq!(stale.message, "The original question changed or is no longer pending. Your saved answer is kept.");
+        }
+
+        let decision = answer_decision_id("c1", "command-1");
+        let watched = vec![("command-1".to_string(), target.clone())];
+        assert!(coord.accepted_answers("c1".into(), watched.clone()).await.unwrap().is_empty(), "not given yet");
+        let answer = json!({ "type": "answer", "threadId": thread_id, "requestId": "req-1", "answer": "Blue" });
+        coord.enqueue_command_deciding(client.clone(), answer.as_object().unwrap().clone(), Some(decision.clone())).unwrap().await.unwrap().unwrap();
+        assert_eq!(coord.accepted_answers("c1".into(), watched.clone()).await.unwrap(), ["command-1"]);
+        assert!(coord.accepted_answers("c2".into(), watched.clone()).await.unwrap().is_empty(), "another client's command is not this one");
+        let given = refused(coord.check_request_answer(client.clone(), target.clone()).await);
+        assert_eq!(given.code, HostErrorCode::StaleRequest, "an answered question is no longer waiting");
+        coord.shutdown().await;
+
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
+        assert_eq!(saved[ANSWERED_REQUESTS_KEY], json!([{ "threadId": thread_id, "provider": "codex", "requestId": "req-1", "questionsDigest": digest, "decisionId": decision }]));
+        assert!(!serde_json::to_string(&saved).unwrap().contains("Blue"), "no answer text in agents.json");
+        let coord = start();
+        assert_eq!(coord.accepted_answers("c1".into(), watched).await.unwrap(), ["command-1"], "a restart still knows the answer was given");
+        coord.shutdown().await;
+    }
+
+    /// An answer check reads the thread from its provider again, as Node's `readRequestDraft` does, and holds no lane while
+    /// it reads: what the provider read stands for the thread's questions, a failed read says only the host's words, and
+    /// an answer that started during the read is refused as Node's `answer-changed`.
+    #[tokio::test]
+    async fn an_answer_check_reads_the_thread_from_its_provider_and_holds_no_lane() {
+        let dir = tempdir().unwrap();
+        let question = checked_question("Which colour?");
+        let (coord, mock, client) = thread_asking(dir.path(), &question).await;
+        let coord = Arc::new(coord);
+        let check = |target: AnswerTarget| {
+            let (coord, client) = (Arc::clone(&coord), client.clone());
+            tokio::spawn(async move { coord.check_request_answer(client, target).await })
+        };
+        let requests = |shell: Value| shell["host"]["threads"][0]["requests"].clone();
+
+        // The read holds no lane: the thread takes another command while its provider reads it.
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&question));
+        read.started.await.unwrap();
+        let rename = json!({ "type": "rename-thread", "threadId": CHECKED_THREAD, "title": "Renamed" });
+        let renamed = coord.run_command(client.clone(), rename.as_object().unwrap().clone()).await.unwrap();
+        assert_eq!(renamed["host"]["threads"][0]["title"], "Renamed", "the thread was not held while its provider read it");
+        assert!(!checking.is_finished(), "the check waits for the provider's read");
+        read.finish.send(Ok(Some(vec![question.clone()]))).unwrap();
+        checking.await.unwrap().expect("the provider still asks it");
+
+        // What the provider read is what the thread asks now.
+        let changed = checked_question("Which shade?");
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&question));
+        read.started.await.unwrap();
+        read.finish.send(Ok(Some(vec![changed.clone()]))).unwrap();
+        let stale = checking.await.unwrap().unwrap_err();
+        assert_eq!((stale.code, stale.message.as_str()), (HostErrorCode::StaleRequest, "The original question changed or is no longer pending. Your saved answer is kept."));
+        assert_eq!(requests(coord.shell(true).await.unwrap()), json!([changed]), "the provider's read was accepted");
+
+        // A read that failed is the host's failure to check, never the adapter's words.
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&changed));
+        read.started.await.unwrap();
+        read.finish.send(Err("codex said something private".into())).unwrap();
+        let failed = checking.await.unwrap().unwrap_err();
+        assert_eq!((failed.code, failed.message.as_str()), (HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()));
+
+        // Another answer that starts while the provider reads is Node's `answer-changed`.
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&changed));
+        read.started.await.unwrap();
+        let answer = json!({ "type": "answer", "threadId": CHECKED_THREAD, "requestId": "req-1", "answer": "Blue" });
+        coord.run_command(client.clone(), answer.as_object().unwrap().clone()).await.unwrap();
+        read.finish.send(Ok(None)).unwrap();
+        let moved = checking.await.unwrap().unwrap_err();
+        assert_eq!((moved.code, moved.message.as_str()), (HostErrorCode::StaleRequest, "Another answer started during this check. Check again. Your saved answer is kept."));
+        Arc::try_unwrap(coord).ok().unwrap().shutdown().await;
     }
 
     #[tokio::test]

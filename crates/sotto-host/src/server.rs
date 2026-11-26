@@ -23,7 +23,11 @@ use sotto_core::file_uploads::{FilePart, FileUploads, PartTaken, Received, HOST_
 use sotto_core::workspace::now_ms;
 use sotto_core::linked_files::LinkRequest;
 use sotto_core::pairing::constant_time_eq;
+use sotto_core::answered_requests::{answer_decision_id, AnswerTarget};
+use sotto_core::command_receipts::{ended_receipt, keeps_receipt, unknown_receipt, CommandReceipts, Receipt};
+use sotto_core::remote_commands::validate_remote_command;
 use sotto_core::protocol_fields::protocol_id;
+use sotto_core::workspace::sha256_hex;
 use sotto_core::thread_media::MediaRequest;
 use sotto_core::{
     parse_watcher_host_read, watcher_progress_change, watcher_record_digest, BoxFuture,
@@ -114,6 +118,10 @@ pub fn advertised_features() -> Vec<String> {
         "watcher-muse".into(),
         "watcher-cursor".into(),
         "watcher-antigravity".into(),
+        // A command's receipt, with whether its answer was taken, and a held answer's question checked again, as Node
+        // offers them to every client.
+        "answer-receipts".into(),
+        "answer-check".into(),
     ]
 }
 
@@ -226,6 +234,32 @@ async fn read_sent_attachment(
         }
         _ => HostResponseEnvelope::err(id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
     }
+}
+
+/// A `receipt` request as Node's strict schema reads it: the command ID it asks about and the answer it names, if any.
+fn receipt_request(fields: &serde_json::Map<String, Value>) -> Option<(String, Option<AnswerTarget>)> {
+    if fields.keys().any(|key| key != "commandId" && key != "answer") {
+        return None;
+    }
+    let answer = match fields.get("answer") {
+        None => None,
+        Some(answer) => Some(AnswerTarget::parse(answer)?),
+    };
+    Some((protocol_id(fields.get("commandId"))?, answer))
+}
+
+/// A `check-answer` request after the checks Node's socket server makes before the coordinator's own, in its order: the
+/// request's shape, then whether this client is offered `answer-check`, then whether it may answer.
+fn checked_answer_check(fields: &serde_json::Map<String, Value>, offered: impl Fn(&str) -> bool, may_answer: bool) -> Result<AnswerTarget, HostErrorCode> {
+    let target = fields.keys().all(|key| key == "answer").then(|| fields.get("answer").and_then(AnswerTarget::parse)).flatten();
+    let target = target.ok_or(HostErrorCode::InvalidRequest)?;
+    if !offered("answer-check") {
+        return Err(HostErrorCode::InvalidRequest);
+    }
+    if !may_answer {
+        return Err(HostErrorCode::Forbidden);
+    }
+    Ok(target)
 }
 
 /// The features this host offers a client on this listener, as Node's `offers` reads them.
@@ -451,6 +485,8 @@ pub struct HostState {
     pub file_reads: Mutex<HashSet<String>>,
     /// How many sockets each paired client has open here, so its file upload goes when the last one closes.
     pub client_sockets: Mutex<HashMap<String, usize>>,
+    /// Each paired client's commands by its request ID, shared by both listeners, as Node's `CommandReceipts`.
+    pub receipts: Arc<Mutex<CommandReceipts>>,
 }
 
 impl HostState {
@@ -819,6 +855,7 @@ impl RunningServer {
             )))),
             file_reads: Mutex::new(HashSet::new()),
             client_sockets: Mutex::new(HashMap::new()),
+            receipts: Arc::new(Mutex::new(CommandReceipts::default())),
         });
 
         let initial_descriptor = state.descriptor();
@@ -1756,52 +1793,8 @@ async fn handle_websocket_upgrade(
                 if !wire.hello_done {
                     continue;
                 }
-                match bcast {
-                    Ok(CoordinatorBroadcast::Shell(mut shell)) => {
-                        let may_answer = state
-                            .memory
-                            .lock()
-                            .unwrap()
-                            .may_grant_remote(&client_id)
-                            .unwrap_or(false);
-                        if let Some(obj) = shell.as_object_mut() {
-                            obj.insert(
-                                "clientCapabilities".into(),
-                                json!({ "mayAnswer": may_answer }),
-                            );
-                        }
-                        let frame = wire.encode_shell_push(shell);
-                        if let Ok(encoded) = serde_json::to_string(&frame) {
-                            if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    Ok(CoordinatorBroadcast::Detail(detail)) => {
-                        if let Some(frame) = wire.encode_detail_update_push(&detail) {
-                            if let Ok(encoded) = serde_json::to_string(&frame) {
-                                if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        // On lag, resend whole shell cleanly so the client stays in sync.
-                        let may_answer = state
-                            .memory
-                            .lock()
-                            .unwrap()
-                            .may_grant_remote(&client_id)
-                            .unwrap_or(false);
-                        if let Ok(shell) = state.coordinator.shell(may_answer).await {
-                            let frame = wire.encode_shell_push(shell);
-                            if let Ok(encoded) = serde_json::to_string(&frame) {
-                                let _ = out_tx.send(OutboundFrame::Text(encoded));
-                            }
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
+                if !forward_coordinator_broadcast(&state, &client_id, &mut wire, &out_tx, bcast).await {
+                    break;
                 }
             }
             watcher_ev = watcher_rx.recv() => {
@@ -1872,6 +1865,157 @@ async fn handle_websocket_upgrade(
     // A client that went shows nothing now (ADR-0092).
     state.coordinator.forget_observer(wire.observer.clone());
     Ok(())
+}
+
+/// Sends one connection what the coordinator published: its shell, a thread's update, or the whole shell again after
+/// this connection fell behind. Each shell, and a lag that may have skipped one, first tells it of each answer it watches
+/// that a provider took, as Node checks `answerWatches` on every publication. False when the socket is gone.
+async fn forward_coordinator_broadcast(
+    state: &HostState,
+    client_id: &str,
+    wire: &mut ClientWireState,
+    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+    bcast: Result<CoordinatorBroadcast, broadcast::error::RecvError>,
+) -> bool {
+    match bcast {
+        Ok(CoordinatorBroadcast::Shell(mut shell)) => {
+            if !push_answer_receipts(state, client_id, wire, out_tx).await {
+                return false;
+            }
+            let may_answer = state.memory.lock().unwrap().may_grant_remote(client_id).unwrap_or(false);
+            if let Some(obj) = shell.as_object_mut() {
+                obj.insert("clientCapabilities".into(), json!({ "mayAnswer": may_answer }));
+            }
+            let frame = wire.encode_shell_push(shell);
+            if let Ok(encoded) = serde_json::to_string(&frame) {
+                if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                    return false;
+                }
+            }
+        }
+        Ok(CoordinatorBroadcast::Detail(detail)) => {
+            if let Some(frame) = wire.encode_detail_update_push(&detail) {
+                if let Ok(encoded) = serde_json::to_string(&frame) {
+                    if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                        return false;
+                    }
+                }
+            }
+        }
+        Err(broadcast::error::RecvError::Lagged(_)) => {
+            if !push_answer_receipts(state, client_id, wire, out_tx).await {
+                return false;
+            }
+            // On lag, resend whole shell cleanly so the client stays in sync.
+            let may_answer = state.memory.lock().unwrap().may_grant_remote(client_id).unwrap_or(false);
+            if let Ok(shell) = state.coordinator.shell(may_answer).await {
+                let frame = wire.encode_shell_push(shell);
+                if let Ok(encoded) = serde_json::to_string(&frame) {
+                    let _ = out_tx.send(OutboundFrame::Text(encoded));
+                }
+            }
+        }
+        Err(broadcast::error::RecvError::Closed) => return false,
+    }
+    true
+}
+
+/// One paired client's command under its own request ID, as Node's socket server keeps its receipt (`CommandReceipts`):
+/// a command sent again under that ID is answered from its first run, and one that passed every check is kept while it
+/// runs and once it ended. The digest is of the command alone, kept in memory only.
+struct CommandReceipt<'a> {
+    state: &'a HostState,
+    client_id: &'a str,
+    request_id: String,
+    digest: String,
+}
+
+impl<'a> CommandReceipt<'a> {
+    fn new(state: &'a HostState, client_id: &'a str, request_id: &str, command: &serde_json::Map<String, Value>) -> Self {
+        let digest = sha256_hex(serde_json::to_string(command).unwrap_or_default().as_bytes());
+        Self { state, client_id, request_id: request_id.to_string(), digest }
+    }
+
+    /// The answer to a command this client already sent under this request ID, before any other check, as Node answers
+    /// it: refused if it says something else, waited on while it runs, and then answered as it ended, a failure in its
+    /// code's own words. None when this client sent no command under the ID, or none the host still keeps.
+    async fn replay(&self, wire: &mut ClientWireState, may_answer: bool) -> Option<HostResponseEnvelope> {
+        let previous = self.state.receipts.lock().unwrap().get(self.client_id, &self.request_id)?;
+        let id = self.request_id.clone();
+        if previous.digest != self.digest {
+            return Some(HostResponseEnvelope::err(id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message()));
+        }
+        Some(match previous.settled().await {
+            None => HostResponseEnvelope::err(id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
+            Some(Receipt { error: Some(code), .. }) => HostResponseEnvelope::err(id, code, code.default_message()),
+            Some(_) => match self.state.coordinator.shell(may_answer).await {
+                Ok(raw_shell) => HostResponseEnvelope::ok(id, wire.encode_command_shell(raw_shell)),
+                Err(err) => HostResponseEnvelope::err(id, err.code, err.message),
+            },
+        })
+    }
+
+    /// Runs a command that passed every check, its receipt kept first, as Node keeps one only after every refusal: busy
+    /// when the store is full of pending work. The command runs to its end and settles its receipt whether or not the
+    /// socket stays to hear it.
+    async fn run(self, client: ClientContext, command: serde_json::Map<String, Value>, wire: &mut ClientWireState) -> HostResponseEnvelope {
+        let CommandReceipt { state, client_id, request_id, digest } = self;
+        {
+            // Only pending work is busy: settled receipts make room.
+            let mut receipts = state.receipts.lock().unwrap();
+            if !receipts.make_room() {
+                return HostResponseEnvelope::err(request_id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
+            }
+            receipts.record(client_id, &request_id, digest);
+        }
+        let is_answer = command.get("type").and_then(Value::as_str) == Some("answer");
+        // An answer is given under this client's own decision ID, so its receipt can say whether it was taken.
+        let decision_id = is_answer.then(|| answer_decision_id(client_id, &request_id));
+        let queued = state.coordinator.enqueue_command_deciding(client, command, decision_id);
+        let receipts = Arc::clone(&state.receipts);
+        let (client_key, request_key) = (client_id.to_string(), request_id.clone());
+        let (ended_tx, ended_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let outcome = match queued {
+                Ok(reply) => reply.await.unwrap_or_else(|_| Err(sotto_core::CoordinatorError::unavailable("Host coordinator stopped."))),
+                Err(err) => Err(err),
+            };
+            receipts.lock().unwrap().settle(&client_key, &request_key, ended_receipt(is_answer, &outcome));
+            let _ = ended_tx.send(outcome);
+        });
+        match ended_rx.await {
+            Ok(Ok(raw_shell)) => HostResponseEnvelope::ok(request_id, wire.encode_command_shell(raw_shell)),
+            Ok(Err(err)) => HostResponseEnvelope::err(request_id, err.code, err.message),
+            Err(_) => HostResponseEnvelope::err(request_id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
+        }
+    }
+}
+
+/// Tells a client that takes `answer-receipts` of each answer it watches that a provider has now taken, as Node's
+/// socket server does on each of the host's publications, and stops watching each one it was told of. False when the
+/// socket is gone.
+async fn push_answer_receipts(
+    state: &HostState,
+    client_id: &str,
+    wire: &mut ClientWireState,
+    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+) -> bool {
+    if !wire.has("answer-receipts") || wire.answer_watches.is_empty() {
+        return true;
+    }
+    let watched = wire.answer_watches.watched().to_vec();
+    let accepted = state.coordinator.accepted_answers(client_id.to_string(), watched.clone()).await.unwrap_or_default();
+    for (command_id, target) in watched.iter().filter(|(command_id, _)| accepted.contains(command_id)) {
+        let frame = json!({ "v": HOST_PROTOCOL_VERSION, "event": "answer-receipt", "acceptedAnswer": target.accepted(command_id) });
+        let Ok(encoded) = serde_json::to_string(&frame) else {
+            continue;
+        };
+        if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+            return false;
+        }
+        wire.answer_watches.forget(command_id);
+    }
+    true
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2295,6 +2439,11 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            // A command sent again under the same request ID is answered from its first run, before any other check.
+            let receipt = CommandReceipt::new(state, client_id, &req.id, cmd);
+            if let Some(reply) = receipt.replay(wire, may_answer).await {
+                return reply;
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
@@ -2334,10 +2483,83 @@ async fn handle_ws_request(
                 user: client_name.to_string(),
                 may_answer,
             };
-            match state.coordinator.run_command(client, cmd.clone()).await {
-                Ok(raw_shell) => {
-                    HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell))
+            let kind = cmd.get("type").and_then(Value::as_str).unwrap_or_default();
+            if !keeps_receipt(kind) {
+                return match state.coordinator.run_command(client, cmd.clone()).await {
+                    Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
+                    Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+                };
+            }
+            // What the coordinator turns down before acting (the allow-list, its fields and ADR-0004's answer policy) is
+            // turned down here before a receipt is kept, as Node's socket server refuses a management command and
+            // `remoteCommandRefusal`'s before it keeps one.
+            if let Err(refusal) = validate_remote_command(cmd, may_answer) {
+                let message = refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string());
+                return HostResponseEnvelope::err(req.id, refusal.code, message);
+            }
+            // An answer to a request its thread no longer waits on is stale and keeps no receipt, as Node refuses it.
+            if kind == "answer" {
+                if let (Some(thread_id), Some(request_id)) = (cmd.get("threadId").and_then(Value::as_str), cmd.get("requestId").and_then(Value::as_str)) {
+                    match state.coordinator.request_waiting(thread_id.to_string(), request_id.to_string()).await {
+                        Ok(true) => {}
+                        Ok(false) => return HostResponseEnvelope::err(req.id, HostErrorCode::StaleRequest, HostErrorCode::StaleRequest.default_message()),
+                        Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+                    }
                 }
+            }
+            receipt.run(client, cmd.clone(), wire).await
+        }
+        "receipt" => {
+            // What became of one of this client's commands, as Node's socket server answers it. With an answer named,
+            // the answer's own acceptance is read too, which outlives a restart; a client that takes `answer-receipts`
+            // and is told it is not accepted yet is told once it is.
+            let Some((command_id, answer)) = receipt_request(&req.fields) else {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            };
+            let receipt = state.receipts.lock().unwrap().receipt(client_id, &command_id).map_or_else(unknown_receipt, |receipt| receipt.to_value());
+            if let Some(target) = answer {
+                match state.coordinator.accepted_answers(client_id.to_string(), vec![(command_id.clone(), target.clone())]).await {
+                    Ok(accepted) if !accepted.is_empty() => {
+                        wire.answer_watches.forget(&command_id);
+                        return HostResponseEnvelope::ok(
+                            req.id,
+                            json!({ "status": "completed", "answerDelivered": true, "acceptedAnswer": target.accepted(&command_id) }),
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+                }
+                if wire.has("answer-receipts") {
+                    wire.answer_watches.watch(&command_id, target);
+                }
+            }
+            HostResponseEnvelope::ok(req.id, receipt)
+        }
+        "check-answer" => {
+            // Whether a question this client holds an answer for still waits as it was asked, as Node's socket server
+            // answers it: the request's shape, then the feature, then the client may answer, then the coordinator's own
+            // check, then the session still holds and the client may still answer.
+            let offered = offered_features(state, mode, client_id);
+            let target = match checked_answer_check(&req.fields, |feature| offered.iter().any(|f| f == feature), may_answer) {
+                Ok(target) => target,
+                Err(code) => return HostResponseEnvelope::err(req.id, code, code.default_message()),
+            };
+            let client = ClientContext { client_id: client_id.to_string(), user: client_name.to_string(), may_answer };
+            if let Err(err) = state.coordinator.check_request_answer(client, target).await {
+                return HostResponseEnvelope::err(req.id, err.code, err.message);
+            }
+            // The provider's read may have outlasted this connection's session or the client's leave to answer.
+            if state.pairing.lock().unwrap().verify_session(upgrade_session).as_deref() != Some(client_id) {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Unauthenticated, HostErrorCode::Unauthenticated.default_message());
+            }
+            let may_answer = state.memory.lock().unwrap().may_grant_remote(client_id).unwrap_or(false);
+            if !may_answer {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+            }
+            // Node answers with its plain `shell(peer)`, which moves neither the thread records nor the catalog a later
+            // push or command answer is measured from.
+            match state.coordinator.shell(may_answer).await {
+                Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_plain_shell(raw_shell)),
                 Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
             }
         }
@@ -3536,6 +3758,232 @@ mod tests {
         assert!(tailnet_phone.iter().any(|f| f == "thread-snooze"), "a feature for every client still goes");
         let tailnet_desktop = features_for_client(&all, true, true);
         assert!(tailnet_desktop.iter().any(|f| f == "thread-prompts") && tailnet_desktop.iter().any(|f| f == "activity-bodies"));
+    }
+
+    fn answer_target() -> Value {
+        json!({ "threadId": "t", "providerId": "codex", "requestId": "r", "questionsDigest": "a".repeat(64) })
+    }
+
+    const ASKING_THREAD: &str = "00000000-0000-4000-8000-00000000000a";
+
+    /// A host on a mock Codex, one paired client that may answer and its session, and a thread whose provider asks one
+    /// question, once the host has published it.
+    struct AskingHost {
+        server: RunningServer,
+        mock: Arc<sotto_core::MockProviderAdapter>,
+        client_id: String,
+        session: String,
+        question: Value,
+        _dir: tempfile::TempDir,
+    }
+
+    /// One connection's own state, as its socket holds it.
+    struct Connection {
+        wire: ClientWireState,
+        watcher_peer: WatcherPeerState,
+        out_tx: mpsc::UnboundedSender<OutboundFrame>,
+        out_rx: mpsc::UnboundedReceiver<OutboundFrame>,
+    }
+
+    impl AskingHost {
+        async fn start() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let mock = Arc::new(sotto_core::MockProviderAdapter::new("codex"));
+            let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+            providers.insert("codex".into(), mock.clone());
+            let server = RunningServer::start(ServerConfig {
+                data_directory: dir.path().to_path_buf(),
+                host_id: "00000000-0000-4000-8000-000000000001".into(),
+                port: 0,
+                sotto_version: "0.1.0".into(),
+                started_by: None,
+                credentials: HostCredentials::open(dir.path(), None).unwrap(),
+                providers,
+                tailscale: None,
+                phone_retry_interval: None,
+            })
+            .await
+            .unwrap();
+            let state = &server.state;
+            let code = state.pairing.lock().unwrap().issue_pairing_code().code;
+            let client_id = state.pairing.lock().unwrap().redeem_pairing_code(&code, "Test Desktop").unwrap().client_id;
+            let session = state.pairing.lock().unwrap().issue_session(&client_id).unwrap().session;
+            state.memory.lock().unwrap().set_remote_answers(&client_id, true, "test").unwrap();
+            let client = ClientContext { client_id: client_id.clone(), user: "Test Desktop".into(), may_answer: true };
+            let run = |command: Value| state.coordinator.run_command(client.clone(), command.as_object().unwrap().clone());
+            let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "P", "path": dir.path().to_string_lossy(), "useExisting": true })).await.unwrap();
+            let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+            run(json!({ "type": "create-thread", "threadId": ASKING_THREAD, "projectId": project_id, "title": "T", "titleSource": "user",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await.unwrap();
+            run(json!({ "type": "manual-send", "threadId": ASKING_THREAD, "text": "Go" })).await.unwrap();
+            let question = json!({ "id": "req-1", "kind": "question", "text": "Which colour?", "options": [{ "id": "blue", "label": "Blue" }] });
+            let mut published = state.coordinator.subscribe();
+            mock.emit_request(ASKING_THREAD, question.clone());
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    if let Ok(CoordinatorBroadcast::Shell(shell)) = published.recv().await {
+                        if shell["host"]["threads"][0]["requests"].as_array().is_some_and(|requests| requests.contains(&question)) {
+                            return;
+                        }
+                    }
+                }
+            })
+            .await
+            .expect("the question was never published");
+            Self { server, mock, client_id, session, question, _dir: dir }
+        }
+
+        /// A connection whose hello accepted `accepts`.
+        async fn connect(&self, accepts: &[&str]) -> Connection {
+            let (out_tx, out_rx) = mpsc::unbounded_channel();
+            let mut connection = Connection { wire: ClientWireState::default(), watcher_peer: WatcherPeerState::default(), out_tx, out_rx };
+            let hello = self.ask(&mut connection, json!({ "v": 1, "id": "hello", "op": "hello", "accepts": accepts })).await;
+            assert_eq!(hello["ok"], true, "{hello}");
+            connection
+        }
+
+        /// One request on `connection`, answered as its socket answers it.
+        async fn ask(&self, connection: &mut Connection, request: Value) -> Value {
+            let Connection { wire, watcher_peer, out_tx, .. } = connection;
+            let reply = handle_ws_request(&self.server.state, &ListenerMode::Admin, &self.client_id, "Test Desktop", &self.session, wire, watcher_peer, out_tx, &request.to_string()).await;
+            serde_json::to_value(reply).unwrap()
+        }
+
+        fn target(&self) -> Value {
+            let questions_digest = sotto_core::answered_requests::request_questions_digest(&self.question).unwrap();
+            json!({ "threadId": ASKING_THREAD, "providerId": "codex", "requestId": "req-1", "questionsDigest": questions_digest })
+        }
+    }
+
+    /// The session is checked again once the coordinator's answer check returns, as Node checks `authenticated(peer)`:
+    /// a client revoked while its provider read the thread is unauthenticated, before whether it may answer.
+    #[tokio::test]
+    async fn an_answer_check_that_outlives_its_session_is_unauthenticated() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&[]).await;
+        let check = json!({ "v": 1, "id": "check-1", "op": "check-answer", "answer": host.target() });
+        let checked = host.ask(&mut connection, check.clone()).await;
+        assert_eq!(checked["ok"], true, "the question still waits: {checked}");
+
+        let sotto_core::provider::HeldThreadRead { started, finish } = host.mock.hold_next_thread_read();
+        let revoke = async {
+            started.await.unwrap();
+            assert!(host.server.state.pairing.lock().unwrap().revoke(&host.client_id).unwrap());
+            finish.send(Ok(None)).unwrap();
+        };
+        let (refused, ()) = tokio::join!(host.ask(&mut connection, check), revoke);
+        assert_eq!(refused["error"]["code"], "unauthenticated", "{refused}");
+        assert_eq!(refused["error"]["message"], HostErrorCode::Unauthenticated.default_message());
+        host.server.close().await;
+    }
+
+    /// A command turned down before it acts keeps no receipt, as Node turns each one down before `receipts.record`: one
+    /// the allow-list refuses, a save naming a revision from a client without `draft-revisions`, and an answer to a
+    /// question no longer waiting. A receipt of a command that failed says only the host's `unavailable`, and a retry
+    /// is answered in those words alone.
+    #[tokio::test]
+    async fn refused_commands_keep_no_receipt_and_a_receipt_keeps_only_the_hosts_words() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&["answer-receipts"]).await;
+        let command = |id: &str, command: Value| json!({ "v": 1, "id": id, "op": "command", "command": command });
+        let receipt = |id: &str| json!({ "v": 1, "id": format!("read-{id}"), "op": "receipt", "commandId": id });
+
+        let refusals = [
+            ("cmd-fields", json!({ "type": "rename-thread", "threadId": ASKING_THREAD, "title": "X", "later": 1 }), "invalid_request"),
+            ("cmd-revision", json!({ "type": "save-thread-draft", "threadId": ASKING_THREAD, "text": "Hi", "expectedDraftId": "d" }), "invalid_request"),
+            ("cmd-stale", json!({ "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-9", "answer": "Blue" }), "stale_request"),
+        ];
+        for (id, refused, code) in refusals {
+            let reply = host.ask(&mut connection, command(id, refused)).await;
+            assert_eq!(reply["error"]["code"], code, "{id}: {reply}");
+            assert_eq!(host.ask(&mut connection, receipt(id)).await["result"], json!({ "status": "unknown" }), "{id} kept no receipt");
+        }
+        // With no receipt kept, the same ID may carry another command, which runs.
+        let renamed = host.ask(&mut connection, command("cmd-fields", json!({ "type": "rename-thread", "threadId": ASKING_THREAD, "title": "Renamed" }))).await;
+        assert_eq!(renamed["ok"], true, "{renamed}");
+        assert_eq!(host.ask(&mut connection, receipt("cmd-fields")).await["result"], json!({ "status": "completed" }));
+
+        // The coordinator's own words answer the command, but its receipt and any retry say only the host's.
+        let unknown = command("cmd-unknown", json!({ "type": "rename-thread", "threadId": "00000000-0000-4000-8000-0000000000ff", "title": "X" }));
+        let first = host.ask(&mut connection, unknown.clone()).await;
+        assert_eq!(first["ok"], false, "{first}");
+        let words = HostErrorCode::Unavailable.default_message();
+        let kept = host.ask(&mut connection, receipt("cmd-unknown")).await;
+        assert_eq!(kept["result"], json!({ "status": "completed", "error": { "code": "unavailable", "message": words } }));
+        let again = host.ask(&mut connection, unknown).await;
+        assert_eq!(again["error"], json!({ "code": "unavailable", "message": words }));
+
+        let answered = host.ask(&mut connection, command("cmd-answer", json!({ "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-1", "answer": "Blue" }))).await;
+        assert_eq!(answered["ok"], true, "{answered}");
+        assert_eq!(host.ask(&mut connection, receipt("cmd-answer")).await["result"], json!({ "status": "completed", "answerDelivered": true }));
+        host.server.close().await;
+    }
+
+    /// A connection that fell behind the host's publications is still told of each answer it watches that a provider took,
+    /// as Node checks `answerWatches` on every publication, before the whole shell it is sent again.
+    #[tokio::test]
+    async fn a_connection_that_lagged_is_told_of_its_accepted_answers() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&["answer-receipts"]).await;
+        let watch = json!({ "v": 1, "id": "read-1", "op": "receipt", "commandId": "cmd-answer", "answer": host.target() });
+        assert_eq!(host.ask(&mut connection, watch).await["result"], json!({ "status": "unknown" }), "not given yet, so watched");
+        let answer = json!({ "v": 1, "id": "cmd-answer", "op": "command",
+            "command": { "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-1", "answer": "Blue" } });
+        assert_eq!(host.ask(&mut connection, answer).await["ok"], true);
+        while connection.out_rx.try_recv().is_ok() {}
+
+        let Connection { wire, out_tx, out_rx, .. } = &mut connection;
+        let lagged = Err(broadcast::error::RecvError::Lagged(3));
+        assert!(forward_coordinator_broadcast(&host.server.state, &host.client_id, wire, out_tx, lagged).await);
+        let Ok(OutboundFrame::Text(first)) = out_rx.try_recv() else { panic!("nothing was pushed") };
+        let pushed: Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(pushed["event"], "answer-receipt", "{pushed}");
+        assert_eq!(pushed["acceptedAnswer"]["decisionId"], "cmd-answer");
+        assert_eq!(pushed["acceptedAnswer"]["requestId"], "req-1");
+        let Ok(OutboundFrame::Text(next)) = out_rx.try_recv() else { panic!("the shell was not sent again") };
+        assert_eq!(serde_json::from_str::<Value>(&next).unwrap()["event"], "shell");
+        assert!(wire.answer_watches.is_empty(), "an answer it was told of is no longer watched");
+        host.server.close().await;
+    }
+
+    /// A `receipt` names a command ID and, if it likes, one exact answer, and nothing else, as Node's strict schema reads it.
+    #[test]
+    fn a_receipt_request_is_read_as_nodes_schema_reads_it() {
+        let read = |value: Value| receipt_request(value.as_object().unwrap());
+        assert_eq!(read(json!({ "commandId": "c" })).map(|(id, answer)| (id, answer.is_none())), Some(("c".into(), true)));
+        let (id, answer) = read(json!({ "commandId": "c", "answer": answer_target() })).unwrap();
+        assert_eq!((id.as_str(), answer.unwrap().request_id.as_str()), ("c", "r"));
+        assert!(read(json!({})).is_none(), "no command ID");
+        assert!(read(json!({ "commandId": "" })).is_none());
+        assert!(read(json!({ "commandId": "c", "later": 1 })).is_none(), "a field Node's strict schema does not name");
+        assert!(read(json!({ "commandId": "c", "answer": { "threadId": "t" } })).is_none(), "a malformed answer is not left out");
+    }
+
+    /// A `check-answer` is refused as Node's socket server refuses it, and in its order: a malformed request, then a
+    /// client not offered `answer-check`, then a client that may not answer.
+    #[test]
+    fn an_answer_check_is_checked_in_nodes_order() {
+        let fields = |value: Value| value.as_object().unwrap().clone();
+        let good = fields(json!({ "answer": answer_target() }));
+        assert_eq!(checked_answer_check(&good, |_| true, true).map(|target| target.thread_id), Ok("t".into()));
+        let bad = fields(json!({ "answer": { "threadId": "t" } }));
+        assert_eq!(checked_answer_check(&bad, |_| false, false), Err(HostErrorCode::InvalidRequest), "the shape comes first");
+        let extra = fields(json!({ "answer": answer_target(), "commandId": "c" }));
+        assert_eq!(checked_answer_check(&extra, |_| true, true), Err(HostErrorCode::InvalidRequest));
+        assert_eq!(checked_answer_check(&good, |_| false, false), Err(HostErrorCode::InvalidRequest), "then the feature");
+        assert_eq!(checked_answer_check(&good, |_| true, false), Err(HostErrorCode::Forbidden), "then whether it may answer");
+    }
+
+    /// Answer receipts and the answer check go to every client, a phone on a tailnet listener too, as Node offers them.
+    #[test]
+    fn answer_receipts_and_the_answer_check_are_offered_to_every_client() {
+        let all = advertised_features();
+        for (desktop, on_listener) in [(true, true), (false, true), (false, false)] {
+            let offered = features_for_client(&all, desktop, on_listener);
+            for feature in ["answer-receipts", "answer-check"] {
+                assert!(offered.iter().any(|f| f == feature), "{feature} to desktop={desktop} on_listener={on_listener}");
+            }
+        }
     }
 
     /// A thread read takes its thread and its one other ID and nothing else, as Node's strict schema does.

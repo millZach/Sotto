@@ -3,8 +3,6 @@
     "desktop": {
       "missing": [
         "agents-view",
-        "answer-check",
-        "answer-receipts",
         "atomic-send",
         "background-refresh",
         "branch-moves",
@@ -63,8 +61,6 @@
     "unrecorded": {
       "missing": [
         "agents-view",
-        "answer-check",
-        "answer-receipts",
         "atomic-send",
         "background-refresh",
         "bring-changes-back",
@@ -258,10 +254,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "check-answer": {
-      "node": "stale_request",
-      "rust": "invalid_request"
-    },
     "coordination-reply": {
       "node": "ok",
       "rust": "invalid_request"
@@ -340,10 +332,6 @@
     },
     "pull-request-confirmation": {
       "node": "forbidden",
-      "rust": "invalid_request"
-    },
-    "receipt": {
-      "node": "ok",
       "rust": "invalid_request"
     },
     "sign-in-cancel": {

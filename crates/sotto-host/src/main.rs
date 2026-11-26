@@ -451,6 +451,48 @@ mod tests {
         (status, serde_json::from_slice(&buf).unwrap())
     }
 
+    /// Sends one masked text frame and reads frames until the reply to `id`, past any push before it.
+    async fn ws_reply(stream: &mut TcpStream, text: &str, id: &str) -> serde_json::Value {
+        let mask = [0x12u8, 0x34, 0x56, 0x78];
+        let mut frame = vec![0x81];
+        if text.len() < 126 {
+            frame.push(0x80 | text.len() as u8);
+        } else {
+            frame.push(0x80 | 126);
+            frame.extend_from_slice(&(text.len() as u16).to_be_bytes());
+        }
+        frame.extend_from_slice(&mask);
+        frame.extend(text.bytes().enumerate().map(|(idx, b)| b ^ mask[idx & 3]));
+        stream.write_all(&frame).await.unwrap();
+        stream.flush().await.unwrap();
+        loop {
+            let mut hdr = [0u8; 2];
+            stream.read_exact(&mut hdr).await.unwrap();
+            let len = match hdr[1] & 0x7f {
+                126 => {
+                    let mut ext = [0u8; 2];
+                    stream.read_exact(&mut ext).await.unwrap();
+                    u16::from_be_bytes(ext) as usize
+                }
+                127 => {
+                    let mut ext = [0u8; 8];
+                    stream.read_exact(&mut ext).await.unwrap();
+                    u64::from_be_bytes(ext) as usize
+                }
+                short => short as usize,
+            };
+            let mut payload = vec![0u8; len];
+            stream.read_exact(&mut payload).await.unwrap();
+            if hdr[0] & 0x0f != 0x1 {
+                continue;
+            }
+            let parsed: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+            if parsed["id"] == id {
+                return parsed;
+            }
+        }
+    }
+
     #[tokio::test]
     async fn health_pair_allow_answers_session_and_websocket_protocol_v1_round_trip() {
         let dir = tempfile::tempdir().unwrap();
@@ -487,7 +529,7 @@ mod tests {
             .iter()
             .filter_map(serde_json::Value::as_str)
             .collect();
-        assert!(!features.contains(&"answer-receipts"));
+        assert!(features.contains(&"answer-receipts") && features.contains(&"answer-check"));
         assert!(!features.contains(&"provider-deepseek"));
         assert!(features.contains(&"usage-dashboard"));
         assert!(features.contains(&"usage-antigravity-no-limits"));
@@ -554,30 +596,7 @@ mod tests {
 
         // Send masked client `hello` frame
         let mut ws_stream = ws_reader.into_inner();
-        let hello = r#"{"v":1,"id":"req-1","op":"hello"}"#;
-        let mask = [0x12u8, 0x34, 0x56, 0x78];
-        let mut frame = vec![0x81, 0x80 | (hello.len() as u8)];
-        frame.extend_from_slice(&mask);
-        for (idx, b) in hello.as_bytes().iter().enumerate() {
-            frame.push(b ^ mask[idx & 3]);
-        }
-        ws_stream.write_all(&frame).await.unwrap();
-        ws_stream.flush().await.unwrap();
-
-        let mut hdr = [0u8; 2];
-        ws_stream.read_exact(&mut hdr).await.unwrap();
-        assert_eq!(hdr[0] & 0x0f, 0x1);
-        let len_b = hdr[1] & 0x7f;
-        let len = if len_b == 126 {
-            let mut ext = [0u8; 2];
-            ws_stream.read_exact(&mut ext).await.unwrap();
-            u16::from_be_bytes(ext) as usize
-        } else {
-            len_b as usize
-        };
-        let mut resp_payload = vec![0u8; len];
-        ws_stream.read_exact(&mut resp_payload).await.unwrap();
-        let parsed: serde_json::Value = serde_json::from_slice(&resp_payload).unwrap();
+        let parsed = ws_reply(&mut ws_stream, r#"{"v":1,"id":"req-1","op":"hello"}"#, "req-1").await;
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["id"], "req-1");
         assert_eq!(parsed["result"]["hostId"], host_id);
@@ -587,6 +606,27 @@ mod tests {
         assert_eq!(parsed["result"]["shell"]["host"]["hostId"], host_id);
         assert_eq!(parsed["result"]["phoneAccess"]["status"], "off");
         assert_eq!(parsed["result"]["phoneAccess"]["phones"], 0);
+
+        // A command keeps its receipt by this client's request ID (`receipt`, as Node's `CommandReceipts`): unknown
+        // before it is sent, completed after, a retry answered from its first run, and a retry that says something else
+        // under the same ID refused. A command that failed is answered again in the host's `unavailable` alone, as Node
+        // replays a receipt's error.
+        let unknown = ws_reply(&mut ws_stream, r#"{"v":1,"id":"req-2","op":"receipt","commandId":"cmd-1"}"#, "req-2").await;
+        assert_eq!(unknown["result"], serde_json::json!({ "status": "unknown" }));
+        let rename = r#"{"v":1,"id":"cmd-1","op":"command","command":{"type":"rename-thread","threadId":"00000000-0000-4000-8000-0000000000aa","title":"Renamed"}}"#;
+        let first = ws_reply(&mut ws_stream, rename, "cmd-1").await;
+        let again = ws_reply(&mut ws_stream, rename, "cmd-1").await;
+        assert_eq!(first["ok"], false, "this host has no such thread");
+        assert_eq!(again["error"], serde_json::json!({ "code": "unavailable", "message": sotto_core::HostErrorCode::Unavailable.default_message() }), "answered from its first run");
+        let other = r#"{"v":1,"id":"cmd-1","op":"command","command":{"type":"rename-thread","threadId":"00000000-0000-4000-8000-0000000000aa","title":"Other"}}"#;
+        assert_eq!(ws_reply(&mut ws_stream, other, "cmd-1").await["error"]["code"], "invalid_request");
+        let kept = ws_reply(&mut ws_stream, r#"{"v":1,"id":"req-3","op":"receipt","commandId":"cmd-1"}"#, "req-3").await;
+        assert_eq!(kept["result"]["status"], "completed");
+        assert_eq!(kept["result"].get("error").is_some(), first["ok"] == false, "a refusal is the receipt's error");
+        // A question this host does not hold is not waiting, as Node's `checkRequestAnswer` says.
+        let digest = "a".repeat(64);
+        let check = format!(r#"{{"v":1,"id":"req-4","op":"check-answer","answer":{{"threadId":"t","providerId":"codex","requestId":"r","questionsDigest":"{digest}"}}}}"#);
+        assert_eq!(ws_reply(&mut ws_stream, &check, "req-4").await["error"]["code"], "stale_request");
 
         // Revoking the paired client immediately closes the already-open WebSocket.
         let revoke_body = serde_json::json!({ "clientId": client_id }).to_string();

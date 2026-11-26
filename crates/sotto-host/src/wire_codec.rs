@@ -49,6 +49,8 @@ pub struct ClientWireState {
     held_details: HashMap<String, AgentThreadDetail>,
     read_ahead: HashMap<String, ReadAheadEntry>,
     read_ahead_order: VecDeque<String>,
+    /// The answers this connection asked the receipt of and was told were not accepted yet (`answer-receipts`).
+    pub answer_watches: sotto_core::command_receipts::AnswerWatches,
 }
 
 impl ClientWireState {
@@ -179,6 +181,18 @@ impl ClientWireState {
             self.last_threads = None;
             self.last_top = None;
             self.last_host = None;
+        }
+        shell
+    }
+
+    /// Encodes a shell an answer carries as Node's plain `shell(peer)` does, as `check-answer` answers: filtered for this
+    /// client, with its catalog whole and no revision, and moving nothing a later push or command answer is measured from.
+    pub fn encode_plain_shell(&mut self, raw_shell: Value) -> Value {
+        let catalog_sent = self.last_models_revision;
+        let mut shell = self.filter_shell(raw_shell, false);
+        self.last_models_revision = catalog_sent;
+        if let Some(host) = shell.get_mut("host").and_then(Value::as_object_mut) {
+            host.remove("modelsRevision");
         }
         shell
     }
@@ -548,6 +562,24 @@ mod tests {
         let mut wire = ClientWireState::default();
         wire.apply_hello(accepts.iter().map(ToString::to_string));
         wire
+    }
+
+    /// The shell `check-answer` carries is Node's plain `shell(peer)`: whole, naming no records or catalog revision, and
+    /// moving nothing the next push or command answer is measured from.
+    #[test]
+    fn a_plain_shell_moves_nothing_a_later_shell_is_measured_from() {
+        let mut wire = client(&["changed-thread-records", "reply-thread-records", "command-changed-thread-records", "model-catalog-revision"]);
+        let shell = |title: &str, catalog: u64| {
+            json!({ "host": { "threads": [{ "id": "t", "title": title, "providerId": "codex" }], "models": [{ "id": "m", "providerId": "codex" }], "modelsRevision": catalog } })
+        };
+        wire.encode_reply_shell(shell("A", 2));
+        let measured_from = |wire: &ClientWireState| (wire.thread_records_revision, wire.last_threads.clone(), wire.last_models_revision);
+        let before = measured_from(&wire);
+        let plain = wire.encode_plain_shell(shell("B", 3));
+        assert_eq!(plain["host"]["threads"][0]["title"], "B", "the threads go whole");
+        assert_eq!(plain["host"]["models"], json!([{ "id": "m", "providerId": "codex" }]), "and so does the catalog");
+        assert!(plain.get("threadRecordsRevision").is_none() && plain["host"].get("modelsRevision").is_none());
+        assert_eq!(measured_from(&wire), before);
     }
 
     /// A desktop that accepts `activity-bodies` and not summaries is sent cut bodies; one that accepts summaries is sent
