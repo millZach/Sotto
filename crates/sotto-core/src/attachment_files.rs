@@ -49,7 +49,7 @@ pub fn attachment_file_request(value: Option<&Value>) -> Option<AttachmentFileRe
 
 /// A file or picture a sent message carries, as its handle names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SentFile {
+pub struct SentAttachment {
     pub name: String,
     pub mime_type: String,
     pub size_bytes: u64,
@@ -70,7 +70,7 @@ pub enum SentRead {
 
 /// Part `part` of a sent file whose content the store keeps at `path` (`None` when it keeps none), at most 8 MiB of its
 /// bytes. The content is read whole and checked against the file's digest before any part of it is answered.
-pub fn read_part(path: Option<&Path>, file: &SentFile, part: u64) -> Result<SentRead, ReadFailed> {
+pub fn read_part(path: Option<&Path>, file: &SentAttachment, part: u64) -> Result<SentRead, ReadFailed> {
     let parts = file.size_bytes.div_ceil(HOST_FILE_PART_BYTES).max(1);
     let Some(path) = path.filter(|_| part < parts) else {
         return Ok(SentRead::Nothing);
@@ -128,7 +128,7 @@ mod tests {
         let bytes: Vec<u8> = (0..(HOST_FILE_PART_BYTES as usize * 2 + 10)).map(|i| (i % 251) as u8).collect();
         let path = dir.path().join("content.bin");
         fs::write(&path, &bytes).unwrap();
-        let file = SentFile { name: "big.log".into(), mime_type: "text/plain".into(), size_bytes: bytes.len() as u64, digest: hex(&Sha256::digest(&bytes)) };
+        let file = SentAttachment { name: "big.log".into(), mime_type: "text/plain".into(), size_bytes: bytes.len() as u64, digest: hex(&Sha256::digest(&bytes)) };
         let mut joined = Vec::new();
         for part in 0..3 {
             let answer = part_of(read_part(Some(&path), &file, part).unwrap());
@@ -142,7 +142,7 @@ mod tests {
 
         let small = dir.path().join("small.bin");
         fs::write(&small, b"12345").unwrap();
-        let file = SentFile { name: "s".into(), mime_type: "text/plain".into(), size_bytes: 5, digest: hex(&Sha256::digest(b"12345")) };
+        let file = SentAttachment { name: "s".into(), mime_type: "text/plain".into(), size_bytes: 5, digest: hex(&Sha256::digest(b"12345")) };
         let answer = part_of(read_part(Some(&small), &file, 0).unwrap());
         assert_eq!((answer["parts"].as_u64(), answer["data"].as_str()), (Some(1), Some("MTIzNDU=")));
         assert_eq!(read_part(Some(&small), &file, 1), Ok(SentRead::Nothing));
@@ -153,7 +153,7 @@ mod tests {
     fn a_changed_or_missing_file_answers_nothing() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("content.bin");
-        let file = SentFile { name: "s".into(), mime_type: "text/plain".into(), size_bytes: 5, digest: hex(&Sha256::digest(b"12345")) };
+        let file = SentAttachment { name: "s".into(), mime_type: "text/plain".into(), size_bytes: 5, digest: hex(&Sha256::digest(b"12345")) };
         assert_eq!(read_part(None, &file, 0), Ok(SentRead::Nothing), "the store keeps no content of that digest");
         assert_eq!(read_part(Some(&path), &file, 0), Ok(SentRead::Gone), "its file is gone");
         fs::write(&path, b"12346").unwrap();

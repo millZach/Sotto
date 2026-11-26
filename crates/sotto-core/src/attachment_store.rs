@@ -27,6 +27,14 @@ use crate::workspace::{corrupt_copy_path, now_ms, rename_retrying, sha256_hex, w
 pub const MAX_IMAGE_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 pub const MAX_FILE_ATTACHMENT_BYTES: usize = 25 * 1024 * 1024;
 pub const MAX_VIDEO_ATTACHMENT_BYTES: usize = 500 * 1024 * 1024;
+/// The most attachments one message carries, as Node's `AGENT_MAX_ATTACHMENTS`.
+pub const AGENT_MAX_ATTACHMENTS: usize = 8;
+/// The most one message's pictures hold between them, as Node's `AGENT_MAX_ATTACHMENT_BYTES`.
+pub const AGENT_MAX_IMAGES_TOTAL_BYTES: u64 = 20 * 1024 * 1024;
+/// The most one message's attachments that are not videos hold between them, as Node's `AGENT_MAX_ATTACHMENTS_TOTAL_BYTES`.
+pub const AGENT_MAX_ATTACHMENTS_TOTAL_BYTES: u64 = 50 * 1024 * 1024;
+/// The most one message's videos hold between them, as Node's `AGENT_MAX_VIDEOS_TOTAL_BYTES`.
+pub const AGENT_MAX_VIDEOS_TOTAL_BYTES: u64 = 500 * 1024 * 1024;
 
 /// The folder under the data folder Node's store keeps content in, its index, and where a video's parts are written.
 const FOLDER: &str = "attachments";

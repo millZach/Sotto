@@ -6,12 +6,16 @@
 //! it carried: never their bytes, which are the attachment store's. Only the exact user message that submitted them may
 //! show them, and only for seven days: an entry older than that, or one dated later than now, names nothing. The
 //! entries' pictures may hold 100 MiB between them; past that the oldest go. What Node wrote is kept as it wrote it:
-//! an entry this host cannot read, such as an inline picture from before ADR-0031 that Node stages at its next start,
-//! is written back unchanged.
+//! an entry this host cannot read, such as an inline picture from before ADR-0031, is written back unchanged.
 //!
-//! The store also places the markers a pane asks for previews by: a published user message's attachments are the
-//! entry's handles without their digests, each picture with `preview: { available: true }`, as Node's `decorate` places
-//! them; a marker no entry stands behind is taken off.
+//! Keep local history decides what reaches disk, as Node's host reads it from its `settings.json` at start. With it
+//! off, no saved entry is read or shown and nothing is written: a send's entry is held for this run alone, as Node
+//! holds one with `retain: false`. A file that cannot be read as an entry list reads as empty and the next write
+//! replaces it, as Node's `peek` reads one: no copy of it is ever kept, since it names private images.
+//!
+//! Markers go only on what leaves the host: a message a client is sent carries the entry's handles without their
+//! digests, each picture with `preview: { available: true }`, as Node's `decorate` places them on an outbound copy, and
+//! any `preview` a provider's message carries comes off. Nothing in the thread store ever carries one.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -21,23 +25,33 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Map, Value};
 
-use crate::attachment_store::{attachment_limit_bytes, has_raster_signature, is_image_type, is_mime_type, read_checked, ReadFailed, StagedAttachmentHandle, MAX_FILE_ATTACHMENT_BYTES};
-use crate::attachment_files::{SentFile, SentRead};
-use crate::protocol_fields::{is_digest, protocol_id, utf16_len, whole_number};
+use crate::attachment_files::{SentAttachment, SentRead};
+use crate::attachment_store::{
+    attachment_limit_bytes, has_raster_signature, is_image_type, is_mime_type, is_video_type, read_checked, ReadFailed, StagedAttachmentHandle,
+    AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, AGENT_MAX_IMAGES_TOTAL_BYTES, AGENT_MAX_VIDEOS_TOTAL_BYTES, MAX_FILE_ATTACHMENT_BYTES,
+};
+use crate::protocol_fields::{is_digest, picture_edge, protocol_id, utf16_len, whole_number};
 use crate::stores::StoredMessage;
-use crate::workspace::{corrupt_copy_path, write_atomic_json};
+use crate::workspace::write_atomic_json;
 
 /// How long a sent message's attachments may be shown and read, as Node's `ATTACHMENT_PREVIEW_RETENTION_MS`.
 pub const ATTACHMENT_PREVIEW_RETENTION_MS: f64 = 7.0 * 86_400_000.0;
 /// The most the kept entries' pictures may hold between them, as Node's `MAX_ATTACHMENT_PREVIEW_BYTES`.
 pub const MAX_ATTACHMENT_PREVIEW_BYTES: u64 = 100 * 1024 * 1024;
-/// The most attachments one message carries, as Node's `AGENT_MAX_ATTACHMENTS`.
-const AGENT_MAX_ATTACHMENTS: usize = 8;
-/// The most bytes one message's pictures may hold, as Node's `AGENT_MAX_ATTACHMENT_BYTES`.
-const AGENT_MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
-/// The longest edges a client that accepted `thread-media-edge` may ask a picture at, as Node's `HOST_PICTURE_EDGES`.
-const HOST_PICTURE_EDGES: [u64; 3] = [320, 640, 1280];
+/// The most pixels an image's side may have, as Node's `agentImageSizeSchema`.
+const IMAGE_SIDE_MAX: u64 = 65_535;
 const FILE: &str = "attachment-previews.json";
+
+/// Keep local history as Node's host reads it from the `settings.json` in its data folder at start: the setting when it
+/// is a true or false, and otherwise Node's default, on, as `parseField` falls back for a missing, unreadable or
+/// damaged file or field.
+pub fn history_enabled(data_directory: &Path) -> bool {
+    fs::read_to_string(data_directory.join("settings.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|settings| settings.get("historyEnabled").and_then(Value::as_bool))
+        .unwrap_or(true)
+}
 
 /// One attachment an entry names, as Node's `agentAttachmentHandleSchema` reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,24 +74,39 @@ pub struct PreviewEntry {
 }
 
 impl PreviewEntry {
-    fn live(&self, now: f64) -> bool {
+    fn within_retention(&self, now: f64) -> bool {
         self.stored_at > now - ATTACHMENT_PREVIEW_RETENTION_MS && self.stored_at <= now
     }
 
     /// Only the exact user message that submitted these handles may show them, as Node's `permits`.
-    fn permits(&self, message: &StoredMessage) -> bool {
-        message.role == "user" && message.command_id.as_ref().is_none_or(|command| *command == self.command_id)
+    fn permits(&self, role: &str, command_id: Option<&str>) -> bool {
+        role == "user" && command_id.is_none_or(|command| command == self.command_id)
+    }
+
+    /// The bytes of the pictures among `handles`, of what is not a video, and of the videos, as Node measures a set.
+    fn totals(handles: &[PreviewHandle]) -> (u64, u64, u64) {
+        handles.iter().fold((0, 0, 0), |(pictures, beside, videos), handle| {
+            let size = handle.size_bytes;
+            if is_video_type(&handle.mime_type) {
+                (pictures, beside, videos + size)
+            } else if is_image_type(&handle.mime_type) {
+                (pictures + size, beside + size, videos)
+            } else {
+                (pictures, beside + size, videos)
+            }
+        })
     }
 
     fn picture_bytes(&self) -> u64 {
-        self.attachments.iter().filter(|handle| is_image_type(&handle.mime_type)).map(|handle| handle.size_bytes).sum()
+        Self::totals(&self.attachments).0
     }
 }
 
-/// A whole number of pixels at least 1, as Node's `agentImageSizeSchema` reads each side.
+/// An image's size as Node's strict `agentImageSizeSchema` reads it: whole pixels, 1 to 65,535 a side.
 fn image_size(value: Option<&Value>) -> bool {
     value.and_then(Value::as_object).is_some_and(|size| {
-        size.len() == 2 && ["width", "height"].iter().all(|side| size.get(*side).and_then(whole_number).is_some_and(|n| n >= 1))
+        size.len() == 2
+            && ["width", "height"].iter().all(|side| size.get(*side).and_then(whole_number).is_some_and(|n| (1..=IMAGE_SIDE_MAX).contains(&n)))
     })
 }
 
@@ -114,7 +143,9 @@ fn handle_of(value: &Value) -> Option<PreviewHandle> {
     Some(PreviewHandle { id: id.into(), name: name.into(), mime_type: mime_type.into(), size_bytes, digest: digest.into() })
 }
 
-/// An entry as Node's `entrySchema` reads one, which takes the fields it names and passes over any other.
+/// An entry as Node's `entrySchema` reads one, which takes the fields it names and passes over any other, with
+/// `agentAttachmentHandlesSchema`'s limits on its handles: at most eight, unique IDs, 20 MiB of pictures, 50 MiB of
+/// what is not a video, and 500 MiB of videos.
 fn entry_of(value: &Value) -> Option<PreviewEntry> {
     let fields = value.as_object()?;
     let list = fields.get("attachments")?.as_array()?;
@@ -123,30 +154,25 @@ fn entry_of(value: &Value) -> Option<PreviewEntry> {
     }
     let attachments: Vec<PreviewHandle> = list.iter().map(handle_of).collect::<Option<_>>()?;
     let unique = attachments.iter().enumerate().all(|(n, handle)| attachments[..n].iter().all(|earlier| earlier.id != handle.id));
-    let entry = PreviewEntry {
+    let (pictures, beside, videos) = PreviewEntry::totals(&attachments);
+    if !unique || pictures > AGENT_MAX_IMAGES_TOTAL_BYTES || beside > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES || videos > AGENT_MAX_VIDEOS_TOTAL_BYTES {
+        return None;
+    }
+    Some(PreviewEntry {
         thread_id: protocol_id(fields.get("threadId"))?,
         message_id: protocol_id(fields.get("messageId"))?,
         command_id: protocol_id(fields.get("commandId"))?,
         stored_at: fields.get("storedAt")?.as_f64().filter(|at| at.is_finite())?,
         attachments,
-    };
-    (unique && entry.picture_bytes() <= AGENT_MAX_ATTACHMENT_BYTES).then_some(entry)
+    })
 }
 
-/// One entry of the file: as it was written, and what this host reads of it, if it reads it.
+/// One entry: as it was written, what this host reads of it, if it reads it, and whether it may reach disk.
 struct Item {
     raw: Value,
     entry: Option<PreviewEntry>,
-}
-
-/// The sent messages' entries this host keeps (see the module's words).
-pub struct AttachmentPreviews {
-    path: PathBuf,
-    /// The version the file was written at, kept while it holds entries this host cannot read.
-    version: Value,
-    items: Vec<Item>,
-    /// The file could not be read at all, so it is never written over.
-    unreadable: bool,
+    /// Written to the file: every entry read from it, and a send's while history is on, as Node's `retain`.
+    retain: bool,
 }
 
 /// A send whose attachments were not recorded: refused, as one recorded otherwise already or one Node's schema would
@@ -161,12 +187,29 @@ pub enum Wanted {
     File,
 }
 
+/// The sent messages' entries this host keeps (see the module's words).
+pub struct AttachmentPreviews {
+    path: PathBuf,
+    /// Keep local history, read once at start.
+    history: bool,
+    /// The version the file was written at, kept while it holds entries this host cannot read.
+    version: Value,
+    items: Vec<Item>,
+    /// The file could not be read at all, so it is never written over.
+    unreadable: bool,
+}
+
 impl AttachmentPreviews {
-    /// The entries in `data_directory`'s `attachment-previews.json`, each read as Node's schema reads it. A file Node's
-    /// schema refuses whole is set aside as `attachment-previews.json.corrupt-<millis>` rather than written over.
-    pub fn new(data_directory: &Path) -> Self {
+    /// The entries in `data_directory`'s `attachment-previews.json`, read as Node's `load` reads them: with history on,
+    /// each entry as Node's schema reads it, then those past their seven days or over the 100 MiB of pictures let go and
+    /// the file written again; with history off, none, and the file is not touched. A file that is not an entry list
+    /// reads as empty, as Node's `peek` reads it, and the next write replaces it.
+    pub fn new(data_directory: &Path, history: bool, now: f64) -> Self {
         let path = data_directory.join(FILE);
-        let mut store = Self { path, version: json!(2), items: Vec::new(), unreadable: false };
+        let mut store = Self { path, history, version: json!(2), items: Vec::new(), unreadable: false };
+        if !history {
+            return store;
+        }
         let text = match fs::read_to_string(&store.path) {
             Ok(text) => text,
             Err(err) if err.kind() == ErrorKind::NotFound => return store,
@@ -179,30 +222,29 @@ impl AttachmentPreviews {
             let version = saved.get("version").filter(|version| matches!(version.as_f64(), Some(v) if v == 1.0 || v == 2.0))?.clone();
             Some((version, saved.get("entries")?.as_array()?.clone()))
         });
-        match saved {
-            Some((version, entries)) => {
-                store.version = version;
-                store.items = entries.into_iter().map(|raw| Item { entry: entry_of(&raw), raw }).collect();
-            }
-            None => {
-                let _ = fs::rename(&store.path, corrupt_copy_path(&store.path));
-            }
+        if let Some((version, entries)) = saved {
+            store.version = version;
+            store.items = entries.into_iter().map(|raw| Item { entry: entry_of(&raw), raw, retain: true }).collect();
         }
+        store.prune(now);
+        let _ = store.write();
         store
     }
 
-    /// The live entry of a thread's message: the first the file names, as Node keeps the first of two for one message.
+    /// The live entry of a thread's message: the first the file names, as Node keeps the first of two for one message,
+    /// within its seven days, and either written or held for this run while history is off, as Node's `live`.
     pub fn live(&self, thread_id: &str, message_id: &str, now: f64) -> Option<&PreviewEntry> {
         self.items
             .iter()
+            .filter(|item| self.history || !item.retain)
             .filter_map(|item| item.entry.as_ref())
             .find(|entry| entry.thread_id == thread_id && entry.message_id == message_id)
-            .filter(|entry| entry.live(now))
+            .filter(|entry| entry.within_retention(now))
     }
 
-    /// Records the attachments a user message was sent with, as Node's `remember`, and writes the file before it
-    /// answers. A message already recorded with the same command and handles changes nothing; one recorded otherwise is
-    /// refused. Answers whether an entry stands for the message, so its pictures carry markers.
+    /// Records the attachments a user message was sent with, as Node's `remember`: written before it answers while
+    /// history is on, and held for this run alone while it is off. A message already recorded with the same command
+    /// and handles changes nothing; one recorded otherwise is refused. Answers whether an entry stands for the message.
     pub fn remember(&mut self, thread_id: &str, message_id: &str, command_id: &str, handles: &[StagedAttachmentHandle], now: f64) -> Result<bool, NotRecorded> {
         let raw = json!({
             "threadId": thread_id,
@@ -222,9 +264,9 @@ impl AttachmentPreviews {
         if handles.is_empty() || self.unreadable {
             return Ok(false);
         }
-        self.items.push(Item { raw, entry: Some(entry) });
+        self.items.push(Item { raw, entry: Some(entry), retain: self.history });
         self.prune(now);
-        if self.write().is_err() {
+        if self.history && self.write().is_err() {
             // Only this entry goes; what it pushed out under the size limit stays out, as Node's does.
             self.items.retain(|item| item.entry.as_ref().is_none_or(|e| e.thread_id != thread_id || e.message_id != message_id));
             return Err(NotRecorded);
@@ -235,7 +277,7 @@ impl AttachmentPreviews {
     /// Lets go of entries past their seven days, and of the oldest while the pictures they name hold more than 100 MiB,
     /// as Node's `prune`. An entry this host cannot read is Node's to keep or let go.
     fn prune(&mut self, now: f64) {
-        self.items.retain(|item| item.entry.as_ref().is_none_or(|entry| entry.live(now)));
+        self.items.retain(|item| item.entry.as_ref().is_none_or(|entry| entry.within_retention(now)));
         let mut bytes: u64 = self.items.iter().filter_map(|item| item.entry.as_ref()).map(PreviewEntry::picture_bytes).sum();
         while bytes > MAX_ATTACHMENT_PREVIEW_BYTES {
             let oldest = self
@@ -250,59 +292,92 @@ impl AttachmentPreviews {
         }
     }
 
+    /// Writes the entries that may reach disk, only while history is on and the file could be read.
     fn write(&self) -> std::io::Result<()> {
-        let unread = self.items.iter().any(|item| item.entry.is_none());
-        let version = if unread { self.version.clone() } else { json!(2) };
-        let entries: Vec<&Value> = self.items.iter().map(|item| &item.raw).collect();
-        write_atomic_json(&self.path, &json!({ "version": version, "entries": entries }))
-    }
-
-    /// Writes the file as it is now, as a host's save does.
-    pub fn save(&self) -> std::io::Result<()> {
-        if self.unreadable {
+        if !self.history || self.unreadable {
             return Ok(());
         }
-        self.write()
+        let kept: Vec<&Item> = self.items.iter().filter(|item| item.retain).collect();
+        let version = if kept.iter().any(|item| item.entry.is_none()) { self.version.clone() } else { json!(2) };
+        let entries: Vec<&Value> = kept.iter().map(|item| &item.raw).collect();
+        write_atomic_json(&self.path, &json!({ "version": version, "entries": entries }))
     }
 
     /// The attachment `attachment_id` of a thread's user message, when a client may read it: a picture for `preview`, or
     /// a file of no more than 25 MiB for `attachment-file`, as Node's `preview` and `filePart` find one.
-    pub fn sent(&self, thread_id: &str, message: &StoredMessage, attachment_id: &str, wanted: Wanted, now: f64) -> Option<SentFile> {
-        let entry = self.live(thread_id, &message.id, now).filter(|entry| entry.permits(message))?;
+    pub fn sent(&self, thread_id: &str, message: &StoredMessage, attachment_id: &str, wanted: Wanted, now: f64) -> Option<SentAttachment> {
+        let entry = self.live(thread_id, &message.id, now).filter(|entry| entry.permits(&message.role, message.command_id.as_deref()))?;
         let handle = entry.attachments.iter().find(|handle| handle.id == attachment_id && is_image_type(&handle.mime_type) == (wanted == Wanted::Picture))?;
         // A video larger than a file may be stays on its computer: the phone shows a sent video and never fetches it back.
         if wanted == Wanted::File && handle.size_bytes > MAX_FILE_ATTACHMENT_BYTES as u64 {
             return None;
         }
-        Some(SentFile { name: handle.name.clone(), mime_type: handle.mime_type.clone(), size_bytes: handle.size_bytes, digest: handle.digest.clone() })
+        Some(SentAttachment { name: handle.name.clone(), mime_type: handle.mime_type.clone(), size_bytes: handle.size_bytes, digest: handle.digest.clone() })
     }
 
-    /// Places each message's markers as Node's `decorate` places them: a marker no live entry stands behind comes off, and
-    /// a user message an entry permits carries the entry's handles, without digests, each picture marked, before any other
-    /// attachment it has.
-    pub fn decorate(&self, thread_id: &str, messages: &mut [StoredMessage], now: f64) {
-        for message in messages.iter_mut() {
-            self.decorate_one(thread_id, message, now);
+    /// The live entries of one thread, found once for every message of it a client is sent.
+    fn thread_entries(&self, thread_id: &str, now: f64) -> Vec<&PreviewEntry> {
+        let mut seen: Vec<&str> = Vec::new();
+        self.items
+            .iter()
+            .filter(|item| self.history || !item.retain)
+            .filter_map(|item| item.entry.as_ref())
+            .filter(|entry| entry.thread_id == thread_id)
+            // The first entry the file names for a message is its entry, live or not, as `live` finds it.
+            .filter(|entry| {
+                let first = !seen.contains(&entry.message_id.as_str());
+                seen.push(&entry.message_id);
+                first
+            })
+            .filter(|entry| entry.within_retention(now))
+            .collect()
+    }
+
+    /// Places the markers on messages of a thread on their way to a client, as Node's `decorate` places them on an
+    /// outbound copy: any `preview` an attachment carries comes off, and a user message a live entry permits carries the
+    /// entry's handles, without digests, each picture marked, before any other attachment it has.
+    pub fn decorate<'a>(&self, thread_id: &str, messages: impl IntoIterator<Item = &'a mut StoredMessage>, now: f64) {
+        let entries = self.thread_entries(thread_id, now);
+        for message in messages {
+            place(&entries, &message.id, &message.role, message.command_id.as_deref(), &mut message.attachments);
         }
     }
 
-    /// `decorate` for one message.
-    pub fn decorate_one(&self, thread_id: &str, message: &mut StoredMessage, now: f64) {
-        let entry = self.live(thread_id, &message.id, now).filter(|entry| entry.permits(message));
-        let Some(Value::Array(attachments)) = message.attachments.as_mut() else {
-            if let Some(entry) = entry {
-                message.attachments = Some(Value::Array(entry.attachments.iter().map(marked).collect()));
-            }
+    /// `decorate` for the message a thread event carries, a `message-added` or `message-replaced`.
+    pub fn decorate_event(&self, thread_id: &str, event: &mut Value, now: f64) {
+        if !matches!(event.get("kind").and_then(Value::as_str), Some("message-added" | "message-replaced")) {
             return;
-        };
-        for attachment in attachments.iter_mut().filter_map(Value::as_object_mut) {
-            attachment.remove("preview");
         }
-        if let Some(entry) = entry {
-            let others = std::mem::take(attachments).into_iter().filter(|other| {
-                !entry.attachments.iter().any(|handle| other.get("id").and_then(Value::as_str) == Some(handle.id.as_str()))
-            });
-            *attachments = entry.attachments.iter().map(marked).chain(others).collect();
+        let Some(message) = event.get_mut("message").and_then(Value::as_object_mut) else { return };
+        let text = |key: &str| message.get(key).and_then(Value::as_str).map(str::to_string);
+        let (id, role, command) = (text("id").unwrap_or_default(), text("role").unwrap_or_default(), text("commandId"));
+        let mut attachments = message.remove("attachments");
+        place(&self.thread_entries(thread_id, now), &id, &role, command.as_deref(), &mut attachments);
+        if let Some(attachments) = attachments {
+            message.insert("attachments".into(), attachments);
+        }
+    }
+}
+
+/// Places one message's markers among a thread's live `entries` (see `AttachmentPreviews::decorate`).
+fn place(entries: &[&PreviewEntry], id: &str, role: &str, command: Option<&str>, attachments: &mut Option<Value>) {
+    let entry = entries.iter().find(|entry| entry.message_id == id).filter(|entry| entry.permits(role, command));
+    match attachments {
+        Some(Value::Array(list)) => {
+            for attachment in list.iter_mut().filter_map(Value::as_object_mut) {
+                attachment.remove("preview");
+            }
+            if let Some(entry) = entry {
+                let others = std::mem::take(list).into_iter().filter(|other| {
+                    !entry.attachments.iter().any(|handle| other.get("id").and_then(Value::as_str) == Some(handle.id.as_str()))
+                });
+                *list = entry.attachments.iter().map(marked).chain(others).collect();
+            }
+        }
+        _ => {
+            if let Some(entry) = entry {
+                *attachments = Some(Value::Array(entry.attachments.iter().map(marked).collect()));
+            }
         }
     }
 }
@@ -335,7 +410,7 @@ pub fn preview_request(value: Option<&Value>) -> Option<PreviewRequest> {
     let edge = match fields.get("edge") {
         None => false,
         Some(edge) => {
-            whole_number(edge).filter(|edge| HOST_PICTURE_EDGES.contains(edge))?;
+            picture_edge(edge)?;
             true
         }
     };
@@ -350,7 +425,7 @@ pub fn preview_request(value: Option<&Value>) -> Option<PreviewRequest> {
 /// A sent picture whose content the store keeps at `path` (`None` when it keeps none), as Node's `preview` answers it:
 /// `{ dataUrl }` of its type, once its bytes are checked against its digest and its type's signature, as Node's
 /// `agentAttachmentPreviewDataSchema` takes only a picture that is the type it says.
-pub fn read_preview(path: Option<&Path>, picture: &SentFile) -> Result<SentRead, ReadFailed> {
+pub fn read_preview(path: Option<&Path>, picture: &SentAttachment) -> Result<SentRead, ReadFailed> {
     let Some(path) = path else { return Ok(SentRead::Nothing) };
     let Some(bytes) = read_checked(path, picture.size_bytes, &picture.digest)? else {
         return Ok(SentRead::Gone);
@@ -393,11 +468,19 @@ mod tests {
         serde_json::from_str(&fs::read_to_string(dir.join(FILE)).unwrap()).unwrap()
     }
 
+    fn entry_json(message: &str, stored_at: f64, attachments: Value) -> Value {
+        json!({ "threadId": "t", "messageId": message, "commandId": "c", "storedAt": stored_at, "attachments": attachments })
+    }
+
+    fn file_handle(id: &str, size: u64) -> Value {
+        json!({ "id": id, "name": "notes.txt", "mimeType": "text/plain", "sizeBytes": size, "digest": "a".repeat(64) })
+    }
+
     /// A send is recorded as Node records one: its fields, no bytes and no dimensions, and written before it answers.
     #[test]
     fn a_send_is_recorded_as_node_records_it() {
         let dir = tempdir().unwrap();
-        let mut previews = AttachmentPreviews::new(dir.path());
+        let mut previews = AttachmentPreviews::new(dir.path(), true, NOW);
         let picture = StagedAttachmentHandle { dimensions: Some(json!({ "width": 1 })), ..handle("p", "image/png", 5) };
         assert_eq!(previews.remember("t", "m", "c", &[picture, handle("f", "text/plain", 9)], NOW), Ok(true));
         let file = saved(dir.path());
@@ -417,19 +500,37 @@ mod tests {
         assert_eq!(saved(dir.path())["entries"].as_array().unwrap().len(), 1);
     }
 
+    /// A send whose handles Node's schema would refuse records nothing, so this host never writes an entry Node drops:
+    /// more than 50 MiB beside videos, more than 500 MiB of videos, or a picture's side over 65,535 pixels.
+    #[test]
+    fn a_send_over_nodes_limits_records_nothing() {
+        let dir = tempdir().unwrap();
+        let mut previews = AttachmentPreviews::new(dir.path(), true, NOW);
+        let mib = 1024 * 1024;
+        let files: Vec<_> = (0..3).map(|n| handle(&format!("f{n}"), "text/plain", 20 * mib)).collect();
+        assert_eq!(previews.remember("t", "files", "c", &files, NOW), Err(NotRecorded), "60 MiB beside videos");
+        assert_eq!(previews.remember("t", "two", "c", &files[..2], NOW), Ok(true), "40 MiB fits");
+        let videos: Vec<_> = (0..2).map(|n| handle(&format!("v{n}"), "video/mp4", 300 * mib)).collect();
+        assert_eq!(previews.remember("t", "videos", "c", &videos, NOW), Err(NotRecorded), "600 MiB of videos");
+        let side = |n: u64| json!({ "original": { "width": n, "height": 1 }, "sent": { "width": 1, "height": 1 } });
+        let wide = |n: u64| entry_json("m", NOW, json!([{ "id": "p", "name": "p.png", "mimeType": "image/png", "sizeBytes": 5, "digest": "a".repeat(64), "dimensions": side(n) }]));
+        assert!(entry_of(&wide(65_535)).is_some());
+        assert!(entry_of(&wide(65_536)).is_none());
+    }
+
     /// Node's entries are read one by one as Node's schema reads them, and what this host cannot read is written back
     /// as Node wrote it.
     #[test]
     fn nodes_entries_are_read_one_by_one_and_kept_whole() {
         let dir = tempdir().unwrap();
-        let good = json!({ "threadId": "t", "messageId": "m", "commandId": "c", "storedAt": NOW - 1000.0, "nodeOnly": "kept",
-            "attachments": [{ "id": "f", "name": " notes.txt ", "mimeType": "text/plain", "sizeBytes": 9, "digest": "a".repeat(64),
-                "dimensions": { "original": { "width": 2, "height": 3 }, "sent": { "width": 1, "height": 1 } } }] });
+        let mut good = entry_json("m", NOW - 1000.0, json!([{ "id": "f", "name": " notes.txt ", "mimeType": "text/plain", "sizeBytes": 9, "digest": "a".repeat(64),
+            "dimensions": { "original": { "width": 2, "height": 3 }, "sent": { "width": 1, "height": 1 } } }]));
+        good["nodeOnly"] = json!("kept");
         let inline = json!({ "threadId": "t", "messageId": "old", "commandId": "c", "storedAt": NOW - 2000.0,
             "attachments": [{ "id": "i", "name": "shot.png", "mimeType": "image/png", "dataUrl": format!("data:image/png;base64,{PNG}") }] });
-        let bad_handle = json!({ "threadId": "t", "messageId": "x", "commandId": "c", "storedAt": NOW, "attachments": [{ "id": "has space" }] });
+        let bad_handle = entry_json("x", NOW, json!([{ "id": "has space" }]));
         fs::write(dir.path().join(FILE), json!({ "version": 1, "entries": [good, inline, bad_handle] }).to_string()).unwrap();
-        let mut previews = AttachmentPreviews::new(dir.path());
+        let mut previews = AttachmentPreviews::new(dir.path(), true, NOW);
         let found = previews.live("t", "m", NOW).unwrap();
         assert_eq!(found.attachments[0].name, "notes.txt", "Node's schema trims a name");
         assert!(previews.live("t", "old", NOW).is_none(), "an inline picture is Node's to stage");
@@ -447,7 +548,7 @@ mod tests {
     #[test]
     fn entries_are_kept_seven_days_and_100_mib_of_pictures() {
         let dir = tempdir().unwrap();
-        let mut previews = AttachmentPreviews::new(dir.path());
+        let mut previews = AttachmentPreviews::new(dir.path(), true, NOW);
         previews.remember("t", "m", "c", &[handle("f", "text/plain", 1)], NOW).unwrap();
         assert!(previews.live("t", "m", NOW + ATTACHMENT_PREVIEW_RETENTION_MS - 1.0).is_some());
         assert!(previews.live("t", "m", NOW + ATTACHMENT_PREVIEW_RETENTION_MS).is_none());
@@ -470,12 +571,62 @@ mod tests {
         assert_eq!(saved(dir.path())["entries"].as_array().unwrap().len(), 1);
     }
 
+    /// At start, entries past their seven days go and the file is written again, as Node's load writes it.
+    #[test]
+    fn expired_entries_go_at_start() {
+        let dir = tempdir().unwrap();
+        let fresh = entry_json("fresh", NOW - 1000.0, json!([file_handle("f", 1)]));
+        let old = entry_json("old", NOW - ATTACHMENT_PREVIEW_RETENTION_MS - 1.0, json!([file_handle("f", 1)]));
+        fs::write(dir.path().join(FILE), json!({ "version": 2, "entries": [old, fresh.clone()] }).to_string()).unwrap();
+        let previews = AttachmentPreviews::new(dir.path(), true, NOW);
+        assert!(previews.live("t", "fresh", NOW).is_some());
+        assert_eq!(saved(dir.path()), json!({ "version": 2, "entries": [fresh] }));
+    }
+
+    /// With Keep local history off, no saved entry is read or shown and nothing is written: the file stays as it was,
+    /// and a send's entry is held for this run alone, as Node holds one with `retain: false`.
+    #[test]
+    fn with_history_off_nothing_is_read_or_written() {
+        let dir = tempdir().unwrap();
+        let file = json!({ "version": 2, "entries": [entry_json("m", NOW - 1000.0, json!([file_handle("f", 1)]))] });
+        fs::write(dir.path().join(FILE), file.to_string()).unwrap();
+        let mut previews = AttachmentPreviews::new(dir.path(), false, NOW);
+        let sent = message("m", "user", Some("c"));
+        assert!(previews.live("t", "m", NOW).is_none(), "no saved entry is read");
+        assert!(previews.sent("t", &sent, "f", Wanted::File, NOW).is_none());
+        let mut shown = [sent.clone()];
+        previews.decorate("t", &mut shown, NOW);
+        assert_eq!(shown[0].attachments, None, "no saved entry is shown");
+
+        assert_eq!(previews.remember("t", "new", "c", &[handle("p", "image/png", 5)], NOW), Ok(true));
+        assert_eq!(saved(dir.path()), file, "nothing is written");
+        assert!(previews.live("t", "new", NOW).is_some(), "held for this run");
+        // A fresh start reads none of it.
+        assert!(AttachmentPreviews::new(dir.path(), false, NOW).live("t", "new", NOW).is_none());
+        assert!(AttachmentPreviews::new(dir.path(), true, NOW).live("t", "new", NOW).is_none(), "it never reached disk");
+
+        let empty = tempdir().unwrap();
+        AttachmentPreviews::new(empty.path(), false, NOW).remember("t", "m", "c", &[handle("f", "text/plain", 1)], NOW).unwrap();
+        assert!(!empty.path().join(FILE).exists());
+    }
+
+    /// Keep local history is read from the host's own `settings.json` as Node reads it: on unless it says false.
+    #[test]
+    fn history_is_read_as_node_reads_it() {
+        let dir = tempdir().unwrap();
+        assert!(history_enabled(dir.path()), "no settings: Node's default");
+        for (settings, on) in [("{\"historyEnabled\":false}", false), ("{\"historyEnabled\":true}", true), ("{\"historyEnabled\":\"no\"}", true), ("not json", true)] {
+            fs::write(dir.path().join("settings.json"), settings).unwrap();
+            assert_eq!(history_enabled(dir.path()), on, "{settings}");
+        }
+    }
+
     /// Only the exact user message that sent the handles finds them: a picture for a preview, a file of no more than
     /// 25 MiB for a file read.
     #[test]
     fn only_the_message_that_sent_them_finds_its_attachments() {
         let dir = tempdir().unwrap();
-        let mut previews = AttachmentPreviews::new(dir.path());
+        let mut previews = AttachmentPreviews::new(dir.path(), true, NOW);
         let large = handle("v", "video/mp4", MAX_FILE_ATTACHMENT_BYTES + 1);
         previews.remember("t", "m", "c", &[handle("p", "image/png", 5), handle("f", "text/plain", 9), large], NOW).unwrap();
         let sent = message("m", "user", Some("c"));
@@ -490,11 +641,12 @@ mod tests {
         assert!(previews.sent("t", &message("m", "user", None), "f", Wanted::File, NOW).is_some(), "Node's permits takes a message with no command");
     }
 
-    /// A published message carries the entry's markers, as Node's `decorate` places them, and loses any no entry backs.
+    /// A message on its way to a client carries the entry's markers, as Node's `decorate` places them, and loses any no
+    /// entry backs, a provider's among them.
     #[test]
     fn markers_are_placed_as_node_places_them() {
         let dir = tempdir().unwrap();
-        let mut previews = AttachmentPreviews::new(dir.path());
+        let mut previews = AttachmentPreviews::new(dir.path(), true, NOW);
         previews.remember("t", "m", "c", &[handle("p", "image/png", 5), handle("f", "text/plain", 9)], NOW).unwrap();
         let mut sent = message("m", "user", Some("c"));
         sent.attachments = Some(json!([{ "id": "p", "name": "p.file", "mimeType": "image/png", "sizeBytes": 5, "digest": "d" }, { "id": "o", "name": "other", "mimeType": "text/plain", "sizeBytes": 1, "preview": { "available": true } }]));
@@ -512,6 +664,14 @@ mod tests {
         let mut late = [message("m", "user", Some("c"))];
         previews.decorate("t", &mut late, NOW + ATTACHMENT_PREVIEW_RETENTION_MS);
         assert_eq!(late[0].attachments, None, "an entry past its seven days places nothing");
+
+        // A thread event's message is decorated the same way; other events are left alone.
+        let mut added = json!({ "kind": "message-added", "at": "x", "message": { "id": "m", "role": "user", "commandId": "c", "text": "", "createdAt": "x" } });
+        previews.decorate_event("t", &mut added, NOW);
+        assert_eq!(added["message"]["attachments"][0]["preview"], json!({ "available": true }));
+        let mut appended = json!({ "kind": "message-text-appended", "messageId": "m", "appendText": "!" });
+        previews.decorate_event("t", &mut appended, NOW);
+        assert!(appended.get("attachments").is_none());
     }
 
     #[test]
@@ -536,13 +696,26 @@ mod tests {
         let bytes = STANDARD.decode(PNG).unwrap();
         let path = dir.path().join("dot.png");
         fs::write(&path, &bytes).unwrap();
-        let picture = SentFile { name: "dot.png".into(), mime_type: "image/png".into(), size_bytes: bytes.len() as u64, digest: sha256_hex(&bytes) };
+        let picture = SentAttachment { name: "dot.png".into(), mime_type: "image/png".into(), size_bytes: bytes.len() as u64, digest: sha256_hex(&bytes) };
         assert_eq!(read_preview(Some(&path), &picture), Ok(SentRead::Answer(json!({ "dataUrl": format!("data:image/png;base64,{PNG}") }))));
         assert_eq!(read_preview(None, &picture), Ok(SentRead::Nothing));
-        let as_gif = SentFile { mime_type: "image/gif".into(), ..picture.clone() };
+        let as_gif = SentAttachment { mime_type: "image/gif".into(), ..picture.clone() };
         assert_eq!(read_preview(Some(&path), &as_gif), Ok(SentRead::Nothing), "a picture that is not its type");
         fs::write(&path, b"changed").unwrap();
         assert_eq!(read_preview(Some(&path), &picture), Ok(SentRead::Gone));
+    }
+
+    /// A damaged file is read as empty, as Node's `peek` reads it, and replaced: no copy of it is kept.
+    #[test]
+    fn a_damaged_file_reads_as_empty_and_is_replaced() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(FILE), "{ \"version\": 3, \"entries\": [] }").unwrap();
+        let mut previews = AttachmentPreviews::new(dir.path(), true, NOW);
+        assert_eq!(saved(dir.path()), json!({ "version": 2, "entries": [] }));
+        previews.remember("t", "m", "c", &[handle("f", "text/plain", 1)], NOW).unwrap();
+        let names: Vec<String> = fs::read_dir(dir.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, [FILE], "no copy of the damaged file");
+        assert_eq!(saved(dir.path())["entries"].as_array().unwrap().len(), 1);
     }
 
     /// What Node keeps for one sent message in the fixture below: a picture and a file, each with its bytes.
@@ -573,8 +746,8 @@ mod tests {
                 }
             }
             let staged = crate::attachment_store::StagedAttachments::new(dir);
-            let previews = AttachmentPreviews::new(dir);
             let now = crate::workspace::now_ms() as f64;
+            let previews = AttachmentPreviews::new(dir, true, now);
             let entries: Vec<PreviewEntry> = previews.items.iter().filter_map(|item| item.entry.clone()).collect();
             assert!(!entries.is_empty(), "Node's entries read");
             for entry in &entries {
@@ -588,7 +761,7 @@ mod tests {
                     assert!(matches!(read, Ok(SentRead::Answer(_))), "{} reads: {read:?}", handle.id);
                 }
             }
-            previews.save().unwrap();
+            previews.write().unwrap();
         });
     }
 
@@ -602,22 +775,10 @@ mod tests {
             let mut staged = crate::attachment_store::StagedAttachments::new(dir);
             let picture = staged.stage_image("dot.png", "image/png", PNG, None).unwrap();
             let file = staged.stage_received_bytes("notes.txt", "text/plain", RUST_SENT_NOTES).unwrap();
-            let mut previews = AttachmentPreviews::new(dir);
             let now = crate::workspace::now_ms() as f64;
+            let mut previews = AttachmentPreviews::new(dir, true, now);
             assert_eq!(previews.remember("rust-thread", "rust-message", "rust-command", &[picture, file], now), Ok(true));
         });
         assert_eq!(written["entries"][0]["attachments"].as_array().unwrap().len(), 2);
-    }
-
-    /// An unreadable file is set aside rather than written over.
-    #[test]
-    fn a_file_node_refuses_whole_is_set_aside() {
-        let dir = tempdir().unwrap();
-        fs::write(dir.path().join(FILE), "{ \"version\": 3, \"entries\": [] }").unwrap();
-        let mut previews = AttachmentPreviews::new(dir.path());
-        previews.remember("t", "m", "c", &[handle("f", "text/plain", 1)], NOW).unwrap();
-        let aside: Vec<_> = fs::read_dir(dir.path()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with("attachment-previews.json.corrupt-")).collect();
-        assert_eq!(aside.len(), 1);
-        assert_eq!(saved(dir.path())["entries"].as_array().unwrap().len(), 1);
     }
 }

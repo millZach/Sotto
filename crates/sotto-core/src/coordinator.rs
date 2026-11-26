@@ -17,7 +17,8 @@ use crate::provider::{
     AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageAck,
     SendMessageRequest, ThreadRecordSeed,
 };
-use crate::attachment_files::SentFile;
+use crate::attachment_files::SentAttachment;
+use crate::attachment_store::AGENT_MAX_ATTACHMENTS;
 use crate::attachment_previews::{AttachmentPreviews, Wanted};
 use crate::attachment_store::AttachmentError;
 use crate::file_uploads::Received;
@@ -143,8 +144,6 @@ fn turn_running(thread: &AgentThread) -> bool {
 pub(crate) const NO_THREAD: &str = "Select an available thread first.";
 /// The longest prompt Node's command schema reads (`AGENT_TEXT_MAX`), in UTF-16 code units as zod counts.
 const AGENT_TEXT_MAX: usize = 100_000;
-/// The most attachments one prompt may carry (`AGENT_MAX_ATTACHMENTS`).
-const AGENT_MAX_ATTACHMENTS: usize = 8;
 /// The most skills or file mentions one prompt may carry, as Node's reference schemas allow.
 const PROMPT_REFERENCES_MAX: usize = 32;
 /// Node's words for a thread whose provider is not connected (`assertCanAct`).
@@ -555,12 +554,12 @@ enum ActorMessage {
     ForgetUnreadable {
         digest: String,
     },
-    GetSentFile {
+    GetSentAttachment {
         thread_id: String,
         message_id: String,
         attachment_id: String,
         wanted: Wanted,
-        reply: oneshot::Sender<Option<(SentFile, Option<PathBuf>)>>,
+        reply: oneshot::Sender<Option<(SentAttachment, Option<PathBuf>)>>,
     },
     RunCommand {
         client: ClientContext,
@@ -868,16 +867,16 @@ impl CoordinatorHandle {
     /// The picture or file `attachment_id` names among the attachments user message `message_id` was sent with, in a
     /// thread this host holds, as the preview store's entry for that message names it (`AttachmentPreviews::sent`), with
     /// where the attachment store keeps its content, if it does.
-    pub async fn sent_file(
+    pub async fn sent_attachment(
         &self,
         thread_id: String,
         message_id: String,
         attachment_id: String,
         wanted: Wanted,
-    ) -> Result<Option<(SentFile, Option<PathBuf>)>, CoordinatorError> {
+    ) -> Result<Option<(SentAttachment, Option<PathBuf>)>, CoordinatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
-            .send(ActorMessage::GetSentFile { thread_id, message_id, attachment_id, wanted, reply: reply_tx })
+            .send(ActorMessage::GetSentAttachment { thread_id, message_id, attachment_id, wanted, reply: reply_tx })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
         reply_rx
             .await
@@ -1203,13 +1202,16 @@ impl CoordinatorActor {
             eprintln!("[Sotto] followups-unreadable");
         }
 
-        // What each sent message carried, in Node's `attachment-previews.json`, whose markers each message read is given.
-        let previews = AttachmentPreviews::new(&data_directory);
-        let loaded_at = crate::workspace::now_ms() as f64;
+        // What each sent message carried, in Node's `attachment-previews.json`, as Keep local history in the host's own
+        // settings lets it reach disk.
+        let previews = AttachmentPreviews::new(
+            &data_directory,
+            crate::attachment_previews::history_enabled(&data_directory),
+            crate::workspace::now_ms() as f64,
+        );
         let mut details = HashMap::new();
         for thread in &persisted.threads {
-            let mut messages = thread_store.read_messages(&thread.id).unwrap_or_default();
-            previews.decorate(&thread.id, &mut messages, loaded_at);
+            let messages = thread_store.read_messages(&thread.id).unwrap_or_default();
             let activities = thread_store
                 .read_activities(&thread.id)
                 .unwrap_or_default()
@@ -1468,8 +1470,7 @@ impl CoordinatorActor {
             }
             ActorMessage::GetDetail { thread_id, reply } => {
                 let detail = self.details.get(&thread_id).cloned().or_else(|| {
-                    let mut messages = self.thread_store.read_messages(&thread_id).unwrap_or_default();
-                    self.previews.decorate(&thread_id, &mut messages, crate::workspace::now_ms() as f64);
+                    let messages = self.thread_store.read_messages(&thread_id).unwrap_or_default();
                     let activities: Vec<Value> = self
                         .thread_store
                         .read_activities(&thread_id)
@@ -1488,7 +1489,7 @@ impl CoordinatorActor {
                             earlier_available: None,
                         })
                     }
-                });
+                }).map(|detail| self.outbound(detail));
                 let _ = reply.send(detail);
             }
             ActorMessage::GetThreadWorkspace { thread_id, reply } => {
@@ -1540,10 +1541,14 @@ impl CoordinatorActor {
                 reply,
             } => {
                 let latest = self.thread_store.latest_seq().unwrap_or(0);
-                let (events, has_more) = self
+                let (mut events, has_more) = self
                     .thread_store
                     .read_events(thread_id.as_deref(), after_seq, limit)
                     .unwrap_or_default();
+                let now = crate::workspace::now_ms() as f64;
+                for event in &mut events {
+                    self.previews.decorate_event(&event.thread_id, &mut event.event, now);
+                }
                 let _ = reply.send((events, has_more, latest));
             }
             ActorMessage::ForgetObserver { observer } => {
@@ -1570,7 +1575,7 @@ impl CoordinatorActor {
                             }
                         }
                     }
-                    out.push((tid.clone(), self.details.get(tid).cloned()));
+                    out.push((tid.clone(), self.details.get(tid).cloned().map(|detail| self.outbound(detail))));
                 }
                 let _ = reply.send(out);
             }
@@ -1599,7 +1604,7 @@ impl CoordinatorActor {
                 };
                 let _ = reply.send(res);
             }
-            ActorMessage::GetSentFile { thread_id, message_id, attachment_id, wanted, reply } => {
+            ActorMessage::GetSentAttachment { thread_id, message_id, attachment_id, wanted, reply } => {
                 // Of a thread this host holds, as Node finds a message in the state it publishes.
                 let message = if !self.threads.iter().any(|thread| thread.id == thread_id) {
                     None
@@ -1659,12 +1664,8 @@ impl CoordinatorActor {
                     .thread_store
                     .read_forward_messages(&thread_id, after_position, limit)
                     .ok();
-                let (messages, earlier_available, has_more) = match page {
-                    Some(mut p) if !p.messages.is_empty() || after_position.is_some() => {
-                        let now = crate::workspace::now_ms() as f64;
-                        for (message, _) in p.messages.iter_mut() {
-                            self.previews.decorate_one(&thread_id, message, now);
-                        }
+                let (mut messages, earlier_available, has_more) = match page {
+                    Some(p) if !p.messages.is_empty() || after_position.is_some() => {
                         (p.messages, p.earlier_available, p.has_more)
                     }
                     _ => {
@@ -1685,6 +1686,7 @@ impl CoordinatorActor {
                         (slice, start > 0, false)
                     }
                 };
+                self.previews.decorate(&thread_id, messages.iter_mut().map(|(message, _)| message), crate::workspace::now_ms() as f64);
                 let activities = self
                     .details
                     .get(&thread_id)
@@ -2880,7 +2882,7 @@ impl CoordinatorActor {
                     flushed_id
                 } else {
                     let stored_attachments = encode_stored_attachments(&attachments);
-                    let mut user_message = StoredMessage {
+                    let user_message = StoredMessage {
                         id: ack.message_id.clone(),
                         role: "user".into(),
                         text,
@@ -2892,7 +2894,7 @@ impl CoordinatorActor {
                         watcher_observed_changes: None,
                         provider_error: None,
                     };
-                    self.record_sent(&thread_id, &mut user_message, &attachments);
+                    self.record_sent(&thread_id, &user_message, &attachments);
 
                     let _ = self.thread_store.append_event(
                         &thread_id,
@@ -4396,9 +4398,9 @@ impl CoordinatorActor {
     }
 
     /// Records what a user message was sent with in Node's preview store, so its pictures show and its files open on
-    /// either host program, and gives it the markers Node's `decorate` would. A failed write costs only the markers: the
-    /// message was already sent.
-    fn record_sent(&mut self, thread_id: &str, message: &mut StoredMessage, attachments: &[StagedAttachmentEntry]) {
+    /// either host program. A failed write costs only the markers: the message was already sent. The message itself is
+    /// stored as it was sent; markers are placed only on its way to a client (`outbound`).
+    fn record_sent(&mut self, thread_id: &str, message: &StoredMessage, attachments: &[StagedAttachmentEntry]) {
         if attachments.is_empty() {
             return;
         }
@@ -4406,11 +4408,18 @@ impl CoordinatorActor {
         let command = message.command_id.clone().unwrap_or_default();
         let now = crate::workspace::now_ms() as f64;
         let _ = self.previews.remember(thread_id, &message.id, &command, &handles, now);
-        self.previews.decorate_one(thread_id, message, now);
+    }
+
+    /// A copy of a thread's detail as a client is sent it, with the preview store's markers placed as Node's `decorate`
+    /// places them on its outbound copy: any `preview` a stored or provider message carries comes off, and a sent message
+    /// a live entry permits is marked.
+    fn outbound(&self, mut detail: AgentThreadDetail) -> AgentThreadDetail {
+        self.previews.decorate(&detail.thread_id, detail.messages.iter_mut(), crate::workspace::now_ms() as f64);
+        detail
     }
 
     fn flush_in_flight_user_message(&mut self, thread_id: &str) -> Option<String> {
-        let (mut user_message, attachments) = {
+        let (user_message, attachments) = {
             let in_flight = self.in_flight_sends.get_mut(thread_id)?;
             if in_flight.flushed {
                 return Some(in_flight.message_id.clone());
@@ -4430,7 +4439,7 @@ impl CoordinatorActor {
             };
             (message, in_flight.attachments.clone())
         };
-        self.record_sent(thread_id, &mut user_message, &attachments);
+        self.record_sent(thread_id, &user_message, &attachments);
         let message_id = user_message.id.clone();
         let _ = self.thread_store.append_event(
             thread_id,
@@ -4574,11 +4583,12 @@ impl CoordinatorActor {
     }
 
     fn flush_dirty(&mut self) {
-        for tid in self.dirty_details.drain() {
+        let dirty: Vec<String> = self.dirty_details.drain().collect();
+        for tid in dirty {
             if let Some(detail) = self.details.get(&tid) {
                 let _ = self
                     .broadcast_tx
-                    .send(CoordinatorBroadcast::Detail(detail.clone()));
+                    .send(CoordinatorBroadcast::Detail(self.outbound(detail.clone())));
             }
         }
         if self.shell_dirty {
@@ -5163,23 +5173,28 @@ mod tests {
             { "id": file.id, "name": "notes.txt", "mimeType": "text/plain", "sizeBytes": notes.len() },
             { "id": image.id, "name": "dot.png", "mimeType": "image/png", "sizeBytes": image.size_bytes, "preview": { "available": true } },
         ])));
+        // Markers go only on what a client is sent: the thread store keeps the message as it was sent.
+        let stored = crate::stores::ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap().read_messages(thread_id).unwrap();
+        let kept = stored.iter().find(|message| message.id == sent).unwrap();
+        assert!(!serde_json::to_string(&kept.attachments).unwrap().contains("preview"), "no marker reaches threads.sqlite");
+        assert_eq!(kept.attachments.as_ref().and_then(Value::as_array).map(Vec::len), Some(2));
         let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("attachment-previews.json")).unwrap()).unwrap();
         assert_eq!((saved["entries"][0]["threadId"].as_str(), saved["entries"][0]["messageId"].as_str()), (Some(thread_id), Some(sent.as_str())));
 
-        let (found, path) = coord.sent_file(thread_id.into(), sent.clone(), file.id.clone(), Wanted::File).await.unwrap().unwrap();
+        let (found, path) = coord.sent_attachment(thread_id.into(), sent.clone(), file.id.clone(), Wanted::File).await.unwrap().unwrap();
         assert_eq!((found.name.as_str(), found.digest.as_str()), ("notes.txt", file.digest.as_str()));
         let crate::attachment_files::SentRead::Answer(answer) = crate::attachment_files::read_part(path.as_deref(), &found, 0).unwrap() else {
             panic!("the sent file's part reads");
         };
         use base64::Engine;
         assert_eq!(base64::engine::general_purpose::STANDARD.decode(answer["data"].as_str().unwrap()).unwrap(), notes);
-        let (picture, path) = coord.sent_file(thread_id.into(), sent.clone(), image.id.clone(), Wanted::Picture).await.unwrap().unwrap();
+        let (picture, path) = coord.sent_attachment(thread_id.into(), sent.clone(), image.id.clone(), Wanted::Picture).await.unwrap().unwrap();
         let read = crate::attachment_previews::read_preview(path.as_deref(), &picture).unwrap();
         assert!(matches!(read, crate::attachment_files::SentRead::Answer(answer) if answer["dataUrl"].as_str().unwrap().starts_with("data:image/png;base64,")));
-        assert!(coord.sent_file(thread_id.into(), sent.clone(), image.id.clone(), Wanted::File).await.unwrap().is_none(), "an image is preview's");
-        assert!(coord.sent_file(thread_id.into(), sent.clone(), "another".into(), Wanted::File).await.unwrap().is_none());
-        assert!(coord.sent_file(thread_id.into(), "another".into(), file.id.clone(), Wanted::File).await.unwrap().is_none());
-        assert!(coord.sent_file("00000000-0000-4000-8000-00000000000c".into(), sent, file.id, Wanted::File).await.unwrap().is_none());
+        assert!(coord.sent_attachment(thread_id.into(), sent.clone(), image.id.clone(), Wanted::File).await.unwrap().is_none(), "an image is preview's");
+        assert!(coord.sent_attachment(thread_id.into(), sent.clone(), "another".into(), Wanted::File).await.unwrap().is_none());
+        assert!(coord.sent_attachment(thread_id.into(), "another".into(), file.id.clone(), Wanted::File).await.unwrap().is_none());
+        assert!(coord.sent_attachment("00000000-0000-4000-8000-00000000000c".into(), sent, file.id, Wanted::File).await.unwrap().is_none());
     }
 
     #[tokio::test]

@@ -32,6 +32,15 @@ pub fn whole_number(value: &Value) -> Option<u64> {
     (number.is_finite() && number.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER as f64).contains(&number)).then_some(number as u64)
 }
 
+/// The longest edges, in pixels, a client that accepts `thread-media-edge` may ask a picture at, as Node's
+/// `HOST_PICTURE_EDGES` (`src/shared/hostProtocol.ts`).
+pub const HOST_PICTURE_EDGES: [u64; 3] = [320, 640, 1280];
+
+/// A picture's longest edge as Node's `pictureEdge` schema reads one: one of `HOST_PICTURE_EDGES`.
+pub fn picture_edge(value: &Value) -> Option<u64> {
+    whole_number(value).filter(|edge| HOST_PICTURE_EDGES.contains(edge))
+}
+
 /// A SHA-256 digest as Node's schemas write one: 64 lowercase hexadecimal digits.
 pub fn is_digest(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))

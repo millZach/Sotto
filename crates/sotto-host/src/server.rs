@@ -16,7 +16,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
 use sotto_core::attachment_files::AttachmentFileRequest;
-use sotto_core::attachment_files::SentRead;
+use sotto_core::attachment_files::{SentAttachment, SentRead};
 use sotto_core::attachment_previews::{PreviewRequest, Wanted};
 use sotto_core::attachment_store::AttachmentError;
 use sotto_core::file_uploads::{FilePart, FileUploads, PartTaken, Received, HOST_CANNOT_STAGE_VIDEOS};
@@ -198,11 +198,26 @@ impl ThreadRead for PreviewRequest {
     }
 }
 
-/// The answer to a read of a sent attachment (`preview` or `attachment-file`): the picture or the part, or null. Content
-/// found gone or no longer its digest is let go, as Node's read lets it go, and answers null; a failure to read content
-/// the store keeps is the host's.
-fn sent_read_answer(state: &HostState, id: String, digest: String, read: Result<Result<SentRead, sotto_core::attachment_store::ReadFailed>, tokio::task::JoinError>) -> HostResponseEnvelope {
-    match read {
+/// A read of a sent attachment (`preview` or `attachment-file`) once its request is checked: the attachment the
+/// message's preview entry names as `wanted`, null when it names none, then `read` on a blocking task from where the
+/// store keeps its content, answering the picture or the part, or null. Content found gone or no longer its digest is
+/// let go, as Node's read lets it go, and answers null; a failure to read content the store keeps is the host's.
+async fn read_sent_attachment(
+    state: &HostState,
+    id: String,
+    (thread_id, message_id, attachment_id): (String, String, String),
+    wanted: Wanted,
+    read: impl FnOnce(Option<&Path>, &SentAttachment) -> Result<SentRead, sotto_core::attachment_store::ReadFailed> + Send + 'static,
+) -> HostResponseEnvelope {
+    let found = match state.coordinator.sent_attachment(thread_id, message_id, attachment_id, wanted).await {
+        Ok(found) => found,
+        Err(err) => return HostResponseEnvelope::err(id, err.code, err.message),
+    };
+    let Some((attachment, path)) = found else {
+        return HostResponseEnvelope::ok(id, Value::Null);
+    };
+    let digest = attachment.digest.clone();
+    match tokio::task::spawn_blocking(move || read(path.as_deref(), &attachment)).await {
         Ok(Ok(SentRead::Answer(answer))) => HostResponseEnvelope::ok(id, answer),
         Ok(Ok(SentRead::Nothing)) => HostResponseEnvelope::ok(id, Value::Null),
         Ok(Ok(SentRead::Gone)) => {
@@ -2256,17 +2271,9 @@ async fn handle_ws_request(
             let Some(_reading) = FileRead::start(state, client_id) else {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
             };
-            let found = match state.coordinator.sent_file(request.thread_id.clone(), request.message_id.clone(), request.attachment_id.clone(), Wanted::File).await {
-                Ok(found) => found,
-                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
-            };
-            let Some((file, path)) = found else {
-                return HostResponseEnvelope::ok(req.id, Value::Null);
-            };
             let part = request.part;
-            let digest = file.digest.clone();
-            let read = tokio::task::spawn_blocking(move || sotto_core::attachment_files::read_part(path.as_deref(), &file, part)).await;
-            sent_read_answer(state, req.id, digest, read)
+            let named = (request.thread_id, request.message_id, request.attachment_id);
+            read_sent_attachment(state, req.id, named, Wanted::File, move |path, file| sotto_core::attachment_files::read_part(path, file, part)).await
         }
         // A picture a sent message carries, as Node's host answers `preview` (ADR-0031): only one that user message's
         // preview entry names and the store still keeps, as a data URL. An edge is refused, since this host offers no
@@ -2277,16 +2284,8 @@ async fn handle_ws_request(
                 Ok(request) => request,
                 Err(code) => return HostResponseEnvelope::err(req.id, code, code.default_message()),
             };
-            let found = match state.coordinator.sent_file(request.thread_id, request.message_id, request.attachment_id, Wanted::Picture).await {
-                Ok(found) => found,
-                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
-            };
-            let Some((picture, path)) = found else {
-                return HostResponseEnvelope::ok(req.id, Value::Null);
-            };
-            let digest = picture.digest.clone();
-            let read = tokio::task::spawn_blocking(move || sotto_core::attachment_previews::read_preview(path.as_deref(), &picture)).await;
-            sent_read_answer(state, req.id, digest, read)
+            let named = (request.thread_id, request.message_id, request.attachment_id);
+            read_sent_attachment(state, req.id, named, Wanted::Picture, sotto_core::attachment_previews::read_preview).await
         }
         "command" => {
             let Some(cmd) = req.fields.get("command").and_then(Value::as_object) else {
