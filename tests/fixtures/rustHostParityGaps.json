@@ -49,8 +49,6 @@
         "thread-coordination-relay",
         "thread-coordination-views",
         "thread-delete",
-        "thread-file-links",
-        "thread-linked-files",
         "thread-media",
         "thread-media-video",
         "thread-move",
@@ -95,8 +93,6 @@
         "settled-threads-on-request",
         "step-window",
         "thread-delete",
-        "thread-file-links",
-        "thread-linked-files",
         "thread-media",
         "thread-media-video",
         "thread-starts",
@@ -391,14 +387,6 @@
       "rust": "invalid_request"
     },
     "thread-delegations": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "thread-file-link": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "thread-linked-file": {
       "node": "ok",
       "rust": "invalid_request"
     },

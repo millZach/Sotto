@@ -70,6 +70,8 @@ pub fn advertised_features() -> Vec<String> {
         "git-changed-files".into(),
         "host-folders".into(),
         "thread-files".into(),
+        "thread-file-links".into(),
+        "thread-linked-files".into(),
         "thread-changes".into(),
         "thread-snooze".into(),
         "failure-seen".into(),
@@ -2286,6 +2288,66 @@ async fn handle_ws_request(
             .await
             .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not preview file."));
             HostResponseEnvelope::ok(req.id, res)
+        }
+        // A Markdown file a thread's message links to, for the side panel (ADR-0120, November 3 amendment), and where a
+        // linked file is, its preview or one 4 MiB part of it for a download (November 12 amendment), as Node's host
+        // answers them. As Node: the request's shape first, then a thread the client may not see, then whether it was
+        // offered the read. Node reads one of these at a time per socket; this host answers a socket's requests in turn,
+        // so it never has two.
+        "thread-file-link" | "thread-linked-file" => {
+            let link = req.op == "thread-file-link";
+            let request = if req.fields.keys().any(|key| key != "request") {
+                None
+            } else if link {
+                sotto_core::linked_files::file_link_request(req.fields.get("request"))
+            } else {
+                sotto_core::linked_files::linked_file_request(req.fields.get("request"))
+            };
+            let Some(request) = request else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            if hides_thread(state, wire, &request.thread_id).await {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            // Offered, as Node's `offers` reads it: the host offers this client the feature, whether or not it accepted it.
+            let recorded = state.desktops.lock().unwrap().has(client_id);
+            let feature = if link { "thread-file-links" } else { "thread-linked-files" };
+            if !features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded)).iter().any(|offered| offered == feature) {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            let Ok(workspace) = state.coordinator.thread_workspace(request.thread_id.clone()).await else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                );
+            };
+            let read = tokio::task::spawn_blocking(move || match &request.want {
+                Some(want) => sotto_core::linked_files::thread_linked_file(workspace.as_ref(), &request.path, want),
+                None => sotto_core::linked_files::thread_file_link(workspace.as_ref(), &request.path),
+            })
+            .await;
+            match read {
+                Ok(answer) => HostResponseEnvelope::ok(req.id, answer),
+                // A read that failed outright is the host's failure to read, as Node's `toolRead` answers it.
+                Err(_) => HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Unavailable,
+                    HostErrorCode::Unavailable.default_message(),
+                ),
+            }
         }
         "thread-changes" => {
             let Some(r) = req.fields.get("request").and_then(Value::as_object) else {
