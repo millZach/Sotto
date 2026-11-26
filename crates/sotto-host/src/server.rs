@@ -2488,7 +2488,7 @@ async fn handle_ws_request(
         "check-answer" => {
             // Whether a question this client holds an answer for still waits as it was asked, as Node's socket server
             // answers it: the request's shape, then the feature, then the client may answer, then the coordinator's own
-            // check, then the client may still answer.
+            // check, then the session still holds and the client may still answer.
             let offered = offered_features(state, mode, client_id);
             let target = match checked_answer_check(&req.fields, |feature| offered.iter().any(|f| f == feature), may_answer) {
                 Ok(target) => target,
@@ -2498,12 +2498,18 @@ async fn handle_ws_request(
             if let Err(err) = state.coordinator.check_request_answer(client, target).await {
                 return HostResponseEnvelope::err(req.id, err.code, err.message);
             }
+            // The provider's read may have outlasted this connection's session or the client's leave to answer.
+            if state.pairing.lock().unwrap().verify_session(upgrade_session).as_deref() != Some(client_id) {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Unauthenticated, HostErrorCode::Unauthenticated.default_message());
+            }
             let may_answer = state.memory.lock().unwrap().may_grant_remote(client_id).unwrap_or(false);
             if !may_answer {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
             }
+            // Node answers with its plain `shell(peer)`, which moves neither the thread records nor the catalog a later
+            // push or command answer is measured from.
             match state.coordinator.shell(may_answer).await {
-                Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_reply_shell(raw_shell)),
+                Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_plain_shell(raw_shell)),
                 Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
             }
         }
@@ -3706,6 +3712,119 @@ mod tests {
 
     fn answer_target() -> Value {
         json!({ "threadId": "t", "providerId": "codex", "requestId": "r", "questionsDigest": "a".repeat(64) })
+    }
+
+    const ASKING_THREAD: &str = "00000000-0000-4000-8000-00000000000a";
+
+    /// A host on a mock Codex, one paired client that may answer and its session, and a thread whose provider asks one
+    /// question, once the host has published it.
+    struct AskingHost {
+        server: RunningServer,
+        mock: Arc<sotto_core::MockProviderAdapter>,
+        client_id: String,
+        session: String,
+        question: Value,
+        _dir: tempfile::TempDir,
+    }
+
+    /// One connection's own state, as its socket holds it.
+    struct Connection {
+        wire: ClientWireState,
+        watcher_peer: WatcherPeerState,
+        out_tx: mpsc::UnboundedSender<OutboundFrame>,
+        out_rx: mpsc::UnboundedReceiver<OutboundFrame>,
+    }
+
+    impl AskingHost {
+        async fn start() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let mock = Arc::new(sotto_core::MockProviderAdapter::new("codex"));
+            let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+            providers.insert("codex".into(), mock.clone());
+            let server = RunningServer::start(ServerConfig {
+                data_directory: dir.path().to_path_buf(),
+                host_id: "00000000-0000-4000-8000-000000000001".into(),
+                port: 0,
+                sotto_version: "0.1.0".into(),
+                started_by: None,
+                credentials: HostCredentials::open(dir.path(), None).unwrap(),
+                providers,
+                tailscale: None,
+                phone_retry_interval: None,
+            })
+            .await
+            .unwrap();
+            let state = &server.state;
+            let code = state.pairing.lock().unwrap().issue_pairing_code().code;
+            let client_id = state.pairing.lock().unwrap().redeem_pairing_code(&code, "Test Desktop").unwrap().client_id;
+            let session = state.pairing.lock().unwrap().issue_session(&client_id).unwrap().session;
+            state.memory.lock().unwrap().set_remote_answers(&client_id, true, "test").unwrap();
+            let client = ClientContext { client_id: client_id.clone(), user: "Test Desktop".into(), may_answer: true };
+            let run = |command: Value| state.coordinator.run_command(client.clone(), command.as_object().unwrap().clone());
+            let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "P", "path": dir.path().to_string_lossy(), "useExisting": true })).await.unwrap();
+            let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+            run(json!({ "type": "create-thread", "threadId": ASKING_THREAD, "projectId": project_id, "title": "T", "titleSource": "user",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await.unwrap();
+            run(json!({ "type": "manual-send", "threadId": ASKING_THREAD, "text": "Go" })).await.unwrap();
+            let question = json!({ "id": "req-1", "kind": "question", "text": "Which colour?", "options": [{ "id": "blue", "label": "Blue" }] });
+            let mut published = state.coordinator.subscribe();
+            mock.emit_request(ASKING_THREAD, question.clone());
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    if let Ok(CoordinatorBroadcast::Shell(shell)) = published.recv().await {
+                        if shell["host"]["threads"][0]["requests"].as_array().is_some_and(|requests| requests.contains(&question)) {
+                            return;
+                        }
+                    }
+                }
+            })
+            .await
+            .expect("the question was never published");
+            Self { server, mock, client_id, session, question, _dir: dir }
+        }
+
+        /// A connection whose hello accepted `accepts`.
+        async fn connect(&self, accepts: &[&str]) -> Connection {
+            let (out_tx, out_rx) = mpsc::unbounded_channel();
+            let mut connection = Connection { wire: ClientWireState::default(), watcher_peer: WatcherPeerState::default(), out_tx, out_rx };
+            let hello = self.ask(&mut connection, json!({ "v": 1, "id": "hello", "op": "hello", "accepts": accepts })).await;
+            assert_eq!(hello["ok"], true, "{hello}");
+            connection
+        }
+
+        /// One request on `connection`, answered as its socket answers it.
+        async fn ask(&self, connection: &mut Connection, request: Value) -> Value {
+            let Connection { wire, watcher_peer, out_tx, .. } = connection;
+            let reply = handle_ws_request(&self.server.state, &ListenerMode::Admin, &self.client_id, "Test Desktop", &self.session, wire, watcher_peer, out_tx, &request.to_string()).await;
+            serde_json::to_value(reply).unwrap()
+        }
+
+        fn target(&self) -> Value {
+            let questions_digest = sotto_core::answered_requests::request_questions_digest(&self.question).unwrap();
+            json!({ "threadId": ASKING_THREAD, "providerId": "codex", "requestId": "req-1", "questionsDigest": questions_digest })
+        }
+    }
+
+    /// The session is checked again once the coordinator's answer check returns, as Node checks `authenticated(peer)`:
+    /// a client revoked while its provider read the thread is unauthenticated, before whether it may answer.
+    #[tokio::test]
+    async fn an_answer_check_that_outlives_its_session_is_unauthenticated() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&[]).await;
+        let check = json!({ "v": 1, "id": "check-1", "op": "check-answer", "answer": host.target() });
+        let checked = host.ask(&mut connection, check.clone()).await;
+        assert_eq!(checked["ok"], true, "the question still waits: {checked}");
+
+        let sotto_core::provider::HeldThreadRead { started, finish } = host.mock.hold_next_thread_read();
+        let revoke = async {
+            started.await.unwrap();
+            assert!(host.server.state.pairing.lock().unwrap().revoke(&host.client_id).unwrap());
+            finish.send(Ok(None)).unwrap();
+        };
+        let (refused, ()) = tokio::join!(host.ask(&mut connection, check), revoke);
+        assert_eq!(refused["error"]["code"], "unauthenticated", "{refused}");
+        assert_eq!(refused["error"]["message"], HostErrorCode::Unauthenticated.default_message());
+        host.server.close().await;
     }
 
     /// A `receipt` names a command ID and, if it likes, one exact answer, and nothing else, as Node's strict schema reads it.
