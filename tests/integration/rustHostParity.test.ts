@@ -9,8 +9,8 @@
 //
 // An answer's kind is compared, not its contents: each command's own behaviour is its handler's own test. What only the
 // socket server can show, across clients, is compared whole: which threads count as shown, which sees a failure (ADR-0092),
-// the prompts the message scrubber reads from each host's thread store (ADR-0109), and who may read an activity record
-// whole (ADR-0025).
+// the prompts the message scrubber reads from each host's thread store (ADR-0109), who may read an activity record
+// whole (ADR-0025), and how a thread's follow-up queue waits after a failed turn and goes once resumed.
 // Both clients use the loopback listener, where Node counts every client as a desktop; a phone over a tailnet listener is
 // not compared here.
 // Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a `cargo build`).
@@ -419,6 +419,61 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
     }
     const [onNode, onRust] = await Promise.all([reads(node), reads(rust)])
     expect(onNode).toEqual({ whole: true, missing: true, summaries: 'invalid_request' })
+    expect(onRust).toEqual(onNode)
+  }, 120_000)
+
+  /**
+   * A thread's follow-up queue on both hosts, as Node's `followups.ts` keeps it: prompts queued after a failed turn wait,
+   * the head paused for the user's review; an order and an edit are kept; a follow-up no longer queued is refused; and
+   * Resume queue sends the queue in its order, one turn after another.
+   */
+  it('queues, orders and resumes follow-ups as Node does', async () => {
+    type Queued = { id: string; threadId: string; text: string; status: string; error?: string }
+    const steps = async (under: HostUnderTest): Promise<Record<string, unknown>> => {
+      const { threadId } = await probeIds(under, randomUUID(), 'the probes')
+      await scriptTheFake(under, { fail: true })
+      await failATurn(under, threadId, undefined)
+      const command = (body: Record<string, unknown>) => request(under.clients.desktop, { op: 'command', command: { threadId, ...body } })
+      const queue = async (): Promise<Queued[]> => (((await request(under.clients.desktop, { op: 'shell' }))?.result as { followups?: Queued[] } | undefined)
+        ?.followups ?? []).filter(item => item.threadId === threadId)
+      const settled = async (what: string, ready: (items: Queued[]) => boolean): Promise<Queued[]> => {
+        const deadline = Date.now() + ANSWER_DEADLINE_MS
+        for (;;) {
+          const items = await queue()
+          if (ready(items)) return items
+          expect(Date.now() < deadline, `${under.label} never ${what}: ${JSON.stringify(items)}`).toBe(true)
+          await new Promise(resolveWait => setTimeout(resolveWait, 100))
+        }
+      }
+      for (const text of ['First queued', 'Second queued']) await command({ type: 'queue-followup', draftId: randomUUID(), text })
+      const held = await settled('paused its queue', items => items.length === 2 && items[0]!.status === 'paused')
+      await command({ type: 'reorder-followups', itemIds: [held[1]!.id, held[0]!.id] })
+      const ordered = await settled('paused its new head', items => items[0]?.text === 'Second queued' && items.every(item => item.status === 'paused'))
+      await command({ type: 'edit-followup', itemId: held[0]!.id, text: 'First, edited' })
+      const gone = ((await command({ type: 'remove-followup', itemId: randomUUID() }))?.result as { error?: string } | undefined)?.error
+      await scriptTheFake(under, { fail: false, reply: 'Answered' })
+      // A host's detail holds a thread's messages while a client observes it.
+      await request(under.clients.desktop, { op: 'observe', threadIds: [threadId] })
+      await command({ type: 'resume-followups' })
+      await settled('sent its queue', items => items.length === 0)
+      type Detail = { messages?: { role: string; text: string }[] }
+      const deadline = Date.now() + ANSWER_DEADLINE_MS
+      let detail: Detail | undefined
+      for (;;) {
+        detail = (await request(under.clients.desktop, { op: 'detail', threadId }))?.result as Detail | undefined
+        if ((detail?.messages ?? []).filter(message => message.role === 'assistant').length >= 2
+          && (await shownThread(under.clients.desktop, threadId))?.status !== 'running') break
+        expect(Date.now() < deadline, `${under.label} never answered its queue`).toBe(true)
+        await new Promise(resolveWait => setTimeout(resolveWait, 100))
+      }
+      return { held: held.map(item => [item.text, item.status, item.error]), ordered: ordered.map(item => [item.text, item.status]), gone,
+        sent: (detail?.messages ?? []).filter(message => message.role === 'user').map(message => message.text) }
+    }
+    const [onNode, onRust] = await Promise.all([steps(node), steps(rust)])
+    const review = 'The last turn did not confirm completion. Review the thread and resume its queue when ready.'
+    expect(onNode).toEqual({ held: [['First queued', 'paused', review], ['Second queued', 'queued', undefined]],
+      ordered: [['Second queued', 'paused'], ['First queued', 'paused']], gone: 'That follow-up is no longer queued.',
+      sent: ['Fail this turn', 'Second queued', 'First, edited'] })
     expect(onRust).toEqual(onNode)
   }, 120_000)
 

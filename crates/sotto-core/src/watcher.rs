@@ -58,7 +58,9 @@ pub const LIMIT_RESTART_HORIZON_MS: i64 = 8 * 24 * 60 * 60 * 1_000;
 pub const LIMIT_RESTARTS_IN_A_ROW_MAX: u32 = 3;
 pub const LIMIT_RESTARTS_RECORDS_MAX: usize = 500;
 pub const FOLLOWUPS_PER_THREAD_MAX: usize = 100;
-pub const FOLLOWUPS_RECEIPTS_MAX: usize = 400;
+/// The receipts `followups.json` keeps, the newest, as Node's `MAX_DELIVERED_DRAFTS`: its schema reads no more than
+/// twice as many, so a file holding more would be set aside whole by Node.
+pub const FOLLOWUPS_RECEIPTS_MAX: usize = 128;
 pub const WATCHER_UNWATCHED_REQUEST_ID: &str = "00000000-0000-0000-0000-000000000000";
 pub const WATCHER_SILENT_REPLY: &str = "NO_REPLY";
 pub const SETTLE_IT: &str = "Settle it";
@@ -2351,6 +2353,7 @@ fn strip_retired_news(mut items: Vec<QueuedFollowup>) -> Vec<QueuedFollowup> {
         let Some(news) = item.news.as_mut() else {
             return true;
         };
+        let held = news.len();
         news.retain_mut(|part| {
             let Some(obj) = part.as_object_mut() else {
                 return true;
@@ -2364,37 +2367,41 @@ fn strip_retired_news(mut items: Vec<QueuedFollowup>) -> Vec<QueuedFollowup> {
             let Some(events) = obj.get_mut("events").and_then(Value::as_array_mut) else {
                 return true;
             };
+            let before = events.len();
             events.retain(|ev| {
                 ev.get("kind")
                     .and_then(Value::as_str)
                     .is_none_or(|k| !RETIRED_WATCHER_KINDS.contains(&k))
             });
+            // As Node's `withoutRetiredNews`: a part goes only when what was retired was all it held.
+            if events.len() == before {
+                return true;
+            }
             let has_events = !events.is_empty();
             let omitted = obj.get("omitted").and_then(Value::as_u64).unwrap_or(0);
             has_events || omitted > 0
         });
-        !news.is_empty()
+        // An item goes only when its news was all retired, as Node's `withoutRetiredNews`.
+        news.len() == held || !news.is_empty()
     });
     items
 }
 
-fn is_waiting_wake_up(item: &QueuedFollowup) -> bool {
+pub(crate) fn is_waiting_wake_up(item: &QueuedFollowup) -> bool {
     item.wake_up == Some(true) && matches!(item.status.as_str(), "queued" | "paused" | "failed")
 }
 
-fn is_any_restart_news(part: &Value) -> bool {
-    matches!(
-        part.get("source").and_then(Value::as_str),
-        Some("restart-resume" | "limit-restart")
-    )
+/// News of either restart, as Node's `isAnyRestartNews`: Sotto closing stopped the turn (`restart`), or a usage limit did.
+pub(crate) fn is_any_restart_news(part: &Value) -> bool {
+    matches!(part.get("source").and_then(Value::as_str), Some("restart" | "limit-restart"))
 }
 
 #[derive(Debug)]
 pub struct FollowupStore {
     directory: PathBuf,
     history_enabled: bool,
-    items: Vec<QueuedFollowup>,
-    receipts: Vec<FollowupReceipt>,
+    pub(crate) items: Vec<QueuedFollowup>,
+    pub(crate) receipts: Vec<FollowupReceipt>,
     /// Top-level fields this build does not know, written back as they were.
     extra: Map<String, Value>,
 }
@@ -2456,7 +2463,7 @@ impl FollowupStore {
         Ok(())
     }
 
-    fn save(&self, watcher_thread_ids: &HashSet<String>) -> Result<(), String> {
+    pub(crate) fn save(&self, watcher_thread_ids: &HashSet<String>) -> Result<(), String> {
         let persisted_items: Vec<QueuedFollowup> = if self.history_enabled {
             self.items.clone()
         } else {
@@ -2597,11 +2604,31 @@ impl FollowupStore {
         Ok(item)
     }
 
+    /// Reads the file again as it stands, before Watcher changes it: the engine's coordinator keeps the user's queue in
+    /// the same file, so a change made to the copy read at start would write over every follow-up queued since.
+    fn refresh(&mut self) {
+        match fs::read_to_string(self.path()) {
+            Ok(text) => {
+                if let Ok(parsed) = serde_json::from_str::<FollowupFile>(&text) {
+                    self.items = strip_retired_news(parsed.items);
+                    self.receipts = parsed.receipts;
+                    self.extra = parsed.extra;
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                self.items.clear();
+                self.receipts.clear();
+            }
+            Err(_) => {}
+        }
+    }
+
     pub fn cancel_watcher(
         &mut self,
         operation_ids: &HashSet<String>,
         watcher_thread_ids: &HashSet<String>,
     ) -> Result<Vec<String>, String> {
+        self.refresh();
         let mut failed = Vec::new();
         let before = self.items.len();
         self.items.retain(|item| {
@@ -2629,6 +2656,7 @@ impl FollowupStore {
         enabled: bool,
         watcher_thread_ids: &HashSet<String>,
     ) -> Result<(), String> {
+        self.refresh();
         self.history_enabled = enabled;
         self.save(watcher_thread_ids)
     }
