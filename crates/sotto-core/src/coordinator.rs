@@ -6217,7 +6217,7 @@ mod tests {
         let delegated = threads.iter().find(|t| t["id"] == child).unwrap();
         assert!(delegated.get("delegatedBy").is_none(), "the thread it delegated to loses only the link");
         assert!(!shell["threadDrafts"].as_array().unwrap().iter().any(|d| d["threadId"] == thread_id.as_str()));
-        assert_eq!(codex.forgotten(), [thread_id.clone()], "the thread's own provider forgets its alias");
+        assert_eq!(codex.forgotten(), std::slice::from_ref(&thread_id), "the thread's own provider forgets its alias");
         let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
         assert_eq!(shell["notice"], "Deleted “Organized”.", "one already gone changes nothing");
         assert_eq!(codex.forgotten().len(), 1);
