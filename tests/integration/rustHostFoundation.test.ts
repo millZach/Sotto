@@ -348,7 +348,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
       type Name = 'desktop' | 'iphone' | 'plain'
       // How each client folds the answer to a request it is waiting on, by request ID, and what each answer folded to.
       const folding: Record<Name, Map<string, (fold: ClientFold, result: unknown) => unknown>> = { desktop: new Map(), iphone: new Map(), plain: new Map() }
-      const folded = new Map<string, unknown>()
+      const folded: Record<Name, Map<string, unknown>> = { desktop: new Map(), iphone: new Map(), plain: new Map() }
       // Every frame is read in the order it arrived, as the referee's runner reads them (`readArrivals`): an answer is
       // folded before a push behind it, even when both arrive in one read, so the push is measured from the answer.
       const drain = (name: Name, sock: typeof desktopSock): void => {
@@ -363,7 +363,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
           const fold = id === undefined ? undefined : folding[name].get(id)
           if (id === undefined || !fold) continue
           folding[name].delete(id)
-          if (item.frame.ok === true) folded.set(id, fold(folds[name], item.frame.result))
+          if (item.frame.ok === true) folded[name].set(id, fold(folds[name], item.frame.result))
         }
       }
       const hello = (fold: ClientFold, result: unknown): unknown => fold.hello(result)
@@ -373,7 +373,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
       plainSock.onArrival(() => drain('plain', plainSock))
 
       const rpc = async (
-        name: 'desktop' | 'iphone' | 'plain',
+        name: Name,
         sock: typeof desktopSock,
         session: string,
         id: string,
@@ -383,7 +383,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         if (fold) folding[name].set(id, fold)
         sock.send({ v: 1, id, session, ...body })
         return await new Promise((resolvePromise, rejectPromise) => {
-          const timer = setTimeout(() => rejectPromise(new Error(`Timed out waiting for ${id}`)), 5_000)
+          const timer = setTimeout(() => { folding[name].delete(id); off(); rejectPromise(new Error(`Timed out waiting for ${id}`)) }, 5_000)
           const check = (): void => {
             drain(name, sock)
             const hit = sock.crossings.find(c => c.dir === 'in' && c.frame.id === id)
@@ -411,7 +411,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
           command: { type: 'create-project', provider: 'codex', title: 'Referee project', path: foldDir, useExisting: true },
         }, commandAnswer)
         expect(projReply.ok).toBe(true)
-        const projShell = folded.get('d2') as { host: { projects: Array<{ id: string }> } }
+        const projShell = folded.desktop.get('d2') as { host: { projects: Array<{ id: string }> } }
         const projectId = projShell.host.projects[0]!.id
 
         const threadId = '00000000-0000-4000-8000-00000000000a'
@@ -458,10 +458,19 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         }, commandAnswer)
         expect(stopReply.ok).toBe(true)
 
-        await new Promise(r => setTimeout(r, 150))
-        drain('desktop', desktopSock)
-        drain('iphone', iphoneSock)
-        drain('plain', plainSock)
+        // Waits until every client has been pushed the prompt, however long its coalesced push takes on a busy runner.
+        const socks = { desktop: desktopSock, iphone: iphoneSock, plain: plainSock }
+        const holdsThePrompt = (name: Name): boolean =>
+          (folds[name].held.details[threadId]?.messages as Array<{ text: string }> | undefined)?.[0]?.text === 'Referee prompt one'
+        const deadline = Date.now() + 10_000
+        for (const name of ['desktop', 'iphone', 'plain'] as const) {
+          drain(name, socks[name])
+          while (!holdsThePrompt(name)) {
+            expect(Date.now() < deadline, `${name} was never pushed the prompt`).toBe(true)
+            await new Promise(r => setTimeout(r, 25))
+            drain(name, socks[name])
+          }
+        }
 
         // 5. Unknown op and disallowed extra command field return invalid_request.
         const badOp = await rpc('desktop', desktopSock, desktopPair.session, 'd7', { op: 'referee-no-such-operation' })
