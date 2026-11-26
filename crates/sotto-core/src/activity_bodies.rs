@@ -96,11 +96,17 @@ fn string_literals(value: &Value, into: &mut Vec<usize>) {
     }
 }
 
+/// Tool input kept as JSON within the limit, and whether a string in it was shortened rather than only whitespace taken
+/// out, as Node's `cutJson` answers.
+struct CutJson {
+    text: String,
+    shortened: bool,
+}
+
 /// Text that is a JSON object or array, such as Claude's tool input, kept valid JSON within the limit: each long string
 /// value in it is shortened, so the short ones (a file path, a pattern) stay whole for the row's preview. `None` when the
-/// text is not JSON, or when even shortened strings leave it over the limit. The second value says whether a string was
-/// shortened rather than only whitespace taken out.
-fn cut_json(text: &str, limit: usize) -> Option<(String, bool)> {
+/// text is not JSON, or when even shortened strings leave it over the limit.
+fn cut_json(text: &str, limit: usize) -> Option<CutJson> {
     let trimmed = text.trim();
     if !(trimmed.starts_with('{') && trimmed.ends_with('}') || trimmed.starts_with('[') && trimmed.ends_with(']')) {
         return None;
@@ -112,7 +118,7 @@ fn cut_json(text: &str, limit: usize) -> Option<(String, bool)> {
     let compact = serde_json::to_string(&value).ok()?;
     // Only whitespace came out: nothing is missing, so nothing is cut.
     if compact.len() <= limit {
-        return Some((compact, false));
+        return Some(CutJson { text: compact, shortened: false });
     }
     let mut literals = Vec::new();
     string_literals(&value, &mut literals);
@@ -138,7 +144,7 @@ fn cut_json(text: &str, limit: usize) -> Option<(String, bool)> {
     while cap >= 2 {
         let shortened = serde_json::to_string(&shorten_strings(&value, cap)).ok()?;
         if shortened.len() <= limit {
-            return Some((shortened, true));
+            return Some(CutJson { text: shortened, shortened: true });
         }
         cap = (cap - 1).min(cap * 9 / 10);
     }
@@ -178,8 +184,8 @@ pub fn cut_activity_bodies(record: &Value, limit: usize) -> Value {
     }
     if let Some(text) = fields.get("text").and_then(Value::as_str).filter(|text| text.len() > limit).map(ToString::to_string) {
         let json = if reads_as_input(fields) { cut_json(&text, limit) } else { None };
-        let shortened = json.as_ref().is_none_or(|(_, shortened)| *shortened);
-        let kept = json.map_or_else(|| cut_text(&text, Keep::Start, limit).to_string(), |(kept, _)| kept);
+        let shortened = json.as_ref().is_none_or(|json| json.shortened);
+        let kept = json.map_or_else(|| cut_text(&text, Keep::Start, limit).to_string(), |json| json.text);
         fields.insert("text".into(), Value::String(kept));
         if shortened {
             cut.insert("text".into(), json!(text.len()));

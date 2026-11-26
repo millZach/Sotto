@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde_json::{json, Map, Value};
 
-use sotto_core::activity_bodies::{cut_activity_bodies, ACTIVITY_BODY_LIMIT};
+use sotto_core::activity_bodies::{cut_activity_bodies, strip_agent_steps, ACTIVITY_BODY_LIMIT};
 use sotto_core::{
     diff_thread_detail, summarize_activity_for_wire, AgentThreadDetail, Observer, HOST_PROTOCOL_VERSION,
 };
@@ -302,28 +302,22 @@ impl ClientWireState {
     }
 
     /// Formats a thread detail for this client: summaries when it accepts `activity-summaries`, records with cut bodies
-    /// when it accepts `activity-bodies`, and the records whole otherwise.
+    /// when it accepts `activity-bodies`, and the records whole otherwise. No record carries its agents' steps, which
+    /// only the host's own sub-agent store reads, as Node's socket server sends them.
     pub fn format_detail(&self, detail: &AgentThreadDetail) -> AgentThreadDetail {
-        if self.takes_cut_bodies() {
-            return AgentThreadDetail {
-                activities: detail
-                    .activities
-                    .iter()
-                    .map(|record| cut_activity_bodies(record, ACTIVITY_BODY_LIMIT))
-                    .collect(),
-                ..detail.clone()
-            };
-        }
-        if !self.has("activity-summaries") {
-            return detail.clone();
-        }
+        let record_for_client: fn(&Value) -> Value = if self.takes_cut_bodies() {
+            |record| cut_activity_bodies(record, ACTIVITY_BODY_LIMIT)
+        } else if self.has("activity-summaries") {
+            summarize_activity_for_wire
+        } else {
+            strip_agent_steps
+        };
         AgentThreadDetail {
-            activities: detail
-                .activities
-                .iter()
-                .map(summarize_activity_for_wire)
-                .collect(),
-            ..detail.clone()
+            thread_id: detail.thread_id.clone(),
+            revision: detail.revision,
+            messages: detail.messages.clone(),
+            activities: detail.activities.iter().map(record_for_client).collect(),
+            earlier_available: detail.earlier_available,
         }
     }
 
@@ -557,5 +551,33 @@ mod tests {
         let summaries = client(&["activity-bodies", "activity-summaries"]).format_detail(&whole);
         assert!(summaries.activities[0].get("output").is_none() && summaries.activities[0].get("cut").is_none());
         assert_eq!(client(&[]).format_detail(&whole).activities, whole.activities);
+    }
+
+    /// No client is sent an agent's steps, whatever its hello accepts, as Node's socket server strips them.
+    #[test]
+    fn no_client_is_sent_agents_steps() {
+        let mut with_steps = detail();
+        with_steps.activities = vec![json!({ "id": "g", "kind": "agents", "agents": [{ "id": "x", "steps": [{ "id": "s" }] }] })];
+        for accepts in [&[][..], &["activity-bodies"][..]] {
+            assert!(client(accepts).format_detail(&with_steps).activities[0]["agents"][0].get("steps").is_none(), "{accepts:?}");
+        }
+    }
+
+    /// A body that grows reaches a desktop that takes cut bodies as a delta carrying the record cut again.
+    #[test]
+    fn a_growing_body_is_sent_cut_in_its_delta() {
+        let mut wire = client(&["activity-bodies", "detail-delta"]);
+        wire.set_observed(&["t".to_string()]);
+        let mut grown = detail();
+        let first = wire.encode_detail_update_push(&grown).unwrap();
+        assert_eq!(first["event"], "detail");
+        let output: String = (0..800).map(|line| format!("out {line:04}\n")).collect();
+        grown.revision = 2;
+        grown.activities[0]["output"] = json!(output);
+        let delta = wire.encode_detail_update_push(&grown).unwrap();
+        assert_eq!(delta["event"], "detail-delta");
+        let record = &delta["delta"]["activityDeltas"][0]["record"];
+        assert_eq!(record["cut"]["output"], output.len());
+        assert!(record["output"].as_str().unwrap().len() <= ACTIVITY_BODY_LIMIT);
     }
 }

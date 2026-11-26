@@ -110,6 +110,36 @@ fn protocol_id(value: Option<&Value>) -> Option<String> {
         .map(ToString::to_string)
 }
 
+/// The sentence an answer too large to send is refused with, by what was asked, as Node's `TOO_LARGE`
+/// (`src/host/socketServer.ts`).
+fn too_large_words(op: &str) -> &'static str {
+    match op {
+        "detail" => HostErrorCode::TooLarge.default_message(),
+        "activity-body" => "This activity is too large to send to this device. Nothing on the host was lost, and the row keeps the part it was sent.",
+        "preview" | "thread-media" | "thread-media-part" | "plugin-meshy-model-bytes" | "plugin-elevenlabs-sound-bytes" | "attachment-content" | "attachment-file" => {
+            "This attachment is too large to preview on this device. Nothing on the host was lost, and the attachment is unchanged there."
+        }
+        "thread-files" | "thread-file-preview" | "thread-file-link" | "thread-linked-file" | "thread-changes" | "thread-changes-review" | "subagent-page" | "subagent-assignments" => {
+            "This file or comparison is too large to send to this device. Nothing on the host was lost or changed. Open it on the host machine."
+        }
+        _ => "The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.",
+    }
+}
+
+/// A thread read's `threadId` and its one other ID field, `other`, as Node's strict schema takes them: both IDs, and no
+/// other field.
+fn thread_read_ids(fields: &serde_json::Map<String, Value>, other: &str) -> Option<(String, String)> {
+    if fields.keys().any(|key| key != "threadId" && key != other) {
+        return None;
+    }
+    Some((protocol_id(fields.get("threadId"))?, protocol_id(fields.get(other))?))
+}
+
+/// Whether a thread is of a provider this client does not know, so it is not this client's to read or act on.
+async fn hides_thread(state: &HostState, wire: &ClientWireState, thread_id: &str) -> bool {
+    matches!(state.coordinator.thread_provider(thread_id.to_string()).await, Ok(Some(provider)) if wire.hides_provider(&provider))
+}
+
 /// The features a tailnet listener offers only to a client the launch script recorded as a desktop, as Node's
 /// `HOST_DESKTOP_FEATURES` (`src/shared/hostProtocol.ts`, ADR-0053). The loopback listener offers them to every client.
 const HOST_DESKTOP_FEATURES: &[&str] = &[
@@ -1569,7 +1599,14 @@ async fn handle_websocket_upgrade(
                             &text,
                         )
                         .await;
-                        let encoded = serde_json::to_string(&reply).map_err(std::io::Error::other)?;
+                        let mut encoded = serde_json::to_string(&reply).map_err(std::io::Error::other)?;
+                        // An answer too large for one frame is refused in its place, as Node's socket server refuses it,
+                        // rather than closing the socket, which would only have the client ask again.
+                        if encoded.len() > sotto_core::HOST_MAX_FRAME_BYTES {
+                            let op = serde_json::from_str::<Value>(&text).ok().and_then(|req| req.get("op").and_then(Value::as_str).map(ToString::to_string));
+                            let refused = HostResponseEnvelope::err(reply.id.clone(), HostErrorCode::TooLarge, too_large_words(op.as_deref().unwrap_or("")));
+                            encoded = serde_json::to_string(&refused).map_err(std::io::Error::other)?;
+                        }
                         if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
                             break;
                         }
@@ -2005,14 +2042,12 @@ async fn handle_ws_request(
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
-                if let Ok(Some(provider)) = state.coordinator.thread_provider(thread_id.to_string()).await {
-                    if wire.hides_provider(&provider) {
-                        return HostResponseEnvelope::err(
-                            req.id,
-                            HostErrorCode::Forbidden,
-                            HostErrorCode::Forbidden.default_message(),
-                        );
-                    }
+                if hides_thread(state, wire, thread_id).await {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::Forbidden,
+                        HostErrorCode::Forbidden.default_message(),
+                    );
                 }
             }
             // A socket client's own `observe-threads` is what its connection observes, as an `observe` is, and goes with
@@ -2335,23 +2370,27 @@ async fn handle_ws_request(
         }
         "activity-body" => {
             // One record whole, for the row a desktop opened (ADR-0025, October 18 amendment), as Node's host answers it.
-            let strict = req.fields.keys().all(|key| key == "threadId" || key == "activityId");
-            let ids = (protocol_id(req.fields.get("threadId")), protocol_id(req.fields.get("activityId")));
-            let (true, true, Some(thread_id), Some(activity_id)) = (wire.takes_cut_bodies(), strict, ids.0, ids.1) else {
+            // As Node: the request's shape first, then a thread the client may not see, then whether it takes cut bodies.
+            let Some((thread_id, activity_id)) = thread_read_ids(&req.fields, "activityId") else {
                 return HostResponseEnvelope::err(
                     req.id,
                     HostErrorCode::InvalidRequest,
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
-            if let Ok(Some(provider)) = state.coordinator.thread_provider(thread_id.clone()).await {
-                if wire.hides_provider(&provider) {
-                    return HostResponseEnvelope::err(
-                        req.id,
-                        HostErrorCode::Forbidden,
-                        HostErrorCode::Forbidden.default_message(),
-                    );
-                }
+            if hides_thread(state, wire, &thread_id).await {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            if !wire.takes_cut_bodies() {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
             }
             let record = match state.coordinator.detail(thread_id).await {
                 Ok(detail) => detail.and_then(|detail| {
@@ -2369,9 +2408,18 @@ async fn handle_ws_request(
             // The prompts above a pane's window for the message scrubber (ADR-0109), as Node's host answers them.
             // Offered to a desktop alone (`HOST_DESKTOP_FEATURES`), and its request is refused for any other client.
             let recorded = state.desktops.lock().unwrap().has(client_id);
-            let strict = req.fields.keys().all(|key| key == "threadId" || key == "beforeMessageId");
-            let ids = (protocol_id(req.fields.get("threadId")), protocol_id(req.fields.get("beforeMessageId")));
-            let (true, true, Some(thread_id), Some(before)) = (desktop_on_listener(mode, recorded), strict, ids.0, ids.1) else {
+            let ids = thread_read_ids(&req.fields, "beforeMessageId");
+            // As Node: a thread the client may not see is refused before whether it is offered the read.
+            if let Some((thread_id, _)) = &ids {
+                if hides_thread(state, wire, thread_id).await {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::Forbidden,
+                        HostErrorCode::Forbidden.default_message(),
+                    );
+                }
+            }
+            let Some((thread_id, before)) = ids.filter(|_| desktop_on_listener(mode, recorded)) else {
                 return HostResponseEnvelope::err(
                     req.id,
                     HostErrorCode::InvalidRequest,
@@ -2920,12 +2968,33 @@ mod tests {
         let phone = features_for_client(&all, false, desktop_on_listener(&ListenerMode::Admin, false));
         assert!(phone.iter().any(|f| f == "thread-prompts"), "on loopback every client is a desktop");
         let tailnet_phone = features_for_client(&all, false, false);
-        for desktop_only in ["thread-prompts", "host-facts", "detail-read-held"] {
+        for desktop_only in ["thread-prompts", "activity-bodies", "host-facts", "detail-read-held"] {
             assert!(!tailnet_phone.iter().any(|f| f == desktop_only), "{desktop_only} went to a tailnet phone");
         }
         assert!(tailnet_phone.iter().any(|f| f == "thread-snooze"), "a feature for every client still goes");
         let tailnet_desktop = features_for_client(&all, true, true);
-        assert!(tailnet_desktop.iter().any(|f| f == "thread-prompts"));
+        assert!(tailnet_desktop.iter().any(|f| f == "thread-prompts") && tailnet_desktop.iter().any(|f| f == "activity-bodies"));
+    }
+
+    /// A thread read takes its thread and its one other ID and nothing else, as Node's strict schema does.
+    #[test]
+    fn a_thread_read_takes_exactly_its_two_ids() {
+        let fields = |value: Value| value.as_object().unwrap().clone();
+        assert_eq!(thread_read_ids(&fields(json!({ "threadId": "t", "activityId": "a" })), "activityId"), Some(("t".into(), "a".into())));
+        assert_eq!(thread_read_ids(&fields(json!({ "threadId": "t", "activityId": "a", "extra": 1 })), "activityId"), None);
+        assert_eq!(thread_read_ids(&fields(json!({ "threadId": "", "activityId": "a" })), "activityId"), None);
+        assert_eq!(thread_read_ids(&fields(json!({ "threadId": "t" })), "activityId"), None);
+        assert_eq!(thread_read_ids(&fields(json!({ "threadId": "t", "activityId": "x".repeat(513) })), "activityId"), None);
+    }
+
+    /// An answer too large to send is refused with the sentence for what was asked, as Node's socket server words it.
+    #[test]
+    fn a_too_large_answer_says_what_was_too_large() {
+        assert!(too_large_words("activity-body").starts_with("This activity is too large"));
+        assert!(too_large_words("thread-media").starts_with("This attachment is too large"));
+        assert!(too_large_words("thread-changes").starts_with("This file or comparison"));
+        assert_eq!(too_large_words("detail"), HostErrorCode::TooLarge.default_message());
+        assert!(too_large_words("shell").starts_with("The thread list on this host"));
     }
 
     #[test]

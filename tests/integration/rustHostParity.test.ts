@@ -9,7 +9,8 @@
 //
 // An answer's kind is compared, not its contents: each command's own behaviour is its handler's own test. What only the
 // socket server can show, across clients, is compared whole: which threads count as shown, which sees a failure (ADR-0092),
-// and the prompts the message scrubber reads from each host's thread store (ADR-0109).
+// the prompts the message scrubber reads from each host's thread store (ADR-0109), and who may read an activity record
+// whole (ADR-0025).
 // Both clients use the loopback listener, where Node counts every client as a desktop; a phone over a tailnet listener is
 // not compared here.
 // Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a `cargo build`).
@@ -387,6 +388,37 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
     }
     const [onNode, onRust] = await Promise.all([prompts(node), prompts(rust)])
     expect(onNode).toEqual({ prompts: [{ text: 'First prompt', attachments: undefined, reply: 'Answered' }, { text: 'Second prompt', attachments: undefined, reply: 'Answered' }], next: undefined })
+    expect(onRust).toEqual(onNode)
+  }, 120_000)
+
+  /**
+   * One activity record read whole (ADR-0025, October 18 amendment), on both hosts: a desktop that takes cut bodies reads
+   * its thread's turn record, and a record the thread does not hold reads as null; a client that takes summaries is refused.
+   */
+  it('reads an activity record whole for the clients Node reads it for', async () => {
+    const reads = async (under: HostUnderTest): Promise<Record<string, unknown>> => {
+      const { threadId } = await probeIds(under, randomUUID(), 'the probes')
+      await scriptTheFake(under, { fail: false, reply: 'Answered' })
+      await request(under.clients.desktop, { op: 'observe', threadIds: [threadId] })
+      await request(under.clients.desktop, { op: 'command', command: { type: 'manual-send', threadId, text: 'Do a turn', draftId: randomUUID() } })
+      type Detail = { activities?: { id: string; kind: string }[]; messages?: { role: string }[] }
+      const deadline = Date.now() + ANSWER_DEADLINE_MS
+      let turn: { id: string; kind: string } | undefined
+      while (!turn) {
+        const detail = (await request(under.clients.desktop, { op: 'detail', threadId }))?.result as Detail | undefined
+        if (detail?.messages?.some(message => message.role === 'assistant')) turn = detail.activities?.find(record => record.kind === 'turn')
+        expect(Date.now() < deadline, `${under.label} never recorded the turn`).toBe(true)
+        if (!turn) await new Promise(resolveWait => setTimeout(resolveWait, 100))
+      }
+      const whole = await request(under.clients.desktop, { op: 'activity-body', threadId, activityId: turn.id })
+      const missing = await request(under.clients.desktop, { op: 'activity-body', threadId, activityId: 'no-such-record' })
+      const summaries = await request(under.clients.unrecorded, { op: 'activity-body', threadId, activityId: turn.id })
+      const record = whole?.result as { id?: string; kind?: string } | null | undefined
+      return { whole: whole?.ok === true && record?.id === turn.id && record?.kind === 'turn', missing: missing?.ok === true && missing.result === null,
+        summaries: (summaries?.error as { code?: string } | undefined)?.code }
+    }
+    const [onNode, onRust] = await Promise.all([reads(node), reads(rust)])
+    expect(onNode).toEqual({ whole: true, missing: true, summaries: 'invalid_request' })
     expect(onRust).toEqual(onNode)
   }, 120_000)
 
