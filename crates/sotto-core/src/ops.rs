@@ -154,6 +154,12 @@ pub fn is_valid_relative_path(path: &str) -> bool {
                 | "lpt7"
                 | "lpt8"
                 | "lpt9"
+                | "com¹"
+                | "com²"
+                | "com³"
+                | "lpt¹"
+                | "lpt²"
+                | "lpt³"
         ) {
             return false;
         }
@@ -1896,14 +1902,14 @@ fn open_contained_dir(path: &Path) -> std::io::Result<fs::File> {
 }
 
 #[cfg(target_os = "linux")]
-fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
     use std::os::fd::AsRawFd;
     let fd_path = format!("/proc/self/fd/{}", file.as_raw_fd());
     fs::canonicalize(fd_path).is_ok_and(|p| p.starts_with(canon_root))
 }
 
 #[cfg(target_os = "macos")]
-fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
     use std::ffi::CStr;
     use std::os::fd::AsRawFd;
     const F_GETPATH: i32 = 50;
@@ -1925,7 +1931,7 @@ fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
 }
 
 #[cfg(windows)]
-fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::AsRawHandle;
     #[link(name = "kernel32")]
@@ -1955,7 +1961,7 @@ fn verify_open_handle_inside(canon_root: &Path, file: &fs::File) -> bool {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-fn verify_open_handle_inside(_canon_root: &Path, _file: &fs::File) -> bool {
+pub(crate) fn verify_open_handle_inside(_canon_root: &Path, _file: &fs::File) -> bool {
     true
 }
 
@@ -3161,6 +3167,17 @@ fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    /// `fileRelativePathSchema` (`src/shared/files.ts`) refuses the superscript device names Windows keeps, as a whole
+    /// name or before an ending.
+    #[test]
+    fn refuses_the_superscript_device_names_as_files_ts_does() {
+        for path in ["com¹", "com²", "com³", "lpt¹", "lpt²", "lpt³", "COM¹.txt", "docs/lpt³.md"] {
+            assert!(!super::is_valid_relative_path(path), "{path}");
+        }
+        assert!(super::is_valid_relative_path("com¹x.txt"));
+        assert!(super::is_valid_relative_path("docs/com10"));
+    }
+
     use super::*;
 
     /// A thread store as Node and this host share it, holding `rows` of one thread: role, text, attachments.

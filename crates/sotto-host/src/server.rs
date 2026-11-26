@@ -138,6 +138,31 @@ fn thread_read_ids(fields: &serde_json::Map<String, Value>, other: &str) -> Opti
     Some((protocol_id(fields.get("threadId"))?, protocol_id(fields.get(other))?))
 }
 
+/// A link read's request (`thread-file-link` or `thread-linked-file`) after the checks Node's socket server makes before
+/// it reads anything, in its order: the request's shape as Node's schema reads it, then a thread the client may not see
+/// (`hidden`), then whether the host offers this client the read (`offered`, as Node's `offers`: offered, whether or
+/// not the client accepted it).
+async fn checked_link_request<Hidden: std::future::Future<Output = bool>>(
+    op: &str,
+    fields: &serde_json::Map<String, Value>,
+    hidden: impl FnOnce(String) -> Hidden,
+    offered: impl FnOnce(&str) -> bool,
+) -> Result<sotto_core::linked_files::LinkRequest, HostErrorCode> {
+    let request = if fields.keys().any(|key| key != "request") {
+        None
+    } else {
+        sotto_core::linked_files::link_request(op, fields.get("request"))
+    };
+    let request = request.ok_or(HostErrorCode::InvalidRequest)?;
+    if hidden(request.thread_id.clone()).await {
+        return Err(HostErrorCode::Forbidden);
+    }
+    if !offered(request.read.feature()) {
+        return Err(HostErrorCode::InvalidRequest);
+    }
+    Ok(request)
+}
+
 /// Whether a thread is of a provider this client does not know, so it is not this client's to read or act on.
 async fn hides_thread(state: &HostState, wire: &ClientWireState, thread_id: &str) -> bool {
     matches!(state.coordinator.thread_provider(thread_id.to_string()).await, Ok(Some(provider)) if wire.hides_provider(&provider))
@@ -2295,38 +2320,20 @@ async fn handle_ws_request(
         // offered the read. Node reads one of these at a time per socket; this host answers a socket's requests in turn,
         // so it never has two.
         "thread-file-link" | "thread-linked-file" => {
-            let link = req.op == "thread-file-link";
-            let request = if req.fields.keys().any(|key| key != "request") {
-                None
-            } else if link {
-                sotto_core::linked_files::file_link_request(req.fields.get("request"))
-            } else {
-                sotto_core::linked_files::linked_file_request(req.fields.get("request"))
-            };
-            let Some(request) = request else {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
-            };
-            if hides_thread(state, wire, &request.thread_id).await {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::Forbidden,
-                    HostErrorCode::Forbidden.default_message(),
-                );
-            }
-            // Offered, as Node's `offers` reads it: the host offers this client the feature, whether or not it accepted it.
             let recorded = state.desktops.lock().unwrap().has(client_id);
-            let feature = if link { "thread-file-links" } else { "thread-linked-files" };
-            if !features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded)).iter().any(|offered| offered == feature) {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
-            }
+            let offered = features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded));
+            let seen: &ClientWireState = wire;
+            let checked = checked_link_request(
+                &req.op,
+                &req.fields,
+                |thread_id| async move { hides_thread(state, seen, &thread_id).await },
+                |feature| offered.iter().any(|name| name == feature),
+            )
+            .await;
+            let request = match checked {
+                Ok(request) => request,
+                Err(code) => return HostResponseEnvelope::err(req.id, code, code.default_message()),
+            };
             let Ok(workspace) = state.coordinator.thread_workspace(request.thread_id.clone()).await else {
                 return HostResponseEnvelope::err(
                     req.id,
@@ -2334,11 +2341,8 @@ async fn handle_ws_request(
                     HostErrorCode::Unavailable.default_message(),
                 );
             };
-            let read = tokio::task::spawn_blocking(move || match &request.want {
-                Some(want) => sotto_core::linked_files::thread_linked_file(workspace.as_ref(), &request.path, want),
-                None => sotto_core::linked_files::thread_file_link(workspace.as_ref(), &request.path),
-            })
-            .await;
+            let read =
+                tokio::task::spawn_blocking(move || sotto_core::linked_files::read_link(workspace.as_ref(), &request)).await;
             match read {
                 Ok(answer) => HostResponseEnvelope::ok(req.id, answer),
                 // A read that failed outright is the host's failure to read, as Node's `toolRead` answers it.
@@ -3025,6 +3029,46 @@ async fn send_http_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A link read is refused as Node's socket server refuses it, and in its order: a malformed request before the thread
+    /// is looked at, a hidden provider's thread before whether the read is offered, and then a read not offered.
+    #[tokio::test]
+    async fn a_link_read_is_checked_in_nodes_order() {
+        use sotto_core::linked_files::{LinkRead, LinkedWant};
+        use std::cell::Cell;
+        let fields = |value: Value| value.as_object().unwrap().clone();
+        let good = json!({ "request": { "threadId": "t", "path": "notes.md", "want": "place" } });
+        let asked = Cell::new(false);
+        let hidden = |answer: bool| {
+            let asked = &asked;
+            move |_: String| {
+                asked.set(true);
+                async move { answer }
+            }
+        };
+
+        let malformed = fields(json!({ "request": { "threadId": "t" } }));
+        assert_eq!(checked_link_request("thread-linked-file", &malformed, hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        let extra = fields(json!({ "request": { "threadId": "t", "path": "notes.md" }, "more": 1 }));
+        assert_eq!(checked_link_request("thread-file-link", &extra, hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        assert!(!asked.get(), "a malformed request is refused before its thread is looked at");
+
+        assert_eq!(checked_link_request("thread-linked-file", &fields(good.clone()), hidden(true), |_| false).await, Err(HostErrorCode::Forbidden));
+        assert!(asked.get());
+        let mut named = None;
+        let refused = checked_link_request("thread-linked-file", &fields(good.clone()), hidden(false), |feature: &str| {
+            named = Some(feature.to_string());
+            false
+        })
+        .await;
+        assert_eq!(refused, Err(HostErrorCode::InvalidRequest));
+        assert_eq!(named.as_deref(), Some("thread-linked-files"));
+
+        let request = checked_link_request("thread-linked-file", &fields(good), hidden(false), |feature| feature == "thread-linked-files").await.unwrap();
+        assert_eq!(request.read, LinkRead::LinkedFile(LinkedWant::Place));
+        let markdown = fields(json!({ "request": { "threadId": "t", "path": "notes.md" } }));
+        assert!(checked_link_request("thread-file-link", &markdown, hidden(false), |feature| feature == "thread-file-links").await.is_ok());
+    }
 
     /// A tailnet listener offers Node's desktop-only features to a recorded desktop alone, as Node's `featuresFor`; the
     /// loopback listener counts every client as a desktop.

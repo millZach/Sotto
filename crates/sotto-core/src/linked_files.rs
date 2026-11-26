@@ -8,7 +8,7 @@
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 
 use crate::ops::{
     is_markdown_file_name, is_valid_relative_path, open_preview_file, preview_content, text_of, tools_err, tools_ok,
-    ThreadWorkspace, MAX_IMAGE_PREVIEW_BYTES, MAX_TEXT_PREVIEW_BYTES,
+    verify_open_handle_inside, ThreadWorkspace, MAX_IMAGE_PREVIEW_BYTES, MAX_TEXT_PREVIEW_BYTES,
 };
 
 /// One part of a linked file a host sends for a download, as Node's `FILES_DOWNLOAD_PART_BYTES`.
@@ -44,12 +44,31 @@ pub enum LinkedWant {
     Part { offset: u64, revision: Option<String> },
 }
 
+/// Which of the two link reads a request asks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkRead {
+    /// `thread-file-link`: a Markdown file's text, for the side panel.
+    MarkdownLink,
+    /// `thread-linked-file`: where a linked file is, its preview, or one part of it.
+    LinkedFile(LinkedWant),
+}
+
+impl LinkRead {
+    /// The feature a host offers for this read.
+    pub fn feature(&self) -> &'static str {
+        match self {
+            LinkRead::MarkdownLink => "thread-file-links",
+            LinkRead::LinkedFile(_) => "thread-linked-files",
+        }
+    }
+}
+
 /// A `thread-file-link` or `thread-linked-file` request as Node's strict schema reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkRequest {
     pub thread_id: String,
     pub path: String,
-    pub want: Option<LinkedWant>,
+    pub read: LinkRead,
 }
 
 fn utf16_len(value: &str) -> usize {
@@ -78,12 +97,6 @@ fn link_fields<'a>(value: Option<&'a Value>, allowed: &[&str]) -> Option<(&'a se
     Some((fields, thread_id.to_string(), path.to_string()))
 }
 
-/// A `thread-file-link` request (`fileLinkRequestSchema`), or `None` when Node's schema refuses it.
-pub fn file_link_request(value: Option<&Value>) -> Option<LinkRequest> {
-    let (_, thread_id, path) = link_fields(value, &[])?;
-    Some(LinkRequest { thread_id, path, want: None })
-}
-
 /// A whole non-negative number no larger than `Number.MAX_SAFE_INTEGER`, as `z.number().int().nonnegative()` takes one.
 fn safe_offset(value: &Value) -> Option<u64> {
     if let Some(whole) = value.as_u64() {
@@ -93,13 +106,12 @@ fn safe_offset(value: &Value) -> Option<u64> {
     (number.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER as f64).contains(&number)).then_some(number as u64)
 }
 
-/// A `thread-linked-file` request (`linkedFileRequestSchema`), or `None` when Node's schema refuses it.
-pub fn linked_file_request(value: Option<&Value>) -> Option<LinkRequest> {
-    let (fields, thread_id, path) = link_fields(value, &["want", "offset", "revision"])?;
-    let want = match fields.get("want")?.as_str()? {
-        "place" | "preview" if fields.contains_key("offset") || fields.contains_key("revision") => return None,
-        "place" => LinkedWant::Place,
-        "preview" => LinkedWant::Preview,
+/// What a `thread-linked-file` request asks for (`linkedFileRequestSchema`), or `None` when Node's schema refuses it.
+fn linked_want(fields: &serde_json::Map<String, Value>) -> Option<LinkedWant> {
+    match fields.get("want")?.as_str()? {
+        "place" | "preview" if fields.contains_key("offset") || fields.contains_key("revision") => None,
+        "place" => Some(LinkedWant::Place),
+        "preview" => Some(LinkedWant::Preview),
         "part" => {
             let offset = safe_offset(fields.get("offset")?)?;
             let revision = match fields.get("revision") {
@@ -111,11 +123,32 @@ pub fn linked_file_request(value: Option<&Value>) -> Option<LinkRequest> {
                         .to_string(),
                 ),
             };
-            LinkedWant::Part { offset, revision }
+            Some(LinkedWant::Part { offset, revision })
         }
+        _ => None,
+    }
+}
+
+/// The request a `thread-file-link` (`fileLinkRequestSchema`) or `thread-linked-file` (`linkedFileRequestSchema`)
+/// operation carries, or `None` when Node's schema refuses it or `op` is neither.
+pub fn link_request(op: &str, value: Option<&Value>) -> Option<LinkRequest> {
+    let markdown = match op {
+        "thread-file-link" => true,
+        "thread-linked-file" => false,
         _ => return None,
     };
-    Some(LinkRequest { thread_id, path, want: Some(want) })
+    let (fields, thread_id, path) = link_fields(value, if markdown { &[] } else { &["want", "offset", "revision"] })?;
+    let read = if markdown { LinkRead::MarkdownLink } else { LinkRead::LinkedFile(linked_want(fields)?) };
+    Some(LinkRequest { thread_id, path, read })
+}
+
+/// Answers a link read on this machine, for the thread's working copy when the host knows the thread.
+pub fn read_link(workspace: Option<&ThreadWorkspace>, request: &LinkRequest) -> Value {
+    let answer = match &request.read {
+        LinkRead::MarkdownLink => markdown_link(workspace, &request.path),
+        LinkRead::LinkedFile(want) => linked_file(workspace, &request.path, want),
+    };
+    answer.map_or_else(|refused| refused, tools_ok)
 }
 
 /// A path as a link wrote it, without a trailing location, as Node's `withoutLinkLocation`: a line such as `:12` or
@@ -167,16 +200,26 @@ fn name_of(path: &str) -> &str {
     path.rfind(['/', '\\']).map_or(path, |at| &path[at + 1..])
 }
 
-/// Whether a path is absolute as Node's `path.isAbsolute` reads it on this platform: on Windows a rooted path
-/// (`\x`, `/x`) counts as well as one with its drive.
-fn is_absolute(path: &str) -> bool {
-    if cfg!(windows) {
-        let bytes = path.as_bytes();
-        matches!(bytes.first(), Some(b'/' | b'\\'))
-            || (bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && matches!(bytes[2], b'/' | b'\\'))
+fn is_separator(c: char) -> bool {
+    c == '/' || (cfg!(windows) && c == '\\')
+}
+
+/// How much of an absolute path is its root, as Node's `path.isAbsolute` reads one on this platform: on Windows a drive
+/// with its separator (`C:\`) or a rooted path's separator alone (`\x`, `/x`), elsewhere the leading `/`. 0 for a
+/// relative path.
+fn root_length(path: &str) -> usize {
+    let bytes = path.as_bytes();
+    if cfg!(windows) && bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && matches!(bytes[2], b'/' | b'\\') {
+        3
+    } else if path.starts_with(is_separator) {
+        1
     } else {
-        path.starts_with('/')
+        0
     }
+}
+
+fn is_absolute(path: &str) -> bool {
+    root_length(path) > 0
 }
 
 /// A path under the home folder, `~` alone or `~/...`.
@@ -184,27 +227,51 @@ fn is_home(path: &str) -> bool {
     path == "~" || path.starts_with("~/") || path.starts_with("~\\")
 }
 
-/// The home folder Node's `os.homedir()` names: `USERPROFILE` first on Windows and `HOME` first elsewhere.
-fn home_folder() -> PathBuf {
+/// The home folder Node's `os.homedir()` names: `USERPROFILE` first on Windows and `HOME` first elsewhere, or `None`
+/// when neither is set.
+fn home_folder() -> Option<PathBuf> {
     let order: [&str; 2] = if cfg!(windows) { ["USERPROFILE", "HOME"] } else { ["HOME", "USERPROFILE"] };
     order
         .iter()
         .find_map(|name| std::env::var_os(name).filter(|home| !home.is_empty()))
         .map(PathBuf::from)
-        .unwrap_or_default()
 }
 
-/// `relative` resolved from `base` by its words alone, as Node's `path.resolve` does before anything is followed, so a
-/// `sub/../x` names `base/x` whatever `sub` links to.
-fn resolve_from(base: &Path, relative: &str) -> PathBuf {
-    let mut out = base.to_path_buf();
-    for part in relative.split(|c| c == '/' || (cfg!(windows) && c == '\\')) {
+/// Adds one name to a path. On Windows `PathBuf::push` takes a segment such as `D:` for a drive and starts again from
+/// it; Node's `path.resolve` reads it as a name, so it is written after a separator instead.
+fn push_name(out: &mut PathBuf, name: &str) {
+    if cfg!(windows) {
+        let text = out.as_mut_os_string();
+        if !matches!(text.as_encoded_bytes().last(), Some(b'\\' | b'/')) {
+            text.push("\\");
+        }
+        text.push(name);
+    } else {
+        out.push(name);
+    }
+}
+
+/// `path` resolved from `base` as Node's `path.resolve(base, path)` does, by its words alone before anything is
+/// followed, so a `sub/../x` names `base/x` whatever `sub` links to. An absolute `path` stands on its own, a rooted one
+/// on Windows on `base`'s drive.
+fn resolve_from(base: &Path, path: &str) -> PathBuf {
+    let root = root_length(path);
+    let mut out = if root == 0 {
+        base.to_path_buf()
+    } else if root == 1 && cfg!(windows) {
+        base.components()
+            .take_while(|part| matches!(part, Component::Prefix(_) | Component::RootDir))
+            .collect()
+    } else {
+        PathBuf::from(&path[..root])
+    };
+    for part in path[root..].split(is_separator) {
         match part {
             "" | "." => {}
             ".." => {
                 out.pop();
             }
-            name => out.push(name),
+            name => push_name(&mut out, name),
         }
     }
     out
@@ -235,7 +302,8 @@ fn io_failure(error: &std::io::Error) -> Value {
 }
 
 /// Which version of a file a read saw, as Node's `sameRevision` compares one: the file it is (device and inode, and
-/// when it was made), its size, and when its contents and its record last changed.
+/// when it was made), its size, and when its contents and its record last changed. Every field is read from the
+/// system; where one cannot be, there is no revision and the read is refused, so none is ever made from missing fields.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Revision {
     dev: u64,
@@ -246,59 +314,68 @@ struct Revision {
     ctime: i128,
 }
 
-fn nanos(time: std::io::Result<std::time::SystemTime>) -> i128 {
-    time.ok()
-        .map(|time| match time.duration_since(std::time::UNIX_EPOCH) {
-            Ok(after) => after.as_nanos() as i128,
-            Err(before) => -(before.duration().as_nanos() as i128),
-        })
-        .unwrap_or(0)
-}
-
 impl Revision {
-    /// What a path's own record says. Where the system keeps no birth time, 0 stands for it, as Node's `birthtimeNs` is
-    /// 0 there, so the revision of an unchanged file stays the same.
+    /// A file's record as `stat` gives it. Where the file system keeps no birth time, 0 stands for it, as Node's
+    /// `birthtimeNs` is 0 there, so the revision of an unchanged file stays the same.
+    #[cfg(unix)]
     fn of_metadata(meta: &fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        let birth = meta
+            .created()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |since| since.as_nanos() as i128);
+        Self {
+            dev: meta.dev(),
+            ino: meta.ino(),
+            birth,
+            size: meta.size(),
+            mtime: i128::from(meta.mtime()) * 1_000_000_000 + i128::from(meta.mtime_nsec()),
+            ctime: i128::from(meta.ctime()) * 1_000_000_000 + i128::from(meta.ctime_nsec()),
+        }
+    }
+
+    /// The revision of the file a real path names, as Node's `stat` reads it.
+    fn of_path(path: &Path) -> Option<Self> {
         #[cfg(unix)]
         {
-            use std::os::unix::fs::MetadataExt;
-            Self {
-                dev: meta.dev(),
-                ino: meta.ino(),
-                birth: nanos(meta.created()),
-                size: meta.size(),
-                mtime: i128::from(meta.mtime()) * 1_000_000_000 + i128::from(meta.mtime_nsec()),
-                ctime: i128::from(meta.ctime()) * 1_000_000_000 + i128::from(meta.ctime_nsec()),
-            }
+            fs::metadata(path).ok().map(|meta| Self::of_metadata(&meta))
         }
-        #[cfg(not(unix))]
-        {
-            // Stable Rust's record of a path on Windows holds no volume, file index or change time; a file's own handle
-            // gives them (`of_file`), and a path's record is only ever compared with another path's or handle's here.
-            Self { dev: 0, ino: 0, birth: nanos(meta.created()), size: meta.len(), mtime: nanos(meta.modified()), ctime: 0 }
-        }
-    }
-
-    /// What an open file's handle says, the whole revision a download names.
-    fn of_file(file: &fs::File) -> std::io::Result<Self> {
-        let revision = Self::of_metadata(&file.metadata()?);
         #[cfg(windows)]
         {
-            // Node's `fstat` reads the volume serial number and file index as `dev` and `ino`, and NTFS's change time as
-            // `ctime`; Rust asks the handle for the same through kernel32.
-            if let Some((dev, ino, ctime)) = windows_identity(file) {
-                return Ok(Self { dev, ino, ctime, ..revision });
-            }
+            // Stable Rust's record of a path holds no volume, file index or change time, so the path is opened to read
+            // its attributes alone and asked through its handle, as for an open file.
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_READ_ATTRIBUTES: u32 = 0x80;
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+            fs::OpenOptions::new()
+                .access_mode(FILE_READ_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(path)
+                .ok()
+                .and_then(|file| Self::of_file(&file))
         }
-        Ok(revision)
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = path;
+            None
+        }
     }
 
-    /// The same record compared without what only a handle knows, so a path's record and a handle's can be compared.
-    fn as_recorded(self) -> Self {
-        if cfg!(windows) {
-            Self { dev: 0, ino: 0, ctime: 0, ..self }
-        } else {
-            self
+    /// The revision of an open file, as Node's `fstat` reads it.
+    fn of_file(file: &fs::File) -> Option<Self> {
+        #[cfg(unix)]
+        {
+            file.metadata().ok().map(|meta| Self::of_metadata(&meta))
+        }
+        #[cfg(windows)]
+        {
+            windows_revision(file)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = file;
+            None
         }
     }
 
@@ -309,12 +386,15 @@ impl Revision {
     }
 }
 
+/// An open file's revision through kernel32, as Node's `fstat` reads it on Windows: the volume serial number and file
+/// index as `dev` and `ino`, and NTFS's creation, last write and change times (in its own 100 ns ticks, which only need
+/// to stay the same for an unchanged file). `None` when either call fails.
 #[cfg(windows)]
-fn windows_identity(file: &fs::File) -> Option<(u64, u64, i128)> {
+fn windows_revision(file: &fs::File) -> Option<Revision> {
     use std::os::windows::io::AsRawHandle;
     #[repr(C)]
     #[derive(Default)]
-    #[allow(dead_code)] // kernel32 writes every field; Sotto reads three.
+    #[allow(dead_code)] // kernel32 writes every field; Sotto reads the volume, size and index.
     struct ByHandleFileInformation {
         attributes: u32,
         creation: [u32; 2],
@@ -329,7 +409,7 @@ fn windows_identity(file: &fs::File) -> Option<(u64, u64, i128)> {
     }
     #[repr(C)]
     #[derive(Default)]
-    #[allow(dead_code)] // kernel32 writes every field; Sotto reads the change time.
+    #[allow(dead_code)] // kernel32 writes every field; Sotto reads the times.
     struct FileBasicInfo {
         creation: i64,
         last_access: i64,
@@ -355,42 +435,47 @@ fn windows_identity(file: &fs::File) -> Option<(u64, u64, i128)> {
                 std::mem::size_of::<FileBasicInfo>() as u32,
             ) != 0
     };
-    read.then(|| {
-        (
-            u64::from(info.volume_serial_number),
-            (u64::from(info.index_high) << 32) | u64::from(info.index_low),
-            i128::from(basic.change),
-        )
+    read.then(|| Revision {
+        dev: u64::from(info.volume_serial_number),
+        ino: (u64::from(info.index_high) << 32) | u64::from(info.index_low),
+        birth: i128::from(basic.creation),
+        size: (u64::from(info.size_high) << 32) | u64::from(info.size_low),
+        mtime: i128::from(basic.last_write),
+        ctime: i128::from(basic.change),
     })
 }
 
-/// Where a link's path led: the real file, its record, the path as written that found it, and whether that path was
-/// written relative to the thread.
+/// Where a link's path led: the real file, its record, the path as written that found it, whether that path was
+/// written relative to the thread, and for a regular file its revision when it was found.
 struct Located {
     absolute: PathBuf,
     meta: fs::Metadata,
     written: String,
     relative_to_thread: bool,
+    revision: Option<Revision>,
 }
 
-fn located(root: &Path, candidate: &str) -> Option<Located> {
-    let home = is_home(candidate);
-    let relative_to_thread = !home && !is_absolute(candidate);
+fn located(root: &Path, home: Option<&Path>, candidate: &str) -> Option<Located> {
+    let is_home = is_home(candidate);
+    let relative_to_thread = !is_home && !is_absolute(candidate);
     let absolute = if relative_to_thread {
         resolve_from(root, candidate)
-    } else if home {
-        resolve_from(&home_folder(), candidate.get(2..).unwrap_or(""))
+    } else if is_home {
+        // With no home folder known, a `~/` path names nothing here. As Node's `resolve(homedir(), candidate.slice(2))`,
+        // `~//x` is the absolute `/x`.
+        resolve_from(home?, candidate.get(2..).unwrap_or(""))
     } else {
         PathBuf::from(candidate)
     };
     let absolute = fs::canonicalize(absolute).ok()?;
     let meta = fs::metadata(&absolute).ok()?;
-    Some(Located { absolute, meta, written: candidate.to_string(), relative_to_thread })
+    let revision = if meta.is_file() { Revision::of_path(&absolute) } else { None };
+    Some(Located { absolute, meta, written: candidate.to_string(), relative_to_thread, revision })
 }
 
 /// Where a link's path leads, as Node's `locateLink`: the path as written wins, then with the drive first for a Windows
 /// path written `/D:/...`, then each of those without a trailing location.
-fn locate_link(root: &Path, path: &str) -> Option<Located> {
+fn locate_link(root: &Path, home: Option<&Path>, path: &str) -> Option<Located> {
     let bare = without_link_location(path);
     let mut tried: Vec<&str> = Vec::with_capacity(4);
     for candidate in [path, with_drive_first(path), bare, with_drive_first(bare)] {
@@ -398,7 +483,7 @@ fn locate_link(root: &Path, path: &str) -> Option<Located> {
             continue;
         }
         tried.push(candidate);
-        if let Some(found) = located(root, candidate) {
+        if let Some(found) = located(root, home, candidate) {
             return Some(found);
         }
     }
@@ -426,19 +511,23 @@ fn workspace_root(workspace: Option<&ThreadWorkspace>) -> Answer<PathBuf> {
 
 /// Where a link's path leads, held inside the thread's folder when it is written relative to it, as Node's `linked`.
 fn found_link(root: &Path, path: &str) -> Answer<Located> {
-    let found = locate_link(root, path).ok_or_else(|| tools_err("path-unavailable", NOT_HERE))?;
+    let found = locate_link(root, home_folder().as_deref(), path).ok_or_else(|| tools_err("path-unavailable", NOT_HERE))?;
     if found.relative_to_thread && !inside(root, &found.absolute) {
         return Err(tools_err("path-outside-workspace", OUTSIDE));
     }
     Ok(found)
 }
 
-/// Opens a linked regular file to read, refused when it is no longer the file its path's record named.
-fn open_unchanged(found: &Located) -> Answer<(fs::File, Revision)> {
+/// Opens a linked regular file to read, refused in Node's words when it is no longer the file found at its path: another
+/// revision, or for a link written relative to the thread a file outside its folder. When the system cannot say which
+/// file it is, the read is refused with `unread`, the words for a file that changed.
+fn open_unchanged(root: &Path, found: &Located, unread: &str) -> Answer<(fs::File, Revision)> {
     let file = open_preview_file(&found.absolute).map_err(|error| io_failure(&error))?;
     let before = file.metadata().map_err(|error| io_failure(&error))?;
-    let revision = Revision::of_file(&file).map_err(|error| io_failure(&error))?;
-    if !before.is_file() || revision.as_recorded() != Revision::of_metadata(&found.meta).as_recorded() {
+    let (Some(recorded), Some(revision)) = (found.revision, Revision::of_file(&file)) else {
+        return Err(tools_err("path-unavailable", unread));
+    };
+    if !before.is_file() || revision != recorded || (found.relative_to_thread && !verify_open_handle_inside(root, &file)) {
         return Err(tools_err("path-unavailable", CHANGED));
     }
     Ok((file, revision))
@@ -450,7 +539,7 @@ fn whole_file(file: &fs::File, before: &Revision) -> Answer<Vec<u8>> {
     file.take(before.size.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(|error| io_failure(&error))?;
-    if bytes.len() as u64 != before.size || Revision::of_file(file).ok().as_ref() != Some(before) {
+    if bytes.len() as u64 != before.size || Revision::of_file(file).as_ref() != Some(before) {
         return Err(tools_err(
             "path-unavailable",
             "This file changed while it was being read. Refresh Files and try again.",
@@ -459,18 +548,10 @@ fn whole_file(file: &fs::File, before: &Revision) -> Answer<Vec<u8>> {
     Ok(bytes)
 }
 
-fn answered(answer: Answer<Value>) -> Value {
-    answer.map_or_else(|refused| refused, tools_ok)
-}
-
 /// A Markdown file a thread's message links to, for the side panel, as Node's `FilesService.previewLink`. Both the path
 /// as written and the file it really is must be Markdown, so a link named `notes.md` that leads to a key is refused. It
 /// answers the file's text and the link's own name, never where the path led.
-pub fn thread_file_link(workspace: Option<&ThreadWorkspace>, path: &str) -> Value {
-    answered(file_link(workspace, path))
-}
-
-fn file_link(workspace: Option<&ThreadWorkspace>, path: &str) -> Answer<Value> {
+fn markdown_link(workspace: Option<&ThreadWorkspace>, path: &str) -> Answer<Value> {
     let root = workspace_root(workspace)?;
     let found = found_link(&root, path)?;
     if !found.meta.is_file() {
@@ -482,7 +563,7 @@ fn file_link(workspace: Option<&ThreadWorkspace>, path: &str) -> Answer<Value> {
     if found.meta.len() > MAX_TEXT_PREVIEW_BYTES as u64 {
         return Err(tools_err("too-large", "Markdown files open here up to 512 KB. Nothing was opened."));
     }
-    let (file, before) = open_unchanged(&found)?;
+    let (file, before) = open_unchanged(&root, &found, CHANGED)?;
     let bytes = whole_file(&file, &before)?;
     let text = text_of(&bytes)?;
     Ok(json!({ "name": name_of(&found.written), "size": bytes.len(), "text": text }))
@@ -499,10 +580,6 @@ fn path_within(root: &Path, target: &Path) -> Option<String> {
 /// A file a thread's message links to, for Files on another computer, as Node's `FilesService.linkedFile`: where it is,
 /// its preview within Files' own limits, or one part of its bytes for a download. A file that changed between two parts
 /// is refused rather than saved in halves.
-pub fn thread_linked_file(workspace: Option<&ThreadWorkspace>, path: &str, want: &LinkedWant) -> Value {
-    answered(linked_file(workspace, path, want))
-}
-
 fn linked_file(workspace: Option<&ThreadWorkspace>, path: &str, want: &LinkedWant) -> Answer<Value> {
     let root = workspace_root(workspace)?;
     let found = found_link(&root, path)?;
@@ -514,50 +591,51 @@ fn linked_file(workspace: Option<&ThreadWorkspace>, path: &str, want: &LinkedWan
         "" => found.absolute.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default(),
         name => name.to_string(),
     };
-    let (offset, revision) = match want {
+    let regular_file = || if found.meta.is_file() { Ok(()) } else { Err(tools_err("not-file", NOT_A_FILE)) };
+    match want {
         LinkedWant::Place => {
             // A place Files cannot name, such as one its listing would show as unavailable, is shown alone as a file
             // outside is.
             let within = path_within(&root, &found.absolute);
-            return Ok(json!({
+            Ok(json!({
                 "is": "place",
                 "name": name,
                 "kind": if found.meta.is_dir() { "directory" } else { "file" },
                 "size": if found.meta.is_file() { found.meta.len() } else { 0 },
                 "inside": within.map(|path| json!({ "workspace": workspace, "path": path })),
-            }));
+            }))
         }
-        LinkedWant::Preview => (None, None),
-        LinkedWant::Part { offset, revision } => (Some(*offset), revision.as_deref()),
-    };
-    if !found.meta.is_file() {
-        return Err(tools_err("not-file", NOT_A_FILE));
+        LinkedWant::Preview => {
+            regular_file()?;
+            if found.meta.len() > MAX_IMAGE_PREVIEW_BYTES as u64 {
+                return Err(tools_err("too-large", "This file exceeds the 8 MiB preview limit."));
+            }
+            let (file, before) = open_unchanged(&root, &found, CHANGED)?;
+            let bytes = whole_file(&file, &before)?;
+            let content = preview_content(&bytes, &name)?;
+            Ok(json!({ "is": "preview", "name": name, "size": bytes.len(), "content": content }))
+        }
+        LinkedWant::Part { offset, revision } => {
+            regular_file()?;
+            let (mut file, before) = open_unchanged(&root, &found, CHANGED_IN_DOWNLOAD)?;
+            let hash = before.hash();
+            if revision.as_ref().is_some_and(|asked| *asked != hash) {
+                return Err(tools_err("path-unavailable", CHANGED_IN_DOWNLOAD));
+            }
+            let (offset, size) = (*offset, before.size);
+            if offset > size {
+                return Err(tools_err("invalid-request", "This part is past the end of the file. Nothing was saved."));
+            }
+            let length = (FILES_DOWNLOAD_PART_BYTES as u64).min(size - offset);
+            let mut bytes = Vec::with_capacity(length as usize);
+            file.seek(SeekFrom::Start(offset)).map_err(|error| io_failure(&error))?;
+            (&file).take(length).read_to_end(&mut bytes).map_err(|error| io_failure(&error))?;
+            if bytes.len() as u64 != length || Revision::of_file(&file) != Some(before) {
+                return Err(tools_err("path-unavailable", CHANGED_IN_DOWNLOAD));
+            }
+            Ok(json!({ "is": "part", "name": name, "size": size, "offset": offset, "data": STANDARD.encode(&bytes), "revision": hash }))
+        }
     }
-    if offset.is_none() && found.meta.len() > MAX_IMAGE_PREVIEW_BYTES as u64 {
-        return Err(tools_err("too-large", "This file exceeds the 8 MiB preview limit."));
-    }
-    let (mut file, before) = open_unchanged(&found)?;
-    let Some(offset) = offset else {
-        let bytes = whole_file(&file, &before)?;
-        let content = preview_content(&bytes, &name)?;
-        return Ok(json!({ "is": "preview", "name": name, "size": bytes.len(), "content": content }));
-    };
-    let hash = before.hash();
-    if revision.is_some_and(|asked| asked != hash) {
-        return Err(tools_err("path-unavailable", CHANGED_IN_DOWNLOAD));
-    }
-    let size = before.size;
-    if offset > size {
-        return Err(tools_err("invalid-request", "This part is past the end of the file. Nothing was saved."));
-    }
-    let length = (FILES_DOWNLOAD_PART_BYTES as u64).min(size - offset);
-    let mut bytes = Vec::with_capacity(length as usize);
-    file.seek(SeekFrom::Start(offset)).map_err(|error| io_failure(&error))?;
-    (&file).take(length).read_to_end(&mut bytes).map_err(|error| io_failure(&error))?;
-    if bytes.len() as u64 != length || Revision::of_file(&file).ok() != Some(before) {
-        return Err(tools_err("path-unavailable", CHANGED_IN_DOWNLOAD));
-    }
-    Ok(json!({ "is": "part", "name": name, "size": size, "offset": offset, "data": STANDARD.encode(&bytes), "revision": hash }))
 }
 
 #[cfg(test)]
@@ -574,6 +652,18 @@ mod tests {
 
     fn message(answer: &Value) -> Option<&str> {
         answer.pointer("/error/message").and_then(Value::as_str)
+    }
+
+    fn request(path: &str, read: LinkRead) -> LinkRequest {
+        LinkRequest { thread_id: "thread-1".into(), path: path.into(), read }
+    }
+
+    fn thread_file_link(workspace: Option<&ThreadWorkspace>, path: &str) -> Value {
+        read_link(workspace, &request(path, LinkRead::MarkdownLink))
+    }
+
+    fn thread_linked_file(workspace: Option<&ThreadWorkspace>, path: &str, want: &LinkedWant) -> Value {
+        read_link(workspace, &request(path, LinkRead::LinkedFile(want.clone())))
     }
 
     #[test]
@@ -603,7 +693,7 @@ mod tests {
 
     #[test]
     fn reads_requests_as_nodes_schemas_do() {
-        let link = |value: Value| file_link_request(Some(&value));
+        let link = |value: Value| link_request("thread-file-link", Some(&value));
         assert_eq!(link(json!({ "threadId": "t", "path": "README.md" })).map(|r| r.path), Some("README.md".into()));
         assert!(link(json!({ "threadId": "t", "path": "README.md", "want": "place" })).is_none());
         assert!(link(json!({ "threadId": "", "path": "README.md" })).is_none());
@@ -614,7 +704,15 @@ mod tests {
         assert!(link(json!({ "threadId": "t", "path": "notes\u{7}.md" })).is_none());
         assert!(link(json!({ "threadId": "t", "path": "C:/notes.md" })).is_some());
 
-        let linked = |value: Value| linked_file_request(Some(&value)).and_then(|r| r.want);
+        assert!(link_request("thread-files", Some(&json!({ "threadId": "t", "path": "a" }))).is_none());
+        assert_eq!(link(json!({ "threadId": "t", "path": "a" })).map(|r| r.read.feature()), Some("thread-file-links"));
+        let linked = |value: Value| {
+            link_request("thread-linked-file", Some(&value)).and_then(|r| match r.read {
+                LinkRead::LinkedFile(want) => Some(want),
+                LinkRead::MarkdownLink => None,
+            })
+        };
+        assert_eq!(LinkRead::LinkedFile(LinkedWant::Place).feature(), "thread-linked-files");
         assert_eq!(linked(json!({ "threadId": "t", "path": "a", "want": "place" })), Some(LinkedWant::Place));
         assert_eq!(linked(json!({ "threadId": "t", "path": "a", "want": "preview" })), Some(LinkedWant::Preview));
         assert_eq!(
@@ -797,5 +895,103 @@ mod tests {
         // `~/` reads from the home folder, never from the thread's.
         let answer = thread_file_link(Some(&ws), "~/sotto-linked-files-test-missing.md");
         assert_eq!(code(&answer), Some("path-unavailable"));
+    }
+
+    #[test]
+    fn resolves_paths_as_nodes_path_resolve_does() {
+        if cfg!(windows) {
+            let base = Path::new(r"C:\root");
+            // A `D:` among a relative path's segments is a name, not a new drive.
+            assert_eq!(resolve_from(base, "a/D:/x"), PathBuf::from(r"C:\root\a\D:\x"));
+            assert_eq!(resolve_from(Path::new(r"\\?\C:\root"), "a/D:"), PathBuf::from(r"\\?\C:\root\a\D:"));
+            assert_eq!(resolve_from(base, "a\\..\\b"), PathBuf::from(r"C:\root\b"));
+            // A rooted path is on the base's drive, and one with its drive stands alone.
+            assert_eq!(resolve_from(base, "/x/y"), PathBuf::from(r"C:\x\y"));
+            assert_eq!(resolve_from(base, "D:/x"), PathBuf::from(r"D:\x"));
+        } else {
+            let base = Path::new("/root");
+            assert_eq!(resolve_from(base, "a/D:/x"), PathBuf::from("/root/a/D:/x"));
+            assert_eq!(resolve_from(base, "a/../b"), PathBuf::from("/root/b"));
+            assert_eq!(resolve_from(base, "/x/y"), PathBuf::from("/x/y"));
+            assert_eq!(resolve_from(base, "../../.."), PathBuf::from("/"));
+        }
+    }
+
+    #[test]
+    fn reads_a_home_path_from_the_home_folder_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let home = root.join("home");
+        fs::create_dir(&home).unwrap();
+        fs::write(home.join("notes.md"), "# Home").unwrap();
+        fs::write(root.join("notes.md"), "# Thread").unwrap();
+
+        let found = locate_link(&root, Some(&home), "~/notes.md").unwrap();
+        assert_eq!(found.absolute, fs::canonicalize(home.join("notes.md")).unwrap());
+        assert!(!found.relative_to_thread);
+        // With no home folder known, a `~/` path names nothing, never the process's own folder.
+        assert!(locate_link(&root, None, "~/notes.md").is_none());
+        assert!(locate_link(&root, None, "~").is_none());
+        // `~//x` is the absolute `/x`, as Node's `resolve(homedir(), '/x')` reads it; on Windows on the home's drive.
+        let plain = dir.path().join("notes.md").to_string_lossy().into_owned();
+        let rooted = if cfg!(windows) { plain[2..].to_string() } else { plain };
+        let found = locate_link(&root, Some(&home), &format!("~/{rooted}")).unwrap();
+        assert_eq!(found.absolute, fs::canonicalize(root.join("notes.md")).unwrap());
+    }
+
+    #[test]
+    fn a_files_revision_is_the_same_by_path_and_by_handle_and_notices_a_swap() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let first = root.join("data.bin");
+        fs::write(&first, [7u8; 8]).unwrap();
+        let by_path = Revision::of_path(&first).unwrap();
+        assert_eq!(Revision::of_file(&fs::File::open(&first).unwrap()), Some(by_path));
+        assert_eq!(Revision::of_path(&first).map(|again| again.hash()), Some(by_path.hash()));
+
+        // Another file with the same size and times moved into its place is another revision.
+        let second = root.join("swap.bin");
+        fs::write(&second, [7u8; 8]).unwrap();
+        let recorded = fs::metadata(&first).unwrap();
+        let times = fs::FileTimes::new().set_modified(recorded.modified().unwrap());
+        #[cfg(windows)]
+        let times = {
+            use std::os::windows::fs::FileTimesExt;
+            times.set_created(recorded.created().unwrap())
+        };
+        fs::File::options().write(true).open(&second).unwrap().set_times(times).unwrap();
+        fs::rename(&second, &first).unwrap();
+        let swapped = Revision::of_path(&first).unwrap();
+        assert_eq!((swapped.size, swapped.mtime), (by_path.size, by_path.mtime));
+        if cfg!(windows) {
+            assert_eq!(swapped.birth, by_path.birth);
+        }
+        assert_ne!((swapped.dev, swapped.ino), (by_path.dev, by_path.ino));
+        assert_ne!(swapped.hash(), by_path.hash());
+    }
+
+    #[test]
+    fn refuses_an_opened_file_outside_the_folder_for_a_relative_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(dir.path()).unwrap();
+        let root = base.join("thread");
+        fs::create_dir(&root).unwrap();
+        let outside = base.join("secret.md");
+        fs::write(&outside, "# outside").unwrap();
+        let located = |relative_to_thread| Located {
+            absolute: outside.clone(),
+            meta: fs::metadata(&outside).unwrap(),
+            written: "notes.md".into(),
+            relative_to_thread,
+            revision: Revision::of_path(&outside),
+        };
+        // A link written relative to the thread whose file is found outside its folder once opened, as after a swap.
+        let refused = open_unchanged(&root, &located(true), CHANGED).unwrap_err();
+        assert_eq!(code(&refused), Some("path-unavailable"));
+        assert_eq!(message(&refused), Some(CHANGED));
+        assert!(open_unchanged(&root, &located(false), CHANGED).is_ok());
+        // A file whose revision the system could not say is refused with the words it is given, never read.
+        let unnamed = Located { revision: None, ..located(false) };
+        assert_eq!(message(&open_unchanged(&root, &unnamed, CHANGED_IN_DOWNLOAD).unwrap_err()), Some(CHANGED_IN_DOWNLOAD));
     }
 }
