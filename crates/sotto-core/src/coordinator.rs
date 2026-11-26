@@ -16,7 +16,7 @@ use crate::ops::ThreadWorkspace;
 use crate::protocol::HostErrorCode;
 use crate::provider::{
     AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageAck,
-    SendMessageRequest, ThreadRecordSeed,
+    SendMessageRequest, ThreadRecordSeed, ThreadRequestsRead,
 };
 use crate::attachment_files::SentAttachment;
 use crate::attachment_store::AGENT_MAX_ATTACHMENTS;
@@ -91,6 +91,8 @@ impl CoordinatorError {
 
 /// What a client is told when it may not do something here, as Node's `REMOTE_PERMISSION_DENIED`.
 const REMOTE_PERMISSION_DENIED: &str = "This action is not allowed from this device. Check its permission policy or complete the action on the host.";
+/// What an answer check's refusal adds when the client's saved answer stays, as Node's `requestAnswerCheckRefusals` say.
+const ANSWER_KEPT: &str = " Your saved answer is kept.";
 
 #[derive(Debug, Clone)]
 pub enum CoordinatorBroadcast {
@@ -579,6 +581,14 @@ enum ActorMessage {
     CheckRequestAnswer {
         client: ClientContext,
         target: AnswerTarget,
+        reply: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
+    /// The provider's read for an answer check came back.
+    RequestAnswerRead {
+        client: ClientContext,
+        target: AnswerTarget,
+        revision: u64,
+        read: ThreadRequestsRead,
         reply: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     AcceptedAnswers {
@@ -1221,6 +1231,9 @@ struct CoordinatorActor {
     answered_requests: AnsweredRequests,
     /// How many answers each thread has on their way to its provider, as Node's `answerActivities` counts them.
     answers_in_flight: HashMap<String, usize>,
+    /// How many answers each thread has ever started, as Node's `answerActivities` revision counts them, so a check can
+    /// tell that another answer started while the provider read the thread.
+    answer_revisions: HashMap<String, u64>,
     /// Each client's shown threads, by the name it observes under.
     observations: HashMap<Observer, Vec<String>>,
     staged: StagedAttachments,
@@ -1367,6 +1380,7 @@ impl CoordinatorActor {
             failures_seen,
             answered_requests,
             answers_in_flight: HashMap::new(),
+            answer_revisions: HashMap::new(),
             observations: HashMap::new(),
             staged,
             previews,
@@ -1942,8 +1956,9 @@ impl CoordinatorActor {
                     reply,
                 });
             }
-            ActorMessage::CheckRequestAnswer { client, target, reply } => {
-                let _ = reply.send(self.check_request_answer(&client, &target));
+            ActorMessage::CheckRequestAnswer { client, target, reply } => self.start_request_answer_check(client, target, reply),
+            ActorMessage::RequestAnswerRead { client, target, revision, read, reply } => {
+                let _ = reply.send(self.finish_request_answer_check(&client, &target, revision, read));
             }
             ActorMessage::AcceptedAnswers { client_id, watched, reply } => {
                 let accepted = watched
@@ -2708,6 +2723,7 @@ impl CoordinatorActor {
 
         let decision_id = decision_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         *self.answers_in_flight.entry(tid.clone()).or_default() += 1;
+        *self.answer_revisions.entry(tid.clone()).or_default() += 1;
         let self_tx = self.self_tx.clone();
         let answer_client = client.clone();
         tokio::spawn(async move {
@@ -4082,13 +4098,65 @@ impl CoordinatorActor {
         }
     }
 
-    /// Node's `checkRequestAnswer`, in its order: the client may answer, then the question is still waiting as the client
-    /// holds it, then no answer to the thread is on its way, then the thread's provider is connected. This host holds
-    /// each thread's questions as its provider last told it, so the check reads those rather than asking the provider.
-    fn check_request_answer(&self, client: &ClientContext, target: &AnswerTarget) -> Result<(), CoordinatorError> {
-        const KEPT: &str = " Your saved answer is kept.";
+    /// Node's `checkRequestAnswer` up to the provider's read, in its order: the question is checked, the thread's answer
+    /// revision is noted, an answer on its way or a provider not connected is refused, and then the provider reads the
+    /// thread again. The read runs outside the actor and holds no lane, as Node's "A native read owns no command lane":
+    /// one provider never holds other threads.
+    fn start_request_answer_check(&mut self, client: ClientContext, target: AnswerTarget, reply: oneshot::Sender<Result<(), CoordinatorError>>) {
+        if let Err(err) = self.validate_request_answer(&client, &target) {
+            let _ = reply.send(Err(err));
+            return;
+        }
+        let revision = self.answer_revisions.get(&target.thread_id).copied().unwrap_or(0);
+        if let Err(err) = self.answer_unchanged(&target.thread_id, revision) {
+            let _ = reply.send(Err(err));
+            return;
+        }
+        let adapter = self
+            .threads
+            .iter()
+            .find(|thread| thread.id == target.thread_id)
+            .filter(|thread| thread_provider_connected(&self.provider_statuses, thread))
+            .and_then(|thread| self.providers.get(&thread.provider_id).cloned());
+        let Some(adapter) = adapter else {
+            let _ = reply.send(Err(CoordinatorError::unavailable("Reconnect the original provider before checking this answer.")));
+            return;
+        };
+        let self_tx = self.self_tx.clone();
+        tokio::spawn(async move {
+            let read = adapter.read_thread_requests(target.thread_id.clone()).await;
+            let _ = self_tx.send(ActorMessage::RequestAnswerRead { client, target, revision, read, reply });
+        });
+    }
+
+    /// The rest of Node's `checkRequestAnswer` once the provider has read the thread: a failed read is the host's failure
+    /// to check, in the host's words and never the adapter's; another answer started meanwhile is refused; then what the
+    /// provider read stands for the thread's waiting questions, the question is checked again, and the host saves and
+    /// publishes. Node then lets Claude and Grok answers marked ready to retry go from its outbox; this host keeps no
+    /// outbox of uncertain answers, so there is nothing to let go.
+    fn finish_request_answer_check(&mut self, client: &ClientContext, target: &AnswerTarget, revision: u64, read: ThreadRequestsRead) -> Result<(), CoordinatorError> {
+        let Ok(requests) = read else {
+            return Err(CoordinatorError::unavailable(HostErrorCode::Unavailable.default_message()));
+        };
+        self.answer_unchanged(&target.thread_id, revision)?;
+        if let Some(requests) = requests {
+            if let Some(thread) = self.threads.iter_mut().find(|thread| thread.id == target.thread_id) {
+                thread.requests = requests;
+                thread.updated_at = now_iso();
+            }
+        }
+        self.validate_request_answer(client, target)?;
+        self.save_workspace();
+        self.shell_dirty = true;
+        self.flush_dirty();
+        Ok(())
+    }
+
+    /// Node's `validate` in `checkRequestAnswer`: the client may answer, and the question is still waiting as the client
+    /// holds it, on the thread and provider it names.
+    fn validate_request_answer(&self, client: &ClientContext, target: &AnswerTarget) -> Result<(), CoordinatorError> {
         if !client.may_answer {
-            return Err(CoordinatorError::forbidden(format!("{REMOTE_PERMISSION_DENIED}{KEPT}")));
+            return Err(CoordinatorError::forbidden(format!("{REMOTE_PERMISSION_DENIED}{ANSWER_KEPT}")));
         }
         let thread = self
             .threads
@@ -4098,17 +4166,22 @@ impl CoordinatorActor {
         let waiting = thread.and_then(|thread| {
             thread.requests.iter().find(|request| request.get("id").and_then(Value::as_str) == Some(target.request_id.as_str()))
         });
-        let (Some(thread), true) = (thread, waiting.and_then(request_questions_digest).as_deref() == Some(target.questions_digest.as_str())) else {
-            return Err(CoordinatorError::stale(format!("The original question changed or is no longer pending.{KEPT}")));
-        };
-        if self.answers_in_flight.contains_key(&thread.id) {
+        if waiting.and_then(request_questions_digest).as_deref() != Some(target.questions_digest.as_str()) {
+            return Err(CoordinatorError::stale(format!("The original question changed or is no longer pending.{ANSWER_KEPT}")));
+        }
+        Ok(())
+    }
+
+    /// Node's `unchanged` in `readRequestDraft`: no answer to the thread is on its way, and none started since `revision`.
+    fn answer_unchanged(&self, thread_id: &str, revision: u64) -> Result<(), CoordinatorError> {
+        if self.answers_in_flight.contains_key(thread_id) {
             return Err(CoordinatorError {
                 code: HostErrorCode::Busy,
-                message: format!("This answer is still being sent. Wait for it to finish before checking it again.{KEPT}"),
+                message: format!("This answer is still being sent. Wait for it to finish before checking it again.{ANSWER_KEPT}"),
             });
         }
-        if !thread_provider_connected(&self.provider_statuses, thread) {
-            return Err(CoordinatorError::unavailable("Reconnect the original provider before checking this answer."));
+        if self.answer_revisions.get(thread_id).copied().unwrap_or(0) != revision {
+            return Err(CoordinatorError::stale(format!("Another answer started during this check. Check again.{ANSWER_KEPT}")));
         }
         Ok(())
     }
@@ -5339,31 +5412,62 @@ mod tests {
         assert!(coord.sent_attachment("00000000-0000-4000-8000-00000000000c".into(), sent, file.id, Wanted::File).await.unwrap().is_none());
     }
 
+    const CHECKED_THREAD: &str = "00000000-0000-4000-8000-00000000000a";
+
+    fn checked_question(text: &str) -> Value {
+        json!({ "id": "req-1", "kind": "question", "text": text, "options": [{ "id": "blue", "label": "Blue" }] })
+    }
+
+    fn answer_target_for(question: &Value) -> AnswerTarget {
+        let questions_digest = request_questions_digest(question).unwrap();
+        AnswerTarget { thread_id: CHECKED_THREAD.into(), provider_id: "codex".into(), request_id: "req-1".into(), questions_digest }
+    }
+
+    /// A Codex thread on a mock provider, sent a prompt, whose provider then asks `question`, once the host has published it.
+    async fn thread_asking(dir: &Path, question: &Value) -> (CoordinatorHandle, Arc<MockProviderAdapter>, ClientContext) {
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(dir.to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "P", "path": dir.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        run(json!({ "type": "create-thread", "threadId": CHECKED_THREAD, "projectId": project_id, "title": "T", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await.unwrap();
+        run(json!({ "type": "manual-send", "threadId": CHECKED_THREAD, "text": "Go" })).await.unwrap();
+        let mut published = coord.subscribe();
+        mock.emit_request(CHECKED_THREAD, question.clone());
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Ok(CoordinatorBroadcast::Shell(shell)) = published.recv().await {
+                    let asks = shell["host"]["threads"].as_array().into_iter().flatten().any(|thread| {
+                        thread["id"] == CHECKED_THREAD && thread["requests"].as_array().is_some_and(|requests| requests.contains(question))
+                    });
+                    if asks {
+                        return;
+                    }
+                }
+            }
+        }).await.expect("the question was never published");
+        (coord, mock, client)
+    }
+
     /// A held answer's question is checked as Node's `checkRequestAnswer` checks it, and an answer the provider took is
     /// kept under its decision ID in `agents.json`, as Node keeps `answeredRequests`, so a restart still knows it.
     #[tokio::test]
     async fn checks_a_held_answer_and_keeps_the_answers_given() {
         let dir = tempdir().unwrap();
+        let question = checked_question("Which colour?");
+        let (coord, _mock, client) = thread_asking(dir.path(), &question).await;
         let start = || {
-            let mock = Arc::new(MockProviderAdapter::new("codex"));
             let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
-            providers.insert("codex".into(), mock.clone());
-            (CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap(), mock)
+            providers.insert("codex".into(), Arc::new(MockProviderAdapter::new("codex")));
+            CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap()
         };
-        let (coord, mock) = start();
-        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
-        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
-        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "P", "path": dir.path().to_string_lossy(), "useExisting": true })).await.unwrap();
-        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
-        let thread_id = "00000000-0000-4000-8000-00000000000a";
-        run(json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "T", "titleSource": "user",
-            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await.unwrap();
-        run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Go" })).await.unwrap();
-        let question = json!({ "id": "req-1", "kind": "question", "text": "Which colour?", "options": [{ "id": "blue", "label": "Blue" }] });
-        mock.emit_request(thread_id, question.clone());
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        let digest = request_questions_digest(&question).unwrap();
-        let target = AnswerTarget { thread_id: thread_id.into(), provider_id: "codex".into(), request_id: "req-1".into(), questions_digest: digest.clone() };
+        let thread_id = CHECKED_THREAD;
+        let target = answer_target_for(&question);
+        let digest = target.questions_digest.clone();
 
         coord.check_request_answer(client.clone(), target.clone()).await.expect("still waiting as it was asked");
         let refused = |result: Result<(), CoordinatorError>| result.unwrap_err();
@@ -5395,9 +5499,65 @@ mod tests {
         let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
         assert_eq!(saved[ANSWERED_REQUESTS_KEY], json!([{ "threadId": thread_id, "provider": "codex", "requestId": "req-1", "questionsDigest": digest, "decisionId": decision }]));
         assert!(!serde_json::to_string(&saved).unwrap().contains("Blue"), "no answer text in agents.json");
-        let (coord, _) = start();
+        let coord = start();
         assert_eq!(coord.accepted_answers("c1".into(), watched).await.unwrap(), ["command-1"], "a restart still knows the answer was given");
         coord.shutdown().await;
+    }
+
+    /// An answer check reads the thread from its provider again, as Node's `readRequestDraft` does, and holds no lane while
+    /// it reads: what the provider read stands for the thread's questions, a failed read says only the host's words, and
+    /// an answer that started during the read is refused as Node's `answer-changed`.
+    #[tokio::test]
+    async fn an_answer_check_reads_the_thread_from_its_provider_and_holds_no_lane() {
+        let dir = tempdir().unwrap();
+        let question = checked_question("Which colour?");
+        let (coord, mock, client) = thread_asking(dir.path(), &question).await;
+        let coord = Arc::new(coord);
+        let check = |target: AnswerTarget| {
+            let (coord, client) = (Arc::clone(&coord), client.clone());
+            tokio::spawn(async move { coord.check_request_answer(client, target).await })
+        };
+        let requests = |shell: Value| shell["host"]["threads"][0]["requests"].clone();
+
+        // The read holds no lane: the thread takes another command while its provider reads it.
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&question));
+        read.started.await.unwrap();
+        let rename = json!({ "type": "rename-thread", "threadId": CHECKED_THREAD, "title": "Renamed" });
+        let renamed = coord.run_command(client.clone(), rename.as_object().unwrap().clone()).await.unwrap();
+        assert_eq!(renamed["host"]["threads"][0]["title"], "Renamed", "the thread was not held while its provider read it");
+        assert!(!checking.is_finished(), "the check waits for the provider's read");
+        read.finish.send(Ok(Some(vec![question.clone()]))).unwrap();
+        checking.await.unwrap().expect("the provider still asks it");
+
+        // What the provider read is what the thread asks now.
+        let changed = checked_question("Which shade?");
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&question));
+        read.started.await.unwrap();
+        read.finish.send(Ok(Some(vec![changed.clone()]))).unwrap();
+        let stale = checking.await.unwrap().unwrap_err();
+        assert_eq!((stale.code, stale.message.as_str()), (HostErrorCode::StaleRequest, "The original question changed or is no longer pending. Your saved answer is kept."));
+        assert_eq!(requests(coord.shell(true).await.unwrap()), json!([changed]), "the provider's read was accepted");
+
+        // A read that failed is the host's failure to check, never the adapter's words.
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&changed));
+        read.started.await.unwrap();
+        read.finish.send(Err("codex said something private".into())).unwrap();
+        let failed = checking.await.unwrap().unwrap_err();
+        assert_eq!((failed.code, failed.message.as_str()), (HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()));
+
+        // Another answer that starts while the provider reads is Node's `answer-changed`.
+        let read = mock.hold_next_thread_read();
+        let checking = check(answer_target_for(&changed));
+        read.started.await.unwrap();
+        let answer = json!({ "type": "answer", "threadId": CHECKED_THREAD, "requestId": "req-1", "answer": "Blue" });
+        coord.run_command(client.clone(), answer.as_object().unwrap().clone()).await.unwrap();
+        read.finish.send(Ok(None)).unwrap();
+        let moved = checking.await.unwrap().unwrap_err();
+        assert_eq!((moved.code, moved.message.as_str()), (HostErrorCode::StaleRequest, "Another answer started during this check. Check again. Your saved answer is kept."));
+        Arc::try_unwrap(coord).ok().unwrap().shutdown().await;
     }
 
     #[tokio::test]
