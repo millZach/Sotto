@@ -150,10 +150,6 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "configure-thread": {
-      "node": "refused",
-      "rust": "ok"
-    },
     "configure-thread-working-copy": {
       "node": "ok",
       "rust": "invalid_request"
@@ -165,10 +161,6 @@
     "create-owlet": {
       "node": "ok",
       "rust": "invalid_request"
-    },
-    "create-project": {
-      "node": "refused",
-      "rust": "ok"
     },
     "delete-thread": {
       "node": "ok",

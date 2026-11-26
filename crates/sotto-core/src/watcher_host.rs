@@ -6111,6 +6111,7 @@ mod tests {
             "path".into(),
             json!(project_dir.path().to_string_lossy().to_string()),
         );
+        create_proj.insert("useExisting".into(), json!(true));
         let client = ClientContext {
             client_id: "desktop-1".into(),
             user: "Desktop".into(),
@@ -6477,6 +6478,7 @@ mod tests {
             "path".into(),
             json!(project_dir.path().to_string_lossy().to_string()),
         );
+        create_proj.insert("useExisting".into(), json!(true));
         let client = ClientContext {
             client_id: "desktop-1".into(),
             user: "Desktop".into(),
@@ -6570,6 +6572,7 @@ mod tests {
             "path".into(),
             json!(project_dir.path().to_string_lossy().to_string()),
         );
+        create_proj.insert("useExisting".into(), json!(true));
         let client = ClientContext {
             client_id: "desktop-1".into(),
             user: "Desktop".into(),
@@ -6765,6 +6768,7 @@ mod tests {
             "path".into(),
             json!(project_dir.path().to_string_lossy().to_string()),
         );
+        create_proj.insert("useExisting".into(), json!(true));
         let client = ClientContext {
             client_id: "client-old".into(),
             user: "Desktop A".into(),
@@ -7056,6 +7060,7 @@ mod tests {
             "path".into(),
             json!(project_dir.path().to_string_lossy().to_string()),
         );
+        create_proj.insert("useExisting".into(), json!(true));
         let client = ClientContext {
             client_id: "client-old".into(),
             user: "Desktop A".into(),

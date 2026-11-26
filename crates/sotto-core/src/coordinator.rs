@@ -216,6 +216,28 @@ fn file_references(command: &Map<String, Value>) -> Result<Option<Vec<Value>>, C
     Ok(Some(list.clone()))
 }
 
+/// Whether a project's name can be a folder's on this host, as Node asks it: Windows refuses more than Linux or macOS.
+fn usable_folder_name(title: &str) -> bool {
+    if cfg!(windows) {
+        let reserved = {
+            let lower = title.to_ascii_lowercase();
+            let stem = lower.split('.').next().unwrap_or_default().trim_end_matches(' ').to_string();
+            matches!(stem.as_str(), "con" | "prn" | "aux" | "nul")
+                || (stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) && stem[3..].chars().all(|c| c.is_ascii_digit() || "¹²³".contains(c)))
+                || ((stem.starts_with("com") || stem.starts_with("lpt")) && stem.chars().count() == 4 && "¹²³".contains(stem.chars().last().unwrap_or(' ')))
+        };
+        !title.chars().any(|c| "<>:\"/\\|?*".contains(c)) && !title.ends_with('.') && !title.ends_with(' ') && !reserved
+    } else {
+        !title.contains('/') && title != "." && title != ".."
+    }
+}
+
+/// A folder's path as two names for it compare: Windows folders match whatever their case.
+fn folder_key(path: &str) -> String {
+    let resolved = std::path::absolute(path).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| path.to_string());
+    if cfg!(windows) { resolved.to_lowercase() } else { resolved }
+}
+
 /// Node's words for a follow-up with neither text nor an image.
 const NO_PROMPT: &str = "There is no prompt to queue.";
 /// The most follow-ups one order may name, as Node's `reorder-followups` schema allows.
@@ -1854,7 +1876,13 @@ impl CoordinatorActor {
             "configure" => self.spawn_cmd_configure(lane, client, &command, reply),
             "connect" => self.spawn_cmd_connect(lane, client, &command, reply),
             "disconnect" => self.spawn_cmd_disconnect(lane, client, &command, reply),
-            "configure-thread" => self.spawn_cmd_configure_thread(lane, client, &command, reply),
+            "configure-thread" => {
+                self.error = None;
+                match self.configure_refusal(&client, &command) {
+                    Ok(()) => self.spawn_cmd_configure_thread(lane, client, &command, reply),
+                    Err(words) => self.refuse_sync_command(lane, &client, words, reply),
+                }
+            }
             "manual-send" => self.route_prompt(lane, client, PromptKind::Send, &command, reply),
             "steer" => self.route_prompt(lane, client, PromptKind::Steer, &command, reply),
             "steer-followup" => self.cmd_steer_followup(lane, client, &command, reply),
@@ -2580,7 +2608,11 @@ impl CoordinatorActor {
                 provider_mode,
                 result,
             } => {
-                result.map_err(CoordinatorError::unavailable)?;
+                // What the provider turns down is turned down in the host's state, as Node's dispatch turns it down.
+                if let Err(words) = result {
+                    self.command_refused(words);
+                    return Ok(self.build_shell(client.may_answer));
+                }
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                     if let Some(m) = model_id {
                         thread.model_id = m;
@@ -2909,37 +2941,75 @@ impl CoordinatorActor {
         Ok(())
     }
 
+    /// Makes or opens a project, as Node's `create-project`: checked in Node's order and words, then a folder Sotto
+    /// makes, or one already there when the command says to use it. A project already open on that folder is selected.
+    /// What Node turns down is turned down in the host's state.
     fn cmd_create_project(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let provider = command
-            .get("provider")
-            .and_then(Value::as_str)
-            .unwrap_or(&self.configuration.provider)
-            .to_string();
-        let Some(title) = command.get("title").and_then(Value::as_str) else {
+        let Some(title) = command.get("title").and_then(Value::as_str).map(ToString::to_string) else {
             return Err(CoordinatorError::invalid("Project title is required."));
         };
-        let Some(path) = command.get("path").and_then(Value::as_str) else {
-            return Err(CoordinatorError::invalid("Project path is required."));
+        self.error = None;
+        if let Err(words) = self.create_project(&title, command) {
+            self.command_refused(words);
+        }
+        Ok(())
+    }
+
+    fn create_project(&mut self, title: &str, command: &Map<String, Value>) -> Result<(), String> {
+        let provider = command.get("provider").and_then(Value::as_str).unwrap_or(&self.configuration.provider).to_string();
+        if !self.host_connected() {
+            return Err(NO_PROVIDER_ON_HOST.into());
+        }
+        let status = self.provider_statuses.get(&provider);
+        if status.is_some_and(|status| status.connection != "connected") {
+            return Err(format!("Connect {} before creating a project.", provider_label(&provider)));
+        }
+        let host_projects = || self.provider_statuses.values().any(|s| s.connection == "connected" && s.capabilities.projects);
+        if !status.map_or_else(host_projects, |status| status.capabilities.projects) {
+            return Err("This provider does not support creating projects.".into());
+        }
+        if !usable_folder_name(title) {
+            return Err("Choose a project name that can be used as a folder name.".into());
+        }
+        let use_existing = command.get("useExisting").and_then(Value::as_bool).unwrap_or(false);
+        let git_init = command.get("gitInit").and_then(Value::as_bool).unwrap_or(false);
+        if git_init && use_existing {
+            return Err("Sotto sets up Git only in a folder it makes. Nothing was added. Add the folder as it is, and ask a thread to set up Git there.".into());
+        }
+        let target = match command.get("path").and_then(Value::as_str).filter(|path| !path.is_empty()) {
+            Some(path) => PathBuf::from(path),
+            None if !self.configuration.projects_directory.is_empty() => Path::new(&self.configuration.projects_directory).join(title),
+            None => PathBuf::new(),
         };
-        let use_existing = command
-            .get("useExisting")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-        let git_init = command
-            .get("gitInit")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let dir = Path::new(path);
-        let mut created_dir = false;
-        if !use_existing {
-            if !dir.exists() {
-                std::fs::create_dir_all(dir)
-                    .map_err(|_| CoordinatorError::unavailable("Could not create project folder."))?;
-                created_dir = true;
+        if !target.is_absolute() {
+            return Err("Choose an absolute project folder or configure a default projects directory.".into());
+        }
+        let dir = std::path::absolute(&target).unwrap_or(target);
+        let path = dir.to_string_lossy().into_owned();
+        let existing = std::fs::metadata(&dir).ok();
+        if existing.as_ref().is_some_and(|meta| !meta.is_dir()) {
+            return Err("A file with that name is already there. Nothing was added. Choose another name.".into());
+        }
+        if existing.is_some() && !use_existing {
+            return Err("That folder already exists. Nothing was added. Choose another folder, or add this one with Add project to use it as it is.".into());
+        }
+        if use_existing && existing.is_none() {
+            return Err("That folder no longer exists. Nothing was added. Choose another folder.".into());
+        }
+        if use_existing {
+            let key = folder_key(&path);
+            let known = self.projects.iter().find(|p| folder_key(&p.path) == key && p.provider_id.as_deref().is_none_or(|id| id == provider));
+            if let Some(known) = known.map(|p| (p.id.clone(), p.title.clone())) {
+                self.active_project_id = Some(known.0);
+                self.active_thread_id = None;
+                self.notice = format!("Opened {}.", known.1);
+                return Ok(());
             }
-        } else if !dir.exists() && git_init {
-            std::fs::create_dir_all(dir)
-                .map_err(|_| CoordinatorError::unavailable("Could not create project folder."))?;
+        }
+        let dir = dir.as_path();
+        let mut created_dir = false;
+        if existing.is_none() {
+            std::fs::create_dir_all(dir).map_err(|_| "Could not create project folder.".to_string())?;
             created_dir = true;
         }
         if git_init {
@@ -2958,16 +3028,14 @@ impl CoordinatorActor {
                 if created_dir {
                     let _ = std::fs::remove_dir_all(dir);
                 }
-                return Err(CoordinatorError::unavailable(
-                    "Could not initialize Git in the project folder.",
-                ));
+                return Err("Could not initialize Git in the project folder.".into());
             }
         }
         let id = Uuid::new_v4().to_string();
         let project = AgentProject {
             id: id.clone(),
             title: title.to_string(),
-            path: path.to_string(),
+            path: path.clone(),
             host_id: Some(self.host_id.clone()),
             provider_id: Some(provider),
             workspace_settled_at: None,
@@ -2975,7 +3043,63 @@ impl CoordinatorActor {
         };
         self.projects.push(project);
         self.active_project_id = Some(id);
+        self.active_thread_id = None;
+        self.notice = format!("Created {title} in {path}.");
         self.save_workspace();
+        Ok(())
+    }
+
+    /// Why a thread's settings may not change, in Node's words and order (`configure-thread` and `validateThreadOptions`).
+    /// This host's catalog offers no speed but standard, so any other speed is refused as a model without it refuses it.
+    fn configure_refusal(&self, client: &ClientContext, command: &Map<String, Value>) -> Result<(), String> {
+        if !self.host_connected() {
+            return Err(NO_PROVIDER_ON_HOST.into());
+        }
+        let given = |key: &str| command.get(key).filter(|value| !value.is_null());
+        if ["modelId", "reasoningEffort", "runtimeMode", "providerMode", "fastMode", "speed"].iter().all(|key| !command.contains_key(*key)) {
+            return Err("Choose a thread setting to change.".into());
+        }
+        let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default();
+        let thread = self.threads.iter().find(|t| t.id == thread_id).ok_or(NO_THREAD)?;
+        if thread.native_session_started && !self.provider_offers(thread, |c| c.configure_thread == Some(true)) {
+            return Err("This provider does not support changing thread settings.".into());
+        }
+        if thread.status == "running" || !thread.requests.is_empty() {
+            return Err("Wait for this thread to finish and answer its pending requests before changing settings.".into());
+        }
+        let model_id = given("modelId").and_then(Value::as_str);
+        let model = self.models.iter().find(|m| m.id == model_id.unwrap_or(&thread.model_id));
+        if thread.native_session_started && model_id.is_some() && !thread.provider_id.is_empty() && model.is_none_or(|m| m.provider_id != thread.provider_id) {
+            return Err("Choose a model from this thread provider. Existing sessions cannot move between providers.".into());
+        }
+        let Some(model) = model.filter(|m| m.ready) else {
+            return Err("That model or account is unavailable. Choose a ready model; Sotto will not switch your account.".into());
+        };
+        let offers = |list: &Option<Vec<String>>, wanted: &str| list.as_ref().is_some_and(|list| list.iter().any(|item| item == wanted));
+        if let Some(effort) = given("reasoningEffort").and_then(Value::as_str) {
+            if !offers(&model.reasoning_efforts, effort) {
+                return Err("That reasoning level is not supported by this model.".into());
+            }
+        }
+        let runtime_mode = given("runtimeMode").and_then(Value::as_str);
+        let provider_mode = given("providerMode").and_then(Value::as_str);
+        let mode_of = |id: &str| model.provider_modes.as_ref().and_then(|modes| modes.iter().find(|mode| mode.get("id").and_then(Value::as_str) == Some(id)));
+        if runtime_mode.is_some_and(|mode| !offers(&model.runtime_modes, mode)) || provider_mode.is_some_and(|mode| mode_of(mode).is_none()) {
+            return Err("That permission mode is not supported by this provider.".into());
+        }
+        let speed = match command.get("speed") {
+            Some(speed) => speed.as_str(),
+            None => (command.get("fastMode") == Some(&Value::Bool(true))).then_some("fast"),
+        };
+        if let Some(speed) = speed.filter(|_| command.contains_key("speed") || model_id.is_none()) {
+            return Err(if speed == "fast" { "This model does not offer fast mode." } else { "This model does not offer ultrafast speed." }.into());
+        }
+        // A mode that lets the agent act without asking is a grant only a client that may answer can give (ADR-0004).
+        let grants = runtime_mode.is_some_and(|mode| mode != "approval-required")
+            || provider_mode.is_some_and(|mode| mode_of(mode).and_then(|m| m.get("allows")).and_then(Value::as_str) != Some("nothing"));
+        if grants && !client.may_answer {
+            return Err("This action is not allowed from this device. Check its permission policy or complete the action on the host.".into());
+        }
         Ok(())
     }
 
@@ -5135,6 +5259,59 @@ mod tests {
         coord.shutdown().await;
     }
 
+    /// Making a project and changing a thread's settings as Node checks them (`create-project`, `configure-thread`): a
+    /// folder already there is refused unless the command says to use it, one gone or a relative path is refused, the
+    /// folder of a project already open opens that project, and a new folder is made; a change with nothing in it, an
+    /// effort or speed the model does not offer, or a mode a client may not grant is refused in the host's state.
+    #[tokio::test]
+    async fn projects_and_thread_settings_are_checked_as_node_checks_them() {
+        let dir = tempdir().unwrap();
+        let (coord, _mock, client, thread_id) = failing_workspace(dir.path()).await;
+        let run = |client: ClientContext, command: Value| coord.run_command(client, command.as_object().unwrap().clone());
+        let project = |path: &Path, use_existing: Option<bool>| {
+            let mut command = json!({ "type": "create-project", "provider": "codex", "title": "Probe", "path": path.to_string_lossy() });
+            if let Some(use_existing) = use_existing {
+                command["useExisting"] = json!(use_existing);
+            }
+            command
+        };
+        let existing = dir.path().join("project");
+        let refused = run(client.clone(), project(&existing, None)).await.unwrap();
+        assert!(refused["error"].as_str().unwrap().starts_with("That folder already exists. Nothing was added."));
+        let refused = run(client.clone(), project(Path::new("relative"), Some(true))).await.unwrap();
+        assert_eq!(refused["error"], "Choose an absolute project folder or configure a default projects directory.");
+        let refused = run(client.clone(), project(&dir.path().join("gone"), Some(true))).await.unwrap();
+        assert_eq!(refused["error"], "That folder no longer exists. Nothing was added. Choose another folder.");
+        let opened = run(client.clone(), project(&existing, Some(true))).await.unwrap();
+        assert_eq!((opened["error"].clone(), opened["host"]["projects"].as_array().unwrap().len()), (Value::Null, 1));
+        assert_eq!(opened["notice"], "Opened Failing.");
+        let fresh = dir.path().join("fresh");
+        let made = run(client.clone(), project(&fresh, None)).await.unwrap();
+        assert_eq!((made["error"].clone(), made["host"]["projects"].as_array().unwrap().len()), (Value::Null, 2));
+        assert!(fresh.is_dir(), "the new project's folder was made");
+
+        let configure = |extra: Value| {
+            let mut command = json!({ "type": "configure-thread", "threadId": thread_id });
+            command.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            command
+        };
+        for (extra, words) in [
+            (json!({}), "Choose a thread setting to change."),
+            (json!({ "reasoningEffort": "medium" }), "That reasoning level is not supported by this model."),
+            (json!({ "speed": "fast" }), "This model does not offer fast mode."),
+            (json!({ "runtimeMode": "no-such-mode" }), "That permission mode is not supported by this provider."),
+        ] {
+            assert_eq!(run(client.clone(), configure(extra)).await.unwrap()["error"], words);
+        }
+        let phone = ClientContext { client_id: "phone".into(), user: "Phone".into(), may_answer: false };
+        // A grant from a client that may not answer is refused before the coordinator reads it, as Node's socket server refuses it.
+        let refused = run(phone, configure(json!({ "runtimeMode": "full-access" }))).await.unwrap_err();
+        assert_eq!(refused.code, HostErrorCode::Forbidden);
+        let changed = run(client.clone(), configure(json!({ "reasoningEffort": "high" }))).await.unwrap();
+        assert_eq!((changed["error"].clone(), changed["host"]["threads"][0]["reasoningEffort"].clone()), (Value::Null, json!("high")));
+        coord.shutdown().await;
+    }
+
     /// A turn running when the host stopped is over once it starts again: the thread takes a Send as a new turn rather
     /// than queuing it behind a turn no provider holds.
     #[tokio::test]
@@ -5354,7 +5531,8 @@ mod tests {
                 name: "Claude Code".into(),
                 connection: "connected".into(),
                 version: "fixture".into(),
-                capabilities: AgentCapabilities::none(),
+                // It makes projects, as the late-ack test needs one; nothing else of it is offered.
+                capabilities: AgentCapabilities { projects: true, ..AgentCapabilities::none() },
                 error: None,
             }
         }
