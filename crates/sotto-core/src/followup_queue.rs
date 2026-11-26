@@ -256,11 +256,26 @@ impl FollowupStore {
     /// Takes the head of its thread's queue to send, as Node's `claim` in its send mode: items `waits` says wait are not
     /// counted. Answers the item as taken, with the command and message it goes as.
     pub fn claim(&mut self, id: &str, waits: impl Fn(&QueuedFollowup) -> bool, watcher_thread_ids: &HashSet<String>) -> Result<QueuedFollowup, String> {
+        self.take(id, Some(&waits), watcher_thread_ids)
+    }
+
+    /// Takes a queued item to steer into its thread's running turn, as Node's `claim` in its steer mode: any item still
+    /// queued, wherever it stands.
+    pub fn claim_to_steer(&mut self, id: &str, watcher_thread_ids: &HashSet<String>) -> Result<QueuedFollowup, String> {
+        self.take(id, None, watcher_thread_ids)
+    }
+
+    fn take(&mut self, id: &str, head_of: Option<&dyn Fn(&QueuedFollowup) -> bool>, watcher_thread_ids: &HashSet<String>) -> Result<QueuedFollowup, String> {
         let mut claimed = None;
         self.change(watcher_thread_ids, |items, _| {
-            let thread_id = items.iter().find(|i| i.id == id).map(|i| i.thread_id.clone());
-            let head = thread_id.and_then(|thread| items.iter().position(|i| i.thread_id == thread && !waits(i)));
-            let Some(at) = head.filter(|&at| items[at].id == id && items[at].status == "queued") else {
+            let at = match head_of {
+                Some(waits) => {
+                    let thread_id = items.iter().find(|i| i.id == id).map(|i| i.thread_id.clone());
+                    thread_id.and_then(|thread| items.iter().position(|i| i.thread_id == thread && !waits(i))).filter(|&at| items[at].id == id)
+                }
+                None => items.iter().position(|i| i.id == id),
+            };
+            let Some(at) = at.filter(|&at| items[at].status == "queued") else {
                 let wake_up = items.iter().any(|i| i.id == id && i.wake_up == Some(true));
                 return Err(if wake_up { "This wake-up is no longer ready to send." } else { "This follow-up is no longer ready to send." }.into());
             };
@@ -442,6 +457,8 @@ mod tests {
         let first = store.enqueue_prompt(prompt("t", "First"), &none()).unwrap().unwrap();
         let second = store.enqueue_prompt(prompt("t", "Second"), &none()).unwrap().unwrap();
         assert!(store.claim(&second, |_| false, &none()).is_err());
+        assert_eq!(store.claim_to_steer(&second, &none()).unwrap().status, "dispatching", "a steer takes any queued item");
+        store.settle(&second, FollowupSettle::Failed, None, &none()).unwrap();
         let claimed = store.claim(&first, |_| false, &none()).unwrap();
         assert!(claimed.command_id.is_some() && claimed.message_id.is_some());
         store.settle(&first, FollowupSettle::Failed, Some("No".into()), &none()).unwrap();
@@ -451,6 +468,7 @@ mod tests {
         store.claim(&first, |_| false, &none()).unwrap();
         store.settle(&first, FollowupSettle::Accepted, None, &none()).unwrap();
         assert_eq!(texts(&store, "t"), ["Second"]);
+        assert!(store.claim_to_steer(&second, &none()).is_ok(), "resumed, the failed steer may be steered again");
     }
 
     /// A pause holds the user's prompts and Sotto's shown wake-ups, never a hidden one.
