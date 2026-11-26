@@ -1,3 +1,4 @@
+import { modPart } from '../../../shared/modParts'
 import { ThreadMediaTiles } from './ThreadMediaTiles'
 import { PictureScopeContext, StepPicturesThreadContext, usePictureScope, useStepPictures, type StepPicturesThread } from './StepPictures'
 import { isCouncilPromptText } from '../../../shared/council'
@@ -435,7 +436,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   const forkedAt = started !== null && started !== 'off' && started.start.from === 'turn' && started.start.route === 'fork' && started.start.messageId === message.id
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
-  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : peer ? 'peer' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={placeRow}
+  <article className="thread-message" data-part={modPart('message')} data-author={message.role === 'user' ? 'user' : 'agent'} data-role={message.role} data-from={wakeUp ? 'sotto' : peer ? 'peer' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={placeRow}
     data-not-carried={fork?.after.has(message.id) || undefined} data-close={close || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     {peer ? <IncomingPeerHeader exchange={peerExchange} createdAt={message.createdAt} />
       : <header>{wakeUp ? <WakeUpWho text={message.text} />

@@ -81,6 +81,7 @@ export const OWL_FEATURES = [
   { id: 'out-of-process-engine', name: 'Out-of-process engine', owlSince: '2026-11-20', owner: 'docs/adr/0210-the-desktop-engine-runs-in-its-own-process.md', sentToStable: false },
   { id: 'rust-remote-host', name: 'Rust host for remote machines', owlSince: '2026-11-20', owner: 'docs/adr/0214-rust-sotto-host-for-remote-machines.md', sentToStable: false },
   { id: 'rust-local-engine', name: 'Rust local desktop engine', owlSince: '2026-11-21', owner: 'docs/adr/0215-rust-local-desktop-engine.md', sentToStable: false },
+  { id: 'mods', name: 'Mods', owlSince: '2026-11-25', owner: 'docs/adr/0217-mods-change-how-sotto-looks-and-add-parts-of-their-own.md', sentToStable: false },
   { id: 'parent-thread-coordination', name: 'Parent-to-parent thread coordination', owlSince: '2026-11-22', owner: 'docs/adr/0216-parent-threads-can-coordinate-with-each-other.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 

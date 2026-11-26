@@ -42,6 +42,8 @@ import { registerDelegationIpc } from '../agents/delegationIpc'
 import { DelegationToolServer } from '../agents/delegationTools'
 import { CoordinationToolServer } from '../agents/threadCoordinationTools'
 import { registerThreadCoordinationIpc } from '../agents/threadCoordinationIpc'
+import { modsFolder } from '../mods/mods'
+import { registerModsIpc } from '../mods/modsIpc'
 import { DesktopCoordinationRelay } from '../agents/threadCoordinationRelay'
 import { DevinAcpHost } from '../agents/devin'
 import { DynamicRecord } from '../agents/dynamicRecord'
@@ -1172,6 +1174,15 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     (channel, payload) => { shellBridge.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled, owlFeatures['dynamic-threads'])
   const cleanupCoordination = registerThreadCoordinationIpc(ipc, threadCoordinationService, senders, () => agentControl.hostId(),
     (channel, payload) => { shellBridge.sendToMain(channel, payload) }, owlFeatures['parent-thread-coordination'] ? hostRouter : undefined)
+  // Mods (ADR-0217): Settings › Mods and the mods folder's watch, only while the Owl feature is on.
+  const cleanupMods = registerModsIpc(ipc, owlFeatures.mods, {
+    folder: modsFolder(userDataPath), coordinator: agentControl, senders,
+    send: (channel, payload) => { shellBridge.sendToMain(channel, payload) },
+    windowId: id => hostEntityKey(agentControl.hostId(), id),
+    openPath: path => shellBridge.openPath(path),
+    reveal: path => { shellBridge.revealInFolder(path) },
+    trash: shellBridge.trashItem ? path => shellBridge.trashItem!(path) : undefined,
+  })
   const dynamicRecord = 'dynamicRecord' in localRuntime && localRuntime.dynamicRecord ? localRuntime.dynamicRecord : owlFeatures['dynamic-threads'] ? new DynamicRecord(userDataPath) : undefined
   const cleanupDynamicRecord = registerDynamicRecordIpc(ipc, owlFeatures['dynamic-threads'], dynamicRecord, senders)
   const cleanupCheckQueues = registerCheckQueueIpc(ipc, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
@@ -1421,6 +1432,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     cleanupUsage()
     cleanupDelegations()
     cleanupCoordination()
+    cleanupMods()
     coordinationRelay?.close()
     cleanupDynamicRecord()
     cleanupCheckQueues()

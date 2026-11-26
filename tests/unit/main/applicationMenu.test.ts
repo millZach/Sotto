@@ -164,4 +164,16 @@ describe('buildApplicationMenuTemplate', () => {
 
     expect(onShowTurnRecords).toHaveBeenCalledTimes(1)
   })
+
+  describe.each(['darwin', 'win32', 'linux'] as const)('Turn off every mod on %s (ADR-0217)', (platform) => {
+    it('is in the View menu on its key only while mods are on', () => {
+      const onTurnOffMods = vi.fn()
+      const view = submenu(template({ platform, onTurnOffMods }), 'View')
+      const item = view.find((entry) => entry.label === 'Turn off every mod')
+      expect(item?.accelerator).toBe('CommandOrControl+Alt+Shift+M')
+      item?.click?.()
+      expect(onTurnOffMods).toHaveBeenCalledOnce()
+      expect(entries(submenu(template({ platform }), 'View'))).not.toContain('Turn off every mod')
+    })
+  })
 })

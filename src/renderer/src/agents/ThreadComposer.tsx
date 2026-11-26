@@ -1,3 +1,4 @@
+import { modPart } from '../../../shared/modParts'
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowUp, ArrowUpRight, Laptop, ListPlus, MessageSquare, Quote, Server, Square, X } from 'lucide-react'
@@ -485,7 +486,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     {/* When Sotto restarts what a limit stopped (ADR-0144; Owl only), before the prompt; a begun continuation takes its place, and Watcher's own pane has the band. */}
     {continuing === undefined && !watcher ? <RestartStrip key={`restart:${threadId}`} thread={row.thread} command={command} composerId={composerId} /> : null}
     {continuing !== undefined ? <ContinueStrip key={`continue:${threadId}`} thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
-    <form className="thread-prompt" data-quiet={quiet || undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
+    <form className="thread-prompt" data-part={modPart('composer')} data-quiet={quiet || undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
       <EffortTrace />

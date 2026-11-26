@@ -1,3 +1,4 @@
+import { modPart } from '../../../shared/modParts'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { threadHost } from './HostPageView'
 import { i18n, type MessageDescriptor } from '@lingui/core'
@@ -549,7 +550,7 @@ export function ToolsPanel({ focusedThreadId, state, command, onOpenBeside, file
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line
   // of chrome, its work and the working-copy footer; CSS draws the rail on the panel's outer edge.
   // A region F6 visits after the panes while it is open (ADR-0164).
-  return <>{player}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" data-region="tools" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
+  return <>{player}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" data-part={modPart('tools')} data-region="tools" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
     style={{ '--tools-width': `${Math.round(width)}px` } as React.CSSProperties} onKeyDown={onKeyDown}>
     <div className="tools-panel__sheet">
       <div className="tools-panel__resize" role="separator" aria-orientation="vertical" aria-label={t`Resize tools panel`} tabIndex={chrome.expanded ? -1 : 0}

@@ -22,6 +22,8 @@ import { releaseUrl } from '../../shared/releases'
 import { ConfirmationDialog } from './components/ConfirmationDialog'
 import type { MicrophoneTestController } from './audio/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
+import { useModLooks } from './state/mods'
+import { owlFeatureEnabledOf } from './state/owlFeature'
 import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useDictationOn } from './state/dictationFeature'
 import { useOpenNotification } from './state/desktopNotifications'
@@ -245,6 +247,10 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
     applyDocumentPreferences(app.settings, document.documentElement, systemDark)
     if (app.settings) setTerminalPreferences(app.settings, app.actions.updateSettings)
   }, [app.settings, app.actions, systemDark, reducesTransparency, appearanceEdits])
+
+  // Mods (ADR-0217): every switched-on mod's look, painted over the window while the Owl feature is on.
+  const saveModsOff = useCallback((modsOff: string[]): void => { void app.actions.updateSettings({ modsOff }) }, [app.actions])
+  useModLooks(owlFeatureEnabledOf(app.update, 'mods'), app.settings?.modsOff, saveModsOff)
 
   useEffect(() => {
     const search = (event: KeyboardEvent): void => {

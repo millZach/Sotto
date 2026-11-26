@@ -1220,6 +1220,10 @@ msgstr "No meaningful improvement in two completed attempts."
 msgid "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 msgstr "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 
+#: src/main/mods/mods.ts
+msgid "No model is ready to make a mod. Connect a provider in Settings › Providers first."
+msgstr "No model is ready to make a mod. Connect a provider in Settings › Providers first."
+
 #: src/main/hosts/desktopHosts.ts
 msgid "Node is saved for {host}, but its host could not be restarted. It runs Node from its next start."
 msgstr "Node is saved for {host}, but its host could not be restarted. It runs Node from its next start."
@@ -1324,6 +1328,10 @@ msgstr "Open parent-thread coordination in the main Sotto window."
 #: src/main/phones/ipc.ts
 msgid "Open Phones in the main Sotto window."
 msgstr "Open Phones in the main Sotto window."
+
+#: src/main/mods/modsIpc.ts
+msgid "Open Settings › Mods in the main Sotto window."
+msgstr "Open Settings › Mods in the main Sotto window."
 
 #: src/main/agents/dynamicRecordIpc.ts
 #: src/main/notifications/notificationIpc.ts
@@ -2788,6 +2796,14 @@ msgstr "The machine it began on"
 msgid "The main window is unavailable."
 msgstr "The main window is unavailable."
 
+#: src/main/mods/modsIpc.ts
+msgid "The mods folder could not be opened."
+msgstr "The mods folder could not be opened."
+
+#: src/main/mods/mods.ts
+msgid "The Mods project could not be made. Nothing was started. Try again."
+msgstr "The Mods project could not be made. Nothing was started. Try again."
+
 #: src/main/tools/checkpoints.ts
 msgid "The native conversation binding changed during this turn."
 msgstr "The native conversation binding changed during this turn."
@@ -3048,6 +3064,10 @@ msgstr "The thread {title} did not start working. {message} Nothing was changed 
 #: src/main/hosts/hostProviderJob.ts
 msgid "The thread could not start."
 msgstr "The thread could not start."
+
+#: src/main/mods/modsIpc.ts
+msgid "The thread could not start. Nothing was started. Try again."
+msgstr "The thread could not start. Nothing was started. Try again."
 
 #: src/main/notifications/openNotificationThread.ts
 msgid "The thread for this notification is no longer available. Choose another thread or start a new one."
@@ -3730,6 +3750,10 @@ msgstr "Try again, or update it by hand on {name} with the commands below."
 #: src/main/tools/ipc.ts
 msgid "Turn checkpoints are kept only for threads on this computer. Nothing was changed."
 msgstr "Turn checkpoints are kept only for threads on this computer. Nothing was changed."
+
+#: src/main/app/applicationMenu.ts
+msgid "Turn off every mod"
+msgstr "Turn off every mod"
 
 #: src/main/agents/watcherRoomDesktop.ts
 msgid "Turn on Run the local host in Settings and restart Sotto to use Watcher."

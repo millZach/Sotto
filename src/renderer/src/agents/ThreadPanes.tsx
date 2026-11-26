@@ -1,3 +1,4 @@
+import { modPart } from '../../../shared/modParts'
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { assignPaneEditorSlots, PaneEditorProvider, releasePaneEditorSlots, type PaneEditorSlot } from './paneEditor'
 import { useLingui } from '@lingui/react/macro'
@@ -499,7 +500,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
             end: () => { window.clearTimeout(moveStart.current); setMoving(null) },
           } : undefined,
         }
-        return <React.Fragment key={slotted.get(id)?.key ?? id}><PaneEditorProvider value={slotted.get(id) ?? null}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-room-backdrop="" data-region="pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
+        return <React.Fragment key={slotted.get(id)?.key ?? id}><PaneEditorProvider value={slotted.get(id) ?? null}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-part={modPart('thread')} data-room-backdrop="" data-region="pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
           data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} {...marks}
           aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.

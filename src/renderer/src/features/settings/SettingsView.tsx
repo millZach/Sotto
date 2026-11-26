@@ -1,3 +1,4 @@
+import { modPart } from '../../../../shared/modParts'
 import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
 import { TeamLinksOnHosts } from '../../watcher/TeamsPage'
@@ -16,7 +17,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AppWindow, Network, Split, AudioLines, Box, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
+import { AppWindow, Network, Split, AudioLines, Box, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer , Wand2 } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -53,6 +54,7 @@ import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { WatcherCompactionSetting } from './WatcherCompactionSetting'
+import { ModsSettings } from './ModsSettings'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
 import { useDesktopNotifications } from '../../state/desktopNotifications'
@@ -149,6 +151,8 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-hosts': Server,
   'settings-cloud-iphone': Cloud,
   'settings-appearance': Palette,
+  // Mods (ADR-0217), an Owl feature: shown only while the Owl list turns `mods` on.
+  'settings-mods': Wand2,
   'settings-privacy': Settings2,
   // Main's watch on itself (#1233), an Owl feature: shown only while the Owl list turns `main-freeze` on.
   'settings-performance': Gauge,
@@ -380,10 +384,11 @@ export function SettingsView({
   const popupOn = useOwlFeature('popup') && window.sotto?.popup !== undefined
   const localAppsOn = useOwlFeature('local-apps')
   const pluginsOn = useOwlFeature('plugins')
+  const modsOn = useOwlFeature('mods') && window.sotto?.mods !== undefined
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
   const dictation = dictationOn(settings, dictationSwitch)
-  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn) && (section.id !== 'settings-council' || councilOn) && (section.id !== 'settings-plugins' || pluginsOn) && (section.id !== 'settings-models' || pluginsOn)
+  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn) && (section.id !== 'settings-council' || councilOn) && (section.id !== 'settings-plugins' || pluginsOn) && (section.id !== 'settings-models' || pluginsOn) && (section.id !== 'settings-mods' || modsOn)
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
@@ -409,7 +414,7 @@ export function SettingsView({
   const notificationsShown = useDesktopNotifications() !== undefined
   const dynamicThreadsOn = useOwlFeature('dynamic-threads')
   const modelRouterOn = useOwlFeature('model-router')
-  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'model-router': modelRouterOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, plugins: pluginsOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'popup-shortcut': popupOn && settings.popupEnabled, 'local-apps': localAppsOn }
+  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'model-router': modelRouterOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, plugins: pluginsOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'popup-shortcut': popupOn && settings.popupEnabled, 'local-apps': localAppsOn, mods: modsOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -478,7 +483,7 @@ export function SettingsView({
   })
 
   return (
-    <div className="management-view settings-view">
+    <div className="management-view settings-view" data-part={modPart('settings')}>
       <SettingsLayout>
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
         {/* Settings' two regions for F6 (ADR-0164): its column, entered at the open page's tab, and the page itself. */}
@@ -726,6 +731,10 @@ export function SettingsView({
               <div id="settings-appearance-panel" className="settings-category" {...panelProps('settings-appearance')}>
                 <AppearanceSettings settings={settings} platform={platform} onSave={save} getSettings={() => settingsRef.current} onSaveMotion={reducedMotion => void saveMotion(reducedMotion)} />
               </div>
+
+              {/* Mods (ADR-0217): only the open page reads the mods folder; the window's own looks are painted from App. */}
+              {modsOn ? <Card className="settings-section" id="settings-mods" {...panelProps('settings-mods')}>
+                <ModsSettings settings={settings} onUpdateSettings={onUpdateSettings} shown={activeSection === 'settings-mods'} /></Card> : null}
 
               <Card className="settings-section" id="settings-privacy" {...panelProps('settings-privacy')}>
                 <div className="settings-section__heading"><h2><Trans>Application</Trans></h2><p className="tt-paragraph"><Trans>Startup, history, updates &amp; reset</Trans></p></div>

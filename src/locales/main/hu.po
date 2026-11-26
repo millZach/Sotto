@@ -1219,6 +1219,10 @@ msgstr ""
 msgid "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 msgstr ""
 
+#: src/main/mods/mods.ts
+msgid "No model is ready to make a mod. Connect a provider in Settings › Providers first."
+msgstr ""
+
 #: src/main/hosts/desktopHosts.ts
 msgid "Node is saved for {host}, but its host could not be restarted. It runs Node from its next start."
 msgstr ""
@@ -1322,6 +1326,10 @@ msgstr ""
 
 #: src/main/phones/ipc.ts
 msgid "Open Phones in the main Sotto window."
+msgstr ""
+
+#: src/main/mods/modsIpc.ts
+msgid "Open Settings › Mods in the main Sotto window."
 msgstr ""
 
 #: src/main/agents/dynamicRecordIpc.ts
@@ -2787,6 +2795,14 @@ msgstr ""
 msgid "The main window is unavailable."
 msgstr ""
 
+#: src/main/mods/modsIpc.ts
+msgid "The mods folder could not be opened."
+msgstr ""
+
+#: src/main/mods/mods.ts
+msgid "The Mods project could not be made. Nothing was started. Try again."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "The native conversation binding changed during this turn."
 msgstr ""
@@ -3046,6 +3062,10 @@ msgstr ""
 
 #: src/main/hosts/hostProviderJob.ts
 msgid "The thread could not start."
+msgstr ""
+
+#: src/main/mods/modsIpc.ts
+msgid "The thread could not start. Nothing was started. Try again."
 msgstr ""
 
 #: src/main/notifications/openNotificationThread.ts
@@ -3728,6 +3748,10 @@ msgstr ""
 
 #: src/main/tools/ipc.ts
 msgid "Turn checkpoints are kept only for threads on this computer. Nothing was changed."
+msgstr ""
+
+#: src/main/app/applicationMenu.ts
+msgid "Turn off every mod"
 msgstr ""
 
 #: src/main/agents/watcherRoomDesktop.ts

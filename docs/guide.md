@@ -20,6 +20,7 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Watcher](#watcher)
 - [Usage](#usage)
 - [Owlets](#owlets)
+- [Mods](#mods)
 - [Update all](#update-all)
 - [Resume threads after a restart](#resume-threads-after-a-restart)
 - [Restart stopped threads](#restart-stopped-threads)
@@ -1346,6 +1347,18 @@ For now an owlet runs only when you talk to it. Schedules and events, such as a 
 ### Owlets on the iPhone
 
 On a paired iPhone, **Owlets** is a tab after Threads while one of your computers makes owlets, with the owlets waiting on you counted on it. It lists them as the sidebar does: Needs you first, then the rest newest first, with a search. Press one to open its thread and answer its cards there, as any thread's. **+** makes a new owlet, with the same name, role, home computer, model and permission mode, and **Edit owlet** in its thread's **•••** menu changes its name and role. On the iPhone Duo unfolded, the sidebar beside an owlet's thread lists the owlets. An iPhone that is older than Owlets is shown none of them.
+
+## Mods
+
+A **mod** changes how Sotto's window looks: an oak-coloured sidebar, a roomier composer, no times in the sidebar's rows. It is a Sotto Owl preview. Open **Settings → Mods**.
+
+**Make a mod** takes what you want in your own words and starts a thread in the **Mods** project, in the mods folder in Sotto's data folder. The thread's agent reads the guide Sotto keeps in that folder, writes the mod there, and the window repaints as soon as its files are saved. The thread is an ordinary one: it asks before it acts, as its permission mode says. You can also write a mod by hand, or copy in one someone shared: **Open mods folder** shows the folder, with the guide inside.
+
+A mod is a folder named with lowercase letters, digits and dashes, holding `mod.json` with its name and `look.css` with its look. A look targets Sotto's part names, such as `[data-part="sidebar"]` or `[data-part="composer"]`, which stay the same across Sotto's updates; the guide lists them all. Sotto paints a look after its own stylesheets, so it wins a tie.
+
+Every mod on the page has a switch. Its **•••** menu has **View its code**, **Change it in a thread**, **Show in folder** and **Remove**, which moves the folder to the bin. **Turn off every mod** switches them all off. So does Ctrl+Alt+Shift+M (Cmd+Option+Shift+M on a Mac) from anywhere in Sotto, even when a look hides the controls.
+
+A look that loads anything, such as an `@import` or a `url()` that is not a `data:` address, is refused whole: the page says why and paints none of it. A mod can't answer a permission or a question for you, can't change what is sent to an agent, and can't reach the internet. Mods paint only the main window: not the floating widget, the popup or your iPhone. For now a mod changes how the window looks; adding panes, bands and menu rows of its own comes next.
 
 ## Usage
 

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { clearSettledThreadsAfterDaysSchema, type ClearSettledThreadsAfterDays } from './threadClear'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
+import { MOD_ID_PATTERN, MOD_LIMIT } from './mods'
 
 import { DEFAULT_HOTKEY } from './constants'
 import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
@@ -162,6 +163,8 @@ export interface AppSettings {
   creature: Creature
   /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
   showCreature: boolean
+  /** The ids of the mods switched off (ADR-0217), so a new mod is on as it appears. Kept whole where the feature is off. */
+  modsOff: string[]
   /**
    * The interface language (ADR-0123): `system` follows the computer's language, a code chooses one. Read only while its
    * Owl feature is on; elsewhere Sotto is English and the choice is kept for when the feature returns.
@@ -518,6 +521,7 @@ const fieldSchemas = {
   watcherScene: z.enum(WATCHER_SCENES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
+  modsOff: z.array(z.string().regex(MOD_ID_PATTERN)).max(MOD_LIMIT),
   interfaceLanguage: z.enum(INTERFACE_LANGUAGE_SETTINGS),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
@@ -650,6 +654,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   watcherScene: DEFAULT_WATCHER_SCENE,
   creature: 'sotto',
   showCreature: true,
+  modsOff: [],
   interfaceLanguage: 'system',
   customThemes: [],
   webLinkDestination: 'external',
@@ -852,6 +857,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     watcherScene: parseField(persisted, 'watcherScene', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
+    modsOff: parseField(persisted, 'modsOff', defaults),
     interfaceLanguage: parseField(persisted, 'interfaceLanguage', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),

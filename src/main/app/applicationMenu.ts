@@ -52,6 +52,8 @@ export interface ApplicationMenuTemplateOptions {
   /** Left out where Sotto cannot update itself, which drops the menu command. */
   readonly onCheckForUpdates?: () => void
   readonly onShowTurnRecords?: () => void
+  /** Turn off every mod (ADR-0217), only while the `mods` Owl feature is on. A key that answers even when a mod hides the controls. */
+  readonly onTurnOffMods?: () => void
 }
 
 function separator(): ApplicationMenuItem {
@@ -101,7 +103,7 @@ function editMenu(): ApplicationMenuItem {
 
 // A packaged build's View menu is zoom alone, with full screen on a Mac. Reload and developer tools come only with
 // `includeDeveloperTools`, which main sets for an unpackaged run, so no browser key reaches a shipped build.
-function viewMenu(includeDeveloperTools: boolean, fullScreen: boolean, onShowTurnRecords?: () => void): ApplicationMenuItem {
+function viewMenu(includeDeveloperTools: boolean, fullScreen: boolean, onShowTurnRecords?: () => void, onTurnOffMods?: () => void): ApplicationMenuItem {
   return {
     label: t`View`,
     submenu: [
@@ -118,6 +120,7 @@ function viewMenu(includeDeveloperTools: boolean, fullScreen: boolean, onShowTur
       { role: 'resetZoom' },
       { role: 'zoomIn' },
       { role: 'zoomOut' },
+      ...(onTurnOffMods ? [separator(), { label: t`Turn off every mod`, accelerator: 'CommandOrControl+Alt+Shift+M', click: onTurnOffMods }] : []),
       ...(fullScreen ? [separator(), { role: 'togglefullscreen' as const }] : []),
     ],
   }
@@ -151,7 +154,7 @@ function hiddenMenu(options: ApplicationMenuTemplateOptions): ApplicationMenuIte
         { role: 'close' },
       ],
     },
-    viewMenu(options.includeDeveloperTools, false),
+    viewMenu(options.includeDeveloperTools, false, undefined, options.onTurnOffMods),
   ]
 }
 
@@ -165,7 +168,7 @@ export function buildApplicationMenuTemplate(options: ApplicationMenuTemplateOpt
   return [
     appMenu(options.appName, options.onShowSettings, options.onCheckForUpdates),
     editMenu(),
-    viewMenu(options.includeDeveloperTools, true, options.onShowTurnRecords),
+    viewMenu(options.includeDeveloperTools, true, options.onShowTurnRecords, options.onTurnOffMods),
     windowMenu(),
   ]
 }

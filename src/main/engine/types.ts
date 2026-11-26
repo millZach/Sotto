@@ -43,6 +43,8 @@ export interface EngineShellBridge {
   openExternal(url: string): Promise<void>
   openPath(path: string): Promise<string>
   revealInFolder(path: string): void
+  /** Moves a file or folder to the bin (a mod's folder on Remove, ADR-0217). */
+  trashItem?(path: string): Promise<void>
   clipboardWrite(text: string): Promise<void>
   readonly credentials: Pick<AgentCredentials, 'available' | 'has' | 'get' | 'set' | 'sealed' | 'restoreSealed'> & {
     exportSnapshot?: () => CredentialSnapshot

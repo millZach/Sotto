@@ -125,6 +125,7 @@ const settingKeys = [
   'watcherScene',
   'creature',
   'showCreature',
+  'modsOff',
   'interfaceLanguage',
   'customThemes',
   'reducedMotion',

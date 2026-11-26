@@ -33,6 +33,8 @@ export const SETTINGS_PAGES = [
   settingsPage('settings-hosts', msg({ message: 'Hosts & phones', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Hosts & phones".' }), 2),
   settingsPage('settings-cloud-iphone', msg({ message: 'Cloud iPhone', comment: 'A Settings page, named in its rail and its heading: a simulated iPhone on run.cloud. Other messages name it as "Settings > Cloud iPhone".' }), 2),
   settingsPage('settings-appearance', msg({ message: 'Appearance', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".' }), 3),
+  // Mods (ADR-0217), an Owl feature: directly below Appearance, shown only while the Owl list turns `mods` on.
+  settingsPage('settings-mods', msg({ message: 'Mods', comment: 'A Settings page, named in its rail and its heading: mods that change how Sotto looks. Other messages name it as "Settings > Mods".' }), 3),
   settingsPage('settings-privacy', msg({ message: 'Application', comment: 'A Settings page, named in its rail and its heading: startup, history, updates and reset. Other messages name it as "Settings > Application".' }), 3),
   settingsPage('settings-performance', msg({ message: 'Performance', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Performance".' }), 3),
 ] as const
@@ -70,7 +72,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dynamic-threads' | 'model-router' | 'inline-media' | 'popup-shortcut' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'plugins' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
+export type SettingGate = 'dynamic-threads' | 'model-router' | 'inline-media' | 'popup-shortcut' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'plugins' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps' | 'mods'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -245,6 +247,9 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'plugin-proton-mail', label: 'Proton Mail', section: 'settings-plugins', words: 'plugin mail email proton bridge password account inbox messages', gate: 'plugins' },
     { id: 'plugin-meshy', label: 'Meshy', section: 'settings-plugins', words: 'plugin 3d models meshy api key credits limit ask before each', gate: 'plugins' },
     { id: 'models-3d', label: msg`3D models`, section: 'settings-models', words: 'meshy 3d models gallery viewer turn glb usdz files credits', gate: 'plugins' },
+    { id: 'mods-make', label: msg`Make a mod`, section: 'settings-mods', words: 'mods customize restyle css look theme sidebar composer', gate: 'mods' },
+    { id: 'mods-turn-off', label: msg`Turn off every mod`, section: 'settings-mods', words: 'mods disable safe reset look', gate: 'mods' },
+    { id: 'mods-folder', label: msg`Open mods folder`, section: 'settings-mods', words: 'mods files css by hand share import', gate: 'mods' },
     { id: 'plugin-elevenlabs', label: 'ElevenLabs', section: 'settings-plugins', words: 'plugin elevenlabs eleven labs sound speech voice music sound effects api key dollars limit ask before each', gate: 'plugins' },
     { id: 'local-apps', label: msg`Let apps on this computer connect`, section: 'settings-hosts', words: 'agent popup menu bar token loopback', gate: 'local-apps' },
     { id: 'cloud-iphone-key', label: msg`run.cloud key`, section: 'settings-cloud-iphone', words: 'cloud iphone' },

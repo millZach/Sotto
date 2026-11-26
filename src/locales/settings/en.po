@@ -55,10 +55,40 @@ msgstr "{0, plural, one {# working} other {# working}}"
 msgid "{0} by {1}"
 msgstr "{0} by {1}"
 
+#. placeholder {0}: mod.name
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "{0} could not be moved to the bin. Nothing was removed. Show it in its folder to remove it by hand."
+msgstr "{0} could not be moved to the bin. Nothing was removed. Show it in its folder to remove it by hand."
+
+#. placeholder {0}: mod.name
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "{0} could not be switched. Nothing was changed. Try again."
+msgstr "{0} could not be switched. Nothing was changed. Try again."
+
+#. placeholder {0}: mod.name
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "{0} is in the bin. Restore its folder from there to bring it back."
+msgstr "{0} is in the bin. Restore its folder from there to bring it back."
+
+#. placeholder {0}: mod.name
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "{0} is off."
+msgstr "{0} is off."
+
+#. placeholder {0}: mod.name
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "{0} is on."
+msgstr "{0} is on."
+
 #. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "{0} s"
 msgstr "{0} s"
+
+#. placeholder {0}: mod.name
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "{0}’s look"
+msgstr "{0}’s look"
 
 #. placeholder {0}: (model.wer * 100).toFixed(1)
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
@@ -1041,6 +1071,10 @@ msgstr "A short sound when recording starts and stops."
 msgid "A theme with the id \"{id}\" is already installed."
 msgstr "A theme with the id \"{id}\" is already installed."
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "A thread is making it in the Mods project. The mod shows here once its files are written."
+msgstr "A thread is making it in the Mods project. The mod shows here once its files are written."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "A thread on another of your computers uses the gh sign-in on that computer, which may be a different account."
 msgstr "A thread on another of your computers uses the gh sign-in on that computer, which may be a different account."
@@ -1383,6 +1417,10 @@ msgstr "Answer"
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Answer {name}"
 msgstr "Answer {name}"
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Answer a permission or a question for you."
+msgstr "Answer a permission or a question for you."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Answer SSH's question for {name}"
@@ -1798,6 +1836,14 @@ msgstr "Cancelled a deployment’s build"
 msgid "Change"
 msgstr "Change"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Change how Sotto looks"
+msgstr "Change how Sotto looks"
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Change it in a thread"
+msgstr "Change it in a thread"
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -1811,6 +1857,16 @@ msgstr "Change the host to add"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Change the host to add, and stop connecting"
 msgstr "Change the host to add, and stop connecting"
+
+#. placeholder {0}: mod.name
+#. placeholder {1}: mod.id
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Change the mod “{0}” (folder {1}): "
+msgstr "Change the mod “{0}” (folder {1}): "
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Change what is sent to an agent."
+msgstr "Change what is sent to an agent."
 
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -2189,6 +2245,10 @@ msgstr "Cloud iPhone minutes used this month"
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Cloud iPhone status could not be read. Reopen Settings and try again."
 msgstr "Cloud iPhone status could not be read. Reopen Settings and try again."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Cmd+Option+Shift+M turns every mod off from anywhere in Sotto, even when a mod hides the controls."
+msgstr "Cmd+Option+Shift+M turns every mod off from anywhere in Sotto, even when a mod hides the controls."
 
 #. {spoken} is a sign-in code read one character at a time.
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
@@ -2606,6 +2666,10 @@ msgstr "Credits this month: {usedCredits} of {limitCredits}, across {across}."
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Credits this month: {usedCredits} of {limitCredits}."
 msgstr "Credits this month: {usedCredits} of {limitCredits}."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Ctrl+Alt+Shift+M turns every mod off from anywhere in Sotto, even when a mod hides the controls."
+msgstr "Ctrl+Alt+Shift+M turns every mod off from anywhere in Sotto, even when a mod hides the controls."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers."
@@ -3059,6 +3123,10 @@ msgstr "Every connection signs in over SSH, and Tailscale may ask you to approve
 msgid "Every edit shows, spacing included."
 msgstr "Every edit shows, spacing included."
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Every mod is off. Their files are kept."
+msgstr "Every mod is off. Their files are kept."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Every project"
 msgstr "Every project"
@@ -3313,6 +3381,10 @@ msgstr "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.
 msgid "GitHub’s sign-in on your other computers"
 msgstr "GitHub’s sign-in on your other computers"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Give the sidebar a warm wood look"
+msgstr "Give the sidebar a warm wood look"
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — the one set that works outside Sotto."
 msgstr "Global — the one set that works outside Sotto."
@@ -3371,6 +3443,10 @@ msgstr "Have my agent set this up"
 #: src/renderer/src/features/settings/HermesChatGptSource.tsx
 msgid "Hermes could not finish signing out. Try again."
 msgstr "Hermes could not finish signing out. Try again."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Hide its code"
+msgstr "Hide its code"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Hide providers"
@@ -3589,6 +3665,11 @@ msgstr "in a thread that is gone"
 msgid "In progress"
 msgstr "In progress"
 
+#. placeholder {0}: mod.id
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "In the {0} folder"
+msgstr "In the {0} folder"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "In the background"
 msgstr "In the background"
@@ -3734,9 +3815,21 @@ msgstr "It restarted once under its systemd unit and Sotto is connecting to it a
 msgid "its account"
 msgstr "its account"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Its look is longer than 64 KB, so none of it is painted."
+msgstr "Its look is longer than 64 KB, so none of it is painted."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Its look loads something from outside Sotto (an @import, or a url() that is not a data: address), so none of it is painted."
+msgstr "Its look loads something from outside Sotto (an @import, or a url() that is not a data: address), so none of it is painted."
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Its messages and activity leave Sotto and can’t be brought back."
 msgstr "Its messages and activity leave Sotto and can’t be brought back."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Its mod.json is missing or unreadable, so it paints nothing. It needs a name, such as { \"name\": \"Oak sidebar\" }."
+msgstr "Its mod.json is missing or unreadable, so it paints nothing. It needs a name, such as { \"name\": \"Oak sidebar\" }."
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Its price is on openrouter.ai."
@@ -3982,6 +4075,10 @@ msgstr "Links and Sotto’s browser"
 msgid "Listening. Say something."
 msgstr "Listening. Say something."
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Load anything from the internet, or send anything anywhere."
+msgstr "Load anything from the internet, or send anything anywhere."
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "load unknown"
 msgstr "load unknown"
@@ -4046,6 +4143,11 @@ msgstr "Mail"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Make 3D models from words or a photo, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Meshy may use what it is sent, and the 3D models it makes, to train its own models."
 msgstr "Make 3D models from words or a photo, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Meshy may use what it is sent, and the 3D models it makes, to train its own models."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Make a mod"
+msgstr "Make a mod"
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
@@ -4224,6 +4326,13 @@ msgstr "Model, reasoning effort, speed and permissions."
 msgid "Models"
 msgstr "Models"
 
+#. A Settings page, named in its rail and its heading: mods that change how Sotto looks. Other messages name it as "Settings > Mods".
+#. A Settings page, named in its rail and its heading: mods that change how Sotto looks. Other messages name it as "Settings > Mods".
+#: src/renderer/src/features/settings/ModsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Mods"
+msgstr "Mods"
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Monthly cap"
@@ -4236,6 +4345,11 @@ msgstr "Monthly credit limit"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Monthly limit in US dollars"
 msgstr "Monthly limit in US dollars"
+
+#. placeholder {0}: mod.name
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "More for {0}"
+msgstr "More for {0}"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "More for {name}"
@@ -4493,6 +4607,10 @@ msgstr "No model"
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "No models were returned. Refresh this provider to check again."
 msgstr "No models were returned. Refresh this provider to check again."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "No mods yet. Make one above, or put a mod’s folder in the mods folder."
+msgstr "No mods yet. Make one above, or put a mod’s folder in the mods folder."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "No other computer is paired. Pair one in Settings › Hosts & phones, and its threads can use these accounts too."
@@ -4888,6 +5006,11 @@ msgstr "Open beside"
 msgid "Open beside shortcut"
 msgstr "Open beside shortcut"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Open mods folder"
+msgstr "Open mods folder"
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Open Muse installation guide"
 msgstr "Open Muse installation guide"
@@ -4961,6 +5084,7 @@ msgid "Open the Usage page."
 msgstr "Open the Usage page."
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
+#: src/renderer/src/features/settings/ModsSettings.tsx
 msgid "Open thread"
 msgstr "Open thread"
 
@@ -5597,6 +5721,10 @@ msgstr "Reading OpenRouter’s speech models…"
 msgid "Reading phone access on {name}…"
 msgstr "Reading phone access on {name}…"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Reading the mods folder…"
+msgstr "Reading the mods folder…"
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Reading…"
 msgstr "Reading…"
@@ -5667,6 +5795,7 @@ msgid "Remote hosts"
 msgstr "Remote hosts"
 
 #. Removes a paired phone.
+#: src/renderer/src/features/settings/ModsSettings.tsx
 #: src/renderer/src/features/settings/phoneParts.tsx
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove"
@@ -6152,6 +6281,10 @@ msgstr "Saving the connection."
 msgid "Saving…"
 msgstr "Saving…"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Say what to change. A thread in the Mods project writes the mod, and Sotto paints it as soon as its files are saved."
+msgstr "Say what to change. A thread in the Mods project writes the mod, and Sotto paints it as soon as its files are saved."
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
 msgstr "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
@@ -6381,6 +6514,10 @@ msgstr "Show every picture and video an agent makes"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Show floating widget when idle"
 msgstr "Show floating widget when idle"
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Show in folder"
+msgstr "Show in folder"
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "Show in menu bar"
@@ -7077,6 +7214,10 @@ msgstr "Start {name}’s host at boot"
 msgid "Start {name}’s host at boot?"
 msgstr "Start {name}’s host at boot?"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Start a thread"
+msgstr "Start a thread"
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Start at boot"
 msgstr "Start at boot"
@@ -7148,8 +7289,13 @@ msgstr "Starting the update…"
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
+#: src/renderer/src/features/settings/ModsSettings.tsx
 msgid "Starting…"
 msgstr "Starting…"
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Starts a thread in Sotto’s mods folder"
+msgstr "Starts a thread in Sotto’s mods folder"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Starts at boot when its threads finish"
@@ -7715,6 +7861,14 @@ msgstr "The model that turns your speech into text. Choosing one switches dictat
 msgid "The models {clientName} offers you now."
 msgstr "The models {clientName} offers you now."
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "The mods could not be switched off. Nothing was changed. Try again."
+msgstr "The mods could not be switched off. Nothing was changed. Try again."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "The mods folder could not be opened. Try again."
+msgstr "The mods folder could not be opened. Try again."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at ElevenLabs’ published API prices."
 msgstr "The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at ElevenLabs’ published API prices."
@@ -7897,6 +8051,10 @@ msgstr "The thread {thread} did not start working. Nothing was changed on {host}
 msgid "The thread <0>{title}</0> goes in the <1>{project}</1> project."
 msgstr "The thread <0>{title}</0> goes in the <1>{project}</1> project."
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "The thread could not start. Nothing was started. Try again."
+msgstr "The thread could not start. Nothing was started. Try again."
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "The thread list is one Tab stop. Up and Down move through it, Home and End go to its ends, Right and Left open and close a folder, and Enter opens the thread."
 msgstr "The thread list is one Tab stop. Up and Down move through it, Home and End go to its ends, Right and Left open and close a folder, and Enter opens the thread."
@@ -8066,6 +8224,10 @@ msgstr "This computer’s local host is off, so Sotto can’t run agents here. T
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This machine is no longer saved, so new workers start on this computer. Choose another."
 msgstr "This machine is no longer saved, so new workers start on this computer. Choose another."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "This mod has no look.css yet."
+msgstr "This mod has no look.css yet."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged."
@@ -8316,6 +8478,11 @@ msgstr "Trying…"
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Turn {mainKeys} back on"
 msgstr "Turn {mainKeys} back on"
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Turn off every mod"
+msgstr "Turn off every mod"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model."
@@ -8720,6 +8887,10 @@ msgstr "Vercel did not accept this token. {kept} Make a new token at {VERCEL_TOK
 msgid "Vercel is turning requests away for now, so the token could not be checked. {kept} Wait a minute, then try again."
 msgstr "Vercel is turning requests away for now, so the token could not be checked. {kept} Wait a minute, then try again."
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "View its code"
+msgstr "View its code"
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "View source for {extensionName}"
 msgstr "View source for {extensionName}"
@@ -8930,6 +9101,10 @@ msgstr "What {name}'s updater printed"
 msgid "What {tool} printed"
 msgstr "What {tool} printed"
 
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "What a mod cannot do"
+msgstr "What a mod cannot do"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "What agents can do without asking"
 msgstr "What agents can do without asking"
@@ -8953,6 +9128,10 @@ msgstr "What Sotto found on {name}"
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "What Sotto said about start at boot on {name}"
 msgstr "What Sotto said about start at boot on {name}"
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "What the mod should change"
+msgstr "What the mod should change"
 
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "What would you like to do next?"
@@ -9209,6 +9388,10 @@ msgstr "Your instructions go to the thread's own model with every draft and win 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
 msgstr "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
+
+#: src/renderer/src/features/settings/ModsSettings.tsx
+msgid "Your mods"
+msgstr "Your mods"
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Your note"
