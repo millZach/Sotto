@@ -5,6 +5,7 @@ pub mod council;
 pub mod credentials;
 pub mod desktop_clients;
 pub mod desktop_hosts;
+pub mod failures_seen;
 pub mod git_review;
 pub mod host_facts;
 pub mod host_router;
@@ -20,6 +21,7 @@ pub mod provider;
 pub mod providers;
 pub mod remote_commands;
 pub mod stores;
+pub mod thread_lifecycle;
 pub mod thread_snoozes;
 #[cfg(test)]
 pub(crate) mod store_trip;
@@ -37,7 +39,7 @@ pub use cli_lookup::{
     augment_current_process_path, build_augmented_path, find_cli, resolve_provider_cli,
     resolve_tool_cli, CliLookupOptions, CliSpec, ResolvedCli, NATIVE_PROVIDER_IDS,
 };
-pub use coordinator::{ClientContext, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle};
+pub use coordinator::{ClientContext, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, Observer};
 pub use council::{
     active_panelists, add_round, advance_round, answered_letters, council_counts, counts_for_round,
     criteria_of, crux_runners, current_round, current_turn, draft_verdict, fairness_done,

@@ -71,6 +71,7 @@ pub fn advertised_features() -> Vec<String> {
         "thread-files".into(),
         "thread-changes".into(),
         "thread-snooze".into(),
+        "failure-seen".into(),
         "host-facts".into(),
         "project-origins".into(),
         "project-git-init".into(),
@@ -94,6 +95,21 @@ pub fn advertised_features() -> Vec<String> {
         "watcher-cursor".into(),
         "watcher-antigravity".into(),
     ]
+}
+
+/// The threads an `observe-threads` command names, as Node's schema reads them: at most 100 thread IDs and nothing else.
+fn observed_thread_ids(command: &serde_json::Map<String, Value>) -> Option<Vec<String>> {
+    if command.keys().any(|key| key != "type" && key != "threadIds") {
+        return None;
+    }
+    let items = command.get("threadIds")?.as_array()?;
+    if items.len() > 100 {
+        return None;
+    }
+    items
+        .iter()
+        .map(|item| item.as_str().filter(|id| !id.is_empty() && id.chars().count() <= 512).map(ToString::to_string))
+        .collect()
 }
 
 /// Filters host-advertised features per authenticated client: `watcher-*` (non-phone) and
@@ -1536,6 +1552,8 @@ async fn handle_websocket_upgrade(
     reader_task.abort();
     drop(out_tx);
     let _ = writer_task.await;
+    // A client that went shows nothing now (ADR-0092).
+    state.coordinator.forget_observer(wire.observer.clone());
     Ok(())
 }
 
@@ -1704,15 +1722,29 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            // `shown: false`: a desktop whose window is behind another app. Its threads stay observed, but none counts as
+            // shown, which sees a failure (ADR-0092). Node's schema takes only `false`.
+            let shown = match req.fields.get("shown") {
+                None => true,
+                Some(Value::Bool(false)) => false,
+                Some(_) => {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::InvalidRequest,
+                        HostErrorCode::InvalidRequest.default_message(),
+                    );
+                }
+            };
             let thread_ids: Vec<String> = arr
                 .iter()
                 .filter_map(Value::as_str)
                 .map(ToString::to_string)
                 .collect();
+            wire.hidden = !shown;
             let previously_observed = wire.observed.clone();
             wire.set_observed(&thread_ids);
 
-            let details = match state.coordinator.observe(thread_ids.clone()).await {
+            let details = match state.coordinator.observe(wire.observer.clone(), thread_ids.clone(), shown).await {
                 Ok(list) => list,
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };
@@ -1930,6 +1962,25 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            // A socket client's own `observe-threads` is what its connection observes, as an `observe` is, and goes with
+            // the connection (`src/host/socketServer.ts`).
+            if cmd.get("type").and_then(Value::as_str) == Some("observe-threads") {
+                let Some(thread_ids) = observed_thread_ids(cmd) else {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::InvalidRequest,
+                        HostErrorCode::InvalidRequest.default_message(),
+                    );
+                };
+                wire.set_observed(&thread_ids);
+                if let Err(err) = state.coordinator.observe(wire.observer.clone(), thread_ids, !wire.hidden).await {
+                    return HostResponseEnvelope::err(req.id, err.code, err.message);
+                }
+                return match state.coordinator.shell(may_answer).await {
+                    Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
+                    Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+                };
+            }
             let client = ClientContext {
                 client_id: client_id.to_string(),
                 user: client_name.to_string(),

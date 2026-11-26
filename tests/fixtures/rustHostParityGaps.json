@@ -24,7 +24,6 @@
         "detached-runs-elsewhere",
         "draft-revisions",
         "every-agent-picture",
-        "failure-seen",
         "git-pull-request",
         "git-pull-request-list",
         "host-delegation",
@@ -85,7 +84,6 @@
         "client-update-outcomes",
         "client-updates",
         "draft-revisions",
-        "failure-seen",
         "git-pull-request",
         "git-pull-request-list",
         "next-prompts",
@@ -185,10 +183,6 @@
       "rust": "invalid_request"
     },
     "dismiss-client-updates": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "dismiss-failures": {
       "node": "ok",
       "rust": "invalid_request"
     },

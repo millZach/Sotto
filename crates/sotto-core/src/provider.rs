@@ -283,6 +283,23 @@ impl MockProviderAdapter {
         }
     }
 
+    /// Ends the thread's running turn as failed, with no reply.
+    pub fn fail_turn(&self, thread_id: &str) {
+        let turn_id = self
+            .active_turns
+            .lock()
+            .unwrap()
+            .remove(thread_id)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        if let Some(tx) = self.events_tx.lock().unwrap().as_ref() {
+            let _ = tx.send(ProviderEvent::TurnCompleted {
+                thread_id: thread_id.to_string(),
+                turn_id,
+                status: "failed".into(),
+            });
+        }
+    }
+
     pub fn emit_request(&self, thread_id: &str, request: Value) {
         if let Some(tx) = self.events_tx.lock().unwrap().as_ref() {
             let _ = tx.send(ProviderEvent::RequestOpened {
