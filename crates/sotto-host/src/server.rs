@@ -15,7 +15,10 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
+use sotto_core::linked_files::LinkRequest;
 use sotto_core::pairing::constant_time_eq;
+use sotto_core::protocol_fields::protocol_id;
+use sotto_core::thread_media::MediaRequest;
 use sotto_core::{
     parse_watcher_host_read, watcher_progress_change, watcher_record_digest, BoxFuture,
     ClientContext, CoordinatorBroadcast, CoordinatorHandle, DesktopClients, HostCredentials,
@@ -104,16 +107,6 @@ pub fn advertised_features() -> Vec<String> {
     ]
 }
 
-/// The longest ID Node's protocol reads (`id` in `src/shared/agents.ts`), in UTF-16 code units as zod counts.
-const ID_MAX: usize = 512;
-
-/// An ID as Node's schema reads one: not empty and at most `ID_MAX` UTF-16 code units.
-fn protocol_id(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(Value::as_str)
-        .filter(|id| !id.is_empty() && id.encode_utf16().count() <= ID_MAX)
-        .map(ToString::to_string)
-}
 
 /// The sentence an answer too large to send is refused with, by what was asked, as Node's `TOO_LARGE`
 /// (`src/host/socketServer.ts`).
@@ -140,55 +133,78 @@ fn thread_read_ids(fields: &serde_json::Map<String, Value>, other: &str) -> Opti
     Some((protocol_id(fields.get("threadId"))?, protocol_id(fields.get(other))?))
 }
 
-/// A link read's request (`thread-file-link` or `thread-linked-file`) after the checks Node's socket server makes before
-/// it reads anything, in its order: the request's shape as Node's schema reads it, then a thread the client may not see
-/// (`hidden`), then whether the host offers this client the read (`offered`, as Node's `offers`: offered, whether or
-/// not the client accepted it).
-async fn checked_link_request<Hidden: std::future::Future<Output = bool>>(
-    op: &str,
+/// A read of one thread's files or media that Node's socket server checks before it reads anything: the thread it names,
+/// the feature the host offers for it, and whether it is refused even where that feature is offered.
+trait ThreadRead {
+    fn thread_id(&self) -> &str;
+    fn feature(&self) -> &'static str;
+    /// Refused once offered: a picture at a longest edge. This host offers no picture edges, since it has no picture
+    /// maker (ADR-0203), so no client of it accepted `thread-media-edge`, and Node refuses an edge from such a client.
+    fn refused_when_offered(&self) -> bool {
+        false
+    }
+}
+
+impl ThreadRead for LinkRequest {
+    fn thread_id(&self) -> &str {
+        &self.thread_id
+    }
+    fn feature(&self) -> &'static str {
+        self.read.feature()
+    }
+}
+
+impl ThreadRead for MediaRequest {
+    fn thread_id(&self) -> &str {
+        &self.thread_id
+    }
+    fn feature(&self) -> &'static str {
+        MediaRequest::feature(self)
+    }
+    fn refused_when_offered(&self) -> bool {
+        self.edge
+    }
+}
+
+/// A thread read's request (`thread-file-link`, `thread-linked-file`, `thread-media` or `thread-media-part`) after the
+/// checks Node's socket server makes before it reads anything, in its order: the request's shape as Node's schema
+/// reads it (`parse`), then a thread the client may not see (`hidden`), then whether the host offers this client the
+/// read (`offered`, as Node's `offers`: offered, whether or not the client accepted it) and whether it is refused there.
+async fn checked_thread_read<Request: ThreadRead, Hidden: std::future::Future<Output = bool>>(
     fields: &serde_json::Map<String, Value>,
+    parse: impl FnOnce(Option<&Value>) -> Option<Request>,
     hidden: impl FnOnce(String) -> Hidden,
     offered: impl FnOnce(&str) -> bool,
-) -> Result<sotto_core::linked_files::LinkRequest, HostErrorCode> {
-    let request = if fields.keys().any(|key| key != "request") {
-        None
-    } else {
-        sotto_core::linked_files::link_request(op, fields.get("request"))
-    };
+) -> Result<Request, HostErrorCode> {
+    let request = if fields.keys().any(|key| key != "request") { None } else { parse(fields.get("request")) };
     let request = request.ok_or(HostErrorCode::InvalidRequest)?;
-    if hidden(request.thread_id.clone()).await {
+    if hidden(request.thread_id().to_string()).await {
         return Err(HostErrorCode::Forbidden);
     }
-    if !offered(request.read.feature()) {
+    if !offered(request.feature()) || request.refused_when_offered() {
         return Err(HostErrorCode::InvalidRequest);
     }
     Ok(request)
 }
 
-/// A media read's request (`thread-media` or `thread-media-part`) after the checks Node's socket server makes before it
-/// reads anything, in its order: the request's shape as Node's schema reads it, then a thread the client may not see
-/// (`hidden`), then whether the host offers this client the read (`offered`, as Node's `offers`) and, for a picture,
-/// whether it names an edge without having accepted `thread-media-edge`. This host offers no picture edges, since it has
-/// no picture maker (ADR-0203), so no client of it accepted one and a request naming an edge is refused.
-async fn checked_media_request<Hidden: std::future::Future<Output = bool>>(
-    op: &str,
+/// `checked_thread_read` for this client: what the host offers it on this listener, and the providers it knows.
+async fn offered_thread_read<Request: ThreadRead>(
+    state: &HostState,
+    mode: &ListenerMode,
+    client_id: &str,
+    wire: &ClientWireState,
     fields: &serde_json::Map<String, Value>,
-    hidden: impl FnOnce(String) -> Hidden,
-    offered: impl FnOnce(&str) -> bool,
-) -> Result<sotto_core::thread_media::MediaRequest, HostErrorCode> {
-    let request = if fields.keys().any(|key| key != "request") {
-        None
-    } else {
-        sotto_core::thread_media::media_request(op, fields.get("request"))
-    };
-    let request = request.ok_or(HostErrorCode::InvalidRequest)?;
-    if hidden(request.thread_id.clone()).await {
-        return Err(HostErrorCode::Forbidden);
-    }
-    if !offered(request.feature()) || request.edge {
-        return Err(HostErrorCode::InvalidRequest);
-    }
-    Ok(request)
+    parse: impl FnOnce(Option<&Value>) -> Option<Request>,
+) -> Result<Request, HostErrorCode> {
+    let recorded = state.desktops.lock().unwrap().has(client_id);
+    let offered = features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded));
+    checked_thread_read(
+        fields,
+        parse,
+        |thread_id| async move { hides_thread(state, wire, &thread_id).await },
+        |feature| offered.iter().any(|name| name == feature),
+    )
+    .await
 }
 
 /// Whether a thread is of a provider this client does not know, so it is not this client's to read or act on.
@@ -2348,15 +2364,10 @@ async fn handle_ws_request(
         // offered the read. Node reads one of these at a time per socket; this host answers a socket's requests in turn,
         // so it never has two.
         "thread-file-link" | "thread-linked-file" => {
-            let recorded = state.desktops.lock().unwrap().has(client_id);
-            let offered = features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded));
-            let seen: &ClientWireState = wire;
-            let checked = checked_link_request(
-                &req.op,
-                &req.fields,
-                |thread_id| async move { hides_thread(state, seen, &thread_id).await },
-                |feature| offered.iter().any(|name| name == feature),
-            )
+            let op = req.op.as_str();
+            let checked = offered_thread_read(state, mode, client_id, wire, &req.fields, |value| {
+                sotto_core::linked_files::link_request(op, value)
+            })
             .await;
             let request = match checked {
                 Ok(request) => request,
@@ -2385,28 +2396,19 @@ async fn handle_ws_request(
         // thread media store in this data folder as Node's host answers it. Node reads one of these at a time per
         // socket; this host answers a socket's requests in turn, so it never has two.
         "thread-media" | "thread-media-part" => {
-            let recorded = state.desktops.lock().unwrap().has(client_id);
-            let offered = features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded));
-            let seen: &ClientWireState = wire;
-            let checked = checked_media_request(
-                &req.op,
-                &req.fields,
-                |thread_id| async move { hides_thread(state, seen, &thread_id).await },
-                |feature| offered.iter().any(|name| name == feature),
-            )
+            let op = req.op.as_str();
+            let checked = offered_thread_read(state, mode, client_id, wire, &req.fields, |value| {
+                sotto_core::thread_media::media_request(op, value)
+            })
             .await;
             let request = match checked {
                 Ok(request) => request,
                 Err(code) => return HostResponseEnvelope::err(req.id, code, code.default_message()),
             };
-            // The record as a pane is sent it, from the thread this host holds: only a handle it carries is read.
-            let record = match state.coordinator.detail(request.thread_id.clone()).await {
-                Ok(detail) => detail.and_then(|detail| {
-                    detail
-                        .activities
-                        .into_iter()
-                        .find(|record| record.get("id").and_then(Value::as_str) == Some(request.activity_id.as_str()))
-                }),
+            // The record as a pane is sent it, of a thread this host holds: only a handle it carries is read, and a thread
+            // it does not hold, whatever rows its store keeps, names nothing.
+            let record = match state.coordinator.thread_activity(request.thread_id.clone(), request.activity_id.clone()).await {
+                Ok(record) => record,
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };
             let data = state.data_directory.clone();
@@ -2534,14 +2536,9 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             }
-            let record = match state.coordinator.detail(thread_id).await {
-                Ok(detail) => detail.and_then(|detail| {
-                    detail
-                        .activities
-                        .iter()
-                        .find(|record| record.get("id").and_then(Value::as_str) == Some(activity_id.as_str()))
-                        .map(sotto_core::activity_bodies::strip_agent_steps)
-                }),
+            // Of a thread this host holds, as Node's `threadActivity`: a thread it does not hold has no record.
+            let record = match state.coordinator.thread_activity(thread_id, activity_id).await {
+                Ok(record) => record.as_ref().map(sotto_core::activity_bodies::strip_agent_steps),
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };
             HostResponseEnvelope::ok(req.id, record.unwrap_or(Value::Null))
@@ -3101,6 +3098,16 @@ async fn send_http_error(
 mod tests {
     use super::*;
 
+    /// The parser of a link read's request.
+    fn link(op: &'static str) -> impl FnOnce(Option<&Value>) -> Option<LinkRequest> {
+        move |value: Option<&Value>| sotto_core::linked_files::link_request(op, value)
+    }
+
+    /// The parser of a media read's request.
+    fn media(op: &'static str) -> impl FnOnce(Option<&Value>) -> Option<MediaRequest> {
+        move |value: Option<&Value>| sotto_core::thread_media::media_request(op, value)
+    }
+
     /// A link read is refused as Node's socket server refuses it, and in its order: a malformed request before the thread
     /// is looked at, a hidden provider's thread before whether the read is offered, and then a read not offered.
     #[tokio::test]
@@ -3119,15 +3126,15 @@ mod tests {
         };
 
         let malformed = fields(json!({ "request": { "threadId": "t" } }));
-        assert_eq!(checked_link_request("thread-linked-file", &malformed, hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        assert_eq!(checked_thread_read(&malformed, link("thread-linked-file"), hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
         let extra = fields(json!({ "request": { "threadId": "t", "path": "notes.md" }, "more": 1 }));
-        assert_eq!(checked_link_request("thread-file-link", &extra, hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        assert_eq!(checked_thread_read(&extra, link("thread-file-link"), hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
         assert!(!asked.get(), "a malformed request is refused before its thread is looked at");
 
-        assert_eq!(checked_link_request("thread-linked-file", &fields(good.clone()), hidden(true), |_| false).await, Err(HostErrorCode::Forbidden));
+        assert_eq!(checked_thread_read(&fields(good.clone()), link("thread-linked-file"), hidden(true), |_| false).await, Err(HostErrorCode::Forbidden));
         assert!(asked.get());
         let mut named = None;
-        let refused = checked_link_request("thread-linked-file", &fields(good.clone()), hidden(false), |feature: &str| {
+        let refused = checked_thread_read(&fields(good.clone()), link("thread-linked-file"), hidden(false), |feature: &str| {
             named = Some(feature.to_string());
             false
         })
@@ -3135,10 +3142,10 @@ mod tests {
         assert_eq!(refused, Err(HostErrorCode::InvalidRequest));
         assert_eq!(named.as_deref(), Some("thread-linked-files"));
 
-        let request = checked_link_request("thread-linked-file", &fields(good), hidden(false), |feature| feature == "thread-linked-files").await.unwrap();
+        let request = checked_thread_read(&fields(good), link("thread-linked-file"), hidden(false), |feature| feature == "thread-linked-files").await.unwrap();
         assert_eq!(request.read, LinkRead::LinkedFile(LinkedWant::Place));
         let markdown = fields(json!({ "request": { "threadId": "t", "path": "notes.md" } }));
-        assert!(checked_link_request("thread-file-link", &markdown, hidden(false), |feature| feature == "thread-file-links").await.is_ok());
+        assert!(checked_thread_read(&markdown, link("thread-file-link"), hidden(false), |feature| feature == "thread-file-links").await.is_ok());
     }
 
     /// A media read is refused as Node's socket server refuses it, and in its order: a malformed request before the thread
@@ -3166,16 +3173,16 @@ mod tests {
             json!({ "request": { "threadId": "t", "activityId": "a", "mediaId": "m0", "edge": 100 } }),
             json!({ "request": { "threadId": "t", "activityId": "a", "mediaId": "m0" }, "more": 1 }),
         ] {
-            assert_eq!(checked_media_request("thread-media", &fields(malformed), hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+            assert_eq!(checked_thread_read(&fields(malformed), media("thread-media"), hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
         }
         let past = json!({ "request": { "threadId": "t", "activityId": "a", "mediaId": "m0", "part": 25 } });
-        assert_eq!(checked_media_request("thread-media-part", &fields(past), hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        assert_eq!(checked_thread_read(&fields(past), media("thread-media-part"), hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
         assert!(!asked.get(), "a malformed request is refused before its thread is looked at");
 
-        assert_eq!(checked_media_request("thread-media-part", &fields(part.clone()), hidden(true), |_| false).await, Err(HostErrorCode::Forbidden));
+        assert_eq!(checked_thread_read(&fields(part.clone()), media("thread-media-part"), hidden(true), |_| false).await, Err(HostErrorCode::Forbidden));
         assert!(asked.get());
         let mut named = None;
-        let refused = checked_media_request("thread-media-part", &fields(part.clone()), hidden(false), |feature: &str| {
+        let refused = checked_thread_read(&fields(part.clone()), media("thread-media-part"), hidden(false), |feature: &str| {
             named = Some(feature.to_string());
             false
         })
@@ -3183,21 +3190,25 @@ mod tests {
         assert_eq!(refused, Err(HostErrorCode::InvalidRequest));
         assert_eq!(named.as_deref(), Some("thread-media-video"));
         let edge = json!({ "request": { "threadId": "t", "activityId": "a", "mediaId": "m0", "edge": 640 } });
-        assert_eq!(checked_media_request("thread-media", &fields(edge.clone()), hidden(true), |_| true).await, Err(HostErrorCode::Forbidden));
-        assert_eq!(checked_media_request("thread-media", &fields(edge), hidden(false), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        assert_eq!(checked_thread_read(&fields(edge.clone()), media("thread-media"), hidden(true), |_| true).await, Err(HostErrorCode::Forbidden));
+        assert_eq!(checked_thread_read(&fields(edge), media("thread-media"), hidden(false), |_| true).await, Err(HostErrorCode::InvalidRequest));
 
-        let request = checked_media_request("thread-media-part", &fields(part), hidden(false), |feature| feature == "thread-media-video").await.unwrap();
+        let request = checked_thread_read(&fields(part), media("thread-media-part"), hidden(false), |feature| feature == "thread-media-video").await.unwrap();
         assert_eq!(request.read, MediaRead::VideoPart(1));
-        let request = checked_media_request("thread-media", &fields(picture), hidden(false), |feature| feature == "thread-media").await.unwrap();
+        let request = checked_thread_read(&fields(picture), media("thread-media"), hidden(false), |feature| feature == "thread-media").await.unwrap();
         assert_eq!(request.read, MediaRead::Picture);
     }
 
-    /// Both media features are offered to every client, as Node offers them, and picture edges to none.
+    /// Both media features are offered to every client, as Node offers them, a phone on a tailnet listener too, and
+    /// picture edges to none.
     #[test]
     fn media_is_offered_to_every_client_without_picture_edges() {
         let all = advertised_features();
-        for (desktop, listener) in [(true, ListenerMode::Admin), (false, ListenerMode::Admin)] {
-            let offered = features_for_client(&all, desktop, desktop_on_listener(&listener, desktop));
+        // A desktop and a client on loopback, where every client counts as a desktop (`desktop_on_listener`), and a phone
+        // on a tailnet listener, which does not.
+        assert!(desktop_on_listener(&ListenerMode::Admin, false));
+        for (desktop, on_listener) in [(true, true), (false, true), (false, false)] {
+            let offered = features_for_client(&all, desktop, on_listener);
             assert!(offered.iter().any(|f| f == "thread-media") && offered.iter().any(|f| f == "thread-media-video"));
             assert!(!offered.iter().any(|f| f == "thread-media-edge"));
         }

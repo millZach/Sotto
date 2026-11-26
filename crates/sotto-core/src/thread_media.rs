@@ -12,12 +12,14 @@
 use std::fs;
 use std::io::{ErrorKind, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+
+use crate::protocol_fields::{hex, is_digest, on_network, protocol_id, utf16_len, whole_number};
 
 /// The largest picture Sotto keeps or shows, as Node's `AGENT_MAX_IMAGE_BYTES`.
 pub const AGENT_MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
@@ -29,10 +31,6 @@ pub const AGENT_VIDEO_PART_BYTES: u64 = 8 * 1024 * 1024;
 pub const AGENT_VIDEO_PARTS_MAX: u64 = AGENT_VIDEO_MAX_BYTES.div_ceil(AGENT_VIDEO_PART_BYTES);
 /// The longest edges a client may ask a picture at, as Node's `HOST_PICTURE_EDGES`.
 const HOST_PICTURE_EDGES: [u64; 3] = [320, 640, 1280];
-/// The longest ID Node's protocol reads (`id` in `src/shared/agents.ts`), in UTF-16 code units as zod counts.
-const ID_MAX: usize = 512;
-/// The largest integer Node's schema takes as an integer (`Number.MAX_SAFE_INTEGER`).
-const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 
 /// The folder under the data folder Node's store keeps pictures in, and the index beside it that remembers videos.
 const MEDIA_FOLDER: &str = "thread-media";
@@ -70,23 +68,6 @@ impl MediaRequest {
             MediaRead::VideoPart(_) => "thread-media-video",
         }
     }
-}
-
-fn protocol_id(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(Value::as_str)
-        .filter(|id| !id.is_empty() && id.encode_utf16().count() <= ID_MAX)
-        .map(ToString::to_string)
-}
-
-/// A number zod reads as an integer: a JSON number with no fraction, within the safe integers, at least zero here.
-fn whole_number(value: &Value) -> Option<u64> {
-    if let Some(n) = value.as_u64() {
-        return (n <= MAX_SAFE_INTEGER).then_some(n);
-    }
-    let n = value.as_f64()?;
-    // `-0` and `3.0` are integers to zod; `as` is exact for every safe integer.
-    (n.is_finite() && n.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER as f64).contains(&n)).then_some(n as u64)
 }
 
 /// A media ID as Node's schema reads one: `m0` to `m7`.
@@ -127,17 +108,30 @@ pub fn media_request(op: &str, value: Option<&Value>) -> Option<MediaRequest> {
     Some(MediaRequest { thread_id, activity_id, media_id, read, edge })
 }
 
+/// What a media handle names, as Node's `agentActivityMediaSchema` reads its `kind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MediaKind {
+    Image,
+    Video,
+}
+
+impl MediaKind {
+    fn of(kind: &str) -> Option<Self> {
+        match kind {
+            "image" => Some(Self::Image),
+            "video" => Some(Self::Video),
+            _ => None,
+        }
+    }
+}
+
 /// A media handle as a record carries it, with the fields a read needs, each as Node's `agentActivityMediaSchema` reads it.
 struct Handle {
     digest: String,
-    kind: String,
+    kind: MediaKind,
     mime_type: String,
     size_bytes: u64,
     name: String,
-}
-
-fn is_digest(text: &str) -> bool {
-    text.len() == 64 && text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// The first handle of `media_id` the record carries, as Node's `record.media.find(item => item.id === mediaId)`, or
@@ -149,13 +143,13 @@ fn handle_of(record: &Value, media_id: &str) -> Option<Handle> {
         .iter()
         .find(|item| item.get("id").and_then(Value::as_str) == Some(media_id))?;
     let digest = item.get("digest")?.as_str().filter(|digest| is_digest(digest))?;
-    let kind = item.get("kind")?.as_str().filter(|kind| *kind == "image" || *kind == "video")?;
+    let kind = MediaKind::of(item.get("kind")?.as_str()?)?;
     let mime_type = item.get("mimeType")?.as_str()?;
     let size_bytes = whole_number(item.get("sizeBytes")?).filter(|size| *size >= 1)?;
-    let name = item.get("name")?.as_str().filter(|name| !name.is_empty() && name.encode_utf16().count() <= 200)?;
+    let name = item.get("name")?.as_str().filter(|name| (1..=200).contains(&utf16_len(name)))?;
     Some(Handle {
         digest: digest.to_string(),
-        kind: kind.to_string(),
+        kind,
         mime_type: mime_type.to_string(),
         size_bytes,
         name: name.to_string(),
@@ -240,10 +234,7 @@ fn remembered_video(data_directory: &Path, digest: &str, size_bytes: u64) -> Opt
     let videos = index.get("videos")?.as_object()?;
     let mut found = None;
     for (key, entry) in videos {
-        let path = entry.get("path").and_then(Value::as_str).filter(|path| {
-            let units = path.encode_utf16().count();
-            (1..=4096).contains(&units)
-        });
+        let path = entry.get("path").and_then(Value::as_str).filter(|path| (1..=4096).contains(&utf16_len(path)));
         let size = entry.get("sizeBytes").and_then(whole_number).filter(|size| *size >= 1);
         let modified = finite(entry.get("modifiedMs"));
         let (Some(path), Some(size), Some(modified)) = (path, size, modified) else {
@@ -259,24 +250,44 @@ fn remembered_video(data_directory: &Path, digest: &str, size_bytes: u64) -> Opt
     found.filter(|file| file.size_bytes == size_bytes)
 }
 
-/// A file's last change in milliseconds, as Node's `Stats.mtimeMs` makes it from the seconds and nanoseconds the system
-/// reports: `sec * 1000 + nsec / 1e6`, in the same double arithmetic, so the two compare exactly.
+/// A file's last change in milliseconds, as Node's `Stats.mtimeMs` reads it; `None` when the system reports none.
 pub fn modified_ms(metadata: &fs::Metadata) -> Option<f64> {
-    let since = metadata.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
-    Some(since.as_secs() as f64 * 1000.0 + f64::from(since.subsec_nanos()) / 1_000_000.0)
+    metadata.modified().ok().map(millis_of)
+}
+
+/// A time in milliseconds from the epoch as Node's `Stats.mtimeMs` makes it from the seconds and nanoseconds libuv
+/// reports: `sec * 1000 + nsec / 1e6`, in the same double arithmetic, so the two compare exactly. Before the epoch the
+/// seconds are the whole second at or before the time and the nanoseconds count forward from it, as a `timespec` holds
+/// them on Linux and macOS and as libuv makes one from a Windows file time: 0.25 s before is `-1 s + 750 000 000 ns`.
+/// On Windows Node reads libuv's seconds as an unsigned 32-bit count (`SET_FIELD_WITH_TIME_STAMP` in its
+/// `node_file-inl.h`, against libuv's 32-bit `long` overflowing in 2038), so there a time before the epoch reads 2^32
+/// seconds later: 1.5 s before is 4 294 967 294 500 ms, as Node 24 reads it on Windows 11.
+pub fn millis_of(time: SystemTime) -> f64 {
+    let (sec, nsec): (i64, u32) = match time.duration_since(UNIX_EPOCH) {
+        Ok(after) => (after.as_secs() as i64, after.subsec_nanos()),
+        Err(before) => {
+            let before = before.duration();
+            match before.subsec_nanos() {
+                0 => (-(before.as_secs() as i64), 0),
+                nanos => (-(before.as_secs() as i64) - 1, 1_000_000_000 - nanos),
+            }
+        }
+    };
+    #[cfg(windows)]
+    let sec = sec.rem_euclid(1 << 32);
+    sec as f64 * 1000.0 + f64::from(nsec) / 1_000_000.0
 }
 
 /// One part of a video a handle names, as Node's `threadMediaVideo` and `readVideo` (`src/main/agents/shownMedia.ts`)
 /// read it: from the file the store remembers for its digest and size, only while that file still has the size and
 /// last change it was found with, and never past its end. `None` otherwise.
 fn read_video_part(data_directory: &Path, handle: &Handle, part: u64) -> Option<Value> {
-    if handle.kind != "video" || !VIDEO_TYPES.contains(&handle.mime_type.as_str()) || handle.size_bytes > AGENT_VIDEO_MAX_BYTES {
+    if handle.kind != MediaKind::Video || !VIDEO_TYPES.contains(&handle.mime_type.as_str()) || handle.size_bytes > AGENT_VIDEO_MAX_BYTES {
         return None;
     }
     let video = remembered_video(data_directory, &handle.digest, handle.size_bytes)?;
     // Node's capture never remembers a video on another computer; a network path would reach it before the file is read.
-    let text = video.path.to_string_lossy();
-    if text.starts_with("//") || text.starts_with("\\\\") || text.starts_with("/\\") || text.starts_with("\\/") {
+    if on_network(&video.path.to_string_lossy()) {
         return None;
     }
     let parts = handle.size_bytes.div_ceil(AGENT_VIDEO_PART_BYTES);
@@ -303,10 +314,6 @@ fn read_video_part(data_directory: &Path, handle: &Handle, part: u64) -> Option<
         "parts": parts,
         "data": STANDARD.encode(&bytes),
     }))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
@@ -482,6 +489,49 @@ mod tests {
         file.set_len(size as u64 - 1).unwrap();
         drop(file);
         assert_eq!(read_media(data.path(), Some(&record), &part_request(1)), Ok(Value::Null));
+    }
+
+    /// What Node 24's `mtimeMs` reads for a file 1.5 s before the epoch, on Windows 11 and elsewhere.
+    #[cfg(windows)]
+    const NODE_BEFORE_EPOCH_MS: f64 = 4_294_967_294_500.0;
+    #[cfg(not(windows))]
+    const NODE_BEFORE_EPOCH_MS: f64 = -1500.0;
+
+    /// Node's `mtimeMs` for times before the epoch, which a video's file can have (an archive's, or a copy that kept one).
+    /// The Windows values are what Node 24 read on Windows 11 for files whose times Rust set to these.
+    #[test]
+    fn a_time_before_the_epoch_is_counted_as_node_counts_it() {
+        let at = |forward: bool, secs: u64, nanos: u32| {
+            let span = Duration::new(secs, nanos);
+            millis_of(if forward { UNIX_EPOCH + span } else { UNIX_EPOCH - span })
+        };
+        assert_eq!(at(true, 1, 500_000_000), 1500.0);
+        assert_eq!(at(true, 0, 0), 0.0);
+        assert_eq!(at(false, 1, 500_000_000), NODE_BEFORE_EPOCH_MS);
+        #[cfg(windows)]
+        let before = [4_294_967_295_750.0, 4_294_967_294_000.0, 4_294_967_295_000.0, 4_293_967_295_876.543_5, 4_263_431_295_012.345_7, 4_294_967_296_000.0];
+        // -1.0000001 s is -2 s and 999 999 900 ns, in Node's arithmetic.
+        #[cfg(not(windows))]
+        let before = [-250.0, -2000.0, -1000.0001, -1_000_000_123.4567, -31_536_000_987.6543, -0.000_099_999_999_974_897_95];
+        let spans = [(0, 250_000_000), (2, 0), (1, 100), (1_000_000, 123_456_700), (31_536_000, 987_654_300), (0, 100)];
+        for ((secs, nanos), node) in spans.into_iter().zip(before) {
+            assert_eq!(at(false, secs, nanos), node, "{secs} s {nanos} ns before the epoch");
+        }
+    }
+
+    #[test]
+    fn a_video_whose_file_dates_from_before_the_epoch_is_read() {
+        let (data, path, record) = remembered(1000);
+        let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_modified(UNIX_EPOCH - Duration::from_millis(1500)).unwrap();
+        drop(file);
+        // As Node remembered it: its `mtimeMs` of that file.
+        let mut index: Value = serde_json::from_str(&fs::read_to_string(data.path().join(MEDIA_INDEX)).unwrap()).unwrap();
+        let digest = record["media"][0]["digest"].as_str().unwrap().to_string();
+        index["videos"][&digest]["modifiedMs"] = json!(NODE_BEFORE_EPOCH_MS);
+        fs::write(data.path().join(MEDIA_INDEX), index.to_string()).unwrap();
+        assert_eq!(modified_ms(&fs::metadata(&path).unwrap()), Some(NODE_BEFORE_EPOCH_MS));
+        assert!(read_media(data.path(), Some(&record), &part_request(0)).unwrap().is_object());
     }
 
     #[test]

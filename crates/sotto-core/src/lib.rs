@@ -20,6 +20,7 @@ pub mod plugins;
 pub mod usage_ops;
 pub mod pairing;
 pub mod protocol;
+pub mod protocol_fields;
 pub mod provider;
 pub mod providers;
 pub mod remote_commands;
