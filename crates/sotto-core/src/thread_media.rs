@@ -10,16 +10,16 @@
 //! has the size and last change it was found with. Nothing else is ever read, and this host never writes the store.
 
 use std::fs;
-use std::io::{ErrorKind, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use serde_json::{json, Map, Value};
-use sha2::{Digest, Sha256};
 
-use crate::protocol_fields::{hex, is_digest, on_network, protocol_id, utf16_len, whole_number};
+use crate::attachment_store::{image_extension, read_checked, ReadFailed};
+use crate::protocol_fields::{is_digest, on_network, protocol_id, utf16_len, whole_number};
 
 /// The largest picture Sotto keeps or shows, as Node's `AGENT_MAX_IMAGE_BYTES`.
 pub const AGENT_MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
@@ -36,9 +36,6 @@ const HOST_PICTURE_EDGES: [u64; 3] = [320, 640, 1280];
 const MEDIA_FOLDER: &str = "thread-media";
 const MEDIA_INDEX: &str = "thread-media.json";
 
-/// The picture types the store keeps, by the extension its file of each has (`EXTENSIONS` in Node's attachment store).
-const PICTURE_EXTENSIONS: [(&str, &str); 4] =
-    [("image/png", "png"), ("image/jpeg", "jpg"), ("image/gif", "gif"), ("image/webp", "webp")];
 /// The video types a tile plays, as Node's `AGENT_VIDEO_MIME_TYPES`.
 const VIDEO_TYPES: [&str; 3] = ["video/mp4", "video/webm", "video/quicktime"];
 
@@ -177,7 +174,7 @@ pub fn read_media(data_directory: &Path, record: Option<&Value>, request: &Media
 /// and size the handle says, whose bytes are still that digest. A file the store does not keep as the handle describes
 /// it, or whose bytes changed, is null; a failure to read one it keeps is the host's, as Node's `readFile` throws it.
 fn read_picture(data_directory: &Path, handle: &Handle) -> Result<Value, MediaReadFailed> {
-    let Some((_, extension)) = PICTURE_EXTENSIONS.iter().find(|(mime, _)| *mime == handle.mime_type) else {
+    let Some(extension) = image_extension(&handle.mime_type) else {
         return Ok(Value::Null);
     };
     // Node's store never keeps an empty picture or one over the image limit, and keeps each by its digest and type.
@@ -185,24 +182,11 @@ fn read_picture(data_directory: &Path, handle: &Handle) -> Result<Value, MediaRe
         return Ok(Value::Null);
     }
     let path = data_directory.join(MEDIA_FOLDER).join(format!("{}.{extension}", handle.digest));
-    let mut file = match fs::File::open(&path) {
-        Ok(file) => file,
-        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(Value::Null),
-        // A folder of that name is no picture the store keeps; Windows refuses to open one as a file.
-        Err(_) if path.is_dir() => return Ok(Value::Null),
-        Err(_) => return Err(MediaReadFailed),
-    };
-    let metadata = file.metadata().map_err(|_| MediaReadFailed)?;
-    if !metadata.is_file() || metadata.len() != handle.size_bytes {
-        return Ok(Value::Null);
+    match read_checked(&path, handle.size_bytes, &handle.digest) {
+        Ok(Some(bytes)) => Ok(json!({ "dataUrl": format!("data:{};base64,{}", handle.mime_type, STANDARD.encode(&bytes)) })),
+        Ok(None) => Ok(Value::Null),
+        Err(ReadFailed) => Err(MediaReadFailed),
     }
-    // At most one byte more than the handle's size: a file that grew is not its digest, and is never read past the limit.
-    let mut bytes = Vec::with_capacity(handle.size_bytes as usize + 1);
-    (&mut file).take(handle.size_bytes + 1).read_to_end(&mut bytes).map_err(|_| MediaReadFailed)?;
-    if hex(&Sha256::digest(&bytes)) != handle.digest {
-        return Ok(Value::Null);
-    }
-    Ok(json!({ "dataUrl": format!("data:{};base64,{}", handle.mime_type, STANDARD.encode(&bytes)) }))
 }
 
 /// Where Node's store remembers a video of this digest is, as `ThreadMediaStore.videoFile`: its `thread-media.json` as
@@ -319,6 +303,8 @@ fn read_video_part(data_directory: &Path, handle: &Handle, part: u64) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol_fields::hex;
+    use sha2::{Digest, Sha256};
     use std::time::{Duration, SystemTime};
 
     fn digest_of(bytes: &[u8]) -> String {

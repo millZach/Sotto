@@ -6,7 +6,6 @@
         "answer-check",
         "answer-receipts",
         "atomic-send",
-        "attachment-files",
         "background-refresh",
         "branch-moves",
         "bring-changes-back",
@@ -55,7 +54,6 @@
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
-        "video-staging",
         "watcher-ready",
         "watcher-tell",
         "worker-swarms"
@@ -68,7 +66,6 @@
         "answer-check",
         "answer-receipts",
         "atomic-send",
-        "attachment-files",
         "background-refresh",
         "bring-changes-back",
         "browser",
@@ -94,7 +91,6 @@
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
-        "video-staging",
         "worker-swarms"
       ],
       "extra": []
@@ -258,10 +254,6 @@
     }
   },
   "operations": {
-    "attachment-file": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "branch-move": {
       "node": "ok",
       "rust": "invalid_request"
@@ -287,10 +279,6 @@
       "rust": "invalid_request"
     },
     "desktop-defaults": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "file-upload-progress": {
       "node": "ok",
       "rust": "invalid_request"
     },

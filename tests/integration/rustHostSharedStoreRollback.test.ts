@@ -1,14 +1,16 @@
 // @vitest-environment node
 // Node -> Rust -> Node for every store other than the thread stores that both a Rust host and Node write (ADR-0214):
-// Councils, checkpoints, plugins, pairing, phone access and Watcher. Each store as Node writes it is checked with
-// Node's own parser, loaded and saved by the Rust host's own code, and read again here, which must change nothing Node
-// reads. Each store a Rust host creates records in is also read here, which Node must accept. Each store gets its own
-// folder and its own Rust test. Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a
-// `cargo build`).
+// Councils, checkpoints, plugins, pairing, phone access, Watcher and attachments. Each store as Node writes it is
+// checked with Node's own parser, loaded and saved by the Rust host's own code, and read again here, which must change
+// nothing Node reads. Each store a Rust host creates records in is also read here, which Node must accept. Each store
+// gets its own folder and its own Rust test. Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after
+// a `cargo build`).
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { AttachmentStore } from '../../src/main/agents/attachmentStore'
 import { parseFollowupStore } from '../../src/main/agents/followups'
 import { parseLimitRestartFile } from '../../src/main/agents/limitRestart'
 import { parsePairedClientsFile } from '../../src/main/agents/pairing'
@@ -248,5 +250,41 @@ describe.skipIf(!RUN_RUST_HOST)('shared stores across a Rust host and a rollback
     const parsed = parse(written)
     expect(parsed).toBeTruthy()
     if (list) expect(parsed).toHaveLength((written as Record<string, unknown[] | undefined>)[list]?.length ?? -1)
+  }, 600_000)
+
+  // Attachments: a folder of content files beside `attachments/index.json`, read back with Node's own `AttachmentStore`.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+  const digestOf = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+  const loaded = async (dir: string) => { const store = new AttachmentStore(dir, { acceptsFiles: true }); await store.load(); return store }
+  const expectKept = async (store: AttachmentStore, content: readonly (readonly [string, Buffer])[]) => {
+    for (const [mimeType, bytes] of content) {
+      expect(store.mimeType(digestOf(bytes)), mimeType).toBe(mimeType)
+      expect(await store.read(digestOf(bytes)), mimeType).toEqual(bytes)
+    }
+  }
+
+  it('attachments/index.json and its content read in Node after a Rust load and save exactly as before', async () => {
+    const dir = await folder()
+    const content = [['image/png', PNG], ['text/plain', Buffer.from('Node’s notes\n')], ['video/mp4', Buffer.from('Node’s video bytes')]] as const
+    const node = await loaded(dir)
+    await node.stage({ name: 'dot.png', mimeType: 'image/png', bytes: PNG })
+    await node.stage({ name: 'notes.txt', mimeType: 'text/plain', bytes: content[1][1] })
+    // A video is kept from its path, as the desktop keeps one too large to pass through memory.
+    const source = join(dir, 'clip.mp4')
+    await writeFile(source, content[2][1])
+    await node.stageFile({ name: 'clip.mp4', mimeType: 'video/mp4', path: source })
+    await node.idle()
+    const before = await read(dir, 'attachments/index.json')
+    runRust('attachment_store::tests::node_attachments_survive_a_rust_load_and_save', dir)
+    expect(await read(dir, 'attachments/index.json')).toEqual(before)
+    await expectKept(await loaded(dir), content)
+  }, 600_000)
+
+  it('attachments a Rust host staged read in Node', async () => {
+    const dir = await folder()
+    runRust('attachment_store::tests::rust_created_attachments_reads_in_node', dir)
+    const store = await loaded(dir)
+    expect(store.kept()).toHaveLength(3)
+    await expectKept(store, [['image/png', PNG], ['text/plain', Buffer.from('Rust staged these notes\n')], ['video/mp4', Buffer.from('Rust staged this video')]])
   }, 600_000)
 })

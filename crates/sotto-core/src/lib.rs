@@ -1,4 +1,6 @@
 pub mod activity_bodies;
+pub mod attachment_files;
+pub mod attachment_store;
 pub mod checkpoints;
 pub mod cli_lookup;
 pub mod coordinator;
@@ -7,6 +9,7 @@ pub mod credentials;
 pub mod desktop_clients;
 pub mod desktop_hosts;
 pub mod failures_seen;
+pub mod file_uploads;
 pub mod followup_queue;
 pub mod git_review;
 pub mod host_facts;
