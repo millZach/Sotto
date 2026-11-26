@@ -1,39 +1,42 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import { COUNCIL_TOOL_DEFINITIONS } from '../../../src/main/agents/councilTools'
 import { COORDINATION_TOOL_DEFINITIONS } from '../../../src/main/agents/threadCoordinationTools'
 import { delegationToolDefinitions } from '../../../src/main/agents/delegationTools'
 import { showInThreadDefinition } from '../../../src/main/agents/mediaTools'
 import { readyToMergeDefinition, tellWatcherDefinition } from '../../../src/main/agents/tellWatcherTools'
 import { listedTool, ThreadToolServer, type ThreadToolDefinition } from '../../../src/main/agents/threadToolServer'
 import { visualizeDefinition } from '../../../src/main/agents/visualTools'
-import { makeSoundDefinition } from '../../../src/main/plugins/elevenlabs/tool'
-import { makeModelDefinition } from '../../../src/main/plugins/meshy/tool'
-import { gitHubCloseIssueDefinition, gitHubCommentDefinition, gitHubOpenIssueDefinition, gitHubReopenIssueDefinition, mailSendDefinition,
-  pluginAccountsDefinition, pluginReadDefinition, vercelCancelDefinition, vercelPromoteDefinition, vercelRollbackDefinition } from '../../../src/main/plugins/pluginTools'
+import { gitHubCommentDefinition, PLUGIN_TOOL_DEFINITIONS } from '../../../src/main/plugins/pluginTools'
 import { browserToolDefinitions } from '../../../src/main/tools/browserAgentTools'
 
 /**
- * `agy` 1.5.17 leaves a session's largest tool out, silently, once its tool declarations pass a total of about 57 KB,
- * and `delegate` is Sotto's largest. Measured on forge, November 25, 2026: this set listed at 56,501 characters, and
- * `agy` kept every tool with a user tool of 2.5 KB beside it and dropped `delegate` with one of 4 KB. Untrimmed (60.8 KB)
- * it dropped `delegate` on its own. The budget only tightens; a raise needs its reason, and an `agy` check, in the PR.
+ * `agy` 1.5.17 leaves a session's largest tool out, silently, once its tool declarations pass about 58 KB, and
+ * `delegate` is Sotto's largest. `agy` counts each tool as it writes it to its own folder: name, description and input
+ * schema, without annotations. Measured on forge, November 25, 2026: it kept all 38 of this set at 57,624 characters,
+ * and dropped `delegate` at about 58,150; untrimmed, this set is 62,296 and lost `delegate`. Only about 500 characters are
+ * left, so a tool or a sentence that pushes past this budget has to make room elsewhere: raising it needs an `agy` check
+ * at the new size, and its reason, in the PR.
  */
-const SOTTO_TOOLS_BUDGET = 57_000
+const SOTTO_TOOLS_BUDGET = 57_700
 
-/** Everything an ordinary Antigravity thread on This computer can be offered with every feature on: seven servers. */
+/** Everything an ordinary Antigravity thread on This computer can be offered with every feature on: eight servers. */
 const everyOrdinaryThreadTool: readonly ThreadToolDefinition[] = [
   ...browserToolDefinitions,
   ...COORDINATION_TOOL_DEFINITIONS,
+  ...COUNCIL_TOOL_DEFINITIONS,
   ...delegationToolDefinitions(true, true, 'this-computer', false, true, true),
   showInThreadDefinition,
-  pluginAccountsDefinition, pluginReadDefinition, gitHubCommentDefinition, gitHubOpenIssueDefinition, gitHubCloseIssueDefinition,
-  gitHubReopenIssueDefinition, vercelCancelDefinition, vercelPromoteDefinition, vercelRollbackDefinition, mailSendDefinition,
-  makeModelDefinition, makeSoundDefinition,
+  ...PLUGIN_TOOL_DEFINITIONS,
   visualizeDefinition,
   readyToMergeDefinition, tellWatcherDefinition,
 ]
-const size = (tool: ThreadToolDefinition): number => JSON.stringify(listedTool(tool)).length
+/** A tool's size as `agy` counts it. */
+const size = (tool: ThreadToolDefinition): number => {
+  const { name, description, inputSchema } = listedTool(tool)
+  return JSON.stringify({ name, description, parameters: inputSchema }).length
+}
 
 describe('the tools Sotto lists for a thread', () => {
   let server: ThreadToolServer | undefined
@@ -53,7 +56,7 @@ describe('the tools Sotto lists for a thread', () => {
     expect(JSON.stringify(listedTool(gitHubCommentDefinition))).toContain('"pattern"')
     expect(JSON.stringify(listed.find(tool => tool.name === 'cancel_delegation'))).toContain('"format":"uuid"')
     // The definitions themselves are untouched, and listing again gives the same object.
-    expect(JSON.stringify(delegationToolDefinitions(true, true, 'this-computer', false, true, true))).toContain('"$schema"')
+    expect(JSON.stringify(everyOrdinaryThreadTool)).toContain('"$schema"')
     const delegate = everyOrdinaryThreadTool.find(tool => tool.name === 'delegate')!
     expect(listedTool(delegate)).toBe(listedTool(delegate))
   })

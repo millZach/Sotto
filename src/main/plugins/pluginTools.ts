@@ -343,6 +343,11 @@ function inTurn<Result>(turns: Map<string, Promise<unknown>>, key: string, run: 
   return turn
 }
 
+/** Every tool `sotto_plugins` offers, in the order it lists them. */
+export const PLUGIN_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = [pluginAccountsDefinition, pluginReadDefinition,
+  gitHubCommentDefinition, gitHubOpenIssueDefinition, gitHubCloseIssueDefinition, gitHubReopenIssueDefinition, vercelCancelDefinition, vercelPromoteDefinition, vercelRollbackDefinition,
+  mailSendDefinition, makeModelDefinition, makeSoundDefinition]
+
 /**
  * `sotto_plugins`: the loopback MCP server through which a thread's agent uses the plugins the user connected
  * (ADR-0205). Sotto makes each call with the user's own sign-in and hands back the result, so no agent holds a secret.
@@ -352,9 +357,7 @@ function inTurn<Result>(turns: Map<string, Promise<unknown>>, key: string, run: 
  */
 export class PluginToolServer implements ScopedThreadTools {
   readonly name = PLUGINS_MCP_SERVER
-  readonly definitions: readonly ThreadToolDefinition[] = [pluginAccountsDefinition, pluginReadDefinition,
-    gitHubCommentDefinition, gitHubOpenIssueDefinition, gitHubCloseIssueDefinition, gitHubReopenIssueDefinition, vercelCancelDefinition, vercelPromoteDefinition, vercelRollbackDefinition,
-    mailSendDefinition, makeModelDefinition, makeSoundDefinition]
+  readonly definitions: readonly ThreadToolDefinition[] = PLUGIN_TOOL_DEFINITIONS
   /**
    * An email's text can be long, and JSON spells some characters in up to six bytes: a call within the tool's own
    * limits must reach it, rather than be refused for its size before any card is shown.

@@ -51,7 +51,7 @@ const listed = new WeakMap<ThreadToolDefinition, ThreadToolDefinition>()
 /**
  * A tool as `tools/list` sends it, schemas compacted. Every Sotto tool checks its own arguments with zod, so nothing a
  * call may carry changes. Antigravity's `agy` (1.5.17) silently drops the largest tool once a session's declarations
- * pass about 57 KB, and those two were 4 KB of the 61 KB an ordinary thread is offered: enough to lose `delegate`.
+ * pass about 58 KB, and those two were 4.7 KB of the 62 KB an ordinary thread is offered: enough to lose `delegate`.
  * `antigravityToolBudget.test.ts` holds the total under that.
  */
 export function listedTool(tool: ThreadToolDefinition): ThreadToolDefinition {
