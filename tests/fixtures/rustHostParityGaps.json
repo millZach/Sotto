@@ -21,7 +21,6 @@
         "delegation-remote",
         "delegation-views",
         "detached-runs-elsewhere",
-        "draft-revisions",
         "every-agent-picture",
         "git-pull-request",
         "git-pull-request-list",
@@ -80,7 +79,6 @@
         "client-update-not-listed",
         "client-update-outcomes",
         "client-updates",
-        "draft-revisions",
         "git-pull-request",
         "git-pull-request-list",
         "next-prompts",
@@ -226,10 +224,6 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "recover-draft": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "refresh-thread-skills": {
       "node": "ok",
       "rust": "invalid_request"
@@ -247,10 +241,6 @@
       "rust": "invalid_request"
     },
     "retry-thread-worktree": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "save-thread-draft": {
       "node": "ok",
       "rust": "invalid_request"
     },
