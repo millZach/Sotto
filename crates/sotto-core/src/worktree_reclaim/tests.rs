@@ -288,6 +288,28 @@ fn keeps_unpushed_nested_work_until_the_user_confirms_it() {
     assert!(!fixture.path.exists());
 }
 
+/// Another repository's worktree inside the folder is nested work of the `worktree` kind; once confirmed it goes with
+/// the folder, and its registration is cleared in its own repository, as Node's `clearNestedWorktree` clears it.
+#[test]
+fn clears_a_nested_worktrees_registration_in_its_own_repository() {
+    let fixture = Fixture::new();
+    let other = fixture.base.join("other");
+    fs::create_dir_all(&other).unwrap();
+    sh_git(&other, &["init", "-q"]);
+    fs::write(other.join("README.md"), "other\n").unwrap();
+    sh_git(&other, &["add", "."]);
+    sh_git(&other, &["commit", "-q", "-m", "Other"]);
+    let nested = fixture.path.join("nested-wt");
+    sh_git(&other, &["worktree", "add", "-q", "-b", "nested", &text(&nested)]);
+    let facts = reclaim_facts(&fixture.record()).unwrap();
+    assert_eq!(facts.repositories, [RepositoryRow { path: "nested-wt/".into(), change_count: 0, unpushed_commit_count: None, kind: "worktree", fetched_by_hash: None }]);
+    fixture.reclaim(&fixture.confirm_all(true)).unwrap();
+    assert!(!fixture.path.exists());
+    let listing = sh_git(&other, &["worktree", "list", "--porcelain", "-z"]);
+    assert!(!registered_worktrees(&listing).iter().any(|entry| path_key(Path::new(&entry.path)) == path_key(&nested)), "its registration went with it");
+    assert!(other.join("README.md").exists(), "its own repository stays");
+}
+
 /// A detached HEAD's folder goes only under a rule or a clear; the user's own removal asks for a branch.
 #[test]
 fn refuses_a_detached_head() {

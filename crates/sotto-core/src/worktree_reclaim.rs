@@ -125,8 +125,7 @@ pub struct ReclaimOptions {
 }
 
 fn whole(value: Option<&Value>) -> Option<u64> {
-    let n = value?.as_f64()?;
-    (n.fract() == 0.0 && (0.0..=9_007_199_254_740_991.0).contains(&n)).then_some(n as u64)
+    crate::protocol_fields::whole_number(value?)
 }
 
 impl ReclaimOptions {
@@ -1380,7 +1379,10 @@ fn emptied_and_unregistered(repository_root: &Path, path: &Path) -> bool {
 /// Clears a nested worktree's registration in its own repository, as Node's `clearNestedWorktree`.
 fn clear_nested_worktree(nested: &NestedWorktree) -> Result<(), RemovalError> {
     let common = Path::new(&nested.common_directory);
-    if registry(common, &["worktree", "remove", "--force", "--", &nested.path], None).is_ok() {
+    // Node stops no `git worktree remove` (`runWorktreeGitProcess`), so this one has no deadline either.
+    let removed = registry_identity(common)
+        .and_then(|identity| coordinate_registry(&identity, || run_worktree_git(&text(common), &["worktree", "remove", "--force", "--", &nested.path], None)));
+    if removed.is_ok() {
         return Ok(());
     }
     let gone = match git(common, &["worktree", "list", "--porcelain", "-z"]) {
@@ -1457,10 +1459,6 @@ fn counts(items: impl Iterator<Item = (String, u64)>) -> Vec<(String, u64)> {
 /// (`automatic`) is not ported, and neither is finishing a removal Sotto started and did not finish (`resumeRemoval`):
 /// inspection refuses such a folder, so it stays.
 pub fn reclaim(data_directory: &Path, metadata: &AgentThreadWorktree, options: &ReclaimOptions) -> Result<AgentThreadWorktree, String> {
-    reclaim_with_stall(data_directory, metadata, options, REMOVAL_STALL)
-}
-
-fn reclaim_with_stall(data_directory: &Path, metadata: &AgentThreadWorktree, options: &ReclaimOptions, stall: Duration) -> Result<AgentThreadWorktree, String> {
     if metadata.mode != "independent" || metadata.reused == Some(true) {
         return Err("Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.".into());
     }
@@ -1558,7 +1556,7 @@ fn reclaim_with_stall(data_directory: &Path, metadata: &AgentThreadWorktree, opt
             Ok(nested)
         })?;
         // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
-        remove_locked(&repository_root, &path, &identity, &nested, stall).map_err(|cause| unfinished_removal(&cause))?;
+        remove_locked(&repository_root, &path, &identity, &nested, REMOVAL_STALL).map_err(|cause| unfinished_removal(&cause))?;
         Ok(reclaimed_record(metadata, facts.branch.clone()))
     })
 }
@@ -1626,8 +1624,10 @@ fn checkout_identity(directory: &Path) -> Result<String, FolderRefused> {
             Err(_) => {
                 let mut candidate = real.clone();
                 loop {
-                    if fs::symlink_metadata(candidate.join(".git")).is_ok() {
-                        return Ok(path_key(&candidate));
+                    match fs::symlink_metadata(candidate.join(".git")) {
+                        Ok(_) => return Ok(path_key(&candidate)),
+                        Err(error) if not_found(&error) => {}
+                        Err(error) => return Err(FolderRefused { words: error.to_string(), missing: false }),
                     }
                     match candidate.parent() {
                         Some(parent) => candidate = parent.to_path_buf(),

@@ -258,6 +258,17 @@ pub struct AgentThreadWorktree {
     pub extra: serde_json::Map<String, Value>,
 }
 
+impl AgentThreadWorktree {
+    /// Whether Sotto removed this folder (ADR-0041), as Node reads `worktree.reclaimedAt`: the next send puts it back.
+    pub fn reclaimed(&self) -> bool {
+        match self.extra.get("reclaimedAt") {
+            None | Some(Value::Null | Value::Bool(false)) => false,
+            Some(Value::String(at)) => !at.is_empty(),
+            Some(_) => true,
+        }
+    }
+}
+
 fn default_worktree_status() -> String {
     "ready".into()
 }

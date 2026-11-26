@@ -433,6 +433,10 @@ pub type WatchedThreads = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
 const DELETION_FOLDERS_WORDS: &str = "Worktree folders it already removed stay removed; their branches and commits stay.";
 /// What Remove worktree says once a thread's own folder is gone, as Node's coordinator says it.
 const RECLAIMED_NOTICE: &str = "Worktree removed. The branch is kept.";
+/// What Remove worktree says when the host stopped before the folder was held, so nothing was touched.
+const RECLAIM_STOPPED: &str = "The host stopped before it could remove this folder. Nothing was removed. Try again.";
+/// What a send to a thread whose folder Sotto removed says, since this host cannot put the folder back as Node's does.
+const RECLAIMED_SEND_REFUSED: &str = "This thread’s worktree folder was removed, and this host cannot put it back yet. Nothing was sent. Its branch keeps its commits, so start a new thread from that branch to carry on.";
 /// What a preview of Remove worktree says when the folder could not be read, as Node's coordinator says it.
 const RECLAIM_PREVIEW_FAILED: &str = "The folder could not be checked. Nothing was removed. Check the host connection and try again.";
 
@@ -452,16 +456,27 @@ fn remove_folder_for_delete(
     if let Some(reason) = reason {
         return Err((reason, None));
     }
-    let (reply, answer) = oneshot::channel();
-    if self_tx.send(ActorMessage::HoldFolderForDelete { thread_id: thread_id.to_string(), folder, reply }).is_err() {
-        return Err((KeptReason::WorktreeError, None));
-    }
-    match answer.blocking_recv() {
-        Ok(None) => {}
-        Ok(Some(late)) => return Err((late, None)),
-        Err(_) => return Err((KeptReason::WorktreeError, None)),
+    match hold_folder(self_tx, thread_id, &folder, true) {
+        Some(None) => {}
+        Some(Some(late)) => return Err((late, None)),
+        None => return Err((KeptReason::WorktreeError, None)),
     }
     crate::worktree_reclaim::reclaim(data_directory, worktree, options).map_err(|words| (KeptReason::WorktreeError, Some(words)))
+}
+
+/// A removal waiting for its folder to be held, as `ActorMessage::HoldFolder` answers it; `None` when the coordinator
+/// has stopped.
+fn hold_folder(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: &str, folder: &str, recheck: bool) -> Option<Option<KeptReason>> {
+    let (reply, answer) = oneshot::channel();
+    self_tx.send(ActorMessage::HoldFolder { thread_id: thread_id.to_string(), folder: folder.to_string(), recheck, reply }).ok()?;
+    answer.blocking_recv().ok()
+}
+
+/// A removal waiting for its held folder's Git status reads to finish.
+struct FolderWaiter {
+    thread_id: String,
+    recheck: bool,
+    reply: oneshot::Sender<Option<KeptReason>>,
 }
 /// A thread's title as Node's clearing names it, cut at 512 UTF-16 code units as `title.slice(0, 512)` cuts it.
 fn clear_title(title: &str) -> String {
@@ -700,15 +715,19 @@ enum ActorMessage {
         outcome: Box<AsyncCommandOutcome>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     },
-    /// Delete thread… asks, with the thread's own folder about to go, whether a turn or a request that began meanwhile
-    /// keeps the thread, as Node's `deleteThreads` asks once more with the folder held. `None` holds the folder.
-    HoldFolderForDelete {
+    /// A removal of a thread's own worktree folder holds it (ADR-0041): no Git status read starts in it from now, and the
+    /// answer waits until one already running has finished, as Node's `gitStatus.hold` and `idle`. Delete thread… also
+    /// asks (`recheck`) whether a turn or a request that began meanwhile keeps the thread, as Node's `deleteThreads` asks
+    /// once more with the folder held; a thread kept lets the folder go. `None` is the folder held.
+    HoldFolder {
         thread_id: String,
         folder: String,
+        recheck: bool,
         reply: oneshot::Sender<Option<KeptReason>>,
     },
     GitStatusReady {
         thread_id: String,
+        folder: String,
         git: Value,
     },
     WatcherReadThread {
@@ -1349,6 +1368,9 @@ struct CoordinatorActor {
     /// The worktree folders being removed (ADR-0041): no Git status read starts in one, as Node's `gitStatus.hold` keeps
     /// one from starting.
     held_worktree_folders: HashSet<String>,
+    /// The Git status reads running, by folder, and the removals waiting for a held folder's reads to finish.
+    git_probes_running: HashMap<String, usize>,
+    folder_idle_waiters: HashMap<String, Vec<FolderWaiter>>,
     /// The follow-up queue, kept in `followups.json` as Node keeps it.
     followups: FollowupStore,
     /// Who queued each follow-up while this host ran, by item ID.
@@ -1507,6 +1529,8 @@ impl CoordinatorActor {
             thread_queues: HashMap::new(),
             in_flight_sends: HashMap::new(),
             held_worktree_folders: HashSet::new(),
+            git_probes_running: HashMap::new(),
+            folder_idle_waiters: HashMap::new(),
             followups,
             followup_origins: HashMap::new(),
             followup_answers: HashMap::new(),
@@ -1776,15 +1800,16 @@ impl CoordinatorActor {
                     if let Some(thread) = self.threads.iter().find(|t| t.id == *tid) {
                         if let Some(ref wt) = thread.worktree {
                             // A folder being removed, or one Sotto removed, has no status to read (`gitStatusFolder`).
-                            let reclaimed = wt.extra.get("reclaimedAt").is_some_and(|at| !at.is_null());
+                            let reclaimed = wt.reclaimed();
                             if wt.git.is_none() && !reclaimed {
                                 if let Some(path) = wt.path.as_ref().filter(|path| !self.held_worktree_folders.contains(*path)) {
                                     let path = path.clone();
+                                    *self.git_probes_running.entry(path.clone()).or_default() += 1;
                                     let thread_id = tid.clone();
                                     let tx = self.self_tx.clone();
                                     tokio::task::spawn_blocking(move || {
                                         let git = probe_git_worktree(&path);
-                                        let _ = tx.send(ActorMessage::GitStatusReady { thread_id, git });
+                                        let _ = tx.send(ActorMessage::GitStatusReady { thread_id, folder: path, git });
                                     });
                                 }
                             }
@@ -1841,9 +1866,21 @@ impl CoordinatorActor {
                     });
                 let _ = reply.send(found);
             }
-            ActorMessage::GitStatusReady { thread_id, git } => {
+            ActorMessage::GitStatusReady { thread_id, folder, git } => {
+                let left = self.git_probes_running.get_mut(&folder).map_or(0, |running| {
+                    *running = running.saturating_sub(1);
+                    *running
+                });
+                if left == 0 {
+                    self.git_probes_running.remove(&folder);
+                    for waiter in self.folder_idle_waiters.remove(&folder).unwrap_or_default() {
+                        self.answer_folder_hold(&folder, waiter);
+                    }
+                }
+                // A status read that finished as its folder was removed, or after, says nothing of the folder now.
+                let held = self.held_worktree_folders.contains(&folder);
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
-                    if let Some(ref mut wt) = thread.worktree {
+                    if let Some(wt) = thread.worktree.as_mut().filter(|wt| !held && !wt.reclaimed()) {
                         wt.git = Some(git);
                         self.shell_dirty = true;
                         self.flush_dirty();
@@ -2131,12 +2168,14 @@ impl CoordinatorActor {
                 self.drain_lane(lane);
                 self.pump_followups();
             }
-            ActorMessage::HoldFolderForDelete { thread_id, folder, reply } => {
-                let late = self.clear_hold(&thread_id).or_else(|| self.threads.iter().find(|t| t.id == thread_id).map_or(Some(KeptReason::Hidden), deletion_hold));
-                if late.is_none() {
-                    self.held_worktree_folders.insert(folder);
+            ActorMessage::HoldFolder { thread_id, folder, recheck, reply } => {
+                self.held_worktree_folders.insert(folder.clone());
+                let waiter = FolderWaiter { thread_id, recheck, reply };
+                if self.git_probes_running.get(&folder).is_some_and(|running| *running > 0) {
+                    self.folder_idle_waiters.entry(folder).or_default().push(waiter);
+                } else {
+                    self.answer_folder_hold(&folder, waiter);
                 }
-                let _ = reply.send(late);
             }
             ActorMessage::Shutdown { .. } => unreachable!(),
         }
@@ -2734,8 +2773,8 @@ impl CoordinatorActor {
         // A thread whose own folder Sotto removed (ADR-0041) has it put back on its branch by Node's next send
         // (`restore`). This host cannot put one back yet, so nothing is sent rather than a turn run in a folder that is
         // not there.
-        if thread.worktree.as_ref().is_some_and(|w| w.extra.get("reclaimedAt").is_some_and(|at| !at.is_null())) {
-            let words = "This thread’s worktree folder was removed, and this host cannot put it back yet. Nothing was sent. Its branch keeps its commits.";
+        if thread.worktree.as_ref().is_some_and(AgentThreadWorktree::reclaimed) {
+            let words = RECLAIMED_SEND_REFUSED;
             let now = now_iso();
             self.deliveries.push(AgentDelivery {
                 command_id,
@@ -3945,16 +3984,14 @@ impl CoordinatorActor {
 
     /// Every other thread's folder, as Node's `checkoutIsUnreferenced` names it to ask whether it works in a checkout: its
     /// working folder, its worktree's, the one it reused, or its project's, and `None` for one with no folder at all. A
-    /// thread whose folder Sotto removed, and one whose own worktree has not been made yet, works nowhere.
+    /// thread whose folder Sotto removed works nowhere. Node also passes over a thread whose own worktree is not made yet
+    /// when its record says its session never started; this host reads an omitted flag as not started and cannot tell the
+    /// two apart, so it passes over none of them, which can only keep a folder that Node would remove.
     fn other_thread_folders(&self, thread_id: &str) -> Vec<Option<String>> {
         self.threads
             .iter()
             .filter(|other| other.id != thread_id)
-            .filter(|other| !other.worktree.as_ref().is_some_and(|w| w.extra.get("reclaimedAt").is_some_and(|at| !at.is_null())))
-            .filter(|other| {
-                !(!other.native_session_started
-                    && other.worktree.as_ref().is_some_and(|w| w.mode == "independent" && w.path.is_none() && w.existing_worktree_path.is_none()))
-            })
+            .filter(|other| !other.worktree.as_ref().is_some_and(AgentThreadWorktree::reclaimed))
             .map(|other| {
                 other
                     .working_directory
@@ -4103,7 +4140,7 @@ impl CoordinatorActor {
         let Some(worktree) = thread.worktree.clone().filter(|w| w.mode == "independent" && w.path.is_some() && w.reused != Some(true)) else {
             return self.refuse_sync_command(lane, &client, "This thread has no worktree of its own to remove.".into(), reply);
         };
-        if worktree.extra.get("reclaimedAt").is_some_and(|at| !at.is_null()) {
+        if worktree.reclaimed() {
             self.notice = RECLAIMED_NOTICE.into();
             return self.finish_sync_command(lane, &client, Ok(()), reply);
         }
@@ -4113,18 +4150,35 @@ impl CoordinatorActor {
         }
         let others = self.other_thread_folders(&thread_id);
         let folder = worktree.path.clone().unwrap_or_default();
-        self.held_worktree_folders.insert(folder.clone());
         let options = crate::worktree_reclaim::ReclaimOptions::from_command(command);
         let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
         tokio::task::spawn_blocking(move || {
-            let result = if crate::worktree_reclaim::owns_checkout_alone(&folder, &others) {
-                crate::worktree_reclaim::reclaim(&data_directory, &worktree, &options)
-            } else {
+            let result = if !crate::worktree_reclaim::owns_checkout_alone(&folder, &others) {
                 Err("Another thread works in this folder too, so it stays.".to_string())
+            } else if hold_folder(&self_tx, &thread_id, &folder, false).is_none() {
+                Err(RECLAIM_STOPPED.to_string())
+            } else {
+                crate::worktree_reclaim::reclaim(&data_directory, &worktree, &options)
             };
             let outcome = AsyncCommandOutcome::Reclaim { folder, thread_id, result };
             let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
         });
+    }
+
+    /// Answers a removal's hold on its folder: for Delete thread…, whether anything that began meanwhile keeps the
+    /// thread, which lets the folder go again.
+    fn answer_folder_hold(&mut self, folder: &str, waiter: FolderWaiter) {
+        let late = if waiter.recheck {
+            self.clear_hold(&waiter.thread_id).or_else(|| self.threads.iter().find(|t| t.id == waiter.thread_id).map_or(Some(KeptReason::Hidden), deletion_hold))
+        } else {
+            None
+        };
+        if late.is_some() {
+            self.held_worktree_folders.remove(folder);
+        }
+        if waiter.reply.send(late).is_err() {
+            self.held_worktree_folders.remove(folder);
+        }
     }
 
     /// A thread's worktree record as its folder's removal left it, kept in `workspace.json`.
@@ -5846,7 +5900,8 @@ fn allocate_independent_worktree(
     let worktrees_root = data_dir.join("thread-worktrees");
     std::fs::create_dir_all(&worktrees_root)
         .map_err(|e| format!("Could not create thread-worktrees folder: {e}"))?;
-    let wt_path = worktrees_root.join(token);
+    // Node names the folder with a whole UUID (`allocate`), which is how its reclaim knows the folder is Sotto's own.
+    let wt_path = worktrees_root.join(Uuid::new_v4().to_string());
     let wt_str = wt_path.to_string_lossy().into_owned();
 
     let mut args = vec!["worktree", "add", "-b", &branch, &wt_str];
@@ -6465,6 +6520,28 @@ mod tests {
         (coord, client, thread_id, folder)
     }
 
+    /// A worktree this host makes for a thread is named as Node names one, with a whole UUID, so its own removal knows the
+    /// folder for Sotto's (ADR-0041) and takes it.
+    #[test]
+    fn makes_a_worktree_its_own_removal_takes() {
+        let dir = tempdir().unwrap();
+        let base = PathBuf::from(std::fs::canonicalize(dir.path()).unwrap().to_string_lossy().trim_start_matches(r"\\?\"));
+        let (data, project) = (base.join("data"), base.join("project"));
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        fixture_git(&project, &["init", "-q"]);
+        std::fs::write(project.join("README.md"), "hello\n").unwrap();
+        fixture_git(&project, &["add", "."]);
+        fixture_git(&project, &["commit", "-q", "-m", "First"]);
+        let worktree = allocate_independent_worktree(&data, &project.to_string_lossy(), None).unwrap();
+        let folder = PathBuf::from(worktree.path.clone().unwrap());
+        assert!(Uuid::parse_str(&folder.file_name().unwrap().to_string_lossy()).is_ok(), "{}", folder.display());
+        let reclaimed = crate::worktree_reclaim::reclaim(&data, &worktree, &Default::default()).unwrap();
+        assert!(reclaimed.reclaimed());
+        assert!(!folder.exists());
+        assert!(Command::new("git").args(["rev-parse", "--verify", "--quiet", &format!("refs/heads/{}", worktree.branch.unwrap())]).current_dir(&project).status().unwrap().success());
+    }
+
     fn branch_kept(project: &Path) -> bool {
         Command::new("git").args(["rev-parse", "--verify", "--quiet", &format!("refs/heads/{OWN_BRANCH}")]).current_dir(project).status().unwrap().success()
     }
@@ -6510,7 +6587,7 @@ mod tests {
         assert_eq!((&shell["error"], &shell["notice"]), (&Value::Null, &json!(RECLAIMED_NOTICE)), "one already removed is done");
 
         let shell = run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Carry on" })).await.unwrap();
-        assert_eq!(shell["error"], "This thread’s worktree folder was removed, and this host cannot put it back yet. Nothing was sent. Its branch keeps its commits.");
+        assert_eq!(shell["error"], RECLAIMED_SEND_REFUSED);
         assert!(!folder.exists(), "nothing put a folder back");
         coord.shutdown().await;
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
