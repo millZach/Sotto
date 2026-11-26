@@ -609,13 +609,15 @@ mod tests {
 
         // A command keeps its receipt by this client's request ID (`receipt`, as Node's `CommandReceipts`): unknown
         // before it is sent, completed after, a retry answered from its first run, and a retry that says something else
-        // under the same ID refused.
+        // under the same ID refused. A command that failed is answered again in the host's `unavailable` alone, as Node
+        // replays a receipt's error.
         let unknown = ws_reply(&mut ws_stream, r#"{"v":1,"id":"req-2","op":"receipt","commandId":"cmd-1"}"#, "req-2").await;
         assert_eq!(unknown["result"], serde_json::json!({ "status": "unknown" }));
         let rename = r#"{"v":1,"id":"cmd-1","op":"command","command":{"type":"rename-thread","threadId":"00000000-0000-4000-8000-0000000000aa","title":"Renamed"}}"#;
         let first = ws_reply(&mut ws_stream, rename, "cmd-1").await;
         let again = ws_reply(&mut ws_stream, rename, "cmd-1").await;
-        assert_eq!((again["ok"].clone(), again["error"]["code"].clone()), (first["ok"].clone(), first["error"]["code"].clone()), "answered as it was the first time");
+        assert_eq!(first["ok"], false, "this host has no such thread");
+        assert_eq!(again["error"], serde_json::json!({ "code": "unavailable", "message": sotto_core::HostErrorCode::Unavailable.default_message() }), "answered from its first run");
         let other = r#"{"v":1,"id":"cmd-1","op":"command","command":{"type":"rename-thread","threadId":"00000000-0000-4000-8000-0000000000aa","title":"Other"}}"#;
         assert_eq!(ws_reply(&mut ws_stream, other, "cmd-1").await["error"]["code"], "invalid_request");
         let kept = ws_reply(&mut ws_stream, r#"{"v":1,"id":"req-3","op":"receipt","commandId":"cmd-1"}"#, "req-3").await;
