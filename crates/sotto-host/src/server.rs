@@ -1793,55 +1793,8 @@ async fn handle_websocket_upgrade(
                 if !wire.hello_done {
                     continue;
                 }
-                match bcast {
-                    Ok(CoordinatorBroadcast::Shell(mut shell)) => {
-                        if !push_answer_receipts(&state, &client_id, &mut wire, &out_tx).await {
-                            break;
-                        }
-                        let may_answer = state
-                            .memory
-                            .lock()
-                            .unwrap()
-                            .may_grant_remote(&client_id)
-                            .unwrap_or(false);
-                        if let Some(obj) = shell.as_object_mut() {
-                            obj.insert(
-                                "clientCapabilities".into(),
-                                json!({ "mayAnswer": may_answer }),
-                            );
-                        }
-                        let frame = wire.encode_shell_push(shell);
-                        if let Ok(encoded) = serde_json::to_string(&frame) {
-                            if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    Ok(CoordinatorBroadcast::Detail(detail)) => {
-                        if let Some(frame) = wire.encode_detail_update_push(&detail) {
-                            if let Ok(encoded) = serde_json::to_string(&frame) {
-                                if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        // On lag, resend whole shell cleanly so the client stays in sync.
-                        let may_answer = state
-                            .memory
-                            .lock()
-                            .unwrap()
-                            .may_grant_remote(&client_id)
-                            .unwrap_or(false);
-                        if let Ok(shell) = state.coordinator.shell(may_answer).await {
-                            let frame = wire.encode_shell_push(shell);
-                            if let Ok(encoded) = serde_json::to_string(&frame) {
-                                let _ = out_tx.send(OutboundFrame::Text(encoded));
-                            }
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
+                if !forward_coordinator_broadcast(&state, &client_id, &mut wire, &out_tx, bcast).await {
+                    break;
                 }
             }
             watcher_ev = watcher_rx.recv() => {
@@ -1912,6 +1865,59 @@ async fn handle_websocket_upgrade(
     // A client that went shows nothing now (ADR-0092).
     state.coordinator.forget_observer(wire.observer.clone());
     Ok(())
+}
+
+/// Sends one connection what the coordinator published: its shell, a thread's update, or the whole shell again after
+/// this connection fell behind. Each shell, and a lag that may have skipped one, first tells it of each answer it watches
+/// that a provider took, as Node checks `answerWatches` on every publication. False when the socket is gone.
+async fn forward_coordinator_broadcast(
+    state: &HostState,
+    client_id: &str,
+    wire: &mut ClientWireState,
+    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+    bcast: Result<CoordinatorBroadcast, broadcast::error::RecvError>,
+) -> bool {
+    match bcast {
+        Ok(CoordinatorBroadcast::Shell(mut shell)) => {
+            if !push_answer_receipts(state, client_id, wire, out_tx).await {
+                return false;
+            }
+            let may_answer = state.memory.lock().unwrap().may_grant_remote(client_id).unwrap_or(false);
+            if let Some(obj) = shell.as_object_mut() {
+                obj.insert("clientCapabilities".into(), json!({ "mayAnswer": may_answer }));
+            }
+            let frame = wire.encode_shell_push(shell);
+            if let Ok(encoded) = serde_json::to_string(&frame) {
+                if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                    return false;
+                }
+            }
+        }
+        Ok(CoordinatorBroadcast::Detail(detail)) => {
+            if let Some(frame) = wire.encode_detail_update_push(&detail) {
+                if let Ok(encoded) = serde_json::to_string(&frame) {
+                    if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                        return false;
+                    }
+                }
+            }
+        }
+        Err(broadcast::error::RecvError::Lagged(_)) => {
+            if !push_answer_receipts(state, client_id, wire, out_tx).await {
+                return false;
+            }
+            // On lag, resend whole shell cleanly so the client stays in sync.
+            let may_answer = state.memory.lock().unwrap().may_grant_remote(client_id).unwrap_or(false);
+            if let Ok(shell) = state.coordinator.shell(may_answer).await {
+                let frame = wire.encode_shell_push(shell);
+                if let Ok(encoded) = serde_json::to_string(&frame) {
+                    let _ = out_tx.send(OutboundFrame::Text(encoded));
+                }
+            }
+        }
+        Err(broadcast::error::RecvError::Closed) => return false,
+    }
+    true
 }
 
 /// One paired client's command under its own request ID, as Node's socket server keeps its receipt (`CommandReceipts`):
@@ -3910,6 +3916,33 @@ mod tests {
         let answered = host.ask(&mut connection, command("cmd-answer", json!({ "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-1", "answer": "Blue" }))).await;
         assert_eq!(answered["ok"], true, "{answered}");
         assert_eq!(host.ask(&mut connection, receipt("cmd-answer")).await["result"], json!({ "status": "completed", "answerDelivered": true }));
+        host.server.close().await;
+    }
+
+    /// A connection that fell behind the host's publications is still told of each answer it watches that a provider took,
+    /// as Node checks `answerWatches` on every publication, before the whole shell it is sent again.
+    #[tokio::test]
+    async fn a_connection_that_lagged_is_told_of_its_accepted_answers() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&["answer-receipts"]).await;
+        let watch = json!({ "v": 1, "id": "read-1", "op": "receipt", "commandId": "cmd-answer", "answer": host.target() });
+        assert_eq!(host.ask(&mut connection, watch).await["result"], json!({ "status": "unknown" }), "not given yet, so watched");
+        let answer = json!({ "v": 1, "id": "cmd-answer", "op": "command",
+            "command": { "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-1", "answer": "Blue" } });
+        assert_eq!(host.ask(&mut connection, answer).await["ok"], true);
+        while connection.out_rx.try_recv().is_ok() {}
+
+        let Connection { wire, out_tx, out_rx, .. } = &mut connection;
+        let lagged = Err(broadcast::error::RecvError::Lagged(3));
+        assert!(forward_coordinator_broadcast(&host.server.state, &host.client_id, wire, out_tx, lagged).await);
+        let Ok(OutboundFrame::Text(first)) = out_rx.try_recv() else { panic!("nothing was pushed") };
+        let pushed: Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(pushed["event"], "answer-receipt", "{pushed}");
+        assert_eq!(pushed["acceptedAnswer"]["decisionId"], "cmd-answer");
+        assert_eq!(pushed["acceptedAnswer"]["requestId"], "req-1");
+        let Ok(OutboundFrame::Text(next)) = out_rx.try_recv() else { panic!("the shell was not sent again") };
+        assert_eq!(serde_json::from_str::<Value>(&next).unwrap()["event"], "shell");
+        assert!(wire.answer_watches.is_empty(), "an answer it was told of is no longer watched");
         host.server.close().await;
     }
 
