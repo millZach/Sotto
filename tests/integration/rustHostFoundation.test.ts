@@ -345,14 +345,29 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         plain: new ClientFold(),
       }
       const processed = { desktop: 0, iphone: 0, plain: 0 }
-      const drain = (name: 'desktop' | 'iphone' | 'plain', sock: typeof desktopSock): void => {
+      type Name = 'desktop' | 'iphone' | 'plain'
+      // How each client folds the answer to a request it is waiting on, by request ID, and what each answer folded to.
+      const folding: Record<Name, Map<string, (fold: ClientFold, result: unknown) => unknown>> = { desktop: new Map(), iphone: new Map(), plain: new Map() }
+      const folded = new Map<string, unknown>()
+      // Every frame is read in the order it arrived, as the referee's runner reads them (`readArrivals`): an answer is
+      // folded before a push behind it, even when both arrive in one read, so the push is measured from the answer.
+      const drain = (name: Name, sock: typeof desktopSock): void => {
         while (processed[name] < sock.crossings.length) {
           const item = sock.crossings[processed[name]++]!
-          if (item.dir === 'in' && typeof item.frame.event === 'string') {
+          if (item.dir !== 'in') continue
+          if (typeof item.frame.event === 'string') {
             folds[name].push(item.frame)
+            continue
           }
+          const id = typeof item.frame.id === 'string' ? item.frame.id : undefined
+          const fold = id === undefined ? undefined : folding[name].get(id)
+          if (id === undefined || !fold) continue
+          folding[name].delete(id)
+          if (item.frame.ok === true) folded.set(id, fold(folds[name], item.frame.result))
         }
       }
+      const hello = (fold: ClientFold, result: unknown): unknown => fold.hello(result)
+      const commandAnswer = (fold: ClientFold, result: unknown): unknown => fold.commandAnswer(result)
       desktopSock.onArrival(() => drain('desktop', desktopSock))
       iphoneSock.onArrival(() => drain('iphone', iphoneSock))
       plainSock.onArrival(() => drain('plain', plainSock))
@@ -363,7 +378,9 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         session: string,
         id: string,
         body: Record<string, unknown>,
+        fold?: (fold: ClientFold, result: unknown) => unknown,
       ): Promise<Record<string, unknown>> => {
+        if (fold) folding[name].set(id, fold)
         sock.send({ v: 1, id, session, ...body })
         return await new Promise((resolvePromise, rejectPromise) => {
           const timer = setTimeout(() => rejectPromise(new Error(`Timed out waiting for ${id}`)), 5_000)
@@ -379,25 +396,22 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
 
       try {
         // 1. All three clients say hello with their real referee profiles.
-        const hDesktop = await rpc('desktop', desktopSock, desktopPair.session, 'd1', { op: 'hello', ...PROFILES.desktop.hello })
+        const hDesktop = await rpc('desktop', desktopSock, desktopPair.session, 'd1', { op: 'hello', ...PROFILES.desktop.hello }, hello)
         expect(hDesktop.ok).toBe(true)
-        folds.desktop.hello(hDesktop.result)
 
-        const hIphone = await rpc('iphone', iphoneSock, iphonePair.session, 'i1', { op: 'hello', ...PROFILES.iphone.hello })
+        const hIphone = await rpc('iphone', iphoneSock, iphonePair.session, 'i1', { op: 'hello', ...PROFILES.iphone.hello }, hello)
         expect(hIphone.ok).toBe(true)
-        folds.iphone.hello(hIphone.result)
 
-        const hPlain = await rpc('plain', plainSock, plainPair.session, 'p1', { op: 'hello', ...PROFILES.plain.hello })
+        const hPlain = await rpc('plain', plainSock, plainPair.session, 'p1', { op: 'hello', ...PROFILES.plain.hello }, hello)
         expect(hPlain.ok).toBe(true)
-        folds.plain.hello(hPlain.result)
 
         // 2. Desktop creates a project and a thread.
         const projReply = await rpc('desktop', desktopSock, desktopPair.session, 'd2', {
           op: 'command',
           command: { type: 'create-project', provider: 'codex', title: 'Referee project', path: foldDir, useExisting: true },
-        })
+        }, commandAnswer)
         expect(projReply.ok).toBe(true)
-        const projShell = folds.desktop.commandAnswer(projReply.result) as { host: { projects: Array<{ id: string }> } }
+        const projShell = folded.get('d2') as { host: { projects: Array<{ id: string }> } }
         const projectId = projShell.host.projects[0]!.id
 
         const threadId = '00000000-0000-4000-8000-00000000000a'
@@ -413,9 +427,8 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
             workingCopy: 'shared',
             managed: false,
           },
-        })
+        }, commandAnswer)
         expect(threadReply.ok).toBe(true)
-        folds.desktop.commandAnswer(threadReply.result)
 
         // 3. All three clients observe the thread; detail MUST be pushed before observe answers!
         for (const [name, sock, sess, id] of [
@@ -436,16 +449,14 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
         const sendReply = await rpc('desktop', desktopSock, desktopPair.session, 'd5', {
           op: 'command',
           command: { type: 'manual-send', threadId, text: 'Referee prompt one' },
-        })
+        }, commandAnswer)
         expect(sendReply.ok).toBe(true)
-        folds.desktop.commandAnswer(sendReply.result)
 
         const stopReply = await rpc('desktop', desktopSock, desktopPair.session, 'd6', {
           op: 'command',
           command: { type: 'interrupt', threadId },
-        })
+        }, commandAnswer)
         expect(stopReply.ok).toBe(true)
-        folds.desktop.commandAnswer(stopReply.result)
 
         await new Promise(r => setTimeout(r, 150))
         drain('desktop', desktopSock)
