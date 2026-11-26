@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::workspace::clip_utf16;
 use crate::git_review::{
     detect_raster_image, parse_name_status_z, parse_numstat_z, section_is_binary, section_path,
     split_patch,
@@ -2166,6 +2167,144 @@ pub fn host_facts(running_threads: usize) -> Value {
 /// (`src/shared/threadWords.ts`) and `ThreadStore.threadWords` (`src/main/agents/threadStore.ts`).
 /// Opens `threads.sqlite` strictly read-only so it never creates a database or contends for write
 /// locks when running beside Node's `AgentControl`.
+/// The most of a sent message a stored prompt carries, as Node's `THREAD_PROMPT_TEXT`.
+const THREAD_PROMPT_TEXT: usize = 400;
+/// The start and end of a turn's last reply a stored prompt carries, as Node's `THREAD_PROMPT_REPLY_HEAD` and `_TAIL`.
+const THREAD_PROMPT_REPLY_HEAD: usize = 300;
+const THREAD_PROMPT_REPLY_TAIL: usize = 300;
+/// The most messages the user sent one answer covers, as Node's `THREAD_PROMPTS_MOST`.
+const THREAD_PROMPTS_MOST: usize = 5_000;
+
+/// The messages the user sent before `before_message_id`, oldest first, each with its turn's last reply with words: what
+/// the message scrubber marks above a pane's window (ADR-0109), as Node's `promptsBefore` reads them from the same
+/// `threads.sqlite`. Only the start of each message and the start and end of each reply are read, a page of the newest at
+/// a time: `next` is the message the next page is read before, absent once the page reaches the first. A message the
+/// store does not hold has nothing before it. Wake-ups are Sotto's, so they are left out. `None` when the store cannot
+/// answer.
+pub fn thread_prompts(data_directory: &Path, thread_id: &str, before_message_id: &str) -> Option<Value> {
+    use rusqlite::OptionalExtension;
+    let db = data_directory.join("threads.sqlite");
+    if !db.is_file() {
+        return None;
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    let _ = conn.busy_timeout(Duration::from_secs(5));
+    let before: Option<i64> = conn
+        .query_row(
+            "SELECT position FROM messages WHERE thread_id = ?1 AND message_id = ?2 LIMIT 1",
+            rusqlite::params![thread_id, before_message_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()?;
+    let Some(before) = before else {
+        return Some(json!({ "prompts": [] }));
+    };
+    // Only the newest prompts an answer carries are read, so a longer history costs no more. The page is counted in the
+    // messages the user's role sent, wake-ups among them, so where it starts says whether there is more.
+    let start: Option<(i64, String)> = conn
+        .query_row(
+            &format!("SELECT position, message_id FROM messages WHERE thread_id = ?1 AND role = 'user' AND position < ?2 ORDER BY position DESC LIMIT 1 OFFSET {}", THREAD_PROMPTS_MOST - 1),
+            rusqlite::params![thread_id, before],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .ok()?;
+    let from = start.as_ref().map_or(0, |(position, _)| *position);
+    let has_wake_ups = conn
+        .query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wake_ups' LIMIT 1", [], |_| Ok(()))
+        .optional()
+        .ok()?
+        .is_some();
+    let mut skip = HashSet::new();
+    if has_wake_ups {
+        let mut wake_ups = conn.prepare("SELECT message_id FROM wake_ups WHERE thread_id = ?1").ok()?;
+        let ids = wake_ups.query_map([thread_id], |row| row.get::<_, String>(0)).ok()?;
+        for id in ids {
+            skip.insert(id.ok()?);
+        }
+    }
+    let whole = THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL;
+    let mut rows = conn
+        .prepare(&format!(
+            "SELECT role, message_id, created_at, attachments, substr(text, 1, CASE WHEN role = 'user' THEN {THREAD_PROMPT_TEXT} ELSE {whole} END) AS head,
+               CASE WHEN role = 'assistant' AND length(text) > {whole} THEN substr(text, -{tail}) END AS tail
+             FROM messages WHERE thread_id = ?1 AND position >= ?2 AND position < ?3 AND (role = 'user' OR trim(text, char(32, 9, 10, 11, 12, 13)) <> '') ORDER BY position",
+            tail = THREAD_PROMPT_REPLY_TAIL * 2
+        ))
+        .ok()?;
+    let read = rows
+        .query_map(rusqlite::params![thread_id, from, before], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })
+        .ok()?;
+    let mut prompts: Vec<serde_json::Map<String, Value>> = Vec::new();
+    // Whether the newest prompt is one a reply may still belong to: a wake-up starts a turn of its own.
+    let mut current = false;
+    for row in read {
+        let (role, id, created_at, attachments, head, tail) = row.ok()?;
+        if role == "user" {
+            if skip.contains(&id) {
+                current = false;
+                continue;
+            }
+            let attached = attachments
+                .and_then(|text| serde_json::from_str::<Vec<Value>>(&text).ok())
+                .map_or(0, |list| list.len());
+            let mut prompt = serde_json::Map::new();
+            prompt.insert("id".into(), json!(id));
+            prompt.insert("createdAt".into(), json!(created_at));
+            prompt.insert("text".into(), json!(clip_utf16(&head, THREAD_PROMPT_TEXT)));
+            if attached > 0 {
+                prompt.insert("attachments".into(), json!(attached.min(1000)));
+            }
+            prompts.push(prompt);
+            current = true;
+        } else if current {
+            // A reply of space alone is no reply with words, whatever kind of space the store's own trim leaves.
+            if tail.is_some() || !head.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}').is_empty() {
+                if let Some(prompt) = prompts.last_mut() {
+                    prompt.insert("reply".into(), json!({ "id": id, "text": prompt_reply_text(&head, tail.as_deref()) }));
+                }
+            }
+        }
+    }
+    let mut answer = json!({ "prompts": prompts });
+    if let Some((_, message_id)) = start.filter(|_| from > 0) {
+        answer["next"] = json!(message_id);
+    }
+    Some(answer)
+}
+
+/// A reply as a stored prompt carries it, as Node's `promptReplyText`: whole when it is short, otherwise its start and
+/// its end from a paragraph's start, so a question it closes on is still its last words. Counted in UTF-16 units.
+fn prompt_reply_text(head: &str, tail: Option<&str>) -> String {
+    let Some(tail) = tail else {
+        return clip_utf16(head, THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL).to_string();
+    };
+    let units: Vec<u16> = tail.encode_utf16().collect();
+    let paragraph = units.windows(2).position(|pair| pair == [10, 10]);
+    let end = match paragraph {
+        Some(at) if at + 2 < units.len() => &units[at + 2..],
+        _ => &units[..],
+    };
+    let last = if end.len() > THREAD_PROMPT_REPLY_TAIL { &end[end.len() - THREAD_PROMPT_REPLY_TAIL..] } else { end };
+    // A cut through a pair of surrogates leaves the low half alone, which is no character.
+    let last = if last.first().is_some_and(|unit| (0xDC00..=0xDFFF).contains(unit)) { &last[1..] } else { last };
+    format!("{}\n\n{}", clip_utf16(head, THREAD_PROMPT_REPLY_HEAD), String::from_utf16_lossy(last))
+}
+
 pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
     let trimmed = query.split_whitespace().collect::<Vec<_>>().join(" ");
     if trimmed.is_empty() {
@@ -3010,6 +3149,61 @@ fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A thread store as Node and this host share it, holding `rows` of one thread: role, text, attachments.
+    fn store_with(rows: &[(&str, &str, Option<&str>)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        drop(crate::stores::ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap());
+        let conn = rusqlite::Connection::open(dir.path().join("threads.sqlite")).unwrap();
+        for (position, (role, text, attachments)) in rows.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO messages (thread_id, position, message_id, role, text, created_at, attachments) VALUES ('t', ?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![position as i64, format!("m{position}"), role, text, format!("2026-11-25T10:00:{position:02}.000Z"), attachments],
+            )
+            .unwrap();
+        }
+        dir
+    }
+
+    /// The prompts above a window, as Node's `promptsBefore` reads them (ADR-0109): the user's messages before the one
+    /// named, oldest first, each with its turn's last reply with words, never a wake-up or what answers it.
+    #[test]
+    fn reads_the_prompts_before_a_message_as_node_does() {
+        let dir = store_with(&[
+            ("user", "First", Some(r#"[{"id":"a"},{"id":"b"}]"#)),
+            ("assistant", "Thinking", None),
+            ("assistant", "Done first", None),
+            ("user", "Wake up", None),
+            ("assistant", "Woke", None),
+            ("user", "Second", None),
+            ("assistant", "  \n ", None),
+            ("user", "Third", None),
+        ]);
+        let conn = rusqlite::Connection::open(dir.path().join("threads.sqlite")).unwrap();
+        conn.execute("INSERT INTO wake_ups (thread_id, message_id) VALUES ('t', 'm3')", []).unwrap();
+        let read = thread_prompts(dir.path(), "t", "m7").unwrap();
+        assert_eq!(read, json!({ "prompts": [
+            { "id": "m0", "createdAt": "2026-11-25T10:00:00.000Z", "text": "First", "attachments": 2, "reply": { "id": "m2", "text": "Done first" } },
+            { "id": "m5", "createdAt": "2026-11-25T10:00:05.000Z", "text": "Second" },
+        ] }));
+        assert_eq!(thread_prompts(dir.path(), "t", "not-held").unwrap(), json!({ "prompts": [] }));
+        assert_eq!(thread_prompts(dir.path(), "t", "m0").unwrap(), json!({ "prompts": [] }));
+        assert!(thread_prompts(&dir.path().join("nowhere"), "t", "m7").is_none(), "a store that cannot answer says so");
+    }
+
+    #[test]
+    fn a_long_message_and_reply_are_cut_as_node_cuts_them() {
+        let long_reply = format!("{}\n\n{}", "h".repeat(500), "t".repeat(700));
+        let dir = store_with(&[("user", &"x".repeat(450), None), ("assistant", &long_reply, None), ("user", "Next", None)]);
+        let read = thread_prompts(dir.path(), "t", "m2").unwrap();
+        let prompt = &read["prompts"][0];
+        assert_eq!(prompt["text"].as_str().unwrap().len(), THREAD_PROMPT_TEXT);
+        assert_eq!(prompt["reply"]["text"], format!("{}\n\n{}", "h".repeat(300), "t".repeat(300)));
+        // A short reply is whole; the low half of a wide character cut at the tail's start never stands alone.
+        assert_eq!(prompt_reply_text("Short", None), "Short");
+        let tail = format!("{}{}", "\u{1F600}", "b".repeat(299));
+        assert_eq!(prompt_reply_text("a", Some(&tail)), format!("a\n\n{}", "b".repeat(299)));
+    }
 
     #[test]
     fn thread_files_and_preview_enforce_root_containment_and_size_bounds() {

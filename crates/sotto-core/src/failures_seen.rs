@@ -18,7 +18,7 @@ use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::thread_lifecycle::{failed_without_request, SettledIn};
-use crate::workspace::{AgentProject, AgentThread, AgentThreadDetail};
+use crate::workspace::{clip_utf16, AgentProject, AgentThread, AgentThreadDetail};
 
 /// The key of the record in `agents.json`.
 pub const SAVED_KEY: &str = "failuresSeen";
@@ -245,7 +245,7 @@ impl FailuresSeen {
             return;
         };
         if let Some(failure) = self.failures.get_mut(&thread.id) {
-            failure.reason = Some(within_utf16(reason, REASON_MAX).to_string());
+            failure.reason = Some(clip_utf16(reason, REASON_MAX).to_string());
         }
     }
 
@@ -309,19 +309,6 @@ fn failed_turn_reason<'a>(thread: &AgentThread, activities: &'a [Value]) -> Opti
         return None;
     }
     record.get("error").and_then(Value::as_str).filter(|error| !error.is_empty())
-}
-
-/// The longest start of `text` that is at most `max` UTF-16 code units, as JavaScript's `slice(0, max)` keeps, except that
-/// a character is never cut in half.
-fn within_utf16(text: &str, max: usize) -> &str {
-    let mut units = 0;
-    for (at, character) in text.char_indices() {
-        units += character.len_utf16();
-        if units > max {
-            return &text[..at];
-        }
-    }
-    text
 }
 
 /// Whether the thread's last turn record says it started after `since`; unknown either way reads as not.
@@ -465,11 +452,11 @@ mod tests {
 
     #[test]
     fn a_reason_is_cut_to_what_node_allows_in_utf_16() {
-        assert_eq!(within_utf16("abc", 2), "ab");
+        assert_eq!(clip_utf16("abc", 2), "ab");
         // Each of these takes two UTF-16 code units, so 600 units hold 300 of them and never half of one.
         let wide = "\u{1F600}".repeat(400);
-        assert_eq!(within_utf16(&wide, REASON_MAX).encode_utf16().count(), 600);
-        assert_eq!(within_utf16(&format!("a{wide}"), REASON_MAX).encode_utf16().count(), 599);
+        assert_eq!(clip_utf16(&wide, REASON_MAX).encode_utf16().count(), 600);
+        assert_eq!(clip_utf16(&format!("a{wide}"), REASON_MAX).encode_utf16().count(), 599);
     }
 
     #[test]

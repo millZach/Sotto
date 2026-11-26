@@ -8,7 +8,8 @@
 // Rust host gains handlers. #2876 is done when it is empty.
 //
 // An answer's kind is compared, not its contents: each command's own behaviour is its handler's own test. What only the
-// socket server can show, across clients, is compared whole: which threads count as shown, which sees a failure (ADR-0092).
+// socket server can show, across clients, is compared whole: which threads count as shown, which sees a failure (ADR-0092),
+// and the prompts the message scrubber reads from each host's thread store (ADR-0109).
 // Both clients use the loopback listener, where Node counts every client as a desktop; a phone over a tailnet listener is
 // not compared here.
 // Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a `cargo build`).
@@ -332,6 +333,42 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
     }
     const [onNode, onRust] = await Promise.all([steps(node), steps(rust)])
     expect(onNode).toEqual({ unshown: false, behind: false, shown: true, afterGone: false })
+    expect(onRust).toEqual(onNode)
+  }, 120_000)
+
+  /**
+   * The message scrubber's prompts (ADR-0109), read on both hosts from their own thread stores after the same three
+   * prompts: the two before the last, oldest first, each with its turn's reply. IDs and times are each host's own.
+   */
+  it('reads the prompts above a window as Node does', async () => {
+    const prompts = async (under: HostUnderTest): Promise<unknown> => {
+      const { threadId } = await probeIds(under, randomUUID(), 'the probes')
+      const script = join(under.data, 'script.json')
+      const current = JSON.parse(await readFile(script, 'utf8').catch(() => '{}')) as Record<string, unknown>
+      await writeFile(script, JSON.stringify({ ...current, fail: false, reply: 'Answered' }))
+      // A host's detail holds a thread's messages while a client observes it.
+      await request(under.clients.desktop, { op: 'observe', threadIds: [threadId] })
+      type Detail = { messages?: { id: string; role: string; text: string }[] }
+      const detail = async (): Promise<Detail | undefined> => (await request(under.clients.desktop, { op: 'detail', threadId }))?.result as Detail | undefined
+      for (const [index, text] of ['First prompt', 'Second prompt', 'Third prompt'].entries()) {
+        const sent = await request(under.clients.desktop, { op: 'command', command: { type: 'manual-send', threadId, text, draftId: randomUUID() } })
+        expect(sent?.ok, `${under.label} took no prompt: ${JSON.stringify(sent?.error)}`).toBe(true)
+        const deadline = Date.now() + ANSWER_DEADLINE_MS
+        while (((await detail())?.messages ?? []).filter(message => message.role === 'assistant').length <= index
+          || (await shownThread(under.clients.desktop, threadId))?.status === 'running') {
+          expect(Date.now() < deadline, `${under.label} never answered ${text}`).toBe(true)
+          await new Promise(resolveWait => setTimeout(resolveWait, 100))
+        }
+      }
+      const last = (await detail())?.messages?.filter(message => message.role === 'user').at(-1)
+      expect(last?.text, `${under.label} holds no third prompt`).toBe('Third prompt')
+      const answer = await request(under.clients.desktop, { op: 'thread-prompts', threadId, beforeMessageId: last!.id })
+      expect(answer?.ok, `${under.label} read no prompts: ${JSON.stringify(answer?.error)}`).toBe(true)
+      const read = answer!.result as { prompts: { text: string; attachments?: number; reply?: { text: string } }[]; next?: string }
+      return { prompts: read.prompts.map(prompt => ({ text: prompt.text, attachments: prompt.attachments, reply: prompt.reply?.text })), next: read.next }
+    }
+    const [onNode, onRust] = await Promise.all([prompts(node), prompts(rust)])
+    expect(onNode).toEqual({ prompts: [{ text: 'First prompt', attachments: undefined, reply: 'Answered' }, { text: 'Second prompt', attachments: undefined, reply: 'Answered' }], next: undefined })
     expect(onRust).toEqual(onNode)
   }, 120_000)
 

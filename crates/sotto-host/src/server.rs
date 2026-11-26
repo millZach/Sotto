@@ -76,6 +76,7 @@ pub fn advertised_features() -> Vec<String> {
         "project-origins".into(),
         "project-git-init".into(),
         "thread-words".into(),
+        "thread-prompts".into(),
         "subagents".into(),
         "usage-dashboard".into(),
         "usage-history".into(),
@@ -2279,6 +2280,45 @@ async fn handle_ws_request(
             .await
             .unwrap_or_else(|_| sotto_core::ops::tools_err("unavailable", "Could not read review."));
             HostResponseEnvelope::ok(req.id, res)
+        }
+        "thread-prompts" => {
+            // The prompts above a pane's window for the message scrubber (ADR-0109), as Node's host answers them.
+            let id_of = |key: &str| {
+                req.fields
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty() && id.chars().count() <= 512)
+                    .map(ToString::to_string)
+            };
+            let (Some(thread_id), Some(before)) = (id_of("threadId"), id_of("beforeMessageId")) else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            let provider = match state.coordinator.thread_provider(thread_id.clone()).await {
+                Ok(provider) => provider,
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+            };
+            // A thread the host does not hold has no prompts it can say; one of a provider this client does not know is
+            // not this client's to read.
+            let Some(provider) = provider else {
+                return HostResponseEnvelope::ok(req.id, Value::Null);
+            };
+            if wire.hides_provider(&provider) {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::Forbidden,
+                    HostErrorCode::Forbidden.default_message(),
+                );
+            }
+            let dir = state.data_directory.clone();
+            let prompts = tokio::task::spawn_blocking(move || sotto_core::ops::thread_prompts(&dir, &thread_id, &before))
+                .await
+                .ok()
+                .flatten();
+            HostResponseEnvelope::ok(req.id, prompts.unwrap_or(Value::Null))
         }
         "thread-words" => {
             let Some(query) = req

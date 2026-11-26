@@ -58,7 +58,6 @@
         "thread-move",
         "thread-move-keep",
         "thread-move-source",
-        "thread-prompts",
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
@@ -104,7 +103,6 @@
         "thread-linked-files",
         "thread-media",
         "thread-media-video",
-        "thread-prompts",
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
@@ -233,10 +231,6 @@
     "interrupt": {
       "node": "refused",
       "rust": "unavailable"
-    },
-    "load-earlier-messages": {
-      "node": "ok",
-      "rust": "invalid_request"
     },
     "preview-delete-thread": {
       "node": "ok",
@@ -473,10 +467,6 @@
       "rust": "invalid_request"
     },
     "thread-move": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "thread-prompts": {
       "node": "ok",
       "rust": "invalid_request"
     }
