@@ -35,7 +35,15 @@ Issues: [#2876](https://github.com/millZach/Sotto/issues/2876) (commands and hel
 - The Rust hello lists the same `features` and capabilities as Node's for the same data folder.
 - **Rolling back to Node never loses or quarantines anything.** Every JSON store both hosts write survives Node → Rust → Node: the provider stores, which Gate 0 covers, and also `workspace.json`'s per-thread snapshot, `threads.json`'s bindings, `councils.json`, the plugin stores, `checkpoints.json`, `paired-clients.json` and `phone-access.json`. A record Rust creates passes Node's schema for its store, since today a thread started on Rust lacks `projectId`, `title` and `createdAt` and would make Node refuse the whole file. Node reads each provider store entry by entry, so an unreadable entry costs only itself. Claude's Rust-only `started` no longer turns a Node-created thread into a fresh session.
 
-Storage and rollback (#2880) is built in its pull request; see ADR-0214's November 25 amendment. Commands and hello (#2876) are next.
+Storage and rollback (#2880) is built in its pull request; see ADR-0214's November 25 amendment.
+
+Commands and hello (#2876) are measured by `tests/integration/rustHostParity.test.ts`, in the Rust host CI job. It starts the Node host and the Rust host on fresh data folders and has a recorded desktop and an unrecorded client say hello to each. It then sends both hosts every remote command and every v1 operation, each on a thread made for it alone. Every difference in features, capabilities or answers must be in `tests/fixtures/rustHostParityGaps.json`, and every entry there must still be a difference. The list only shrinks: the update run takes closed gaps off and never adds one. A few things a Node host offers its desktop that the referee's Node host cannot show (a host update, OpenCode's sign-in, picture edges) are held to Rust alone. On November 25 it held:
+
+- 66 features Node offers a recorded desktop that Rust does not, and 41 for an unrecorded client; Rust offered none that Node does not. Rust also lacks the three features the referee cannot show.
+- 53 of the 67 remote commands. Rust answers most with `invalid_request` where Node runs them or turns them down in the state it sends back.
+- 39 operations, plus the host update and OpenCode's sign-in.
+
+Each later #2876 pull request implements a group of them to Node's behaviour, with its own tests, and removes its entries. This half of the gate is done when the list is empty.
 
 **Done when:** a CI test fails on any command with no Rust handler, or a handler that is only an `InvalidRequest` stub, and on any hello feature difference; the test shows 0 of each. Every shared JSON store has a Node → Rust → Node round-trip test in CI, like `rustHostThreadStoreRollback.test.ts`, and a record Rust creates passes Node's schema.
 
