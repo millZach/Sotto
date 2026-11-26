@@ -2452,6 +2452,12 @@ async fn handle_ws_request(
             if let Some(reply) = receipt.replay(wire, may_answer).await {
                 return reply;
             }
+            // Deleting a thread is read as Node's strict schema reads it (`commandFromProtocolV1`) before anything turns it
+            // down or keeps its receipt, so one in the wrong shape is invalid_request whatever this client may do.
+            let deleting = matches!(cmd.get("type").and_then(Value::as_str), Some("delete-thread" | "preview-delete-thread"));
+            if deleting && !sotto_core::thread_clearing::delete_command_shape(cmd) {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
@@ -2492,10 +2498,17 @@ async fn handle_ws_request(
                 may_answer,
             };
             let kind = cmd.get("type").and_then(Value::as_str).unwrap_or_default();
-            // Deleting a thread is only for a listener that offers `thread-delete` (ADR-0140), as Node's
-            // `remoteCommandRefusal` refuses it before it reads the command's fields or the client's answer policy.
-            if matches!(kind, "delete-thread" | "preview-delete-thread") && !offered_features(state, mode, client_id).iter().any(|f| f == "thread-delete") {
-                return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+            // Then Node's `remoteCommandRefusal`: deleting is only for a listener that offers `thread-delete` (ADR-0140),
+            // and a delete takes the remote-answer policy. Both are turned down before the preview answers and before a
+            // delete's receipt is kept.
+            if deleting {
+                if !offered_features(state, mode, client_id).iter().any(|f| f == "thread-delete") {
+                    return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+                }
+                if let Err(refusal) = validate_remote_command(cmd, may_answer) {
+                    let message = refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string());
+                    return HostResponseEnvelope::err(req.id, refusal.code, message);
+                }
             }
             // A preview keeps no receipt: Node's socket server answers it before it keeps one, with its own outcome.
             if !keeps_receipt(kind) || kind == "preview-delete-thread" {
@@ -3930,6 +3943,43 @@ mod tests {
         let answered = host.ask(&mut connection, command("cmd-answer", json!({ "type": "answer", "threadId": ASKING_THREAD, "requestId": "req-1", "answer": "Blue" }))).await;
         assert_eq!(answered["ok"], true, "{answered}");
         assert_eq!(host.ask(&mut connection, receipt("cmd-answer")).await["result"], json!({ "status": "completed", "answerDelivered": true }));
+        host.server.close().await;
+    }
+
+    /// A delete or a preview in the wrong shape is invalid_request before anything turns it down, and keeps no receipt, as
+    /// Node's socket server parses a command (`commandFromProtocolV1`) before `remoteCommandRefusal` and both before
+    /// `receipts.record`. A well-formed delete from a client that may not answer is then forbidden and keeps none either,
+    /// and a preview, which takes no answer policy, is answered with what deleting would do and keeps none.
+    #[tokio::test]
+    async fn a_delete_is_read_before_it_is_refused_and_keeps_no_receipt() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&["answer-receipts"]).await;
+        let command = |id: &str, command: Value| json!({ "v": 1, "id": id, "op": "command", "command": command });
+        let receipt = |id: &str| json!({ "v": 1, "id": format!("read-{id}"), "op": "receipt", "commandId": id });
+        let malformed = [
+            ("delete-empty-id", json!({ "type": "delete-thread", "threadId": "" })),
+            ("delete-bad-items", json!({ "type": "delete-thread", "threadId": ASKING_THREAD, "confirmedItems": [{ "path": "a", "fileCount": -1 }] })),
+            ("delete-bad-repositories", json!({ "type": "delete-thread", "threadId": ASKING_THREAD, "confirmedRepositories": [{ "path": "r", "changeCount": 0, "kind": "folder" }] })),
+            ("delete-extra-field", json!({ "type": "delete-thread", "threadId": ASKING_THREAD, "later": 1 })),
+            ("preview-extra-field", json!({ "type": "preview-delete-thread", "threadId": ASKING_THREAD, "confirmedIgnored": [] })),
+        ];
+        for may_answer in [true, false] {
+            host.server.state.memory.lock().unwrap().set_remote_answers(&host.client_id, may_answer, "test").unwrap();
+            for (name, refused) in &malformed {
+                let id = format!("{name}-{may_answer}");
+                let reply = host.ask(&mut connection, command(&id, refused.clone())).await;
+                assert_eq!(reply["error"]["code"], "invalid_request", "{id}: {reply}");
+                assert_eq!(host.ask(&mut connection, receipt(&id)).await["result"], json!({ "status": "unknown" }), "{id} kept no receipt");
+            }
+        }
+        let refused = host.ask(&mut connection, command("delete-no-policy", json!({ "type": "delete-thread", "threadId": ASKING_THREAD }))).await;
+        assert_eq!(refused["error"]["code"], "forbidden", "{refused}");
+        assert_eq!(host.ask(&mut connection, receipt("delete-no-policy")).await["result"], json!({ "status": "unknown" }));
+        let preview = host.ask(&mut connection, command("preview", json!({ "type": "preview-delete-thread", "threadId": ASKING_THREAD }))).await;
+        assert_eq!(preview["ok"], true, "{preview}");
+        assert_eq!(preview["result"]["error"], Value::Null);
+        assert_eq!(preview["result"]["threadDeletePreview"], json!({ "threadId": ASKING_THREAD, "kept": "not-settled", "worktree": null }));
+        assert_eq!(host.ask(&mut connection, receipt("preview")).await["result"], json!({ "status": "unknown" }), "a preview keeps no receipt");
         host.server.close().await;
     }
 

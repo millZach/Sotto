@@ -13,6 +13,65 @@ use crate::workspace::{sha256_hex, AgentProject, AgentThread};
 
 /// How deep delegation goes, as Node's `DELEGATION_LEVELS_MAX` (`src/shared/delegation.ts`).
 const DELEGATION_LEVELS_MAX: usize = 2;
+/// The longest thread ID Node's command schema reads (`id` in `src/shared/agents.ts`), in UTF-16 code units.
+const THREAD_ID_MAX: usize = 512;
+/// The most confirmed ignored items or item folders, and nested repositories, Node's command schema reads
+/// (`WORKTREE_CONFIRMED_ITEMS_MAX`, `WORKTREE_CONFIRMED_REPOSITORIES_MAX` in `src/shared/agents.ts`).
+const WORKTREE_CONFIRMED_ITEMS_MAX: usize = 10_000;
+const WORKTREE_CONFIRMED_REPOSITORIES_MAX: usize = 1_000;
+
+/// Whether a JSON number is a whole number at or above `min`, as zod's `int()` with `nonnegative()` or `positive()`.
+fn whole_at_least(value: Option<&Value>, min: f64) -> bool {
+    value.and_then(Value::as_f64).is_some_and(|n| n.fract() == 0.0 && n >= min && n.abs() <= 9_007_199_254_740_991.0)
+}
+
+/// Whether an object holds only `keys`, as a strict zod object reads it.
+fn only_keys(object: &Map<String, Value>, keys: &[&str]) -> bool {
+    object.keys().all(|key| keys.contains(&key.as_str()))
+}
+
+/// Whether one of Delete thread…'s confirmation lists, if it is there, is what Node's `worktreeConfirmations` schema
+/// reads: at most `max` items, each as `item` says.
+fn confirmation_list(command: &Map<String, Value>, key: &str, max: usize, item: impl Fn(&Value) -> bool) -> bool {
+    match command.get(key) {
+        None => true,
+        Some(Value::Array(items)) => items.len() <= max && items.iter().all(item),
+        Some(_) => false,
+    }
+}
+
+/// Whether a `preview-delete-thread` or `delete-thread` command is one Node's strict command schema reads
+/// (`agentCommandSchema` in `src/shared/agents.ts`, which `commandFromProtocolV1` parses before any refusal): only its
+/// own fields, a thread ID, and for a delete the confirmations of what goes with a worktree folder (ADR-0041), each
+/// optional and limited as Node limits it.
+pub fn delete_command_shape(command: &Map<String, Value>) -> bool {
+    let kind = command.get("type").and_then(Value::as_str);
+    let fields: &[&str] = match kind {
+        Some("preview-delete-thread") => &["type", "threadId"],
+        Some("delete-thread") => &["type", "threadId", "confirmedIgnored", "confirmedItems", "confirmedRepositories"],
+        _ => return false,
+    };
+    let thread_id = command.get("threadId").and_then(Value::as_str).is_some_and(|id| !id.is_empty() && id.encode_utf16().count() <= THREAD_ID_MAX);
+    if !only_keys(command, fields) || !thread_id {
+        return false;
+    }
+    confirmation_list(command, "confirmedIgnored", WORKTREE_CONFIRMED_ITEMS_MAX, Value::is_string)
+        && confirmation_list(command, "confirmedItems", WORKTREE_CONFIRMED_ITEMS_MAX, |item| {
+            item.as_object().is_some_and(|o| only_keys(o, &["path", "fileCount"]) && o.get("path").is_some_and(Value::is_string) && whole_at_least(o.get("fileCount"), 0.0))
+        })
+        && confirmation_list(command, "confirmedRepositories", WORKTREE_CONFIRMED_REPOSITORIES_MAX, |item| {
+            item.as_object().is_some_and(|o| {
+                only_keys(o, &["path", "changeCount", "unpushedCommitCount", "kind", "fetchedByHash"])
+                    && o.get("path").is_some_and(Value::is_string)
+                    && whole_at_least(o.get("changeCount"), 0.0)
+                    && o.get("unpushedCommitCount").is_none_or(|n| whole_at_least(Some(n), 0.0))
+                    && matches!(o.get("kind").and_then(Value::as_str), Some("worktree" | "repository"))
+                    && o.get("fetchedByHash").is_none_or(|fetched| {
+                        fetched.as_object().is_some_and(|f| only_keys(f, &["remote", "commitCount"]) && f.get("remote").is_some_and(Value::is_string) && whole_at_least(f.get("commitCount"), 1.0))
+                    })
+            })
+        })
+}
 
 /// Why a settled thread is kept back (ADR-0140 decision 3), as Node's `THREAD_CLEAR_KEPT_REASONS`
 /// (`src/shared/threadClear.ts`): a code a client words and the log names as it is.
@@ -439,6 +498,31 @@ mod tests {
         assert_eq!(redacted, node);
         assert_eq!(redacted_payload(&json!({ "kind": "turn-started", "at": "A" }).to_string()), None);
         assert_eq!(redacted_payload("not json"), None);
+    }
+
+    /// Node's strict schema for the two commands: their own fields, a thread ID, and the confirmations as it limits them.
+    #[test]
+    fn reads_delete_commands_as_nodes_schema_reads_them() {
+        let read = |command: Value| delete_command_shape(command.as_object().unwrap());
+        assert!(read(json!({ "type": "preview-delete-thread", "threadId": "t" })));
+        assert!(read(json!({ "type": "delete-thread", "threadId": "t", "confirmedIgnored": ["node_modules"], "confirmedItems": [{ "path": "a", "fileCount": 2 }],
+            "confirmedRepositories": [{ "path": "r", "changeCount": 0, "kind": "repository", "fetchedByHash": { "remote": "origin", "commitCount": 1 } }] })));
+        for refused in [
+            json!({ "type": "preview-delete-thread" }),
+            json!({ "type": "preview-delete-thread", "threadId": "" }),
+            json!({ "type": "preview-delete-thread", "threadId": "x".repeat(513) }),
+            json!({ "type": "preview-delete-thread", "threadId": "t", "confirmedIgnored": [] }),
+            json!({ "type": "delete-thread", "threadId": "t", "later": 1 }),
+            json!({ "type": "delete-thread", "threadId": "t", "confirmedIgnored": "node_modules" }),
+            json!({ "type": "delete-thread", "threadId": "t", "confirmedItems": [{ "path": "a", "fileCount": -1 }] }),
+            json!({ "type": "delete-thread", "threadId": "t", "confirmedItems": [{ "path": "a", "fileCount": 1.5 }] }),
+            json!({ "type": "delete-thread", "threadId": "t", "confirmedItems": [{ "path": "a", "fileCount": 1, "extra": true }] }),
+            json!({ "type": "delete-thread", "threadId": "t", "confirmedRepositories": [{ "path": "r", "changeCount": 0, "kind": "folder" }] }),
+            json!({ "type": "delete-thread", "threadId": "t", "confirmedRepositories": [{ "path": "r", "changeCount": 0, "kind": "worktree", "fetchedByHash": { "remote": "o", "commitCount": 0 } }] }),
+            json!({ "type": "delete-thread", "threadId": "t", "confirmedIgnored": vec!["x"; 10_001] }),
+        ] {
+            assert!(!read(refused.clone()), "{refused}");
+        }
     }
 
     /// The identities remembered as erased are Node's own, byte for byte (`activityIdentityHash`, `privacyIdentity`).

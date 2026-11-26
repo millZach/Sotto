@@ -431,50 +431,6 @@ pub type WatchedThreads = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
 
 /// What a failed erase adds about folders, as Node's `DELETION_FOLDERS_WORDS` (`src/main/agents/workspace.ts`).
 const DELETION_FOLDERS_WORDS: &str = "Worktree folders it already removed stay removed; their branches and commits stay.";
-/// The most confirmed ignored items or item folders, and nested repositories, Node's command schema reads
-/// (`WORKTREE_CONFIRMED_ITEMS_MAX`, `WORKTREE_CONFIRMED_REPOSITORIES_MAX` in `src/shared/agents.ts`).
-const WORKTREE_CONFIRMED_ITEMS_MAX: usize = 10_000;
-const WORKTREE_CONFIRMED_REPOSITORIES_MAX: usize = 1_000;
-
-/// Whether a JSON number is a whole number at or above `min`, as zod's `int()` with `nonnegative()` or `positive()`.
-fn whole_at_least(value: Option<&Value>, min: f64) -> bool {
-    value.and_then(Value::as_f64).is_some_and(|n| n.fract() == 0.0 && n >= min && n.abs() <= 9_007_199_254_740_991.0)
-}
-
-/// Whether an object holds only `keys`, as a strict zod object reads it.
-fn only_keys(object: &Map<String, Value>, keys: &[&str]) -> bool {
-    object.keys().all(|key| keys.contains(&key.as_str()))
-}
-
-/// Delete thread…'s confirmations, read as Node's `worktreeConfirmations` schema reads them: what the user ticked to go
-/// with a worktree folder (ADR-0041). Each is optional; a list in any other shape is refused.
-fn worktree_confirmations_shape(command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-    let refused = || CoordinatorError::invalid("The confirmed worktree items must be what the folder's check listed.");
-    let list = |key: &str, max: usize, item: &dyn Fn(&Value) -> bool| -> Result<(), CoordinatorError> {
-        match command.get(key) {
-            None => Ok(()),
-            Some(Value::Array(items)) if items.len() <= max && items.iter().all(item) => Ok(()),
-            Some(_) => Err(refused()),
-        }
-    };
-    list("confirmedIgnored", WORKTREE_CONFIRMED_ITEMS_MAX, &|item| item.is_string())?;
-    list("confirmedItems", WORKTREE_CONFIRMED_ITEMS_MAX, &|item| {
-        item.as_object().is_some_and(|o| only_keys(o, &["path", "fileCount"]) && o.get("path").is_some_and(Value::is_string) && whole_at_least(o.get("fileCount"), 0.0))
-    })?;
-    list("confirmedRepositories", WORKTREE_CONFIRMED_REPOSITORIES_MAX, &|item| {
-        item.as_object().is_some_and(|o| {
-            only_keys(o, &["path", "changeCount", "unpushedCommitCount", "kind", "fetchedByHash"])
-                && o.get("path").is_some_and(Value::is_string)
-                && whole_at_least(o.get("changeCount"), 0.0)
-                && o.get("unpushedCommitCount").is_none_or(|n| whole_at_least(Some(n), 0.0))
-                && matches!(o.get("kind").and_then(Value::as_str), Some("worktree" | "repository"))
-                && o.get("fetchedByHash").is_none_or(|fetched| {
-                    fetched.as_object().is_some_and(|f| only_keys(f, &["remote", "commitCount"]) && f.get("remote").is_some_and(Value::is_string) && whole_at_least(f.get("commitCount"), 1.0))
-                })
-        })
-    })
-}
-
 /// A thread's title as Node's clearing names it, cut at 512 UTF-16 code units as `title.slice(0, 512)` cuts it.
 fn clear_title(title: &str) -> String {
     let mut units = 0;
@@ -3876,7 +3832,9 @@ impl CoordinatorActor {
     /// not send a paired client, so the host's error stays as it was.
     fn cmd_delete_thread(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
         let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?.to_string();
-        worktree_confirmations_shape(command)?;
+        if !crate::thread_clearing::delete_command_shape(command) {
+            return Err(CoordinatorError::invalid("The confirmed worktree items must be what the folder's check listed."));
+        }
         let title = self.threads.iter().find(|t| t.id == thread_id).map(|t| clear_title(&t.title)).unwrap_or_default();
         if self.delete_thread(&thread_id, &title).is_ok() {
             eprintln!("[Sotto] threads-cleared 1");
