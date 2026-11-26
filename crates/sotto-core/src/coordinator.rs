@@ -1302,7 +1302,11 @@ struct CoordinatorActor {
     threads: Vec<AgentThread>,
     project_aliases: Vec<Value>,
     creations: Vec<Value>,
+    /// The cleared threads' IDs in the order `workspace.json` keeps them (ADR-0140 decision 6).
     cleared_thread_ids: Vec<String>,
+    /// The same IDs as a set, as Node's `clearedIds`: every provider event asks it, so asking costs the same however
+    /// many threads were cleared.
+    cleared: HashSet<String>,
     snapshot_extra: Map<String, Value>,
     file_extra: Map<String, Value>,
     agents_json_extra: Map<String, Value>,
@@ -1459,6 +1463,7 @@ impl CoordinatorActor {
             threads: persisted.threads,
             project_aliases: persisted.project_aliases,
             creations: persisted.creations,
+            cleared: persisted.cleared_thread_ids.iter().cloned().collect(),
             cleared_thread_ids: persisted.cleared_thread_ids,
             snapshot_extra: persisted.snapshot_extra,
             file_extra: persisted.file_extra,
@@ -3886,7 +3891,7 @@ impl CoordinatorActor {
     /// creation record and alias gone, other threads' links to it gone, its ID on the cleared list, and what the coordinator
     /// kept of it let go. Its branch and the provider's own transcript are kept. `Err` holds Node's words for why not.
     fn delete_thread(&mut self, thread_id: &str, title: &str) -> Result<(), String> {
-        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id).filter(|_| !self.cleared_thread_ids.iter().any(|id| id == thread_id)) else {
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id).filter(|_| !self.cleared.contains(thread_id)) else {
             return Err(format!("Sotto could not find “{title}”. Nothing was deleted."));
         };
         let kept = self
@@ -3917,6 +3922,7 @@ impl CoordinatorActor {
         }
         self.creations.retain(|item| item.get("threadId").and_then(Value::as_str).is_none_or(|id| !gone.contains(id)));
         self.cleared_thread_ids.extend(ids.iter().cloned());
+        self.cleared.extend(ids.iter().cloned());
         // The adapter's alias record goes with it; Node also has each adapter forget what it holds in memory.
         self.thread_bindings.retain(|id, _| !gone.contains(id));
         self.details.retain(|id, _| !gone.contains(id));
@@ -4732,7 +4738,7 @@ impl CoordinatorActor {
 
     fn handle_provider_event(&mut self, event: ProviderEvent) {
         // A cleared thread stays cleared (ADR-0140 decision 6): nothing a provider still reports of one brings it back.
-        if event_thread_id(&event).is_some_and(|id| self.cleared_thread_ids.iter().any(|cleared| cleared == id)) {
+        if event_thread_id(&event).is_some_and(|id| self.cleared.contains(id)) {
             return;
         }
         match event {
