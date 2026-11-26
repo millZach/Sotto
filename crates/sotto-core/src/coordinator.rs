@@ -431,6 +431,38 @@ pub type WatchedThreads = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
 
 /// What a failed erase adds about folders, as Node's `DELETION_FOLDERS_WORDS` (`src/main/agents/workspace.ts`).
 const DELETION_FOLDERS_WORDS: &str = "Worktree folders it already removed stay removed; their branches and commits stay.";
+/// What Remove worktree says once a thread's own folder is gone, as Node's coordinator says it.
+const RECLAIMED_NOTICE: &str = "Worktree removed. The branch is kept.";
+/// What a preview of Remove worktree says when the folder could not be read, as Node's coordinator says it.
+const RECLAIM_PREVIEW_FAILED: &str = "The folder could not be checked. Nothing was removed. Check the host connection and try again.";
+
+/// Delete thread…'s removal of a thread's own worktree folder, off the coordinator's thread, as Node's `deleteThreads`
+/// does it: why the folder keeps the thread, then, with the folder held, whether anything that began meanwhile keeps it,
+/// and then the removal with the user's confirmations. A removal that fails keeps the thread, with Node's words for why.
+fn remove_folder_for_delete(
+    data_directory: &Path,
+    thread_id: &str,
+    worktree: &AgentThreadWorktree,
+    others: &[Option<String>],
+    options: &crate::worktree_reclaim::ReclaimOptions,
+    self_tx: &mpsc::UnboundedSender<ActorMessage>,
+) -> Result<AgentThreadWorktree, (KeptReason, Option<String>)> {
+    let folder = worktree.path.clone().unwrap_or_default();
+    let (reason, _) = crate::worktree_reclaim::worktree_deletion_hold(worktree, crate::worktree_reclaim::owns_checkout_alone(&folder, others));
+    if let Some(reason) = reason {
+        return Err((reason, None));
+    }
+    let (reply, answer) = oneshot::channel();
+    if self_tx.send(ActorMessage::HoldFolderForDelete { thread_id: thread_id.to_string(), folder, reply }).is_err() {
+        return Err((KeptReason::WorktreeError, None));
+    }
+    match answer.blocking_recv() {
+        Ok(None) => {}
+        Ok(Some(late)) => return Err((late, None)),
+        Err(_) => return Err((KeptReason::WorktreeError, None)),
+    }
+    crate::worktree_reclaim::reclaim(data_directory, worktree, options).map_err(|words| (KeptReason::WorktreeError, Some(words)))
+}
 /// A thread's title as Node's clearing names it, cut at 512 UTF-16 code units as `title.slice(0, 512)` cuts it.
 fn clear_title(title: &str) -> String {
     let mut units = 0;
@@ -535,6 +567,30 @@ enum AsyncCommandOutcome {
     },
     Compact {
         result: Result<(), String>,
+    },
+    /// What Remove worktree would take, read from the folder (ADR-0041), or none when it could not be read.
+    ReclaimPreview {
+        facts: Option<Value>,
+    },
+    /// A thread's own worktree folder removed, or why it stayed, in Node's words.
+    Reclaim {
+        folder: String,
+        thread_id: String,
+        result: Result<AgentThreadWorktree, String>,
+    },
+    /// What deleting a thread with its own worktree folder would do: why it is kept, and the folder's facts.
+    DeletePreview {
+        thread_id: String,
+        kept: Option<KeptReason>,
+        worktree: Option<Value>,
+    },
+    /// A thread's own worktree folder removed for Delete thread…, or why the thread is kept, with Node's words for a
+    /// removal that failed.
+    DeleteThread {
+        folder: String,
+        thread_id: String,
+        title: String,
+        result: Result<AgentThreadWorktree, (KeptReason, Option<String>)>,
     },
 }
 
@@ -643,6 +699,13 @@ enum ActorMessage {
         client: ClientContext,
         outcome: Box<AsyncCommandOutcome>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    },
+    /// Delete thread… asks, with the thread's own folder about to go, whether a turn or a request that began meanwhile
+    /// keeps the thread, as Node's `deleteThreads` asks once more with the folder held. `None` holds the folder.
+    HoldFolderForDelete {
+        thread_id: String,
+        folder: String,
+        reply: oneshot::Sender<Option<KeptReason>>,
     },
     GitStatusReady {
         thread_id: String,
@@ -1283,6 +1346,9 @@ struct CoordinatorActor {
     busy_thread_ids: HashSet<String>,
     thread_queues: HashMap<String, VecDeque<PendingCommand>>,
     in_flight_sends: HashMap<String, InFlightSend>,
+    /// The worktree folders being removed (ADR-0041): no Git status read starts in one, as Node's `gitStatus.hold` keeps
+    /// one from starting.
+    held_worktree_folders: HashSet<String>,
     /// The follow-up queue, kept in `followups.json` as Node keeps it.
     followups: FollowupStore,
     /// Who queued each follow-up while this host ran, by item ID.
@@ -1440,6 +1506,7 @@ impl CoordinatorActor {
             busy_thread_ids: HashSet::new(),
             thread_queues: HashMap::new(),
             in_flight_sends: HashMap::new(),
+            held_worktree_folders: HashSet::new(),
             followups,
             followup_origins: HashMap::new(),
             followup_answers: HashMap::new(),
@@ -1708,8 +1775,10 @@ impl CoordinatorActor {
                 for tid in &thread_ids {
                     if let Some(thread) = self.threads.iter().find(|t| t.id == *tid) {
                         if let Some(ref wt) = thread.worktree {
-                            if wt.git.is_none() {
-                                if let Some(ref path) = wt.path {
+                            // A folder being removed, or one Sotto removed, has no status to read (`gitStatusFolder`).
+                            let reclaimed = wt.extra.get("reclaimedAt").is_some_and(|at| !at.is_null());
+                            if wt.git.is_none() && !reclaimed {
+                                if let Some(path) = wt.path.as_ref().filter(|path| !self.held_worktree_folders.contains(*path)) {
                                     let path = path.clone();
                                     let thread_id = tid.clone();
                                     let tx = self.self_tx.clone();
@@ -2062,6 +2131,13 @@ impl CoordinatorActor {
                 self.drain_lane(lane);
                 self.pump_followups();
             }
+            ActorMessage::HoldFolderForDelete { thread_id, folder, reply } => {
+                let late = self.clear_hold(&thread_id).or_else(|| self.threads.iter().find(|t| t.id == thread_id).map_or(Some(KeptReason::Hidden), deletion_hold));
+                if late.is_none() {
+                    self.held_worktree_folders.insert(folder);
+                }
+                let _ = reply.send(late);
+            }
             ActorMessage::Shutdown { .. } => unreachable!(),
         }
     }
@@ -2243,23 +2319,12 @@ impl CoordinatorActor {
             }
             // Deleting a settled thread (ADR-0140) is checked again in the thread's own lane, as Node's workspace checks
             // it, and goes there: nothing of it waits on a provider.
-            "preview-delete-thread" => {
-                let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
-                let kept = self.threads.iter().find(|t| t.id == thread_id).map_or(Some(KeptReason::Hidden), |thread| {
-                    deletion_hold(thread).or_else(|| own_worktree(thread).map(|path| self.worktree_deletion_hold(&thread.id, path)))
-                });
-                if let Some(ref tid) = lane {
-                    self.busy_thread_ids.remove(tid);
-                } else {
-                    self.global_lane_busy = false;
-                }
-                self.answer_delete_preview(&client, &thread_id, kept, reply);
-                self.drain_lane(lane);
-            }
-            "delete-thread" => {
-                let res = self.cmd_delete_thread(&command);
-                self.finish_sync_command(lane, &client, res, reply);
-            }
+            "preview-delete-thread" => self.cmd_preview_delete_thread(lane, client, &command, reply),
+            "delete-thread" => self.cmd_delete_thread(lane, client, &command, reply),
+            // Removing a thread's own worktree folder (ADR-0041) waits on Git and the disk in the thread's lane, off the
+            // coordinator's own thread.
+            "preview-reclaim-thread-worktree" => self.cmd_preview_reclaim(lane, client, &command, reply),
+            "reclaim-thread-worktree" => self.cmd_reclaim_thread_worktree(lane, client, &command, reply),
 
             // Slow provider / git-worktree commands run outside the owner loop while holding only their lane.
             "configure" => self.spawn_cmd_configure(lane, client, &command, reply),
@@ -2664,6 +2729,29 @@ impl CoordinatorActor {
                 self.finish_sync_command(lane, &client, Ok(()), reply);
                 return;
             }
+        }
+
+        // A thread whose own folder Sotto removed (ADR-0041) has it put back on its branch by Node's next send
+        // (`restore`). This host cannot put one back yet, so nothing is sent rather than a turn run in a folder that is
+        // not there.
+        if thread.worktree.as_ref().is_some_and(|w| w.extra.get("reclaimedAt").is_some_and(|at| !at.is_null())) {
+            let words = "This thread’s worktree folder was removed, and this host cannot put it back yet. Nothing was sent. Its branch keeps its commits.";
+            let now = now_iso();
+            self.deliveries.push(AgentDelivery {
+                command_id,
+                draft_id,
+                thread_id: tid,
+                message_id: None,
+                status: "failed".into(),
+                error: Some(words.into()),
+                created_at: now.clone(),
+                updated_at: now,
+                local_feedback_ms: Some(0),
+                provider_latency_ms: None,
+            });
+            self.error = Some(words.into());
+            self.finish_sync_command(lane, &client, Ok(()), reply);
+            return;
         }
 
         let Some(adapter) = self.providers.get(&thread.provider_id).cloned() else {
@@ -3238,6 +3326,45 @@ impl CoordinatorActor {
             AsyncCommandOutcome::Compact { result } => {
                 if let Err(words) = result {
                     self.command_refused(words);
+                }
+            }
+            // A preview is answered with its own outcome, and the host's error stays as it was, as Node's coordinator
+            // answers `preview-reclaim-thread-worktree`.
+            AsyncCommandOutcome::ReclaimPreview { facts } => {
+                let mut shell = self.build_shell(client.may_answer);
+                if let Some(obj) = shell.as_object_mut() {
+                    match facts {
+                        Some(facts) => {
+                            obj.insert("error".into(), Value::Null);
+                            obj.insert("worktreeReclaimPreview".into(), facts);
+                        }
+                        None => {
+                            obj.insert("error".into(), Value::String(RECLAIM_PREVIEW_FAILED.into()));
+                        }
+                    }
+                }
+                return Ok(shell);
+            }
+            AsyncCommandOutcome::Reclaim { folder, thread_id, result } => {
+                self.held_worktree_folders.remove(&folder);
+                match result {
+                    Ok(record) => {
+                        self.keep_reclaimed_record(&thread_id, record);
+                        self.notice = RECLAIMED_NOTICE.into();
+                    }
+                    Err(words) => self.command_refused(words),
+                }
+            }
+            AsyncCommandOutcome::DeletePreview { thread_id, kept, worktree } => return Ok(self.delete_preview_shell(client, &thread_id, kept, worktree)),
+            AsyncCommandOutcome::DeleteThread { folder, thread_id, title, result } => {
+                self.held_worktree_folders.remove(&folder);
+                match result {
+                    // Node's words for a kept thread are its coordinator's own answer alone, which a paired client is not sent.
+                    Err((reason, _error)) => eprintln!("[Sotto] thread-clear-kept {}", reason.code()),
+                    Ok(record) => {
+                        self.keep_reclaimed_record(&thread_id, record);
+                        self.finish_delete(&thread_id, &title);
+                    }
                 }
             }
         }
@@ -3816,63 +3943,228 @@ impl CoordinatorActor {
         clear_hold(self.threads.iter().find(|t| t.id == thread_id), &facts)
     }
 
-    /// Why a thread's own worktree folder keeps it, as Node's `worktreeDeletionHold` reads it from the folder: one another
-    /// thread also works in is in use. Node then reads the folder's facts and removes it under ADR-0041's guards; this
-    /// host reads no such facts yet, so the folder is kept as Node keeps one whose facts it could not read.
-    fn worktree_deletion_hold(&self, thread_id: &str, path: &str) -> KeptReason {
-        let same = |other: &AgentThread| other.worktree.as_ref().and_then(|w| w.path.as_deref()).is_some_and(|p| Path::new(p) == Path::new(path));
-        if self.threads.iter().any(|other| other.id != thread_id && same(other)) {
-            KeptReason::WorktreeInUse
-        } else {
-            KeptReason::WorktreeError
-        }
+    /// Every other thread's folder, as Node's `checkoutIsUnreferenced` names it to ask whether it works in a checkout: its
+    /// working folder, its worktree's, the one it reused, or its project's, and `None` for one with no folder at all. A
+    /// thread whose folder Sotto removed, and one whose own worktree has not been made yet, works nowhere.
+    fn other_thread_folders(&self, thread_id: &str) -> Vec<Option<String>> {
+        self.threads
+            .iter()
+            .filter(|other| other.id != thread_id)
+            .filter(|other| !other.worktree.as_ref().is_some_and(|w| w.extra.get("reclaimedAt").is_some_and(|at| !at.is_null())))
+            .filter(|other| {
+                !(!other.native_session_started
+                    && other.worktree.as_ref().is_some_and(|w| w.mode == "independent" && w.path.is_none() && w.existing_worktree_path.is_none()))
+            })
+            .map(|other| {
+                other
+                    .working_directory
+                    .clone()
+                    .or_else(|| other.worktree.as_ref().and_then(|w| w.path.clone().or_else(|| w.existing_worktree_path.clone())))
+                    .or_else(|| self.projects.iter().find(|p| p.id == other.project_id).map(|p| p.path.clone()))
+            })
+            .collect()
     }
 
     /// Answers `preview-delete-thread` with the host's state, `error: null` and what deleting would do, as Node's
-    /// `clearCommand` answers it: why the thread is kept, or null, and its own worktree's facts, which this host reads
-    /// none of.
+    /// `clearCommand` answers it: why the thread is kept, or null, and its own worktree folder's facts when it has one to
+    /// remove.
     fn answer_delete_preview(&mut self, client: &ClientContext, thread_id: &str, kept: Option<KeptReason>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        let _ = reply.send(Ok(self.delete_preview_shell(client, thread_id, kept, None)));
+    }
+
+    fn delete_preview_shell(&self, client: &ClientContext, thread_id: &str, kept: Option<KeptReason>, worktree: Option<Value>) -> Value {
         let mut shell = self.build_shell(client.may_answer);
         if let Some(obj) = shell.as_object_mut() {
             obj.insert("error".into(), Value::Null);
-            obj.insert("threadDeletePreview".into(), json!({ "threadId": thread_id, "kept": kept.map(KeptReason::code), "worktree": null }));
+            obj.insert("threadDeletePreview".into(), json!({ "threadId": thread_id, "kept": kept.map(KeptReason::code), "worktree": worktree.unwrap_or(Value::Null) }));
         }
-        let _ = reply.send(Ok(shell));
+        shell
     }
 
-    /// Deletes one settled thread from Delete thread…, as Node's `clearCommand` does. Its outcome is told as Node tells it:
-    /// the notice on a deletion, and otherwise words on the coordinator's own answer alone, which Node's socket server does
-    /// not send a paired client, so the host's error stays as it was.
-    fn cmd_delete_thread(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-        let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?.to_string();
+    /// What deleting a thread would do, checked in its lane, as Node's `previewThreadDeletion`: a thread the host does not
+    /// hold is hidden; otherwise what the workspace keeps it for, and, for a thread with its own worktree folder, what the
+    /// folder keeps it for and the folder's facts, read off the coordinator's thread.
+    fn cmd_preview_delete_thread(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            self.release_lane(&lane);
+            self.answer_delete_preview(&client, &thread_id, Some(KeptReason::Hidden), reply);
+            return self.drain_lane(lane);
+        };
+        let held = deletion_hold(thread);
+        let Some(worktree) = own_worktree(thread).and(thread.worktree.clone()) else {
+            self.release_lane(&lane);
+            self.answer_delete_preview(&client, &thread_id, held, reply);
+            return self.drain_lane(lane);
+        };
+        let others = self.other_thread_folders(&thread_id);
+        let self_tx = self.self_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let folder = worktree.path.clone().unwrap_or_default();
+            let (reason, facts) = crate::worktree_reclaim::worktree_deletion_hold(&worktree, crate::worktree_reclaim::owns_checkout_alone(&folder, &others));
+            let outcome = AsyncCommandOutcome::DeletePreview { thread_id, kept: held.or(reason), worktree: facts.map(|facts| facts.to_json()) };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+        });
+    }
+
+    fn release_lane(&mut self, lane: &Option<String>) {
+        if let Some(tid) = lane {
+            self.busy_thread_ids.remove(tid);
+        } else {
+            self.global_lane_busy = false;
+        }
+    }
+
+    /// Deletes one settled thread from Delete thread…, as Node's `clearCommand` and workspace `deleteThreads` do. A thread
+    /// with its own worktree folder has the folder removed first, under ADR-0041's guards and with the user's confirmations,
+    /// off the coordinator's thread and in the thread's lane; then it is checked once more and erased. Its outcome is told
+    /// as Node tells it: the notice on a deletion, and otherwise words on the coordinator's own answer alone, which Node's
+    /// socket server does not send a paired client, so the host's error stays as it was.
+    fn cmd_delete_thread(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        let thread_id = match required_id(command, "threadId", THREAD_ID_MAX) {
+            Ok(id) => id.to_string(),
+            Err(err) => return self.finish_sync_command(lane, &client, Err(err), reply),
+        };
         if !crate::thread_clearing::delete_command_shape(command) {
-            return Err(CoordinatorError::invalid("The confirmed worktree items must be what the folder's check listed."));
+            let err = CoordinatorError::invalid("The confirmed worktree items must be what the folder's check listed.");
+            return self.finish_sync_command(lane, &client, Err(err), reply);
         }
         let title = self.threads.iter().find(|t| t.id == thread_id).map(|t| clear_title(&t.title)).unwrap_or_default();
-        if self.delete_thread(&thread_id, &title).is_ok() {
+        self.shell_dirty = true;
+        match self.delete_hold(&thread_id, &title) {
+            Ok(None) => {
+                self.finish_delete(&thread_id, &title);
+                self.finish_sync_command(lane, &client, Ok(()), reply);
+            }
+            Ok(Some(worktree)) => {
+                let others = self.other_thread_folders(&thread_id);
+                let options = crate::worktree_reclaim::ReclaimOptions::from_command(command);
+                let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
+                tokio::task::spawn_blocking(move || {
+                    let folder = worktree.path.clone().unwrap_or_default();
+                    let result = remove_folder_for_delete(&data_directory, &thread_id, &worktree, &others, &options, &self_tx);
+                    let outcome = AsyncCommandOutcome::DeleteThread { folder, thread_id, title, result };
+                    let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+                });
+            }
+            Err(_) => self.finish_sync_command(lane, &client, Ok(()), reply),
+        }
+    }
+
+    /// Erases a thread that passed every check and tells it, as Node's `clearCommand` tells a deletion.
+    fn finish_delete(&mut self, thread_id: &str, title: &str) {
+        if self.erase_thread(thread_id).is_ok() {
             eprintln!("[Sotto] threads-cleared 1");
             self.notice = format!("Deleted “{title}”.");
         }
-        self.shell_dirty = true;
-        Ok(())
     }
 
-    /// Deletes a thread, finally (ADR-0140 decision 4), as Node's workspace `deleteThreads` and coordinator
-    /// `forgetDeletedThreads` do for one: checked again, its sub-agent rosters and then its history erased, its record,
-    /// creation record and alias gone, other threads' links to it gone, its ID on the cleared list, and what the coordinator
-    /// kept of it let go. Its branch and the provider's own transcript are kept. `Err` holds Node's words for why not.
-    fn delete_thread(&mut self, thread_id: &str, title: &str) -> Result<(), String> {
+    /// Answers `preview-reclaim-thread-worktree` with what removing the thread's own worktree folder would take, read off
+    /// the coordinator's thread in the thread's lane, as Node's `previewThreadWorktreeReclaim`. Any failure, a thread with
+    /// no folder of its own included, is Node's one sentence, on this answer alone.
+    fn cmd_preview_reclaim(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        if !crate::worktree_reclaim::reclaim_command_shape(command) {
+            return self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message())), reply);
+        }
+        let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default();
+        let worktree = self
+            .threads
+            .iter()
+            .find(|t| t.id == thread_id)
+            .and_then(|t| t.worktree.clone())
+            .filter(|w| w.mode == "independent" && w.reused != Some(true));
+        let self_tx = self.self_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let facts = worktree.and_then(|worktree| crate::worktree_reclaim::reclaim_facts(&worktree).ok()).map(|facts| facts.to_json());
+            let outcome = AsyncCommandOutcome::ReclaimPreview { facts };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+        });
+    }
+
+    /// Removes a thread's own worktree folder because the user asked (ADR-0041), as Node's `reclaimThreadWorktree` and its
+    /// coordinator: refused for a thread with no folder of its own, one still working or waiting on an answer, and one
+    /// whose folder another thread works in; then removed under every guard of `worktree_reclaim::reclaim`, off the
+    /// coordinator's thread in the thread's lane, with no Git status read starting in the folder meanwhile. The thread
+    /// keeps its record and its branch keeps its commits. Settle's own request (`afterSettle`) is the host's cleanup rule's
+    /// to answer, which this host does not have, so it removes nothing, as Node's rule removes nothing while it is off.
+    fn cmd_reclaim_thread_worktree(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        if !crate::worktree_reclaim::reclaim_command_shape(command) {
+            return self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message())), reply);
+        }
+        let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
+        // As Node's command path: the error clears as the command starts, and a failure is both the error and the notice.
+        self.error = None;
+        if command.get("afterSettle") == Some(&Value::Bool(true)) {
+            return self.finish_sync_command(lane, &client, Ok(()), reply);
+        }
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return self.refuse_sync_command(lane, &client, "This thread is not known to Sotto. Refresh and select it again.".into(), reply);
+        };
+        let Some(worktree) = thread.worktree.clone().filter(|w| w.mode == "independent" && w.path.is_some() && w.reused != Some(true)) else {
+            return self.refuse_sync_command(lane, &client, "This thread has no worktree of its own to remove.".into(), reply);
+        };
+        if worktree.extra.get("reclaimedAt").is_some_and(|at| !at.is_null()) {
+            self.notice = RECLAIMED_NOTICE.into();
+            return self.finish_sync_command(lane, &client, Ok(()), reply);
+        }
+        if thread.status == "running" || !thread.requests.is_empty() || self.in_flight_sends.contains_key(&thread_id) {
+            let words = "This thread is still working. Wait for it to finish and answer its requests before removing its folder.";
+            return self.refuse_sync_command(lane, &client, words.into(), reply);
+        }
+        let others = self.other_thread_folders(&thread_id);
+        let folder = worktree.path.clone().unwrap_or_default();
+        self.held_worktree_folders.insert(folder.clone());
+        let options = crate::worktree_reclaim::ReclaimOptions::from_command(command);
+        let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
+        tokio::task::spawn_blocking(move || {
+            let result = if crate::worktree_reclaim::owns_checkout_alone(&folder, &others) {
+                crate::worktree_reclaim::reclaim(&data_directory, &worktree, &options)
+            } else {
+                Err("Another thread works in this folder too, so it stays.".to_string())
+            };
+            let outcome = AsyncCommandOutcome::Reclaim { folder, thread_id, result };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+        });
+    }
+
+    /// A thread's worktree record as its folder's removal left it, kept in `workspace.json`.
+    fn keep_reclaimed_record(&mut self, thread_id: &str, record: AgentThreadWorktree) {
+        if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+            thread.worktree = Some(record);
+            self.save_workspace();
+            self.shell_dirty = true;
+        }
+    }
+
+    /// Why a thread is not deleted now, in Node's words, or the thread's own worktree folder that goes first: what the
+    /// coordinator keeps it for (`clearHold`), then what the workspace keeps it for (`deletionHold`). A store that did not
+    /// open cannot erase a word, so nothing is deleted, not even a folder (ADR-0140 decision 4).
+    fn delete_hold(&self, thread_id: &str, title: &str) -> Result<Option<AgentThreadWorktree>, String> {
         let Some(thread) = self.threads.iter().find(|t| t.id == thread_id).filter(|_| !self.cleared.contains(thread_id)) else {
             return Err(format!("Sotto could not find “{title}”. Nothing was deleted."));
         };
-        let kept = self
-            .clear_hold(thread_id)
-            .or_else(|| deletion_hold(thread))
-            .or_else(|| own_worktree(thread).map(|path| self.worktree_deletion_hold(thread_id, path)));
-        if let Some(kept) = kept {
+        if let Some(kept) = self.clear_hold(thread_id).or_else(|| deletion_hold(thread)) {
             eprintln!("[Sotto] thread-clear-kept {}", kept.code());
-            self.shell_dirty = true;
             return Err(format!("“{title}” was not deleted: {}. Nothing was deleted.", kept.words()));
+        }
+        if SubagentStore::open(&self.data_directory.join("subagents.sqlite")).is_err() {
+            return Err("Sotto could not open its thread history, so it deleted nothing. Restart Sotto and try again.".into());
+        }
+        Ok(own_worktree(thread).and(thread.worktree.clone()))
+    }
+
+    /// Deletes a thread, finally (ADR-0140 decision 4), as Node's workspace `deleteThreads` and coordinator
+    /// `forgetDeletedThreads` do for one: checked once more, its sub-agent rosters and then its history erased, its record,
+    /// creation record and alias gone, other threads' links to it gone, its ID on the cleared list, and what the coordinator
+    /// kept of it let go. Its branch and the provider's own transcript are kept. `Err` holds Node's words for why not.
+    fn erase_thread(&mut self, thread_id: &str) -> Result<(), String> {
+        // Whatever began in the moment between the thread's checks and this removal keeps it.
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return Err("Sotto could not find this thread. Nothing was deleted.".into());
+        };
+        if let Some(kept) = self.clear_hold(thread_id).or_else(|| deletion_hold(thread)) {
+            eprintln!("[Sotto] thread-clear-kept {}", kept.code());
+            return Err(kept.words().into());
         }
         let ids = vec![thread_id.to_string()];
         // A store that did not open cannot erase a word, so nothing is deleted (ADR-0140 decision 4).
@@ -6134,6 +6426,140 @@ mod tests {
         coord.shutdown().await;
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
         assert!(workspace["snapshot"]["projects"][0].get("workspaceSettledAt").is_none());
+    }
+
+    const OWN_BRANCH: &str = "sotto/own-folder";
+
+    fn fixture_git(cwd: &Path, args: &[&str]) {
+        let out = Command::new("git")
+            .args(["-c", "user.name=Sotto Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "init.defaultBranch=main"])
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// The organized workspace with its project a Git repository and its thread on a worktree of its own in the data
+    /// folder's reserved place, as Node's host records one, and the coordinator started again on it.
+    async fn workspace_with_own_worktree(dir: &Path) -> (CoordinatorHandle, ClientContext, String, PathBuf) {
+        let (coord, client, _project_id, thread_id) = organized_workspace(dir).await;
+        coord.shutdown().await;
+        let base = std::fs::canonicalize(dir).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let project = base.join("project");
+        fixture_git(&project, &["init", "-q"]);
+        std::fs::write(project.join("README.md"), "hello\n").unwrap();
+        std::fs::write(project.join(".gitignore"), "build/\n").unwrap();
+        fixture_git(&project, &["add", "."]);
+        fixture_git(&project, &["commit", "-q", "-m", "First"]);
+        let folder = base.join("thread-worktrees").join("5d2c9a7e-1b3f-4e6a-8c0d-2f4b6a8e0c13");
+        std::fs::create_dir_all(folder.parent().unwrap()).unwrap();
+        fixture_git(&project, &["worktree", "add", "-q", "-b", OWN_BRANCH, &folder.to_string_lossy()]);
+        let path = dir.join("workspace.json");
+        let mut workspace: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let thread = workspace["snapshot"]["threads"].as_array_mut().unwrap().iter_mut().find(|t| t["id"] == thread_id.as_str()).unwrap();
+        thread["worktree"] = json!({ "mode": "independent", "status": "ready", "path": folder.to_string_lossy(), "repositoryRoot": project.to_string_lossy(),
+            "branch": OWN_BRANCH, "temporaryBranch": true, "reused": false });
+        std::fs::write(&path, serde_json::to_string(&workspace).unwrap()).unwrap();
+        let coord = CoordinatorHandle::spawn(dir.to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        (coord, client, thread_id, folder)
+    }
+
+    fn branch_kept(project: &Path) -> bool {
+        Command::new("git").args(["rev-parse", "--verify", "--quiet", &format!("refs/heads/{OWN_BRANCH}")]).current_dir(project).status().unwrap().success()
+    }
+
+    /// Remove worktree as Node's host does it (ADR-0041): a preview lists what the folder holds on its own answer, with no
+    /// word of the host's own; uncommitted work stays until the user confirms it, in Node's words as the host's error and
+    /// notice; then the folder goes, the branch stays, the record says so and is saved, and a send to the thread is turned
+    /// down rather than run in a folder that is not there. Settle's own request removes nothing on this host.
+    #[tokio::test]
+    async fn removes_a_threads_own_worktree_as_node_does() {
+        let dir = tempdir().unwrap();
+        let (coord, client, thread_id, folder) = workspace_with_own_worktree(dir.path()).await;
+        let project = folder.parent().unwrap().parent().unwrap().join("project");
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+
+        let shell = run(json!({ "type": "preview-reclaim-thread-worktree", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert_eq!(shell["worktreeReclaimPreview"], json!({ "path": folder.to_string_lossy(), "branch": OWN_BRANCH, "dirty": false, "ignored": [], "items": [],
+            "repositories": [], "untracked": [] }));
+        let shell = run(json!({ "type": "preview-reclaim-thread-worktree", "threadId": "00000000-0000-4000-8000-0000000000ff" })).await.unwrap();
+        assert_eq!(shell["error"], RECLAIM_PREVIEW_FAILED, "a thread with no folder of its own");
+        assert!(shell.get("worktreeReclaimPreview").is_none());
+
+        let shell = run(json!({ "type": "reclaim-thread-worktree", "threadId": thread_id, "afterSettle": true })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert!(folder.join("README.md").exists(), "Settle's request is the cleanup rule's, which this host does not have");
+
+        std::fs::write(folder.join("README.md"), "changed\n").unwrap();
+        let shell = run(json!({ "type": "reclaim-thread-worktree", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["error"], crate::worktree_reclaim::RECLAIM_WORKTREE_NEEDS_CONFIRMATION);
+        assert_eq!(shell["notice"], crate::worktree_reclaim::RECLAIM_WORKTREE_NEEDS_CONFIRMATION);
+        assert_eq!(std::fs::read_to_string(folder.join("README.md")).unwrap(), "changed\n");
+
+        let shell = run(json!({ "type": "reclaim-thread-worktree", "threadId": thread_id, "withUncommittedChanges": true })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert_eq!(shell["notice"], RECLAIMED_NOTICE);
+        assert!(!folder.exists(), "the folder is gone");
+        assert!(branch_kept(&project), "the branch keeps its commits");
+        let record = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == thread_id.as_str()).unwrap()["worktree"].clone();
+        assert!(record["reclaimedAt"].is_string());
+        assert_eq!(record["branch"], OWN_BRANCH);
+        let shell = run(json!({ "type": "reclaim-thread-worktree", "threadId": thread_id })).await.unwrap();
+        assert_eq!((&shell["error"], &shell["notice"]), (&Value::Null, &json!(RECLAIMED_NOTICE)), "one already removed is done");
+
+        let shell = run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Carry on" })).await.unwrap();
+        assert_eq!(shell["error"], "This thread’s worktree folder was removed, and this host cannot put it back yet. Nothing was sent. Its branch keeps its commits.");
+        assert!(!folder.exists(), "nothing put a folder back");
+        coord.shutdown().await;
+        let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
+        assert!(workspace["snapshot"]["threads"][0]["worktree"]["reclaimedAt"].is_string(), "the record is saved");
+    }
+
+    /// Delete thread… for a thread with its own worktree folder, as Node's `previewThreadDeletion` and `deleteThreads` do
+    /// it: the preview carries the folder's facts; uncommitted work keeps the thread whole; ignored files go only with the
+    /// user's confirmations from the preview; and then the folder goes before the thread, and its branch stays.
+    #[tokio::test]
+    async fn deletes_a_thread_with_its_own_worktree_as_node_does() {
+        let dir = tempdir().unwrap();
+        let (coord, client, thread_id, folder) = workspace_with_own_worktree(dir.path()).await;
+        let project = folder.parent().unwrap().parent().unwrap().join("project");
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let held = |shell: &Value| shell["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id.as_str());
+        run(json!({ "type": "settle-thread", "threadId": thread_id })).await.unwrap();
+
+        let preview = run(json!({ "type": "preview-delete-thread", "threadId": thread_id })).await.unwrap()["threadDeletePreview"].clone();
+        assert_eq!(preview["kept"], Value::Null);
+        assert_eq!(preview["worktree"]["branch"], OWN_BRANCH);
+
+        std::fs::write(folder.join("new.txt"), "unsaved").unwrap();
+        let preview = run(json!({ "type": "preview-delete-thread", "threadId": thread_id })).await.unwrap()["threadDeletePreview"].clone();
+        assert_eq!(preview["kept"], "uncommitted");
+        assert_eq!(preview["worktree"]["dirty"], true);
+        let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
+        assert!(held(&shell), "uncommitted work keeps the thread");
+        assert!(folder.join("new.txt").exists());
+        std::fs::remove_file(folder.join("new.txt")).unwrap();
+
+        std::fs::create_dir_all(folder.join("build")).unwrap();
+        std::fs::write(folder.join("build").join("out.txt"), "12345").unwrap();
+        let preview = run(json!({ "type": "preview-delete-thread", "threadId": thread_id })).await.unwrap()["threadDeletePreview"].clone();
+        assert_eq!(preview["kept"], Value::Null, "Delete thread… lists ignored files for the user to tick");
+        assert_eq!(preview["worktree"]["ignored"], json!(["build/"]));
+        assert_eq!(preview["worktree"]["items"], json!([{ "path": "build/", "bytes": 5, "fileCount": 1 }]));
+        let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
+        assert!(held(&shell), "ignored files the user did not confirm keep the thread");
+        assert_eq!(shell["error"], Value::Null, "Node's refusal words stay on the coordinator's own answer");
+        assert!(folder.join("build").join("out.txt").exists());
+
+        let shell = run(json!({ "type": "delete-thread", "threadId": thread_id, "confirmedIgnored": preview["worktree"]["ignored"],
+            "confirmedItems": [{ "path": "build/", "fileCount": 1 }] })).await.unwrap();
+        assert_eq!(shell["notice"], "Deleted “Organized”.");
+        assert!(!held(&shell));
+        assert!(!folder.exists(), "the folder went with the thread");
+        assert!(branch_kept(&project), "the branch keeps its commits");
+        coord.shutdown().await;
     }
 
     /// Delete thread… as Node's `clearCommand` and workspace `deleteThreads` do it (ADR-0140). A preview says why a thread

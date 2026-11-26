@@ -2458,6 +2458,11 @@ async fn handle_ws_request(
             if deleting && !sotto_core::thread_clearing::delete_command_shape(cmd) {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
+            // So is removing a thread's own worktree folder (ADR-0041), with its confirmations as Delete thread… limits them.
+            let reclaiming = matches!(cmd.get("type").and_then(Value::as_str), Some("reclaim-thread-worktree" | "preview-reclaim-thread-worktree"));
+            if reclaiming && !sotto_core::worktree_reclaim::reclaim_command_shape(cmd) {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
@@ -2510,8 +2515,15 @@ async fn handle_ws_request(
                     return HostResponseEnvelope::err(req.id, refusal.code, message);
                 }
             }
-            // A preview keeps no receipt: Node's socket server answers it before it keeps one, with its own outcome.
-            if !keeps_receipt(kind) || kind == "preview-delete-thread" {
+            // A preview keeps no receipt: Node's socket server answers it before it keeps one, with its own outcome, once
+            // `remoteCommandRefusal` has passed it.
+            if kind == "preview-reclaim-thread-worktree" {
+                if let Err(refusal) = validate_remote_command(cmd, may_answer) {
+                    let message = refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string());
+                    return HostResponseEnvelope::err(req.id, refusal.code, message);
+                }
+            }
+            if !keeps_receipt(kind) || kind == "preview-delete-thread" || kind == "preview-reclaim-thread-worktree" {
                 return match state.coordinator.run_command(client, cmd.clone()).await {
                     Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
                     Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
@@ -3979,6 +3991,40 @@ mod tests {
         assert_eq!(preview["ok"], true, "{preview}");
         assert_eq!(preview["result"]["error"], Value::Null);
         assert_eq!(preview["result"]["threadDeletePreview"], json!({ "threadId": ASKING_THREAD, "kept": "not-settled", "worktree": null }));
+        assert_eq!(host.ask(&mut connection, receipt("preview")).await["result"], json!({ "status": "unknown" }), "a preview keeps no receipt");
+        host.server.close().await;
+    }
+
+    /// Remove worktree is read as Node's schema reads it before anything turns it down (ADR-0041); its confirmations then
+    /// take the remote-answer policy, before a receipt is kept; and its preview keeps no receipt and answers with its own
+    /// outcome, here Node's words for a thread with no folder of its own.
+    #[tokio::test]
+    async fn a_worktree_removal_is_read_before_it_is_refused_and_its_preview_keeps_no_receipt() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&["answer-receipts"]).await;
+        let command = |id: &str, command: Value| json!({ "v": 1, "id": id, "op": "command", "command": command });
+        let receipt = |id: &str| json!({ "v": 1, "id": format!("read-{id}"), "op": "receipt", "commandId": id });
+        let malformed = [
+            ("reclaim-after-settle-false", json!({ "type": "reclaim-thread-worktree", "threadId": ASKING_THREAD, "afterSettle": false })),
+            ("reclaim-bad-items", json!({ "type": "reclaim-thread-worktree", "threadId": ASKING_THREAD, "confirmedItems": [{ "path": "a", "fileCount": -1 }] })),
+            ("preview-reclaim-extra-field", json!({ "type": "preview-reclaim-thread-worktree", "threadId": ASKING_THREAD, "withUncommittedChanges": true })),
+        ];
+        for may_answer in [true, false] {
+            host.server.state.memory.lock().unwrap().set_remote_answers(&host.client_id, may_answer, "test").unwrap();
+            for (name, refused) in &malformed {
+                let id = format!("{name}-{may_answer}");
+                let reply = host.ask(&mut connection, command(&id, refused.clone())).await;
+                assert_eq!(reply["error"]["code"], "invalid_request", "{id}: {reply}");
+                assert_eq!(host.ask(&mut connection, receipt(&id)).await["result"], json!({ "status": "unknown" }), "{id} kept no receipt");
+            }
+        }
+        let refused = host.ask(&mut connection, command("reclaim-no-policy", json!({ "type": "reclaim-thread-worktree", "threadId": ASKING_THREAD, "withUncommittedChanges": true }))).await;
+        assert_eq!(refused["error"]["code"], "forbidden", "{refused}");
+        assert_eq!(host.ask(&mut connection, receipt("reclaim-no-policy")).await["result"], json!({ "status": "unknown" }));
+        let preview = host.ask(&mut connection, command("preview", json!({ "type": "preview-reclaim-thread-worktree", "threadId": ASKING_THREAD }))).await;
+        assert_eq!(preview["ok"], true, "{preview}");
+        assert_eq!(preview["result"]["error"], "The folder could not be checked. Nothing was removed. Check the host connection and try again.");
+        assert!(preview["result"].get("worktreeReclaimPreview").is_none());
         assert_eq!(host.ask(&mut connection, receipt("preview")).await["result"], json!({ "status": "unknown" }), "a preview keeps no receipt");
         host.server.close().await;
     }

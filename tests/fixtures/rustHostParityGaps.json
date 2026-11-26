@@ -186,15 +186,7 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "preview-reclaim-thread-worktree": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "queue-client-updates": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "reclaim-thread-worktree": {
       "node": "refused",
       "rust": "invalid_request"
     },
