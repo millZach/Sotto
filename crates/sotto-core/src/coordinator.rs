@@ -17,6 +17,9 @@ use crate::provider::{
     AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageAck,
     SendMessageRequest, ThreadRecordSeed,
 };
+use crate::attachment_files::{sent_file, SentFile};
+use crate::attachment_store::StageError;
+use crate::file_uploads::Received;
 use crate::remote_commands::validate_remote_command;
 use crate::thread_drafts::{DraftFacts, DraftSave, DraftSaved, SeenRevision, ThreadDrafts};
 use crate::thread_lifecycle::{has_time, is_closed, SettledIn};
@@ -544,16 +547,15 @@ enum ActorMessage {
         dimensions: Option<Value>,
         reply: oneshot::Sender<Result<StagedAttachmentHandle, CoordinatorError>>,
     },
-    StageFilePart {
-        upload_id: String,
-        index: usize,
-        count: usize,
-        name: String,
-        mime_type: String,
-        size_bytes: usize,
-        digest: String,
-        data_b64: String,
-        reply: oneshot::Sender<Result<Option<StagedAttachmentHandle>, CoordinatorError>>,
+    StageReceived {
+        received: Received,
+        reply: oneshot::Sender<Result<StagedAttachmentHandle, StageError>>,
+    },
+    GetSentFile {
+        thread_id: String,
+        message_id: String,
+        attachment_id: String,
+        reply: oneshot::Sender<Option<(SentFile, Option<PathBuf>)>>,
     },
     RunCommand {
         client: ClientContext,
@@ -844,35 +846,29 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn stage_file_part(
+    /// Keeps a file whose every part reached the host and checked out (`stage-file-part`), as Node's host hands it to
+    /// `stageAttachment` or, for a video on disk, `stageAttachmentFile`. A video's upload file is moved in, or goes.
+    pub async fn stage_received(&self, received: Received) -> Result<StagedAttachmentHandle, StageError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx.send(ActorMessage::StageReceived { received, reply: reply_tx }).map_err(|_| StageError::Failed)?;
+        reply_rx.await.map_err(|_| StageError::Failed)?
+    }
+
+    /// The file `attachment_id` names among the attachments of user message `message_id`, in a thread this host holds,
+    /// when a client may read it (`attachment_files::sent_file`), with where the store keeps its content, if it does.
+    pub async fn sent_file(
         &self,
-        upload_id: String,
-        index: usize,
-        count: usize,
-        name: String,
-        mime_type: String,
-        size_bytes: usize,
-        digest: String,
-        data_b64: String,
-    ) -> Result<Option<StagedAttachmentHandle>, CoordinatorError> {
+        thread_id: String,
+        message_id: String,
+        attachment_id: String,
+    ) -> Result<Option<(SentFile, Option<PathBuf>)>, CoordinatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
-            .send(ActorMessage::StageFilePart {
-                upload_id,
-                index,
-                count,
-                name,
-                mime_type,
-                size_bytes,
-                digest,
-                data_b64,
-                reply: reply_tx,
-            })
+            .send(ActorMessage::GetSentFile { thread_id, message_id, attachment_id, reply: reply_tx })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
         reply_rx
             .await
-            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
     }
 
     /// Enqueues a command synchronously on the coordinator actor in arrival order and returns the
@@ -1574,31 +1570,39 @@ impl CoordinatorActor {
                     .map_err(CoordinatorError::invalid);
                 let _ = reply.send(res);
             }
-            ActorMessage::StageFilePart {
-                upload_id,
-                index,
-                count,
-                name,
-                mime_type,
-                size_bytes,
-                digest,
-                data_b64,
-                reply,
-            } => {
-                let res = self
-                    .staged
-                    .stage_file_part(
-                        &upload_id,
-                        index,
-                        count,
-                        &name,
-                        &mime_type,
-                        size_bytes,
-                        &digest,
-                        &data_b64,
-                    )
-                    .map_err(CoordinatorError::invalid);
+            ActorMessage::StageReceived { received, reply } => {
+                let res = match received {
+                    Received::File { name, mime_type, bytes } => self.staged.stage_received_bytes(&name, &mime_type, &bytes),
+                    Received::Video { name, mime_type, path, digest } => {
+                        let res = self.staged.stage_received_file(&name, &mime_type, &path, &digest);
+                        // Moved in, or not kept: either way the upload's file is no longer the host's to hold.
+                        let _ = std::fs::remove_file(&path);
+                        res
+                    }
+                };
                 let _ = reply.send(res);
+            }
+            ActorMessage::GetSentFile { thread_id, message_id, attachment_id, reply } => {
+                // Of a thread this host holds, as Node finds a message in the state it publishes.
+                let message = if !self.threads.iter().any(|thread| thread.id == thread_id) {
+                    None
+                } else if let Some(found) = self
+                    .details
+                    .get(&thread_id)
+                    .and_then(|detail| detail.messages.iter().find(|message| message.id == message_id))
+                {
+                    Some(found.clone())
+                } else {
+                    self.thread_store.read_message_by_id(&thread_id, &message_id).ok().flatten()
+                };
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let found = message
+                    .and_then(|message| sent_file(&message, &attachment_id, now_ms))
+                    .map(|file| {
+                        let path = self.staged.content_path(&file.digest);
+                        (file, path)
+                    });
+                let _ = reply.send(found);
             }
             ActorMessage::GitStatusReady { thread_id, git } => {
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
@@ -5076,6 +5080,47 @@ mod tests {
     };
     use std::sync::Mutex;
     use tempfile::tempdir;
+
+    /// A file staged here and sent with a message is what that message names and nothing else: its part reads back, and
+    /// another attachment ID, another message, a thread the host does not hold or an image name no file.
+    #[tokio::test]
+    async fn a_sent_file_is_found_by_the_message_that_carried_it() {
+        let dir = tempdir().unwrap();
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| {
+            let coord = coord.clone();
+            let client = client.clone();
+            async move { coord.run_command(client, command.as_object().unwrap().clone()).await.unwrap() }
+        };
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "Files", "path": dir.path().to_string_lossy(), "useExisting": true })).await;
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let thread_id = "00000000-0000-4000-8000-00000000000b";
+        run(json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Files", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared", "managed": false })).await;
+
+        let notes = b"the notes the phone opens".to_vec();
+        let file = coord.stage_received(Received::File { name: "notes.txt".into(), mime_type: "text/plain".into(), bytes: notes.clone() }).await.unwrap();
+        let image = coord.stage_image("dot.png".into(), "image/png".into(),
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".into(), None).await.unwrap();
+        run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Here are the notes",
+            "attachments": [serde_json::to_value(&file).unwrap(), serde_json::to_value(&image).unwrap()] })).await;
+        let detail = coord.detail(thread_id.into()).await.unwrap().unwrap();
+        let sent = detail.messages.iter().find(|message| message.role == "user").unwrap().id.clone();
+
+        let (found, path) = coord.sent_file(thread_id.into(), sent.clone(), file.id.clone()).await.unwrap().unwrap();
+        assert_eq!((found.name.as_str(), found.digest.as_str()), ("notes.txt", file.digest.as_str()));
+        let answer = crate::attachment_files::read_part(path.as_deref(), &found, 0).unwrap();
+        use base64::Engine;
+        assert_eq!(base64::engine::general_purpose::STANDARD.decode(answer["data"].as_str().unwrap()).unwrap(), notes);
+        assert!(coord.sent_file(thread_id.into(), sent.clone(), image.id.clone()).await.unwrap().is_none(), "an image is preview's");
+        assert!(coord.sent_file(thread_id.into(), sent.clone(), "another".into()).await.unwrap().is_none());
+        assert!(coord.sent_file(thread_id.into(), "another".into(), file.id.clone()).await.unwrap().is_none());
+        assert!(coord.sent_file("00000000-0000-4000-8000-00000000000c".into(), sent, file.id).await.unwrap().is_none());
+    }
 
     #[tokio::test]
     async fn runs_full_project_thread_send_question_answer_and_interrupt_flow() {

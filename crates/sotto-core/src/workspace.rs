@@ -1,10 +1,8 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -888,238 +886,10 @@ pub fn diff_thread_detail(base: &AgentThreadDetail, next: &AgentThreadDetail) ->
     }))
 }
 
-pub const MAX_IMAGE_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
-pub const MAX_FILE_ATTACHMENT_BYTES: usize = 25 * 1024 * 1024;
-pub const MAX_VIDEO_ATTACHMENT_BYTES: usize = 500 * 1024 * 1024;
-pub const MAX_FILE_PART_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_FILE_PARTS: usize = 4;
-pub const MAX_VIDEO_PARTS: usize = 63;
-const MAX_PENDING_UPLOADS: usize = 64;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StagedAttachmentHandle {
-    pub id: String,
-    pub name: String,
-    pub mime_type: String,
-    pub size_bytes: usize,
-    pub digest: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dimensions: Option<Value>,
-}
-
-impl StagedAttachmentHandle {
-    pub fn is_image(&self) -> bool {
-        self.mime_type.to_ascii_lowercase().starts_with("image/")
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct StagedAttachmentEntry {
-    pub handle: StagedAttachmentHandle,
-    pub path: PathBuf,
-}
-
-#[derive(Default)]
-struct PendingFileUpload {
-    name: String,
-    mime_type: String,
-    size_bytes: usize,
-    digest: String,
-    count: usize,
-    received_bytes: usize,
-    parts: BTreeMap<usize, Vec<u8>>,
-}
-
-/// Stages remote images (`stage-attachment`) and chunked files (`stage-file-part`) on disk under
-/// `<data>/staged-attachments/`, matching ADR-0031 and ADR-0131.
-pub struct StagedAttachments {
-    directory: PathBuf,
-    entries: HashMap<String, StagedAttachmentEntry>,
-    uploads: HashMap<String, PendingFileUpload>,
-}
-
-impl StagedAttachments {
-    pub fn new(data_directory: &Path) -> Self {
-        Self {
-            directory: data_directory.join("staged-attachments"),
-            entries: HashMap::new(),
-            uploads: HashMap::new(),
-        }
-    }
-
-    pub fn stage_image(
-        &mut self,
-        name: &str,
-        mime_type: &str,
-        data_b64: &str,
-        dimensions: Option<Value>,
-    ) -> Result<StagedAttachmentHandle, String> {
-        let allowed_mime = matches!(
-            mime_type,
-            "image/png" | "image/jpeg" | "image/webp" | "image/gif"
-        );
-        if !allowed_mime {
-            return Err("Only PNG, JPEG, WebP, and GIF images can be attached.".into());
-        }
-        let max_b64 = MAX_IMAGE_ATTACHMENT_BYTES.div_ceil(3) * 4;
-        if data_b64.len() > max_b64 {
-            return Err("Attachment image size is out of bounds.".into());
-        }
-        let bytes = STANDARD
-            .decode(data_b64)
-            .map_err(|_| "Attachment image data is not valid base64.".to_string())?;
-        if bytes.is_empty() || bytes.len() > MAX_IMAGE_ATTACHMENT_BYTES {
-            return Err("Attachment image size is out of bounds.".into());
-        }
-        let digest = sha256_hex(&bytes);
-        let id = Uuid::new_v4().to_string();
-        fs::create_dir_all(&self.directory).map_err(|e| e.to_string())?;
-        let file_path = self.directory.join(format!("{id}.bin"));
-        fs::write(&file_path, &bytes).map_err(|e| e.to_string())?;
-        let handle = StagedAttachmentHandle {
-            id: id.clone(),
-            name: name.to_string(),
-            mime_type: mime_type.to_string(),
-            size_bytes: bytes.len(),
-            digest,
-            dimensions,
-        };
-        self.entries.insert(
-            id,
-            StagedAttachmentEntry {
-                handle: handle.clone(),
-                path: file_path,
-            },
-        );
-        Ok(handle)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn stage_file_part(
-        &mut self,
-        upload_id: &str,
-        index: usize,
-        count: usize,
-        name: &str,
-        mime_type: &str,
-        size_bytes: usize,
-        digest: &str,
-        data_b64: &str,
-    ) -> Result<Option<StagedAttachmentHandle>, String> {
-        let is_video = mime_type.to_ascii_lowercase().starts_with("video/");
-        let max_size = if is_video {
-            MAX_VIDEO_ATTACHMENT_BYTES
-        } else {
-            MAX_FILE_ATTACHMENT_BYTES
-        };
-        let max_parts = if is_video {
-            MAX_VIDEO_PARTS
-        } else {
-            MAX_FILE_PARTS
-        };
-        if size_bytes == 0 || size_bytes > max_size {
-            return Err("Uploaded file exceeds the allowed size limit.".into());
-        }
-        if count == 0 || count > max_parts || index >= count {
-            return Err("Invalid file upload part index.".into());
-        }
-        let max_part_b64 = MAX_FILE_PART_BYTES.div_ceil(3) * 4;
-        if data_b64.is_empty() || data_b64.len() > max_part_b64 {
-            return Err("File upload part exceeds the maximum part size.".into());
-        }
-        let bytes = STANDARD
-            .decode(data_b64)
-            .map_err(|_| "File part data is not valid base64.".to_string())?;
-        if bytes.is_empty() || bytes.len() > MAX_FILE_PART_BYTES {
-            return Err("File upload part exceeds the maximum part size.".into());
-        }
-        if !self.uploads.contains_key(upload_id) && self.uploads.len() >= MAX_PENDING_UPLOADS {
-            return Err("Too many file uploads are in progress.".into());
-        }
-        let pending = self
-            .uploads
-            .entry(upload_id.to_string())
-            .or_insert_with(|| PendingFileUpload {
-                name: name.to_string(),
-                mime_type: mime_type.to_string(),
-                size_bytes,
-                digest: digest.to_string(),
-                count,
-                received_bytes: 0,
-                parts: BTreeMap::new(),
-            });
-        if pending.count != count
-            || pending.size_bytes != size_bytes
-            || pending.name != name
-            || pending.mime_type != mime_type
-            || !pending.digest.eq_ignore_ascii_case(digest)
-        {
-            self.uploads.remove(upload_id);
-            return Err("File upload metadata changed between parts.".into());
-        }
-        let prev_len = pending.parts.get(&index).map(|v| v.len()).unwrap_or(0);
-        let next_total = pending
-            .received_bytes
-            .saturating_sub(prev_len)
-            .checked_add(bytes.len())
-            .ok_or_else(|| "Uploaded file exceeds the declared size.".to_string())?;
-        if next_total > pending.size_bytes || next_total > max_size {
-            self.uploads.remove(upload_id);
-            return Err("Uploaded file exceeds the declared size.".into());
-        }
-        pending.received_bytes = next_total;
-        pending.parts.insert(index, bytes);
-        if pending.parts.len() < pending.count {
-            return Ok(None);
-        }
-        let completed = self.uploads.remove(upload_id).unwrap();
-        let actual_total: usize = completed.parts.values().map(Vec::len).sum();
-        if actual_total != completed.size_bytes || actual_total > max_size {
-            return Err("Uploaded file size does not match declared size.".into());
-        }
-        let mut combined = Vec::with_capacity(actual_total);
-        for idx in 0..completed.count {
-            if let Some(chunk) = completed.parts.get(&idx) {
-                combined.extend_from_slice(chunk);
-            }
-        }
-        let actual_digest = sha256_hex(&combined);
-        if !actual_digest.eq_ignore_ascii_case(&completed.digest) {
-            return Err("Uploaded file checksum does not match.".into());
-        }
-        let id = Uuid::new_v4().to_string();
-        fs::create_dir_all(&self.directory).map_err(|e| e.to_string())?;
-        let file_path = self.directory.join(format!("{id}.bin"));
-        fs::write(&file_path, &combined).map_err(|e| e.to_string())?;
-        let handle = StagedAttachmentHandle {
-            id: id.clone(),
-            name: completed.name,
-            mime_type: completed.mime_type,
-            size_bytes: combined.len(),
-            digest: actual_digest,
-            dimensions: None,
-        };
-        self.entries.insert(
-            id,
-            StagedAttachmentEntry {
-                handle: handle.clone(),
-                path: file_path,
-            },
-        );
-        Ok(Some(handle))
-    }
-
-    pub fn get(&self, id: &str) -> Option<&StagedAttachmentEntry> {
-        self.entries.get(id)
-    }
-
-    pub fn get_by_digest(&self, digest: &str) -> Option<&StagedAttachmentEntry> {
-        self.entries
-            .values()
-            .find(|e| e.handle.digest.eq_ignore_ascii_case(digest))
-    }
-}
+pub use crate::attachment_store::{
+    StagedAttachmentEntry, StagedAttachmentHandle, StagedAttachments, MAX_FILE_ATTACHMENT_BYTES, MAX_IMAGE_ATTACHMENT_BYTES,
+    MAX_VIDEO_ATTACHMENT_BYTES,
+};
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -1191,7 +961,6 @@ pub fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[test]
     fn computes_append_and_activity_deltas_accurately() {
@@ -1229,49 +998,5 @@ mod tests {
         assert_eq!(delta["messageDeltas"][0]["id"], "m1");
         assert_eq!(delta["messageDeltas"][0]["appendText"], " world");
         assert_eq!(delta["activityDeltas"][0]["record"]["status"], "completed");
-    }
-
-    #[test]
-    fn stages_images_and_chunked_files_with_checksum_verification() {
-        let dir = tempdir().unwrap();
-        let mut staged = StagedAttachments::new(dir.path());
-        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-        let img = staged
-            .stage_image("Referee.png", "image/png", png, None)
-            .unwrap();
-        assert_eq!(img.mime_type, "image/png");
-        assert!(staged.get(&img.id).is_some());
-        let serialized = serde_json::to_value(&img).unwrap();
-        assert!(serialized.get("kind").is_none());
-
-        let content = b"Referee notes\nsecond line\n";
-        let digest = sha256_hex(content);
-        let handle = staged
-            .stage_file_part(
-                "u1",
-                0,
-                1,
-                "Referee notes.txt",
-                "text/plain",
-                content.len(),
-                &digest,
-                &STANDARD.encode(content),
-            )
-            .unwrap()
-            .unwrap();
-        assert_eq!(handle.size_bytes, content.len());
-
-        // Oversized sizeBytes declaration must be rejected cleanly before allocation (no panic).
-        let huge = staged.stage_file_part(
-            "u-huge",
-            0,
-            1,
-            "huge.txt",
-            "text/plain",
-            usize::MAX,
-            &digest,
-            &STANDARD.encode(b"x"),
-        );
-        assert!(huge.is_err());
     }
 }

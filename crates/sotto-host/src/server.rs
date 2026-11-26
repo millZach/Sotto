@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,6 +15,9 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
+use sotto_core::attachment_files::AttachmentFileRequest;
+use sotto_core::attachment_store::StageError;
+use sotto_core::file_uploads::{FilePart, FileUploads, PartFailed, Received, HOST_CANNOT_STAGE_VIDEOS};
 use sotto_core::linked_files::LinkRequest;
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::protocol_fields::protocol_id;
@@ -57,6 +60,10 @@ pub fn advertised_features() -> Vec<String> {
         "detail-delta".into(),
         "attachment-staging".into(),
         "file-staging".into(),
+        // With file staging, as Node lists them: videos up to 500 MiB staged in parts on disk (ADR-0131, November 9
+        // amendment), and a sent file's bytes for the iPhone's Quick Look (October 25 amendment).
+        "video-staging".into(),
+        "attachment-files".into(),
         "activity-summaries".into(),
         "model-catalog-revision".into(),
         "changed-thread-records".into(),
@@ -166,6 +173,114 @@ impl ThreadRead for MediaRequest {
     }
 }
 
+impl ThreadRead for AttachmentFileRequest {
+    fn thread_id(&self) -> &str {
+        &self.thread_id
+    }
+    fn feature(&self) -> &'static str {
+        AttachmentFileRequest::feature(self)
+    }
+}
+
+/// The features this host offers a client on this listener, as Node's `offers` reads them.
+fn offered_features(state: &HostState, mode: &ListenerMode, client_id: &str) -> Vec<String> {
+    let recorded = state.desktops.lock().unwrap().has(client_id);
+    features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded))
+}
+
+/// A `stage-file-part` request after the checks Node's socket server makes before it takes the part, in its order: the
+/// part's shape as Node's schema reads it, then whether the host offers this client `file-staging`, then a video larger
+/// than a file from a client the host does not offer `video-staging`, which is told why.
+fn checked_file_part(fields: &serde_json::Map<String, Value>, offered: impl Fn(&str) -> bool) -> Result<FilePart, (HostErrorCode, &'static str)> {
+    let invalid = (HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+    let part = if fields.keys().any(|key| key != "part") { None } else { sotto_core::file_uploads::file_part(fields.get("part")) };
+    let part = part.ok_or(invalid)?;
+    if !offered("file-staging") {
+        return Err(invalid);
+    }
+    if part.is_large_video() && !offered("video-staging") {
+        return Err((HostErrorCode::InvalidRequest, HOST_CANNOT_STAGE_VIDEOS));
+    }
+    Ok(part)
+}
+
+/// A `file-upload-progress` request's upload after Node's checks, in its order: its shape, then `video-staging` offered.
+fn checked_upload_progress(fields: &serde_json::Map<String, Value>, offered: impl Fn(&str) -> bool) -> Result<String, HostErrorCode> {
+    let upload_id = sotto_core::file_uploads::progress_request(fields).ok_or(HostErrorCode::InvalidRequest)?;
+    if !offered("video-staging") {
+        return Err(HostErrorCode::InvalidRequest);
+    }
+    Ok(upload_id)
+}
+
+/// The time in milliseconds, as the upload waits are counted.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// One paired client's read of a sent file's part, held while it runs so the client has one at a time across its
+/// sockets, as Node's `fileReads`.
+struct FileRead<'a> {
+    state: &'a HostState,
+    client_id: String,
+}
+
+impl<'a> FileRead<'a> {
+    fn start(state: &'a HostState, client_id: &str) -> Option<Self> {
+        state.file_reads.lock().unwrap().insert(client_id.to_string()).then(|| Self { state, client_id: client_id.to_string() })
+    }
+}
+
+impl Drop for FileRead<'_> {
+    fn drop(&mut self) {
+        self.state.file_reads.lock().unwrap().remove(&self.client_id);
+    }
+}
+
+/// One open socket of a paired client. When its client's last socket closes, the client's file upload goes, and a
+/// video's stays for its own wait, as Node's `leave` (ADR-0131).
+struct ClientSocket {
+    state: Arc<HostState>,
+    client_id: String,
+}
+
+impl ClientSocket {
+    fn open(state: Arc<HostState>, client_id: &str) -> Self {
+        *state.client_sockets.lock().unwrap().entry(client_id.to_string()).or_insert(0) += 1;
+        Self { state, client_id: client_id.to_string() }
+    }
+}
+
+impl Drop for ClientSocket {
+    fn drop(&mut self) {
+        let last = {
+            let mut sockets = self.state.client_sockets.lock().unwrap();
+            let count = sockets.get_mut(&self.client_id).map(|count| {
+                *count = count.saturating_sub(1);
+                *count
+            });
+            if count == Some(0) {
+                sockets.remove(&self.client_id);
+            }
+            count == Some(0)
+        };
+        if !last {
+            return;
+        }
+        let state = Arc::clone(&self.state);
+        let client_id = std::mem::take(&mut self.client_id);
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let mut uploads = state.uploads.lock().await;
+                // A socket the client opened again meanwhile keeps its upload.
+                if !state.client_sockets.lock().unwrap().contains_key(&client_id) {
+                    uploads.leave(&client_id);
+                }
+            });
+        }
+    }
+}
+
 /// A thread read's request (`thread-file-link`, `thread-linked-file`, `thread-media` or `thread-media-part`) after the
 /// checks Node's socket server makes before it reads anything, in its order: the request's shape as Node's schema
 /// reads it (`parse`), then a thread the client may not see (`hidden`), then whether the host offers this client the
@@ -196,8 +311,7 @@ async fn offered_thread_read<Request: ThreadRead>(
     fields: &serde_json::Map<String, Value>,
     parse: impl FnOnce(Option<&Value>) -> Option<Request>,
 ) -> Result<Request, HostErrorCode> {
-    let recorded = state.desktops.lock().unwrap().has(client_id);
-    let offered = features_for_client(&state.features, recorded, desktop_on_listener(mode, recorded));
+    let offered = offered_features(state, mode, client_id);
     checked_thread_read(
         fields,
         parse,
@@ -290,6 +404,12 @@ pub struct HostState {
     pub watcher: Arc<WatcherHostService>,
     pub revoked_tx: broadcast::Sender<String>,
     pub capabilities_tx: broadcast::Sender<String>,
+    /// Each paired client's file on its way here, by its client ID, however many sockets it opens (ADR-0131).
+    pub uploads: Arc<tokio::sync::Mutex<FileUploads>>,
+    /// The paired clients with a sent file's part being read for them, so each has one such read at a time.
+    pub file_reads: Mutex<HashSet<String>>,
+    /// How many sockets each paired client has open here, so its file upload goes when the last one closes.
+    pub client_sockets: Mutex<HashMap<String, usize>>,
 }
 
 impl HostState {
@@ -652,6 +772,12 @@ impl RunningServer {
             watcher,
             revoked_tx,
             capabilities_tx,
+            // A video's parts go to the attachment store's own `uploads` folder, as Node's host writes them.
+            uploads: Arc::new(tokio::sync::Mutex::new(FileUploads::new(Some(
+                sotto_core::attachment_store::upload_folder(&config.data_directory),
+            )))),
+            file_reads: Mutex::new(HashSet::new()),
+            client_sockets: Mutex::new(HashMap::new()),
         });
 
         let initial_descriptor = state.descriptor();
@@ -1474,6 +1600,7 @@ async fn handle_websocket_upgrade(
         }
         ListenerMode::Admin => None,
     };
+    let _client_socket = ClientSocket::open(Arc::clone(&state), &client_id);
 
     let (mut read_half, mut write_half) = tokio::io::split(stream);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<OutboundFrame>();
@@ -2026,81 +2153,100 @@ async fn handle_ws_request(
                 Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
             }
         }
+        // One part of a file for a draft on this host (`file-staging`, ADR-0131), the last part's answer its handle, as
+        // Node's host takes it: one upload per paired client across its sockets, a video's parts on disk with
+        // `video-staging`. Node takes one part at a time per socket; this host answers a socket's requests in turn.
         "stage-file-part" => {
-            let Some(part) = req.fields.get("part").and_then(Value::as_object) else {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
+            let offered = offered_features(state, mode, client_id);
+            let part = match checked_file_part(&req.fields, |feature| offered.iter().any(|name| name == feature)) {
+                Ok(part) => part,
+                Err((code, words)) => return HostResponseEnvelope::err(req.id, code, words),
             };
-            let (
-                Some(upload_id),
-                Some(index),
-                Some(count),
-                Some(name),
-                Some(mime),
-                Some(size_bytes_u64),
-                Some(digest),
-                Some(data),
-            ) = (
-                part.get("uploadId").and_then(Value::as_str),
-                part.get("index").and_then(Value::as_u64),
-                part.get("count").and_then(Value::as_u64),
-                part.get("name").and_then(Value::as_str),
-                part.get("mimeType").and_then(Value::as_str),
-                part.get("sizeBytes").and_then(Value::as_u64),
-                part.get("digest").and_then(Value::as_str),
-                part.get("data").and_then(Value::as_str),
-            )
-            else {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
+            let idle_ms = if sotto_core::attachment_store::is_video_type(&part.mime_type) {
+                sotto_core::file_uploads::VIDEO_UPLOAD_IDLE_MS
+            } else {
+                sotto_core::file_uploads::FILE_UPLOAD_IDLE_MS
             };
-            let Ok(size_bytes) = usize::try_from(size_bytes_u64) else {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    "Uploaded file exceeds the allowed size limit.",
-                );
+            let uploads = Arc::clone(&state.uploads).lock_owned().await;
+            let client = client_id.to_string();
+            let now = now_ms();
+            let taken = tokio::task::spawn_blocking(move || {
+                let mut uploads = uploads;
+                uploads.receive_part(&client, &part, now)
+            })
+            .await
+            .unwrap_or(Err(PartFailed::Failed));
+            let received = match taken {
+                Ok(Some(received)) => received,
+                Ok(None) => {
+                    // The upload goes once its wait after this part is over, unless another part came, as Node's timer
+                    // after each part lets it go; a video's part file goes with it.
+                    let uploads = Arc::clone(&state.uploads);
+                    tokio::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(idle_ms)).await;
+                        uploads.lock().await.sweep(now_ms());
+                    });
+                    return HostResponseEnvelope::ok(req.id, Value::Null);
+                }
+                Err(PartFailed::Refused(words)) => return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, words),
+                Err(PartFailed::Failed) => {
+                    return HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message())
+                }
             };
-            let Ok(index_usize) = usize::try_from(index) else {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    "Invalid file upload part index.",
-                );
+            let upload_file = match &received {
+                Received::Video { path, .. } => Some(path.clone()),
+                Received::File { .. } => None,
             };
-            let Ok(count_usize) = usize::try_from(count) else {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    "Invalid file upload part count.",
-                );
+            let staged = state.coordinator.stage_received(received).await;
+            // Moved into the store, or not kept: the upload's file goes either way.
+            if let Some(path) = upload_file {
+                let _ = fs::remove_file(path);
+            }
+            match staged {
+                Ok(handle) => HostResponseEnvelope::ok(req.id, serde_json::to_value(handle).unwrap_or(Value::Null)),
+                // A file refused for what it is says so; anything else is the host's failure to keep it.
+                Err(StageError::Refused(words)) => HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, words),
+                Err(StageError::Failed) => {
+                    HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message())
+                }
+            }
+        }
+        // How many parts of an upload the host holds for this client (`video-staging`), so it can carry on where it
+        // stopped, or null when it holds none.
+        "file-upload-progress" => {
+            let offered = offered_features(state, mode, client_id);
+            let upload_id = match checked_upload_progress(&req.fields, |feature| offered.iter().any(|name| name == feature)) {
+                Ok(upload_id) => upload_id,
+                Err(code) => return HostResponseEnvelope::err(req.id, code, code.default_message()),
             };
-            match state
-                .coordinator
-                .stage_file_part(
-                    upload_id.into(),
-                    index_usize,
-                    count_usize,
-                    name.into(),
-                    mime.into(),
-                    size_bytes,
-                    digest.into(),
-                    data.into(),
-                )
-                .await
-            {
-                Ok(Some(handle)) => HostResponseEnvelope::ok(
-                    req.id,
-                    serde_json::to_value(handle).unwrap_or(Value::Null),
-                ),
-                Ok(None) => HostResponseEnvelope::ok(req.id, Value::Null),
-                Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+            let parts = state.uploads.lock().await.progress(client_id, &upload_id, now_ms());
+            HostResponseEnvelope::ok(req.id, parts.map_or(Value::Null, |parts| json!({ "parts": parts })))
+        }
+        // One part of a file a sent message carries, for the iPhone's Quick Look (ADR-0131, October 25 amendment), as
+        // Node's host answers it: only a file that user message carries and the store still keeps. Node reads one at a
+        // time per socket, which this host does by answering a socket's requests in turn, and one per paired client
+        // across its sockets.
+        "attachment-file" => {
+            let checked = offered_thread_read(state, mode, client_id, wire, &req.fields, sotto_core::attachment_files::attachment_file_request).await;
+            let request = match checked {
+                Ok(request) => request,
+                Err(code) => return HostResponseEnvelope::err(req.id, code, code.default_message()),
+            };
+            let Some(_reading) = FileRead::start(state, client_id) else {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
+            };
+            let found = match state.coordinator.sent_file(request.thread_id.clone(), request.message_id.clone(), request.attachment_id.clone()).await {
+                Ok(found) => found,
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+            };
+            let Some((file, path)) = found else {
+                return HostResponseEnvelope::ok(req.id, Value::Null);
+            };
+            let part = request.part;
+            let read = tokio::task::spawn_blocking(move || sotto_core::attachment_files::read_part(path.as_deref(), &file, part)).await;
+            match read {
+                Ok(Ok(answer)) => HostResponseEnvelope::ok(req.id, answer),
+                _ => HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
             }
         }
         "command" => {
@@ -3211,6 +3357,88 @@ mod tests {
             let offered = features_for_client(&all, desktop, on_listener);
             assert!(offered.iter().any(|f| f == "thread-media") && offered.iter().any(|f| f == "thread-media-video"));
             assert!(!offered.iter().any(|f| f == "thread-media-edge"));
+        }
+    }
+
+    /// A sent file's part is refused as Node's socket server refuses it, and in its order: a malformed request before the
+    /// thread is looked at, a hidden provider's thread before whether the read is offered, then a read not offered.
+    #[tokio::test]
+    async fn an_attachment_file_read_is_checked_in_nodes_order() {
+        use std::cell::Cell;
+        let fields = |value: Value| value.as_object().unwrap().clone();
+        let parse = sotto_core::attachment_files::attachment_file_request;
+        let good = json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a", "part": 0 } });
+        let asked = Cell::new(false);
+        let hidden = |answer: bool| {
+            let asked = &asked;
+            move |_: String| {
+                asked.set(true);
+                async move { answer }
+            }
+        };
+
+        for malformed in [
+            json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a" } }),
+            json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a", "part": 4 } }),
+            json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a", "part": 0, "digest": "d" } }),
+            json!({ "request": { "threadId": "t", "messageId": "m", "attachmentId": "a", "part": 0 }, "more": 1 }),
+        ] {
+            assert_eq!(checked_thread_read(&fields(malformed), parse, hidden(true), |_| true).await, Err(HostErrorCode::InvalidRequest));
+        }
+        assert!(!asked.get(), "a malformed request is refused before its thread is looked at");
+
+        assert_eq!(checked_thread_read(&fields(good.clone()), parse, hidden(true), |_| false).await, Err(HostErrorCode::Forbidden));
+        assert!(asked.get());
+        let mut named = None;
+        let refused = checked_thread_read(&fields(good.clone()), parse, hidden(false), |feature: &str| {
+            named = Some(feature.to_string());
+            false
+        })
+        .await;
+        assert_eq!(refused, Err(HostErrorCode::InvalidRequest));
+        assert_eq!(named.as_deref(), Some("attachment-files"));
+        let request = checked_thread_read(&fields(good), parse, hidden(false), |feature| feature == "attachment-files").await.unwrap();
+        assert_eq!((request.message_id.as_str(), request.attachment_id.as_str(), request.part), ("m", "a", 0));
+    }
+
+    /// A file part is refused in Node's order: a malformed part, then a host that does not offer file staging, then a
+    /// video larger than a file from a client it does not offer video staging, in Node's words.
+    #[test]
+    fn a_file_part_is_checked_in_nodes_order() {
+        let fields = |value: Value| value.as_object().unwrap().clone();
+        let part = |mime: &str, size: u64, count: u64| {
+            json!({ "part": { "uploadId": "3f0c8a52-6c1e-4f5d-9b7a-2d4e6f8a0b1c", "index": 0, "count": count, "name": "clip",
+                "mimeType": mime, "sizeBytes": size, "digest": "a".repeat(64), "data": "cHJvYmU=" } })
+        };
+        let invalid = (HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+        let large = part("video/mp4", 30 * 1024 * 1024, 4);
+        let mut extra = large.clone();
+        extra["more"] = json!(1);
+        assert_eq!(checked_file_part(&fields(extra), |_| true), Err(invalid));
+        assert_eq!(checked_file_part(&fields(part("text/plain", 30 * 1024 * 1024, 4)), |_| true), Err(invalid), "only a video may be larger than a file");
+        assert_eq!(checked_file_part(&fields(large.clone()), |_| false), Err(invalid), "file staging is asked of first");
+        let staging = |feature: &str| feature == "file-staging";
+        assert_eq!(checked_file_part(&fields(large.clone()), staging), Err((HostErrorCode::InvalidRequest, HOST_CANNOT_STAGE_VIDEOS)));
+        assert_eq!(checked_file_part(&fields(part("video/mp4", 5, 5)), staging), Err((HostErrorCode::InvalidRequest, HOST_CANNOT_STAGE_VIDEOS)));
+        assert!(checked_file_part(&fields(part("video/mp4", 5, 1)), staging).is_ok(), "a video no larger than a file needs no video staging");
+        assert!(checked_file_part(&fields(large), |feature| feature == "file-staging" || feature == "video-staging").unwrap().is_large_video());
+
+        let upload = json!({ "uploadId": "3f0c8a52-6c1e-4f5d-9b7a-2d4e6f8a0b1c" });
+        assert_eq!(checked_upload_progress(&fields(json!({ "uploadId": "x" })), |_| false), Err(HostErrorCode::InvalidRequest));
+        assert_eq!(checked_upload_progress(&fields(upload.clone()), |feature| feature == "file-staging"), Err(HostErrorCode::InvalidRequest));
+        assert!(checked_upload_progress(&fields(upload), |feature| feature == "video-staging").is_ok());
+    }
+
+    /// Video staging and sent files go with file staging to every client, as Node offers them, a phone on a tailnet
+    /// listener too.
+    #[test]
+    fn file_staging_features_are_offered_to_every_client() {
+        let all = advertised_features();
+        for (desktop, on_listener) in [(true, true), (false, true), (false, false)] {
+            let offered = features_for_client(&all, desktop, on_listener);
+            for feature in ["file-staging", "video-staging", "attachment-files"] {
+                assert!(offered.iter().any(|f| f == feature), "{feature} to desktop={desktop} on_listener={on_listener}");
+            }
         }
     }
 
