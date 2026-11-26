@@ -24,7 +24,7 @@ use crate::workspace::{AgentProject, AgentThread, AgentThreadDetail};
 pub const SAVED_KEY: &str = "failuresSeen";
 /// How many marks are kept for threads gone from the host's list, newest last, as Node's `FAILURES_SEEN_MAX`.
 pub const FAILURES_SEEN_MAX: usize = 200;
-/// The longest reason published with a failure, as `failureReason` allows.
+/// The longest reason published with a failure, as `failureReason` allows: 600 UTF-16 code units, as JavaScript counts.
 const REASON_MAX: usize = 600;
 /// The fields a thread carries for its failure, which only this record writes.
 const PUBLISHED: [&str; 4] = ["failureId", "failureReason", "failureSince", "failureSeen"];
@@ -245,7 +245,7 @@ impl FailuresSeen {
             return;
         };
         if let Some(failure) = self.failures.get_mut(&thread.id) {
-            failure.reason = Some(reason.chars().take(REASON_MAX).collect());
+            failure.reason = Some(within_utf16(reason, REASON_MAX).to_string());
         }
     }
 
@@ -309,6 +309,19 @@ fn failed_turn_reason<'a>(thread: &AgentThread, activities: &'a [Value]) -> Opti
         return None;
     }
     record.get("error").and_then(Value::as_str).filter(|error| !error.is_empty())
+}
+
+/// The longest start of `text` that is at most `max` UTF-16 code units, as JavaScript's `slice(0, max)` keeps, except that
+/// a character is never cut in half.
+fn within_utf16(text: &str, max: usize) -> &str {
+    let mut units = 0;
+    for (at, character) in text.char_indices() {
+        units += character.len_utf16();
+        if units > max {
+            return &text[..at];
+        }
+    }
+    text
 }
 
 /// Whether the thread's last turn record says it started after `since`; unknown either way reads as not.
@@ -448,6 +461,15 @@ mod tests {
         assert!(world.with(|view| record.dismiss(&named, view)));
         assert!(record.has("a"));
         assert!(!record.has("b"), "a thread that asks the user something is the user's to answer");
+    }
+
+    #[test]
+    fn a_reason_is_cut_to_what_node_allows_in_utf_16() {
+        assert_eq!(within_utf16("abc", 2), "ab");
+        // Each of these takes two UTF-16 code units, so 600 units hold 300 of them and never half of one.
+        let wide = "\u{1F600}".repeat(400);
+        assert_eq!(within_utf16(&wide, REASON_MAX).encode_utf16().count(), 600);
+        assert_eq!(within_utf16(&format!("a{wide}"), REASON_MAX).encode_utf16().count(), 599);
     }
 
     #[test]

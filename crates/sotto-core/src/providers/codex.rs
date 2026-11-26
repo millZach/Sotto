@@ -329,6 +329,10 @@ struct CodexSharedState {
     native_to_sotto: Mutex<HashMap<String, String>>,
     /// Sotto thread ID -> active Codex turn ID.
     active_turns: Mutex<HashMap<String, String>>,
+    /// Sotto thread ID -> the Codex turn that last ended there. A turn can end before its `turn/start` answer is read, and
+    /// that late answer must not make it the thread's active turn again, or the next prompt goes as a steer of a turn
+    /// that is over and Codex refuses it.
+    ended_turns: Mutex<HashMap<String, String>>,
     /// Sotto thread ID -> last user message ID for `afterMessageId` on turns.
     last_user_message_id: Mutex<HashMap<String, String>>,
     /// Sotto thread ID -> active turn activity JSON so completion preserves id/startedAt.
@@ -340,6 +344,14 @@ struct CodexSharedState {
 }
 
 impl CodexSharedState {
+    /// The turn a prompt's answer names becomes the thread's active turn, unless it has already ended.
+    fn turn_acknowledged(&self, thread_id: &str, turn_id: &str) {
+        if self.ended_turns.lock().unwrap().get(thread_id).map(String::as_str) == Some(turn_id) {
+            return;
+        }
+        self.active_turns.lock().unwrap().insert(thread_id.to_string(), turn_id.to_string());
+    }
+
     fn new(data_directory: PathBuf) -> Self {
         let records = load_codex_records(&data_directory);
         let mut native_to_sotto = HashMap::new();
@@ -362,6 +374,7 @@ impl CodexSharedState {
             records: Mutex::new(records),
             native_to_sotto: Mutex::new(native_to_sotto),
             active_turns: Mutex::new(HashMap::new()),
+            ended_turns: Mutex::new(HashMap::new()),
             last_user_message_id: Mutex::new(HashMap::new()),
             turn_activities: Mutex::new(HashMap::new()),
             streaming_items: Mutex::new(HashMap::new()),
@@ -662,6 +675,9 @@ impl CodexSharedState {
                     _ => "Turn completed",
                 };
                 self.active_turns.lock().unwrap().remove(&sotto_tid);
+                if !turn_id.is_empty() {
+                    self.ended_turns.lock().unwrap().insert(sotto_tid.clone(), turn_id.clone());
+                }
                 if let Some(mut act) = self.turn_activities.lock().unwrap().remove(&sotto_tid) {
                     if let Some(obj) = act.as_object_mut() {
                         obj.insert("status".into(), Value::String(status.into()));
@@ -1196,11 +1212,7 @@ impl ProviderAdapter for CodexAdapter {
                         .and_then(Value::as_str)
                         .map(ToString::to_string)
                         .unwrap_or_else(|| Uuid::new_v4().to_string());
-                    self.shared
-                        .active_turns
-                        .lock()
-                        .unwrap()
-                        .insert(req.thread_id.clone(), turn_id.clone());
+                    self.shared.turn_acknowledged(&req.thread_id, &turn_id);
                     Ok(SendMessageAck {
                         message_id,
                         turn_id,
@@ -1613,6 +1625,19 @@ fn build_codex_response_payload(method: &str, params: &Value, req: &AnswerReques
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A turn that ends before its `turn/start` answer is read stays ended: the late answer does not make it the active
+    /// turn again, so the thread's next prompt starts a turn rather than steering one that is over.
+    #[test]
+    fn a_late_answer_does_not_bring_back_a_turn_that_ended() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = CodexSharedState::new(dir.path().to_path_buf());
+        shared.ended_turns.lock().unwrap().insert("t".into(), "turn-1".into());
+        shared.turn_acknowledged("t", "turn-1");
+        assert!(!shared.active_turns.lock().unwrap().contains_key("t"));
+        shared.turn_acknowledged("t", "turn-2");
+        assert_eq!(shared.active_turns.lock().unwrap().get("t").map(String::as_str), Some("turn-2"));
+    }
 
     #[test]
     fn codex_response_shapes_match_generated_schema() {

@@ -16,7 +16,7 @@ use sotto_core::{
     read_phone_access_readonly, read_plugins_readonly, read_watcher_readonly, release_host_lock,
     remote_host_credential_slot, AcpAdapter, AcpAdapterConfig, AcpFlavor, CheckpointBlobPair,
     CheckpointManager, CheckpointThreadInfo, ClaudeAdapter, ClaudeAdapterConfig, ClientContext,
-    CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle,
+    CodexAdapter, CodexAdapterConfig, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, Observer,
     CouncilCommand, CouncilCommandContext, CouncilManager, CouncilModelInfo,
     CouncilOriginThreadInfo, CouncilThreadViewContext, DesktopHostRouter, DesktopHostsManager,
     HostConnectionPreference, HostLease, LocalAppsManager, LocalPluginsManager, MemoryStore,
@@ -50,8 +50,6 @@ struct EngineCliArgs {
     accelerator: bool,
 }
 
-/// The name the desktop window observes threads under.
-const DESKTOP_WINDOW_OBSERVER: &str = "desktop-window";
 
 fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
     let mut data_directory = std::env::var("SOTTO_ENGINE_DATA").ok().map(PathBuf::from);
@@ -404,7 +402,7 @@ async fn handle_rpc(
             // The desktop window's own panes. This engine hears nothing of the window's focus, so they count as shown,
             // as Node's host service counts the window while it has the focus (ADR-0046, ADR-0092).
             let observed = coordinator
-                .observe(DESKTOP_WINDOW_OBSERVER.into(), ids, true)
+                .observe(Observer::DesktopWindow, ids, true)
                 .await
                 .map_err(coord_err)?;
             let out: Vec<Value> = observed

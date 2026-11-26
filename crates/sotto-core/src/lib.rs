@@ -39,7 +39,7 @@ pub use cli_lookup::{
     augment_current_process_path, build_augmented_path, find_cli, resolve_provider_cli,
     resolve_tool_cli, CliLookupOptions, CliSpec, ResolvedCli, NATIVE_PROVIDER_IDS,
 };
-pub use coordinator::{ClientContext, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle};
+pub use coordinator::{ClientContext, CoordinatorBroadcast, CoordinatorError, CoordinatorHandle, Observer};
 pub use council::{
     active_panelists, add_round, advance_round, answered_letters, council_counts, counts_for_round,
     criteria_of, crux_runners, current_round, current_turn, draft_verdict, fairness_done,

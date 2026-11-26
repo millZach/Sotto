@@ -97,6 +97,21 @@ pub fn advertised_features() -> Vec<String> {
     ]
 }
 
+/// The threads an `observe-threads` command names, as Node's schema reads them: at most 100 thread IDs and nothing else.
+fn observed_thread_ids(command: &serde_json::Map<String, Value>) -> Option<Vec<String>> {
+    if command.keys().any(|key| key != "type" && key != "threadIds") {
+        return None;
+    }
+    let items = command.get("threadIds")?.as_array()?;
+    if items.len() > 100 {
+        return None;
+    }
+    items
+        .iter()
+        .map(|item| item.as_str().filter(|id| !id.is_empty() && id.chars().count() <= 512).map(ToString::to_string))
+        .collect()
+}
+
 /// Filters host-advertised features per authenticated client: `watcher-*` (non-phone) and
 /// `project-origins` are offered ONLY to authenticated paired desktops recorded in
 /// `desktop-clients.json` (ADR-0073, ADR-0082).
@@ -1351,7 +1366,7 @@ async fn handle_websocket_upgrade(
         }
     });
 
-    let mut wire = ClientWireState::observing(format!("socket:{}", uuid::Uuid::new_v4()));
+    let mut wire = ClientWireState::default();
     let mut watcher_peer = WatcherPeerState::default();
     let mut revoked_rx = state.revoked_tx.subscribe();
     let mut drop_rx = match mode {
@@ -1725,6 +1740,7 @@ async fn handle_ws_request(
                 .filter_map(Value::as_str)
                 .map(ToString::to_string)
                 .collect();
+            wire.hidden = !shown;
             let previously_observed = wire.observed.clone();
             wire.set_observed(&thread_ids);
 
@@ -1946,6 +1962,25 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            // A socket client's own `observe-threads` is what its connection observes, as an `observe` is, and goes with
+            // the connection (`src/host/socketServer.ts`).
+            if cmd.get("type").and_then(Value::as_str) == Some("observe-threads") {
+                let Some(thread_ids) = observed_thread_ids(cmd) else {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::InvalidRequest,
+                        HostErrorCode::InvalidRequest.default_message(),
+                    );
+                };
+                wire.set_observed(&thread_ids);
+                if let Err(err) = state.coordinator.observe(wire.observer.clone(), thread_ids, !wire.hidden).await {
+                    return HostResponseEnvelope::err(req.id, err.code, err.message);
+                }
+                return match state.coordinator.shell(may_answer).await {
+                    Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
+                    Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+                };
+            }
             let client = ClientContext {
                 client_id: client_id.to_string(),
                 user: client_name.to_string(),

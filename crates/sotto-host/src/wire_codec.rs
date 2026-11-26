@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde_json::{json, Map, Value};
 
 use sotto_core::{
-    diff_thread_detail, summarize_activity_for_wire, AgentThreadDetail, HOST_PROTOCOL_VERSION,
+    diff_thread_detail, summarize_activity_for_wire, AgentThreadDetail, Observer, HOST_PROTOCOL_VERSION,
 };
 
 const READ_AHEAD_LIMIT: usize = 64;
@@ -28,8 +28,12 @@ struct ReadAheadEntry {
 /// `detail-read-held`, and `activity-summaries`).
 #[derive(Default)]
 pub struct ClientWireState {
-    /// The name this connection observes threads under, so the host can tell which threads each client shows.
-    pub observer: String,
+    /// Who this connection observes threads as, its own from the start, so the host can tell which threads each client
+    /// shows.
+    pub observer: Observer,
+    /// Set by an `observe` with `shown: false`: a desktop behind another app, whose threads stay observed but none is
+    /// shown (ADR-0092). Kept until its next `observe`, so its own `observe-threads` shows nothing either, as on Node.
+    pub hidden: bool,
     pub hello_done: bool,
     pub accepts: HashSet<String>,
     pub observed: HashSet<String>,
@@ -59,11 +63,6 @@ impl ClientWireState {
 
     pub fn has(&self, feature: &str) -> bool {
         self.accepts.contains(feature)
-    }
-
-    /// A connection's state, observing under `observer`.
-    pub fn observing(observer: String) -> Self {
-        Self { observer, ..Self::default() }
     }
 
     pub fn set_observed(&mut self, thread_ids: &[String]) {

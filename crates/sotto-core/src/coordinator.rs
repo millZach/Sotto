@@ -111,6 +111,24 @@ struct QueuedThreadFollowup {
     client: ClientContext,
 }
 
+/// Who observes threads, so the host can tell which threads each client shows (ADR-0092).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Observer {
+    /// One socket connection, for as long as it lasts.
+    Connection(String),
+    /// A client's own `observe-threads` command, under its client ID.
+    Client(String),
+    /// The desktop window this engine runs for.
+    DesktopWindow,
+}
+
+impl Default for Observer {
+    /// A connection of its own, so no two connections ever share what they show.
+    fn default() -> Self {
+        Self::Connection(Uuid::new_v4().to_string())
+    }
+}
+
 /// The most threads one `observe-threads` may name, as Node's schema allows.
 const OBSERVED_THREADS_MAX: usize = 100;
 /// The most failures one Dismiss all may name, as Node's `AGENT_DISMISS_FAILURES_MAX`.
@@ -247,13 +265,13 @@ enum ActorMessage {
         reply: oneshot::Sender<(Vec<StoredThreadEvent>, bool, i64)>,
     },
     ObserveThreads {
-        observer: String,
+        observer: Observer,
         thread_ids: Vec<String>,
         shown: bool,
         reply: oneshot::Sender<Vec<(String, Option<AgentThreadDetail>)>>,
     },
     ForgetObserver {
-        observer: String,
+        observer: Observer,
     },
     StageImage {
         name: String,
@@ -493,7 +511,7 @@ impl CoordinatorHandle {
     /// window is behind another app: its threads stay observed but none is shown, which sees a failure (ADR-0092).
     pub async fn observe(
         &self,
-        observer: String,
+        observer: Observer,
         thread_ids: Vec<String>,
         shown: bool,
     ) -> Result<Vec<(String, Option<AgentThreadDetail>)>, CoordinatorError> {
@@ -756,7 +774,7 @@ impl CoordinatorHandle {
     }
 
     /// A client that went: it shows nothing now.
-    pub fn forget_observer(&self, observer: String) {
+    pub fn forget_observer(&self, observer: Observer) {
         let _ = self.tx.send(ActorMessage::ForgetObserver { observer });
     }
 
@@ -837,7 +855,7 @@ struct CoordinatorActor {
     thread_snoozes: ThreadSnoozes,
     failures_seen: FailuresSeen,
     /// Each client's shown threads, by the name it observes under.
-    observations: HashMap<String, Vec<String>>,
+    observations: HashMap<Observer, Vec<String>>,
     staged: StagedAttachments,
 
     shell_dirty: bool,
@@ -1059,6 +1077,11 @@ impl CoordinatorActor {
             }
         }
         self.rebuild_catalog();
+        // The saved marks and snoozes are read against the threads before any client is answered, as Node reads its
+        // first snapshot: a failed thread is named, and a mark or snooze that no longer holds goes.
+        if self.track_marks() {
+            self.save_workspace();
+        }
         for msg in deferred_messages {
             self.handle_actor_message(msg);
         }
@@ -3055,17 +3078,22 @@ impl CoordinatorActor {
     /// Reads every thread against the record of failures seen, then ends the snoozes of threads that now need the
     /// user, as Node's `acceptSnapshot` does; true when a saved mark or snooze moved.
     fn track_marks(&mut self) -> bool {
-        let statuses = &self.provider_statuses;
-        let connected = |thread: &AgentThread| thread_provider_connected(statuses, thread);
-        let view = ThreadsView { threads: &self.threads, projects: &self.projects, details: &self.details, connected: &connected };
-        let failures = self.failures_seen.track(&view);
+        let failures = self.with_failures_seen(|record, view| record.track(view));
         let seen = &self.failures_seen;
         let snoozes = self.thread_snoozes.track(&self.threads, &self.projects, |id| seen.has(id));
         failures || snoozes
     }
 
+    /// Runs `act` on the record of failures seen, with the threads as the host holds them now.
+    fn with_failures_seen<T>(&mut self, act: impl FnOnce(&mut FailuresSeen, &ThreadsView<'_>) -> T) -> T {
+        let statuses = &self.provider_statuses;
+        let connected = |thread: &AgentThread| thread_provider_connected(statuses, thread);
+        let view = ThreadsView { threads: &self.threads, projects: &self.projects, details: &self.details, connected: &connected };
+        act(&mut self.failures_seen, &view)
+    }
+
     /// What one client shows now, by the name it observes under; nothing once it observes nothing.
-    fn set_observation(&mut self, observer: String, thread_ids: &[String], shown: Option<Vec<String>>) {
+    fn set_observation(&mut self, observer: Observer, thread_ids: &[String], shown: Option<Vec<String>>) {
         if thread_ids.is_empty() {
             self.observations.remove(&observer);
         } else {
@@ -3078,10 +3106,7 @@ impl CoordinatorActor {
     /// that moved a mark, as Node's `showThreads`.
     fn show_threads(&mut self) {
         let shown: HashSet<String> = self.observations.values().flatten().cloned().collect();
-        let statuses = &self.provider_statuses;
-        let connected = |thread: &AgentThread| thread_provider_connected(statuses, thread);
-        let view = ThreadsView { threads: &self.threads, projects: &self.projects, details: &self.details, connected: &connected };
-        if self.failures_seen.show(shown, &view) {
+        if self.with_failures_seen(|record, view| record.show(shown, view)) {
             self.save_workspace();
             self.shell_dirty = true;
             self.flush_dirty();
@@ -3089,27 +3114,23 @@ impl CoordinatorActor {
     }
 
     /// A client's own `observe-threads`, as Node's host service takes it: its threads replace those it observed under
-    /// its ID, and `shownThreadIds` says which of them it shows where that is fewer.
+    /// its ID, and it shows them all. Only the socket server may say a client shows fewer, which no remote command can.
     fn cmd_observe_threads(&mut self, client: &ClientContext, command: &Map<String, Value>) -> Result<Option<String>, CoordinatorError> {
-        let ids = |key: &str| -> Result<Option<Vec<String>>, CoordinatorError> {
-            match command.get(key) {
-                None => Ok(None),
-                Some(Value::Array(items)) if items.len() <= OBSERVED_THREADS_MAX => items
-                    .iter()
-                    .map(|item| match item.as_str() {
-                        Some(id) if !id.is_empty() && id.chars().count() <= THREAD_ID_MAX => Ok(id.to_string()),
-                        _ => Err(CoordinatorError::invalid(format!("{key} must be thread IDs."))),
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(Some),
-                Some(_) => Err(CoordinatorError::invalid(format!("{key} must be thread IDs."))),
-            }
+        let refused = || CoordinatorError::invalid("threadIds must be thread IDs.");
+        let Some(Value::Array(items)) = command.get("threadIds") else {
+            return Err(refused());
         };
-        let Some(thread_ids) = ids("threadIds")? else {
-            return Err(CoordinatorError::invalid("threadIds must be thread IDs."));
-        };
-        let shown = ids("shownThreadIds")?.unwrap_or_else(|| thread_ids.clone());
-        self.set_observation(format!("command:{}", client.client_id), &thread_ids, Some(shown));
+        if items.len() > OBSERVED_THREADS_MAX {
+            return Err(refused());
+        }
+        let thread_ids = items
+            .iter()
+            .map(|item| match item.as_str() {
+                Some(id) if !id.is_empty() && id.chars().count() <= THREAD_ID_MAX => Ok(id.to_string()),
+                _ => Err(refused()),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.set_observation(Observer::Client(client.client_id.clone()), &thread_ids, Some(thread_ids.clone()));
         Ok(None)
     }
 
@@ -3136,10 +3157,7 @@ impl CoordinatorActor {
                 named.insert(thread_id.to_string(), failure.to_string());
             }
         }
-        let statuses = &self.provider_statuses;
-        let connected = |thread: &AgentThread| thread_provider_connected(statuses, thread);
-        let view = ThreadsView { threads: &self.threads, projects: &self.projects, details: &self.details, connected: &connected };
-        if self.failures_seen.dismiss(&named, &view) {
+        if self.with_failures_seen(|record, view| record.dismiss(&named, view)) {
             self.save_workspace();
         }
         Ok(None)
@@ -4383,9 +4401,9 @@ mod tests {
         assert!(thread.get("failureSeen").is_none());
         let failure = thread["failureId"].clone();
 
-        coord.observe("socket:behind".into(), vec![thread_id.clone()], false).await.unwrap();
+        coord.observe(Observer::Connection("behind".into()), vec![thread_id.clone()], false).await.unwrap();
         assert!(coord.shell(true).await.unwrap()["host"]["threads"][0].get("failureSeen").is_none(), "a window behind another app shows nothing");
-        coord.observe("socket:front".into(), vec![thread_id.clone()], true).await.unwrap();
+        coord.observe(Observer::Connection("front".into()), vec![thread_id.clone()], true).await.unwrap();
         let thread = coord.shell(true).await.unwrap()["host"]["threads"][0].clone();
         assert_eq!(thread["failureSeen"], true);
         assert_eq!(thread["failureId"], failure);
@@ -4393,7 +4411,7 @@ mod tests {
         // Seen, the failure no longer needs the user, so a snooze holds.
         let shell = coord.run_command(client.clone(), json!({ "type": "snooze-thread", "threadId": thread_id, "until": later }).as_object().unwrap().clone()).await.unwrap();
         assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], later);
-        coord.forget_observer("socket:front".into());
+        coord.forget_observer(Observer::Connection("front".into()));
         coord.shutdown().await;
 
         let agents: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();

@@ -7,8 +7,10 @@
 // `tests/fixtures/rustHostParityGaps.json`, and every listed difference must still be one, so the list only shrinks as the
 // Rust host gains handlers. #2876 is done when it is empty.
 //
-// An answer's kind is compared, not its contents: each command's own behaviour is its handler's own test. Both clients use
-// the loopback listener, where Node counts every client as a desktop; a phone over a tailnet listener is not compared here.
+// An answer's kind is compared, not its contents: each command's own behaviour is its handler's own test. What only the
+// socket server can show, across clients, is compared whole: which threads count as shown, which sees a failure (ADR-0092).
+// Both clients use the loopback listener, where Node counts every client as a desktop; a phone over a tailnet listener is
+// not compared here.
 // Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after a `cargo build`).
 // `SOTTO_UPDATE_RUST_PARITY_GAPS=1` takes closed gaps off the list; it never adds one, since a new gap is a regression.
 import { execFileSync } from 'node:child_process'
@@ -280,6 +282,58 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
     await compare(Object.entries(OPERATION_PROBES).filter(([op]) => op !== 'hello' && op !== 'command')
       .map(([op, probe]) => [op, (ids: ProbeIds) => probe(ids) as Record<string, unknown>] as const), found.operations)
   }, 600_000)
+
+  /** The thread as the host's state now shows it, read with a `shell` request. */
+  async function shownThread(client: Client, threadId: string): Promise<{ status?: string; failureId?: string; failureSeen?: boolean } | undefined> {
+    const answer = await request(client, { op: 'shell' })
+    const threads = (answer?.result as { host?: { threads?: { id: string; status?: string; failureId?: string; failureSeen?: boolean }[] } } | undefined)?.host?.threads
+    return threads?.find(thread => thread.id === threadId)
+  }
+
+  /** Sends a prompt the fake fails, and waits until the host names a failure other than `before`. */
+  async function failATurn(under: HostUnderTest, threadId: string, before: string | undefined): Promise<string> {
+    const sent = await request(under.clients.desktop, { op: 'command', command: { type: 'manual-send', threadId, text: 'Fail this turn', draftId: randomUUID() } })
+    expect(sent?.ok, `${under.label} took no prompt: ${JSON.stringify(sent?.error)}`).toBe(true)
+    const deadline = Date.now() + ANSWER_DEADLINE_MS
+    for (;;) {
+      const thread = await shownThread(under.clients.desktop, threadId)
+      if (thread?.status === 'error' && thread.failureId && thread.failureId !== before) return thread.failureId
+      expect(Date.now() < deadline, `${under.label} never named the failure: ${JSON.stringify(thread)}`).toBe(true)
+      await new Promise(resolveWait => setTimeout(resolveWait, 100))
+    }
+  }
+
+  /**
+   * Which threads count as shown, as the socket server decides it, step by step on both hosts: a failure no client shows
+   * is news; a desktop behind another app (`shown: false`) shows nothing it observes; a client's own `observe-threads` shows
+   * its threads; and once that client goes, it shows nothing, so the thread's next failure is news again.
+   */
+  it('sees a failure when a client shows its thread, as Node does', async () => {
+    const steps = async (under: HostUnderTest): Promise<Record<string, boolean>> => {
+      const { threadId } = await probeIds(under, randomUUID(), 'the probes')
+      const script = join(under.data, 'script.json')
+      const current = JSON.parse(await readFile(script, 'utf8').catch(() => '{}')) as Record<string, unknown>
+      await writeFile(script, JSON.stringify({ ...current, fail: true }))
+      const seen = async (): Promise<boolean> => (await shownThread(under.clients.desktop, threadId))?.failureSeen === true
+      const first = await failATurn(under, threadId, undefined)
+      const unshown = await seen()
+      await request(under.clients.desktop, { op: 'observe', threadIds: [threadId], shown: false })
+      const behind = await seen()
+      const viewer = await connect(under.host.port, under.data, `Parity viewer on ${under.label}`)
+      await hello(viewer.client, 'unrecorded')
+      await request(viewer.client, { op: 'command', command: { type: 'observe-threads', threadIds: [threadId] } })
+      const shown = await seen()
+      viewer.client.socket.close()
+      // The host hears the close in its own time: wait until a shell no longer shows the viewer's threads as shown.
+      await new Promise(resolveWait => setTimeout(resolveWait, 500))
+      await failATurn(under, threadId, first)
+      const afterGone = await seen()
+      return { unshown, behind, shown, afterGone }
+    }
+    const [onNode, onRust] = await Promise.all([steps(node), steps(rust)])
+    expect(onNode).toEqual({ unshown: false, behind: false, shown: true, afterGone: false })
+    expect(onRust).toEqual(onNode)
+  }, 120_000)
 
   it('differs from Node only where the gap list says, and in every place it says', async () => {
     const sorted = <T>(record: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))

@@ -51,3 +51,46 @@ impl<'a> SettledIn<'a> {
         has_time(thread.workspace_settled_at.as_deref()) || self.projects.contains(thread.project_id.as_str()) || is_closed(thread)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn thread(fields: Value) -> AgentThread {
+        let mut value = json!({ "id": "t", "projectId": "p", "title": "T", "status": "idle" });
+        value.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn closed_follows_node_archived_and_settled_rules() {
+        assert!(!is_closed(&thread(json!({}))));
+        assert!(is_closed(&thread(json!({ "archivedAt": "2026-11-25T10:00:00.000Z" }))));
+        assert!(!is_closed(&thread(json!({ "archivedAt": "not a time" }))));
+        assert!(is_closed(&thread(json!({ "settledAt": "2026-11-25T10:00:00.000Z" }))));
+        assert!(!is_closed(&thread(json!({ "settledAt": "2026-11-25T10:00:00.000Z", "settledOverride": "active" }))));
+        assert!(is_closed(&thread(json!({ "settledOverride": "settled" }))));
+    }
+
+    #[test]
+    fn a_failure_without_a_request_is_an_open_thread_in_error_asking_nothing() {
+        assert!(failed_without_request(&thread(json!({ "status": "error" }))));
+        assert!(!failed_without_request(&thread(json!({ "status": "error", "requests": [{ "id": "r" }] }))));
+        assert!(!failed_without_request(&thread(json!({ "status": "error", "archivedAt": "2026-11-25T10:00:00.000Z" }))));
+        assert!(!failed_without_request(&thread(json!({ "status": "idle" }))));
+    }
+
+    #[test]
+    fn settled_reads_the_thread_its_project_and_closed() {
+        let projects: Vec<AgentProject> = vec![
+            serde_json::from_value(json!({ "id": "p", "title": "P", "path": "/p", "workspaceSettledAt": "2026-11-25T10:00:00.000Z" })).unwrap(),
+            serde_json::from_value(json!({ "id": "q", "title": "Q", "path": "/q" })).unwrap(),
+        ];
+        let settled = SettledIn::new(&projects);
+        assert!(settled.settled(&thread(json!({}))), "its project is settled");
+        assert!(!settled.settled(&thread(json!({ "projectId": "q" }))));
+        assert!(settled.settled(&thread(json!({ "projectId": "q", "workspaceSettledAt": "2026-11-25T10:00:00.000Z" }))));
+        assert!(settled.settled(&thread(json!({ "projectId": "q", "archivedAt": "2026-11-25T10:00:00.000Z" }))));
+    }
+}
