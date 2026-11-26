@@ -23,6 +23,21 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error("Corrupt JSON in SQLite store: {0}")]
     Json(#[from] serde_json::Error),
+    /// Work that committed but did not finish, such as a scrub whose checkpoint found the log busy.
+    #[error("{0}")]
+    Unfinished(&'static str),
+}
+
+/// Runs `work` with its commits flushed to the disk (`synchronous=FULL`), then puts the connection back to the setting
+/// every save uses, as Node's `flushedCommits` (`src/main/storage/sqliteDurability.ts`). The work's own failure is the
+/// one reported.
+fn flushed_commits<T>(conn: &Connection, work: impl FnOnce() -> Result<T, StoreError>) -> Result<T, StoreError> {
+    conn.execute_batch("PRAGMA synchronous = FULL;")?;
+    let result = work();
+    let restored = conn.execute_batch("PRAGMA synchronous = NORMAL;");
+    let value = result?;
+    restored?;
+    Ok(value)
 }
 
 /// Opens a SQLite database with the exact pragmas required for parity with Node's `node:sqlite`
@@ -468,6 +483,68 @@ impl ThreadStore {
                 Err(err)
             }
         }
+    }
+
+    /// Drops deleted threads' projection and takes the words out of their log, leaving only that it happened, as Node's
+    /// `ThreadStore.forgetMany` does for clearing (ADR-0140): one transaction whose commit waits for the disk, the
+    /// identities of their activities remembered as erased, then one scrub, however many threads go.
+    pub fn forget_many(&self, thread_ids: &[String]) -> Result<(), StoreError> {
+        let mut ids: Vec<&str> = Vec::new();
+        for id in thread_ids {
+            if !ids.contains(&id.as_str()) {
+                ids.push(id);
+            }
+        }
+        if ids.is_empty() {
+            return Ok(());
+        }
+        flushed_commits(&self.conn, || {
+            let mut hashes = Vec::new();
+            for id in &ids {
+                let mut stmt = self.conn.prepare("SELECT thread_id, activity_id FROM activities WHERE thread_id = ?1")?;
+                let rows = stmt.query_map([id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+                for row in rows {
+                    let (thread, activity) = row?;
+                    hashes.push(crate::thread_clearing::activity_identity_hash(&thread, &activity));
+                }
+            }
+            self.conn.execute_batch("BEGIN IMMEDIATE;")?;
+            let erased = (|| -> Result<(), StoreError> {
+                for id in &ids {
+                    for table in ["messages", "activities", "activity_epochs", "visuals", "wake_ups"] {
+                        self.conn.execute(&format!("DELETE FROM {table} WHERE thread_id = ?1"), [id])?;
+                    }
+                    let mut stmt = self.conn.prepare("SELECT seq, payload FROM events WHERE thread_id = ?1")?;
+                    let events: Vec<(i64, String)> = stmt
+                        .query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                        .collect::<Result<_, _>>()?;
+                    for (seq, payload) in events {
+                        if let Some(redacted) = crate::thread_clearing::redacted_payload(&payload) {
+                            self.conn.execute("UPDATE events SET payload = ?1 WHERE seq = ?2", rusqlite::params![redacted, seq])?;
+                        }
+                    }
+                }
+                for hash in &hashes {
+                    self.conn.execute("INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?1)", [hash])?;
+                }
+                Ok(())
+            })();
+            match erased {
+                Ok(()) => self.conn.execute_batch("COMMIT;")?,
+                Err(err) => {
+                    let _ = self.conn.execute_batch("ROLLBACK;");
+                    return Err(err);
+                }
+            }
+            // Redaction is not finished while the words are still in a freed page or in the write-ahead log: a checkpoint
+            // that found the log busy folded none of it, so the forget has not finished and is a failure.
+            let busy: i64 = self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))?;
+            if busy != 0 {
+                return Err(StoreError::Unfinished("The history log could not be cleared"));
+            }
+            self.conn.execute_batch("VACUUM;")?;
+            Ok(())
+        })
     }
 
     pub fn read_messages(&self, thread_id: &str) -> Result<Vec<StoredMessage>, StoreError> {
@@ -1125,6 +1202,54 @@ impl SubagentStore {
             |r| r.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Deleted threads' rosters go whole (ADR-0140), as Node's `SubagentStore.forgetMany`: their rows, tasks, results
+    /// and classifications, in one transaction whose commit waits for the disk, then one scrub. Their identities are
+    /// remembered as erased, as turning history off does.
+    pub fn forget_many(&self, thread_ids: &[String]) -> Result<(), StoreError> {
+        let mut ids: Vec<&str> = Vec::new();
+        for id in thread_ids {
+            if !ids.contains(&id.as_str()) {
+                ids.push(id);
+            }
+        }
+        if ids.is_empty() {
+            return Ok(());
+        }
+        flushed_commits(&self.conn, || {
+            self.conn.execute_batch("BEGIN IMMEDIATE;")?;
+            let erased = (|| -> Result<(), StoreError> {
+                for id in &ids {
+                    let mut stmt = self.conn.prepare("SELECT agent_id, assignment_id FROM subagent_assignments WHERE thread_id = ?1")?;
+                    let assignments: Vec<(String, String)> = stmt
+                        .query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                        .collect::<Result<_, _>>()?;
+                    for (agent, assignment) in assignments {
+                        for identity in [
+                            crate::thread_clearing::subagent_identity(id, &agent, Some(&assignment)),
+                            crate::thread_clearing::subagent_identity(id, &agent, None),
+                        ] {
+                            self.conn.execute("INSERT OR IGNORE INTO subagent_redactions (identity) VALUES (?1)", [identity])?;
+                        }
+                    }
+                    for table in ["subagent_assignments", "subagent_classifications", "subagent_rows", "subagent_threads"] {
+                        self.conn.execute(&format!("DELETE FROM {table} WHERE thread_id = ?1"), [id])?;
+                    }
+                }
+                Ok(())
+            })();
+            match erased {
+                Ok(()) => self.conn.execute_batch("COMMIT;")?,
+                Err(err) => {
+                    let _ = self.conn.execute_batch("ROLLBACK;");
+                    return Err(err);
+                }
+            }
+            Ok(())
+        })?;
+        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
     }
 }
 

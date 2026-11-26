@@ -45,7 +45,6 @@
         "step-window",
         "thread-coordination-relay",
         "thread-coordination-views",
-        "thread-delete",
         "thread-move",
         "thread-move-keep",
         "thread-move-source",
@@ -83,7 +82,6 @@
         "settle-worktree-cleanup",
         "settled-threads-on-request",
         "step-window",
-        "thread-delete",
         "thread-starts",
         "usable-models",
         "usage-background-refresh",
@@ -144,10 +142,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "delete-thread": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "dismiss-client-updates": {
       "node": "ok",
       "rust": "invalid_request"
@@ -189,10 +183,6 @@
       "rust": "invalid_request"
     },
     "git-unlink-pull-request": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "preview-delete-thread": {
       "node": "ok",
       "rust": "invalid_request"
     },

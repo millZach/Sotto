@@ -200,6 +200,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
     expect(Array.isArray(health.features)).toBe(true)
     expect(health.features).toContain('answer-receipts')
     expect(health.features).toContain('answer-check')
+    expect(health.features).toContain('thread-delete')
     expect(health.features).not.toContain('provider-deepseek')
     expect(health.adminToken).toBeUndefined()
 

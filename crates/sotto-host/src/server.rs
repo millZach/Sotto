@@ -122,6 +122,10 @@ pub fn advertised_features() -> Vec<String> {
         // offers them to every client.
         "answer-receipts".into(),
         "answer-check".into(),
+        // Deleting a settled thread (ADR-0140), where Node's host offers it: its Owl answer `clear-threads` has gone to
+        // stable, so it is on in every build, and both of this host's listeners serve desktops. It is not one of
+        // `HOST_DESKTOP_FEATURES`, so every client on them is offered it, as Node offers it.
+        "thread-delete".into(),
     ]
 }
 
@@ -814,6 +818,10 @@ impl RunningServer {
         if let Ok(initial_shell) = coordinator.shell(false).await {
             let _ = watcher.observe_shell(&initial_shell);
         }
+        // A thread Watcher watches is kept back from deleting (ADR-0140 decision 3), as Node's coordinator asks its
+        // Watcher hooks. The coordinator holds the service weakly, so neither keeps the other alive.
+        let watching = Arc::downgrade(&watcher);
+        coordinator.set_watched_threads(Arc::new(move || watching.upgrade().map(|watcher| watcher.watched_local_thread_ids()).unwrap_or_default()));
 
         let listener = TcpListener::bind(("127.0.0.1", config.port)).await?;
         let bound_port = listener.local_addr()?.port();
@@ -2484,7 +2492,13 @@ async fn handle_ws_request(
                 may_answer,
             };
             let kind = cmd.get("type").and_then(Value::as_str).unwrap_or_default();
-            if !keeps_receipt(kind) {
+            // Deleting a thread is only for a listener that offers `thread-delete` (ADR-0140), as Node's
+            // `remoteCommandRefusal` refuses it before it reads the command's fields or the client's answer policy.
+            if matches!(kind, "delete-thread" | "preview-delete-thread") && !offered_features(state, mode, client_id).iter().any(|f| f == "thread-delete") {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+            }
+            // A preview keeps no receipt: Node's socket server answers it before it keeps one, with its own outcome.
+            if !keeps_receipt(kind) || kind == "preview-delete-thread" {
                 return match state.coordinator.run_command(client, cmd.clone()).await {
                     Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
                     Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
