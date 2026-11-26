@@ -1,15 +1,16 @@
 // @vitest-environment node
 // Node -> Rust -> Node for every store other than the thread stores that both a Rust host and Node write (ADR-0214):
-// Councils, checkpoints, plugins, pairing, phone access, Watcher and attachments. Each store as Node writes it is
-// checked with Node's own parser, loaded and saved by the Rust host's own code, and read again here, which must change
-// nothing Node reads. Each store a Rust host creates records in is also read here, which Node must accept. Each store
-// gets its own folder and its own Rust test. Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and locally after
-// a `cargo build`).
+// Councils, checkpoints, plugins, pairing, phone access, Watcher, attachments and their previews. Each store as Node
+// writes it is checked with Node's own parser, loaded and saved by the Rust host's own code, and read again here, which
+// must change nothing Node reads. Each store a Rust host creates records in is also read here, which Node must accept.
+// Each store gets its own folder and its own Rust test. Runs when `SOTTO_TEST_RUST_HOST=1` (the Rust host CI job, and
+// locally after a `cargo build`).
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { AttachmentPreviews } from '../../src/main/agents/attachmentPreviews'
 import { AttachmentStore } from '../../src/main/agents/attachmentStore'
 import { parseFollowupStore } from '../../src/main/agents/followups'
 import { parseLimitRestartFile } from '../../src/main/agents/limitRestart'
@@ -29,6 +30,7 @@ import { parsePluginUses } from '../../src/main/plugins/useRecord'
 import { parseCheckpointStorage } from '../../src/main/tools/checkpointStore'
 import { parseSoundRecords } from '../../src/main/tools/elevenlabs/records'
 import { parseModelRecords } from '../../src/main/tools/meshy/records'
+import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { KEEP_WATCHING, SETTLE_IT } from '../../src/shared/watcherQuestions'
 import { runRustStoreTest } from './rustHostNodeStores'
 
@@ -286,5 +288,49 @@ describe.skipIf(!RUN_RUST_HOST)('shared stores across a Rust host and a rollback
     const store = await loaded(dir)
     expect(store.kept()).toHaveLength(3)
     await expectKept(store, [['image/png', PNG], ['text/plain', Buffer.from('Rust staged these notes\n')], ['video/mp4', Buffer.from('Rust staged this video')]])
+  }, 600_000)
+
+  // Attachment previews: what each sent message carried, read back with Node's own `AttachmentPreviews`, which finds a
+  // picture by `preview` and a file by `filePart` through the message that sent them.
+  const previewsOf = async (dir: string) => {
+    const store = await loaded(dir)
+    const previews = new AttachmentPreviews(dir, store, () => true)
+    await previews.load()
+    return previews
+  }
+  /** The state Node's preview store finds a sent message in: the thread, and the user message with its command. */
+  const sentIn = (threadId: string, messageId: string, commandId: string) =>
+    ({ threads: [{ id: threadId, messages: [{ id: messageId, role: 'user', commandId }] }] }) as unknown as AgentHostSnapshot
+  const expectSent = async (dir: string, ids: { threadId: string; messageId: string; commandId: string; picture: string; file: string }, notes: Buffer) => {
+    const previews = await previewsOf(dir), state = sentIn(ids.threadId, ids.messageId, ids.commandId)
+    expect(await previews.preview(state, ids.threadId, ids.messageId, ids.picture)).toBe(`data:image/png;base64,${PNG.toString('base64')}`)
+    const part = await previews.filePart(state, { threadId: ids.threadId, messageId: ids.messageId, attachmentId: ids.file, part: 0 })
+    expect(part && Buffer.from(part.data, 'base64')).toEqual(notes)
+  }
+
+  it('attachment-previews.json reads in Node after a Rust load and save exactly as before', async () => {
+    const dir = await folder()
+    const notes = Buffer.from('Node’s sent notes\n')
+    const store = await loaded(dir)
+    const picture = await store.stage({ name: 'dot.png', mimeType: 'image/png', bytes: PNG })
+    const file = await store.stage({ name: 'notes.txt', mimeType: 'text/plain', bytes: notes })
+    const previews = new AttachmentPreviews(dir, store, () => true)
+    await previews.load()
+    await previews.remember('thread-1', 'message-1', 'command-1', [picture, file])
+    const before = await read(dir, 'attachment-previews.json')
+    // The Rust test finds each attachment the entry names and reads it, before it saves.
+    runRust('attachment_previews::tests::node_attachment_previews_survive_a_rust_load_and_save', dir)
+    expect(await read(dir, 'attachment-previews.json')).toEqual(before)
+    await expectSent(dir, { threadId: 'thread-1', messageId: 'message-1', commandId: 'command-1', picture: picture.id, file: file.id }, notes)
+  }, 600_000)
+
+  it('a message a Rust host sent shows its picture and opens its file in Node', async () => {
+    const dir = await folder()
+    runRust('attachment_previews::tests::rust_created_attachment_previews_reads_in_node', dir)
+    const written = await read(dir, 'attachment-previews.json') as { entries: { attachments: { id: string; mimeType: string }[] }[] }
+    const [picture, file] = written.entries[0]!.attachments
+    expect([picture?.mimeType, file?.mimeType]).toEqual(['image/png', 'text/plain'])
+    await expectSent(dir, { threadId: 'rust-thread', messageId: 'rust-message', commandId: 'rust-command', picture: picture!.id, file: file!.id },
+      Buffer.from('Notes a Rust host sent\n'))
   }, 600_000)
 })

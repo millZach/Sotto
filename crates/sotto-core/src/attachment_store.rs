@@ -93,7 +93,7 @@ pub fn is_mime_type(text: &str) -> bool {
 }
 
 /// Whether an image's first bytes are of its type, as Node's `bytesHaveRasterSignature`.
-fn has_raster_signature(mime_type: &str, bytes: &[u8]) -> bool {
+pub(crate) fn has_raster_signature(mime_type: &str, bytes: &[u8]) -> bool {
     match mime_type {
         "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
         "image/jpeg" => bytes.starts_with(b"\xff\xd8\xff"),

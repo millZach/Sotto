@@ -1,5 +1,6 @@
 pub mod activity_bodies;
 pub mod attachment_files;
+pub mod attachment_previews;
 pub mod attachment_store;
 pub mod checkpoints;
 pub mod cli_lookup;

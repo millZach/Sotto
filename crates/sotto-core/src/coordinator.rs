@@ -17,7 +17,8 @@ use crate::provider::{
     AnswerRequestInput, HeldProviderAdapter, ProviderAdapter, ProviderEvent, SendMessageAck,
     SendMessageRequest, ThreadRecordSeed,
 };
-use crate::attachment_files::{sent_file, SentFile};
+use crate::attachment_files::SentFile;
+use crate::attachment_previews::{AttachmentPreviews, Wanted};
 use crate::attachment_store::AttachmentError;
 use crate::file_uploads::Received;
 use crate::remote_commands::validate_remote_command;
@@ -558,6 +559,7 @@ enum ActorMessage {
         thread_id: String,
         message_id: String,
         attachment_id: String,
+        wanted: Wanted,
         reply: oneshot::Sender<Option<(SentFile, Option<PathBuf>)>>,
     },
     RunCommand {
@@ -863,17 +865,19 @@ impl CoordinatorHandle {
         let _ = self.tx.send(ActorMessage::ForgetUnreadable { digest });
     }
 
-    /// The file `attachment_id` names among the attachments of user message `message_id`, in a thread this host holds,
-    /// when a client may read it (`attachment_files::sent_file`), with where the store keeps its content, if it does.
+    /// The picture or file `attachment_id` names among the attachments user message `message_id` was sent with, in a
+    /// thread this host holds, as the preview store's entry for that message names it (`AttachmentPreviews::sent`), with
+    /// where the attachment store keeps its content, if it does.
     pub async fn sent_file(
         &self,
         thread_id: String,
         message_id: String,
         attachment_id: String,
+        wanted: Wanted,
     ) -> Result<Option<(SentFile, Option<PathBuf>)>, CoordinatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
-            .send(ActorMessage::GetSentFile { thread_id, message_id, attachment_id, reply: reply_tx })
+            .send(ActorMessage::GetSentFile { thread_id, message_id, attachment_id, wanted, reply: reply_tx })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
         reply_rx
             .await
@@ -1161,6 +1165,7 @@ struct CoordinatorActor {
     /// Each client's shown threads, by the name it observes under.
     observations: HashMap<Observer, Vec<String>>,
     staged: StagedAttachments,
+    previews: AttachmentPreviews,
 
     shell_dirty: bool,
     dirty_details: HashSet<String>,
@@ -1198,9 +1203,13 @@ impl CoordinatorActor {
             eprintln!("[Sotto] followups-unreadable");
         }
 
+        // What each sent message carried, in Node's `attachment-previews.json`, whose markers each message read is given.
+        let previews = AttachmentPreviews::new(&data_directory);
+        let loaded_at = crate::workspace::now_ms() as f64;
         let mut details = HashMap::new();
         for thread in &persisted.threads {
-            let messages = thread_store.read_messages(&thread.id).unwrap_or_default();
+            let mut messages = thread_store.read_messages(&thread.id).unwrap_or_default();
+            previews.decorate(&thread.id, &mut messages, loaded_at);
             let activities = thread_store
                 .read_activities(&thread.id)
                 .unwrap_or_default()
@@ -1295,6 +1304,7 @@ impl CoordinatorActor {
             failures_seen,
             observations: HashMap::new(),
             staged,
+            previews,
             shell_dirty: false,
             dirty_details: HashSet::new(),
         }
@@ -1458,7 +1468,8 @@ impl CoordinatorActor {
             }
             ActorMessage::GetDetail { thread_id, reply } => {
                 let detail = self.details.get(&thread_id).cloned().or_else(|| {
-                    let messages = self.thread_store.read_messages(&thread_id).unwrap_or_default();
+                    let mut messages = self.thread_store.read_messages(&thread_id).unwrap_or_default();
+                    self.previews.decorate(&thread_id, &mut messages, crate::workspace::now_ms() as f64);
                     let activities: Vec<Value> = self
                         .thread_store
                         .read_activities(&thread_id)
@@ -1588,7 +1599,7 @@ impl CoordinatorActor {
                 };
                 let _ = reply.send(res);
             }
-            ActorMessage::GetSentFile { thread_id, message_id, attachment_id, reply } => {
+            ActorMessage::GetSentFile { thread_id, message_id, attachment_id, wanted, reply } => {
                 // Of a thread this host holds, as Node finds a message in the state it publishes.
                 let message = if !self.threads.iter().any(|thread| thread.id == thread_id) {
                     None
@@ -1601,9 +1612,9 @@ impl CoordinatorActor {
                 } else {
                     self.thread_store.read_message_by_id(&thread_id, &message_id).ok().flatten()
                 };
-                let now_ms = crate::workspace::now_ms() as i64;
+                let now = crate::workspace::now_ms() as f64;
                 let found = message
-                    .and_then(|message| sent_file(&message, &attachment_id, now_ms))
+                    .and_then(|message| self.previews.sent(&thread_id, &message, &attachment_id, wanted, now))
                     .map(|file| {
                         let path = self.staged.content_path(&file.digest);
                         (file, path)
@@ -1649,7 +1660,11 @@ impl CoordinatorActor {
                     .read_forward_messages(&thread_id, after_position, limit)
                     .ok();
                 let (messages, earlier_available, has_more) = match page {
-                    Some(p) if !p.messages.is_empty() || after_position.is_some() => {
+                    Some(mut p) if !p.messages.is_empty() || after_position.is_some() => {
+                        let now = crate::workspace::now_ms() as f64;
+                        for (message, _) in p.messages.iter_mut() {
+                            self.previews.decorate_one(&thread_id, message, now);
+                        }
                         (p.messages, p.earlier_available, p.has_more)
                     }
                     _ => {
@@ -2865,7 +2880,7 @@ impl CoordinatorActor {
                     flushed_id
                 } else {
                     let stored_attachments = encode_stored_attachments(&attachments);
-                    let user_message = StoredMessage {
+                    let mut user_message = StoredMessage {
                         id: ack.message_id.clone(),
                         role: "user".into(),
                         text,
@@ -2877,6 +2892,7 @@ impl CoordinatorActor {
                         watcher_observed_changes: None,
                         provider_error: None,
                     };
+                    self.record_sent(&thread_id, &mut user_message, &attachments);
 
                     let _ = self.thread_store.append_event(
                         &thread_id,
@@ -4379,14 +4395,28 @@ impl CoordinatorActor {
         }
     }
 
+    /// Records what a user message was sent with in Node's preview store, so its pictures show and its files open on
+    /// either host program, and gives it the markers Node's `decorate` would. A failed write costs only the markers: the
+    /// message was already sent.
+    fn record_sent(&mut self, thread_id: &str, message: &mut StoredMessage, attachments: &[StagedAttachmentEntry]) {
+        if attachments.is_empty() {
+            return;
+        }
+        let handles: Vec<StagedAttachmentHandle> = attachments.iter().map(|attachment| attachment.handle.clone()).collect();
+        let command = message.command_id.clone().unwrap_or_default();
+        let now = crate::workspace::now_ms() as f64;
+        let _ = self.previews.remember(thread_id, &message.id, &command, &handles, now);
+        self.previews.decorate_one(thread_id, message, now);
+    }
+
     fn flush_in_flight_user_message(&mut self, thread_id: &str) -> Option<String> {
-        let user_message = {
+        let (mut user_message, attachments) = {
             let in_flight = self.in_flight_sends.get_mut(thread_id)?;
             if in_flight.flushed {
                 return Some(in_flight.message_id.clone());
             }
             in_flight.flushed = true;
-            StoredMessage {
+            let message = StoredMessage {
                 id: in_flight.message_id.clone(),
                 role: "user".into(),
                 text: in_flight.text.clone(),
@@ -4397,8 +4427,10 @@ impl CoordinatorActor {
                 watcher_own_change: None,
                 watcher_observed_changes: None,
                 provider_error: None,
-            }
+            };
+            (message, in_flight.attachments.clone())
         };
+        self.record_sent(thread_id, &mut user_message, &attachments);
         let message_id = user_message.id.clone();
         let _ = self.thread_store.append_event(
             thread_id,
@@ -5096,8 +5128,9 @@ mod tests {
     use std::sync::Mutex;
     use tempfile::tempdir;
 
-    /// A file staged here and sent with a message is what that message names and nothing else: its part reads back, and
-    /// another attachment ID, another message, a thread the host does not hold or an image name no file.
+    /// A file staged here and sent with a message is what that message names and nothing else: the send is recorded in
+    /// Node's preview store, the message carries Node's markers, its part and its picture read back, and another
+    /// attachment ID, another message, a thread the host does not hold, or a picture asked for as a file name nothing.
     #[tokio::test]
     async fn a_sent_file_is_found_by_the_message_that_carried_it() {
         let dir = tempdir().unwrap();
@@ -5124,19 +5157,29 @@ mod tests {
         run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Here are the notes",
             "attachments": [serde_json::to_value(&file).unwrap(), serde_json::to_value(&image).unwrap()] })).await;
         let detail = coord.detail(thread_id.into()).await.unwrap().unwrap();
-        let sent = detail.messages.iter().find(|message| message.role == "user").unwrap().id.clone();
+        let message = detail.messages.iter().find(|message| message.role == "user").unwrap();
+        let sent = message.id.clone();
+        assert_eq!(message.attachments, Some(json!([
+            { "id": file.id, "name": "notes.txt", "mimeType": "text/plain", "sizeBytes": notes.len() },
+            { "id": image.id, "name": "dot.png", "mimeType": "image/png", "sizeBytes": image.size_bytes, "preview": { "available": true } },
+        ])));
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("attachment-previews.json")).unwrap()).unwrap();
+        assert_eq!((saved["entries"][0]["threadId"].as_str(), saved["entries"][0]["messageId"].as_str()), (Some(thread_id), Some(sent.as_str())));
 
-        let (found, path) = coord.sent_file(thread_id.into(), sent.clone(), file.id.clone()).await.unwrap().unwrap();
+        let (found, path) = coord.sent_file(thread_id.into(), sent.clone(), file.id.clone(), Wanted::File).await.unwrap().unwrap();
         assert_eq!((found.name.as_str(), found.digest.as_str()), ("notes.txt", file.digest.as_str()));
-        let crate::attachment_files::FilePartRead::Part(answer) = crate::attachment_files::read_part(path.as_deref(), &found, 0).unwrap() else {
+        let crate::attachment_files::SentRead::Answer(answer) = crate::attachment_files::read_part(path.as_deref(), &found, 0).unwrap() else {
             panic!("the sent file's part reads");
         };
         use base64::Engine;
         assert_eq!(base64::engine::general_purpose::STANDARD.decode(answer["data"].as_str().unwrap()).unwrap(), notes);
-        assert!(coord.sent_file(thread_id.into(), sent.clone(), image.id.clone()).await.unwrap().is_none(), "an image is preview's");
-        assert!(coord.sent_file(thread_id.into(), sent.clone(), "another".into()).await.unwrap().is_none());
-        assert!(coord.sent_file(thread_id.into(), "another".into(), file.id.clone()).await.unwrap().is_none());
-        assert!(coord.sent_file("00000000-0000-4000-8000-00000000000c".into(), sent, file.id).await.unwrap().is_none());
+        let (picture, path) = coord.sent_file(thread_id.into(), sent.clone(), image.id.clone(), Wanted::Picture).await.unwrap().unwrap();
+        let read = crate::attachment_previews::read_preview(path.as_deref(), &picture).unwrap();
+        assert!(matches!(read, crate::attachment_files::SentRead::Answer(answer) if answer["dataUrl"].as_str().unwrap().starts_with("data:image/png;base64,")));
+        assert!(coord.sent_file(thread_id.into(), sent.clone(), image.id.clone(), Wanted::File).await.unwrap().is_none(), "an image is preview's");
+        assert!(coord.sent_file(thread_id.into(), sent.clone(), "another".into(), Wanted::File).await.unwrap().is_none());
+        assert!(coord.sent_file(thread_id.into(), "another".into(), file.id.clone(), Wanted::File).await.unwrap().is_none());
+        assert!(coord.sent_file("00000000-0000-4000-8000-00000000000c".into(), sent, file.id, Wanted::File).await.unwrap().is_none());
     }
 
     #[tokio::test]
