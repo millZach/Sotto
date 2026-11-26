@@ -244,8 +244,11 @@ pub struct MockProviderAdapter {
     events_tx: Arc<Mutex<Option<mpsc::UnboundedSender<ProviderEvent>>>>,
     active_turns: Arc<Mutex<std::collections::HashMap<String, String>>>,
     /// The next thread read, held until a test answers it.
-    held_read: Arc<Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<ThreadRequestsRead>)>>>,
+    held_read: Arc<Mutex<Option<HeldReadEnds>>>,
 }
+
+/// The adapter's ends of a held read: it tells the test the read began, and waits for what the read returns.
+type HeldReadEnds = (oneshot::Sender<()>, oneshot::Receiver<ThreadRequestsRead>);
 
 /// What a provider's read of a thread's waiting requests returns.
 pub type ThreadRequestsRead = Result<Option<Vec<Value>>, String>;
