@@ -596,30 +596,7 @@ mod tests {
 
         // Send masked client `hello` frame
         let mut ws_stream = ws_reader.into_inner();
-        let hello = r#"{"v":1,"id":"req-1","op":"hello"}"#;
-        let mask = [0x12u8, 0x34, 0x56, 0x78];
-        let mut frame = vec![0x81, 0x80 | (hello.len() as u8)];
-        frame.extend_from_slice(&mask);
-        for (idx, b) in hello.as_bytes().iter().enumerate() {
-            frame.push(b ^ mask[idx & 3]);
-        }
-        ws_stream.write_all(&frame).await.unwrap();
-        ws_stream.flush().await.unwrap();
-
-        let mut hdr = [0u8; 2];
-        ws_stream.read_exact(&mut hdr).await.unwrap();
-        assert_eq!(hdr[0] & 0x0f, 0x1);
-        let len_b = hdr[1] & 0x7f;
-        let len = if len_b == 126 {
-            let mut ext = [0u8; 2];
-            ws_stream.read_exact(&mut ext).await.unwrap();
-            u16::from_be_bytes(ext) as usize
-        } else {
-            len_b as usize
-        };
-        let mut resp_payload = vec![0u8; len];
-        ws_stream.read_exact(&mut resp_payload).await.unwrap();
-        let parsed: serde_json::Value = serde_json::from_slice(&resp_payload).unwrap();
+        let parsed = ws_reply(&mut ws_stream, r#"{"v":1,"id":"req-1","op":"hello"}"#, "req-1").await;
         assert_eq!(parsed["ok"], true);
         assert_eq!(parsed["id"], "req-1");
         assert_eq!(parsed["result"]["hostId"], host_id);
