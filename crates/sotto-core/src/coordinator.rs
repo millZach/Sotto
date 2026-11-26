@@ -3787,11 +3787,24 @@ impl CoordinatorActor {
 
     /// Whether something is queued or on its way for a thread, or an action of its has an unknown result, as Node's
     /// clearing asks `hasPendingThreadWork` and its outbox: a prompt in its queue other than a wake-up still waiting, a
-    /// delivery not yet confirmed, or a send on its way.
+    /// delivery not yet confirmed, or a send on its way. After a switch from Node, its own outbox and deliveries are in
+    /// the agents.json records this host carries as they were, and count as Node counts them: any outbox item of the
+    /// thread's, and any delivery the user has not released (`setAside` with `updatesResumed`) that is unconfirmed,
+    /// queued or submitting, or set aside with its updates still held.
     fn pending_thread_work(&self, thread_id: &str) -> bool {
+        let named = |item: &Value| item.get("threadId").and_then(Value::as_str) == Some(thread_id);
+        let flag = |item: &Value, key: &str| item.get(key) == Some(&Value::Bool(true));
+        let node_list = |key: &str| self.agents_json_extra.get(key).and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
+        let node_delivery_pending = |item: &Value| {
+            let released = flag(item, "setAside") && flag(item, "updatesResumed");
+            let held = flag(item, "setAside") && !flag(item, "updatesResumed");
+            !released && (matches!(item.get("status").and_then(Value::as_str), Some("uncertain" | "queued" | "submitting")) || held)
+        };
         self.followups.holds_prompts(thread_id)
             || self.deliveries.iter().any(|d| d.thread_id == thread_id && matches!(d.status.as_str(), "uncertain" | "queued" | "submitting"))
             || self.in_flight_sends.contains_key(thread_id)
+            || node_list("outbox").iter().any(named)
+            || node_list("deliveries").iter().any(|item| named(item) && node_delivery_pending(item))
     }
 
     /// Why the coordinator keeps this thread back from deleting now, or `None` (ADR-0140 decision 3), as Node's
@@ -6262,6 +6275,55 @@ mod tests {
         coord.shutdown().await;
         let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
         assert!(store.read_messages(&thread_id).unwrap().is_empty(), "nothing it reported reached the store");
+    }
+
+    /// What Node's outbox and deliveries still hold for a thread keeps it back from deleting after a switch from Node, as
+    /// Node's clearing counts them (`clearFacts`, `pendingThreadWorkReason`): an outbox item, an unconfirmed delivery, and
+    /// one set aside with its updates held. A delivery the user released and a delivered one hold nothing.
+    #[tokio::test]
+    async fn nodes_outbox_and_deliveries_keep_a_thread_back() {
+        let dir = tempdir().unwrap();
+        let (coord, client, project_id, outboxed) = organized_workspace(dir.path()).await;
+        let ids = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2", "00000000-0000-4000-8000-0000000000c3", "00000000-0000-4000-8000-0000000000c4"];
+        for id in ids {
+            coord.run_command(client.clone(), json!({ "type": "create-thread", "threadId": id, "projectId": project_id, "title": "Held",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
+        }
+        coord.run_command(client.clone(), json!({ "type": "settle-project", "projectId": project_id }).as_object().unwrap().clone()).await.unwrap();
+        coord.shutdown().await;
+        let [uncertain, set_aside, released, delivered] = ids;
+        let path = dir.path().join("agents.json");
+        let mut agents: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let delivery = |thread: &str, status: &str, extra: Value| {
+            let mut item = json!({ "commandId": format!("command-{thread}"), "draftId": "00000000-0000-4000-8000-0000000000e1", "threadId": thread,
+                "status": status, "createdAt": "2026-11-26T10:00:00.000Z", "updatedAt": "2026-11-26T10:00:01.000Z" });
+            item.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            item
+        };
+        let fields = agents.as_object_mut().unwrap();
+        fields.insert("outbox".into(), json!([{ "id": "o1", "type": "send", "threadId": outboxed }]));
+        fields.insert("deliveries".into(), json!([
+            delivery(uncertain, "uncertain", json!({})),
+            delivery(set_aside, "delivered", json!({ "setAside": true })),
+            delivery(released, "uncertain", json!({ "setAside": true, "updatesResumed": true })),
+            delivery(delivered, "delivered", json!({})),
+        ]));
+        std::fs::write(&path, serde_json::to_string(&agents).unwrap()).unwrap();
+
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let kept = |id: String| {
+            let coord = &coord;
+            let client = client.clone();
+            async move {
+                coord.run_command(client, json!({ "type": "preview-delete-thread", "threadId": id }).as_object().unwrap().clone()).await.unwrap()["threadDeletePreview"]["kept"].clone()
+            }
+        };
+        assert_eq!(kept(outboxed.clone()).await, "queued", "an outbox item");
+        assert_eq!(kept(uncertain.into()).await, "queued", "an unconfirmed delivery");
+        assert_eq!(kept(set_aside.into()).await, "queued", "set aside with its updates held");
+        assert_eq!(kept(released.into()).await, Value::Null, "released by the user");
+        assert_eq!(kept(delivered.into()).await, Value::Null, "delivered");
+        coord.shutdown().await;
     }
 
     /// A workspace.json that still holds a cleared thread, as one saved mid-delete or by an older build can, is read as
