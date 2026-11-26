@@ -10,6 +10,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::failures_seen::{FailuresSeen, ThreadsView, SAVED_KEY as FAILURES_SEEN_KEY};
+use crate::followup_queue::{FollowupEdit, FollowupPrompt, FollowupSettle, UNKNOWN_TURN};
 use crate::ops::ThreadWorkspace;
 use crate::protocol::HostErrorCode;
 use crate::provider::{
@@ -17,7 +18,9 @@ use crate::provider::{
     SendMessageRequest, ThreadRecordSeed,
 };
 use crate::remote_commands::validate_remote_command;
+use crate::thread_lifecycle::{has_time, is_closed, SettledIn};
 use crate::thread_snoozes::{SnoozeUntil, ThreadSnoozes, SAVED_KEY as THREAD_SNOOZES_KEY};
+use crate::watcher::{FollowupStore, QueuedFollowup};
 use crate::stores::{
     StoredMessage, StoredThreadEvent, ThreadEvent, ThreadEventAttribution, ThreadStore,
     MAX_AGENT_ACTIVITIES,
@@ -95,20 +98,119 @@ pub struct WatcherThreadRead {
     pub activities: Vec<Value>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct QueuedThreadFollowup {
-    id: String,
-    thread_id: String,
-    draft_id: String,
-    #[serde(skip_serializing)]
-    message_id: String,
-    text: String,
-    status: String,
-    created_at: String,
-    updated_at: String,
-    #[serde(skip_serializing)]
+/// Who queued a follow-up while this host ran, so its send goes as theirs: the client, and the message ID Watcher named
+/// for it. A follow-up read from `followups.json` has none and goes as the host's own.
+#[derive(Debug, Clone)]
+struct FollowupOrigin {
     client: ClientContext,
+    message_id: Option<String>,
+}
+
+/// The client a follow-up queued before this host started goes as.
+fn host_client() -> ClientContext {
+    ClientContext { client_id: String::new(), user: "Sotto".into(), may_answer: true }
+}
+
+/// The threads that are Watchers, whose queued words a store kept without history leaves off disk.
+fn watcher_thread_ids(threads: &[AgentThread]) -> HashSet<String> {
+    threads.iter().filter(|t| t.kind.as_deref() == Some("watcher")).map(|t| t.id.clone()).collect()
+}
+
+/// Whether a thread's turn is still running, as Node's `isThreadTurnRunning`.
+fn turn_running(thread: &AgentThread) -> bool {
+    thread.status == "running" || thread.last_turn.as_ref().is_some_and(|turn| turn.status == "running")
+}
+
+/// Node's words for a command about a thread this host does not hold (`thread` in `control.ts`).
+const NO_THREAD: &str = "Select an available thread first.";
+/// The longest prompt Node's command schema reads (`AGENT_TEXT_MAX`), in UTF-16 code units as zod counts.
+const AGENT_TEXT_MAX: usize = 100_000;
+/// The most attachments one prompt may carry (`AGENT_MAX_ATTACHMENTS`).
+const AGENT_MAX_ATTACHMENTS: usize = 8;
+/// The most skills or file mentions one prompt may carry, as Node's reference schemas allow.
+const PROMPT_REFERENCES_MAX: usize = 32;
+/// Node's words for a thread whose provider is not connected (`assertCanAct`).
+const RECONNECT_PROVIDER: &str = "Reconnect this thread provider before sending. Your draft is saved.";
+/// Node's words for a host with no provider connected (`noProviderRefusal` on a host).
+const NO_PROVIDER: &str = "No provider is connected on this host. Connect one in Settings > Hosts & phones. Your draft is saved.";
+
+/// A prompt's parts, read and checked as Node's command schema reads them (`prompt_parts`).
+struct PromptParts {
+    text: String,
+    attachments: Option<Vec<Value>>,
+    skills: Option<Vec<Value>>,
+    files: Option<Vec<Value>>,
+}
+
+/// A UUID field, refused as Node's `z.uuid()` refuses one that is missing or malformed.
+fn required_uuid(command: &Map<String, Value>, key: &str) -> Result<String, CoordinatorError> {
+    command
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|id| Uuid::parse_str(id).is_ok() && id.len() == 36)
+        .map(ToString::to_string)
+        .ok_or_else(|| CoordinatorError::invalid(format!("{key} must be an ID.")))
+}
+
+/// A prompt's skills as Node's `agentSkillReferencesSchema` reads them: each its name and path alone, each once.
+fn skill_references(command: &Map<String, Value>) -> Result<Option<Vec<Value>>, CoordinatorError> {
+    let Some(list) = command.get("skills") else {
+        return Ok(None);
+    };
+    let refused = || CoordinatorError::invalid("skills must each name a skill once.");
+    let list = list.as_array().filter(|list| list.len() <= PROMPT_REFERENCES_MAX).ok_or_else(refused)?;
+    let mut seen = HashSet::new();
+    for skill in list {
+        let fields = skill.as_object().filter(|fields| fields.len() == 2).ok_or_else(refused)?;
+        let part = |key: &str, max: usize| fields.get(key).and_then(Value::as_str).filter(|v| !v.is_empty() && v.encode_utf16().count() <= max);
+        let (Some(name), Some(path)) = (part("name", 512), part("path", 4_096)) else {
+            return Err(refused());
+        };
+        if !seen.insert((name, path)) {
+            return Err(refused());
+        }
+    }
+    Ok(Some(list.clone()))
+}
+
+/// A prompt's file mentions as Node's `agentFileReferencesSchema` reads them: each a relative path in the working copy
+/// with no space in it, each once.
+fn file_references(command: &Map<String, Value>) -> Result<Option<Vec<Value>>, CoordinatorError> {
+    let Some(list) = command.get("files") else {
+        return Ok(None);
+    };
+    let refused = || CoordinatorError::invalid("files must each mention a file in the working copy once.");
+    let list = list.as_array().filter(|list| list.len() <= PROMPT_REFERENCES_MAX).ok_or_else(refused)?;
+    let mut seen = HashSet::new();
+    for file in list {
+        let path = file
+            .as_object()
+            .filter(|fields| fields.len() == 1)
+            .and_then(|fields| fields.get("path"))
+            .and_then(Value::as_str)
+            .filter(|path| !path.is_empty() && !path.chars().any(char::is_whitespace) && crate::ops::is_valid_relative_path(path))
+            .ok_or_else(refused)?;
+        if !seen.insert(path) {
+            return Err(refused());
+        }
+    }
+    Ok(Some(list.clone()))
+}
+
+/// Node's words for a follow-up with neither text nor an image.
+const NO_PROMPT: &str = "There is no prompt to queue.";
+/// The most follow-ups one order may name, as Node's `reorder-followups` schema allows.
+const FOLLOWUP_ORDER_MAX: usize = 100;
+/// Why a queue waits after a turn that did not finish, in Node's words (`pumpFollowups`).
+const QUEUE_UNREVIEWED: &str = "The last turn did not confirm completion. Review the thread and resume its queue when ready.";
+
+/// An order's item IDs, refused as Node's schema refuses one that is not a list of at most a hundred IDs.
+fn order_ids(command: &Map<String, Value>) -> Result<Vec<String>, CoordinatorError> {
+    let refused = || CoordinatorError::invalid("itemIds must be a list of follow-up IDs.");
+    let list = command.get("itemIds").and_then(Value::as_array).filter(|ids| ids.len() <= FOLLOWUP_ORDER_MAX).ok_or_else(refused)?;
+    list.iter()
+        .map(|id| id.as_str().filter(|id| Uuid::parse_str(id).is_ok()).map(ToString::to_string).ok_or_else(refused))
+        .collect()
 }
 
 /// Who observes threads, so the host can tell which threads each client shows (ADR-0092).
@@ -337,6 +439,12 @@ enum ActorMessage {
     WatcherCancelQueuedFollowups {
         draft_ids: HashSet<String>,
         reply: oneshot::Sender<usize>,
+    },
+    /// A queued follow-up's send answered (`send_followup`).
+    FollowupSent {
+        item_id: String,
+        draft_id: String,
+        outcome: Result<Value, CoordinatorError>,
     },
     WatcherInterrupt {
         thread_id: String,
@@ -866,7 +974,10 @@ struct CoordinatorActor {
     busy_thread_ids: HashSet<String>,
     thread_queues: HashMap<String, VecDeque<PendingCommand>>,
     in_flight_sends: HashMap<String, InFlightSend>,
-    queued_followups: Vec<QueuedThreadFollowup>,
+    /// The follow-up queue, kept in `followups.json` as Node keeps it.
+    followups: FollowupStore,
+    /// Who queued each follow-up while this host ran, by item ID.
+    followup_origins: HashMap<String, FollowupOrigin>,
     thread_snoozes: ThreadSnoozes,
     failures_seen: FailuresSeen,
     /// Each client's shown threads, by the name it observes under.
@@ -900,6 +1011,13 @@ impl CoordinatorActor {
             if let Some(upd) = adapter.client_update() {
                 client_updates.push(upd);
             }
+        }
+
+        // Read as Node reads it: a queue this build cannot read is set aside, and an item a stop interrupted mid-send is
+        // left for the user rather than sent again.
+        let mut followups = FollowupStore::new(&data_directory, true);
+        if followups.load(&watcher_thread_ids(&persisted.threads)).is_err() {
+            eprintln!("[Sotto] followups-unreadable");
         }
 
         let mut details = HashMap::new();
@@ -986,7 +1104,8 @@ impl CoordinatorActor {
             busy_thread_ids: HashSet::new(),
             thread_queues: HashMap::new(),
             in_flight_sends: HashMap::new(),
-            queued_followups: Vec::new(),
+            followups,
+            followup_origins: HashMap::new(),
             thread_snoozes,
             failures_seen,
             observations: HashMap::new(),
@@ -1395,22 +1514,18 @@ impl CoordinatorActor {
                 if delivery == "queue"
                     && (thread.status == "running" || self.busy_thread_ids.contains(&thread_id))
                 {
-                    let item_id = Uuid::new_v4().to_string();
-                    let now = now_iso();
-                    self.queued_followups.push(QueuedThreadFollowup {
-                        id: item_id.clone(),
-                        thread_id,
-                        draft_id,
-                        message_id,
-                        text,
-                        status: "queued".into(),
-                        created_at: now.clone(),
-                        updated_at: now,
-                        client,
-                    });
+                    let prompt = FollowupPrompt { thread_id, draft_id, text, ..FollowupPrompt::default() };
+                    let answer = match self.followups.enqueue_prompt(prompt, &watcher_thread_ids(&self.threads)) {
+                        Ok(Some(item_id)) => {
+                            self.followup_origins.insert(item_id.clone(), FollowupOrigin { client, message_id: Some(message_id) });
+                            Ok(("queued".into(), Some(item_id)))
+                        }
+                        Ok(None) => Ok(("accepted".into(), None)),
+                        Err(words) => Err(CoordinatorError::invalid(words)),
+                    };
                     self.shell_dirty = true;
                     self.flush_dirty();
-                    let _ = reply.send(Ok(("queued".into(), Some(item_id))));
+                    let _ = reply.send(answer);
                     return;
                 }
                 let mut cmd = Map::new();
@@ -1451,10 +1566,7 @@ impl CoordinatorActor {
                 });
             }
             ActorMessage::WatcherCancelQueuedFollowups { draft_ids, reply } => {
-                let before = self.queued_followups.len();
-                self.queued_followups
-                    .retain(|f| !draft_ids.contains(&f.draft_id));
-                let removed = before.saturating_sub(self.queued_followups.len());
+                let removed = self.followups.cancel_drafts(&draft_ids, &watcher_thread_ids(&self.threads)).unwrap_or(0);
                 if removed > 0 {
                     self.shell_dirty = true;
                     self.flush_dirty();
@@ -1530,6 +1642,7 @@ impl CoordinatorActor {
                     reply,
                 });
             }
+            ActorMessage::FollowupSent { item_id, draft_id, outcome } => self.followup_sent(&item_id, &draft_id, outcome),
             ActorMessage::AsyncCommandDone {
                 lane,
                 client,
@@ -1546,6 +1659,7 @@ impl CoordinatorActor {
                 let _ = reply.send(res);
                 self.flush_dirty();
                 self.drain_lane(lane);
+                self.pump_followups();
             }
             ActorMessage::Shutdown { .. } => unreachable!(),
         }
@@ -1570,19 +1684,28 @@ impl CoordinatorActor {
     fn enqueue_or_dispatch(&mut self, pending: PendingCommand) {
         // Node answers these before any lane (`control.ts`): each is Sotto's own record of what the user has seen or put
         // aside, so none waits behind a thread's send or another client's action.
+        // The follow-up queue is Sotto's own record too, so changing it waits on no send (`followupCommand`); the queue
+        // sends on its own once the thread is ready. Steering one into a running turn waits on the thread's lane.
         let unlaned = pending.command.get("type").and_then(Value::as_str);
-        if matches!(unlaned, Some("snooze-thread" | "dismiss-failures" | "observe-threads")) {
+        if matches!(
+            unlaned,
+            Some("snooze-thread" | "dismiss-failures" | "observe-threads" | "queue-followup" | "edit-followup" | "remove-followup"
+                | "reorder-followups" | "resume-followups")
+        ) {
             let PendingCommand { client, command, reply } = pending;
             let outcome = match validate_remote_command(&command, client.may_answer) {
                 Ok("snooze-thread") => self.cmd_snooze_thread(&command),
                 Ok("dismiss-failures") => self.cmd_dismiss_failures(&command),
-                Ok(_) => self.cmd_observe_threads(&client, &command),
+                Ok("observe-threads") => self.cmd_observe_threads(&client, &command),
+                Ok("queue-followup") => self.cmd_queue_followup(&client, &command).map(|()| None),
+                Ok(kind) => self.cmd_change_followups(kind, &command).map(|()| None),
                 Err(refusal) => Err(CoordinatorError {
                     code: refusal.code,
                     message: refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string()),
                 }),
             };
             self.answer_with_shell(&client, outcome, reply);
+            self.pump_followups();
             return;
         }
         let lane = pending
@@ -1698,52 +1821,10 @@ impl CoordinatorActor {
             "manual-send" | "steer" => {
                 self.spawn_cmd_manual_send(lane, client, &command, None, reply)
             }
-            "queue-followup" => {
-                let Some(tid) = command
-                    .get("threadId")
-                    .and_then(Value::as_str)
-                    .map(ToString::to_string)
-                else {
-                    self.finish_sync_command(
-                        lane,
-                        &client,
-                        Err(CoordinatorError::invalid("threadId is required.")),
-                        reply,
-                    );
-                    return;
-                };
-                let is_running = self
-                    .threads
-                    .iter()
-                    .find(|t| t.id == tid)
-                    .is_some_and(|t| t.status == "running");
-                if is_running {
-                    let text = command
-                        .get("text")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .to_string();
-                    let draft_id = command
-                        .get("draftId")
-                        .and_then(Value::as_str)
-                        .map(ToString::to_string)
-                        .unwrap_or_else(|| Uuid::new_v4().to_string());
-                    let now = now_iso();
-                    self.queued_followups.push(QueuedThreadFollowup {
-                        id: Uuid::new_v4().to_string(),
-                        thread_id: tid,
-                        draft_id,
-                        message_id: Uuid::new_v4().to_string(),
-                        text,
-                        status: "queued".into(),
-                        created_at: now.clone(),
-                        updated_at: now,
-                        client: client.clone(),
-                    });
-                    self.finish_sync_command(lane, &client, Ok(()), reply);
-                } else {
-                    self.spawn_cmd_manual_send(lane, client, &command, None, reply);
-                }
+            "steer-followup" => {
+                let res = self.cmd_change_followups(cmd_type, &command);
+                self.finish_sync_command(lane, &client, res, reply);
+                self.pump_followups();
             }
             "answer" => self.spawn_cmd_answer(lane, client, &command, reply),
             "interrupt" => self.spawn_cmd_interrupt(lane, client, &command, reply),
@@ -3090,6 +3171,283 @@ impl CoordinatorActor {
         Ok(())
     }
 
+    /// Queues a prompt, as Node's `followupCommand` queues one: the queue sends it once the thread is ready, at once when
+    /// it already is. A prompt the queue turns down is turned down in the host's state.
+    fn cmd_queue_followup(&mut self, client: &ClientContext, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+        let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?.to_string();
+        let draft_id = required_uuid(command, "draftId")?;
+        let parts = self.prompt_parts(command)?;
+        let prompt = FollowupPrompt {
+            thread_id,
+            draft_id,
+            text: parts.text,
+            attachments: parts.attachments.unwrap_or_default(),
+            skills: parts.skills,
+            files: parts.files,
+            ..FollowupPrompt::default()
+        };
+        self.error = None;
+        match self.queue_followup(prompt) {
+            Ok(Some(item_id)) => {
+                self.followup_origins.insert(item_id, FollowupOrigin { client: client.clone(), message_id: None });
+            }
+            Ok(None) => {}
+            Err(words) => self.command_refused(words),
+        }
+        Ok(())
+    }
+
+    fn queue_followup(&mut self, mut prompt: FollowupPrompt) -> Result<Option<String>, String> {
+        let thread = self.threads.iter().find(|t| t.id == prompt.thread_id).ok_or(NO_THREAD)?;
+        if prompt.text.trim().is_empty() && prompt.attachments.is_empty() {
+            return Err(NO_PROMPT.into());
+        }
+        if has_time(thread.extra.get("archivedAt").and_then(Value::as_str)) {
+            return Err("This thread is archived. Reopen it before queuing a prompt.".into());
+        }
+        // A prompt queued while its thread rests follows the turn it rests on, so it goes without a review.
+        if thread.status == "idle" && thread.requests.is_empty() {
+            prompt.resume_after_turn_id = Some(thread.last_turn.as_ref().map_or(UNKNOWN_TURN, |turn| turn.id.as_str()).to_string());
+        }
+        let queued = self.followups.enqueue_prompt(prompt, &watcher_thread_ids(&self.threads))?;
+        self.shell_dirty = true;
+        Ok(queued)
+    }
+
+    /// Edits, removes, orders, resumes or steers a thread's queued follow-ups, as Node's `followupCommand` and
+    /// `steerFollowup`. What the queue turns down is turned down in the host's state, as Node's command path turns down
+    /// every failure.
+    fn cmd_change_followups(&mut self, kind: &str, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+        let thread_id = required_id(command, "threadId", THREAD_ID_MAX)?;
+        let item_id = || required_uuid(command, "itemId");
+        let watchers = watcher_thread_ids(&self.threads);
+        let outcome = match kind {
+            "reorder-followups" => {
+                let order = order_ids(command)?;
+                self.threads_has(thread_id).and_then(|()| self.followups.reorder(thread_id, &order, &watchers))
+            }
+            "resume-followups" => self.resume_followups(thread_id),
+            "steer-followup" => self.steer_followup(thread_id, &item_id()?),
+            "edit-followup" => {
+                let item_id = item_id()?;
+                let parts = self.prompt_parts(command)?;
+                self.edit_followup(thread_id, &item_id, parts)
+            }
+            _ => {
+                let item_id = item_id()?;
+                self.threads_has(thread_id).and_then(|()| self.followups.remove_item(thread_id, &item_id, &watchers))
+            }
+        };
+        // Each change clears the host's error first, as Node's command path does; none of them sets it.
+        self.error = None;
+        if let Err(words) = outcome {
+            self.command_refused(words);
+        }
+        self.shell_dirty = true;
+        Ok(())
+    }
+
+    fn threads_has(&self, thread_id: &str) -> Result<(), String> {
+        self.threads.iter().any(|t| t.id == thread_id).then_some(()).ok_or_else(|| NO_THREAD.into())
+    }
+
+    /// Edits a queued prompt with what the command gives, keeping what it leaves out, as Node's `edit-followup`.
+    fn edit_followup(&mut self, thread_id: &str, item_id: &str, parts: PromptParts) -> Result<(), String> {
+        self.threads_has(thread_id)?;
+        let existing = self.followups.items().iter().find(|i| i.thread_id == thread_id && i.id == item_id);
+        let attachments = parts.attachments.or_else(|| existing.map(|i| i.attachments.clone())).unwrap_or_default();
+        if parts.text.trim().is_empty() && attachments.is_empty() {
+            return Err(NO_PROMPT.into());
+        }
+        let update = FollowupEdit {
+            text: parts.text,
+            attachments,
+            skills: parts.skills.or_else(|| existing.and_then(|i| i.skills.clone())),
+            files: parts.files.or_else(|| existing.and_then(|i| i.files.clone())),
+        };
+        self.followups.edit_item(thread_id, item_id, update, &watcher_thread_ids(&self.threads))
+    }
+
+    /// A prompt's parts as Node's command schema reads them, refused as it refuses them: its text, the images and files
+    /// it attaches, its skills and its file mentions. Each attachment must be one this host staged, and is kept as the
+    /// host's own record of it, so `followups.json` holds only what Node's schema reads back.
+    fn prompt_parts(&self, command: &Map<String, Value>) -> Result<PromptParts, CoordinatorError> {
+        let text = command
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|text| text.encode_utf16().count() <= AGENT_TEXT_MAX)
+            .ok_or_else(|| CoordinatorError::invalid("text must be the prompt's words."))?
+            .to_string();
+        let attachments = match command.get("attachments") {
+            None => None,
+            Some(list) => {
+                let refused = || CoordinatorError::invalid("attachments must be files staged on this host.");
+                let list = list.as_array().filter(|list| list.len() <= AGENT_MAX_ATTACHMENTS).ok_or_else(refused)?;
+                let mut handles = Vec::with_capacity(list.len());
+                for item in list {
+                    let id = item.get("id").and_then(Value::as_str).ok_or_else(refused)?;
+                    let entry = self.staged.get(id).ok_or_else(refused)?;
+                    let handle = serde_json::to_value(&entry.handle).map_err(|_| refused())?;
+                    if handles.contains(&handle) {
+                        return Err(refused());
+                    }
+                    handles.push(handle);
+                }
+                Some(handles)
+            }
+        };
+        Ok(PromptParts { text, attachments, skills: skill_references(command)?, files: file_references(command)? })
+    }
+
+    /// Sends a thread's paused and failed follow-ups again, as the user's review of the turn the thread rests on.
+    fn resume_followups(&mut self, thread_id: &str) -> Result<(), String> {
+        let thread = self.threads.iter().find(|t| t.id == thread_id).ok_or(NO_THREAD)?;
+        if is_closed(thread) || SettledIn::new(&self.projects).settled(thread) {
+            return Err("Restore this thread and project before resuming queued follow-ups.".into());
+        }
+        self.can_act(thread_id)?;
+        // A turn still running is no turn to review yet: the queue then follows none.
+        let turn = thread.last_turn.as_ref().filter(|_| !turn_running(thread)).map_or(UNKNOWN_TURN, |turn| turn.id.as_str()).to_string();
+        self.followups.resume(thread_id, Some(&turn), &watcher_thread_ids(&self.threads))
+    }
+
+    /// Steers a queued follow-up into its thread's running turn, as Node's `steerFollowup` would. This host's adapters
+    /// cannot steer a running turn yet, so the message stays queued and the host says so in Node's words.
+    fn steer_followup(&self, thread_id: &str, item_id: &str) -> Result<(), String> {
+        let Some(item) = self.followups.items().iter().find(|i| i.thread_id == thread_id && i.id == item_id) else {
+            // Already sent or removed: a repeated press never makes another prompt.
+            return Ok(());
+        };
+        if item.wake_up == Some(true) {
+            return Err("A wake-up goes when the thread is ready for it, never into a running turn. It is still queued.".into());
+        }
+        self.can_act(thread_id)?;
+        Err("This provider does not support native steering. Leave the message queued instead.".into())
+    }
+
+    /// Whether the host may act on a thread now, as Node's `assertCanAct` asks: a provider connected on the host, the
+    /// thread there, and its own provider connected.
+    fn can_act(&self, thread_id: &str) -> Result<(), String> {
+        if !self.provider_statuses.values().any(|status| status.connection == "connected") {
+            return Err(NO_PROVIDER.into());
+        }
+        let thread = self.threads.iter().find(|t| t.id == thread_id).ok_or(NO_THREAD)?;
+        if !thread_provider_connected(&self.provider_statuses, thread) {
+            return Err(RECONNECT_PROVIDER.into());
+        }
+        Ok(())
+    }
+
+    /// Sends each thread's next queued follow-up once the thread is ready for it, as Node's `pumpFollowups` sends the
+    /// user's prompts and Watcher's: one at a time, each after the turn before it. A queue whose last turn did not finish
+    /// is paused for the user's review. Sotto's wake-ups wait whole, since this host sends none of them yet.
+    fn pump_followups(&mut self) {
+        if self.followups.items().is_empty() {
+            return;
+        }
+        let watchers = watcher_thread_ids(&self.threads);
+        let mut thread_ids: Vec<String> = Vec::new();
+        for item in self.followups.items() {
+            if !thread_ids.contains(&item.thread_id) {
+                thread_ids.push(item.thread_id.clone());
+            }
+        }
+        for thread_id in thread_ids {
+            if self.busy_thread_ids.contains(&thread_id) || self.in_flight_sends.contains_key(&thread_id) {
+                continue;
+            }
+            let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+                continue;
+            };
+            let Some(head) = self.followups.items().iter().find(|i| i.thread_id == thread_id && i.wake_up != Some(true)) else {
+                continue;
+            };
+            if head.status != "queued" || turn_running(thread) || !thread.requests.is_empty() {
+                continue;
+            }
+            let rests_on = thread.last_turn.as_ref().map_or(UNKNOWN_TURN, |turn| turn.id.as_str());
+            let reviewed = head.resume_after_turn_id.as_deref() == Some(rests_on);
+            // A compaction that failed is a turn that did not finish, though the thread rests on the turn before it.
+            let compaction_failed = thread.status == "error"
+                && thread.extra.get("compaction").and_then(|c| c.get("status")).and_then(Value::as_str) == Some("failed");
+            let finished = thread.last_turn.as_ref().is_some_and(|turn| turn.status == "completed") && !compaction_failed;
+            // Node's review: the turn the thread rests on finished, or the user resumed the queue after it.
+            if !finished && !reviewed {
+                if self.followups.pause(&thread_id, QUEUE_UNREVIEWED, &watchers).is_err() {
+                    self.error = Some("Could not pause the follow-up queue.".into());
+                }
+                self.shell_dirty = true;
+                continue;
+            }
+            let ready = thread_provider_connected(&self.provider_statuses, thread)
+                && (thread.status == "idle" || thread.status == "error" && reviewed)
+                && (!thread.native_session_started || finished || reviewed)
+                && thread.extra.get("historyStatus").and_then(Value::as_str).is_none_or(|status| status == "ready")
+                && !is_closed(thread)
+                && !SettledIn::new(&self.projects).settled(thread);
+            if !ready {
+                continue;
+            }
+            let head_id = head.id.clone();
+            if let Ok(item) = self.followups.claim(&head_id, |i| i.wake_up == Some(true), &watchers) {
+                self.shell_dirty = true;
+                self.send_followup(item);
+            }
+        }
+        self.flush_dirty();
+    }
+
+    /// Sends a follow-up the queue took, as the client that queued it, and settles it once the send is answered.
+    fn send_followup(&mut self, item: QueuedFollowup) {
+        let origin = self.followup_origins.get(&item.id).cloned();
+        let client = origin.as_ref().map_or_else(host_client, |origin| origin.client.clone());
+        let message_id = origin.and_then(|origin| origin.message_id).or(item.message_id);
+        let mut command = Map::new();
+        command.insert("type".into(), json!("manual-send"));
+        command.insert("threadId".into(), json!(item.thread_id));
+        command.insert("text".into(), json!(item.text.trim()));
+        command.insert("draftId".into(), json!(item.draft_id));
+        command.insert("attachments".into(), Value::Array(item.attachments));
+        for (key, list) in [("skills", item.skills), ("files", item.files)] {
+            if let Some(list) = list {
+                command.insert(key.into(), Value::Array(list));
+            }
+        }
+        let (reply, answered) = oneshot::channel();
+        let self_tx = self.self_tx.clone();
+        let (item_id, draft_id) = (item.id, item.draft_id);
+        tokio::spawn(async move {
+            let outcome = answered.await.unwrap_or_else(|_| Err(CoordinatorError::unavailable("Host coordinator stopped.")));
+            let _ = self_tx.send(ActorMessage::FollowupSent { item_id, draft_id, outcome });
+        });
+        self.busy_thread_ids.insert(item.thread_id.clone());
+        self.spawn_cmd_manual_send(Some(item.thread_id), client, &command, message_id, reply);
+    }
+
+    /// Settles a queued follow-up once its send is answered, as Node settles one: sent, it leaves the queue; not sent,
+    /// it stays at the head, failed and saying why, until the user resumes or removes it.
+    fn followup_sent(&mut self, item_id: &str, draft_id: &str, outcome: Result<Value, CoordinatorError>) {
+        let delivery = self.deliveries.iter().rev().find(|d| d.draft_id == draft_id);
+        let (settle, error) = match (&outcome, delivery) {
+            (Ok(_), Some(d)) if d.status == "accepted" => (FollowupSettle::Accepted, None),
+            (Ok(_), Some(d)) if d.status == "uncertain" => (FollowupSettle::Uncertain, d.error.clone()),
+            (Ok(shell), d) => (
+                FollowupSettle::Failed,
+                d.and_then(|d| d.error.clone()).or_else(|| shell.get("error").and_then(Value::as_str).map(ToString::to_string)),
+            ),
+            (Err(err), _) => (FollowupSettle::Failed, Some(err.message.clone())),
+        };
+        let error = error.or_else(|| (settle != FollowupSettle::Accepted).then(|| "Could not send this follow-up.".to_string()));
+        if self.followups.settle(item_id, settle, error, &watcher_thread_ids(&self.threads)).is_err() {
+            self.error = Some("Could not save the follow-up queue.".into());
+        }
+        if settle == FollowupSettle::Accepted {
+            self.followup_origins.remove(item_id);
+        }
+        self.shell_dirty = true;
+        self.pump_followups();
+    }
+
     /// A command turned down as Node's command path turns one down: its words are both the host's error and its notice.
     fn command_refused(&mut self, words: String) {
         self.notice = words.clone();
@@ -3244,6 +3602,8 @@ impl CoordinatorActor {
                     self.client_updates.push(upd);
                 }
                 self.shell_dirty = true;
+                // A queue waiting on its thread's provider goes once the provider connects.
+                self.pump_followups();
             }
             ProviderEvent::TurnStarted {
                 thread_id,
@@ -3361,6 +3721,8 @@ impl CoordinatorActor {
                     thread.updated_at = now_iso();
                     self.shell_dirty = true;
                 }
+                // A queue waiting on the thread's question goes once it is answered.
+                self.pump_followups();
             }
             ProviderEvent::TurnCompleted {
                 thread_id,
@@ -3452,29 +3814,8 @@ impl CoordinatorActor {
             }
         }
         self.shell_dirty = true;
-        if status == "completed" {
-            if let Some(pos) = self
-                .queued_followups
-                .iter()
-                .position(|f| f.thread_id == thread_id)
-            {
-                let next = self.queued_followups.remove(pos);
-                let mut cmd = Map::new();
-                cmd.insert("type".into(), Value::String("manual-send".into()));
-                cmd.insert("threadId".into(), Value::String(next.thread_id.clone()));
-                cmd.insert("text".into(), Value::String(next.text));
-                cmd.insert("draftId".into(), Value::String(next.draft_id));
-                let (tx, _rx) = oneshot::channel();
-                self.busy_thread_ids.insert(next.thread_id.clone());
-                self.spawn_cmd_manual_send(
-                    Some(next.thread_id),
-                    next.client,
-                    &cmd,
-                    Some(next.message_id),
-                    tx,
-                );
-            }
-        }
+        // The thread's next follow-up goes after a turn that finished; after one that did not, its queue is paused.
+        self.pump_followups();
     }
 
     fn push_message_to_detail(&mut self, thread_id: &str, message: StoredMessage) {
@@ -3669,8 +4010,8 @@ impl CoordinatorActor {
             "draftRequestId": null,
             "draftThreadId": null,
             "error": self.error,
-            "followupReceipts": [],
-            "followups": self.queued_followups,
+            "followupReceipts": self.followups.published_receipts(),
+            "followups": self.followups.published(),
             "globalLaneBusy": self.global_lane_busy,
             "historyEnabled": true,
             "hostId": self.host_id,
@@ -4450,6 +4791,75 @@ mod tests {
         }).await.expect("the failure was never published")
     }
 
+    async fn queued_followups(coord: &CoordinatorHandle) -> Vec<Value> {
+        coord.shell(true).await.unwrap()["followups"].as_array().cloned().unwrap_or_default()
+    }
+
+    /// Waits until the host's queue and thread stand as `ready` says.
+    async fn wait_for_queue(coord: &CoordinatorHandle, what: &str, ready: impl Fn(&[Value], &Value) -> bool) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let shell = coord.shell(true).await.unwrap();
+                let queue = shell["followups"].as_array().cloned().unwrap_or_default();
+                if ready(&queue, &shell["host"]["threads"][0]) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.unwrap_or_else(|_| panic!("{what}"));
+    }
+
+    /// The follow-up queue as Node's (`followups.ts`, `pumpFollowups`): a prompt queued while a turn runs goes once the
+    /// turn finishes, the head first; after a turn that failed the queue waits until Resume queue; an edit and an order
+    /// are kept; what the queue turns down is turned down in the host's state; `followups.json` holds what was sent.
+    #[tokio::test]
+    async fn a_queued_follow_up_goes_after_its_turn_as_node_sends_it() {
+        let dir = tempdir().unwrap();
+        let (coord, mock, client, thread_id) = failing_workspace(dir.path()).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        run(json!({ "type": "manual-send", "threadId": thread_id, "text": "First" })).await.unwrap();
+        for text in ["Second", "Third"] {
+            let shell = run(json!({ "type": "queue-followup", "threadId": thread_id, "draftId": Uuid::new_v4().to_string(), "text": text })).await.unwrap();
+            assert_eq!(shell["error"], Value::Null);
+        }
+        let queue = queued_followups(&coord).await;
+        let (second, third) = (queue[0]["id"].as_str().unwrap().to_string(), queue[1]["id"].as_str().unwrap().to_string());
+        run(json!({ "type": "reorder-followups", "threadId": thread_id, "itemIds": [third, second] })).await.unwrap();
+        run(json!({ "type": "edit-followup", "threadId": thread_id, "itemId": second, "text": "Second, edited" })).await.unwrap();
+        let texts: Vec<Value> = queued_followups(&coord).await.iter().map(|item| item["text"].clone()).collect();
+        assert_eq!(texts, [json!("Third"), json!("Second, edited")]);
+        let refused = run(json!({ "type": "remove-followup", "threadId": thread_id, "itemId": Uuid::new_v4().to_string() })).await.unwrap();
+        assert_eq!(refused["error"], "That follow-up is no longer queued.");
+        let refused = run(json!({ "type": "steer-followup", "threadId": thread_id, "itemId": second })).await.unwrap();
+        assert_eq!(refused["error"], "This provider does not support native steering. Leave the message queued instead.");
+        let refused = run(json!({ "type": "queue-followup", "threadId": thread_id, "draftId": Uuid::new_v4().to_string(), "text": " " })).await.unwrap();
+        assert_eq!(refused["error"], "There is no prompt to queue.");
+        // What Node's schema refuses is refused, so followups.json holds only what Node reads back.
+        let draft = || Uuid::new_v4().to_string();
+        for unread in [json!({ "draftId": "not-a-draft" }), json!({ "draftId": draft(), "attachments": [{ "id": "never-staged" }] }),
+            json!({ "draftId": draft(), "files": [{ "path": "/outside" }] }), json!({ "draftId": draft(), "files": [{ "path": "a b.txt" }] }),
+            json!({ "draftId": draft(), "skills": [{ "name": "Only a name" }] }), json!({ "draftId": draft(), "text": "x".repeat(100_001) })] {
+            let mut command = json!({ "type": "queue-followup", "threadId": thread_id, "text": "Refused" });
+            command.as_object_mut().unwrap().extend(unread.as_object().unwrap().clone());
+            assert_eq!(run(command.clone()).await.unwrap_err().code, HostErrorCode::InvalidRequest, "{command}");
+        }
+        assert_eq!(queued_followups(&coord).await.len(), 2);
+
+        mock.complete_turn(&thread_id, "Done");
+        wait_for_queue(&coord, "the head never went", |queue, thread| queue.len() == 1 && thread["status"] == "running").await;
+        assert_eq!(queued_followups(&coord).await[0]["text"], "Second, edited");
+        mock.fail_turn(&thread_id);
+        wait_for_queue(&coord, "the queue never paused", |queue, _| queue.first().is_some_and(|item| item["status"] == "paused")).await;
+        assert_eq!(queued_followups(&coord).await[0]["error"], QUEUE_UNREVIEWED);
+        run(json!({ "type": "resume-followups", "threadId": thread_id })).await.unwrap();
+        wait_for_queue(&coord, "the resumed prompt never went", |queue, thread| queue.is_empty() && thread["status"] == "running").await;
+        coord.shutdown().await;
+
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("followups.json")).unwrap()).unwrap();
+        assert_eq!(saved["items"], json!([]));
+        assert_eq!(saved["receipts"].as_array().unwrap().len(), 2);
+    }
+
     /// Failures seen as Node's `FailuresSeen` (ADR-0092): a failed thread is named and unseen until a client that
     /// shows it observes it; a desktop behind another app observes without showing; the mark is `agents.json`'s
     /// `failuresSeen` and survives a restart; a seen failure no longer wakes a snooze.
@@ -4506,9 +4916,10 @@ mod tests {
         coord.shutdown().await;
     }
 
-    /// A snooze is answered before any lane, as Node answers it, so it never waits behind a send on its thread.
+    /// A snooze and a queued follow-up are answered before any lane, as Node answers them, so neither waits behind a
+    /// send on its thread.
     #[tokio::test]
-    async fn a_snooze_does_not_wait_behind_a_send() {
+    async fn a_snooze_or_a_follow_up_does_not_wait_behind_a_send() {
         use crate::provider::BoxFuture;
 
         struct HeldSendAdapter {
@@ -4574,6 +4985,10 @@ mod tests {
                 run(json!({ "type": "snooze-thread", "threadId": thread_id, "until": "2099-01-01T09:00:00.000Z" }))).await
                 .expect("the snooze waited behind the send").unwrap();
             assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], "2099-01-01T09:00:00.000Z");
+            let shell = tokio::time::timeout(Duration::from_secs(5),
+                run(json!({ "type": "queue-followup", "threadId": thread_id, "draftId": Uuid::new_v4().to_string(), "text": "Next" }))).await
+                .expect("the follow-up waited behind the send").unwrap();
+            assert_eq!(shell["followups"][0]["text"], "Next");
             release.notify_one();
         };
         let (sent, ()) = tokio::join!(send, snooze);

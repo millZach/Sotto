@@ -7,6 +7,7 @@ pub mod credentials;
 pub mod desktop_clients;
 pub mod desktop_hosts;
 pub mod failures_seen;
+pub mod followup_queue;
 pub mod git_review;
 pub mod host_facts;
 pub mod host_router;

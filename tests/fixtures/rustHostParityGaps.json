@@ -182,10 +182,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "edit-followup": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "fork-thread": {
       "node": "refused",
       "rust": "invalid_request"
@@ -262,20 +258,8 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "remove-followup": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "reorder-followups": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "restore-thread-branch": {
       "node": "refused",
-      "rust": "invalid_request"
-    },
-    "resume-followups": {
-      "node": "ok",
       "rust": "invalid_request"
     },
     "retry-thread-worktree": {
@@ -301,10 +285,6 @@
     "steer": {
       "node": "refused",
       "rust": "ok"
-    },
-    "steer-followup": {
-      "node": "ok",
-      "rust": "invalid_request"
     },
     "stop-babysitting": {
       "node": "refused",
