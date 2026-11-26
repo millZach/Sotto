@@ -915,11 +915,19 @@ pub(crate) fn corrupt_copy_path(path: &Path) -> std::path::PathBuf {
 }
 
 pub fn write_atomic_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
+    let mut body = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
+    body.push('\n');
+    write_atomic(path, body.as_bytes())
+}
+
+/// Writes `bytes` to a file of its own beside `path`, `<name>.tmp-<uuid>`, readable by this user alone, and renames it
+/// into place, so no reader ever sees part of it. The temporary file goes when anything fails.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let body = serde_json::to_string_pretty(value).map_err(std::io::Error::other)?;
-    let temp = path.with_extension(format!("json.tmp-{}", Uuid::new_v4()));
+    let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+    let temp = path.with_file_name(format!("{name}.tmp-{}", Uuid::new_v4()));
     let res = (|| -> std::io::Result<()> {
         let mut opts = OpenOptions::new();
         opts.create_new(true).write(true);
@@ -929,16 +937,42 @@ pub fn write_atomic_json<T: Serialize>(path: &Path, value: &T) -> std::io::Resul
             opts.mode(0o600);
         }
         let mut file = opts.open(&temp)?;
-        file.write_all(body.as_bytes())?;
-        file.write_all(b"\n")?;
+        file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&temp, path)
+        rename_retrying(&temp, path)
     })();
     if res.is_err() {
         let _ = fs::remove_file(&temp);
     }
     res
+}
+
+/// How long a rename waits before each try again while Windows holds its target, as Node's
+/// `WINDOWS_RENAME_RETRY_DELAYS_MS` (`src/main/agents/attachmentStore.ts`).
+const WINDOWS_RENAME_RETRY_DELAYS_MS: [u64; 5] = [10, 20, 40, 80, 160];
+
+/// Renames `from` to `to`, trying again on Windows while another process holds the target open (an antivirus scan, a
+/// reader), as Node's store does. Elsewhere, and once the waits are spent, the error is the rename's.
+pub fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut waits = WINDOWS_RENAME_RETRY_DELAYS_MS.iter();
+    loop {
+        match fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            // Node retries EPERM and EBUSY, which libuv makes of Windows' access denied (5), sharing violation (32) and
+            // lock violation (33).
+            Err(err) if cfg!(windows) && matches!(err.raw_os_error(), Some(5 | 32 | 33)) => {
+                let Some(wait) = waits.next() else { return Err(err) };
+                std::thread::sleep(std::time::Duration::from_millis(*wait));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+/// The time in milliseconds since the epoch.
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 /// The longest start of `text` that is at most `max` UTF-16 code units, as JavaScript's `slice(0, max)` keeps and Node's

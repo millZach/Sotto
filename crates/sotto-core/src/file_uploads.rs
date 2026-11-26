@@ -21,7 +21,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::attachment_store::{is_mime_type, is_video_type, MAX_FILE_ATTACHMENT_BYTES, MAX_VIDEO_ATTACHMENT_BYTES};
+use crate::attachment_store::{is_mime_type, is_video_type, AttachmentError, MAX_FILE_ATTACHMENT_BYTES, MAX_VIDEO_ATTACHMENT_BYTES};
 use crate::protocol_fields::{hex, is_digest, utf16_len, whole_number};
 
 /// The raw bytes one part carries at most, as Node's `HOST_FILE_PART_BYTES`.
@@ -167,11 +167,12 @@ pub enum Received {
     Video { name: String, mime_type: String, path: PathBuf, digest: String },
 }
 
-/// Why a part was not taken: refused, in words the client is shown, or the host's failure to keep it.
+/// What a part that was taken leaves: more parts to come, within the upload's wait, or the whole file.
 #[derive(Debug, PartialEq, Eq)]
-pub enum PartFailed {
-    Refused(&'static str),
-    Failed,
+pub enum PartTaken {
+    /// Parts are still to come; the upload goes `wait_ms` after this part unless the next one comes first.
+    More { wait_ms: u64 },
+    Whole(Received),
 }
 
 /// The whole file an upload's parts name.
@@ -247,7 +248,7 @@ impl FileUploads {
 
     /// Takes one part of a client's upload: `None` while parts are still to come, the whole file once the last has
     /// arrived and its size and digest are the ones its parts named.
-    pub fn receive_part(&mut self, client: &str, part: &FilePart, now: u64) -> Result<Option<Received>, PartFailed> {
+    pub fn receive_part(&mut self, client: &str, part: &FilePart, now: u64) -> Result<PartTaken, AttachmentError> {
         let to_disk = self.video_folder.is_some() && is_video_type(&part.mime_type);
         if let Some(upload) = self.uploads.get(client) {
             let idle = if to_disk { upload.idle_ms() } else { FILE_UPLOAD_IDLE_MS };
@@ -264,28 +265,28 @@ impl FileUploads {
             );
         } else {
             let Some(upload) = self.uploads.get(client) else {
-                return Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE));
+                return Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE));
             };
             // A stray part of an upload this host no longer holds leaves the one under way alone.
             if upload.whole.upload_id != part.upload_id || (to_disk && upload.disk.is_none()) {
-                return Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE));
+                return Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE));
             }
             if part.index != upload.next || !upload.whole.names(part) {
                 self.drop_upload(client);
-                return Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE));
+                return Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE));
             }
         }
         let data = node_base64(&part.data);
         let upload = self.uploads.get_mut(client).expect("the upload was just found or made");
         if data.len() as u64 > HOST_FILE_PART_BYTES || upload.received + data.len() as u64 > upload.whole.size_bytes {
             self.drop_upload(client);
-            return Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE));
+            return Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE));
         }
         match upload.disk.as_mut() {
             Some(disk) => {
                 if disk.file.write_all(&data).is_err() {
                     self.drop_upload(client);
-                    return Err(PartFailed::Failed);
+                    return Err(AttachmentError::Failed);
                 }
                 disk.hash.update(&data);
             }
@@ -295,7 +296,7 @@ impl FileUploads {
         upload.next += 1;
         upload.last_part_at = now;
         if upload.next < upload.whole.count {
-            return Ok(None);
+            return Ok(PartTaken::More { wait_ms: upload.idle_ms() });
         }
         let upload = self.uploads.remove(client).expect("the upload is held");
         let whole = upload.whole;
@@ -305,27 +306,27 @@ impl FileUploads {
                 drop(disk.file);
                 if synced.is_err() {
                     let _ = fs::remove_file(&disk.path);
-                    return Err(PartFailed::Failed);
+                    return Err(AttachmentError::Failed);
                 }
                 if upload.received != whole.size_bytes || hex(&disk.hash.finalize()) != whole.digest {
                     let _ = fs::remove_file(&disk.path);
-                    return Err(PartFailed::Refused(FILE_UPLOAD_MISMATCH));
+                    return Err(AttachmentError::Refused(FILE_UPLOAD_MISMATCH));
                 }
-                Ok(Some(Received::Video { name: whole.name, mime_type: whole.mime_type, path: disk.path, digest: whole.digest }))
+                Ok(PartTaken::Whole(Received::Video { name: whole.name, mime_type: whole.mime_type, path: disk.path, digest: whole.digest }))
             }
             None => {
                 if upload.chunks.len() as u64 != whole.size_bytes || hex(&Sha256::digest(&upload.chunks)) != whole.digest {
-                    return Err(PartFailed::Refused(FILE_UPLOAD_MISMATCH));
+                    return Err(AttachmentError::Refused(FILE_UPLOAD_MISMATCH));
                 }
-                Ok(Some(Received::File { name: whole.name, mime_type: whole.mime_type, bytes: upload.chunks }))
+                Ok(PartTaken::Whole(Received::File { name: whole.name, mime_type: whole.mime_type, bytes: upload.chunks }))
             }
         }
     }
 
     /// A new file for a video's parts, of a random name in the uploads folder, readable by this user alone.
-    fn open_part_file(&self) -> Result<Disk, PartFailed> {
-        let folder = self.video_folder.as_ref().ok_or(PartFailed::Failed)?;
-        fs::create_dir_all(folder).map_err(|_| PartFailed::Failed)?;
+    fn open_part_file(&self) -> Result<Disk, AttachmentError> {
+        let folder = self.video_folder.as_ref().ok_or(AttachmentError::Failed)?;
+        fs::create_dir_all(folder).map_err(|_| AttachmentError::Failed)?;
         let path = folder.join(format!("{}.part", Uuid::new_v4()));
         let mut options = OpenOptions::new();
         options.create_new(true).write(true);
@@ -334,7 +335,7 @@ impl FileUploads {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let file = options.open(&path).map_err(|_| PartFailed::Failed)?;
+        let file = options.open(&path).map_err(|_| AttachmentError::Failed)?;
         Ok(Disk { path, file, hash: Sha256::new() })
     }
 
@@ -460,17 +461,17 @@ mod tests {
     fn a_file_arrives_in_parts_and_is_checked() {
         let mut uploads = FileUploads::new(None);
         let whole = b"first-second";
-        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 0, 2, "text/plain", whole, b"first-"), 0), Ok(None));
+        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 0, 2, "text/plain", whole, b"first-"), 0), Ok(PartTaken::More { wait_ms: FILE_UPLOAD_IDLE_MS }));
         assert_eq!(uploads.progress("c", UPLOAD, 1), Some(1));
         let done = uploads.receive_part("c", &part(UPLOAD, 1, 2, "text/plain", whole, b"second"), 2).unwrap();
-        assert_eq!(done, Some(Received::File { name: "clip".into(), mime_type: "text/plain".into(), bytes: whole.to_vec() }));
+        assert_eq!(done, PartTaken::Whole(Received::File { name: "clip".into(), mime_type: "text/plain".into(), bytes: whole.to_vec() }));
         assert!(!uploads.holds("c"));
 
         // The same size but other bytes is not the file the parts named.
         let other = b"first-SECOND";
         uploads.receive_part("c", &part(UPLOAD, 0, 2, "text/plain", whole, b"first-"), 0).unwrap();
         let mismatch = uploads.receive_part("c", &part(UPLOAD, 1, 2, "text/plain", whole, &other[6..]), 1);
-        assert_eq!(mismatch, Err(PartFailed::Refused(FILE_UPLOAD_MISMATCH)));
+        assert_eq!(mismatch, Err(AttachmentError::Refused(FILE_UPLOAD_MISMATCH)));
         assert!(!uploads.holds("c"));
     }
 
@@ -481,20 +482,20 @@ mod tests {
         let mut uploads = FileUploads::new(None);
         let whole = b"aaaabbbbcccc";
         uploads.receive_part("c", &part(UPLOAD, 0, 3, "text/plain", whole, b"aaaa"), 0).unwrap();
-        assert_eq!(uploads.receive_part("c", &part(OTHER, 1, 3, "text/plain", whole, b"bbbb"), 1), Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE)));
+        assert_eq!(uploads.receive_part("c", &part(OTHER, 1, 3, "text/plain", whole, b"bbbb"), 1), Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE)));
         assert_eq!(uploads.progress("c", UPLOAD, 1), Some(1), "a stray part leaves the upload under way alone");
         let mut renamed = part(UPLOAD, 1, 3, "text/plain", whole, b"bbbb");
         renamed.name = "other".into();
-        assert_eq!(uploads.receive_part("c", &renamed, 2), Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE)));
+        assert_eq!(uploads.receive_part("c", &renamed, 2), Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE)));
         assert!(!uploads.holds("c"));
 
         uploads.receive_part("c", &part(UPLOAD, 0, 3, "text/plain", whole, b"aaaa"), 0).unwrap();
-        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 2, 3, "text/plain", whole, b"cccc"), 1), Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE)));
+        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 2, 3, "text/plain", whole, b"cccc"), 1), Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE)));
         assert!(!uploads.holds("c"));
 
         // A part carrying more than the file named ends the upload; a first part starts again, replacing any other.
         uploads.receive_part("c", &part(UPLOAD, 0, 3, "text/plain", whole, b"aaaa"), 0).unwrap();
-        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 1, 3, "text/plain", whole, b"bbbbbbbbbb"), 1), Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE)));
+        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 1, 3, "text/plain", whole, b"bbbbbbbbbb"), 1), Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE)));
         uploads.receive_part("c", &part(UPLOAD, 0, 3, "text/plain", whole, b"aaaa"), 0).unwrap();
         uploads.receive_part("c", &part(OTHER, 0, 1, "text/plain", b"x", b"x"), 1).unwrap();
         assert_eq!(uploads.progress("c", UPLOAD, 1), None);
@@ -515,7 +516,7 @@ mod tests {
         uploads.receive_part("c", &part(UPLOAD, 0, 2, "text/plain", whole, b"aaaa"), 0).unwrap();
         assert_eq!(uploads.progress("c", UPLOAD, FILE_UPLOAD_IDLE_MS - 1), Some(1));
         assert_eq!(uploads.progress("c", UPLOAD, FILE_UPLOAD_IDLE_MS), None);
-        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 1, 2, "text/plain", whole, b"bbbb"), FILE_UPLOAD_IDLE_MS), Err(PartFailed::Refused(FILE_UPLOAD_INCOMPLETE)));
+        assert_eq!(uploads.receive_part("c", &part(UPLOAD, 1, 2, "text/plain", whole, b"bbbb"), FILE_UPLOAD_IDLE_MS), Err(AttachmentError::Refused(FILE_UPLOAD_INCOMPLETE)));
         assert!(!uploads.holds("c"));
     }
 
@@ -528,7 +529,8 @@ mod tests {
         let mut uploads = FileUploads::new(Some(folder.clone()));
         let whole = b"frame-one|frame-two|frame-three";
         let pieces: [&[u8]; 3] = [&whole[..10], &whole[10..20], &whole[20..]];
-        uploads.receive_part("c", &part(UPLOAD, 0, 3, "video/mp4", whole, pieces[0]), 0).unwrap();
+        let first = uploads.receive_part("c", &part(UPLOAD, 0, 3, "video/mp4", whole, pieces[0]), 0).unwrap();
+        assert_eq!(first, PartTaken::More { wait_ms: VIDEO_UPLOAD_IDLE_MS });
         assert_eq!(part_files(&folder), 1);
         uploads.leave("c");
         assert_eq!(uploads.progress("c", UPLOAD, 1), Some(1), "a video's upload outlasts its client's sockets");
@@ -536,7 +538,7 @@ mod tests {
         uploads.receive_part("c", &part(UPLOAD, 1, 3, "video/mp4", whole, pieces[1]), FILE_UPLOAD_IDLE_MS + 5).unwrap();
         assert_eq!(uploads.progress("c", UPLOAD, VIDEO_UPLOAD_IDLE_MS), Some(2));
         let done = uploads.receive_part("c", &part(UPLOAD, 2, 3, "video/mp4", whole, pieces[2]), VIDEO_UPLOAD_IDLE_MS).unwrap();
-        let Some(Received::Video { path, digest, .. }) = done else { panic!("the video comes out on disk") };
+        let PartTaken::Whole(Received::Video { path, digest, .. }) = done else { panic!("the video comes out on disk") };
         assert_eq!(fs::read(&path).unwrap(), whole);
         assert_eq!(digest, hex(&Sha256::digest(whole)));
         assert_eq!(path.parent(), Some(folder.as_path()));
@@ -545,7 +547,7 @@ mod tests {
         // One that changed on its way is refused and its file goes.
         uploads.receive_part("c", &part(UPLOAD, 0, 2, "video/mp4", b"aaaabbbb", b"aaaa"), 0).unwrap();
         let changed = part(UPLOAD, 1, 2, "video/mp4", b"aaaabbbb", b"bbbX");
-        assert_eq!(uploads.receive_part("c", &changed, 1), Err(PartFailed::Refused(FILE_UPLOAD_MISMATCH)));
+        assert_eq!(uploads.receive_part("c", &changed, 1), Err(AttachmentError::Refused(FILE_UPLOAD_MISMATCH)));
         assert_eq!(part_files(&folder), 0);
 
         // One whose wait is over goes, its file with it.

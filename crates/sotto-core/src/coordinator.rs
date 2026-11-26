@@ -18,7 +18,7 @@ use crate::provider::{
     SendMessageRequest, ThreadRecordSeed,
 };
 use crate::attachment_files::{sent_file, SentFile};
-use crate::attachment_store::StageError;
+use crate::attachment_store::AttachmentError;
 use crate::file_uploads::Received;
 use crate::remote_commands::validate_remote_command;
 use crate::thread_drafts::{DraftFacts, DraftSave, DraftSaved, SeenRevision, ThreadDrafts};
@@ -549,7 +549,10 @@ enum ActorMessage {
     },
     StageReceived {
         received: Received,
-        reply: oneshot::Sender<Result<StagedAttachmentHandle, StageError>>,
+        reply: oneshot::Sender<Result<StagedAttachmentHandle, AttachmentError>>,
+    },
+    ForgetUnreadable {
+        digest: String,
     },
     GetSentFile {
         thread_id: String,
@@ -848,10 +851,16 @@ impl CoordinatorHandle {
 
     /// Keeps a file whose every part reached the host and checked out (`stage-file-part`), as Node's host hands it to
     /// `stageAttachment` or, for a video on disk, `stageAttachmentFile`. A video's upload file is moved in, or goes.
-    pub async fn stage_received(&self, received: Received) -> Result<StagedAttachmentHandle, StageError> {
+    pub async fn stage_received(&self, received: Received) -> Result<StagedAttachmentHandle, AttachmentError> {
         let (reply_tx, reply_rx) = oneshot::channel();
-        self.tx.send(ActorMessage::StageReceived { received, reply: reply_tx }).map_err(|_| StageError::Failed)?;
-        reply_rx.await.map_err(|_| StageError::Failed)?
+        self.tx.send(ActorMessage::StageReceived { received, reply: reply_tx }).map_err(|_| AttachmentError::Failed)?;
+        reply_rx.await.map_err(|_| AttachmentError::Failed)?
+    }
+
+    /// A reader of a sent file found the content the store keeps for `digest` gone or changed: the store lets it go
+    /// unless it reads as its digest again now, in turn with staging.
+    pub fn forget_unreadable(&self, digest: String) {
+        let _ = self.tx.send(ActorMessage::ForgetUnreadable { digest });
     }
 
     /// The file `attachment_id` names among the attachments of user message `message_id`, in a thread this host holds,
@@ -1509,13 +1518,10 @@ impl CoordinatorActor {
                 let _ = reply.send(connected);
             }
             ActorMessage::GetAttachmentContent { digest, reply } => {
-                let found = self.staged.get_by_digest(&digest).and_then(|entry| {
-                    std::fs::read(&entry.path)
-                        .ok()
-                        .map(|bytes| (entry.handle.mime_type.clone(), bytes))
-                });
-                let _ = reply.send(found);
+                // An image the store keeps, staged in this run or before it, and never a file, which draws no chip.
+                let _ = reply.send(self.staged.read_image(&digest));
             }
+            ActorMessage::ForgetUnreadable { digest } => self.staged.forget_unreadable(&digest),
             ActorMessage::ReadEvents {
                 thread_id,
                 after_seq,
@@ -1567,7 +1573,7 @@ impl CoordinatorActor {
                 let res = self
                     .staged
                     .stage_image(&name, &mime_type, &data_b64, dimensions)
-                    .map_err(CoordinatorError::invalid);
+                    .map_err(attachment_refusal);
                 let _ = reply.send(res);
             }
             ActorMessage::StageReceived { received, reply } => {
@@ -1595,7 +1601,7 @@ impl CoordinatorActor {
                 } else {
                     self.thread_store.read_message_by_id(&thread_id, &message_id).ok().flatten()
                 };
-                let now_ms = chrono::Utc::now().timestamp_millis();
+                let now_ms = crate::workspace::now_ms() as i64;
                 let found = message
                     .and_then(|message| sent_file(&message, &attachment_id, now_ms))
                     .map(|file| {
@@ -5058,6 +5064,15 @@ fn probe_git_worktree(folder: &str) -> Value {
     }
 }
 
+/// Content refused for what it is, in the words the client is shown, or not kept for the host's own failure, in Node's
+/// words for that (`unavailable` in `src/host/socketServer.ts`): nothing was attached, and the client can try again.
+fn attachment_refusal(err: AttachmentError) -> CoordinatorError {
+    match err {
+        AttachmentError::Refused(words) => CoordinatorError::invalid(words),
+        AttachmentError::Failed => CoordinatorError::unavailable(HostErrorCode::Unavailable.default_message()),
+    }
+}
+
 fn encode_stored_attachments(attachments: &[StagedAttachmentEntry]) -> Option<Value> {
     if attachments.is_empty() {
         None
@@ -5113,7 +5128,9 @@ mod tests {
 
         let (found, path) = coord.sent_file(thread_id.into(), sent.clone(), file.id.clone()).await.unwrap().unwrap();
         assert_eq!((found.name.as_str(), found.digest.as_str()), ("notes.txt", file.digest.as_str()));
-        let answer = crate::attachment_files::read_part(path.as_deref(), &found, 0).unwrap();
+        let crate::attachment_files::FilePartRead::Part(answer) = crate::attachment_files::read_part(path.as_deref(), &found, 0).unwrap() else {
+            panic!("the sent file's part reads");
+        };
         use base64::Engine;
         assert_eq!(base64::engine::general_purpose::STANDARD.decode(answer["data"].as_str().unwrap()).unwrap(), notes);
         assert!(coord.sent_file(thread_id.into(), sent.clone(), image.id.clone()).await.unwrap().is_none(), "an image is preview's");

@@ -8,19 +8,16 @@
 //! bytes come from the attachment store's file for the handle's digest, read whole and checked against that digest
 //! before any part of it is answered, so a part is never cut from bytes that are not the file the message sent.
 
-use std::fs;
-use std::io::{ErrorKind, Read};
 use std::path::Path;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use chrono::DateTime;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
-use crate::attachment_store::{is_image_type, is_mime_type, MAX_FILE_ATTACHMENT_BYTES};
+use crate::attachment_store::{is_image_type, is_mime_type, read_checked, ReadFailed, MAX_FILE_ATTACHMENT_BYTES};
 use crate::file_uploads::{HOST_FILE_PARTS_MAX, HOST_FILE_PART_BYTES};
-use crate::protocol_fields::{hex, is_digest, protocol_id, utf16_len, whole_number};
+use crate::protocol_fields::{is_digest, protocol_id, utf16_len, whole_number};
 use crate::stores::StoredMessage;
 
 /// How long a sent message's attachments may be read, as Node's `ATTACHMENT_PREVIEW_RETENTION_MS`: seven days.
@@ -89,38 +86,31 @@ pub fn sent_file(message: &StoredMessage, attachment_id: &str, now_ms: i64) -> O
     Some(SentFile { name: name.to_string(), mime_type: mime_type.to_string(), size_bytes, digest: digest.to_string() })
 }
 
-/// A part read the host failed at, which Node's socket server answers as `unavailable`.
-#[derive(Debug, PartialEq, Eq)]
-pub struct AttachmentReadFailed;
+/// What a part read found.
+#[derive(Debug, PartialEq)]
+pub enum FilePartRead {
+    /// The part, in base64, with what the whole file is so the client can check it once every part is in.
+    Part(Value),
+    /// Nothing to answer: a part past the last, or content the store does not keep.
+    Nothing,
+    /// The content the store keeps for the digest is gone, has another size, or is no longer the digest's bytes: nothing
+    /// to answer, and the store lets it go, as Node's `read` does.
+    Gone,
+}
 
-/// Part `part` of a sent file whose content the store keeps at `path` (`None` when it keeps none): at most 8 MiB of its
-/// bytes in base64, with what the whole file is so the client can check it once every part is in. Null for a part past
-/// the last, and for content that is gone, has another size, or whose bytes are no longer the file's digest.
-pub fn read_part(path: Option<&Path>, file: &SentFile, part: u64) -> Result<Value, AttachmentReadFailed> {
+/// Part `part` of a sent file whose content the store keeps at `path` (`None` when it keeps none), at most 8 MiB of its
+/// bytes. The content is read whole and checked against the file's digest before any part of it is answered.
+pub fn read_part(path: Option<&Path>, file: &SentFile, part: u64) -> Result<FilePartRead, ReadFailed> {
     let parts = file.size_bytes.div_ceil(HOST_FILE_PART_BYTES).max(1);
     let Some(path) = path.filter(|_| part < parts) else {
-        return Ok(Value::Null);
+        return Ok(FilePartRead::Nothing);
     };
-    let mut opened = match fs::File::open(path) {
-        Ok(opened) => opened,
-        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(Value::Null),
-        // A folder of that name is no content the store keeps; Windows refuses to open one as a file.
-        Err(_) if path.is_dir() => return Ok(Value::Null),
-        Err(_) => return Err(AttachmentReadFailed),
+    let Some(bytes) = read_checked(path, file.size_bytes, &file.digest)? else {
+        return Ok(FilePartRead::Gone);
     };
-    let metadata = opened.metadata().map_err(|_| AttachmentReadFailed)?;
-    if !metadata.is_file() || metadata.len() != file.size_bytes {
-        return Ok(Value::Null);
-    }
-    // At most one byte more than its size: a file that grew is not its digest, and is never read past the limit.
-    let mut bytes = Vec::with_capacity(file.size_bytes as usize + 1);
-    (&mut opened).take(file.size_bytes + 1).read_to_end(&mut bytes).map_err(|_| AttachmentReadFailed)?;
-    if hex(&Sha256::digest(&bytes)) != file.digest {
-        return Ok(Value::Null);
-    }
     let start = (part * HOST_FILE_PART_BYTES) as usize;
     let end = (start + HOST_FILE_PART_BYTES as usize).min(bytes.len());
-    Ok(json!({
+    Ok(FilePartRead::Part(json!({
         "name": file.name,
         "mimeType": file.mime_type,
         "sizeBytes": file.size_bytes,
@@ -128,13 +118,16 @@ pub fn read_part(path: Option<&Path>, file: &SentFile, part: u64) -> Result<Valu
         "part": part,
         "parts": parts,
         "data": STANDARD.encode(&bytes[start..end]),
-    }))
+    })))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol_fields::hex;
     use chrono::{TimeZone, Utc};
+    use sha2::{Digest, Sha256};
+    use std::fs;
     use tempfile::tempdir;
 
     const NOW: i64 = 1_795_000_000_000;
@@ -160,6 +153,13 @@ mod tests {
 
     fn handle(id: &str, mime: &str, size: u64, digest: &str) -> Value {
         json!({ "id": id, "name": "notes.txt", "mimeType": mime, "sizeBytes": size, "digest": digest })
+    }
+
+    fn part_of(read: FilePartRead) -> Value {
+        match read {
+            FilePartRead::Part(answer) => answer,
+            other => panic!("expected a part, read {other:?}"),
+        }
     }
 
     #[test]
@@ -219,37 +219,37 @@ mod tests {
         let file = SentFile { name: "big.log".into(), mime_type: "text/plain".into(), size_bytes: bytes.len() as u64, digest: hex(&Sha256::digest(&bytes)) };
         let mut joined = Vec::new();
         for part in 0..3 {
-            let answer = read_part(Some(&path), &file, part).unwrap();
+            let answer = part_of(read_part(Some(&path), &file, part).unwrap());
             assert_eq!((answer["part"].as_u64(), answer["parts"].as_u64()), (Some(part), Some(3)));
             assert_eq!(answer["sizeBytes"], bytes.len());
             joined.extend(STANDARD.decode(answer["data"].as_str().unwrap()).unwrap());
         }
         assert_eq!(joined.len(), bytes.len());
         assert_eq!(joined, bytes);
-        assert_eq!(read_part(Some(&path), &file, 3), Ok(Value::Null), "a part past the end");
+        assert_eq!(read_part(Some(&path), &file, 3), Ok(FilePartRead::Nothing), "a part past the end");
 
         let small = dir.path().join("small.bin");
         fs::write(&small, b"12345").unwrap();
         let file = SentFile { name: "s".into(), mime_type: "text/plain".into(), size_bytes: 5, digest: hex(&Sha256::digest(b"12345")) };
-        let answer = read_part(Some(&small), &file, 0).unwrap();
+        let answer = part_of(read_part(Some(&small), &file, 0).unwrap());
         assert_eq!((answer["parts"].as_u64(), answer["data"].as_str()), (Some(1), Some("MTIzNDU=")));
-        assert_eq!(read_part(Some(&small), &file, 1), Ok(Value::Null));
+        assert_eq!(read_part(Some(&small), &file, 1), Ok(FilePartRead::Nothing));
     }
 
-    /// Content that is gone, that changed, or that has another size is no part of the file the message sent.
+    /// Content that is gone, that changed, or that has another size is no part of the file the message sent, and is gone.
     #[test]
     fn a_changed_or_missing_file_answers_nothing() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("content.bin");
         let file = SentFile { name: "s".into(), mime_type: "text/plain".into(), size_bytes: 5, digest: hex(&Sha256::digest(b"12345")) };
-        assert_eq!(read_part(None, &file, 0), Ok(Value::Null), "the store keeps no content of that digest");
-        assert_eq!(read_part(Some(&path), &file, 0), Ok(Value::Null), "its file is gone");
+        assert_eq!(read_part(None, &file, 0), Ok(FilePartRead::Nothing), "the store keeps no content of that digest");
+        assert_eq!(read_part(Some(&path), &file, 0), Ok(FilePartRead::Gone), "its file is gone");
         fs::write(&path, b"12346").unwrap();
-        assert_eq!(read_part(Some(&path), &file, 0), Ok(Value::Null), "same size, other bytes");
+        assert_eq!(read_part(Some(&path), &file, 0), Ok(FilePartRead::Gone), "same size, other bytes");
         fs::write(&path, b"123456").unwrap();
-        assert_eq!(read_part(Some(&path), &file, 0), Ok(Value::Null), "another size");
+        assert_eq!(read_part(Some(&path), &file, 0), Ok(FilePartRead::Gone), "another size");
         fs::remove_file(&path).unwrap();
         fs::create_dir(&path).unwrap();
-        assert_eq!(read_part(Some(&path), &file, 0), Ok(Value::Null), "a folder");
+        assert_eq!(read_part(Some(&path), &file, 0), Ok(FilePartRead::Gone), "a folder");
     }
 }

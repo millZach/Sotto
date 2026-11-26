@@ -16,8 +16,10 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, watch, Semaphore};
 
 use sotto_core::attachment_files::AttachmentFileRequest;
-use sotto_core::attachment_store::StageError;
-use sotto_core::file_uploads::{FilePart, FileUploads, PartFailed, Received, HOST_CANNOT_STAGE_VIDEOS};
+use sotto_core::attachment_files::FilePartRead;
+use sotto_core::attachment_store::AttachmentError;
+use sotto_core::file_uploads::{FilePart, FileUploads, PartTaken, Received, HOST_CANNOT_STAGE_VIDEOS};
+use sotto_core::workspace::now_ms;
 use sotto_core::linked_files::LinkRequest;
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::protocol_fields::protocol_id;
@@ -211,11 +213,6 @@ fn checked_upload_progress(fields: &serde_json::Map<String, Value>, offered: imp
         return Err(HostErrorCode::InvalidRequest);
     }
     Ok(upload_id)
-}
-
-/// The time in milliseconds, as the upload waits are counted.
-fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 /// One paired client's read of a sent file's part, held while it runs so the client has one at a time across its
@@ -2162,11 +2159,6 @@ async fn handle_ws_request(
                 Ok(part) => part,
                 Err((code, words)) => return HostResponseEnvelope::err(req.id, code, words),
             };
-            let idle_ms = if sotto_core::attachment_store::is_video_type(&part.mime_type) {
-                sotto_core::file_uploads::VIDEO_UPLOAD_IDLE_MS
-            } else {
-                sotto_core::file_uploads::FILE_UPLOAD_IDLE_MS
-            };
             let uploads = Arc::clone(&state.uploads).lock_owned().await;
             let client = client_id.to_string();
             let now = now_ms();
@@ -2175,21 +2167,21 @@ async fn handle_ws_request(
                 uploads.receive_part(&client, &part, now)
             })
             .await
-            .unwrap_or(Err(PartFailed::Failed));
+            .unwrap_or(Err(AttachmentError::Failed));
             let received = match taken {
-                Ok(Some(received)) => received,
-                Ok(None) => {
+                Ok(PartTaken::Whole(received)) => received,
+                Ok(PartTaken::More { wait_ms }) => {
                     // The upload goes once its wait after this part is over, unless another part came, as Node's timer
                     // after each part lets it go; a video's part file goes with it.
                     let uploads = Arc::clone(&state.uploads);
                     tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_millis(idle_ms)).await;
+                        tokio::time::sleep(Duration::from_millis(wait_ms)).await;
                         uploads.lock().await.sweep(now_ms());
                     });
                     return HostResponseEnvelope::ok(req.id, Value::Null);
                 }
-                Err(PartFailed::Refused(words)) => return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, words),
-                Err(PartFailed::Failed) => {
+                Err(AttachmentError::Refused(words)) => return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, words),
+                Err(AttachmentError::Failed) => {
                     return HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message())
                 }
             };
@@ -2205,8 +2197,8 @@ async fn handle_ws_request(
             match staged {
                 Ok(handle) => HostResponseEnvelope::ok(req.id, serde_json::to_value(handle).unwrap_or(Value::Null)),
                 // A file refused for what it is says so; anything else is the host's failure to keep it.
-                Err(StageError::Refused(words)) => HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, words),
-                Err(StageError::Failed) => {
+                Err(AttachmentError::Refused(words)) => HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, words),
+                Err(AttachmentError::Failed) => {
                     HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message())
                 }
             }
@@ -2243,9 +2235,16 @@ async fn handle_ws_request(
                 return HostResponseEnvelope::ok(req.id, Value::Null);
             };
             let part = request.part;
+            let digest = file.digest.clone();
             let read = tokio::task::spawn_blocking(move || sotto_core::attachment_files::read_part(path.as_deref(), &file, part)).await;
             match read {
-                Ok(Ok(answer)) => HostResponseEnvelope::ok(req.id, answer),
+                Ok(Ok(FilePartRead::Part(answer))) => HostResponseEnvelope::ok(req.id, answer),
+                Ok(Ok(FilePartRead::Nothing)) => HostResponseEnvelope::ok(req.id, Value::Null),
+                // Content that is gone or no longer its digest is let go, as Node's read lets it go, and answers null.
+                Ok(Ok(FilePartRead::Gone)) => {
+                    state.coordinator.forget_unreadable(digest);
+                    HostResponseEnvelope::ok(req.id, Value::Null)
+                }
                 _ => HostResponseEnvelope::err(req.id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
             }
         }
