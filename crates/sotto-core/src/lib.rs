@@ -5,6 +5,7 @@ pub mod council;
 pub mod credentials;
 pub mod desktop_clients;
 pub mod desktop_hosts;
+pub mod failures_seen;
 pub mod git_review;
 pub mod host_facts;
 pub mod host_router;
@@ -20,6 +21,7 @@ pub mod provider;
 pub mod providers;
 pub mod remote_commands;
 pub mod stores;
+pub mod thread_lifecycle;
 pub mod thread_snoozes;
 #[cfg(test)]
 pub(crate) mod store_trip;

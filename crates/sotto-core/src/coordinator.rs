@@ -9,6 +9,7 @@ use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
+use crate::failures_seen::{FailuresSeen, ThreadsView, SAVED_KEY as FAILURES_SEEN_KEY};
 use crate::ops::ThreadWorkspace;
 use crate::protocol::HostErrorCode;
 use crate::provider::{
@@ -108,6 +109,27 @@ struct QueuedThreadFollowup {
     updated_at: String,
     #[serde(skip_serializing)]
     client: ClientContext,
+}
+
+/// The most threads one `observe-threads` may name, as Node's schema allows.
+const OBSERVED_THREADS_MAX: usize = 100;
+/// The most failures one Dismiss all may name, as Node's `AGENT_DISMISS_FAILURES_MAX`.
+const DISMISS_FAILURES_MAX: usize = 500;
+
+/// Whether a thread's provider is connected and the host with it, as Node's `isThreadProviderConnected` asks of a
+/// connected host.
+fn thread_provider_connected(statuses: &BTreeMap<String, AgentProviderStatus>, thread: &AgentThread) -> bool {
+    let host_connected = statuses.values().any(|status| status.connection == "connected");
+    if !host_connected {
+        return false;
+    }
+    if let Some(connected) = thread.extra.get("clientConnected").and_then(Value::as_bool) {
+        return connected;
+    }
+    if thread.provider_id.is_empty() {
+        return true;
+    }
+    statuses.get(&thread.provider_id).is_some_and(|status| status.connection == "connected")
 }
 
 /// The longest thread ID Node's command schema reads (`id` in `src/shared/agents.ts`).
@@ -225,8 +247,13 @@ enum ActorMessage {
         reply: oneshot::Sender<(Vec<StoredThreadEvent>, bool, i64)>,
     },
     ObserveThreads {
+        observer: String,
         thread_ids: Vec<String>,
+        shown: bool,
         reply: oneshot::Sender<Vec<(String, Option<AgentThreadDetail>)>>,
+    },
+    ForgetObserver {
+        observer: String,
     },
     StageImage {
         name: String,
@@ -462,14 +489,20 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
     }
 
+    /// One client's observed threads, which replace those it observed before. `shown` is false for a desktop whose
+    /// window is behind another app: its threads stay observed but none is shown, which sees a failure (ADR-0092).
     pub async fn observe(
         &self,
+        observer: String,
         thread_ids: Vec<String>,
+        shown: bool,
     ) -> Result<Vec<(String, Option<AgentThreadDetail>)>, CoordinatorError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
             .send(ActorMessage::ObserveThreads {
+                observer,
                 thread_ids,
+                shown,
                 reply: reply_tx,
             })
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
@@ -722,6 +755,11 @@ impl CoordinatorHandle {
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?
     }
 
+    /// A client that went: it shows nothing now.
+    pub fn forget_observer(&self, observer: String) {
+        let _ = self.tx.send(ActorMessage::ForgetObserver { observer });
+    }
+
     pub async fn shutdown(&self) {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self.tx.send(ActorMessage::Shutdown { reply: reply_tx }).is_ok() {
@@ -797,6 +835,9 @@ struct CoordinatorActor {
     in_flight_sends: HashMap<String, InFlightSend>,
     queued_followups: Vec<QueuedThreadFollowup>,
     thread_snoozes: ThreadSnoozes,
+    failures_seen: FailuresSeen,
+    /// Each client's shown threads, by the name it observes under.
+    observations: HashMap<String, Vec<String>>,
     staged: StagedAttachments,
 
     shell_dirty: bool,
@@ -875,6 +916,7 @@ impl CoordinatorActor {
         let staged = StagedAttachments::new(&data_directory);
         let mut agents_json_extra = persisted.agents_json_extra;
         let thread_snoozes = ThreadSnoozes::take_saved(&mut agents_json_extra);
+        let failures_seen = FailuresSeen::take_saved(&mut agents_json_extra);
         Self {
             data_directory,
             host_id,
@@ -913,6 +955,8 @@ impl CoordinatorActor {
             in_flight_sends: HashMap::new(),
             queued_followups: Vec::new(),
             thread_snoozes,
+            failures_seen,
+            observations: HashMap::new(),
             staged,
             shell_dirty: false,
             dirty_details: HashSet::new(),
@@ -1120,7 +1164,13 @@ impl CoordinatorActor {
                     .unwrap_or_default();
                 let _ = reply.send((events, has_more, latest));
             }
-            ActorMessage::ObserveThreads { thread_ids, reply } => {
+            ActorMessage::ForgetObserver { observer } => {
+                if self.observations.remove(&observer).is_some() {
+                    self.show_threads();
+                }
+            }
+            ActorMessage::ObserveThreads { observer, thread_ids, shown, reply } => {
+                self.set_observation(observer, &thread_ids, shown.then(|| thread_ids.clone()));
                 let mut out = Vec::with_capacity(thread_ids.len());
                 for tid in &thread_ids {
                     if let Some(thread) = self.threads.iter().find(|t| t.id == *tid) {
@@ -1476,11 +1526,15 @@ impl CoordinatorActor {
     }
 
     fn enqueue_or_dispatch(&mut self, pending: PendingCommand) {
-        // Node answers a snooze before any lane (`control.ts`), so it never waits behind a thread's send.
-        if pending.command.get("type").and_then(Value::as_str) == Some("snooze-thread") {
+        // Node answers these before any lane (`control.ts`): each is Sotto's own record of what the user has seen or put
+        // aside, so none waits behind a thread's send or another client's action.
+        let unlaned = pending.command.get("type").and_then(Value::as_str);
+        if matches!(unlaned, Some("snooze-thread" | "dismiss-failures" | "observe-threads")) {
             let PendingCommand { client, command, reply } = pending;
             let outcome = match validate_remote_command(&command, client.may_answer) {
-                Ok(_) => self.cmd_snooze_thread(&command),
+                Ok("snooze-thread") => self.cmd_snooze_thread(&command),
+                Ok("dismiss-failures") => self.cmd_dismiss_failures(&command),
+                Ok(_) => self.cmd_observe_threads(&client, &command),
                 Err(refusal) => Err(CoordinatorError {
                     code: refusal.code,
                     message: refusal.message.unwrap_or_else(|| refusal.code.default_message().to_string()),
@@ -1588,9 +1642,6 @@ impl CoordinatorActor {
                 let target = if cmd_type.ends_with("-project") { SettledTarget::Project } else { SettledTarget::Thread };
                 let res = self.cmd_set_workspace_settled(&command, target, cmd_type.starts_with("settle-"));
                 self.finish_sync_command(lane, &client, res, reply);
-            }
-            "observe-threads" => {
-                self.finish_sync_command(lane, &client, Ok(()), reply);
             }
 
             // Slow provider / git-worktree commands run outside the owner loop while holding only their lane.
@@ -1701,7 +1752,7 @@ impl CoordinatorActor {
         outcome: Result<Option<String>, CoordinatorError>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
-        if self.thread_snoozes.track(&self.threads, &self.projects) {
+        if self.track_marks() {
             self.save_workspace();
         }
         self.shell_dirty = true;
@@ -3001,6 +3052,99 @@ impl CoordinatorActor {
         Ok(())
     }
 
+    /// Reads every thread against the record of failures seen, then ends the snoozes of threads that now need the
+    /// user, as Node's `acceptSnapshot` does; true when a saved mark or snooze moved.
+    fn track_marks(&mut self) -> bool {
+        let statuses = &self.provider_statuses;
+        let connected = |thread: &AgentThread| thread_provider_connected(statuses, thread);
+        let view = ThreadsView { threads: &self.threads, projects: &self.projects, details: &self.details, connected: &connected };
+        let failures = self.failures_seen.track(&view);
+        let seen = &self.failures_seen;
+        let snoozes = self.thread_snoozes.track(&self.threads, &self.projects, |id| seen.has(id));
+        failures || snoozes
+    }
+
+    /// What one client shows now, by the name it observes under; nothing once it observes nothing.
+    fn set_observation(&mut self, observer: String, thread_ids: &[String], shown: Option<Vec<String>>) {
+        if thread_ids.is_empty() {
+            self.observations.remove(&observer);
+        } else {
+            self.observations.insert(observer, shown.unwrap_or_default());
+        }
+        self.show_threads();
+    }
+
+    /// Shows the threads every client shows, which sees each that has failed (ADR-0092), and tells every client when
+    /// that moved a mark, as Node's `showThreads`.
+    fn show_threads(&mut self) {
+        let shown: HashSet<String> = self.observations.values().flatten().cloned().collect();
+        let statuses = &self.provider_statuses;
+        let connected = |thread: &AgentThread| thread_provider_connected(statuses, thread);
+        let view = ThreadsView { threads: &self.threads, projects: &self.projects, details: &self.details, connected: &connected };
+        if self.failures_seen.show(shown, &view) {
+            self.save_workspace();
+            self.shell_dirty = true;
+            self.flush_dirty();
+        }
+    }
+
+    /// A client's own `observe-threads`, as Node's host service takes it: its threads replace those it observed under
+    /// its ID, and `shownThreadIds` says which of them it shows where that is fewer.
+    fn cmd_observe_threads(&mut self, client: &ClientContext, command: &Map<String, Value>) -> Result<Option<String>, CoordinatorError> {
+        let ids = |key: &str| -> Result<Option<Vec<String>>, CoordinatorError> {
+            match command.get(key) {
+                None => Ok(None),
+                Some(Value::Array(items)) if items.len() <= OBSERVED_THREADS_MAX => items
+                    .iter()
+                    .map(|item| match item.as_str() {
+                        Some(id) if !id.is_empty() && id.chars().count() <= THREAD_ID_MAX => Ok(id.to_string()),
+                        _ => Err(CoordinatorError::invalid(format!("{key} must be thread IDs."))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Some),
+                Some(_) => Err(CoordinatorError::invalid(format!("{key} must be thread IDs."))),
+            }
+        };
+        let Some(thread_ids) = ids("threadIds")? else {
+            return Err(CoordinatorError::invalid("threadIds must be thread IDs."));
+        };
+        let shown = ids("shownThreadIds")?.unwrap_or_else(|| thread_ids.clone());
+        self.set_observation(format!("command:{}", client.client_id), &thread_ids, Some(shown));
+        Ok(None)
+    }
+
+    /// Dismiss all (ADR-0092), as Node's `dismiss-failures`: each named thread that still stands in the failure its row
+    /// showed reads as seen on every client, as if one had shown it, and the record is saved. It waits on no lane.
+    fn cmd_dismiss_failures(&mut self, command: &Map<String, Value>) -> Result<Option<String>, CoordinatorError> {
+        let refused = || CoordinatorError::invalid("failures must name threads and their failures.");
+        let Some(Value::Array(items)) = command.get("failures") else {
+            return Err(refused());
+        };
+        if items.is_empty() || items.len() > DISMISS_FAILURES_MAX {
+            return Err(refused());
+        }
+        let mut named = HashMap::new();
+        for item in items {
+            let Some(item) = item.as_object().filter(|item| item.keys().all(|key| key == "threadId" || key == "failure")) else {
+                return Err(refused());
+            };
+            let thread_id = required_id(item, "threadId", THREAD_ID_MAX).map_err(|_| refused())?;
+            let Some(failure) = item.get("failure").and_then(Value::as_str).filter(|failure| failure.chars().count() <= 64) else {
+                return Err(refused());
+            };
+            if self.threads.iter().any(|t| t.id == thread_id) {
+                named.insert(thread_id.to_string(), failure.to_string());
+            }
+        }
+        let statuses = &self.provider_statuses;
+        let connected = |thread: &AgentThread| thread_provider_connected(statuses, thread);
+        let view = ThreadsView { threads: &self.threads, projects: &self.projects, details: &self.details, connected: &connected };
+        if self.failures_seen.dismiss(&named, &view) {
+            self.save_workspace();
+        }
+        Ok(None)
+    }
+
     /// Snoozes a thread until a time or ends its snooze, as Node's `snooze-thread` (ADR-0175). A thread that is not
     /// there is turned down in this answer alone, as Node does.
     fn cmd_snooze_thread(&mut self, command: &Map<String, Value>) -> Result<Option<String>, CoordinatorError> {
@@ -3017,7 +3161,7 @@ impl CoordinatorActor {
             return Ok(Some("That thread is unavailable. Nothing changed.".into()));
         }
         self.thread_snoozes.set(tid, until);
-        self.thread_snoozes.track(&self.threads, &self.projects);
+        self.track_marks();
         self.save_workspace();
         Ok(None)
     }
@@ -3362,8 +3506,9 @@ impl CoordinatorActor {
         }
         if self.shell_dirty {
             self.shell_dirty = false;
-            // A thread that changed may now need the user, which ends its snooze before any client is shown it.
-            if self.thread_snoozes.track(&self.threads, &self.projects) {
+            // A thread that changed may have failed, or may now need the user, which ends its snooze, before any client
+            // is shown it.
+            if self.track_marks() {
                 self.save_workspace();
             }
             let shell = self.build_shell(false);
@@ -3434,6 +3579,7 @@ impl CoordinatorActor {
                 let mut val = serde_json::to_value(t).unwrap_or_else(|_| json!({}));
                 if let Some(obj) = val.as_object_mut() {
                     obj.insert("snoozedUntil".into(), self.thread_snoozes.published(&t.id));
+                    self.failures_seen.publish(&t.id, obj);
                 }
                 val
             })
@@ -3598,6 +3744,7 @@ impl CoordinatorActor {
             .entry("outbox".to_string())
             .or_insert_with(|| Value::Array(Vec::new()));
         agents_obj.insert(THREAD_SNOOZES_KEY.into(), self.thread_snoozes.saved());
+        agents_obj.insert(FAILURES_SEEN_KEY.into(), self.failures_seen.saved());
         let _ = write_atomic_json(&self.data_directory.join("agents.json"), &Value::Object(agents_obj));
     }
 }
@@ -4189,6 +4336,95 @@ mod tests {
         coord.shutdown().await;
         let agents: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
         assert_eq!(agents["threadSnoozes"], json!({}));
+    }
+
+    /// A project and a thread on a mock provider the test can fail turns of.
+    async fn failing_workspace(dir: &Path) -> (CoordinatorHandle, Arc<MockProviderAdapter>, ClientContext, String) {
+        let project_dir = dir.join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(dir.to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let shell = coord.run_command(client.clone(), json!({ "type": "create-project", "provider": "codex", "title": "Failing",
+            "path": project_dir.to_string_lossy(), "useExisting": true }).as_object().unwrap().clone()).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let thread_id = "00000000-0000-4000-8000-00000000000d".to_string();
+        coord.run_command(client.clone(), json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Failing",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
+        (coord, mock, client, thread_id)
+    }
+
+    /// Sends a prompt and fails its turn, then waits until the host publishes the failure.
+    async fn fail_a_turn(coord: &CoordinatorHandle, mock: &MockProviderAdapter, client: &ClientContext, thread_id: &str) -> Value {
+        coord.run_command(client.clone(), json!({ "type": "manual-send", "threadId": thread_id, "text": "Hello" }).as_object().unwrap().clone()).await.unwrap();
+        mock.fail_turn(thread_id);
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let thread = coord.shell(true).await.unwrap()["host"]["threads"][0].clone();
+                if thread["status"] == "error" && thread["failureId"].is_string() {
+                    return thread;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("the failure was never published")
+    }
+
+    /// Failures seen as Node's `FailuresSeen` (ADR-0092): a failed thread is named and unseen until a client that
+    /// shows it observes it; a desktop behind another app observes without showing; the mark is `agents.json`'s
+    /// `failuresSeen` and survives a restart; a seen failure no longer wakes a snooze.
+    #[tokio::test]
+    async fn a_failure_is_seen_once_a_client_shows_its_thread() {
+        let dir = tempdir().unwrap();
+        let (coord, mock, client, thread_id) = failing_workspace(dir.path()).await;
+        let later = "2099-01-01T09:00:00.000Z";
+        let thread = fail_a_turn(&coord, &mock, &client, &thread_id).await;
+        assert!(thread.get("failureSeen").is_none());
+        let failure = thread["failureId"].clone();
+
+        coord.observe("socket:behind".into(), vec![thread_id.clone()], false).await.unwrap();
+        assert!(coord.shell(true).await.unwrap()["host"]["threads"][0].get("failureSeen").is_none(), "a window behind another app shows nothing");
+        coord.observe("socket:front".into(), vec![thread_id.clone()], true).await.unwrap();
+        let thread = coord.shell(true).await.unwrap()["host"]["threads"][0].clone();
+        assert_eq!(thread["failureSeen"], true);
+        assert_eq!(thread["failureId"], failure);
+
+        // Seen, the failure no longer needs the user, so a snooze holds.
+        let shell = coord.run_command(client.clone(), json!({ "type": "snooze-thread", "threadId": thread_id, "until": later }).as_object().unwrap().clone()).await.unwrap();
+        assert_eq!(shell["host"]["threads"][0]["snoozedUntil"], later);
+        coord.forget_observer("socket:front".into());
+        coord.shutdown().await;
+
+        let agents: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("agents.json")).unwrap()).unwrap();
+        assert_eq!(agents["failuresSeen"][0]["threadId"], thread_id.as_str());
+        assert_eq!(agents["failuresSeen"][0]["failure"], failure);
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let thread = coord.shell(true).await.unwrap()["host"]["threads"][0].clone();
+        assert_eq!((thread["failureSeen"].clone(), thread["failureId"].clone()), (json!(true), failure));
+        coord.shutdown().await;
+    }
+
+    /// Dismiss all, as Node's `dismiss-failures`: a thread is seen only while it stands in the failure its row showed,
+    /// and a list Node's schema would refuse is refused.
+    #[tokio::test]
+    async fn dismiss_all_sees_the_failures_its_rows_showed() {
+        let dir = tempdir().unwrap();
+        let (coord, mock, client, thread_id) = failing_workspace(dir.path()).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let thread = fail_a_turn(&coord, &mock, &client, &thread_id).await;
+
+        let shell = run(json!({ "type": "dismiss-failures", "failures": [{ "threadId": thread_id, "failure": "an-older-one" }] })).await.unwrap();
+        assert!(shell["host"]["threads"][0].get("failureSeen").is_none(), "a failure the row did not show stays news");
+        let shell = run(json!({ "type": "dismiss-failures", "failures": [{ "threadId": thread_id, "failure": thread["failureId"] },
+            { "threadId": "00000000-0000-4000-8000-0000000000ff", "failure": "" }] })).await.unwrap();
+        assert_eq!(shell["host"]["threads"][0]["failureSeen"], true);
+
+        for refused in [json!([]), json!([{ "threadId": thread_id, "failure": "x", "extra": 1 }]), json!([{ "threadId": "", "failure": "x" }]),
+            json!([{ "threadId": thread_id, "failure": "x".repeat(65) }])] {
+            assert_eq!(run(json!({ "type": "dismiss-failures", "failures": refused })).await.unwrap_err().code, HostErrorCode::InvalidRequest);
+        }
+        coord.shutdown().await;
     }
 
     /// A snooze is answered before any lane, as Node answers it, so it never waits behind a send on its thread.

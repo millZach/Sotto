@@ -28,6 +28,8 @@ struct ReadAheadEntry {
 /// `detail-read-held`, and `activity-summaries`).
 #[derive(Default)]
 pub struct ClientWireState {
+    /// The name this connection observes threads under, so the host can tell which threads each client shows.
+    pub observer: String,
     pub hello_done: bool,
     pub accepts: HashSet<String>,
     pub observed: HashSet<String>,
@@ -57,6 +59,11 @@ impl ClientWireState {
 
     pub fn has(&self, feature: &str) -> bool {
         self.accepts.contains(feature)
+    }
+
+    /// A connection's state, observing under `observer`.
+    pub fn observing(observer: String) -> Self {
+        Self { observer, ..Self::default() }
     }
 
     pub fn set_observed(&mut self, thread_ids: &[String]) {

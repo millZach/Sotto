@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
+use crate::thread_lifecycle::{failed_without_request, SettledIn};
 use crate::workspace::{AgentProject, AgentThread};
 
 /// The key of the record in `agents.json`.
@@ -88,26 +89,18 @@ impl ThreadSnoozes {
 
     /// Wakes each thread that needs the user, and the threads that delegated to it up to the first settled one, as
     /// Node's `track` does; true when a snooze ended. A thread needs the user while it waits on a request, or while it
-    /// is open and its last turn failed with nothing to answer. No client of this host is told a failure was seen, so
-    /// every such failure is still unseen.
-    pub fn track(&mut self, threads: &[AgentThread], projects: &[AgentProject]) -> bool {
+    /// is open and its last turn failed with nothing to answer and no client has shown the failure (`failure_seen`).
+    pub fn track(&mut self, threads: &[AgentThread], projects: &[AgentProject], failure_seen: impl Fn(&str) -> bool) -> bool {
         if self.until.is_empty() {
             return false;
         }
-        let settled_projects: HashSet<&str> = projects
-            .iter()
-            .filter(|project| has_time(project.workspace_settled_at.as_deref()))
-            .map(|project| project.id.as_str())
-            .collect();
-        let settled = |thread: &AgentThread| {
-            has_time(thread.workspace_settled_at.as_deref())
-                || settled_projects.contains(thread.project_id.as_str())
-                || is_closed(thread)
-        };
+        let settled_in = SettledIn::new(projects);
+        let settled = |thread: &AgentThread| settled_in.settled(thread);
         let by_id: HashMap<&str, &AgentThread> = threads.iter().map(|thread| (thread.id.as_str(), thread)).collect();
         let mut changed = false;
         for thread in threads {
-            let needs = !thread.requests.is_empty() || !settled(thread) && failure_unseen(thread);
+            let needs = !thread.requests.is_empty()
+                || !settled(thread) && failed_without_request(thread) && !failure_seen(&thread.id);
             if !needs {
                 continue;
             }
@@ -126,32 +119,6 @@ impl ThreadSnoozes {
         }
         changed
     }
-}
-
-/// Whether a saved time reads as one, as Node's `hasTimestamp`.
-fn has_time(value: Option<&str>) -> bool {
-    value.is_some_and(|value| DateTime::parse_from_rfc3339(value).is_ok())
-}
-
-/// Archived or settled by its provider, as Node's `isThreadClosed`.
-fn is_closed(thread: &AgentThread) -> bool {
-    let archived = thread.extra.get("archivedAt").and_then(Value::as_str);
-    if has_time(archived) {
-        return true;
-    }
-    match thread.extra.get("settledOverride").and_then(Value::as_str) {
-        Some("active") => false,
-        Some("settled") => true,
-        _ => has_time(thread.settled_at.as_deref()),
-    }
-}
-
-/// A failed thread that asks nothing and that no client was told it showed, as Node's `failureUnseen`.
-fn failure_unseen(thread: &AgentThread) -> bool {
-    thread.status == "error"
-        && thread.requests.is_empty()
-        && !is_closed(thread)
-        && thread.extra.get("failureSeen") != Some(&Value::Bool(true))
 }
 
 #[cfg(test)]
@@ -216,7 +183,7 @@ mod tests {
         for id in ["parent", "child", "other"] {
             snoozes.set(id, at(LATER));
         }
-        assert!(snoozes.track(&[parent.clone(), child.clone(), other.clone()], &[project(None)]));
+        assert!(snoozes.track(&[parent.clone(), child.clone(), other.clone()], &[project(None)], |_| false));
         assert_eq!(snoozes.saved(), json!({ "other": LATER }));
 
         // A settled thread stops the walk: the one that delegated to it stays snoozed.
@@ -224,7 +191,7 @@ mod tests {
         child.workspace_settled_at = Some("2026-11-25T09:00:00.000Z".into());
         snoozes.set("parent", at(LATER));
         snoozes.set("child", at(LATER));
-        assert!(snoozes.track(&[parent, child], &[project(None)]));
+        assert!(snoozes.track(&[parent, child], &[project(None)], |_| false));
         assert_eq!(snoozes.saved(), json!({ "other": LATER, "parent": LATER }));
     }
 
@@ -234,11 +201,10 @@ mod tests {
         let mut snoozes = ThreadSnoozes::default();
         snoozes.set("failed", at(LATER));
         // In a settled project the failure is quiet.
-        assert!(!snoozes.track(std::slice::from_ref(&failed), &[project(Some("2026-11-25T09:00:00.000Z"))]));
-        let mut seen = failed.clone();
-        seen.extra.insert("failureSeen".into(), Value::Bool(true));
-        assert!(!snoozes.track(&[seen], &[project(None)]));
-        assert!(snoozes.track(&[failed], &[project(None)]));
+        assert!(!snoozes.track(std::slice::from_ref(&failed), &[project(Some("2026-11-25T09:00:00.000Z"))], |_| false));
+        // A failure some client has shown is no news.
+        assert!(!snoozes.track(std::slice::from_ref(&failed), &[project(None)], |id| id == "failed"));
+        assert!(snoozes.track(&[failed], &[project(None)], |_| false));
         assert_eq!(snoozes.saved(), json!({}));
     }
 }

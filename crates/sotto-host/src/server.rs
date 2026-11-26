@@ -71,6 +71,7 @@ pub fn advertised_features() -> Vec<String> {
         "thread-files".into(),
         "thread-changes".into(),
         "thread-snooze".into(),
+        "failure-seen".into(),
         "host-facts".into(),
         "project-origins".into(),
         "project-git-init".into(),
@@ -1350,7 +1351,7 @@ async fn handle_websocket_upgrade(
         }
     });
 
-    let mut wire = ClientWireState::default();
+    let mut wire = ClientWireState::observing(format!("socket:{}", uuid::Uuid::new_v4()));
     let mut watcher_peer = WatcherPeerState::default();
     let mut revoked_rx = state.revoked_tx.subscribe();
     let mut drop_rx = match mode {
@@ -1536,6 +1537,8 @@ async fn handle_websocket_upgrade(
     reader_task.abort();
     drop(out_tx);
     let _ = writer_task.await;
+    // A client that went shows nothing now (ADR-0092).
+    state.coordinator.forget_observer(wire.observer.clone());
     Ok(())
 }
 
@@ -1704,6 +1707,19 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
+            // `shown: false`: a desktop whose window is behind another app. Its threads stay observed, but none counts as
+            // shown, which sees a failure (ADR-0092). Node's schema takes only `false`.
+            let shown = match req.fields.get("shown") {
+                None => true,
+                Some(Value::Bool(false)) => false,
+                Some(_) => {
+                    return HostResponseEnvelope::err(
+                        req.id,
+                        HostErrorCode::InvalidRequest,
+                        HostErrorCode::InvalidRequest.default_message(),
+                    );
+                }
+            };
             let thread_ids: Vec<String> = arr
                 .iter()
                 .filter_map(Value::as_str)
@@ -1712,7 +1728,7 @@ async fn handle_ws_request(
             let previously_observed = wire.observed.clone();
             wire.set_observed(&thread_ids);
 
-            let details = match state.coordinator.observe(thread_ids.clone()).await {
+            let details = match state.coordinator.observe(wire.observer.clone(), thread_ids.clone(), shown).await {
                 Ok(list) => list,
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };

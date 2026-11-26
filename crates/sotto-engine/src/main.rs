@@ -50,6 +50,9 @@ struct EngineCliArgs {
     accelerator: bool,
 }
 
+/// The name the desktop window observes threads under.
+const DESKTOP_WINDOW_OBSERVER: &str = "desktop-window";
+
 fn parse_args(args: &[String]) -> Result<EngineCliArgs, String> {
     let mut data_directory = std::env::var("SOTTO_ENGINE_DATA").ok().map(PathBuf::from);
     let mut endpoint = std::env::var("SOTTO_ENGINE_ENDPOINT").ok();
@@ -398,7 +401,12 @@ async fn handle_rpc(
                         .collect()
                 })
                 .unwrap_or_default();
-            let observed = coordinator.observe(ids).await.map_err(coord_err)?;
+            // The desktop window's own panes. This engine hears nothing of the window's focus, so they count as shown,
+            // as Node's host service counts the window while it has the focus (ADR-0046, ADR-0092).
+            let observed = coordinator
+                .observe(DESKTOP_WINDOW_OBSERVER.into(), ids, true)
+                .await
+                .map_err(coord_err)?;
             let out: Vec<Value> = observed
                 .into_iter()
                 .map(|(tid, d)| {
