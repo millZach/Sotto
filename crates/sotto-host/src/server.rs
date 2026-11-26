@@ -70,6 +70,7 @@ pub fn advertised_features() -> Vec<String> {
         "host-folders".into(),
         "thread-files".into(),
         "thread-changes".into(),
+        "thread-snooze".into(),
         "host-facts".into(),
         "project-origins".into(),
         "project-git-init".into(),

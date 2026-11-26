@@ -5469,9 +5469,14 @@ fn is_thread_provider_connected(snapshot: Option<&Value>, thread: &Value) -> boo
 }
 
 fn is_thread_settled(snapshot: Option<&Value>, thread: &Value) -> bool {
-    if thread.get("settledAt").and_then(Value::as_str).is_some()
-        || thread.get("archivedAt").and_then(Value::as_str).is_some()
-    {
+    // Settled in Sotto's workspace, by itself or its project, as Node's Watcher reads it (`isWorkspaceThreadSettled`
+    // in `src/main/agents/watcher.ts`). A provider's own `settledAt` is not the workspace's.
+    let has_time = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_str)
+            .is_some_and(|time| DateTime::parse_from_rfc3339(time).is_ok())
+    };
+    if has_time(thread.get("workspaceSettledAt")) {
         return true;
     }
     let Some(project_id) = thread.get("projectId").and_then(Value::as_str) else {
@@ -5484,9 +5489,7 @@ fn is_thread_settled(snapshot: Option<&Value>, thread: &Value) -> bool {
             ps.iter()
                 .find(|p| p.get("id").and_then(Value::as_str) == Some(project_id))
         })
-        .and_then(|p| p.get("workspaceSettledAt"))
-        .and_then(Value::as_str)
-        .is_some()
+        .is_some_and(|p| has_time(p.get("workspaceSettledAt")))
 }
 
 fn thread_background_work_count(thread: &Value) -> u64 {

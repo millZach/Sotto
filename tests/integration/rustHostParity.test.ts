@@ -285,17 +285,18 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
     const sorted = <T>(record: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
     const actual: Gaps = { features: found.features, unseen: { features: found.unseen.features.sort(), operations: found.unseen.operations.sort() },
       commands: sorted(found.commands), operations: sorted(found.operations) }
-    const listed = JSON.parse(await readFile(GAPS_FILE, 'utf8')) as Gaps
+    let listed = JSON.parse(await readFile(GAPS_FILE, 'utf8')) as Gaps
     if (UPDATE_GAPS) {
-      // The list may only shrink: a gap the hosts show that is not on it fails below, whatever this run writes.
+      // The list may only shrink: a gap the hosts show that is not on it is not written, so it fails below.
       const kept = (now: Answers, before: Answers): Answers => Object.fromEntries(Object.entries(now).filter(([name]) => name in before))
       const within = (now: string[], before: string[] | undefined): string[] => now.filter(name => before?.includes(name))
-      await writeFile(GAPS_FILE, JSON.stringify({
+      listed = {
         features: Object.fromEntries(CLIENT_KINDS.map(client => [client, { missing: within(actual.features[client]?.missing ?? [], listed.features[client]?.missing),
           extra: within(actual.features[client]?.extra ?? [], listed.features[client]?.extra) }])),
         unseen: { features: within(actual.unseen.features, listed.unseen.features), operations: within(actual.unseen.operations, listed.unseen.operations) },
         commands: kept(actual.commands, listed.commands), operations: kept(actual.operations, listed.operations),
-      }, null, 2) + '\n')
+      }
+      await writeFile(GAPS_FILE, JSON.stringify(listed, null, 2) + '\n')
     }
     expect(actual).toEqual(listed)
   })
