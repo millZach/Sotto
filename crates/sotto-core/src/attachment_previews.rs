@@ -9,9 +9,12 @@
 //! an entry this host cannot read, such as an inline picture from before ADR-0031, is written back unchanged.
 //!
 //! Keep local history decides what reaches disk, as Node's host reads it from its `settings.json` at start. With it
-//! off, no saved entry is read or shown and nothing is written: a send's entry is held for this run alone, as Node
-//! holds one with `retain: false`. A file that cannot be read as an entry list reads as empty and the next write
-//! replaces it, as Node's `peek` reads one: no copy of it is ever kept, since it names private images.
+//! off, no saved entry is read or shown, and the start writes the file again without them, as Node's `load` does, so
+//! the previews saved while it was on do not stay on disk: Node keeps only its dormant threads' entries then, the
+//! threads its own Owl answers hide, and this host hides none, so it keeps none. A send's entry is held for this run
+//! alone, as Node holds one with `retain: false`, and never written. A file that cannot be read as an entry list reads
+//! as empty and is replaced, as Node's `peek` reads one: no copy of it is ever kept, since it names private images, and
+//! the copies a crash left of it are removed at start.
 //!
 //! Markers go only on what leaves the host: a message a client is sent carries the entry's handles without their
 //! digests, each picture with `preview: { available: true }`, as Node's `decorate` places them on an outbound copy, and
@@ -202,14 +205,12 @@ pub struct AttachmentPreviews {
 impl AttachmentPreviews {
     /// The entries in `data_directory`'s `attachment-previews.json`, read as Node's `load` reads them: with history on,
     /// each entry as Node's schema reads it, then those past their seven days or over the 100 MiB of pictures let go and
-    /// the file written again; with history off, none, and the file is not touched. A file that is not an entry list
-    /// reads as empty, as Node's `peek` reads it, and the next write replaces it.
+    /// the file written again; with history off, none, and the file written again with none. A file that is not an entry
+    /// list reads as empty, as Node's `peek` reads it, and is replaced. Either way the copies a crash left of the file go.
     pub fn new(data_directory: &Path, history: bool, now: f64) -> Self {
         let path = data_directory.join(FILE);
         let mut store = Self { path, history, version: json!(2), items: Vec::new(), unreadable: false };
-        if !history {
-            return store;
-        }
+        remove_crash_copies(data_directory);
         let text = match fs::read_to_string(&store.path) {
             Ok(text) => text,
             Err(err) if err.kind() == ErrorKind::NotFound => return store,
@@ -218,6 +219,11 @@ impl AttachmentPreviews {
                 return store;
             }
         };
+        if !history {
+            // Node keeps its dormant threads' entries alone in this mode; this host hides no thread, so it keeps none.
+            let _ = write_atomic_json(&store.path, &json!({ "version": 2, "entries": [] }));
+            return store;
+        }
         let saved = serde_json::from_str::<Map<String, Value>>(&text).ok().and_then(|saved| {
             let version = saved.get("version").filter(|version| matches!(version.as_f64(), Some(v) if v == 1.0 || v == 2.0))?.clone();
             Some((version, saved.get("entries")?.as_array()?.clone()))
@@ -357,6 +363,28 @@ impl AttachmentPreviews {
             message.insert("attachments".into(), attachments);
         }
     }
+}
+
+/// Removes the copies a crash left of the file while it was being written: Node's `attachment-previews.json.tmp-<pid>-<uuid>`,
+/// as its `maintainRecoveryCopies` removes them when it keeps no dormant thread, and this host's own
+/// `attachment-previews.json.tmp-<uuid>`. Each holds what the file held, so none is left behind.
+fn remove_crash_copies(data_directory: &Path) {
+    let Ok(names) = fs::read_dir(data_directory) else { return };
+    for name in names.flatten() {
+        let file_name = name.file_name();
+        let Some(rest) = file_name.to_str().and_then(|name| name.strip_prefix("attachment-previews.json.tmp-")) else { continue };
+        let uuid = rest.split_once('-').filter(|(pid, _)| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit())).map_or(rest, |(_, uuid)| uuid);
+        if is_uuid(uuid) {
+            let _ = fs::remove_file(name.path());
+        }
+    }
+}
+
+/// A UUID as Node's `randomUUID` and this host's write name one: 8-4-4-4-12 lowercase hexadecimal digits.
+fn is_uuid(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(at, b)| if matches!(at, 8 | 13 | 18 | 23) { *b == b'-' } else { matches!(b, b'0'..=b'9' | b'a'..=b'f') })
 }
 
 /// Places one message's markers among a thread's live `entries` (see `AttachmentPreviews::decorate`).
@@ -583,8 +611,8 @@ mod tests {
         assert_eq!(saved(dir.path()), json!({ "version": 2, "entries": [fresh] }));
     }
 
-    /// With Keep local history off, no saved entry is read or shown and nothing is written: the file stays as it was,
-    /// and a send's entry is held for this run alone, as Node holds one with `retain: false`.
+    /// With Keep local history off, no saved entry is read or shown, and a send's entry is held for this run alone, as Node
+    /// holds one with `retain: false`, and never written.
     #[test]
     fn with_history_off_nothing_is_read_or_written() {
         let dir = tempdir().unwrap();
@@ -599,7 +627,7 @@ mod tests {
         assert_eq!(shown[0].attachments, None, "no saved entry is shown");
 
         assert_eq!(previews.remember("t", "new", "c", &[handle("p", "image/png", 5)], NOW), Ok(true));
-        assert_eq!(saved(dir.path()), file, "nothing is written");
+        assert_eq!(saved(dir.path()), json!({ "version": 2, "entries": [] }), "nothing of this run is written");
         assert!(previews.live("t", "new", NOW).is_some(), "held for this run");
         // A fresh start reads none of it.
         assert!(AttachmentPreviews::new(dir.path(), false, NOW).live("t", "new", NOW).is_none());
@@ -608,6 +636,38 @@ mod tests {
         let empty = tempdir().unwrap();
         AttachmentPreviews::new(empty.path(), false, NOW).remember("t", "m", "c", &[handle("f", "text/plain", 1)], NOW).unwrap();
         assert!(!empty.path().join(FILE).exists());
+    }
+
+    /// With history off, the start writes the file again without the entries saved while it was on, as Node's load
+    /// does: a damaged file is replaced the same way, never copied aside, crash copies of it go, and nothing of this
+    /// run reaches it.
+    #[test]
+    fn history_off_at_start_drops_the_saved_entries() {
+        let dir = tempdir().unwrap();
+        let saved_on = json!({ "version": 1, "entries": [
+            entry_json("m", NOW - 1000.0, json!([file_handle("f", 1)])),
+            json!({ "threadId": "t", "messageId": "old", "commandId": "c", "storedAt": NOW, "attachments": [{ "id": "i", "dataUrl": "data:image/png;base64,AAAA" }] }),
+        ] });
+        fs::write(dir.path().join(FILE), saved_on.to_string()).unwrap();
+        let node_copy = dir.path().join("attachment-previews.json.tmp-4242-0f8c1d2e-3b4a-4c5d-8e6f-001122334455");
+        let own_copy = dir.path().join("attachment-previews.json.tmp-1a9d2e3f-4c5b-4d6e-9f70-112233445566");
+        let other = dir.path().join("attachment-previews.json.tmp-not-a-copy");
+        for copy in [&node_copy, &own_copy, &other] {
+            fs::write(copy, saved_on.to_string()).unwrap();
+        }
+        let mut previews = AttachmentPreviews::new(dir.path(), false, NOW);
+        assert_eq!(saved(dir.path()), json!({ "version": 2, "entries": [] }), "the saved entries are gone from disk");
+        assert!(!node_copy.exists() && !own_copy.exists(), "a crash copy holds what the file held");
+        assert!(other.exists(), "only this file's crash copies go");
+        previews.remember("t", "new", "c", &[handle("p", "image/png", 5)], NOW).unwrap();
+        assert_eq!(saved(dir.path()), json!({ "version": 2, "entries": [] }), "nothing of this run reaches the file");
+
+        let damaged = tempdir().unwrap();
+        fs::write(damaged.path().join(FILE), "{ not json").unwrap();
+        AttachmentPreviews::new(damaged.path(), false, NOW);
+        let names: Vec<String> = fs::read_dir(damaged.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, [FILE], "a damaged file is replaced, not copied aside");
+        assert_eq!(saved(damaged.path()), json!({ "version": 2, "entries": [] }));
     }
 
     /// Keep local history is read from the host's own `settings.json` as Node reads it: on unless it says false.
