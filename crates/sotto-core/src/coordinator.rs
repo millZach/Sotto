@@ -98,6 +98,19 @@ pub struct WatcherThreadRead {
     pub activities: Vec<Value>,
 }
 
+/// A command's reply waiting on a steered follow-up's settle, with the client it answers.
+struct FollowupAnswer {
+    client: ClientContext,
+    reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+}
+
+/// What kind of prompt a client sent, as Node's command path routes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptKind {
+    Send,
+    Steer,
+}
+
 /// Who queued a follow-up while this host ran, so its send goes as theirs: the client, and the message ID Watcher named
 /// for it. A follow-up read from `followups.json` has none and goes as the host's own.
 #[derive(Debug, Clone)]
@@ -337,8 +350,9 @@ enum AsyncCommandOutcome {
     Interrupt {
         thread_id: String,
         result: Result<(), String>,
-        /// A user's Stop is turned down in the host's state, as Node's command path turns it down; Watcher hears its own.
-        refuse_in_state: bool,
+        /// A user's Stop, with whether its queue pause failed to save: it is turned down in the host's state, as Node's
+        /// command path turns it down. Watcher's own Stop, `None`, hears its failure.
+        user: Option<bool>,
     },
     Compact {
         result: Result<(), String>,
@@ -987,7 +1001,7 @@ struct CoordinatorActor {
     /// Who queued each follow-up while this host ran, by item ID.
     followup_origins: HashMap<String, FollowupOrigin>,
     /// The reply of each steered follow-up's command, answered once its steer is settled, by item ID.
-    followup_answers: HashMap<String, (ClientContext, oneshot::Sender<Result<Value, CoordinatorError>>)>,
+    followup_answers: HashMap<String, FollowupAnswer>,
     thread_snoozes: ThreadSnoozes,
     failures_seen: FailuresSeen,
     /// Each client's shown threads, by the name it observes under.
@@ -1144,6 +1158,10 @@ impl CoordinatorActor {
         // for the user's review rather than behind a turn that will never end.
         let stopped: Vec<String> = self.threads.iter().filter(|t| turn_running(t)).map(|t| t.id.clone()).collect();
         for thread_id in &stopped {
+            // What it asked went with it: no provider here holds the question or the permission any more.
+            if let Some(thread) = self.threads.iter_mut().find(|t| &t.id == thread_id) {
+                thread.requests.clear();
+            }
             self.finish_turn(thread_id, "interrupted");
         }
 
@@ -1602,7 +1620,7 @@ impl CoordinatorActor {
                 cmd.insert("threadId".into(), Value::String(thread_id.clone()));
                 let (inner_tx, inner_rx) = oneshot::channel();
                 self.busy_thread_ids.insert(thread_id.clone());
-                self.spawn_cmd_interrupt(Some(thread_id), client, &cmd, false, inner_tx);
+                self.spawn_cmd_interrupt(Some(thread_id), client, &cmd, None, inner_tx);
                 tokio::spawn(async move {
                     let mapped = match inner_rx.await {
                         Ok(Ok(_)) => Ok(()),
@@ -1837,7 +1855,8 @@ impl CoordinatorActor {
             "connect" => self.spawn_cmd_connect(lane, client, &command, reply),
             "disconnect" => self.spawn_cmd_disconnect(lane, client, &command, reply),
             "configure-thread" => self.spawn_cmd_configure_thread(lane, client, &command, reply),
-            "manual-send" | "steer" => self.route_prompt(lane, client, cmd_type, &command, reply),
+            "manual-send" => self.route_prompt(lane, client, PromptKind::Send, &command, reply),
+            "steer" => self.route_prompt(lane, client, PromptKind::Steer, &command, reply),
             "steer-followup" => self.cmd_steer_followup(lane, client, &command, reply),
             "answer" => self.spawn_cmd_answer(lane, client, &command, reply),
             "interrupt" => self.cmd_interrupt(lane, client, &command, reply),
@@ -1845,10 +1864,7 @@ impl CoordinatorActor {
                 self.error = None;
                 match self.compact_refusal(command.get("threadId").and_then(Value::as_str).unwrap_or_default()) {
                     Ok(()) => self.spawn_cmd_compact(lane, client, &command, reply),
-                    Err(words) => {
-                        self.command_refused(words);
-                        self.finish_sync_command(lane, &client, Ok(()), reply);
-                    }
+                    Err(words) => self.refuse_sync_command(lane, &client, words, reply),
                 }
             }
             _ => {
@@ -1872,6 +1888,12 @@ impl CoordinatorActor {
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
         self.finish_sync_with_refusal(lane, client, outcome.map(|()| None), reply);
+    }
+
+    /// Ends a command turned down in the host's state, as Node's command path turns one down.
+    fn refuse_sync_command(&mut self, lane: Option<String>, client: &ClientContext, words: String, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        self.command_refused(words);
+        self.finish_sync_command(lane, client, Ok(()), reply);
     }
 
     /// Ends a command whose answer may turn it down in the state it sends back, as Node answers some commands:
@@ -2398,7 +2420,7 @@ impl CoordinatorActor {
         lane: Option<String>,
         client: ClientContext,
         command: &Map<String, Value>,
-        refuse_in_state: bool,
+        user: Option<bool>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
         let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
@@ -2427,7 +2449,7 @@ impl CoordinatorActor {
                 outcome: Box::new(AsyncCommandOutcome::Interrupt {
                     thread_id: tid,
                     result,
-                    refuse_in_state,
+                    user,
                 }),
                 reply,
             });
@@ -2711,10 +2733,16 @@ impl CoordinatorActor {
                 }
                 self.notice = format!("Answered {title}.");
             }
-            AsyncCommandOutcome::Interrupt { thread_id, result, refuse_in_state } => match result {
-                Ok(()) => self.finish_turn(&thread_id, "interrupted"),
-                Err(words) if refuse_in_state => self.command_refused(words),
-                Err(words) => return Err(CoordinatorError::unavailable(words)),
+            AsyncCommandOutcome::Interrupt { thread_id, result, user } => match (result, user) {
+                (Ok(()), pause_failed) => {
+                    self.finish_turn(&thread_id, "interrupted");
+                    // Said once the Stop has gone, as Node says it.
+                    if pause_failed == Some(true) {
+                        self.command_refused("Stop was sent, but the queue pause could not be saved. Your queued messages are still saved. Check them before sending another message.".into());
+                    }
+                }
+                (Err(words), Some(_)) => self.command_refused(words),
+                (Err(words), None) => return Err(CoordinatorError::unavailable(words)),
             },
             // What the provider turns down is turned down in the host's state, as Node's dispatch turns it down.
             AsyncCommandOutcome::Compact { result } => {
@@ -3357,13 +3385,10 @@ impl CoordinatorActor {
         match self.steer_followup(&thread_id, &item_id) {
             Ok(Some(item)) => {
                 self.shell_dirty = true;
-                self.send_followup(item, Some((client, reply)));
+                self.send_followup(item, Some(FollowupAnswer { client, reply }));
             }
             Ok(None) => self.finish_sync_command(lane, &client, Ok(()), reply),
-            Err(words) => {
-                self.command_refused(words);
-                self.finish_sync_command(lane, &client, Ok(()), reply);
-            }
+            Err(words) => self.refuse_sync_command(lane, &client, words, reply),
         }
     }
 
@@ -3371,11 +3396,14 @@ impl CoordinatorActor {
         let Some(item) = self.followups.items().iter().find(|i| i.thread_id == thread_id && i.id == item_id) else {
             return Ok(None);
         };
+        // A steer of it already on its way is the press this one repeats.
+        if item.status == "dispatching" && self.followup_answers.contains_key(item_id) {
+            return Ok(None);
+        }
         if item.wake_up == Some(true) {
             return Err("A wake-up goes when the thread is ready for it, never into a running turn. It is still queued.".into());
         }
-        self.can_act(thread_id, true)?;
-        let thread = self.threads.iter().find(|t| t.id == thread_id).ok_or(NO_THREAD)?;
+        let thread = self.can_act(thread_id, true)?;
         if !self.provider_offers(thread, |c| c.steer == Some(true)) {
             return Err("This provider does not support native steering. Leave the message queued instead.".into());
         }
@@ -3401,18 +3429,25 @@ impl CoordinatorActor {
         &mut self,
         lane: Option<String>,
         client: ClientContext,
-        kind: &str,
+        kind: PromptKind,
         command: &Map<String, Value>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
         let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
-        if let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) {
+        // A draft already delivered is not sent again, whichever way its retry would go (`deliveredDrafts`).
+        let draft_id = command.get("draftId").and_then(Value::as_str);
+        self.error = None;
+        if draft_id.is_some_and(|draft| self.delivered_drafts.iter().any(|d| d.thread_id == thread_id && d.draft_id == draft)) {
+            return self.finish_sync_command(lane, &client, Ok(()), reply);
+        }
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return self.refuse_sync_command(lane, &client, NO_THREAD.into(), reply);
+        };
+        {
             let asks = !thread.requests.is_empty();
             let queues = asks
-                || kind == "manual-send"
-                    && (thread.status == "running"
-                        || self.in_flight_sends.contains_key(&thread_id)
-                        || self.followups.items().iter().any(|i| i.thread_id == thread_id && !crate::watcher::is_waiting_wake_up(i)));
+                || kind == PromptKind::Send
+                    && (thread.status == "running" || self.in_flight_sends.contains_key(&thread_id) || self.followups.holds_prompts(&thread_id));
             if queues {
                 let mut queued = command.clone();
                 queued.insert("type".into(), json!("queue-followup"));
@@ -3422,11 +3457,9 @@ impl CoordinatorActor {
                 self.pump_followups();
                 return;
             }
-            if kind == "steer" {
-                self.error = None;
+            if kind == PromptKind::Steer {
                 if let Err(words) = self.steer_refusal(&thread_id, command) {
-                    self.command_refused(words);
-                    return self.finish_sync_command(lane, &client, Ok(()), reply);
+                    return self.refuse_sync_command(lane, &client, words, reply);
                 }
             }
         }
@@ -3435,8 +3468,7 @@ impl CoordinatorActor {
 
     /// Why a steer may not go, in Node's words and order (`steer` in `control.ts`).
     fn steer_refusal(&self, thread_id: &str, command: &Map<String, Value>) -> Result<(), String> {
-        self.can_act(thread_id, true)?;
-        let thread = self.threads.iter().find(|t| t.id == thread_id).ok_or(NO_THREAD)?;
+        let thread = self.can_act(thread_id, true)?;
         if !self.provider_offers(thread, |c| c.steer == Some(true)) {
             return Err("This provider does not support native steering. Queue a follow-up instead.".into());
         }
@@ -3465,14 +3497,11 @@ impl CoordinatorActor {
         self.error = None;
         let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
         if let Err(words) = self.interrupt_refusal(&thread_id) {
-            self.command_refused(words);
-            return self.finish_sync_command(lane, &client, Ok(()), reply);
+            return self.refuse_sync_command(lane, &client, words, reply);
         }
-        if self.followups.pause(&thread_id, QUEUE_INTERRUPTED, &watcher_thread_ids(&self.threads)).is_err() {
-            self.error = Some("Stop was sent, but the queue pause could not be saved. Your queued messages are still saved. Check them before sending another message.".into());
-        }
+        let pause_failed = self.followups.pause(&thread_id, QUEUE_INTERRUPTED, &watcher_thread_ids(&self.threads)).is_err();
         self.shell_dirty = true;
-        self.spawn_cmd_interrupt(lane, client, command, true, reply);
+        self.spawn_cmd_interrupt(lane, client, command, Some(pause_failed), reply);
     }
 
     /// Why a Stop may not go, in Node's words and order (`validateInterrupt`).
@@ -3487,13 +3516,16 @@ impl CoordinatorActor {
         if is_closed(thread) {
             return Err("This thread is settled or archived. There is no open work to stop.".into());
         }
+        // Node's dispatch asks again for the thread's own provider before it sends the Stop (`assertCanAct`).
+        if !thread_provider_connected(&self.provider_statuses, thread) {
+            return Err(RECONNECT_PROVIDER.into());
+        }
         Ok(())
     }
 
     /// Why a compaction may not go, in Node's words and order (`compact-thread` in `control.ts`).
     fn compact_refusal(&self, thread_id: &str) -> Result<(), String> {
-        self.can_act(thread_id, false)?;
-        let thread = self.threads.iter().find(|t| t.id == thread_id).ok_or(NO_THREAD)?;
+        let thread = self.can_act(thread_id, false)?;
         let offered = self.provider_offers(thread, |c| c.compact == Some(true));
         if !offered || thread.extra.get("manualCompactionSupported") == Some(&Value::Bool(false)) {
             return Err("Native manual compaction is unavailable for this thread.".into());
@@ -3515,7 +3547,7 @@ impl CoordinatorActor {
 
     /// Whether the host may act on a thread now, as Node's `assertCanAct` asks: a provider connected on the host, the
     /// thread there, and its own provider connected. `draft_kept` adds Node's words that the draft is saved.
-    fn can_act(&self, thread_id: &str, draft_kept: bool) -> Result<(), String> {
+    fn can_act(&self, thread_id: &str, draft_kept: bool) -> Result<&AgentThread, String> {
         let kept = if draft_kept { DRAFT_KEPT } else { "" };
         if !self.host_connected() {
             return Err(format!("{NO_PROVIDER_ON_HOST}{kept}"));
@@ -3524,7 +3556,7 @@ impl CoordinatorActor {
         if !thread_provider_connected(&self.provider_statuses, thread) {
             return Err(format!("{RECONNECT_PROVIDER}{kept}"));
         }
-        Ok(())
+        Ok(thread)
     }
 
     /// Sends each thread's next queued follow-up once the thread is ready for it, as Node's `pumpFollowups` sends the
@@ -3588,7 +3620,7 @@ impl CoordinatorActor {
 
     /// Sends a follow-up the queue took, as the client that queued it, and settles it once the send is answered. A
     /// steered one carries its command's reply, answered once it is settled.
-    fn send_followup(&mut self, item: QueuedFollowup, answer: Option<(ClientContext, oneshot::Sender<Result<Value, CoordinatorError>>)>) {
+    fn send_followup(&mut self, item: QueuedFollowup, answer: Option<FollowupAnswer>) {
         if let Some(answer) = answer {
             self.followup_answers.insert(item.id.clone(), answer);
         }
@@ -3637,9 +3669,9 @@ impl CoordinatorActor {
         if settle == FollowupSettle::Accepted {
             self.followup_origins.remove(item_id);
         }
-        if let Some((client, reply)) = self.followup_answers.remove(item_id) {
+        if let Some(FollowupAnswer { client, reply }) = self.followup_answers.remove(item_id) {
             // A steer that did not go is turned down in the host's state, as Node's command path turns it down.
-            if let Some(words) = self.followups.items().iter().find(|i| i.id == item_id).and_then(|i| i.error.clone()) {
+            if let Some(words) = self.followups.error_of(item_id) {
                 self.command_refused(words);
             }
             let _ = reply.send(Ok(self.build_shell(client.may_answer)));
@@ -5074,7 +5106,14 @@ mod tests {
         let refused = run(json!({ "type": "steer", "threadId": thread_id, "draftId": Uuid::new_v4().to_string(), "text": "Steer" })).await.unwrap();
         assert_eq!(refused["error"], "There is no running turn to steer. Send or queue this prompt instead.");
 
-        run(json!({ "type": "manual-send", "threadId": thread_id, "text": "First" })).await.unwrap();
+        let refused = run(json!({ "type": "steer", "threadId": "00000000-0000-4000-8000-0000000000ff", "draftId": Uuid::new_v4().to_string(), "text": "Steer" })).await.unwrap();
+        assert_eq!(refused["error"], NO_THREAD);
+
+        let first = Uuid::new_v4().to_string();
+        run(json!({ "type": "manual-send", "threadId": thread_id, "draftId": first, "text": "First" })).await.unwrap();
+        // The same draft again, as a client retrying it, is not sent or queued a second time.
+        let retried = run(json!({ "type": "manual-send", "threadId": thread_id, "draftId": first, "text": "First" })).await.unwrap();
+        assert_eq!((retried["error"].clone(), retried["followups"].clone()), (Value::Null, json!([])));
         for text in ["Sent while it ran", "Steer me"] {
             let shell = run(json!({ "type": "manual-send", "threadId": thread_id, "draftId": Uuid::new_v4().to_string(), "text": text })).await.unwrap();
             assert_eq!(shell["error"], Value::Null);

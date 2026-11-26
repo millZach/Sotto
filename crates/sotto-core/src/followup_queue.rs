@@ -265,10 +265,11 @@ impl FollowupStore {
         self.take(id, None, watcher_thread_ids)
     }
 
-    fn take(&mut self, id: &str, head_of: Option<&dyn Fn(&QueuedFollowup) -> bool>, watcher_thread_ids: &HashSet<String>) -> Result<QueuedFollowup, String> {
+    /// Takes a queued item: the head of its thread's queue, past what `head_skipping` says waits, or with none any item.
+    fn take(&mut self, id: &str, head_skipping: Option<&dyn Fn(&QueuedFollowup) -> bool>, watcher_thread_ids: &HashSet<String>) -> Result<QueuedFollowup, String> {
         let mut claimed = None;
         self.change(watcher_thread_ids, |items, _| {
-            let at = match head_of {
+            let at = match head_skipping {
                 Some(waits) => {
                     let thread_id = items.iter().find(|i| i.id == id).map(|i| i.thread_id.clone());
                     thread_id.and_then(|thread| items.iter().position(|i| i.thread_id == thread && !waits(i))).filter(|&at| items[at].id == id)
@@ -323,6 +324,16 @@ impl FollowupStore {
             Ok(removed > 0)
         })?;
         Ok(removed)
+    }
+
+    /// Whether a thread's queue holds anything of the user's or Watcher's, rather than only Sotto's waiting wake-ups.
+    pub fn holds_prompts(&self, thread_id: &str) -> bool {
+        self.items.iter().any(|item| item.thread_id == thread_id && !is_waiting_wake_up(item))
+    }
+
+    /// Why an item waits, as its record says.
+    pub fn error_of(&self, item_id: &str) -> Option<String> {
+        self.items.iter().find(|item| item.id == item_id).and_then(|item| item.error.clone())
     }
 
     /// The queue as a client is shown it, as Node's state carries it: no hidden wake-up, and no item's news or the
