@@ -3891,6 +3891,7 @@ impl CoordinatorActor {
         // previews, and being the active or a shown thread.
         self.thread_drafts.forget_threads(&gone);
         self.deliveries.retain(|d| !gone.contains(&d.thread_id));
+        self.forget_saved_agents_records(&gone);
         let watchers = watcher_thread_ids(&self.threads);
         let _ = self.followups.forget_threads(&gone, &watchers);
         self.previews.forget_threads(&gone);
@@ -3903,6 +3904,30 @@ impl CoordinatorActor {
         self.save_workspace();
         self.shell_dirty = true;
         Ok(())
+    }
+
+    /// What deleted threads left in the records of Node's `agents.json` this host carries as they were, cleared as Node's
+    /// `forgetDeletedThreads` clears them: their deliveries and delivered prompt digests, the composer's draft, its
+    /// words, images and binding, when it was theirs (`clearDraft`), and the active thread when it was one of them.
+    fn forget_saved_agents_records(&mut self, gone: &HashSet<String>) {
+        let extra = &mut self.agents_json_extra;
+        let theirs = |value: Option<&Value>| value.and_then(Value::as_str).is_some_and(|id| gone.contains(id));
+        for key in ["deliveries", "deliveredPromptDigests"] {
+            if let Some(Value::Array(items)) = extra.get_mut(key) {
+                items.retain(|item| !theirs(item.get("threadId")));
+            }
+        }
+        if theirs(extra.get("draftThreadId")) {
+            extra.insert("draft".into(), Value::String(String::new()));
+            extra.insert("draftAttachments".into(), Value::Array(Vec::new()));
+            extra.insert("draftThreadId".into(), Value::Null);
+            extra.insert("draftRequestId".into(), Value::Null);
+            extra.insert("manualDraftId".into(), Value::Null);
+            extra.insert("composing".into(), Value::Bool(false));
+        }
+        if theirs(extra.get("activeThreadId")) {
+            extra.insert("activeThreadId".into(), Value::Null);
+        }
     }
 
     /// Settles or restores a thread or a project from a command. One that is not there is turned down in the host's
@@ -6099,6 +6124,23 @@ mod tests {
             subagents.execute("INSERT INTO subagent_rows (thread_id, agent_id, sequence, status, value) VALUES (?1, 'agent-1', 1, 'done', '{}')", [&thread_id]).unwrap();
             subagents.execute("INSERT INTO subagent_assignments (thread_id, agent_id, assignment_id, sequence, value, fingerprint, observed_at) VALUES (?1, 'agent-1', 'task-1', 1, '{}', 'f', 'o')", [&thread_id]).unwrap();
         }
+        // What Node's coordinator left in agents.json for it, which this host carries as it was: the composer's draft,
+        // the active thread, a delivery receipt and a delivered prompt's digest, beside the delegated thread's own receipt.
+        {
+            let path = dir.path().join("agents.json");
+            let mut agents: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let delivery = |thread: &str, draft: &str| json!({ "commandId": format!("command-{draft}"), "draftId": draft, "threadId": thread,
+                "status": "delivered", "createdAt": "2026-11-26T10:00:00.000Z", "updatedAt": "2026-11-26T10:00:01.000Z" });
+            let fields = agents.as_object_mut().unwrap();
+            fields.insert("draft".into(), json!("Secret composer words"));
+            fields.insert("draftThreadId".into(), json!(thread_id));
+            fields.insert("draftRequestId".into(), json!("request-1"));
+            fields.insert("composing".into(), json!(true));
+            fields.insert("activeThreadId".into(), json!(thread_id));
+            fields.insert("deliveries".into(), json!([delivery(&thread_id, "00000000-0000-4000-8000-0000000000e1"), delivery(child, "00000000-0000-4000-8000-0000000000e2")]));
+            fields.insert("deliveredPromptDigests".into(), json!([{ "threadId": thread_id, "draftId": "00000000-0000-4000-8000-0000000000e1", "digest": "Secret digest" }]));
+            std::fs::write(&path, serde_json::to_string(&agents).unwrap()).unwrap();
+        }
         let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
         let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
         let preview = |id: &str| run(json!({ "type": "preview-delete-thread", "threadId": id }));
@@ -6141,6 +6183,11 @@ mod tests {
         assert!(!registry.contains(&thread_id), "its alias record goes");
         let agents = std::fs::read_to_string(dir.path().join("agents.json")).unwrap();
         assert!(!agents.contains("Drafted"), "its draft goes");
+        assert!(!agents.contains("Secret") && !agents.contains(&thread_id), "nothing of it stays in agents.json: {agents}");
+        let agents: Value = serde_json::from_str(&agents).unwrap();
+        assert_eq!((&agents["draft"], &agents["draftThreadId"], &agents["draftRequestId"], &agents["composing"]), (&json!(""), &Value::Null, &Value::Null, &json!(false)));
+        assert_eq!(agents["activeThreadId"], Value::Null);
+        assert_eq!(agents["deliveries"].as_array().unwrap().len(), 1, "the delegated thread keeps its own receipt");
         let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
         assert!(store.read_messages(&thread_id).unwrap().is_empty());
         assert!(store.read_activities(&thread_id).unwrap().is_empty());
