@@ -1,3 +1,4 @@
+pub mod activity_bodies;
 pub mod checkpoints;
 pub mod cli_lookup;
 pub mod coordinator;

@@ -2,7 +2,6 @@
   "features": {
     "desktop": {
       "missing": [
-        "activity-bodies",
         "agents-view",
         "answer-check",
         "answer-receipts",
@@ -70,7 +69,6 @@
     },
     "unrecorded": {
       "missing": [
-        "activity-bodies",
         "agents-view",
         "answer-check",
         "answer-receipts",
@@ -318,10 +316,6 @@
     }
   },
   "operations": {
-    "activity-body": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "attachment-file": {
       "node": "ok",
       "rust": "invalid_request"
