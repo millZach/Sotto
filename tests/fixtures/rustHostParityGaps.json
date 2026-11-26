@@ -146,10 +146,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "compact-thread": {
-      "node": "refused",
-      "rust": "unavailable"
-    },
     "compose": {
       "node": "refused",
       "rust": "invalid_request"
@@ -222,10 +218,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "interrupt": {
-      "node": "refused",
-      "rust": "unavailable"
-    },
     "preview-delete-thread": {
       "node": "ok",
       "rust": "invalid_request"
@@ -281,10 +273,6 @@
     "start-thread-session": {
       "node": "ok",
       "rust": "invalid_request"
-    },
-    "steer": {
-      "node": "refused",
-      "rust": "ok"
     },
     "stop-babysitting": {
       "node": "refused",
