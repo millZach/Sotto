@@ -49,6 +49,8 @@ pub struct ClientWireState {
     held_details: HashMap<String, AgentThreadDetail>,
     read_ahead: HashMap<String, ReadAheadEntry>,
     read_ahead_order: VecDeque<String>,
+    /// The answers this connection asked the receipt of and was told were not accepted yet (`answer-receipts`).
+    pub answer_watches: sotto_core::command_receipts::AnswerWatches,
 }
 
 impl ClientWireState {
