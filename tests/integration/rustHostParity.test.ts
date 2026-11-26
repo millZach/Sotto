@@ -284,6 +284,13 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
       .map(([op, probe]) => [op, (ids: ProbeIds) => probe(ids) as Record<string, unknown>] as const), found.operations)
   }, 600_000)
 
+  /** Lays `value` over the fake Codex's script on one host, so its next turns go as `value` says. */
+  async function scriptTheFake(under: HostUnderTest, value: Record<string, unknown>): Promise<void> {
+    const script = join(under.data, 'script.json')
+    const current = JSON.parse(await readFile(script, 'utf8').catch(() => '{}')) as Record<string, unknown>
+    await writeFile(script, JSON.stringify({ ...current, ...value }))
+  }
+
   /** The thread as the host's state now shows it, read with a `shell` request. */
   async function shownThread(client: Client, threadId: string): Promise<{ status?: string; failureId?: string; failureSeen?: boolean } | undefined> {
     const answer = await request(client, { op: 'shell' })
@@ -312,9 +319,7 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
   it('sees a failure when a client shows its thread, as Node does', async () => {
     const steps = async (under: HostUnderTest): Promise<Record<string, boolean>> => {
       const { threadId } = await probeIds(under, randomUUID(), 'the probes')
-      const script = join(under.data, 'script.json')
-      const current = JSON.parse(await readFile(script, 'utf8').catch(() => '{}')) as Record<string, unknown>
-      await writeFile(script, JSON.stringify({ ...current, fail: true }))
+      await scriptTheFake(under, { fail: true })
       const seen = async (): Promise<boolean> => (await shownThread(under.clients.desktop, threadId))?.failureSeen === true
       const first = await failATurn(under, threadId, undefined)
       const unshown = await seen()
@@ -343,9 +348,7 @@ describe.skipIf(!RUN_RUST_HOST)('the Rust host against the Node host', () => {
   it('reads the prompts above a window as Node does', async () => {
     const prompts = async (under: HostUnderTest): Promise<unknown> => {
       const { threadId } = await probeIds(under, randomUUID(), 'the probes')
-      const script = join(under.data, 'script.json')
-      const current = JSON.parse(await readFile(script, 'utf8').catch(() => '{}')) as Record<string, unknown>
-      await writeFile(script, JSON.stringify({ ...current, fail: false, reply: 'Answered' }))
+      await scriptTheFake(under, { fail: false, reply: 'Answered' })
       // A host's detail holds a thread's messages while a client observes it.
       await request(under.clients.desktop, { op: 'observe', threadIds: [threadId] })
       type Detail = { messages?: { id: string; role: string; text: string }[] }

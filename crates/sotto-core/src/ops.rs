@@ -2163,10 +2163,6 @@ pub fn host_facts(running_threads: usize) -> Value {
     host_facts_report(running_threads, false)
 }
 
-/// Searches thread messages for a query string matching `agentThreadWordsSchema`
-/// (`src/shared/threadWords.ts`) and `ThreadStore.threadWords` (`src/main/agents/threadStore.ts`).
-/// Opens `threads.sqlite` strictly read-only so it never creates a database or contends for write
-/// locks when running beside Node's `AgentControl`.
 /// The most of a sent message a stored prompt carries, as Node's `THREAD_PROMPT_TEXT`.
 const THREAD_PROMPT_TEXT: usize = 400;
 /// The start and end of a turn's last reply a stored prompt carries, as Node's `THREAD_PROMPT_REPLY_HEAD` and `_TAIL`.
@@ -2174,15 +2170,32 @@ const THREAD_PROMPT_REPLY_HEAD: usize = 300;
 const THREAD_PROMPT_REPLY_TAIL: usize = 300;
 /// The most messages the user sent one answer covers, as Node's `THREAD_PROMPTS_MOST`.
 const THREAD_PROMPTS_MOST: usize = 5_000;
+/// The most attachments a stored prompt counts, as Node's schema allows.
+const THREAD_PROMPT_ATTACHMENTS_MOST: usize = 1_000;
 
-/// The messages the user sent before `before_message_id`, oldest first, each with its turn's last reply with words: what
-/// the message scrubber marks above a pane's window (ADR-0109), as Node's `promptsBefore` reads them from the same
-/// `threads.sqlite`. Only the start of each message and the start and end of each reply are read, a page of the newest at
-/// a time: `next` is the message the next page is read before, absent once the page reaches the first. A message the
-/// store does not hold has nothing before it. Wake-ups are Sotto's, so they are left out. `None` when the store cannot
-/// answer.
-pub fn thread_prompts(data_directory: &Path, thread_id: &str, before_message_id: &str) -> Option<Value> {
-    use rusqlite::OptionalExtension;
+/// One prompt the message scrubber marks, as Node's `agentThreadPromptSchema` has it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadPrompt {
+    id: String,
+    created_at: String,
+    text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attachments: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply: Option<ThreadPromptReply>,
+}
+
+/// The last reply with words of a prompt's turn.
+#[derive(Serialize)]
+struct ThreadPromptReply {
+    id: String,
+    text: String,
+}
+
+/// `threads.sqlite`, opened strictly read-only so a read never creates a database or contends for write locks beside
+/// the host that writes it. `None` when there is none or it cannot be opened.
+fn open_thread_store_read_only(data_directory: &Path) -> Option<rusqlite::Connection> {
     let db = data_directory.join("threads.sqlite");
     if !db.is_file() {
         return None;
@@ -2193,6 +2206,24 @@ pub fn thread_prompts(data_directory: &Path, thread_id: &str, before_message_id:
     )
     .ok()?;
     let _ = conn.busy_timeout(Duration::from_secs(5));
+    Some(conn)
+}
+
+/// Whether the store has the wake-ups table, which a store from before it was added does not.
+fn has_wake_ups_table(conn: &rusqlite::Connection) -> bool {
+    conn.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wake_ups' LIMIT 1", [], |_| Ok(true))
+        .unwrap_or(false)
+}
+
+/// The messages the user sent before `before_message_id`, oldest first, each with its turn's last reply with words: what
+/// the message scrubber marks above a pane's window (ADR-0109), as Node's `promptsBefore` reads them from the same
+/// `threads.sqlite`. Only the start of each message and the start and end of each reply are read, a page of the newest at
+/// a time: `next` is the message the next page is read before, absent once the page reaches the first. A message the
+/// store does not hold has nothing before it. Wake-ups are Sotto's, so they are left out. `None` when the store cannot
+/// answer.
+pub fn thread_prompts(data_directory: &Path, thread_id: &str, before_message_id: &str) -> Option<Value> {
+    use rusqlite::OptionalExtension;
+    let conn = open_thread_store_read_only(data_directory)?;
     let before: Option<i64> = conn
         .query_row(
             "SELECT position FROM messages WHERE thread_id = ?1 AND message_id = ?2 LIMIT 1",
@@ -2215,13 +2246,8 @@ pub fn thread_prompts(data_directory: &Path, thread_id: &str, before_message_id:
         .optional()
         .ok()?;
     let from = start.as_ref().map_or(0, |(position, _)| *position);
-    let has_wake_ups = conn
-        .query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wake_ups' LIMIT 1", [], |_| Ok(()))
-        .optional()
-        .ok()?
-        .is_some();
     let mut skip = HashSet::new();
-    if has_wake_ups {
+    if has_wake_ups_table(&conn) {
         let mut wake_ups = conn.prepare("SELECT message_id FROM wake_ups WHERE thread_id = ?1").ok()?;
         let ids = wake_ups.query_map([thread_id], |row| row.get::<_, String>(0)).ok()?;
         for id in ids {
@@ -2249,33 +2275,34 @@ pub fn thread_prompts(data_directory: &Path, thread_id: &str, before_message_id:
             ))
         })
         .ok()?;
-    let mut prompts: Vec<serde_json::Map<String, Value>> = Vec::new();
-    // Whether the newest prompt is one a reply may still belong to: a wake-up starts a turn of its own.
-    let mut current = false;
+    let mut prompts: Vec<ThreadPrompt> = Vec::new();
+    // A wake-up starts a turn of its own, so what answers it is no prompt's reply.
+    let mut takes_reply = false;
     for row in read {
         let (role, id, created_at, attachments, head, tail) = row.ok()?;
         if role == "user" {
             if skip.contains(&id) {
-                current = false;
+                takes_reply = false;
                 continue;
             }
-            let attached = attachments
-                .and_then(|text| serde_json::from_str::<Vec<Value>>(&text).ok())
-                .map_or(0, |list| list.len());
-            let mut prompt = serde_json::Map::new();
-            prompt.insert("id".into(), json!(id));
-            prompt.insert("createdAt".into(), json!(created_at));
-            prompt.insert("text".into(), json!(clip_utf16(&head, THREAD_PROMPT_TEXT)));
-            if attached > 0 {
-                prompt.insert("attachments".into(), json!(attached.min(1000)));
-            }
-            prompts.push(prompt);
-            current = true;
-        } else if current {
+            // A list the store cannot read leaves the whole read unanswered, as Node's parse does.
+            let attached = match attachments {
+                None => 0,
+                Some(text) => serde_json::from_str::<Vec<Value>>(&text).ok()?.len(),
+            };
+            prompts.push(ThreadPrompt {
+                id,
+                created_at,
+                text: clip_utf16(&head, THREAD_PROMPT_TEXT).to_string(),
+                attachments: (attached > 0).then(|| attached.min(THREAD_PROMPT_ATTACHMENTS_MOST)),
+                reply: None,
+            });
+            takes_reply = true;
+        } else if takes_reply {
             // A reply of space alone is no reply with words, whatever kind of space the store's own trim leaves.
             if tail.is_some() || !head.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}').is_empty() {
                 if let Some(prompt) = prompts.last_mut() {
-                    prompt.insert("reply".into(), json!({ "id": id, "text": prompt_reply_text(&head, tail.as_deref()) }));
+                    prompt.reply = Some(ThreadPromptReply { id, text: prompt_reply_text(&head, tail.as_deref()) });
                 }
             }
         }
@@ -2305,6 +2332,10 @@ fn prompt_reply_text(head: &str, tail: Option<&str>) -> String {
     format!("{}\n\n{}", clip_utf16(head, THREAD_PROMPT_REPLY_HEAD), String::from_utf16_lossy(last))
 }
 
+/// Searches thread messages for a query string matching `agentThreadWordsSchema`
+/// (`src/shared/threadWords.ts`) and `ThreadStore.threadWords` (`src/main/agents/threadStore.ts`).
+/// Opens `threads.sqlite` strictly read-only so it never creates a database or contends for write
+/// locks when running beside Node's `AgentControl`.
 pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
     let trimmed = query.split_whitespace().collect::<Vec<_>>().join(" ");
     if trimmed.is_empty() {
@@ -2326,25 +2357,10 @@ pub fn search_thread_words(data_directory: &Path, query: &str) -> Value {
         return json!({ "found": [] });
     }
 
-    let db = data_directory.join("threads.sqlite");
-    if !db.is_file() {
-        return json!({ "found": [] });
-    }
-    let Ok(conn) = rusqlite::Connection::open_with_flags(
-        &db,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) else {
+    let Some(conn) = open_thread_store_read_only(data_directory) else {
         return json!({ "found": [] });
     };
-    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
-
-    let has_wake_ups: bool = conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wake_ups' LIMIT 1",
-            [],
-            |_| Ok(true),
-        )
-        .unwrap_or(false);
+    let has_wake_ups = has_wake_ups_table(&conn);
 
     let mut escaped = String::with_capacity(needle.len() + 2);
     escaped.push('%');
@@ -3189,6 +3205,24 @@ mod tests {
         assert_eq!(thread_prompts(dir.path(), "t", "not-held").unwrap(), json!({ "prompts": [] }));
         assert_eq!(thread_prompts(dir.path(), "t", "m0").unwrap(), json!({ "prompts": [] }));
         assert!(thread_prompts(&dir.path().join("nowhere"), "t", "m7").is_none(), "a store that cannot answer says so");
+    }
+
+    /// A page holds the newest `THREAD_PROMPTS_MOST` messages the user sent, and names the message the next page is read
+    /// before; the next page reaches the first and names none. An attachments list the store cannot read answers nothing.
+    #[test]
+    fn reads_a_long_history_a_page_at_a_time() {
+        let rows: Vec<(&str, &str, Option<&str>)> = (0..=THREAD_PROMPTS_MOST + 1).map(|_| ("user", "Prompt", None)).collect();
+        let dir = store_with(&rows);
+        let last = format!("m{}", THREAD_PROMPTS_MOST + 1);
+        let page = thread_prompts(dir.path(), "t", &last).unwrap();
+        assert_eq!(page["prompts"].as_array().unwrap().len(), THREAD_PROMPTS_MOST);
+        assert_eq!(page["prompts"][0]["id"], "m1");
+        assert_eq!(page["next"], "m1");
+        let rest = thread_prompts(dir.path(), "t", "m1").unwrap();
+        assert_eq!(rest, json!({ "prompts": [{ "id": "m0", "createdAt": "2026-11-25T10:00:00.000Z", "text": "Prompt" }] }));
+
+        let broken = store_with(&[("user", "Prompt", Some("not json")), ("user", "Next", None)]);
+        assert!(thread_prompts(broken.path(), "t", "m1").is_none());
     }
 
     #[test]

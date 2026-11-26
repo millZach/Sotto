@@ -150,7 +150,7 @@ fn thread_provider_connected(statuses: &BTreeMap<String, AgentProviderStatus>, t
     statuses.get(&thread.provider_id).is_some_and(|status| status.connection == "connected")
 }
 
-/// The longest thread ID Node's command schema reads (`id` in `src/shared/agents.ts`).
+/// The longest thread ID Node's command schema reads (`id` in `src/shared/agents.ts`), in UTF-16 code units as zod counts.
 const THREAD_ID_MAX: usize = 512;
 /// The longest project or other provider entity ID Node's command schema reads (`providerEntityId`).
 const PROVIDER_ENTITY_ID_MAX: usize = 6_144;
@@ -158,7 +158,7 @@ const PROVIDER_ENTITY_ID_MAX: usize = 6_144;
 /// A command's ID field, refused as Node's schema refuses it when it is missing, empty or longer than `max`.
 fn required_id<'a>(command: &'a Map<String, Value>, key: &str, max: usize) -> Result<&'a str, CoordinatorError> {
     match command.get(key).and_then(Value::as_str) {
-        Some(id) if !id.is_empty() && id.chars().count() <= max => Ok(id),
+        Some(id) if !id.is_empty() && id.encode_utf16().count() <= max => Ok(id),
         _ => Err(CoordinatorError::invalid(format!("{key} must be an ID."))),
     }
 }
