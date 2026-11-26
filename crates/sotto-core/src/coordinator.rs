@@ -3879,6 +3879,13 @@ impl CoordinatorActor {
             unlink_from(other, &gone);
         }
         self.creations.retain(|item| item.get("threadId").and_then(Value::as_str).is_none_or(|id| !gone.contains(id)));
+        // The thread's own provider forgets its alias record, as Node's `ThreadRegistry.forgetThread` asks the adapter its
+        // binding names, while threads.json still binds the thread to the key its record has on disk.
+        for id in &ids {
+            if let Some(adapter) = self.thread_bindings.get(id).and_then(|binding| self.providers.get(&binding.provider)) {
+                adapter.forget_thread(id);
+            }
+        }
         self.cleared_thread_ids.extend(ids.iter().cloned());
         self.cleared.extend(ids.iter().cloned());
         forget_unlinked_pull_requests(&mut self.file_extra, |id| gone.contains(id));
@@ -6162,7 +6169,10 @@ mod tests {
             fields.insert("deliveredPromptDigests".into(), json!([{ "threadId": thread_id, "draftId": "00000000-0000-4000-8000-0000000000e1", "digest": "Secret digest" }]));
             std::fs::write(&path, serde_json::to_string(&agents).unwrap()).unwrap();
         }
-        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let codex = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers = mock_providers();
+        providers.insert("codex".into(), codex.clone());
+        let coord = CoordinatorHandle::spawn(dir.path().to_path_buf(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
         let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
         let preview = |id: &str| run(json!({ "type": "preview-delete-thread", "threadId": id }));
 
@@ -6194,8 +6204,10 @@ mod tests {
         let delegated = threads.iter().find(|t| t["id"] == child).unwrap();
         assert!(delegated.get("delegatedBy").is_none(), "the thread it delegated to loses only the link");
         assert!(!shell["threadDrafts"].as_array().unwrap().iter().any(|d| d["threadId"] == thread_id.as_str()));
+        assert_eq!(codex.forgotten(), [thread_id.clone()], "the thread's own provider forgets its alias");
         let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
         assert_eq!(shell["notice"], "Deleted “Organized”.", "one already gone changes nothing");
+        assert_eq!(codex.forgotten().len(), 1);
         coord.shutdown().await;
 
         let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();

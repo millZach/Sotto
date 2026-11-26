@@ -389,9 +389,10 @@ impl CodexSharedState {
     }
 
     fn save_records(&self) {
-        let snapshot = self.records.lock().unwrap().clone();
+        // Held while the file is written, so a record `forget_thread` let go is never written back from an earlier copy.
+        let snapshot = self.records.lock().unwrap();
         let path = self.data_directory.join(CODEX_THREADS_FILE);
-        crate::providers::save_thread_records(&path, &snapshot, crate::providers::parse_serde_record::<CodexThreadRecord>, crate::providers::encode_serde_record);
+        crate::providers::save_thread_records(&path, &*snapshot, crate::providers::parse_serde_record::<CodexThreadRecord>, crate::providers::encode_serde_record);
     }
 
     fn resolve_sotto_thread(&self, native_thread_id: &str) -> Option<String> {
@@ -837,6 +838,17 @@ impl CodexAdapter {
 }
 
 impl ProviderAdapter for CodexAdapter {
+    /// Lets go of a deleted thread's alias record (ADR-0140 decision 4), as Node's adapter `forgetThread` removes it:
+    /// its entry in this provider's `*-threads.json` goes, under the records lock so no save from an earlier copy
+    /// writes it back, and so does the adapter's own map to it.
+    fn forget_thread(&self, thread_id: &str) {
+        let mut records = self.shared.records.lock().unwrap();
+        records.remove(thread_id);
+        crate::providers::forget_thread_record(&self.shared.data_directory.join(CODEX_THREADS_FILE), thread_id);
+        drop(records);
+        self.shared.native_to_sotto.lock().unwrap().retain(|_, sotto| sotto != thread_id);
+    }
+
     fn id(&self) -> &str {
         "codex"
     }
@@ -1625,6 +1637,26 @@ fn build_codex_response_payload(method: &str, params: &Value, req: &AnswerReques
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A deleted thread's alias goes from codex-threads.json under Node's key for it and stays gone when the adapter next
+    /// saves, as Node's `forgetThread` removes it (ADR-0140 decision 4); another thread's record is kept.
+    #[test]
+    fn a_deleted_threads_alias_is_forgotten_and_not_written_back() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("threads.json"), serde_json::json!({ "bindings": [
+            { "threadId": "gone", "provider": "codex", "sessionId": "node-key", "projectId": "p", "createdAt": "2026-11-20T10:00:00.000Z" },
+        ] }).to_string()).unwrap();
+        let record = |native: &str| serde_json::json!({ "codexThreadId": native, "cwd": "/w", "modelId": "m", "projectId": "p", "title": "T", "createdAt": "2026-11-20T10:00:00.000Z" });
+        let path = dir.path().join(CODEX_THREADS_FILE);
+        std::fs::write(&path, serde_json::json!({ "node-key": record("native-1"), "kept": record("native-2") }).to_string()).unwrap();
+        let adapter = CodexAdapter::new(CodexAdapterConfig::native(dir.path().to_path_buf()));
+        assert!(adapter.shared.records.lock().unwrap().contains_key("gone"), "Node's record is read under its thread");
+        adapter.forget_thread("gone");
+        assert!(!adapter.shared.records.lock().unwrap().contains_key("gone"));
+        adapter.shared.save_records();
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved, serde_json::json!({ "kept": record("native-2") }));
+    }
 
     /// A turn that ends before its `turn/start` answer is read stays ended: the late answer does not make it the active
     /// turn again, so the thread's next prompt starts a turn rather than steering one that is over.

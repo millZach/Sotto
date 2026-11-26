@@ -155,6 +155,11 @@ pub trait ProviderAdapter: Send + Sync {
     fn read_thread_requests(&self, _thread_id: String) -> BoxFuture<'_, ThreadRequestsRead> {
         Box::pin(async { Ok(None) })
     }
+
+    /// Lets go of a deleted thread's alias record (ADR-0140 decision 4), as Node's adapters' `forgetThread` do. Asked
+    /// while `threads.json` still binds the thread, so a record Node made is found under Node's key for it. An adapter
+    /// that keeps no record of its own has nothing to forget.
+    fn forget_thread(&self, _thread_id: &str) {}
 }
 
 /// Stand-in adapter for providers held by an Owl feature gate or inactive during a referee run.
@@ -245,6 +250,8 @@ pub struct MockProviderAdapter {
     active_turns: Arc<Mutex<std::collections::HashMap<String, String>>>,
     /// The next thread read, held until a test answers it.
     held_read: Arc<Mutex<Option<HeldReadEnds>>>,
+    /// The threads the host asked this adapter to forget, in order.
+    forgotten: Arc<Mutex<Vec<String>>>,
 }
 
 /// The adapter's ends of a held read: it tells the test the read began, and waits for what the read returns.
@@ -269,7 +276,13 @@ impl MockProviderAdapter {
             events_tx: Arc::new(Mutex::new(None)),
             active_turns: Arc::new(Mutex::new(std::collections::HashMap::new())),
             held_read: Arc::new(Mutex::new(None)),
+            forgotten: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    /// The threads the host asked this adapter to forget, in order.
+    pub fn forgotten(&self) -> Vec<String> {
+        self.forgotten.lock().unwrap().clone()
     }
 
     /// Holds the next `read_thread_requests` until the test sends what it returns.
@@ -343,6 +356,10 @@ impl MockProviderAdapter {
 impl ProviderAdapter for MockProviderAdapter {
     fn id(&self) -> &str {
         &self.id
+    }
+
+    fn forget_thread(&self, thread_id: &str) {
+        self.forgotten.lock().unwrap().push(thread_id.to_string());
     }
 
     fn name(&self) -> &str {

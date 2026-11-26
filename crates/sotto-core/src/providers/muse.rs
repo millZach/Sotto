@@ -353,9 +353,10 @@ impl MuseSharedState {
     }
 
     fn save_records(&self) {
-        let snapshot = self.records.lock().unwrap().clone();
+        // Held while the file is written, so a record `forget_thread` let go is never written back from an earlier copy.
+        let snapshot = self.records.lock().unwrap();
         let path = self.data_directory.join(MUSE_THREADS_FILE);
-        crate::providers::save_thread_records(&path, &snapshot, crate::providers::parse_serde_record::<MuseThreadRecord>, crate::providers::encode_serde_record);
+        crate::providers::save_thread_records(&path, &*snapshot, crate::providers::parse_serde_record::<MuseThreadRecord>, crate::providers::encode_serde_record);
     }
 
     fn resolve_sotto(&self, native_sid: &str) -> Option<String> {
@@ -708,6 +709,17 @@ impl MuseAdapter {
 }
 
 impl ProviderAdapter for MuseAdapter {
+    /// Lets go of a deleted thread's alias record (ADR-0140 decision 4), as Node's adapter `forgetThread` removes it:
+    /// its entry in this provider's `*-threads.json` goes, under the records lock so no save from an earlier copy
+    /// writes it back, and so does the adapter's own map to it.
+    fn forget_thread(&self, thread_id: &str) {
+        let mut records = self.shared.records.lock().unwrap();
+        records.remove(thread_id);
+        crate::providers::forget_thread_record(&self.shared.data_directory.join(MUSE_THREADS_FILE), thread_id);
+        drop(records);
+        self.shared.native_to_sotto.lock().unwrap().retain(|_, sotto| sotto != thread_id);
+    }
+
     fn id(&self) -> &str {
         "muse"
     }

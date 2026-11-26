@@ -135,6 +135,18 @@ pub(crate) fn save_thread_records<T>(
     let _ = crate::workspace::write_atomic_json(path, &serde_json::Value::Object(out));
 }
 
+/// Takes one thread's record out of a provider's `*-threads.json`, as Node's adapters' `forgetThread` delete its alias
+/// (ADR-0140 decision 4): the entry under its key on disk (`StoreKeys`) goes, whether or not this build can read it, and
+/// every other entry stays as it was. A file that is missing or is not an object is left alone.
+pub(crate) fn forget_thread_record(path: &std::path::Path, sotto_id: &str) {
+    let Ok(raw) = std::fs::read_to_string(path) else { return };
+    let Ok(serde_json::Value::Object(mut map)) = serde_json::from_str::<serde_json::Value>(&raw) else { return };
+    let keys = StoreKeys::of(path);
+    if map.remove(keys.disk(sotto_id)).is_some() {
+        let _ = crate::workspace::write_atomic_json(path, &serde_json::Value::Object(map));
+    }
+}
+
 /// The fields a record this host creates for `thread_id` starts from, so Node reads it after a rollback (ADR-0214). An
 /// entry already on disk for the thread is kept whole: a Node record with no session yet, which this host cannot read.
 /// What Node's schema requires and the entry lacks comes from the thread (`projectId`, `title`, `createdAt`, no
@@ -394,6 +406,25 @@ mod tests {
         ] }).to_string()).unwrap();
         std::fs::write(&waiting, json!({ node_key: { "projectId": "p", "title": "Named in Node", "settingsConfirmed": false } }).to_string()).unwrap();
         assert_eq!(node_record_fields(&waiting, thread, &seed(), &[])["title"], "Named in Node");
+    }
+
+    /// A deleted thread's alias goes from its provider's store under Node's key for it, readable or not, and nothing
+    /// else does, as Node's adapters' `forgetThread` delete it.
+    #[test]
+    fn a_deleted_threads_alias_goes_under_nodes_key_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (thread, node_key, kept) = ("sotto-thread-1", "adapter-key-1", "sotto-thread-2");
+        std::fs::write(dir.path().join("threads.json"), json!({ "bindings": [
+            { "threadId": thread, "provider": "codex", "sessionId": node_key, "projectId": "p", "createdAt": "2026-11-20T10:00:00.000Z" },
+        ] }).to_string()).unwrap();
+        let path = dir.path().join("codex-threads.json");
+        let other = json!({ "codexThreadId": "native-2", "cwd": "/w", "modelId": "m", "projectId": "p", "title": "Kept", "createdAt": "2026-11-21T10:00:00.000Z" });
+        std::fs::write(&path, json!({ node_key: { "unreadable": true }, kept: other }).to_string()).unwrap();
+        forget_thread_record(&path, thread);
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved, json!({ kept: other }));
+        forget_thread_record(&dir.path().join("claude-threads.json"), thread);
+        assert!(!dir.path().join("claude-threads.json").exists(), "a store that is not there is not made");
     }
 
     #[test]
