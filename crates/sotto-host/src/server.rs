@@ -60,6 +60,7 @@ pub fn advertised_features() -> Vec<String> {
         "reply-thread-records".into(),
         "command-changed-thread-records".into(),
         "kept-parts".into(),
+        "draft-revisions".into(),
         "detail-read-held".into(),
         "provider-opencode".into(),
         "provider-cursor".into(),
@@ -2049,6 +2050,10 @@ async fn handle_ws_request(
                         HostErrorCode::Forbidden.default_message(),
                     );
                 }
+            }
+            // A save naming the revision it saw is a `draft-revisions` client's, as Node's socket server allows it.
+            if cmd.get("type").and_then(Value::as_str) == Some("save-thread-draft") && cmd.contains_key("expectedDraftId") && !wire.has("draft-revisions") {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
             // A socket client's own `observe-threads` is what its connection observes, as an `observe` is, and goes with
             // the connection (`src/host/socketServer.ts`).

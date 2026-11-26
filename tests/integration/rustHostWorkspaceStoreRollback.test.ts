@@ -74,8 +74,8 @@ describe.skipIf(!RUN_RUST_HOST)('coordinator stores for a thread a Rust host mad
     expect(parseThreadRegistry(await read('threads.json')).bindings).toContainEqual(expect.objectContaining({ threadId: THREAD, provider: 'codex' }))
   })
 
-  it('agents.json reads in Node', async () => {
-    const agents = await read('agents.json')
-    expect(() => parseSavedAgents(agents)).not.toThrow()
+  it('agents.json reads in Node, the thread draft saved on Rust with it', async () => {
+    const agents = parseSavedAgents(await read('agents.json')) as { threadDrafts: { threadId: string; text: string }[] }
+    expect(agents.threadDrafts).toContainEqual(expect.objectContaining({ threadId: THREAD, text: 'Drafted on Rust' }))
   })
 })
