@@ -4,6 +4,7 @@ import { HostProviderJobs, type ProviderJobHosts } from '../../../src/main/hosts
 import { hostProviderBrief } from '../../../src/main/hosts/hostProviderBrief'
 import type { HostSetupThreads } from '../../../src/main/hosts/hostSetup'
 import { agentJobTools, HOST_SETUP_MCP_SERVER, HostSetupToolServer, providerJobToolDefinitions, type HostSetupToolHandlers } from '../../../src/main/hosts/hostSetupTools'
+import { listedTool } from '../../../src/main/agents/threadToolServer'
 import type { AgentProviderStatus, ProviderId } from '../../../src/shared/agents'
 import type { HostSetupChoice, HostsCommand } from '../../../src/shared/hosts'
 import { deferred } from '../../fixtures/deferred'
@@ -244,7 +245,7 @@ describe('the tool server for both jobs', () => {
       expect(endpoint).toMatchObject({ name: HOST_SETUP_MCP_SERVER })
       expect(await server.mcpServer('thread-2')).toBeUndefined()
       const post = (body: unknown) => fetch(endpoint.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: endpoint.headers[0]!.value }, body: JSON.stringify(body) })
-      expect(await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()).toMatchObject({ result: { tools: providerJobToolDefinitions } })
+      expect(await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()).toMatchObject({ result: { tools: providerJobToolDefinitions.map(listedTool) } })
       const call = async (name: string, args: unknown) => JSON.parse(((await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } })).json()) as { result: { content: { text: string }[] } }).result.content[0]!.text) as Record<string, unknown>
       expect(await call('provider_check', { host: 'lab' })).toMatchObject({ message: 'This tool takes no arguments. The host and the provider are fixed when the job starts.' })
       expect(await call('provider_check', { provider: 'grok' })).toMatchObject({ message: expect.stringContaining('takes no arguments') })

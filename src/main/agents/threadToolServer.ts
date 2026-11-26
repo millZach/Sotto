@@ -37,6 +37,33 @@ const frameSchema = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(
 const initializeSchema = z.object({ protocolVersion: z.string() })
 const toolCallSchema = z.object({ name: z.string().max(128), arguments: z.unknown().optional() })
 
+/** The `pattern` zod writes beside every `format: "uuid"`, about 170 characters each time. */
+const ZOD_UUID_PATTERN = (z.toJSONSchema(z.uuid()) as { pattern?: string }).pattern
+/** A JSON Schema as a client is sent it: no `$schema` line, and no UUID regex where `format: "uuid"` already says it. */
+function compactSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(compactSchema)
+  if (!value || typeof value !== 'object') return value
+  const uuid = (value as Record<string, unknown>).format === 'uuid'
+  return Object.fromEntries(Object.entries(value).filter(([key, entry]) => key !== '$schema' && !(uuid && key === 'pattern' && entry === ZOD_UUID_PATTERN))
+    .map(([key, entry]) => [key, compactSchema(entry)]))
+}
+const listed = new WeakMap<ThreadToolDefinition, ThreadToolDefinition>()
+/**
+ * A tool as `tools/list` sends it, schemas compacted. Every Sotto tool checks its own arguments with zod, so nothing a
+ * call may carry changes. Antigravity's `agy` (1.5.17) silently drops the largest tool once a session's declarations
+ * pass about 58 KB, and those two were 4.7 KB of the 62 KB an ordinary thread is offered: enough to lose `delegate`.
+ * `antigravityToolBudget.test.ts` holds the total under that.
+ */
+export function listedTool(tool: ThreadToolDefinition): ThreadToolDefinition {
+  let compact = listed.get(tool)
+  if (!compact) {
+    compact = { ...tool, inputSchema: compactSchema(tool.inputSchema) as Record<string, unknown>,
+      ...(tool.outputSchema ? { outputSchema: compactSchema(tool.outputSchema) as Record<string, unknown> } : {}) }
+    listed.set(tool, compact)
+  }
+  return compact
+}
+
 /**
  * A thread-bound local MCP transport: `127.0.0.1` only, one bearer token per Sotto thread, no browser origin,
  * bounded bodies. The token says which thread is calling and nothing more; admission is never permission to
@@ -122,7 +149,7 @@ export class ThreadToolServer {
         reply({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: this.identity.serverName, version: '1.0.0' }, instructions: this.identity.instructions }); return
       }
       if (method === 'ping') { reply({}); return }
-      if (method === 'tools/list') { reply({ tools: this.listFor?.(threadId) ?? this.definitions }); return }
+      if (method === 'tools/list') { reply({ tools: (this.listFor?.(threadId) ?? this.definitions).map(listedTool) }); return }
       if (method === 'tools/call') {
         const call = toolCallSchema.safeParse(params)
         if (!call.success) { response.writeHead(400).end(); return }

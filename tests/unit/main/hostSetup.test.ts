@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostSetup, hostSetupRequests, type HostSetupHosts, type HostSetupThreads } from '../../../src/main/hosts/hostSetup'
 import { hostSetupBrief } from '../../../src/main/hosts/hostSetupBrief'
 import { HOST_SETUP_MCP_SERVER, HostSetupToolServer, hostSetupToolDefinitions } from '../../../src/main/hosts/hostSetupTools'
+import { listedTool } from '../../../src/main/agents/threadToolServer'
 import type { HostSetupChoice, HostsCommand, HostStatus, RemoteHost } from '../../../src/shared/hosts'
 import { deferred } from '../../fixtures/deferred'
 
@@ -335,7 +336,7 @@ describe('the host setup tool server', () => {
       expect(endpoint).toMatchObject({ name: HOST_SETUP_MCP_SERVER, type: 'http' })
       expect(endpoint.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/u)
       const post = (body: unknown) => fetch(endpoint.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: endpoint.headers[0]!.value }, body: JSON.stringify(body) })
-      expect(await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()).toMatchObject({ result: { tools: hostSetupToolDefinitions } })
+      expect(await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()).toMatchObject({ result: { tools: hostSetupToolDefinitions.map(listedTool) } })
       const status = await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'host_status', arguments: {} } })).json() as { result: { content: { text: string }[] } }
       expect(JSON.parse(status.result.content[0]!.text)).toMatchObject({ device: 'forge', target: 'zach@forge', installationFolder: '~/.local/share/sotto-host', dataFolder: '~/.sotto' })
       expect(status.result.content[0]!.text).not.toContain('id_forge')
