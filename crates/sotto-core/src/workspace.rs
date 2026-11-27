@@ -273,6 +273,10 @@ fn default_worktree_status() -> String {
     "ready".into()
 }
 
+fn session_started_unless_said() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentThread {
@@ -294,7 +298,9 @@ pub struct AgentThread {
     pub runtime_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_mode: Option<String>,
-    #[serde(default)]
+    /// Whether the provider's session has started. A record that does not say, from a build that did not write it,
+    /// has started, as Node reads `nativeSessionStarted === false` as the only unstarted thread.
+    #[serde(default = "session_started_unless_said")]
     pub native_session_started: bool,
     #[serde(default)]
     pub created_at: String,

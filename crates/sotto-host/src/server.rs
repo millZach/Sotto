@@ -2470,6 +2470,11 @@ async fn handle_ws_request(
             if working_copy && !sotto_core::worktree_reclaim::working_copy_command_shape(cmd) {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
+            // And so is choosing a thread's working copy before its first send.
+            let choosing = cmd.get("type").and_then(Value::as_str) == Some("configure-thread-working-copy");
+            if choosing && sotto_core::worktree_reclaim::WorkingCopySelection::from_command(cmd).is_none() {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {

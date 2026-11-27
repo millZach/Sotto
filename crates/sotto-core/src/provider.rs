@@ -252,6 +252,8 @@ pub struct MockProviderAdapter {
     held_read: Arc<Mutex<Option<HeldReadEnds>>>,
     /// The threads the host asked this adapter to forget, in order.
     forgotten: Arc<Mutex<Vec<String>>>,
+    /// The folder each send went to, in order.
+    sent_folders: Arc<Mutex<Vec<String>>>,
 }
 
 /// The adapter's ends of a held read: it tells the test the read began, and waits for what the read returns.
@@ -277,12 +279,18 @@ impl MockProviderAdapter {
             active_turns: Arc::new(Mutex::new(std::collections::HashMap::new())),
             held_read: Arc::new(Mutex::new(None)),
             forgotten: Arc::new(Mutex::new(Vec::new())),
+            sent_folders: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     /// The threads the host asked this adapter to forget, in order.
     pub fn forgotten(&self) -> Vec<String> {
         self.forgotten.lock().unwrap().clone()
+    }
+
+    /// The folder each send went to, in order.
+    pub fn sent_folders(&self) -> Vec<String> {
+        self.sent_folders.lock().unwrap().clone()
     }
 
     /// Holds the next `read_thread_requests` until the test sends what it returns.
@@ -445,6 +453,7 @@ impl ProviderAdapter for MockProviderAdapter {
     }
 
     fn send_message(&self, req: SendMessageRequest) -> BoxFuture<'_, Result<SendMessageAck, String>> {
+        self.sent_folders.lock().unwrap().push(req.cwd.clone());
         let message_id = req.message_id;
         let turn_id = Uuid::new_v4().to_string();
         self.active_turns
