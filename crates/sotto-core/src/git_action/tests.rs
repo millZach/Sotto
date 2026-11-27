@@ -8,6 +8,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+thread_local! {
+    /// A commit deadline shorter than Node's ten minutes, for a test that waits one out on its own thread.
+    pub(super) static COMMIT_DEADLINE: std::cell::Cell<Option<Duration>> = const { std::cell::Cell::new(None) };
+}
+
 fn sh_git(cwd: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .args(["-c", "user.name=Sotto Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "init.defaultBranch=main"])
@@ -759,4 +764,28 @@ fn a_hook_that_globs_its_pathspecs_sees_the_files_as_it_does_under_node() {
         _ => None,
     }).collect();
     assert!(output.contains(&"glob found work.txt".to_string()), "{output:?}");
+}
+
+/// A drafted message longer than a pipe holds, with a pre-commit hook that prints more than one holds: Git reads the
+/// message only after the hook, so the message is written while what the hook prints is read, as Node writes standard
+/// input, and the commit settles within its deadline rather than wait on itself for good.
+#[test]
+fn a_long_message_and_a_hook_that_prints_a_lot_settle_within_the_commit_deadline() {
+    let f = Fixture::new(false);
+    hook(&f.repo, "pre-commit", "#!/bin/sh\nyes 'the hook has a great deal to say about this tree' | head -n 8000 1>&2\nexit 0\n");
+    f.write("work.txt", "second\n");
+    let body = "The drafted body goes on at length.\n".repeat(10_000);
+    let deadline = Duration::from_secs(20);
+    let (done, outcome) = mpsc::channel();
+    let cwd = f.repo.clone();
+    let draft = format!("Long message\n\n{body}");
+    std::thread::spawn(move || {
+        COMMIT_DEADLINE.with(|cell| cell.set(Some(deadline)));
+        let mut services = StandIns::new();
+        services.draft = Some(draft);
+        let _ = done.send(run_stacked_action(&input(&cwd, GitStackedAction::Commit), false, &services, &quiet()));
+    });
+    let settled = outcome.recv_timeout(deadline + Duration::from_secs(10)).expect("the commit never settled");
+    assert_eq!(settled.unwrap().commit.status, "created");
+    assert_eq!(f.git(&["log", "-1", "--pretty=%B"]), format!("Long message\n\n{}", body.trim()));
 }

@@ -30,6 +30,14 @@ const COMMAND_DEADLINE: Duration = Duration::from_secs(30);
 const CHECKOUT_DEADLINE: Duration = Duration::from_secs(10);
 /// Node's `COMMIT_TIMEOUT_MS`: a commit's hooks may take long.
 const COMMIT_DEADLINE: Duration = Duration::from_secs(10 * 60);
+/// Node's `COMMIT_TIMEOUT_MS`, or the shorter one a test sets on its own thread.
+fn commit_deadline() -> Duration {
+    #[cfg(test)]
+    if let Some(deadline) = tests::COMMIT_DEADLINE.with(std::cell::Cell::get) {
+        return deadline;
+    }
+    COMMIT_DEADLINE
+}
 /// Node's `PUSH_TIMEOUT_MS`.
 const PUSH_DEADLINE: Duration = Duration::from_secs(10 * 60);
 /// Node's `FETCH_TIMEOUT_MS` for the status read's fetch.
@@ -986,7 +994,7 @@ fn commit(cwd: &str, message: &CommitMessage, progress: &Progress) -> Result<Str
     };
     let input = if message.body.is_empty() { format!("{}\n", message.subject) } else { format!("{}\n\n{}\n", message.subject, message.body) };
     let env = [("GIT_TRACE2_EVENT".to_string(), lock(&trace).path.to_string_lossy().into_owned())];
-    let made = run_action_git_with(cwd, &["commit", "-F", "-"], COMMIT_DEADLINE, ActionGitExtras { env: &env, stdin: Some(input.as_bytes()), lines: Some(sink) });
+    let made = run_action_git_with(cwd, &["commit", "-F", "-"], commit_deadline(), ActionGitExtras { env: &env, stdin: Some(input.as_bytes()), lines: Some(sink) });
     drop(stop);
     let _ = ticker.join();
     lock(&trace).read(progress);

@@ -3128,12 +3128,6 @@ fn run_git_impl(
         }
     })?;
 
-    if let Some(input) = stdin_bytes {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(input);
-        }
-    }
-
     // Drain stdout and bounded stderr on dedicated reader threads while enforcing `deadline`
     // so a stalled git clean filter or hook is always terminated instead of wedging a worker.
     let stdout_pipe = child.stdout.take();
@@ -3157,6 +3151,17 @@ fn run_git_impl(
             None => Vec::new(),
         }
     });
+
+    // Standard input is written on its own thread once the readers are draining, as Node's runner ends it without
+    // waiting: Git can read it late, as a commit reads its message only after its pre-commit hook, and a hook that
+    // prints more than a pipe holds would otherwise wait on a reader that waits on this write, past any deadline. The
+    // handle closes when the write ends, or fails once Git is gone.
+    if let (Some(input), Some(mut stdin)) = (stdin_bytes, child.stdin.take()) {
+        let input = input.to_vec();
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&input);
+        });
+    }
 
     let mut timed_out = false;
     // When the command settles at the latest: Node's runner gives it two seconds from its deadline, or from the stop when
