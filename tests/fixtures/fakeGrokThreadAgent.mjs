@@ -36,8 +36,12 @@ if (process.argv.includes('--deny')) {
    reply({ method: '_x.ai/session_notification', params: { sessionId: p.sessionId, update: { sessionUpdate: 'model_changed', model_id: p.modelId, reasoning_effort: p._meta?.reasoningEffort } } })
   } else if (frame.method === 'session/prompt') {
    if (script.fail) { reply({ id: frame.id, error: { code: -32603, message: 'Scripted failure' } }); return }
-   reply({ method: 'session/update', params: { sessionId: p.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.text ?? 'Fixture title' } } } })
-   reply({ id: frame.id, result: { stopReason: 'end_turn' } })
+   // `delayMs` stands for a client that takes that long to answer, so a caller's deadline can pass first.
+   const answer = () => {
+    reply({ method: 'session/update', params: { sessionId: p.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.text ?? 'Fixture title' } } } })
+    reply({ id: frame.id, result: { stopReason: 'end_turn' } })
+   }
+   if (script.delayMs) setTimeout(answer, script.delayMs); else answer()
   } else if (frame.id !== undefined) reply({ id: frame.id, error: { code: -32601, message: 'Not in this fixture' } })
  }).on('close', () => process.exit(0))
  // The thread agent below never starts in this process: module evaluation waits here until the call ends.

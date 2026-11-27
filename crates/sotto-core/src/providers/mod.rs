@@ -4,6 +4,7 @@ mod claude_side;
 pub mod claude_history;
 pub mod codex;
 mod codex_side;
+pub(crate) mod grok_side;
 mod side_process;
 pub mod muse;
 pub mod opencode;
