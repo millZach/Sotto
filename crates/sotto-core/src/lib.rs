@@ -41,6 +41,7 @@ pub(crate) mod store_trip;
 pub mod watcher;
 pub mod watcher_host;
 pub mod workspace;
+pub mod worktree_reclaim;
 
 pub use checkpoints::{
     blob_hash, checkout_identity, inspect_checkpoint_blobs, read_checkpoints_readonly,

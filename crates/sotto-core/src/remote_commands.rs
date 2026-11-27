@@ -288,13 +288,14 @@ fn remote_command_needs_answer_policy(cmd_type: &str, command: &Map<String, Valu
             .and_then(Value::as_str)
             .is_some_and(|mode| mode != "approval-required"),
         "restore-thread-branch" => command.get("withUncommittedChanges") == Some(&Value::Bool(true)),
+        // Each confirmation is the user's that work goes with the folder (ADR-0041), so any one of them, given at all,
+        // takes the policy, as Node reads `Boolean(command.confirmedIgnored?.length)` and the rest.
         "reclaim-thread-worktree" => {
+            let given = |key: &str| command.get(key).and_then(Value::as_array).is_some_and(|list| !list.is_empty());
             command.get("withUncommittedChanges") == Some(&Value::Bool(true))
-                || command.get("confirmedIgnored").is_some_and(|v| !v.is_null())
-                || command.get("confirmedItems").is_some_and(|v| !v.is_null())
-                || command
-                    .get("confirmedRepositories")
-                    .is_some_and(|v| !v.is_null())
+                || given("confirmedIgnored")
+                || given("confirmedItems")
+                || given("confirmedRepositories")
         }
         _ => false,
     }
@@ -322,6 +323,24 @@ mod tests {
                 .code,
             HostErrorCode::InvalidRequest
         );
+    }
+
+    /// Remove worktree takes the remote-answer policy for each confirmation that work goes with the folder, and only when
+    /// it is given, as Node's `remoteCommandNeedsAnswerPolicy` reads an empty list as none.
+    #[test]
+    fn takes_the_answer_policy_for_a_removals_confirmations() {
+        let needs = |command: Value| validate_remote_command(command.as_object().unwrap(), false).is_err();
+        assert!(!needs(json!({ "type": "reclaim-thread-worktree", "threadId": "t" })));
+        assert!(!needs(json!({ "type": "reclaim-thread-worktree", "threadId": "t", "withUncommittedChanges": false, "confirmedIgnored": [], "confirmedItems": [], "confirmedRepositories": [] })));
+        assert!(!needs(json!({ "type": "preview-reclaim-thread-worktree", "threadId": "t" })));
+        for given in [
+            json!({ "type": "reclaim-thread-worktree", "threadId": "t", "withUncommittedChanges": true }),
+            json!({ "type": "reclaim-thread-worktree", "threadId": "t", "confirmedIgnored": ["build/"] }),
+            json!({ "type": "reclaim-thread-worktree", "threadId": "t", "confirmedItems": [{ "path": "build/", "fileCount": 1 }] }),
+            json!({ "type": "reclaim-thread-worktree", "threadId": "t", "confirmedRepositories": [{ "path": "r/", "changeCount": 0, "kind": "repository" }] }),
+        ] {
+            assert!(needs(given.clone()), "{given}");
+        }
     }
 
     #[test]

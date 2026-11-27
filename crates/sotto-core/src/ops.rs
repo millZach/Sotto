@@ -3155,6 +3155,21 @@ fn run_git_impl(
     Ok(GitRunOutput { stdout: stdout_str })
 }
 
+/// Git as Node's `runWorktreeGitProcess` (`src/main/agents/threadWorktrees.ts`) runs it for a thread's own worktree:
+/// `LC_ALL=C` with nothing that redirects Git, at most 2,000,000 bytes back, and Node's deadline, which is 30 seconds
+/// unless `deadline` says otherwise (`None` for a removal, which Node never stops). Failures are in Node's words.
+pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Duration>) -> Result<String, String> {
+    // Node gives a removal no deadline at all; a day stands for none.
+    let deadline = Instant::now() + deadline.unwrap_or(Duration::from_secs(86_400));
+    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline).map(|o| o.stdout).map_err(|e| match e {
+        GitRunError::Unavailable(_) => "Git is unavailable. Install Git or explicitly choose a shared working copy.".into(),
+        GitRunError::MaxBuffer(_) => "Git returned too much output. Nothing was removed.".into(),
+        GitRunError::Failed(msg) if msg == "git timed out" => "Git took too long.".into(),
+        GitRunError::Failed(msg) if msg.starts_with("git exited with status") => "Git could not finish this action.".into(),
+        GitRunError::Failed(msg) => msg,
+    })
+}
+
 fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
     run_git_clean(folder, args, &[], None, None)
         .map(|o| o.stdout)

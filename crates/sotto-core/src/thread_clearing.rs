@@ -281,7 +281,7 @@ pub fn deletion_hold(thread: &AgentThread) -> Option<KeptReason> {
 /// as Node's `ownWorktreeToRemove`.
 pub fn own_worktree(thread: &AgentThread) -> Option<&str> {
     let worktree = thread.worktree.as_ref().filter(|worktree| worktree.mode == "independent")?;
-    if worktree.reused == Some(true) || worktree.extra.get("reclaimedAt").is_some_and(truthy) {
+    if worktree.reused == Some(true) || worktree.reclaimed() {
         return None;
     }
     worktree.path.as_deref().filter(|path| !path.is_empty() && Path::new(path).exists())
