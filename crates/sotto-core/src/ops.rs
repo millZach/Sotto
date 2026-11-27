@@ -3238,19 +3238,32 @@ pub(crate) const GIT_MISSING: &str = "git is not installed or is not on PATH.";
 /// nothing that redirects Git, at most 8,000,000 bytes back, stopped at `deadline` with SIGTERM so Git can remove its
 /// locks, and failing in Node's words: what Git said on its error stream, or that it exited, did not finish or is missing.
 pub(crate) fn run_action_git(folder: &str, args: &[&str], deadline: Duration) -> Result<String, String> {
-    run_git_impl(folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate).map(|o| o.stdout).map_err(|e| match e {
+    run_git_impl(folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate).map(|o| o.stdout).map_err(action_git_words)
+}
+
+/// A Git action's failure in Node's runner's words.
+fn action_git_words(error: GitRunError) -> String {
+    match error {
         GitRunError::Unavailable(_) => GIT_MISSING.into(),
         GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
         GitRunError::Failed(msg) if msg == "git timed out" => "git did not finish in time.".into(),
-        GitRunError::Failed(msg) => match msg.strip_prefix("git exited with status ") {
-            // `ExitStatus` says "exit code: 1" on Windows and "exit status: 1" elsewhere; a signal has no code.
-            Some(status) => match status.rsplit_once(": ").map(|(_, code)| code).filter(|code| code.parse::<i64>().is_ok()) {
-                Some(code) if !status.starts_with("signal") => format!("git exited with {code}."),
-                _ => "git exited with a signal.".into(),
-            },
+        GitRunError::Failed(msg) => match msg.strip_prefix("git exited with status ").map(exit_code) {
+            Some(Some(code)) => format!("git exited with {code}."),
+            Some(None) => "git exited with a signal.".into(),
             None => msg,
         },
-    })
+    }
+}
+
+/// The code an `ExitStatus` was written with, as Node gives it: "exit code: 1" on Windows, where a code of 0x80000000 or
+/// more is written in hex and Node, as libuv hands it over, has the unsigned number; "exit status: 1" elsewhere. A
+/// signal has none.
+fn exit_code(status: &str) -> Option<u64> {
+    let code = status.strip_prefix("exit code: ").or_else(|| status.strip_prefix("exit status: "))?;
+    match code.strip_prefix("0x") {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => code.parse().ok(),
+    }
 }
 
 fn run_git(folder: &str, args: &[&str]) -> Result<String, String> {
@@ -3277,6 +3290,18 @@ mod tests {
     }
 
     use super::*;
+
+    /// A Git action that exits with a Windows code of 0x80000000 or more, which `ExitStatus` writes in hex, is said as
+    /// Node says it: the unsigned code in decimal, as libuv hands it over (`spawnCommand`), not as a signal.
+    #[cfg(windows)]
+    #[test]
+    fn says_a_large_windows_exit_code_as_node_does() {
+        use std::os::windows::process::ExitStatusExt;
+        let said = |code: u32| action_git_words(GitRunError::Failed(format!("git exited with status {}", std::process::ExitStatus::from_raw(code))));
+        assert_eq!(said(0xC000_0005), "git exited with 3221225477.");
+        assert_eq!(said(0x8000_0000), "git exited with 2147483648.");
+        assert_eq!(said(128), "git exited with 128.");
+    }
 
     /// A thread store as Node and this host share it, holding `rows` of one thread: role, text, attachments.
     fn store_with(rows: &[(&str, &str, Option<&str>)]) -> tempfile::TempDir {
