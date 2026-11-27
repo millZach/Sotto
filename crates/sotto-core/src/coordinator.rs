@@ -425,6 +425,24 @@ fn required_id<'a>(command: &'a Map<String, Value>, key: &str, max: usize) -> Re
     }
 }
 
+/// Whether a working-copy command is one Node's strict command schema reads (`agentCommandSchema` in
+/// `src/shared/agents.ts`): a thread ID, and `background` or `withUncommittedChanges` only as a boolean, on the command
+/// that takes it.
+fn working_copy_command_shape(command: &Map<String, Value>) -> Result<(), CoordinatorError> {
+    let refused = || CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message());
+    required_id(command, "threadId", THREAD_ID_MAX).map_err(|_| refused())?;
+    let flag = match command.get("type").and_then(Value::as_str) {
+        Some("refresh-thread-worktree") => Some("background"),
+        Some("restore-thread-branch") => Some("withUncommittedChanges"),
+        _ => None,
+    };
+    let unread = command.iter().any(|(key, value)| key != "type" && key != "threadId" && (Some(key.as_str()) != flag || !value.is_boolean()));
+    if unread {
+        return Err(refused());
+    }
+    Ok(())
+}
+
 /// The threads on this host Watcher watches, asked as a thread is checked for deleting (ADR-0140 decision 3), as Node's
 /// coordinator asks its Watcher hooks' `watchedThreadIds`.
 pub type WatchedThreads = Arc<dyn Fn() -> Vec<String> + Send + Sync>;
@@ -435,8 +453,10 @@ const DELETION_FOLDERS_WORDS: &str = "Worktree folders it already removed stay r
 const RECLAIMED_NOTICE: &str = "Worktree removed. The branch is kept.";
 /// What Remove worktree says when the host stopped before the folder was held, so nothing was touched.
 const RECLAIM_STOPPED: &str = "The host stopped before it could remove this folder. Nothing was removed. Try again.";
-/// What a send to a thread whose folder Sotto removed says, since this host cannot put the folder back as Node's does.
-const RECLAIMED_SEND_REFUSED: &str = "This thread’s worktree folder was removed, and this host cannot put it back yet. Nothing was sent. Its branch keeps its commits, so start a new thread from that branch to carry on.";
+/// What Restore branch says once the checkout is back on the branch of the thread's last send, as Node's coordinator says it.
+const BRANCH_RESTORED_NOTICE: &str = "Branch restored.";
+/// A thread this host does not hold, in Node's words (`thread` in `src/main/agents/workspace.ts`).
+const UNKNOWN_THREAD: &str = "This thread is not known to Sotto. Refresh and select it again.";
 /// What a preview of Remove worktree says when the folder could not be read, as Node's coordinator says it.
 const RECLAIM_PREVIEW_FAILED: &str = "The folder could not be checked. Nothing was removed. Check the host connection and try again.";
 
@@ -559,7 +579,17 @@ enum AsyncCommandOutcome {
         attachments: Vec<StagedAttachmentEntry>,
         elapsed_ms: u64,
         allocated_worktree: Option<Box<AgentThreadWorktree>>,
+        /// The thread's folder, held while the send put it back or read it with Git.
+        held_folder: Option<String>,
         result: Result<SendMessageAck, String>,
+    },
+    /// A send turned down before its prompt went out, because its folder could not be put back or read (ADR-0014).
+    SendRefused {
+        thread_id: String,
+        command_id: String,
+        draft_id: String,
+        words: String,
+        held_folder: Option<String>,
     },
     Answer {
         thread_id: String,
@@ -592,6 +622,18 @@ enum AsyncCommandOutcome {
         folder: String,
         thread_id: String,
         result: Result<AgentThreadWorktree, String>,
+    },
+    /// A thread's working copy as Refresh or Retry read it, with its own worktree folder held while it was read.
+    WorktreeRead {
+        folder: Option<String>,
+        thread_id: String,
+        record: AgentThreadWorktree,
+    },
+    /// A thread's project checkout back on the branch of its last send, or why not, with any record read on the way.
+    BranchRestore {
+        folder: Option<String>,
+        thread_id: String,
+        result: Result<AgentThreadWorktree, (String, Option<Box<AgentThreadWorktree>>)>,
     },
     /// What deleting a thread with its own worktree folder would do: why it is kept, and the folder's facts.
     DeletePreview {
@@ -1797,23 +1839,8 @@ impl CoordinatorActor {
                 self.set_observation(observer, &thread_ids, shown.then(|| thread_ids.clone()));
                 let mut out = Vec::with_capacity(thread_ids.len());
                 for tid in &thread_ids {
-                    if let Some(thread) = self.threads.iter().find(|t| t.id == *tid) {
-                        if let Some(ref wt) = thread.worktree {
-                            // A folder being removed, or one Sotto removed, has no status to read (`gitStatusFolder`).
-                            let reclaimed = wt.reclaimed();
-                            if wt.git.is_none() && !reclaimed {
-                                if let Some(path) = wt.path.as_ref().filter(|path| !self.held_worktree_folders.contains(*path)) {
-                                    let path = path.clone();
-                                    *self.git_probes_running.entry(path.clone()).or_default() += 1;
-                                    let thread_id = tid.clone();
-                                    let tx = self.self_tx.clone();
-                                    tokio::task::spawn_blocking(move || {
-                                        let git = probe_git_worktree(&path);
-                                        let _ = tx.send(ActorMessage::GitStatusReady { thread_id, folder: path, git });
-                                    });
-                                }
-                            }
-                        }
+                    if self.threads.iter().any(|t| t.id == *tid && t.worktree.as_ref().is_some_and(|wt| wt.git.is_none())) {
+                        self.read_git_status(tid);
                     }
                     out.push((tid.clone(), self.details.get(tid).cloned().map(|detail| self.outbound(detail))));
                 }
@@ -2364,6 +2391,10 @@ impl CoordinatorActor {
             // coordinator's own thread.
             "preview-reclaim-thread-worktree" => self.cmd_preview_reclaim(lane, client, &command, reply),
             "reclaim-thread-worktree" => self.cmd_reclaim_thread_worktree(lane, client, &command, reply),
+            // Reading a thread's working copy again, putting its folder back and switching its checkout's branch wait on
+            // Git and the disk in the thread's lane too.
+            "retry-thread-worktree" | "refresh-thread-worktree" => self.cmd_update_thread_worktree(lane, client, &command, reply),
+            "restore-thread-branch" => self.cmd_restore_thread_branch(lane, client, &command, reply),
 
             // Slow provider / git-worktree commands run outside the owner loop while holding only their lane.
             "configure" => self.spawn_cmd_configure(lane, client, &command, reply),
@@ -2770,29 +2801,6 @@ impl CoordinatorActor {
             }
         }
 
-        // A thread whose own folder Sotto removed (ADR-0041) has it put back on its branch by Node's next send
-        // (`restore`). This host cannot put one back yet, so nothing is sent rather than a turn run in a folder that is
-        // not there.
-        if thread.worktree.as_ref().is_some_and(AgentThreadWorktree::reclaimed) {
-            let words = RECLAIMED_SEND_REFUSED;
-            let now = now_iso();
-            self.deliveries.push(AgentDelivery {
-                command_id,
-                draft_id,
-                thread_id: tid,
-                message_id: None,
-                status: "failed".into(),
-                error: Some(words.into()),
-                created_at: now.clone(),
-                updated_at: now,
-                local_feedback_ms: Some(0),
-                provider_latency_ms: None,
-            });
-            self.error = Some(words.into());
-            self.finish_sync_command(lane, &client, Ok(()), reply);
-            return;
-        }
-
         let Some(adapter) = self.providers.get(&thread.provider_id).cloned() else {
             self.finish_sync_command(lane, &client, Err(CoordinatorError::unavailable("Provider is not available.")), reply);
             return;
@@ -2812,6 +2820,8 @@ impl CoordinatorActor {
             .and_then(|w| w.path.clone())
             .or_else(|| thread.working_directory.clone())
             .unwrap_or_else(|| project_path.clone());
+        // A worktree already made, which the send puts back and checks before its prompt goes out.
+        let recorded = thread.worktree.clone().filter(|_| !needs_worktree);
         let data_dir = self.data_directory.clone();
         let self_tx = self.self_tx.clone();
         let model_opt = (!thread.model_id.is_empty()).then_some(thread.model_id.clone());
@@ -2833,6 +2843,7 @@ impl CoordinatorActor {
         tokio::spawn(async move {
             let started = Instant::now();
             let mut allocated_worktree = None;
+            let mut held_folder = None;
             let cwd = if needs_worktree {
                 let alloc = tokio::task::spawn_blocking(move || {
                     allocate_independent_worktree(&data_dir, &project_path, base_branch.as_deref())
@@ -2858,6 +2869,7 @@ impl CoordinatorActor {
                                 attachments,
                                 elapsed_ms: started.elapsed().as_millis() as u64,
                                 allocated_worktree: None,
+                                held_folder: None,
                                 result: Err(err),
                             }),
                             reply,
@@ -2866,6 +2878,32 @@ impl CoordinatorActor {
                     }
                 }
             } else {
+                // A folder that was deleted or that Sotto removed is put back on its recorded branch, and the branch the
+                // folder has is adopted and recorded as this send's, before the prompt goes out (ADR-0014), as Node's
+                // `sendWorkingDirectory` does. A thread's own worktree folder is held while Git is asked.
+                if let Some(recorded) = recorded {
+                    let (tx, thread_id, data, project) = (self_tx.clone(), tid.clone(), data_dir.clone(), project_path.clone());
+                    let checked = tokio::task::spawn_blocking(move || {
+                        let filled = crate::worktree_reclaim::with_repository(&recorded, &project);
+                        let folder = filled.path.clone().filter(|_| filled.mode == "independent");
+                        let mut held = None;
+                        let read = crate::worktree_reclaim::send_working_copy(&data, &filled, || {
+                            held = folder.filter(|folder| hold_folder(&tx, &thread_id, folder, false).is_some());
+                        });
+                        (read.map(|read| read.or_else(|| (filled != recorded).then_some(filled))), held)
+                    })
+                    .await
+                    .unwrap_or_else(|_| (Err("The working folder is unavailable.".into()), None));
+                    held_folder = checked.1;
+                    match checked.0 {
+                        Ok(record) => allocated_worktree = record.map(Box::new),
+                        Err(words) => {
+                            let outcome = AsyncCommandOutcome::SendRefused { thread_id: tid, command_id, draft_id, words, held_folder };
+                            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+                            return;
+                        }
+                    }
+                }
                 existing_cwd
             };
 
@@ -2900,6 +2938,7 @@ impl CoordinatorActor {
                     attachments,
                     elapsed_ms: started.elapsed().as_millis() as u64,
                     allocated_worktree,
+                    held_folder,
                     result,
                 }),
                 reply,
@@ -3209,13 +3248,18 @@ impl CoordinatorActor {
                 attachments,
                 elapsed_ms,
                 allocated_worktree,
+                held_folder,
                 result,
             } => {
                 let in_flight = self.in_flight_sends.remove(&thread_id);
+                if let Some(folder) = held_folder {
+                    self.held_worktree_folders.remove(&folder);
+                }
                 if let Some(wt) = allocated_worktree {
                     if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                         t.working_directory = wt.path.clone();
                         t.worktree = Some(*wt);
+                        self.save_workspace();
                     }
                 }
                 let ack = result.map_err(CoordinatorError::unavailable)?;
@@ -3388,11 +3432,64 @@ impl CoordinatorActor {
                 self.held_worktree_folders.remove(&folder);
                 match result {
                     Ok(record) => {
-                        self.keep_reclaimed_record(&thread_id, record);
+                        self.keep_worktree_record(&thread_id, record);
                         self.notice = RECLAIMED_NOTICE.into();
                     }
                     Err(words) => self.command_refused(words),
                 }
+            }
+            // The record Refresh read is kept, and the folder's status is read again, as Node's refresh reads it once the
+            // record is read.
+            AsyncCommandOutcome::WorktreeRead { folder, thread_id, record } => {
+                if let Some(folder) = folder {
+                    self.held_worktree_folders.remove(&folder);
+                }
+                let readable = record.status == "ready" && !record.reclaimed();
+                self.keep_worktree_record(&thread_id, record);
+                if readable {
+                    self.read_git_status(&thread_id);
+                }
+            }
+            AsyncCommandOutcome::BranchRestore { folder, thread_id, result } => {
+                if let Some(folder) = folder {
+                    self.held_worktree_folders.remove(&folder);
+                }
+                match result {
+                    Ok(record) => {
+                        self.keep_worktree_record(&thread_id, record);
+                        self.notice = BRANCH_RESTORED_NOTICE.into();
+                        // The branch moved under any status read begun before now, so this read is one of its own.
+                        self.read_git_status(&thread_id);
+                    }
+                    Err((words, record)) => {
+                        if let Some(record) = record {
+                            self.keep_worktree_record(&thread_id, *record);
+                        }
+                        self.command_refused(words);
+                    }
+                }
+            }
+            // As Node's send fails before its prompt goes out: the delivery failed, with the words for why, and the host's
+            // error says so.
+            AsyncCommandOutcome::SendRefused { thread_id, command_id, draft_id, words, held_folder } => {
+                if let Some(folder) = held_folder {
+                    self.held_worktree_folders.remove(&folder);
+                }
+                self.in_flight_sends.remove(&thread_id);
+                let now = now_iso();
+                self.deliveries.push(AgentDelivery {
+                    command_id,
+                    draft_id,
+                    thread_id,
+                    message_id: None,
+                    status: "failed".into(),
+                    error: Some(words.clone()),
+                    created_at: now.clone(),
+                    updated_at: now,
+                    local_feedback_ms: Some(0),
+                    provider_latency_ms: None,
+                });
+                self.error = Some(words);
             }
             AsyncCommandOutcome::DeletePreview { thread_id, kept, worktree } => return Ok(self.delete_preview_shell(client, &thread_id, kept, worktree)),
             AsyncCommandOutcome::DeleteThread { folder, thread_id, title, result } => {
@@ -3401,7 +3498,7 @@ impl CoordinatorActor {
                     // Node's words for a kept thread are its coordinator's own answer alone, which a paired client is not sent.
                     Err((reason, _error)) => eprintln!("[Sotto] thread-clear-kept {}", reason.code()),
                     Ok(record) => {
-                        self.keep_reclaimed_record(&thread_id, record);
+                        self.keep_worktree_record(&thread_id, record);
                         self.finish_delete(&thread_id, &title);
                     }
                 }
@@ -4165,6 +4262,113 @@ impl CoordinatorActor {
         });
     }
 
+    /// Refresh and Retry of a thread's working copy, as Node's `updateThreadWorktree` and its coordinator: off the
+    /// coordinator's thread in the thread's lane, with no Git status read starting in a thread's own worktree folder
+    /// meanwhile, a deleted folder is put back on its recorded branch, a removal Sotto started is finished, and the record is
+    /// read again with Git; then the folder's status is read. A thread whose worktree is not made yet has nothing to read.
+    /// Retry of a worktree whose setup failed before the thread's first send sets it up again: this host makes a thread's
+    /// worktree at its first send, so the record goes back to waiting for that. The window's own refresh (`background`) differs from the user's only
+    /// in how it asks GitHub, which this host's refresh does not.
+    fn cmd_update_thread_worktree(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        if let Err(err) = working_copy_command_shape(command) {
+            return self.finish_sync_command(lane, &client, Err(err), reply);
+        }
+        self.error = None;
+        let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return self.refuse_sync_command(lane, &client, UNKNOWN_THREAD.into(), reply);
+        };
+        let Some(worktree) = thread.worktree.clone() else {
+            return self.finish_sync_command(lane, &client, Ok(()), reply);
+        };
+        let retry = command.get("type").and_then(Value::as_str) == Some("retry-thread-worktree");
+        if retry && !thread.native_session_started && worktree.status == "error" && worktree.path.is_none() {
+            if let Some(record) = self.threads.iter_mut().find(|t| t.id == thread_id).and_then(|t| t.worktree.as_mut()) {
+                record.status = "pending".into();
+                record.error = None;
+            }
+            self.save_workspace();
+            self.shell_dirty = true;
+            return self.finish_sync_command(lane, &client, Ok(()), reply);
+        }
+        let Some(folder) = worktree.path.clone() else {
+            return self.finish_sync_command(lane, &client, Ok(()), reply);
+        };
+        let project = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
+        let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
+        // A project checkout other threads share is only read here, so it is not held from them.
+        let own = worktree.mode == "independent";
+        tokio::task::spawn_blocking(move || {
+            let folder = Some(folder).filter(|folder| own && hold_folder(&self_tx, &thread_id, folder, false).is_some());
+            let record = crate::worktree_reclaim::read_working_copy(&data_directory, &crate::worktree_reclaim::with_repository(&worktree, &project));
+            let outcome = AsyncCommandOutcome::WorktreeRead { folder, thread_id, record };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+        });
+    }
+
+    /// Restore branch, as Node's `restoreThreadBranch` and its coordinator: refused while the thread works or waits on an
+    /// answer, as Node's Git actions are (`gitActionFolder`); then, off the coordinator's thread in the thread's lane with
+    /// its folder held, the project checkout goes back to the branch of the thread's last send. Uncommitted work on another
+    /// branch moves only with the user's answer (`withUncommittedChanges`).
+    fn cmd_restore_thread_branch(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        if let Err(err) = working_copy_command_shape(command) {
+            return self.finish_sync_command(lane, &client, Err(err), reply);
+        }
+        self.error = None;
+        let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return self.refuse_sync_command(lane, &client, UNKNOWN_THREAD.into(), reply);
+        };
+        let refusal = if thread.status == "running" {
+            Some("Wait for the thread to finish its turn before changing Git.")
+        } else if !thread.requests.is_empty() {
+            Some("Answer the thread's waiting request before changing Git.")
+        } else if self.in_flight_sends.contains_key(&thread_id) {
+            Some("Wait for active or pending thread work before changing Git.")
+        } else {
+            None
+        };
+        if let Some(words) = refusal {
+            return self.refuse_sync_command(lane, &client, words.into(), reply);
+        }
+        let Some(worktree) = thread.worktree.clone() else {
+            return self.refuse_sync_command(lane, &client, "This thread has no project checkout to switch.".into(), reply);
+        };
+        let with_uncommitted_changes = command.get("withUncommittedChanges") == Some(&Value::Bool(true));
+        let project = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
+        let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
+        tokio::task::spawn_blocking(move || {
+            let folder = worktree.path.clone().filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
+            let filled = crate::worktree_reclaim::with_repository(&worktree, &project);
+            let result = crate::worktree_reclaim::restore_thread_branch(&data_directory, &filled, with_uncommitted_changes);
+            let outcome = AsyncCommandOutcome::BranchRestore { folder, thread_id, result };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+        });
+    }
+
+    /// Reads the Git status of a thread's folder off the coordinator's thread, as the window's own read of a thread starts
+    /// one. A folder being removed, one Sotto removed, and one held while its branch or record changes have no status to
+    /// read (`gitStatusFolder`).
+    fn read_git_status(&mut self, thread_id: &str) {
+        let Some(path) = self
+            .threads
+            .iter()
+            .find(|t| t.id == thread_id)
+            .and_then(|t| t.worktree.as_ref())
+            .filter(|wt| !wt.reclaimed())
+            .and_then(|wt| wt.path.clone())
+            .filter(|path| !self.held_worktree_folders.contains(path))
+        else {
+            return;
+        };
+        *self.git_probes_running.entry(path.clone()).or_default() += 1;
+        let (thread_id, tx) = (thread_id.to_string(), self.self_tx.clone());
+        tokio::task::spawn_blocking(move || {
+            let git = probe_git_worktree(&path);
+            let _ = tx.send(ActorMessage::GitStatusReady { thread_id, folder: path, git });
+        });
+    }
+
     /// Answers a removal's hold on its folder: for Delete thread…, whether anything that began meanwhile keeps the
     /// thread, which lets the folder go again.
     fn answer_folder_hold(&mut self, folder: &str, waiter: FolderWaiter) {
@@ -4181,8 +4385,8 @@ impl CoordinatorActor {
         }
     }
 
-    /// A thread's worktree record as its folder's removal left it, kept in `workspace.json`.
-    fn keep_reclaimed_record(&mut self, thread_id: &str, record: AgentThreadWorktree) {
+    /// A thread's worktree record as its folder's removal, a refresh or a branch switch left it, kept in `workspace.json`.
+    fn keep_worktree_record(&mut self, thread_id: &str, record: AgentThreadWorktree) {
         if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
             thread.worktree = Some(record);
             self.save_workspace();
@@ -6548,8 +6752,9 @@ mod tests {
 
     /// Remove worktree as Node's host does it (ADR-0041): a preview lists what the folder holds on its own answer, with no
     /// word of the host's own; uncommitted work stays until the user confirms it, in Node's words as the host's error and
-    /// notice; then the folder goes, the branch stays, the record says so and is saved, and a send to the thread is turned
-    /// down rather than run in a folder that is not there. Settle's own request removes nothing on this host.
+    /// notice; then the folder goes, the branch stays, and the record says so and is saved. Refresh leaves it removed, and
+    /// the next send puts it back on its branch before its prompt goes out, as Node's `restore` does. Settle's own request
+    /// removes nothing on this host.
     #[tokio::test]
     async fn removes_a_threads_own_worktree_as_node_does() {
         let dir = tempdir().unwrap();
@@ -6586,12 +6791,52 @@ mod tests {
         let shell = run(json!({ "type": "reclaim-thread-worktree", "threadId": thread_id })).await.unwrap();
         assert_eq!((&shell["error"], &shell["notice"]), (&Value::Null, &json!(RECLAIMED_NOTICE)), "one already removed is done");
 
+        let shell = run(json!({ "type": "refresh-thread-worktree", "threadId": thread_id, "background": true })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert!(!folder.exists(), "only a send puts a removed folder back");
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
+        assert!(saved["snapshot"]["threads"][0]["worktree"]["reclaimedAt"].is_string(), "the record is saved");
+
         let shell = run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Carry on" })).await.unwrap();
-        assert_eq!(shell["error"], RECLAIMED_SEND_REFUSED);
-        assert!(!folder.exists(), "nothing put a folder back");
+        assert_eq!(shell["error"], Value::Null);
+        assert!(folder.join("README.md").exists(), "the folder is back");
+        let checked_out = Command::new("git").args(["branch", "--show-current"]).current_dir(&folder).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&checked_out.stdout).trim(), OWN_BRANCH);
+        let record = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == thread_id.as_str()).unwrap()["worktree"].clone();
+        assert!(record.get("reclaimedAt").is_none(), "{record}");
+        assert_eq!((&record["status"], &record["sentBranch"]), (&json!("ready"), &json!(OWN_BRANCH)));
         coord.shutdown().await;
-        let workspace: Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("workspace.json")).unwrap()).unwrap();
-        assert!(workspace["snapshot"]["threads"][0]["worktree"]["reclaimedAt"].is_string(), "the record is saved");
+    }
+
+    /// Refresh, Retry and Restore branch through the coordinator, as Node's: a command Node's schema would not read is
+    /// refused whole; one for a thread the host does not hold is turned down in Node's words; a thread whose worktree is
+    /// not made yet has nothing to read; and Restore branch needs a send to have recorded a branch.
+    #[tokio::test]
+    async fn refreshes_and_restores_a_threads_working_copy_as_node_does() {
+        let dir = tempdir().unwrap();
+        let (coord, client, thread_id, folder) = workspace_with_own_worktree(dir.path()).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        for command in [
+            json!({ "type": "refresh-thread-worktree", "threadId": thread_id, "background": "yes" }),
+            json!({ "type": "retry-thread-worktree", "threadId": thread_id, "background": true }),
+            json!({ "type": "restore-thread-branch", "threadId": thread_id, "withUncommittedChanges": 1 }),
+            json!({ "type": "restore-thread-branch", "threadId": "" }),
+        ] {
+            let refused = run(command.clone()).await.unwrap_err();
+            assert_eq!(refused.code, HostErrorCode::InvalidRequest, "{command}");
+        }
+        let unknown = "00000000-0000-4000-8000-0000000000ff";
+        for kind in ["refresh-thread-worktree", "retry-thread-worktree", "restore-thread-branch"] {
+            let shell = run(json!({ "type": kind, "threadId": unknown })).await.unwrap();
+            assert_eq!(shell["error"], UNKNOWN_THREAD, "{kind}");
+        }
+        std::fs::remove_dir_all(&folder).unwrap();
+        let shell = run(json!({ "type": "retry-thread-worktree", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert!(folder.join("README.md").exists(), "Retry put the deleted folder back");
+        let shell = run(json!({ "type": "restore-thread-branch", "threadId": thread_id })).await.unwrap();
+        assert_eq!(shell["error"], "This thread has no project checkout to switch.");
+        coord.shutdown().await;
     }
 
     /// Delete thread… for a thread with its own worktree folder, as Node's `previewThreadDeletion` and `deleteThreads` do

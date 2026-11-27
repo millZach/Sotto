@@ -411,6 +411,8 @@ fn registry(cwd: &Path, args: &[&str], identity: Option<&RegistryIdentity>) -> R
 struct Registered {
     path: String,
     branch: Option<String>,
+    head: Option<String>,
+    detached: bool,
     locked: bool,
     lock_reason: Option<String>,
     prunable: bool,
@@ -426,6 +428,8 @@ fn registered_worktrees(output: &str) -> Vec<Registered> {
             Registered {
                 path: after("worktree ").unwrap_or_default(),
                 branch: after("branch "),
+                head: after("HEAD "),
+                detached: fields.contains(&"detached"),
                 locked: fields.iter().any(|field| *field == "locked" || field.starts_with("locked ")),
                 lock_reason: after("locked "),
                 prunable: fields.iter().any(|field| *field == "prunable" || field.starts_with("prunable ")),
@@ -519,7 +523,8 @@ fn working_directory(metadata: &AgentThreadWorktree) -> Result<PathBuf, String> 
 /// What inspection reads of a worktree the walk is about to check, as Node's `inspectWithin` for a reclaim: that the folder
 /// is the checkout the record names, one the original repository's registry lists and has not locked, with the branch
 /// it has checked out and whether anything in it is uncommitted. `observed` is what was read inside the registry lane.
-fn inspect_within(metadata: &AgentThreadWorktree, identity: Option<RegistryIdentity>, observed: Option<(String, String)>) -> Result<(Option<String>, bool, RegistryIdentity), String> {
+/// A reclaim counts a submodule's changes as uncommitted too (`reclaiming`); an ordinary inspection, as Node's `inspect`, does not.
+fn inspect_within(metadata: &AgentThreadWorktree, identity: Option<RegistryIdentity>, observed: Option<(String, String)>, reclaiming: bool) -> Result<(Option<String>, bool, RegistryIdentity), String> {
     let recorded = metadata.path.as_deref().ok_or("The working folder is not allocated. Retry setup.")?;
     let path = existing_working_directory(Path::new(recorded)).map_err(|refused| refused.words)?;
     let repository_root = metadata.repository_root.as_deref().ok_or("The worktree binding is incomplete.")?;
@@ -561,7 +566,8 @@ fn inspect_within(metadata: &AgentThreadWorktree, identity: Option<RegistryIdent
         return Err("The working folder no longer belongs to the original repository.".into());
     }
     working_directory(metadata)?;
-    let dirty = !git(&path, &["status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none"])?.is_empty();
+    let status: &[&str] = if reclaiming { &["status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none"] } else { &["status", "--porcelain", "--untracked-files=normal"] };
+    let dirty = !git(&path, status)?.is_empty();
     Ok((branch, dirty, identity))
 }
 
@@ -1128,7 +1134,7 @@ fn reclaim_facts_within(metadata: &AgentThreadWorktree, identity_in_lane: Option
         }
         None => None,
     };
-    let (branch, dirty, identity) = inspect_within(metadata, identity_in_lane.cloned(), observed)?;
+    let (branch, dirty, identity) = inspect_within(metadata, identity_in_lane.cloned(), observed, true)?;
     let path = PathBuf::from(metadata.path.clone().unwrap_or_default());
     let listing = git(&path, &["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])?;
     let untracked_listing = git(&path, &["ls-files", "--others", "--exclude-standard", "-z"])?;
@@ -1418,19 +1424,24 @@ fn remove_locked(repository_root: &Path, path: &Path, identity: &RegistryIdentit
     })
 }
 
-/// A reclaimed record on the branch the folder had, as Node's `reclaimedRecord` with `withoutIncomingRef`: the incoming
-/// ref a moved branch's worktree was made from goes with the folder (ADR-0082 decision 3).
-fn reclaimed_record(metadata: &AgentThreadWorktree, branch: Option<String>) -> AgentThreadWorktree {
-    let mut record = metadata.clone();
-    if record.temporary_branch == Some(true) && branch != record.branch {
-        record.temporary_branch = Some(false);
+/// A reclaimed record on the branch the folder had, or, with none, on the commit it had, which `restore` checks out, as
+/// Node's `reclaimedRecord` with `withoutIncomingRef`: the incoming ref a moved branch's worktree was made from goes with
+/// the folder (ADR-0082 decision 3). The removal is remembered until the folder is put back (`finishedRemovals`).
+fn reclaimed_record(metadata: &AgentThreadWorktree, branch: Option<String>, detached_commit: Option<String>) -> AgentThreadWorktree {
+    let at = now_iso();
+    let commit = if branch.is_some() { None } else { detached_commit };
+    if let Some(path) = metadata.path.as_deref() {
+        restore::record_finished(Path::new(path), branch.clone(), commit.clone(), at.clone());
     }
-    record.branch = branch;
+    let mut record = restore::with_checked_out_branch(metadata, branch);
     record.status = "ready".into();
     record.error = None;
     record.extra.remove("dirty");
-    record.extra.remove("detachedCommit");
-    record.extra.insert("reclaimedAt".into(), Value::String(now_iso()));
+    match commit {
+        Some(commit) => record.extra.insert("detachedCommit".into(), Value::String(commit)),
+        None => record.extra.remove("detachedCommit"),
+    };
+    record.extra.insert("reclaimedAt".into(), Value::String(at));
     if let Some(Value::String(reference)) = record.extra.remove("incomingRef") {
         let incoming = reference
             .strip_prefix("refs/sotto/incoming/")
@@ -1456,8 +1467,8 @@ fn counts(items: impl Iterator<Item = (String, u64)>) -> Vec<(String, u64)> {
 /// not register as this repository's unlocked checkout, one on a detached HEAD, one holding a link out of itself, one with
 /// ignored files, nested work or files the user did not confirm, one whose files changed since they were listed, one with
 /// uncommitted changes the user did not confirm, and one that is a repository of its own. A rule acting alone
-/// (`automatic`) is not ported, and neither is finishing a removal Sotto started and did not finish (`resumeRemoval`):
-/// inspection refuses such a folder, so it stays.
+/// (`automatic`) is not ported. A removal Sotto started and did not finish is refused here, as inspection refuses it, and
+/// finished by Refresh (`restore::resume_removal`).
 pub fn reclaim(data_directory: &Path, metadata: &AgentThreadWorktree, options: &ReclaimOptions) -> Result<AgentThreadWorktree, String> {
     if metadata.mode != "independent" || metadata.reused == Some(true) {
         return Err("Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.".into());
@@ -1557,7 +1568,7 @@ pub fn reclaim(data_directory: &Path, metadata: &AgentThreadWorktree, options: &
         })?;
         // Outside the registry lane, so other threads' Git work in the repository does not wait for a large folder.
         remove_locked(&repository_root, &path, &identity, &nested, REMOVAL_STALL).map_err(|cause| unfinished_removal(&cause))?;
-        Ok(reclaimed_record(metadata, facts.branch.clone()))
+        Ok(reclaimed_record(metadata, facts.branch.clone(), None))
     })
 }
 
@@ -1680,6 +1691,9 @@ pub fn owns_checkout_alone(folder: &str, others: &[Option<String>]) -> bool {
     }
     true
 }
+
+mod restore;
+pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, RESTORE_BRANCH_NEEDS_CONFIRMATION};
 
 #[cfg(test)]
 mod tests;

@@ -78,6 +78,8 @@ pub fn advertised_features() -> Vec<String> {
         "command-changed-thread-records".into(),
         "kept-parts".into(),
         "draft-revisions".into(),
+        // `refresh-thread-worktree` takes `background`, the window's own refresh, as Node offers it to every client.
+        "background-refresh".into(),
         "detail-read-held".into(),
         "provider-opencode".into(),
         "provider-cursor".into(),

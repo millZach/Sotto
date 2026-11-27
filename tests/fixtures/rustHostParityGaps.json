@@ -4,7 +4,6 @@
       "missing": [
         "agents-view",
         "atomic-send",
-        "background-refresh",
         "branch-moves",
         "bring-changes-back",
         "browser",
@@ -61,7 +60,6 @@
       "missing": [
         "agents-view",
         "atomic-send",
-        "background-refresh",
         "bring-changes-back",
         "browser",
         "client-update-not-listed",
@@ -194,19 +192,7 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "refresh-thread-worktree": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "regenerate-thread-title": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "restore-thread-branch": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "retry-thread-worktree": {
       "node": "ok",
       "rust": "invalid_request"
     },
