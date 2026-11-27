@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
+import { HOST_PROVIDERS } from '../../src/shared/hostProviders'
 
 const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
 
@@ -49,6 +50,14 @@ function isolatedEnvironment(root: string): NodeJS.ProcessEnv {
   }
 }
 
+/**
+ * Turns every provider off in a host's data folder, as a user can. Off Windows the host also looks in folders outside
+ * any home or PATH, such as `/usr/local/bin`, so the environment above cannot hide a provider installed there.
+ */
+async function turnProvidersOff(dataDirectory: string): Promise<void> {
+  await writeFile(join(dataDirectory, 'agents.json'), JSON.stringify({ configuration: { disconnectedProviders: [...HOST_PROVIDERS] } }))
+}
+
 function runLaunchScript(cfg: Record<string, unknown>): Promise<Record<string, unknown>[]> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify(cfg)], {
@@ -86,6 +95,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host opt-in launch script integratio
     const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
     await mkdir(join(installPath, 'host'), { recursive: true })
     await mkdir(dataDirectory, { recursive: true })
+    await turnProvidersOff(dataDirectory)
     await copyFile(binary, join(installPath, 'host', exe))
 
     const baseCfg = {
@@ -147,6 +157,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host opt-in launch script integratio
     const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
     await mkdir(join(installPath, 'host'), { recursive: true })
     await mkdir(dataDirectory, { recursive: true })
+    await turnProvidersOff(dataDirectory)
     await copyFile(binary, join(installPath, 'host', exe))
     await writeFile(join(installPath, 'package.json'), JSON.stringify({ type: 'module' }))
     await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(installPath, 'host', 'index.js'))
@@ -191,6 +202,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host opt-in launch script integratio
     const rustBinPath = join(installPath, 'host', exe)
     await mkdir(join(installPath, 'host'), { recursive: true })
     await mkdir(dataDirectory, { recursive: true })
+    await turnProvidersOff(dataDirectory)
     await writeFile(join(installPath, 'package.json'), JSON.stringify({ type: 'module' }))
     await copyFile(resolve('tests/fixtures/fakeSshHost.mjs'), join(installPath, 'host', 'index.js'))
 

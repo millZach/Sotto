@@ -37,9 +37,15 @@ export async function startHost(command: HostCommand, data: string, provider: st
   child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-20_000) })
   const exited = new Promise<void>(resolve => child.once('exit', () => resolve()))
   const port = await new Promise<number>((resolve, reject) => {
-    const timer = setTimeout(() => { void stopProcessTree(child); reject(new Error(`The host did not say it was ready within ${deadlineMs} ms.\n${stderr}`)) }, deadlineMs)
+    let timedOut = false
+    // The failure is said once the host and what it started have exited, so nothing outlives the test that failed.
+    const timer = setTimeout(() => {
+      timedOut = true
+      const late = new Error(`The host did not say it was ready within ${deadlineMs} ms.\n${stderr}`)
+      void stopProcessTree(child).then(() => reject(late))
+    }, deadlineMs)
     child.once('error', error => { clearTimeout(timer); reject(error) })
-    void exited.then(() => { clearTimeout(timer); reject(new Error(`The host exited before it was ready.\n${stderr}`)) })
+    void exited.then(() => { clearTimeout(timer); if (!timedOut) reject(new Error(`The host exited before it was ready.\n${stderr}`)) })
     createInterface({ input: child.stdout! }).on('line', line => {
       let ready: { event?: unknown; port?: unknown }
       try { ready = JSON.parse(line) as typeof ready } catch { return }
