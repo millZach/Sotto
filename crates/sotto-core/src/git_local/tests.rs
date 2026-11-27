@@ -247,6 +247,32 @@ fn refuses_a_folder_that_is_not_ready_or_gone() {
     assert_eq!(run(dir.path(), &thread, &LocalGitCommand::Init).1, Err(format!("The folder {gone} is not there any more. Move it back, or add the project again from where it is now.")));
 }
 
+/// Writes `hook` in `repository`'s hooks folder as a shell script Git can run, here and on Windows.
+fn write_hook(repository: &Path, hook: &str, script: &str) {
+    let path = repository.join(".git").join("hooks").join(hook);
+    fs::write(&path, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// A hook that leaves a process holding Git's output open once Git has exited does not hold the command past its
+/// deadline: it settles on Node's timer, the deadline and two seconds' grace, as "did not finish in time"
+/// (`spawnCommand` in `src/main/agents/git/gitStatus.ts`), rather than wait for the process to let go.
+#[test]
+fn settles_on_its_deadline_when_a_hook_holds_the_output_after_git_exits() {
+    let remote = Remote::new();
+    sh_git(&remote.ours, &["branch", "other"]);
+    write_hook(&remote.ours, "post-checkout", "#!/bin/sh\nsleep 8 &\nexit 0\n");
+    let started = std::time::Instant::now();
+    let switched = git(&remote.ours(), &["checkout", "other", "--"], Duration::from_secs(1));
+    let took = started.elapsed();
+    assert_eq!(switched, Err("git did not finish in time.".to_string()));
+    assert!(took < Duration::from_secs(5), "settled after {took:?}, past the deadline and its grace");
+}
+
 /// A Git write stopped at its deadline is sent SIGTERM, as Node's `child.kill()` sends it, so Git removes the
 /// `index.lock` it holds before it goes and the next Git write in the checkout is not refused. SIGKILL would leave the
 /// lock behind. Unix only: Windows has no SIGTERM, and Node's stop there is TerminateProcess, as this host's is.

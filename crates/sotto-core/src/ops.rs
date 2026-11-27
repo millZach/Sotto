@@ -3130,7 +3130,11 @@ fn run_git_impl(
     // so a stalled git clean filter or hook is always terminated instead of wedging a worker.
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();
+    // Nothing is sent on it: each reader holds a sender until it ends, so the channel closes once both pipes have.
+    let (reading, pipes_closed) = std::sync::mpsc::channel::<()>();
+    let stdout_reading = reading.clone();
     let reader = std::thread::spawn(move || -> (Vec<u8>, bool) {
+        let _reading = stdout_reading;
         let mut buf = Vec::new();
         let mut overflowed = false;
         if let Some(mut stdout) = stdout_pipe {
@@ -3148,6 +3152,7 @@ fn run_git_impl(
         (buf, overflowed)
     });
     let stderr_reader = std::thread::spawn(move || -> Vec<u8> {
+        let _reading = reading;
         let mut buf = Vec::new();
         if let Some(stderr) = stderr_pipe {
             // As much of what Git said as its output may hold, so the last lines a refusal quotes are there.
@@ -3158,8 +3163,9 @@ fn run_git_impl(
     });
 
     let mut timed_out = false;
-    // When a command stopped at its deadline settles: Node's runner gives it two seconds from the stop (`spawnCommand`).
-    let mut settle_by = deadline;
+    // When the command settles at the latest: Node's runner gives it two seconds from its deadline, or from the stop when
+    // it is stopped there (`spawnCommand`).
+    let mut settle_by = deadline + TIMEOUT_GRACE;
     let status = loop {
         match child.try_wait() {
             Ok(Some(st)) => break Ok(st),
@@ -3179,12 +3185,15 @@ fn run_git_impl(
             Err(e) => break Err(e),
         }
     };
-    if timed_out {
-        // A hook or a remote helper the command started can hold its pipes open after it is gone, so a timeout settles on
-        // its own grace, as Node's runner does (`spawnCommand`), rather than wait for a close a grandchild may never allow.
-        while !(reader.is_finished() && stderr_reader.is_finished()) && Instant::now() < settle_by {
-            std::thread::sleep(Duration::from_millis(15));
-        }
+    // A hook or a remote helper the command started can hold its pipes open after Git is gone, whether Git exited or was
+    // stopped, so the command settles on its deadline and grace, as Node's runner does (`spawnCommand`), rather than wait
+    // for a close a grandchild may never allow. One still held then did not finish in time; its readers end when the
+    // grandchild lets go.
+    let held = matches!(
+        pipes_closed.recv_timeout(settle_by.saturating_duration_since(Instant::now())),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+    );
+    if timed_out || held {
         return Err(GitRunError::Failed("git timed out".into()));
     }
     let (buf, overflowed) = reader.join().unwrap_or_default();
