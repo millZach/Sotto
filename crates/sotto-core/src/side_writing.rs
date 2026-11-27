@@ -28,19 +28,6 @@ pub enum ShortTextPurpose {
 }
 
 impl ShortTextPurpose {
-    /// Node's name for the purpose.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ThreadTitle => "thread-title",
-            Self::ThreadBranch => "thread-branch",
-            Self::CommitMessage => "commit-message",
-            Self::PullRequestText => "pull-request-text",
-            Self::NextPrompt => "next-prompt",
-            Self::CommandSummary => "command-summary",
-            Self::ModelRoute => "model-route",
-        }
-    }
-
     /// Node's `watcherMayWrite`: the side calls Watcher's own thread may make, since neither runs a tool or joins its
     /// conversation (ADR-0173, ADR-0185).
     pub fn watcher_may_write(self) -> bool {
@@ -76,17 +63,6 @@ pub struct ShortTextRequest {
     pub shape: ShortTextShape,
 }
 
-/// Why a side call wrote nothing, as Node's `ShortTextFailureReason`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShortTextFailure {
-    /// The thread's provider writes nothing for it.
-    Unavailable,
-    /// It was asked and failed.
-    Failed,
-    /// It answered with nothing to keep.
-    Empty,
-}
-
 /// The thread a side call is for, as the caller finds it: its provider's adapter, and whether it runs on Watcher's
 /// launch profile. The caller answers `None` for a thread Node's workspace would not ask about: one it does not know,
 /// one hidden from it, a council judge's, or one whose provider session has not started.
@@ -112,18 +88,19 @@ pub async fn write_short_text(threads: &SideWritingThreads, thread_id: &str, req
     };
     let content = match content {
         Ok(Some(content)) => content,
-        Ok(None) => return failed(purpose, ShortTextFailure::Unavailable),
-        Err(_) => return failed(purpose, ShortTextFailure::Failed),
+        Ok(None) => return failed(),
+        Err(_) => return failed(),
     };
     let kept = match request.shape {
         ShortTextShape::Line => trim_to_line(&content, request.max_characters),
         ShortTextShape::Text => trim_to_text(&content, request.max_characters),
     };
-    kept.or_else(|| failed(purpose, ShortTextFailure::Empty))
+    kept.or_else(failed)
 }
 
-/// Node's headless host logs a short-writing failure by its code alone: not the purpose, the reason or any text.
-fn failed(_purpose: ShortTextPurpose, _reason: ShortTextFailure) -> Option<String> {
+/// Node's headless host logs a short-writing failure, whether the thread's provider writes nothing, failed or wrote
+/// nothing to keep, by its code alone: not the purpose, the reason or any text.
+fn failed() -> Option<String> {
     eprintln!("[Sotto] short-writing-failed");
     None
 }
@@ -232,8 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn names_each_purpose_as_node_does_and_lets_watcher_write_only_its_own() {
-        assert_eq!(ShortTextPurpose::CommitMessage.as_str(), "commit-message");
+    fn lets_watcher_write_only_its_own_side_calls() {
         assert!(!ShortTextPurpose::CommitMessage.watcher_may_write());
         assert!(ShortTextPurpose::NextPrompt.watcher_may_write() && ShortTextPurpose::CommandSummary.watcher_may_write());
     }

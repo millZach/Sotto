@@ -13,6 +13,7 @@ use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use super::claude::ClaudeLaunch;
 use crate::side_writing::ShortTextPrompt;
 
 /// Node's `outputLimitBytes` default: what the run may print, standard output and error together.
@@ -69,21 +70,31 @@ fn arguments(prompt: &ShortTextPrompt, model: &str, effort: Option<&str>) -> Vec
     args
 }
 
-/// The side call on `command`, the user's Claude Code with its own leading arguments, in `cwd`: what Claude Code wrote,
-/// or why it did not, in Node's words. A run past `deadline` or the output limit is killed.
-pub(crate) async fn write(mut command: Command, prompt: &ShortTextPrompt, model: &str, effort: Option<&str>, cwd: &Path, deadline: Duration) -> Result<String, String> {
+/// One side call: what it asks, on which model and effort, in which folder, and how long it may take.
+pub(crate) struct SideRun<'a> {
+    pub(crate) prompt: &'a ShortTextPrompt,
+    pub(crate) model: &'a str,
+    pub(crate) effort: Option<&'a str>,
+    pub(crate) cwd: &'a Path,
+    pub(crate) deadline: Duration,
+}
+
+/// The side call on the user's Claude Code, after its own leading arguments and `prefix_args`: what Claude Code wrote,
+/// or why it did not, in Node's words. A run past its deadline or the output limit is killed.
+pub(crate) async fn write(launch: &ClaudeLaunch, prefix_args: &[String], run: SideRun<'_>) -> Result<String, String> {
+    let SideRun { prompt, model, effort, cwd, deadline } = run;
     if !valid_model(model) || effort.is_some_and(|effort| !valid_effort(effort)) {
         return Err("Choose a valid Claude model before asking it to write.".into());
     }
-    let path = command.as_std().get_envs().find(|(key, _)| key.eq_ignore_ascii_case("PATH")).and_then(|(_, value)| value.map(ToOwned::to_owned));
-    command.env_clear();
+    let mut command = Command::new(&launch.executable);
+    command.args(&launch.prefix_args).args(prefix_args).env_clear();
     for (key, value) in std::env::vars_os() {
         if key.to_str().is_some_and(|key| ENVIRONMENT_KEYS.contains(&key.to_ascii_lowercase().as_str())) {
             command.env(key, value);
         }
     }
     // The PATH the CLI lookup found the client on, as Node's `withCliPath` adds it.
-    if let Some(path) = path {
+    if let Some(path) = &launch.path {
         command.env("PATH", path);
     }
     command

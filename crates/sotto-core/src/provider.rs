@@ -269,12 +269,8 @@ pub struct MockProviderAdapter {
     side_calls: Arc<Mutex<Vec<(String, ShortTextPrompt)>>>,
 }
 
-/// What one of the mock's side calls answers: what it wrote or why it failed, after an optional wait.
-#[derive(Debug, Clone)]
-pub struct SideAnswer {
-    pub delay: std::time::Duration,
-    pub written: Result<Option<String>, String>,
-}
+/// What one of the mock's side calls answers: what it wrote, nothing, or why it failed.
+pub type SideAnswer = Result<Option<String>, String>;
 
 /// The adapter's ends of a held read: it tells the test the read began, and waits for what the read returns.
 type HeldReadEnds = (oneshot::Sender<()>, oneshot::Receiver<ThreadRequestsRead>);
@@ -574,10 +570,6 @@ impl ProviderAdapter for MockProviderAdapter {
     fn write_short_text(&self, thread_id: String, prompt: ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
         self.side_calls.lock().unwrap().push((thread_id, prompt));
         let answer = self.side_answers.lock().unwrap().pop_front();
-        Box::pin(async move {
-            let Some(answer) = answer else { return Ok(None) };
-            tokio::time::sleep(answer.delay).await;
-            answer.written
-        })
+        Box::pin(async move { answer.unwrap_or(Ok(None)) })
     }
 }

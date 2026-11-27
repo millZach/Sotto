@@ -79,6 +79,26 @@ impl ClaudeAdapterConfig {
             side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
+
+    /// The user's Claude Code as the CLI lookup finds it, or the configured client when no lookup is made; `None` when
+    /// the lookup finds none. The configured leading arguments are the caller's to add.
+    fn launch(&self) -> Option<ClaudeLaunch> {
+        if !self.use_cli_lookup {
+            return Some(ClaudeLaunch { executable: PathBuf::from(&self.executable), prefix_args: Vec::new(), path: None });
+        }
+        let options = crate::cli_lookup::CliLookupOptions::from_process_env();
+        let resolved = crate::cli_lookup::resolve_provider_cli("claude", &self.data_directory, &options)?;
+        let path = (!resolved.augmented_path.is_empty()).then_some(resolved.augmented_path);
+        Some(ClaudeLaunch { executable: resolved.executable, prefix_args: resolved.prefix_args, path })
+    }
+}
+
+/// How the user's Claude Code starts: the program, its own leading arguments, and the PATH it was found on, as Node's
+/// `withCliPath` adds it.
+pub(crate) struct ClaudeLaunch {
+    pub(crate) executable: PathBuf,
+    pub(crate) prefix_args: Vec<String>,
+    pub(crate) path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,27 +232,14 @@ impl ClaudeSessionProcess {
             }
         }
 
-        let resolved = if config.use_cli_lookup {
-            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
-            Some(
-                crate::cli_lookup::resolve_provider_cli("claude", &config.data_directory, &opts)
-                    .ok_or_else(|| {
-                        "Install Claude Code and sign in before connecting this provider."
-                            .to_string()
-                    })?,
-            )
-        } else {
-            None
-        };
-        let mut cmd = match &resolved {
-            Some(res) => {
-                let mut c = Command::new(&res.executable);
-                c.args(&res.prefix_args);
-                res.apply_tokio(&mut c);
-                c
-            }
-            None => Command::new(&config.executable),
-        };
+        let launch = config.launch().ok_or_else(|| {
+            "Install Claude Code and sign in before connecting this provider.".to_string()
+        })?;
+        let mut cmd = Command::new(&launch.executable);
+        cmd.args(&launch.prefix_args);
+        if let Some(path) = &launch.path {
+            cmd.env("PATH", path);
+        }
         cmd.args(&args)
             .current_dir(cwd)
             .env("NO_COLOR", "1")
@@ -865,22 +872,6 @@ impl ClaudeAdapter {
         }
     }
 
-    /// The user's Claude Code with its own leading arguments, found as a thread's session finds it, or `None` when it
-    /// is not installed.
-    fn side_command(&self) -> Option<Command> {
-        if !self.config.use_cli_lookup {
-            let mut command = Command::new(&self.config.executable);
-            command.args(&self.config.prefix_args);
-            return Some(command);
-        }
-        let options = crate::cli_lookup::CliLookupOptions::from_process_env();
-        let resolved = crate::cli_lookup::resolve_provider_cli("claude", &self.config.data_directory, &options)?;
-        let mut command = Command::new(&resolved.executable);
-        command.args(&resolved.prefix_args).args(&self.config.prefix_args);
-        resolved.apply_tokio(&mut command);
-        Some(command)
-    }
-
     async fn ensure_thread_session(
         &self,
         req: &SendMessageRequest,
@@ -1300,12 +1291,13 @@ impl ProviderAdapter for ClaudeAdapter {
             let Some(model) = record.model_id else {
                 return Ok(None);
             };
-            let Some(command) = self.side_command() else {
+            let Some(launch) = self.config.launch() else {
                 return Ok(None);
             };
             let effort = crate::side_writing::side_writing_effort(&self.models(), &public_provider_entity_id("claude", "model", &model));
             let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
-            super::claude_side::write(command, &prompt, &model, effort.as_deref(), Path::new(&cwd), self.config.side_writing_deadline).await.map(Some)
+            let run = super::claude_side::SideRun { prompt: &prompt, model: &model, effort: effort.as_deref(), cwd: Path::new(&cwd), deadline: self.config.side_writing_deadline };
+            super::claude_side::write(&launch, &self.config.prefix_args, run).await.map(Some)
         })
     }
 
