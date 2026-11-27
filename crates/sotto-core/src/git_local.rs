@@ -187,7 +187,7 @@ impl Pulled {
 
 /// Whether `cwd` is in a repository, as Node's status read decides it (`rev-parse --git-common-dir`). Git missing is its
 /// own failure, never a folder called "not a repository".
-fn is_repository(cwd: &str) -> Result<bool, String> {
+pub(crate) fn is_repository(cwd: &str) -> Result<bool, String> {
     match git(cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir"], COMMAND_DEADLINE) {
         Ok(_) => Ok(true),
         Err(words) if words == GIT_MISSING => Err(words),
@@ -299,8 +299,13 @@ pub(crate) fn js_trim(text: &str) -> &str {
 
 /// The last two lines of what Git said, joined, as Node keeps them (`split('\n').slice(-2).join(' ')`).
 pub(crate) fn last_two_lines(text: &str) -> String {
+    last_lines(text, 2)
+}
+
+/// The last `count` lines of what Git said, joined with spaces, as Node keeps them (`split('\n').slice(-count)`).
+pub(crate) fn last_lines(text: &str, count: usize) -> String {
     let lines: Vec<&str> = text.split('\n').collect();
-    lines[lines.len().saturating_sub(2)..].join(" ")
+    lines[lines.len().saturating_sub(count)..].join(" ")
 }
 
 /// `{lead} {detail}` with `detail` cut to `max` UTF-16 code units, trimmed, as Node's refusals build it.

@@ -20,8 +20,8 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::git_local::{js_trim, last_two_lines, refused_with, safe_remote};
-use crate::ops::{run_action_git as git, run_action_git_with, ActionGitExtras, LineSink, GIT_MISSING};
+use crate::git_local::{is_repository, js_trim, last_lines, last_two_lines, refused_with, safe_remote};
+use crate::ops::{parse_porcelain_v2_changed, run_action_git as git, run_action_git_with, ActionGitExtras, LineSink};
 use crate::workspace::clip_utf16;
 
 /// What Node's runner gives a Git command that names no deadline of its own.
@@ -246,6 +246,7 @@ pub enum GitActionCta {
     RunAction { label: String, action: GitStackedAction },
 }
 
+/// The feature branch step: `created` with its name, or `skipped_not_requested`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BranchStep {
     pub status: &'static str,
@@ -253,6 +254,7 @@ pub struct BranchStep {
     pub name: Option<String>,
 }
 
+/// The commit step: `created` with the commit and its subject, `skipped_no_changes` or `skipped_not_requested`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CommitStep {
     pub status: &'static str,
@@ -262,6 +264,8 @@ pub struct CommitStep {
     pub subject: Option<String>,
 }
 
+/// The push step: `pushed` with the branch and upstream, and whether the upstream was set; `skipped_up_to_date` or
+/// `skipped_not_requested`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PushStep {
@@ -274,6 +278,7 @@ pub struct PushStep {
     pub set_upstream: Option<bool>,
 }
 
+/// The pull request step: `created` or `opened_existing` with what GitHub said of it, or `skipped_not_requested`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PullRequestStep {
     pub status: &'static str,
@@ -386,7 +391,7 @@ impl GitActionProgress {
     }
 }
 
-/// A Git diff cut for a provider to describe, as Node's `diffExcerpt` cuts it.
+/// A Git diff cut for a provider to describe, as Node's `diffExcerpt` (`src/main/llm/diffExcerpt.ts`) cuts it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffExcerpt {
     pub text: String,
@@ -455,6 +460,7 @@ pub struct GitActionInput {
 }
 
 impl GitActionInput {
+    /// The action a command asks for, in the folder Git runs it in.
     pub fn new(command: &GitActionCommand, cwd: String) -> Self {
         Self {
             thread_id: command.thread_id.clone(),
@@ -487,10 +493,8 @@ pub struct ActionStatus {
 /// either, so neither is read here. Its stand-in for `ahead` on a branch with no upstream is not read either: every step
 /// that reads `ahead` reads it only for a branch with one.
 pub fn read_status(cwd: &str, fetch: bool) -> Result<ActionStatus, String> {
-    match git(cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir"], COMMAND_DEADLINE) {
-        Ok(_) => {}
-        Err(words) if words == GIT_MISSING => return Err(words),
-        Err(_) => return Ok(ActionStatus::default()),
+    if !is_repository(cwd)? {
+        return Ok(ActionStatus::default());
     }
     let has_origin = lines(&git(cwd, &["remote"], COMMAND_DEADLINE).unwrap_or_default()).iter().any(|remote| remote == "origin");
     if fetch && has_origin {
@@ -584,55 +588,6 @@ fn digits(text: &str) -> Result<u64, ()> {
         return Err(());
     }
     text.parse().map_err(|_| ())
-}
-
-/// One changed path in `status --porcelain=v2 -z`, as Node's `parseChangedRecords` reads it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ChangedRecord {
-    path: String,
-    original_path: Option<String>,
-    status: &'static str,
-}
-
-fn changed_records(output: &str) -> Vec<ChangedRecord> {
-    let status_of = |xy: &str| {
-        if xy.contains('D') {
-            "deleted"
-        } else if xy.contains('A') {
-            "added"
-        } else if xy.contains('T') {
-            "type-changed"
-        } else {
-            "modified"
-        }
-    };
-    let records: Vec<&str> = output.split('\0').collect();
-    let mut result = Vec::new();
-    let mut index = 0;
-    while index < records.len() {
-        let record = records[index];
-        index += 1;
-        if record.is_empty() || record.starts_with("# ") {
-            continue;
-        }
-        let fields: Vec<&str> = record.split(' ').collect();
-        let rest = |from: usize| fields.get(from..).map(|rest| rest.join(" ")).unwrap_or_default();
-        let xy = fields.get(1).copied().unwrap_or_default();
-        match record.as_bytes()[0] {
-            b'?' => result.push(ChangedRecord { path: record.get(2..).unwrap_or_default().to_string(), original_path: None, status: "untracked" }),
-            b'1' => result.push(ChangedRecord { path: rest(8), original_path: None, status: status_of(xy) }),
-            b'u' => result.push(ChangedRecord { path: rest(10), original_path: None, status: "conflicted" }),
-            b'2' => {
-                // The new path ends this record; the original follows as its own.
-                let original = records.get(index).copied().unwrap_or_default();
-                index += 1;
-                let status = if xy.contains('C') { "added" } else { "renamed" };
-                result.push(ChangedRecord { path: rest(9), original_path: (!original.is_empty()).then(|| original.to_string()), status });
-            }
-            _ => {}
-        }
-    }
-    result
 }
 
 /// The lines of Git's output, trimmed, without the empty ones.
@@ -859,7 +814,7 @@ impl Staged {
     /// and leaves staged files that were not chosen out for now. A conflicted file refuses before the index is touched.
     fn stage(cwd: &str, file_paths: Option<&[String]>) -> Result<Self, String> {
         let top = js_trim(&git(cwd, &["rev-parse", "--show-toplevel"], COMMAND_DEADLINE)?).to_string();
-        let records = changed_records(&git(&top, &["status", "--porcelain=v2", "-z", "--untracked-files=all"], COMMAND_DEADLINE)?);
+        let (_, records) = parse_porcelain_v2_changed(&git(&top, &["status", "--porcelain=v2", "-z", "--untracked-files=all"], COMMAND_DEADLINE)?);
         if records.iter().any(|record| record.status == "conflicted") {
             return Err("Resolve the conflicted files before committing here.".into());
         }
@@ -1060,18 +1015,16 @@ fn remove_trace(folder: &Path) {
     }
 }
 
-/// The last `count` lines of what Git said, joined with spaces, as Node keeps them (`split('\n').slice(-count)`).
-fn last_lines(text: &str, count: usize) -> String {
-    let lines: Vec<&str> = text.split('\n').collect();
-    lines[lines.len().saturating_sub(count)..].join(" ")
+/// A Git setting, trimmed, or nothing when it is not set: Node's `config --get` with `.catch(() => '')`.
+fn config(cwd: &str, key: &str) -> String {
+    js_trim(&git(cwd, &["config", "--get", key], COMMAND_DEADLINE).unwrap_or_default()).to_string()
 }
 
 /// The remote a push goes to, as T3 chooses it: `branch.<b>.pushRemote`, then `remote.pushDefault`, when either names a
 /// remote this repository has, then `origin`, then the first remote.
 fn push_remote(cwd: &str, branch: Option<&str>) -> Option<String> {
     let remotes = lines(&git(cwd, &["remote"], COMMAND_DEADLINE).unwrap_or_default());
-    let config = |key: &str| js_trim(&git(cwd, &["config", "--get", key], COMMAND_DEADLINE).unwrap_or_default()).to_string();
-    let configured = [branch.map(|branch| config(&format!("branch.{branch}.pushRemote"))).unwrap_or_default(), config("remote.pushDefault")];
+    let configured = [branch.map(|branch| config(cwd, &format!("branch.{branch}.pushRemote"))).unwrap_or_default(), config(cwd, "remote.pushDefault")];
     configured
         .into_iter()
         .find(|value| !value.is_empty() && remotes.contains(value))
@@ -1105,9 +1058,11 @@ fn push(cwd: &str, branch: Option<&str>) -> Result<PushStep, String> {
         return Err("Cannot push because no git remote is configured for this repository.".into());
     };
     let upstream = status.upstream.as_deref().map(parse_upstream);
-    let config = |key: &str| js_trim(&git(cwd, &["config", "--get", key], COMMAND_DEADLINE).unwrap_or_default()).to_string();
-    let destination = format!("HEAD:refs/heads/{publish}");
-    let published = || PushStep { status: "pushed", branch: Some(publish.clone()), upstream: Some(format!("{remote}/{publish}")), set_upstream: Some(true) };
+    // Publishes the branch under its own name and makes that its upstream.
+    let publish_here = || -> Result<PushStep, String> {
+        git(cwd, &["push", "-u", &remote, &format!("HEAD:refs/heads/{publish}")], PUSH_DEADLINE)?;
+        Ok(PushStep { status: "pushed", branch: Some(publish.clone()), upstream: Some(format!("{remote}/{publish}")), set_upstream: Some(true) })
+    };
     let attempt = (|| -> Result<PushStep, String> {
         let Some((upstream_remote, upstream_branch)) = upstream.as_ref() else {
             let pushed_already = git(cwd, &["rev-parse", "--verify", "-q", &format!("refs/remotes/{remote}/{publish}")], COMMAND_DEADLINE).unwrap_or_default();
@@ -1115,15 +1070,13 @@ fn push(cwd: &str, branch: Option<&str>) -> Result<PushStep, String> {
             if !pushed_already.is_empty() && pushed_already == js_trim(&git(cwd, &["rev-parse", "HEAD"], COMMAND_DEADLINE)?) {
                 return Ok(PushStep { status: "skipped_up_to_date", branch: None, upstream: None, set_upstream: None });
             }
-            git(cwd, &["push", "-u", &remote, &destination], PUSH_DEADLINE)?;
-            return Ok(published());
+            return publish_here();
         };
         let elsewhere = &remote != upstream_remote;
-        let configured_elsewhere = (elsewhere && config(&format!("branch.{branch}.pushRemote")) == remote) || (elsewhere && config("remote.pushDefault") == remote);
+        let configured_elsewhere = (elsewhere && config(cwd, &format!("branch.{branch}.pushRemote")) == remote) || (elsewhere && config(cwd, "remote.pushDefault") == remote);
         if configured_elsewhere {
             // A triangular workflow: fetched from one remote, pushed to another. Git's own push would go there, so this one does too.
-            git(cwd, &["push", "-u", &remote, &destination], PUSH_DEADLINE)?;
-            return Ok(published());
+            return publish_here();
         }
         // Only a branch with the upstream's own name, or one named after the remote ref itself, is the same branch.
         // `fix/main` tracking `origin/main` is a topic branch, and its push publishes it under its own name.
@@ -1131,11 +1084,10 @@ fn push(cwd: &str, branch: Option<&str>) -> Result<PushStep, String> {
         if !same_branch {
             // A branch cut from `origin/main` tracks main; pushing publishes it under its own name and moves the upstream there.
             let base = format!("branch.{branch}.gh-merge-base");
-            if config(&base).is_empty() {
+            if config(cwd, &base).is_empty() {
                 let _ = git(cwd, &["config", &base, upstream_branch], COMMAND_DEADLINE);
             }
-            git(cwd, &["push", "-u", &remote, &destination], PUSH_DEADLINE)?;
-            return Ok(published());
+            return publish_here();
         }
         if status.ahead == 0 && status.behind == 0 {
             return Ok(PushStep { status: "skipped_up_to_date", branch: None, upstream: None, set_upstream: None });

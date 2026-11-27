@@ -541,13 +541,16 @@ fn count_untracked_lines(path: &Path) -> Option<(u64, u64)> {
     Some((lines, 0))
 }
 
-struct ChangedFileRecord {
-    path: String,
-    original_path: Option<String>,
-    status: &'static str,
+/// One changed path in `status --porcelain=v2 -z`, as Node's `parseChangedRecords` reads it.
+pub(crate) struct ChangedFileRecord {
+    pub path: String,
+    pub original_path: Option<String>,
+    pub status: &'static str,
 }
 
-fn parse_porcelain_v2_changed(output: &str) -> (bool, Vec<ChangedFileRecord>) {
+/// The changed paths of `status --porcelain=v2 -z`, as Node's `parseChangedRecords` reads them, and whether the branch
+/// has no commit yet.
+pub(crate) fn parse_porcelain_v2_changed(output: &str) -> (bool, Vec<ChangedFileRecord>) {
     let records: Vec<&str> = output.split('\0').collect();
     let mut unborn = false;
     let mut result = Vec::new();
