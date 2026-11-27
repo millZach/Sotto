@@ -84,6 +84,10 @@ impl<R: AsyncRead + Unpin> SideOutput<R> {
     /// part-read stays for the next call.
     pub(crate) async fn next_line(&mut self) -> Result<Option<String>, OverLimit> {
         loop {
+            // Counted before anything waiting is handed on, as Node fails the call the moment either stream passes it.
+            if self.printed.load(Ordering::SeqCst) > self.limit {
+                return Err(OverLimit);
+            }
             if let Some(at) = self.buffer.iter().position(|byte| *byte == b'\n') {
                 let line: Vec<u8> = self.buffer.drain(..=at).collect();
                 return Ok(Some(String::from_utf8_lossy(&line[..at]).into_owned()));
@@ -94,8 +98,9 @@ impl<R: AsyncRead + Unpin> SideOutput<R> {
             }
             let mut chunk = [0u8; 8192];
             let read = tokio::select! {
-                read = self.stdout.read(&mut chunk) => read,
+                biased;
                 () = self.overflow.notified() => return Err(OverLimit),
+                read = self.stdout.read(&mut chunk) => read,
             };
             match read {
                 Ok(0) => self.closed = true,
@@ -171,6 +176,14 @@ mod tests {
             assert_eq!(output.next_line().await, Err(OverLimit));
             let mut alone = SideOutput::new(&[b'y'; 30][..], &b""[..], 20, true);
             assert_eq!(alone.next_line().await, Err(OverLimit));
+
+            // Lines already read and a closed output are refused too once the error stream has passed the limit.
+            let mut waiting = SideOutput::new(&b"one\ntwo\n"[..], &[b'x'; 15][..], 20, true);
+            assert_eq!(waiting.next_line().await, Ok(Some("one".into())));
+            while waiting.printed.load(Ordering::SeqCst) <= 20 {
+                tokio::task::yield_now().await;
+            }
+            assert_eq!(waiting.next_line().await, Err(OverLimit));
         });
     }
 }
