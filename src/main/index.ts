@@ -249,6 +249,9 @@ import { TerminalService } from './tools/terminal'
 import { terminalTakesMenuShortcut } from './terminals/menuShortcuts'
 import { BrowserService } from './tools/browser'
 import { createBrowserAgentServer } from './tools/browserAgentTools'
+import { BrowserFiles } from './tools/browserFiles'
+import { BrowserProfiles } from './tools/browserProfiles'
+import { findImportSources, importCookies } from './tools/browserImport'
 import { CloudIphoneService } from './tools/cloudIphone/service'
 import { CloudUsageLedger } from './tools/cloudIphone/usageLedger'
 import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
@@ -928,7 +931,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   let cloudIphoneService: CloudIphoneService | undefined
   let desktopNotifier: DesktopNotifier | null = null
   const terminalServiceRef: { current?: TerminalService } = {}
-  const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService)
+  // The full browser catalog (ADR-0220), read once at start like every Owl answer; Antigravity keeps the stable one.
+  const browserParity = owlFeatures['browser-parity']
+  const browserFiles = browserParity ? new BrowserFiles(join(userDataPath, 'browser-files')) : undefined
+  void browserFiles?.sweep()
+  // The user's browser profiles (ADR-0221); a removed one's data goes here, before any session can open it.
+  const browserProfiles = browserParity ? new BrowserProfiles(join(userDataPath, 'browser-profiles.json')) : undefined
+  void browserProfiles?.sweepPartitions(userDataPath)
+  // Under test, other browsers are looked for only in the test's own folder, never the tester's (ADR-0221).
+  const importRoot = e2eConfiguration !== null && !app.isPackaged ? process.env.SOTTO_E2E_IMPORT_ROOT : undefined
+  const browserImport = e2eConfiguration !== null ? { sources: () => importRoot ? findImportSources([{ browser: 'Firefox' as const, folder: importRoot }]) : Promise.resolve([]), copy: importCookies } : undefined
+  const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService, browserParity)
   const filesBindingsMirror = new FilesBindingsMirror()
 
   const engineOptions: DesktopEngineOptions = {
@@ -1965,6 +1978,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         pointAtSomething: owlFeatures['quiet-browser'],
         // A secret request's reference is typed from the engine that holds its value (ADR-0219).
         ...(owlFeatures['secret-requests'] && engine.takeSecret ? { secret: (threadId: string, ref: string) => engine.takeSecret!(threadId, ref) } : {}),
+        ...(browserParity ? { parity: true } : {}), ...(browserFiles ? { browserFiles } : {}), ...(browserProfiles ? { profiles: browserProfiles } : {}), ...(browserImport ? { browserImport } : {}),
       })
       cloudIphoneService = new CloudIphoneService({
         files: shellFiles, credentials,

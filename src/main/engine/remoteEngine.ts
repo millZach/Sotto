@@ -13,6 +13,7 @@ import type { ToolsResult } from '../../shared/tools'
 import type { AgentVisual } from '../../shared/visuals'
 import type { ClientIdentity } from '../agents/hostService'
 import type { ThreadToolCallContext } from '../agents/threadToolServer'
+import type { BrowserServerOptions } from '../agents/browserAgentServer'
 import type { ThreadVideoPart } from '../agents/threadMediaScheme'
 import type { RoomBridge } from '../agents/watcherRoomDesktop'
 import type { QuestionPageOpening } from '../hosts/desktopHostRouter'
@@ -180,7 +181,7 @@ export async function startOutOfProcessEngine(
       case 'shell:browserCall':
         return shellBridge.browserTools.call(args[0] as string, args[1] as string, args[2], args[3] as ThreadToolCallContext | undefined)
       case 'shell:browserMcpServer':
-        return shellBridge.browserTools.mcpServer(args[0] as string)
+        return shellBridge.browserTools.mcpServer(args[0] as string, args[1] as BrowserServerOptions | undefined)
       case 'shell:credentialsSet':
         await shellBridge.credentials.set(args[0] as string, args[1] as string)
         return snapshotCredentials(shellBridge)

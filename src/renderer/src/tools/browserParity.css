@@ -1,0 +1,29 @@
+/* The full browser's pane pieces (ADR-0220; Owl). They sit at the page's foot with the agent's strip, under the native
+   page and never over it, and take colour only from theme roles. The recording dot is steady: nothing here blinks. */
+.browser-parity__dialog { padding-block: 8px; }
+.browser-parity__lead { display: block; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.browser-parity__words { display: block; max-height: 6.5em; overflow: auto; color: var(--tt-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.browser-parity__prompt { flex: 1 1 14em; min-width: 0; }
+.browser-pane__strip[data-state='recording'] .browser-pane__dot { background: var(--tt-error); }
+.browser-pane__opened.browser-parity__servers { margin: 0 auto 28px; }
+.browser-parity__servers-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 4px; }
+.browser-parity__servers-head h2 { margin: 0; }
+.browser-parity__servers-head .files-icon { width: 26px; height: 26px; border-radius: var(--tt-radius-control); }
+.browser-parity__servers .browser-pane__recent > .browser-parity__server-title { flex: 1 1 auto; color: var(--tt-text-muted); font-size: var(--tt-type-small); text-align: right; }
+.browser-parity__none { margin: 4px 8px 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+/* Browser profiles (ADR-0221): which one new pages open in, Add and Remove, in the empty pane under the servers. */
+.browser-pane__opened.browser-parity__profiles { margin: 0 auto 28px; }
+.browser-parity__profile-list { display: grid; gap: 2px; margin-bottom: 4px; }
+.browser-parity__profile-row { display: flex; align-items: center; gap: 6px; }
+.browser-parity__profile-row > .browser-parity__profile { flex: 1 1 auto; }
+.browser-parity__profile-row > .files-icon { flex: none; width: 26px; height: 26px; border-radius: var(--tt-radius-control); }
+.browser-parity__profile { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 34px; padding: 0 8px; border-radius: var(--tt-radius-control); color: var(--tt-text); font-size: var(--tt-type-body); cursor: pointer; }
+.browser-parity__profile:hover { background: var(--tt-hover); }
+.browser-parity__profile > input { flex: none; margin: 0; accent-color: var(--tt-accent); }
+.browser-parity__profile-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser-parity__profile-note { flex: 1 1 auto; color: var(--tt-text-muted); font-size: var(--tt-type-small); text-align: right; white-space: nowrap; }
+.browser-parity__confirm { display: flex; flex: none; gap: 6px; }
+.browser-parity__add { display: grid; gap: 10px; padding: 8px; }
+.browser-parity__add-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.browser-parity__profile-chip { max-width: 12em; }
+.browser-parity__profile-chip > bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

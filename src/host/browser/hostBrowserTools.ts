@@ -4,6 +4,7 @@ import { FilesService, type FilesBinding } from '../../main/files/service'
 import { createHostBrowserAgentServer } from '../../main/tools/browserAgentTools'
 import { HostBrowser } from './hostBrowser'
 import { HostBrowserService } from './hostBrowserService'
+import type { BrowserFiles } from '../../main/tools/browserFiles'
 
 export interface HostBrowserToolsOptions {
   /** The host's own threads' working copies, through the resolver its Files and Changes reads use. */
@@ -11,6 +12,10 @@ export interface HostBrowserToolsOptions {
   readonly withoutAsking: boolean
   saveWithoutAsking(value: boolean): Promise<void>
   readonly browser?: HostBrowser
+  /** The full catalog (ADR-0220): the host's own `browser-parity` Owl answer. */
+  readonly parity?: boolean
+  /** Where screenshots an agent saves on this host are kept (ADR-0220). */
+  readonly browserFiles?: BrowserFiles
 }
 export interface HostBrowserTools {
   readonly service: HostBrowserService
@@ -29,8 +34,9 @@ export function hostBrowserTools(options: HostBrowserToolsOptions): HostBrowserT
   const files = new FilesService({ resolveBinding: options.resolveBinding, copyPath: notHere, reveal: notHere })
   const listeners = new Set<(event: BrowserEvent) => void>()
   const service = new HostBrowserService({ browser: options.browser ?? new HostBrowser(), files, withoutAsking: options.withoutAsking, saveWithoutAsking: options.saveWithoutAsking,
+    ...options.parity ? { parity: true } : {}, ...options.browserFiles ? { browserFiles: options.browserFiles } : {},
     emit: event => { for (const listener of [...listeners]) { try { listener(event) } catch { /* A listener's failure is its own. */ } } } })
-  const tools = createHostBrowserAgentServer(service)
+  const tools = createHostBrowserAgentServer(service, options.parity === true)
   return { service, tools,
     subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
     close: async () => { listeners.clear(); await tools.close(); await service.shutDown() } }

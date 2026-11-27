@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { browserAnswerActionSchema, browserControlTaskSchema, browserCreateSchema, browserListingSchema, browserNavigateSchema, browserPageSchema, browserRequestSchema, browserShareSchema, browserTaskSchema } from './browser'
+import { browserAnswerActionSchema, browserControlTaskSchema, browserCreateSchema, browserDialogAnswerSchema, browserEmulateSchema, browserListingSchema, browserNavigateSchema, browserPageSchema, browserRequestSchema, browserShareSchema, browserTaskSchema } from './browser'
 import { toolListRequestSchema, toolsResultSchema, toolTargetSchema } from './tools'
 
 /**
@@ -49,6 +49,9 @@ export const hostBrowserRequestSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal('setting'), payload: browserSettingSchema }).strict(),
   /** Whether the host has Chrome, Chromium or Edge for its thread's browser, so the pane can say to install one (Zach, November 9). */
   z.object({ method: z.literal('available'), payload: toolListRequestSchema }).strict(),
+  /** The user answers a host page's dialog, or sets its colour scheme or device size (ADR-0220). */
+  z.object({ method: z.literal('answerDialog'), payload: browserDialogAnswerSchema }).strict(),
+  z.object({ method: z.literal('emulate'), payload: browserEmulateSchema }).strict(),
 ])
 export type HostBrowserRequest = z.infer<typeof hostBrowserRequestSchema>
 export type HostBrowserMethod = HostBrowserRequest['method']
@@ -66,6 +69,7 @@ export const hostBrowserResultSchemas = {
   close: voidResult, tasks: toolsResultSchema(z.array(browserTaskSchema).max(64)), share: pageResult, controlTask: taskResult, answerAction: taskResult,
   stopGrant: voidResult, input: voidResult, watch: voidResult, unwatch: voidResult, setting: voidResult,
   available: toolsResultSchema(z.object({ available: z.boolean() }).strict()),
+  answerDialog: pageResult, emulate: pageResult,
 } as const satisfies Record<HostBrowserMethod, z.ZodType>
 
 export type HostBrowserResult<M extends HostBrowserMethod> = z.output<(typeof hostBrowserResultSchemas)[M]>

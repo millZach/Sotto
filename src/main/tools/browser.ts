@@ -1,13 +1,19 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
-import { browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserViewportSchema, browserCaptureSchema, browserPointModeSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserAgentResult, type BrowserCapture, type BrowserPointState } from '../../shared/browser'
+import { browserAddProfileSchema, browserRequestSchema, browserMountSchema, browserNoPayloadSchema, browserOpenLinkSchema, browserRemoveProfileSchema, safeBrowserUrl, type BrowserProfile, type BrowserPage, type BrowserEvent, type BrowserBounds, browserViewportSchema, browserCaptureSchema, browserPointModeSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserAgentResult, type BrowserCapture, type BrowserPointState } from '../../shared/browser'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
 import { BrowserAutomation, type PointTarget } from './browserAutomation'
 import { BrowserTasks, type BrowserCreateRequest, type BrowserTaskWords, type TaskPage } from './browserTasks'
 import { fail, parse } from './common'
 import type { ThreadFilePages } from './threadFilePages'
+import type { BrowserFiles } from './browserFiles'
+import { PageRecording } from './pageRecorder'
+import { findLocalServers } from './localServers'
+import { profilePartition, ProfileProblem, type BrowserProfiles } from './browserProfiles'
+import { findImportSources, importCookies, type CookieTarget, type FoundImportSource } from './browserImport'
+import { toolTargetSchema } from '../../shared/tools'
 import { blockSpellcheckDictionaryDownloads } from '../security'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
@@ -46,7 +52,17 @@ export interface BrowserDependencies {
   filePages?: ThreadFilePages
   /** A secret request's value for its one-use reference (ADR-0219), from the engine that holds it. */
   secret?(threadId: string, ref: string): Promise<string | null>
+  /** The full catalog (ADR-0220): the `browser-parity` Owl answer, read once at start. */
+  readonly parity?: boolean
+  /** Where screenshots and recordings an agent saves are kept (ADR-0220). */
+  readonly browserFiles?: BrowserFiles
+  /** The user's browser profiles (ADR-0221), with the full catalog on. */
+  readonly profiles?: BrowserProfiles
+  /** Other browsers' profiles to copy sign-ins from, and the copy itself; tests give their own. */
+  readonly browserImport?: { sources(): Promise<FoundImportSource[]>; copy(folder: string, target: CookieTarget): Promise<{ imported: number; skipped: number }> }
 }
+/** The input events that mean the user is using a page (ADR-0220, decision 8); a pointer passing over does not. */
+const USER_INPUT = new Set(['mouseDown', 'keyDown', 'rawKeyDown', 'char', 'mouseWheel', 'gestureScrollBegin', 'touchStart'])
 
 /** Untrusted browsing is wholly separate from the application renderer and its session. */
 export class BrowserService extends BrowserTasks<PageRecord> {
@@ -59,10 +75,15 @@ export class BrowserService extends BrowserTasks<PageRecord> {
   /** Point sessions, and the newest point request per page, so an Off that overtakes an On wins. */
   private pointSessions = 0
   private readonly pointRequests = new Map<string, number>()
+  /** Recordings in progress (ADR-0220): each holds the page drawing while hidden, and its recorder. */
+  private readonly recordings = new Map<PageRecord, { readonly recording: PageRecording; readonly release: () => void; stopping?: Promise<string> }>()
+  /** A recording that stopped itself at its limit, kept until the agent asks for it. */
+  private readonly finishedRecordings = new Map<string, string>()
   constructor(private readonly dependencies: BrowserDependencies) {
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => dependencies.byDefault(), words: browserWords,
       ...dependencies.filePages ? { filePages: dependencies.filePages } : {},
-      ...dependencies.secret ? { secret: (threadId: string, ref: string) => dependencies.secret!(threadId, ref) } : {} })
+      ...dependencies.secret ? { secret: (threadId: string, ref: string) => dependencies.secret!(threadId, ref) } : {},
+      ...dependencies.parity ? { parity: true } : {}, ...dependencies.browserFiles ? { browserFiles: dependencies.browserFiles } : {} })
   }
   protected readPage(record: PageRecord): void {
     if (record.view.webContents.isDestroyed()) return
@@ -83,11 +104,12 @@ export class BrowserService extends BrowserTasks<PageRecord> {
    * its own storage, as a separate device does, and Chromium keeps page zoom per origin within a session, so the
    * phone's zoom (which fits its 393-pixel page into the player) never reaches a page in Tools.
    */
-  private browserSession(workspace: FileWorkspace, phone: boolean): Session {
-    const key = phone ? `phone:${workspace.threadId}:${workspace.workspaceId}` : workspace.workspaceId
+  private browserSession(workspace: FileWorkspace, phone: boolean, profile: BrowserProfile | null = null): Session {
+    // A browser profile's session is the user's, kept on disk across threads and runs (ADR-0221); every other one is in memory.
+    const key = profile ? `profile:${profile.id}` : phone ? `phone:${workspace.threadId}:${workspace.workspaceId}` : workspace.workspaceId
     const existing = this.sessions.get(key)
     if (existing) return existing
-    const isolated = session.fromPartition(phone ? `sotto-phone-${this.namespace}-${randomUUID()}` : `sotto-browser-${this.namespace}-${workspace.workspaceId}`)
+    const isolated = session.fromPartition(profile ? profilePartition(profile.id) : phone ? `sotto-phone-${this.namespace}-${randomUUID()}` : `sotto-browser-${this.namespace}-${workspace.workspaceId}`)
     blockSpellcheckDictionaryDownloads(isolated)
     isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
     isolated.setPermissionCheckHandler(() => false)
@@ -112,8 +134,10 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     if (this.pages.size >= 32) return fail('busy', 'Close a browser page before opening another (32 maximum).')
     const phone = request.device === 'iphone'
     if (phone && this.phoneOf(owner)) return fail('busy', 'This thread already has a test iPhone. Open the address on it instead.')
+    const profile = request.profileId ? await this.profileOf(request.profileId) : null
+    if (profile && phone) return fail('invalid-request', t`The test iPhone keeps its own storage, so it opens without a profile.`)
     const view = new WebContentsView({ webPreferences: {
-      session: this.browserSession(owner, phone), contextIsolation: true, sandbox: true,
+      session: this.browserSession(owner, phone, profile), contextIsolation: true, sandbox: true,
       nodeIntegration: false, nodeIntegrationInWorker: false, nodeIntegrationInSubFrames: false,
       webviewTag: false, webSecurity: true, allowRunningInsecureContent: false,
       navigateOnDragDrop: false, safeDialogs: true, backgroundThrottling: true,
@@ -121,9 +145,13 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     } })
     // A phone starts at its own size, so a capture before the player ever draws it is already 393 pixels wide.
     view.setBounds(phone ? { x: 0, y: 0, width: TEST_IPHONE.width, height: TEST_IPHONE.height } : { x: 0, y: 0, width: 1280, height: 800 })
-    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, madePrivate: false, point: null, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null } }
+    // A page in a profile starts private, so the browser grant never shares a signed-in page: the user shares it (ADR-0221).
+    const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, madePrivate: profile !== null, point: null, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null, ...profile ? { profile } : {} } }
     this.pages.set(record.page.id, record)
+    this.track(record)
     const contents = view.webContents
+    // The user's own input (an agent's runs while its action holds the page) hands the page to them for a moment.
+    contents.on('input-event', (_event, input) => { if (USER_INPUT.has(input.type) && !this.executing.has(record.page.id)) this.userUsed(record) })
     if (phone) {
       contents.setUserAgent(TEST_IPHONE.userAgent)
       // Each new origin starts at the session's default zoom, so the phone's fit is put back on every document.
@@ -361,7 +389,115 @@ export class BrowserService extends BrowserTasks<PageRecord> {
       if (lease.temporary && !lease.window.isDestroyed()) lease.window.destroy()
     }
   }
+  protected async startRecording(record: PageRecord): Promise<void> {
+    if (!this.dependencies.browserFiles) return fail('unavailable', 'Recording is not available in this build.')
+    // The page keeps drawing while it is hidden, since a recording of a page that stopped drawing would stand still.
+    const release = this.prepareCapture(record)
+    const recording = new PageRecording(() => { void this.stopRecordingOf(record, true).catch(() => undefined) })
+    this.recordings.set(record, { recording, release })
+    try { await record.automation.startScreencast(data => recording.frame(data)) }
+    catch (error) { this.recordings.delete(record); recording.close(); release(); throw error }
+    record.page.recording = { startedAt: recording.startedAt }
+  }
+  protected async stopRecordingOf(record: PageRecord, keep = false): Promise<string> {
+    const active = this.recordings.get(record)
+    if (!active) {
+      const finished = this.finishedRecordings.get(record.page.id) ?? fail('blocked', 'This page is not recording.')
+      this.finishedRecordings.delete(record.page.id)
+      return finished
+    }
+    active.stopping ??= (async () => {
+      try {
+        await record.automation.stopScreencast()
+        const video = await active.recording.finish()
+        if (video.length === 0) return fail('unavailable', 'The recording has no pictures: the page did not draw while it ran.')
+        return await this.dependencies.browserFiles!.save(record.page.workspace.threadId, 'recording', 'webm', video)
+      } finally {
+        this.recordings.delete(record)
+        active.release()
+        record.page.recording = null
+        if (this.pages.has(record.page.id)) this.publish(record)
+      }
+    })()
+    const path = await active.stopping
+    if (keep) this.finishedRecordings.set(record.page.id, path)
+    else this.finishedRecordings.delete(record.page.id)
+    return path
+  }
+  /** The user's Open developer tools (ADR-0220): Chromium's own, in a window of their own, for a page here. No agent tool opens them. */
+  devtools(payload: unknown) { return this.run(async () => {
+    this.fullBrowser()
+    const record = await this.owned(parse(browserRequestSchema, payload), false)
+    if (record.view.webContents.isDestroyed()) return fail('page-unavailable', t`This page has closed.`)
+    record.view.webContents.openDevTools({ mode: 'detach', activate: true })
+  }) }
+  /** The profile a new page names, refused in words when profiles are off or it was removed (ADR-0221). */
+  private async profileOf(id: string): Promise<BrowserProfile> {
+    const profile = await this.profileStore().find(id)
+    return profile ?? fail('unavailable', t`That browser profile was removed. Choose another, or open the page without one.`)
+  }
+  private profileStore(): BrowserProfiles {
+    const profiles = this.dependencies.parity ? this.dependencies.profiles : undefined
+    return profiles ?? fail('unavailable', t`Browser profiles are not on in this version of Sotto.`)
+  }
+  private importer() { return this.dependencies.browserImport ?? { sources: () => findImportSources(), copy: importCookies } }
+  private async importSources() {
+    return (await this.importer().sources().catch(() => [])).map(({ id, browser, name }) => ({ id, browser, name }))
+  }
+  /** The user's profiles, and other browsers' profiles on this computer, by name only: their folders stay here (ADR-0221). */
+  profiles(payload: unknown) { return this.run(async () => {
+    parse(browserNoPayloadSchema, payload)
+    const store = this.profileStore()
+    return { profiles: await store.list(), sources: await this.importSources() }
+  }) }
+  /** The user's Add profile, copying another browser's sign-ins into it once when they chose one (ADR-0221). */
+  addProfile(payload: unknown) { return this.run(async () => {
+    const request = parse(browserAddProfileSchema, payload)
+    const store = this.profileStore()
+    const importer = this.importer()
+    const source = request.importFrom ? (await importer.sources().catch(() => [])).find(found => found.id === request.importFrom) : undefined
+    if (request.importFrom && !source) return fail('unavailable', t`That browser's profile is no longer on this computer. Nothing was added.`)
+    let profile: BrowserProfile
+    try { profile = await store.add(request.name) } catch (error) { if (error instanceof ProfileProblem) return fail('invalid-request', error.message); throw error }
+    if (!source) return { profile, imported: 0, skipped: 0 }
+    try {
+      return { profile, ...await importer.copy(source.folder, session.fromPartition(profilePartition(profile.id)).cookies) }
+    } catch {
+      // A failed copy leaves no half-made profile behind.
+      await this.forgetProfile(profile.id)
+      const browser = source.browser
+      return fail('unavailable', t({ message: `Sotto could not read the sign-ins from ${browser}. Close ${browser}, then try again. Nothing was added.`, comment: '{browser} is Firefox or Zen.' }))
+    }
+  }) }
+  /** The user's Remove: the profile's pages close, then its cookies and site data are deleted (ADR-0221). */
+  removeProfile(payload: unknown) { return this.run(async () => {
+    const request = parse(browserRemoveProfileSchema, payload)
+    const store = this.profileStore()
+    for (const record of [...this.pages.values()]) {
+      if (record.page.profile?.id !== request.id) continue
+      const { threadId, workspaceId } = record.page.workspace
+      await this.destroy(record)
+      this.dependencies.emit({ type: 'closed', threadId, workspaceId, pageId: record.page.id })
+    }
+    await this.forgetProfile(request.id)
+    return { profiles: await store.list(), sources: await this.importSources() }
+  }) }
+  private async forgetProfile(id: string): Promise<void> {
+    const stored = this.sessions.get(`profile:${id}`) ?? session.fromPartition(profilePartition(id))
+    await stored.clearData().catch(() => undefined)
+    await stored.clearStorageData().catch(() => undefined)
+    this.sessions.delete(`profile:${id}`)
+    await this.profileStore().remove(id)
+  }
+  /** Loopback servers started from Sotto, for the pane and `browser_servers` (ADR-0220). */
+  localServers(payload: unknown) { return this.run(async () => {
+    this.fullBrowser()
+    parse(toolTargetSchema, payload)
+    return findLocalServers()
+  }) }
   protected destroy(record: PageRecord): Promise<void> {
+    // A recording on a closing page is kept, as its record_stop would keep it.
+    if (this.recordings.has(record)) void this.stopRecordingOf(record, true).catch(() => undefined)
     const slot = slotOf(record)
     if (this.desiredPageId[slot] === record.page.id) { this.desiredPageId[slot] = null; this.mountVersion[slot]++ }
     if (this.isMounted(record)) this.removeMountedView(slot)
@@ -530,6 +666,8 @@ export class BrowserService extends BrowserTasks<PageRecord> {
   }) }
   dispose(): void {
     this.disposed = true
+    for (const [record, active] of this.recordings) { active.recording.close(); active.release(); void record.automation.stopScreencast() }
+    this.recordings.clear()
     this.detach()
     for (const record of this.pages.values()) void this.destroy(record)
     for (const isolated of this.sessions.values()) {

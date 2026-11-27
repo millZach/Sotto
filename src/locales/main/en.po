@@ -392,6 +392,10 @@ msgid "A new-window request was blocked. Use a link destination action or open t
 msgstr "A new-window request was blocked. Use a link destination action or open this page externally."
 
 #: src/main/tools/ipc.ts
+msgid "A page on the host machine does not record. Nothing was changed."
+msgstr "A page on the host machine does not record. Nothing was changed."
+
+#: src/main/tools/ipc.ts
 msgid "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
 msgstr "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
 
@@ -599,6 +603,10 @@ msgstr "Branches are unavailable on this host."
 #: src/main/agents/ipcCore.ts
 msgid "Branches are unavailable."
 msgstr "Branches are unavailable."
+
+#: src/main/tools/browser.ts
+msgid "Browser profiles are not on in this version of Sotto."
+msgstr "Browser profiles are not on in this version of Sotto."
 
 #: src/main/plugins/changeWords.ts
 msgid "Cancel a deployment on Vercel"
@@ -877,6 +885,10 @@ msgstr "Desktop permissions could not be set up on the host. Nothing was replace
 #: src/main/hosts/hostFailureWords.ts
 msgid "Desktop permissions could not be set up on the host. Nothing was saved. Nothing was replaced. Check its data folder, then add the host again."
 msgstr "Desktop permissions could not be set up on the host. Nothing was saved. Nothing was replaced. Check its data folder, then add the host again."
+
+#: src/main/tools/ipc.ts
+msgid "Developer tools open only for a page on this computer. Nothing was opened."
+msgstr "Developer tools open only for a page on this computer. Nothing was opened."
 
 #: src/main/hosts/hostSetup.ts
 msgid "Don’t add"
@@ -1638,6 +1650,10 @@ msgstr "Sends Meshy the photo {photo} from this thread’s folder, redrawn witho
 msgid "Sends Meshy these words: “{words}”"
 msgstr "Sends Meshy these words: “{words}”"
 
+#: src/main/tools/ipc.ts
+msgid "Servers on the host machine are not listed here yet. Ask the agent for the address."
+msgstr "Servers on the host machine are not listed here yet. Ask the agent for the address."
+
 #: src/main/omarchy/setup.ts
 msgid "Set up by hand. Sotto leaves these files alone."
 msgstr "Set up by hand. Sotto leaves these files alone."
@@ -1787,6 +1803,11 @@ msgstr "Sotto could not read that request, so nothing was sent to the host. Clos
 #: src/main/hosts/sshLauncher.ts
 msgid "Sotto could not read the key fingerprint. Check the key on the host before you trust it."
 msgstr "Sotto could not read the key fingerprint. Check the key on the host before you trust it."
+
+#. {browser} is Firefox or Zen.
+#: src/main/tools/browser.ts
+msgid "Sotto could not read the sign-ins from {browser}. Close {browser}, then try again. Nothing was added."
+msgstr "Sotto could not read the sign-ins from {browser}. Close {browser}, then try again. Nothing was added."
 
 #: src/main/ownModelServers/ipc.ts
 msgid "Sotto could not read your own model servers."
@@ -2136,6 +2157,14 @@ msgstr "Terminal is shutting down."
 #: src/main/themes/openVsx.ts
 msgid "That address is not an Open VSX address."
 msgstr "That address is not an Open VSX address."
+
+#: src/main/tools/browser.ts
+msgid "That browser profile was removed. Choose another, or open the page without one."
+msgstr "That browser profile was removed. Choose another, or open the page without one."
+
+#: src/main/tools/browser.ts
+msgid "That browser's profile is no longer on this computer. Nothing was added."
+msgstr "That browser's profile is no longer on this computer. Nothing was added."
 
 #: src/main/council/climbService.ts
 msgid "That Climb is no longer here."
@@ -3049,6 +3078,10 @@ msgstr "The terminal could not start or save its session. Check that the shell i
 msgid "The test iPhone keeps its own size."
 msgstr "The test iPhone keeps its own size."
 
+#: src/main/tools/browser.ts
+msgid "The test iPhone keeps its own storage, so it opens without a profile."
+msgstr "The test iPhone keeps its own storage, so it opens without a profile."
+
 #: src/main/themes/ipc.ts
 msgid "The theme file could not be written there. Choose another folder."
 msgstr "The theme file could not be written there. Choose another folder."
@@ -3536,6 +3569,10 @@ msgstr "This page belongs to a thread on another computer, so it is not shown he
 #: src/main/tools/browser.ts
 msgid "This page closed."
 msgstr "This page closed."
+
+#: src/main/tools/browser.ts
+msgid "This page has closed."
+msgstr "This page has closed."
 
 #: src/main/tools/ipc.ts
 msgid "This page is on the host machine, so it is drawn from its pictures. Nothing was changed."

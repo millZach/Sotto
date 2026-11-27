@@ -54,7 +54,8 @@ function BrowserPlayerFrame({ page, mount, boundary, threadId, bridge, onHost }:
 
 /** The task the player shows for a thread: its newest, never one on the test iPhone, which floats in the phone player (ADR-0045). */
 export function playerTask(tasks: readonly BrowserTask[], threadId: string): BrowserTask | undefined {
-  return tasks.find(item => item.threadId === threadId && !item.device)
+  // A background page (ADR-0220) floats only when it waits for the user's answer.
+  return tasks.find(item => item.threadId === threadId && !item.device && (!item.background || item.pendingAction !== null))
 }
 
 /**

@@ -1,5 +1,6 @@
-import type { BrowserAction, BrowserBounds, BrowserCapture } from '../../shared/browser'
+import { presetSize, type BrowserAction, type BrowserAppearance, type BrowserBounds, type BrowserCapture, type BrowserDialog, type BrowserTargetFields } from '../../shared/browser'
 import { ToolFailure, fail } from './common'
+import { SNAPSHOT_TEXT, formatSnapshot, keyEvents, modifierMask, type AXNode } from './pageSnapshot'
 
 /**
  * The page's debugger, as a page automation drives it: Electron's own on the desktop, a DevTools session over a pipe
@@ -31,12 +32,34 @@ export const EVIDENCE_LIMIT = 2_000_000
 export interface PageEvidence { readonly image: string; readonly width: number; readonly height: number }
 export interface PagePicture { readonly empty: boolean; readonly width: number; readonly height: number; readonly dataUrl: string }
 
-export type PageInput = Extract<BrowserAction, { type: 'click' | 'type' | 'scroll' | 'viewport' | 'tap' | 'swipe' | 'key' }>
-/** What a `key` action sends: the key's code, and the character a press types for the keys that type one. */
-const KEYS: Record<Extract<BrowserAction, { type: 'key' }>['key'], { code: number; text?: string }> = {
-  Enter: { code: 13, text: '\r' }, Backspace: { code: 8 }, Tab: { code: 9 }, Escape: { code: 27 },
-  ArrowUp: { code: 38 }, ArrowDown: { code: 40 }, ArrowLeft: { code: 37 }, ArrowRight: { code: 39 },
-}
+export type PageInput = Extract<BrowserAction, { type: 'click' | 'type' | 'scroll' | 'viewport' | 'tap' | 'swipe' | 'key' | 'hover' | 'select' | 'drag' }>
+/** The actions that reach one element, or the page's open dialog or file chooser, so what they reach is recorded when asked and checked when run. */
+export type TargetedAction = Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' | 'select' | 'drag' | 'upload' | 'dialog' }>
+export const isTargeted = (action: BrowserAction): action is TargetedAction => ['click', 'type', 'tap', 'key', 'select', 'drag', 'upload', 'dialog'].includes(action.type)
+/** A dialog's untrusted words as Sotto shows them: no control or direction-changing characters, at most 2000. */
+// eslint-disable-next-line no-control-regex -- Untrusted page words shown in Sotto's own chrome.
+const pageWords = (value: unknown): string => String(value ?? '').replace(/[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/gu, ' ').slice(0, 2000)
+/** Run on an element: scrolls its nearest scrolling container, or the page, and returns how far that moved. */
+const SCROLL_ELEMENT = `function(dx, dy) {
+  const root = document.scrollingElement || document.documentElement
+  const scrolls = element => { const style = getComputedStyle(element); return (/(auto|scroll|overlay)/.test(style.overflowY) && element.scrollHeight > element.clientHeight) || (/(auto|scroll|overlay)/.test(style.overflowX) && element.scrollWidth > element.clientWidth) }
+  let element = this.nodeType === 1 ? this : this.parentElement
+  while (element && element !== document.body && element !== root && !scrolls(element)) element = element.parentElement
+  const target = element && element !== document.body && element !== root ? element : root
+  const left = target.scrollLeft, top = target.scrollTop
+  target.scrollBy({ left: dx, top: dy, behavior: 'instant' })
+  return { x: target.scrollLeft - left, y: target.scrollTop - top, page: target === root }
+}`
+/** How long a click waits for the file chooser it may have opened (ADR-0220). */
+const CHOOSER_GRACE_MS = 300
+/** How much an evaluated value may say back (ADR-0220). */
+export const EVALUATE_LIMIT = 64 * 1024
+/** How many console messages a page keeps for its snapshot. */
+const CONSOLE_KEPT = 100
+/** A drag moves through this many points, so a page's pointer handlers see it travel. */
+const DRAG_STEPS = 8
+/** How often `wait_for` looks again. */
+const WAIT_POLL_MS = 100
 /** A swipe is this many touch moves between its two points: enough for a list to read it as a fling. */
 const SWIPE_STEPS = 10
 /** How long one point-mode command may take before the page counts as not answering. */
@@ -92,13 +115,35 @@ export abstract class PageAutomation {
   /** Which debugger attachment is current. A command left from an earlier one cannot reset this one. */
   private session = 0
   /** The viewport the agent set, if any. Chromium drops it with the attachment, so a fresh one sets it again. */
-  private viewport: { width: number; height: number } | null = null
+  private viewport: { width: number; height: number; mobile: boolean } | null = null
   private readonly errors: { kind: string; message: string }[] = []
   /**
    * Secrets typed into this page from a secret request (ADR-0219), held only in memory while it is open, so whatever
    * the page says back (its words, errors, an evaluated value) reaches the agent with each one masked.
    */
   private readonly typedSecrets = new Set<string>()
+  /** A secret was typed into the document loaded now, so `evaluate` could read it there (ADR-0220, decision 6). */
+  private secretInDocument = false
+  /**
+   * The full catalog (ADR-0220): the page's dialogs, file chooser and load events reach Sotto through the Page domain,
+   * which the pane can then answer. Off, the Page domain stays off and dialogs stay Electron's, as before.
+   */
+  parity = false
+  /** Told when the page's dialog or file chooser opens or closes, so its owner publishes the page again. */
+  onChange: (() => void) | null = null
+  /** Refs from the latest snapshot to the DOM nodes they name; a navigation or a handoff forgets them. */
+  private refs = new Map<string, number>()
+  private readonly consoleLog: { level: string; text: string }[] = []
+  private dialogOpen: (BrowserDialog & { readonly seq: number }) | null = null
+  private dialogSeq = 0
+  private readonly dialogWaiters = new Set<() => void>()
+  /** A file chooser an agent's click opened, waiting for `upload` (ADR-0220). */
+  private chooser: { readonly backendNodeId: number; readonly multiple: boolean; readonly seq: number } | null = null
+  private interceptUntil = 0
+  private appearance: BrowserAppearance | null = null
+  private loadedAt = { domContent: 0, load: 0 }
+  private screencast: ((data: string) => void) | null = null
+  private dragData: unknown = null
   /**
    * `touch` is the test iPhone's (ADR-0045): while attached, the page sees a touch screen and the mouse taps it.
    * `prepareCapture` lends the page a surface to draw into while it is off screen, and returns its release.
@@ -141,11 +186,13 @@ export abstract class PageAutomation {
       this.page.offEvent(this.onMessage)
       this.page.onEvent(this.onMessage)
       const commands = [this.send('Network.enable'), this.send('Runtime.enable')]
+      if (this.parity) commands.push(this.send('Page.enable'))
+      if (this.appearance) commands.push(this.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: this.appearance }] }))
       if (this.touch) commands.push(
         this.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }),
         this.send('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' }),
       )
-      if (this.viewport) commands.push(this.send('Emulation.setDeviceMetricsOverride', { ...this.viewport, deviceScaleFactor: 1, mobile: false }))
+      if (this.viewport) commands.push(this.send('Emulation.setDeviceMetricsOverride', { ...this.viewport, deviceScaleFactor: 1 }))
       const enabling = Promise.all(commands).then(() => undefined)
       // A setup that failed is not kept: the next action tries it again rather than failing on the old answer.
       enabling.catch(() => { if (this.enabled === enabling) this.enabled = null })
@@ -168,10 +215,14 @@ export abstract class PageAutomation {
       const details = params.exceptionDetails as { text?: string; exception?: { description?: string } } | undefined
       message = details?.exception?.description ?? details?.text ?? 'A page script failed.'
     }
-    if (method === 'Runtime.consoleAPICalled' && params.type === 'error') {
+    if (method === 'Runtime.consoleAPICalled') {
       const args = params.args as { value?: unknown; description?: string }[] | undefined
-      message = args?.map(arg => typeof arg.value === 'string' ? arg.value : arg.description ?? '').join(' ') ?? 'The page reported an error.'
+      const words = args?.map(arg => typeof arg.value === 'string' ? arg.value : arg.value !== undefined ? JSON.stringify(arg.value) : arg.description ?? '').join(' ') ?? ''
+      this.consoleLog.push({ level: String(params.type ?? 'log'), text: words.slice(0, 500) })
+      if (this.consoleLog.length > CONSOLE_KEPT) this.consoleLog.shift()
+      if (params.type === 'error') message = words || 'The page reported an error.'
     }
+    this.onPageEvent(method, params)
     if (method === 'Overlay.nodeHighlightRequested' && this.pointing && typeof params.nodeId === 'number') this.hover(params.nodeId)
     if (method === 'Overlay.inspectNodeRequested' && this.pointing && typeof params.backendNodeId === 'number') {
       const handlers = this.pointing
@@ -287,6 +338,40 @@ export abstract class PageAutomation {
     const id = attributes.get('id')
     return { element: { tag, role: ['generic', 'none', 'presentation'].includes(role) ? '' : role, name, text: '', selector: id ? `#${cssIdentifier(id)}` : tag } }
   }
+  /** The Page domain's news for the full catalog: dialogs, the file chooser, loads and recorded frames. */
+  private onPageEvent(method: string, params: Record<string, unknown>): void {
+    if (method === 'Page.javascriptDialogOpening') {
+      const type = ['alert', 'confirm', 'prompt', 'beforeunload'].includes(String(params.type)) ? String(params.type) as BrowserDialog['type'] : 'alert'
+      this.dialogOpen = { type, message: pageWords(params.message), ...(type === 'prompt' ? { defaultPrompt: pageWords(params.defaultPrompt) } : {}), seq: ++this.dialogSeq }
+      for (const waiter of [...this.dialogWaiters]) waiter()
+      this.onChange?.()
+    } else if (method === 'Page.javascriptDialogClosed') {
+      this.dialogOpen = null
+      this.onChange?.()
+    } else if (method === 'Page.fileChooserOpened' && typeof params.backendNodeId === 'number') {
+      this.chooser = { backendNodeId: params.backendNodeId, multiple: params.mode === 'selectMultiple', seq: ++this.dialogSeq }
+      for (const waiter of [...this.dialogWaiters]) waiter()
+      this.onChange?.()
+    } else if (method === 'Page.domContentEventFired') this.loadedAt.domContent = Date.now()
+    else if (method === 'Page.loadEventFired') this.loadedAt.load = Date.now()
+    else if (method === 'Page.screencastFrame' && typeof params.data === 'string') {
+      void this.page.sendCommand('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => undefined)
+      this.screencast?.(params.data)
+    } else if (method === 'Input.dragIntercepted') this.dragData = params.data ?? null
+  }
+  /** The dialog the page has open, as the window and the agent see it, or null. */
+  dialog(): BrowserDialog | null {
+    if (!this.dialogOpen) return null
+    const dialog = this.dialogOpen
+    // The page's words go to the pane: a secret the page echoes is masked there as everywhere (ADR-0219).
+    return { type: dialog.type, message: this.masked(dialog.message), ...(dialog.defaultPrompt !== undefined ? { defaultPrompt: this.masked(dialog.defaultPrompt) } : {}) }
+  }
+  /** Whether the page's DOMContentLoaded came at or after `at`, as a navigation's readiness wait asks. */
+  domContentSince(at: number): boolean { return this.loadedAt.domContent >= at }
+  /** Whether an agent's file chooser waits for `upload`. */
+  choosing(): boolean { return this.chooser !== null }
+  /** The colour scheme the page is told it has, or null for the computer's. */
+  colorScheme(): BrowserAppearance | null { return this.appearance }
   async inspect(): Promise<string> {
     await this.ready()
     const result = await this.send('Accessibility.getFullAXTree') as { nodes?: { ignored?: boolean; role?: { value?: unknown }; name?: { value?: unknown }; backendDOMNodeId?: number }[] }
@@ -307,6 +392,204 @@ export abstract class PageAutomation {
     return result
   }
   /**
+   * The page as an agent reads it in the full catalog (ADR-0220): its address and title, the accessibility tree with a
+   * ref on each element, the words on screen, and what its console and network said. Refs replace the last snapshot's.
+   */
+  async snapshotText(): Promise<string> {
+    this.noDialog()
+    await this.ready()
+    const result = await this.send('Accessibility.getFullAXTree') as { nodes?: AXNode[] }
+    const formatted = formatSnapshot(result.nodes ?? [])
+    this.refs = formatted.refs
+    const read = await this.send('Runtime.evaluate', { expression: `({ title: document.title, text: document.body ? document.body.innerText.slice(0, ${SNAPSHOT_TEXT}) : '', state: document.readyState })`, returnByValue: true }) as { result?: { value?: { title?: string; text?: string; state?: string } } }
+    const page = read.result?.value ?? {}
+    const sections = [
+      `URL: ${this.page.url()}`, `Title: ${page.title ?? ''}`, `Ready state: ${page.state ?? 'unknown'}`,
+      ...(this.dialogOpen ? [`Open dialog: ${this.dialogOpen.type} ${JSON.stringify(this.dialogOpen.message)}`] : []),
+      ...(this.chooser ? ['A file chooser is open: answer it with upload and no target.'] : []),
+      '', '## Accessibility tree (act on an element by its ref)', formatted.tree || '(empty)', ...(formatted.truncated ? ['(The tree is longer; scroll or use a selector for the rest.)'] : []),
+      '', '## Visible text', page.text ?? '',
+      '', '## Console (latest last)', ...(this.consoleLog.length ? this.consoleLog.slice(-50).map(entry => `[${entry.level}] ${entry.text}`) : ['(none)']),
+      '', '## Errors (console and network)', ...(this.errors.length ? this.errors.map(entry => `[${entry.kind}] ${entry.message}`) : ['(none)']),
+    ]
+    return this.masked(sections.join('\n'))
+  }
+  /** A JavaScript expression run in the page (ADR-0220), its value said back as JSON, cut at `EVALUATE_LIMIT` and masked. */
+  async evaluate(expression: string, awaitPromise = false): Promise<string> {
+    this.noDialog()
+    if (this.secretInDocument) return fail('blocked', 'This page holds a secret you saved, so evaluate is off here until the page loads another document. Use snapshot, click and type instead.')
+    await this.ready()
+    const result = await this.raceDialog(this.send('Runtime.evaluate', { expression, awaitPromise, returnByValue: true, userGesture: true })) as { result?: { type?: string; value?: unknown; description?: string; unserializableValue?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } } | 'dialog'
+    if (result === 'dialog') return this.masked(`The page opened a ${this.dialogOpen?.type ?? 'dialog'} ${JSON.stringify(this.dialogOpen?.message ?? '')} while evaluating. Answer it with the dialog action.`)
+    if (result.exceptionDetails) return this.masked(`Threw: ${(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'An error').slice(0, 4000)}`)
+    const value = result.result
+    const said = value?.type === 'undefined' ? 'undefined' : value?.unserializableValue ?? (value && 'value' in value ? JSON.stringify(value.value) ?? 'undefined' : value?.description ?? 'undefined')
+    return this.masked(said.length > EVALUATE_LIMIT ? `${said.slice(0, EVALUATE_LIMIT)}… (cut at ${EVALUATE_LIMIT} characters)` : said)
+  }
+  /**
+   * Waits for an element, words or an address (ADR-0220), looking every 100 ms until `timeoutMs`. Says how long it took,
+   * or fails in words when it never came.
+   */
+  async waitFor(action: Extract<BrowserAction, { type: 'wait_for' }>, guard: () => void): Promise<string> {
+    this.noDialog()
+    await this.ready()
+    const timeout = action.timeoutMs ?? 5000, started = Date.now(), visible = (action.state ?? 'visible') === 'visible'
+    const VISIBLE = 'function() { const element = this.nodeType === 1 ? this : this.parentElement; if (!element || !element.isConnected) return false; const box = element.getBoundingClientRect(); const style = getComputedStyle(element); return box.width > 0 && box.height > 0 && style.visibility !== \'hidden\' && style.display !== \'none\' }'
+    const check = async (): Promise<boolean> => {
+      if (action.urlIncludes !== undefined) {
+        const href = await this.send('Runtime.evaluate', { expression: 'location.href', returnByValue: true }) as { result?: { value?: unknown } }
+        return String(href.result?.value ?? this.page.url()).includes(action.urlIncludes) === visible
+      }
+      if (action.text !== undefined) {
+        const found = await this.send('Runtime.evaluate', { expression: `!!document.body && document.body.innerText.includes(${JSON.stringify(action.text)})`, returnByValue: true }) as { result?: { value?: unknown } }
+        return (found.result?.value === true) === visible
+      }
+      let objectId: string | undefined
+      if (action.ref !== undefined) {
+        const backendNodeId = this.refs.get(action.ref)
+        if (backendNodeId === undefined) return fail('blocked', `${action.ref} is not in your latest snapshot. Take a snapshot and use its refs.`)
+        const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-wait' }).catch(() => ({})) as { object?: { objectId?: string } }
+        objectId = resolved.object?.objectId
+      } else {
+        const found = await this.send('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(action.selector)})`, objectGroup: 'sotto-browser-wait' }) as { result?: { objectId?: string }; exceptionDetails?: unknown }
+        if (found.exceptionDetails) return fail('invalid-request', 'That selector is not valid CSS.')
+        objectId = found.result?.objectId
+      }
+      try {
+        if (!objectId) return !visible
+        const shown = await this.send('Runtime.callFunctionOn', { objectId, functionDeclaration: VISIBLE, returnByValue: true }) as { result?: { value?: unknown } }
+        return (shown.result?.value === true) === visible
+      } finally { await this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-wait' }).catch(() => undefined) }
+    }
+    for (;;) {
+      guard()
+      // A navigation mid-check loses the page's context; the next look tries again in the new one.
+      const met = await check().catch((error: unknown) => { if (error instanceof ToolFailure && error.code !== 'unavailable') throw error; return false })
+      if (met) return `Seen after ${Date.now() - started} ms.`
+      if (this.dialogOpen) return fail('blocked', `The page opened a ${this.dialogOpen.type} dialog while waiting. Answer it with the dialog action.`)
+      if (Date.now() - started >= timeout) return fail('blocked', `Not ${visible ? 'seen' : 'gone'} within ${timeout} ms. Take a snapshot to see the page as it is.`)
+      await new Promise(resolve => setTimeout(resolve, WAIT_POLL_MS))
+    }
+  }
+  /** Answers the page's open dialog: OK or Cancel, with a prompt's text (ADR-0220). */
+  async answerDialog(accept: boolean, promptText?: string): Promise<BrowserDialog> {
+    const open = this.dialogOpen
+    if (!open) return fail('blocked', 'No dialog is open on this page.')
+    await this.ready()
+    await this.send('Page.handleJavaScriptDialog', { accept, ...(promptText !== undefined && open.type === 'prompt' ? { promptText } : {}) })
+    if (this.dialogOpen === open) this.dialogOpen = null
+    this.onChange?.()
+    return { type: open.type, message: this.masked(open.message), ...(open.defaultPrompt !== undefined ? { defaultPrompt: this.masked(open.defaultPrompt) } : {}) }
+  }
+  /** What the agent asked about, so the answer reaches only that dialog or chooser. */
+  private pendingKey(kind: 'dialog' | 'chooser'): string {
+    if (kind === 'dialog') return this.dialogOpen ? `dialog:${this.dialogOpen.seq}` : fail('blocked', 'No dialog is open on this page.')
+    return this.chooser ? `chooser:${this.chooser.seq}` : fail('blocked', 'No file chooser is open. Name the file input by ref or selector, or click it first.')
+  }
+  /** The page's colour scheme (ADR-0220): light, dark, no preference, or null for the computer's again. */
+  async emulateAppearance(scheme: BrowserAppearance | null): Promise<void> {
+    await this.ready()
+    await this.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme ?? '' }] })
+    this.appearance = scheme
+  }
+  /**
+   * Gives a file input files from this computer (ADR-0220): the input named, or the file chooser an agent's click
+   * opened. `paths` are already checked to be the thread's; none clears the input, which is how a chooser is cancelled.
+   */
+  async upload(target: BrowserTargetFields, paths: readonly string[], guard: () => void): Promise<string> {
+    this.noDialog()
+    await this.ready()
+    guard()
+    let backendNodeId: number
+    if (target.x === undefined && target.ref === undefined && target.selector === undefined) {
+      const chooser = this.chooser ?? fail('blocked', 'No file chooser is open. Name the file input by ref or selector.')
+      if (!chooser.multiple && paths.length > 1) return fail('blocked', 'This file chooser takes one file.')
+      backendNodeId = chooser.backendNodeId
+      this.chooser = null
+      this.interceptUntil = 0
+      await this.send('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined)
+      this.onChange?.()
+    } else {
+      backendNodeId = await this.nodeOf(target)
+      const node = await this.send('DOM.describeNode', { backendNodeId }) as { node?: { nodeName?: string; attributes?: string[] } }
+      const attributes = node.node?.attributes ?? []
+      const type = attributes[attributes.indexOf('type') + 1]
+      if (node.node?.nodeName !== 'INPUT' || attributes.indexOf('type') < 0 || type?.toLowerCase() !== 'file') return fail('blocked', 'That element is not a file input. Snapshot the page and name an <input type="file">.')
+    }
+    await this.send('DOM.setFileInputFiles', { files: [...paths], backendNodeId })
+    return paths.length ? `Gave the input ${paths.length} file${paths.length === 1 ? '' : 's'}.` : 'Cleared the file input.'
+  }
+  /**
+   * Pictures of the page as it draws, for a recording (ADR-0220). Chromium sends one each time the page changes, each a
+   * JPEG at most 1280 pixels on a side; they stop with `stopScreencast` or the page.
+   */
+  async startScreencast(onFrame: (data: string) => void): Promise<void> {
+    this.noDialog()
+    await this.ready()
+    this.screencast = onFrame
+    await this.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 })
+  }
+  async stopScreencast(): Promise<void> {
+    if (!this.screencast) return
+    this.screencast = null
+    if (this.page.isGone() || !this.page.isAttached()) return
+    await this.send('Page.stopScreencast').catch(() => undefined)
+  }
+  /** Most actions cannot run while the page has a dialog open; it holds the page's script until answered. */
+  private noDialog(): void {
+    if (this.dialogOpen) fail('blocked', `The page has a ${this.dialogOpen.type} dialog open: ${JSON.stringify(this.dialogOpen.message.slice(0, 300))}. Answer it with the dialog action first.`)
+  }
+  /** A command that a dialog opening interrupts: the page waits for the dialog, so the command returns once it is answered. */
+  private async raceDialog<T>(command: Promise<T>): Promise<T | 'dialog'> {
+    if (!this.parity) return command
+    let waiter: (() => void) | undefined
+    const opened = new Promise<'dialog'>(resolve => { waiter = () => resolve('dialog'); this.dialogWaiters.add(waiter) })
+    command.catch(() => undefined)
+    try { return await Promise.race([command, opened]) } finally { this.dialogWaiters.delete(waiter!) }
+  }
+  /** The DOM node a ref or a selector names (ADR-0220), or a refusal that says what to do instead. */
+  private async nodeOf(target: BrowserTargetFields): Promise<number> {
+    if (target.ref !== undefined) {
+      const backendNodeId = this.refs.get(target.ref)
+      if (backendNodeId === undefined) return fail('blocked', `${target.ref} is not in your latest snapshot. Take a snapshot and use its refs.`)
+      return backendNodeId
+    }
+    if (target.selector === undefined) return fail('invalid-request', 'Name the element by ref or selector.')
+    const found = await this.send('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(target.selector)})`, objectGroup: 'sotto-browser-node' }) as { result?: { objectId?: string; subtype?: string }; exceptionDetails?: unknown }
+    try {
+      if (found.exceptionDetails) return fail('invalid-request', 'That selector is not valid CSS.')
+      if (!found.result?.objectId || found.result.subtype === 'null') return fail('blocked', 'Nothing on the page matches that selector. Take a snapshot to see what is there.')
+      const described = await this.send('DOM.describeNode', { objectId: found.result.objectId }) as { node?: { backendNodeId?: number } }
+      return described.node?.backendNodeId ?? fail('blocked', 'Nothing on the page matches that selector.')
+    } finally { await this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-node' }).catch(() => undefined) }
+  }
+  /**
+   * Where input for an element lands: its middle, scrolled into view, checked to be the element itself (or a label for
+   * it) and not something drawn over it.
+   */
+  private async pointOfNode(backendNodeId: number): Promise<{ x: number; y: number }> {
+    await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId }).catch(() => undefined)
+    const quads = await this.send('DOM.getContentQuads', { backendNodeId }).catch(() => ({ quads: [] })) as { quads?: number[][] }
+    const quad = quads.quads?.find(entry => entry.length >= 8 && Math.abs((entry[2]! - entry[0]!) * (entry[5]! - entry[1]!)) >= 1)
+    if (!quad) return fail('blocked', 'That element takes no space on the page, so nothing can reach it. Take a snapshot and choose another.')
+    const x = (quad[0]! + quad[2]! + quad[4]! + quad[6]!) / 4, y = (quad[1]! + quad[3]! + quad[5]! + quad[7]!) / 4
+    const viewport = await this.visibleViewport()
+    if (x < 0 || y < 0 || x >= viewport.clientWidth || y >= viewport.clientHeight) return fail('blocked', 'That element is outside the visible page even after scrolling. Scroll its container, then try again.')
+    const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-hit' }) as { object?: { objectId?: string } }
+    try {
+      const objectId = resolved.object?.objectId ?? fail('blocked', 'That element is gone. Take a snapshot and try again.')
+      const hit = await this.send('Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: x }, { value: y }],
+        functionDeclaration: 'function(x, y) { const root = this.getRootNode(); const at = (root && root.elementFromPoint ? root : document).elementFromPoint(x, y); if (!at) return false; if (at === this || (this.contains && this.contains(at))) return true; const label = at.closest && at.closest(\'label\'); return !!label && label.control === this }' }) as { result?: { value?: unknown } }
+      if (hit.result?.value !== true) return fail('blocked', 'Something else is drawn over that element at its middle. Take a screenshot, then close what covers it or use another target.')
+    } finally { await this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-hit' }).catch(() => undefined) }
+    return { x: Math.round(x), y: Math.round(y) }
+  }
+  /** The point an action names, directly or through its element. */
+  private async pointOf(target: BrowserTargetFields): Promise<{ x: number; y: number }> {
+    if (target.x !== undefined && target.y !== undefined) return { x: target.x, y: target.y }
+    return this.pointOfNode(await this.nodeOf(target))
+  }
+  /**
    * Types a secret request's value into the focused password field (ADR-0219). The field was checked when the action
    * was asked for; the value is remembered only to mask it in what the page says back, and forgotten with the page.
    */
@@ -314,6 +597,7 @@ export abstract class PageAutomation {
     await this.ready()
     guard()
     this.typedSecrets.add(value)
+    this.secretInDocument = true
     await this.send('Input.insertText', { text: value })
   }
   /**
@@ -321,12 +605,12 @@ export abstract class PageAutomation {
    * pixels. PNG at full size by default; a JPEG at a smaller `scale` is what a host makes its smaller pictures from,
    * since it has no image library of its own.
    */
-  protected async snapshot(rect?: BrowserBounds, encoding: PageEncoding = { format: 'png', scale: 1 }): Promise<PageFrame> {
+  protected async snapshot(rect?: BrowserBounds, encoding: PageEncoding = { format: 'png', scale: 1 }, fullPage = false): Promise<PageFrame> {
     const release = this.prepareCapture()
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       // Giving up ends the attachment too, so the abandoned capture's commands cannot cut into the next action.
-      return await Promise.race([this.frame(rect, encoding), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { this.reset(); reject(new ToolFailure('unavailable', 'The page did not draw in time. Inspect it before trying again.')) }, 10_000) })])
+      return await Promise.race([this.frame(rect, encoding, fullPage), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { this.reset(); reject(new ToolFailure('unavailable', 'The page did not draw in time. Inspect it before trying again.')) }, 10_000) })])
     } finally { if (timer) clearTimeout(timer); release() }
   }
   /** The part of the page on screen, in CSS pixels, and how far down the document it sits; a screenshot is this. */
@@ -336,9 +620,17 @@ export abstract class PageAutomation {
     if (!viewport || !viewport.clientWidth || !viewport.clientHeight) return fail('unavailable', 'This page has not drawn yet. Wait for it to load, then try again.')
     return viewport
   }
-  private async frame(rect: BrowserBounds | undefined, encoding: PageEncoding): Promise<PageFrame> {
+  private async frame(rect: BrowserBounds | undefined, encoding: PageEncoding, fullPage = false): Promise<PageFrame> {
     await this.ready()
     const viewport = await this.visibleViewport()
+    if (fullPage) {
+      // The whole document from its top, up to 8192 pixels tall, as wide as the page shows it.
+      const layout = await this.send('Page.getLayoutMetrics') as { cssContentSize?: { width: number; height: number } }
+      const width = Math.round(viewport.clientWidth), height = Math.min(8192, Math.round(layout.cssContentSize?.height ?? viewport.clientHeight))
+      const whole = await this.send('Page.captureScreenshot', { format: encoding.format, fromSurface: true, captureBeyondViewport: true, clip: { x: 0, y: 0, width, height, scale: encoding.scale } }) as { data?: string }
+      if (!whole.data) return fail('unavailable', 'The page could not be captured. Try again.')
+      return { data: whole.data, format: encoding.format, width: Math.round(width * encoding.scale), height: Math.round(height * encoding.scale) }
+    }
     const width = Math.round(rect?.width ?? viewport.clientWidth), height = Math.round(rect?.height ?? viewport.clientHeight)
     if (width <= 0 || height <= 0 || width > 8192 || height > 8192) return fail('too-large', 'This page is too large to capture. Set a smaller viewport, then try again.')
     if (rect && (rect.x + rect.width > viewport.clientWidth || rect.y + rect.height > viewport.clientHeight)) return fail('blocked', 'This selection extends beyond the captured page.')
@@ -360,10 +652,11 @@ export abstract class PageAutomation {
     const result = await this.send('Runtime.evaluate', { expression, returnByValue: true }) as { result?: { value?: { element: NonNullable<BrowserCapture['element']>; bounds: BrowserBounds } } }
     return result.result?.value ?? null
   }
-  async capture(url: string, point?: { x: number; y: number }, region?: BrowserBounds): Promise<BrowserCapture> {
+  async capture(url: string, point?: { x: number; y: number }, region?: BrowserBounds, fullPage = false): Promise<BrowserCapture> {
+    this.noDialog()
     const element = point ? (await this.elementAt(point))?.element ?? null : null
     const rect = region ? Object.fromEntries(Object.entries(region).map(([key, value]) => [key, Math.round(value)])) as BrowserBounds : undefined
-    const snapshot = this.picture(await this.snapshot(rect))
+    const snapshot = this.picture(await this.snapshot(rect, undefined, fullPage))
     if (snapshot.empty) return fail('unavailable', 'This page has not drawn yet. Wait for it to load, then try again.')
     const image = snapshot.dataUrl
     if (image.length > 16_000_000) return fail('too-large', 'This page is too large to capture. Set a smaller viewport, then try again.')
@@ -387,11 +680,18 @@ export abstract class PageAutomation {
     return located.backendNodeId
   }
   /** What a click, tap, typed entry or key press would reach: the node at its point, or the focused node. */
-  async target(action: Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' }>): Promise<string> {
+  async target(action: TargetedAction): Promise<string> {
+    if (action.type === 'dialog') return this.pendingKey('dialog')
+    this.noDialog()
     await this.ready()
+    if (action.type === 'upload' && action.x === undefined && action.ref === undefined && action.selector === undefined) return this.pendingKey('chooser')
+    if (action.type === 'drag') return `${await this.describeTarget(action.from)} -> ${await this.describeTarget(action.to)}`
+    if (action.type === 'select' || action.type === 'upload') return this.describeTarget(action)
     let backendNodeId: number | undefined
-    if (action.type === 'click' || action.type === 'tap') {
-      backendNodeId = await this.nodeAt(action)
+    if ((action.type === 'click' || action.type === 'type') && (action.ref !== undefined || action.selector !== undefined)) {
+      backendNodeId = await this.nodeOf(action)
+    } else if (action.type === 'click' || action.type === 'tap') {
+      backendNodeId = await this.nodeAt({ x: action.x!, y: action.y! })
     } else {
       const focused = await this.send('Runtime.evaluate', { expression: 'document.activeElement', objectGroup: 'sotto-browser-target' }) as { result?: { objectId?: string } }
       if (!focused.result?.objectId) return fail('blocked', 'Nothing on the page has focus. Click a text field, then type.')
@@ -415,6 +715,13 @@ export abstract class PageAutomation {
     }
     return JSON.stringify(result.node).slice(0, 16_000)
   }
+  /** A target as the approval records it: the node at a point, or the node a ref or selector names. */
+  private async describeTarget(target: BrowserTargetFields): Promise<string> {
+    const backendNodeId = target.x !== undefined && target.y !== undefined ? await this.nodeAt({ x: target.x, y: target.y }) : await this.nodeOf(target)
+    if (!backendNodeId) return fail('blocked', 'Nothing on the page is at that point. Take a snapshot and use its refs.')
+    const result = await this.send('DOM.describeNode', { backendNodeId, depth: 0 }) as { node?: unknown }
+    return JSON.stringify(result.node).slice(0, 8000)
+  }
   /**
    * Chromium answers a wheel or touch event only once the page draws a frame, and a page that is not on screen
    * draws none, so input borrows the surface a capture borrows. Without it a scroll, tap or swipe on a hidden page
@@ -424,13 +731,32 @@ export abstract class PageAutomation {
    * holding the surface, until the page has drawn twice. Without it a click straight after a scroll was checked
    * against where the page had been and pressed what scrolled into that place.
    */
-  async input(action: PageInput, guard: () => void): Promise<void> {
+  async input(action: PageInput, guard: () => void): Promise<string | undefined> {
+    this.noDialog()
     await this.ready()
     guard()
     const release = this.prepareCapture()
     try {
-      await this.dispatch(action)
-      if (action.type === 'scroll' || action.type === 'swipe' || action.type === 'tap') await this.settled()
+      // An agent's click or key may open a file chooser; it is held for `upload` instead of shown (ADR-0220).
+      if (this.parity && (action.type === 'click' || action.type === 'tap' || (action.type === 'key' && (action.key === 'Enter' || action.key === 'Space' || action.key === ' ')))) {
+        this.interceptUntil = Date.now() + 60_000
+        await this.send('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => undefined)
+      }
+      const outcome = await this.raceDialog(this.dispatch(action))
+      const opened = (): string | undefined => this.dialogOpen
+        ? `The page opened a ${this.dialogOpen.type} dialog: ${JSON.stringify(this.masked(this.dialogOpen.message))}. Answer it with the dialog action.`
+        : this.chooser ? 'The page opened a file chooser. Answer it with upload and the files, or paths: [] to cancel.' : undefined
+      if (outcome === 'dialog' && opened()) return opened()
+      if (action.type === 'scroll' || action.type === 'swipe' || action.type === 'tap' || action.type === 'hover' || action.type === 'drag') await this.raceDialog(this.settled())
+      // The chooser's news comes a moment after the click that opened it.
+      if (this.parity && this.interceptUntil && !opened()) await this.raceDialog(new Promise(resolve => setTimeout(resolve, CHOOSER_GRACE_MS)))
+      if (opened()) return opened()
+      if (this.parity && this.interceptUntil && !this.chooser) {
+        // No chooser came: the user's own clicks open the system's again.
+        this.interceptUntil = 0
+        await this.send('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined)
+      }
+      return typeof outcome === 'string' ? outcome : undefined
     } finally { release() }
   }
   /**
@@ -440,7 +766,7 @@ export abstract class PageAutomation {
   private async settled(): Promise<void> {
     await this.send('Runtime.evaluate', { expression: SETTLE_EXPRESSION, awaitPromise: true }).catch(() => undefined)
   }
-  private async dispatch(action: PageInput): Promise<void> {
+  private async dispatch(action: PageInput): Promise<string | undefined> {
     const send = (method: string, params: Record<string, unknown>): Promise<unknown> => this.send(method, params)
     if (action.type === 'tap') {
       // Start and end are one operation, as a click's press and release are.
@@ -455,33 +781,125 @@ export abstract class PageAutomation {
         }
       }, () => send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }))
     } else if (action.type === 'key') {
-      const key = KEYS[action.key]
-      const event = { key: action.key, code: action.key, windowsVirtualKeyCode: key.code, nativeVirtualKeyCode: key.code }
-      await send('Input.dispatchKeyEvent', { type: key.text ? 'keyDown' : 'rawKeyDown', ...event, ...(key.text ? { text: key.text, unmodifiedText: key.text } : {}) })
-      await send('Input.dispatchKeyEvent', { type: 'keyUp', ...event })
+      for (const event of keyEvents(action.key, action.modifiers ?? [])) await send('Input.dispatchKeyEvent', event)
     } else if (action.type === 'click') {
-      await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(action.x), y: Math.round(action.y), button: 'left', clickCount: 1 })
-      // Press/release is one operation. Always release when Pause arrives mid-click.
-      await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(action.x), y: Math.round(action.y), button: 'left', clickCount: 1 })
+      const { x, y } = await this.pointOf(action)
+      const button = action.button ?? 'left', held = action.modifiers?.length ? { modifiers: modifierMask(action.modifiers) } : {}
+      // The full catalog moves the pointer there first, so the page sees it arrive as a person's would.
+      if (this.parity) await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y), ...held })
+      for (let count = 1; count <= (action.clickCount ?? 1); count++) {
+        await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(x), y: Math.round(y), button, clickCount: count, ...held })
+        // Press/release is one operation. Always release when Pause arrives mid-click.
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x), y: Math.round(y), button, clickCount: count, ...held })
+      }
+    } else if (action.type === 'hover') {
+      const { x, y } = await this.pointOf(action)
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y) })
     } else if (action.type === 'type') {
       if (action.text === undefined) return fail('blocked', 'Pass the text to type.')
-      await this.send('Input.insertText', { text: action.text })
+      if (action.ref !== undefined || action.selector !== undefined) await this.send('DOM.focus', { backendNodeId: await this.nodeOf(action) })
+      if (action.clear) await this.selectAll()
+      if (action.text === '' && action.clear) for (const event of keyEvents('Delete')) await this.send('Input.dispatchKeyEvent', event)
+      else await this.send('Input.insertText', { text: action.text })
+    } else if (action.type === 'scroll') {
+      // An element named by ref or selector scrolls its own container directly. A wheel is routed by where the page
+      // is drawn, and a page the player draws smaller than its viewport drops a wheel outside what it draws.
+      if (action.ref !== undefined || action.selector !== undefined) return this.scrollElement(await this.nodeOf(action), action.deltaX, action.deltaY)
+      let point: { x: number; y: number }
+      if (action.x !== undefined && action.y !== undefined) point = { x: action.x, y: action.y }
+      else { const viewport = await this.visibleViewport(); point = { x: Math.round(viewport.clientWidth / 2), y: Math.round(viewport.clientHeight / 2) } }
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: point.x, y: point.y, deltaX: action.deltaX, deltaY: action.deltaY })
+    } else if (action.type === 'select') {
+      const node = action.x !== undefined && action.y !== undefined ? await this.nodeAt({ x: action.x, y: action.y }) : await this.nodeOf(action)
+      return this.selectValues(node ?? fail('blocked', 'Nothing on the page is at that point.'), action.values)
+    } else if (action.type === 'drag') {
+      return this.drag(await this.pointOf(action.from), await this.pointOf(action.to))
+    } else if (action.fill) {
+      await this.send('Emulation.clearDeviceMetricsOverride')
+      this.viewport = null
+    } else {
+      const size = action.preset ? presetSize(action.preset, action.orientation) : { width: action.width!, height: action.height!, mobile: false }
+      await this.send('Emulation.setDeviceMetricsOverride', { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: size.mobile })
+      this.viewport = size
     }
-    else if (action.type === 'scroll') await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: action.x, y: action.y, deltaX: action.deltaX, deltaY: action.deltaY })
-    else {
-      await this.send('Emulation.setDeviceMetricsOverride', { width: action.width, height: action.height, deviceScaleFactor: 1, mobile: false })
-      this.viewport = { width: action.width, height: action.height }
+    return undefined
+  }
+  /** Selects everything in the focused field, so what is typed next replaces it. */
+  private async selectAll(): Promise<void> {
+    await this.send('Runtime.evaluate', { expression: '(() => { const element = document.activeElement; if (element && typeof element.select === \'function\') { element.select(); return } if (element && element.isContentEditable) { const range = document.createRange(); range.selectNodeContents(element); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range) } })()' })
+  }
+  /** Chooses options in a native `<select>` by value or label, and tells the page as a person's choice would. */
+  private async selectValues(backendNodeId: number, values: readonly string[]): Promise<string> {
+    const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-select' }) as { object?: { objectId?: string } }
+    try {
+      const objectId = resolved.object?.objectId ?? fail('blocked', 'That element is gone. Take a snapshot and try again.')
+      const result = await this.send('Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: values }],
+        functionDeclaration: 'function(values) { if (this.tagName !== \'SELECT\') return { error: \'not-select\' }; const options = Array.from(this.options); const chosen = []; for (const value of values) { const option = options.find(entry => entry.value === value) || options.find(entry => entry.label === value || entry.textContent.trim() === value); if (!option) return { error: \'missing\', value }; if (option.disabled) return { error: \'disabled\', value }; chosen.push(option) } if (!this.multiple && chosen.length > 1) return { error: \'single\' }; for (const option of options) option.selected = chosen.includes(option); this.dispatchEvent(new Event(\'input\', { bubbles: true })); this.dispatchEvent(new Event(\'change\', { bubbles: true })); return { selected: chosen.map(option => option.label || option.value) } }' }) as { result?: { value?: { error?: string; value?: string; selected?: string[] } } }
+      const answer = result.result?.value
+      if (answer?.error === 'not-select') return fail('blocked', 'That element is not a <select>. For a custom menu, click it and then click the option.')
+      if (answer?.error === 'missing') return fail('blocked', `This menu has no option ${JSON.stringify(answer.value)}. Snapshot the page to see its options.`)
+      if (answer?.error === 'disabled') return fail('blocked', `The option ${JSON.stringify(answer.value)} is disabled.`)
+      if (answer?.error === 'single') return fail('blocked', 'This menu takes one choice.')
+      return `Selected ${JSON.stringify(answer?.selected ?? [])}.`
+    } finally { await this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-select' }).catch(() => undefined) }
+  }
+  /**
+   * Drags from one point to another as a mouse does: press, travel, release. An HTML drag the page starts is caught
+   * (`Input.setInterceptDrags`) and dropped on the target, since Chromium's own drag loop does not run for protocol input.
+   */
+  private async drag(from: { x: number; y: number }, to: { x: number; y: number }): Promise<string> {
+    this.dragData = null
+    await this.send('Input.setInterceptDrags', { enabled: true }).catch(() => undefined)
+    try {
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(from.x), y: Math.round(from.y) })
+      await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(from.x), y: Math.round(from.y), button: 'left', clickCount: 1 })
+      await this.cleaningUp(async () => {
+        for (let step = 1; step <= DRAG_STEPS; step++) {
+          const x = from.x + (to.x - from.x) * step / DRAG_STEPS, y = from.y + (to.y - from.y) * step / DRAG_STEPS
+          await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y), button: 'left', buttons: 1 })
+        }
+        if (this.dragData) {
+          const drop = { x: Math.round(to.x), y: Math.round(to.y), data: this.dragData }
+          for (const type of ['dragEnter', 'dragOver', 'drop']) await this.send('Input.dispatchDragEvent', { type, ...drop })
+        }
+      }, () => this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(to.x), y: Math.round(to.y), button: 'left', clickCount: 1 }))
+      return this.dragData ? 'Dragged and dropped (an HTML drag).' : 'Dragged.'
+    } finally {
+      this.dragData = null
+      await this.send('Input.setInterceptDrags', { enabled: false }).catch(() => undefined)
     }
   }
+  /** Scrolls the nearest container of an element that can scroll, or the page when none can, and says how far it moved. */
+  private async scrollElement(backendNodeId: number, deltaX: number, deltaY: number): Promise<string> {
+    const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-scroll' }) as { object?: { objectId?: string } }
+    try {
+      const objectId = resolved.object?.objectId ?? fail('blocked', 'That element is gone. Take a snapshot and try again.')
+      const result = await this.send('Runtime.callFunctionOn', { objectId, returnByValue: true, arguments: [{ value: deltaX }, { value: deltaY }], functionDeclaration: SCROLL_ELEMENT }) as { result?: { value?: unknown } }
+      const moved = result.result?.value as { x?: unknown; y?: unknown; page?: unknown } | undefined
+      const x = Number(moved?.x) || 0, y = Number(moved?.y) || 0
+      const where = moved?.page === true ? 'the page' : 'its container'
+      return x === 0 && y === 0 ? `Nothing moved: ${where} cannot scroll further that way.` : `Scrolled ${where} by ${Math.round(x)}, ${Math.round(y)}.`
+    } finally { await this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-scroll' }).catch(() => undefined) }
+  }
+  /** Forgets the last snapshot's refs: the user took the page over, so its elements may have moved (ADR-0220). */
+  forgetRefs(): void { this.refs = new Map() }
   async resetViewport(): Promise<void> {
     await this.ready()
     await this.send('Emulation.clearDeviceMetricsOverride')
     this.viewport = null
   }
-  clear(): void { this.errors.length = 0 }
+  /** A new document: its errors, console, refs and any chooser go with the old one. */
+  clear(): void {
+    this.errors.length = 0; this.consoleLog.length = 0
+    this.refs = new Map()
+    this.secretInDocument = false
+    if (this.chooser) { this.chooser = null; this.onChange?.() }
+  }
   dispose(): void {
     // Typed secrets stay masked until the page itself closes: the field still holds them after its sharing ends.
     this.clear()
+    this.screencast = null
+    this.dialogOpen = null
     this.pointSession++
     this.pointing = null; this.hovered = null; this.hoverRequest++
     if (this.page.isGone()) return

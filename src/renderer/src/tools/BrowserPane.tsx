@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Check, ExternalLink, Globe, Hand, History, ImagePlus, MoreHorizontal, Pause, PictureInPicture2, Play, Plus, RotateCw, Share2, SquareDashedMousePointer, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Code, ExternalLink, Globe, Hand, History, ImagePlus, MoreHorizontal, Pause, PictureInPicture2, Play, Plus, RotateCw, Share2, SquareDashedMousePointer, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import { BROWSER_WAITING_TO_OPEN, type BrowserBridge, type BrowserPage, type BrowserPointPick, type BrowserTask } from '../../../shared/browser'
 import { threadTakesSottoTools } from '../../../shared/agents'
@@ -11,6 +11,8 @@ import { outlinedCapture, PointComment, PointLine, pointedWords, themeRgb, type 
 import { browserPages, normalizeAddress, pageLabel, useThreadBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { BrowserMachine } from './HostPageView'
+import { DialogStrip, emulateFor, LocalServers, parityMenuGroups, RecordingLine, useBrowserParity, useParityMenuWords } from './BrowserParity'
+import { BrowserProfiles, ProfileChip } from './BrowserProfiles'
 import { browsingWords, shortAddress } from './browserSteps'
 import type { BrowserSurfaceProps } from './BrowserSurface'
 import { ToolsChrome } from './ToolsChrome'
@@ -32,6 +34,9 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
   const browser = useThreadBrowser(store, threadId)
   const tasks = useThreadBrowserTasks(store, threadId)
   const opened = useOpenedAddresses(store, threadId)
+  // The full browser (ADR-0220; Owl): dialogs, recording, devices, colours and local servers in the pane.
+  const parity = useBrowserParity()
+  const parityWords = useParityMenuWords()
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const agentToolsUnavailable = !threadTakesSottoTools(owningThread)
@@ -43,6 +48,8 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
   const [draft, setDraft] = useState<{ pageId: string | null; text: string } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // The browser profile new pages open in (ADR-0221), chosen by the user in the empty pane; null keeps nothing.
+  const [profileId, setProfileId] = useState<string | null>(null)
   // Whether a paired host has a browser at all (Zach, November 9): with none, the pane says to install one, with Check again.
   const [hostHasBrowser, setHostHasBrowser] = useState<boolean | null>(null)
   const [checkingHost, setCheckingHost] = useState(false)
@@ -169,7 +176,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
   const open = (url: string): void => {
     // A host's page that could not open may be a host with no browser, which the pane then says in full.
     const done = (ok: boolean): void => { if (ok) { setDraft(null); setCreating(false) } else if (onHost) void checkHostBrowser() }
-    if (newPage || !active) void store.create(bridge, threadId, url).then(done)
+    if (newPage || !active) void store.create(bridge, threadId, url, undefined, parity && !onHost && profileId ? profileId : undefined).then(done)
     else void store.navigate(bridge, threadId, active.id, url).then(done)
   }
   const submit = (event: FormEvent): void => {
@@ -215,6 +222,14 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
     } catch { setProblem(t`The browser did not answer. Try again.`) }
     finally { setBusy(false) }
   }
+  const emulate = async (change: Parameters<typeof emulateFor>[4]): Promise<void> => {
+    if (!active) return
+    setBusy(true); setProblem(null)
+    try {
+      const error = await emulateFor(store, bridge, threadId, active, change, t`Browser is not available in this window.`, t`The browser did not answer. Try again.`)
+      if (activeIdRef.current === active.id) setProblem(error)
+    } finally { setBusy(false) }
+  }
   // Screenshot to message: the page as it looks now goes into the draft as browser feedback, with no comment step.
   const screenshotToMessage = async (): Promise<void> => {
     if (!bridge || !active || !agents) return
@@ -244,15 +259,19 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
       { id: 'external', label: openInSystemBrowser, icon: <ExternalLink size={15} aria-hidden="true" />, run: () => openExternally(page.url) },
       ...(!agentToolsUnavailable ? [{ id: 'share', label: page.sharedOrigin ? t`Stop sharing` : shareWithAgent, icon: <Share2 size={15} aria-hidden="true" />, disabled: busy, run: () => void pageAction('share') }] : []),
       ...(onFloat ? [{ id: 'float', label: t`Float the browser over the thread`, icon: <PictureInPicture2 size={15} aria-hidden="true" />, run: onFloat }] : []),
+      // Chromium's own developer tools, in a window of their own (ADR-0220): the user's, for a page on this computer.
+      ...(parity && !onHost && bridge?.devtools ? [{ id: 'devtools', label: t`Open developer tools`, icon: <Code size={15} aria-hidden="true" />, run: () => { void bridge.devtools!({ threadId, workspaceId: page.workspace.workspaceId, pageId: page.id }).then(result => { if (!result.ok) setProblem(result.error.message) }, () => setProblem(t`The browser did not answer. Try again.`)) } }] : []),
     ],
     ...onHost ? [] : [[
       { id: 'fit', label: t`Fit the pane`, checked: current === 'fit', icon: check(current === 'fit'), disabled: busy, run: () => void pageAction('viewport', 'fit') },
       ...sizes.map(size => {
         const [width, height] = size.split('x')
         const label = t({ message: `Show at ${width} x ${height}`, comment: 'A browser page size in CSS pixels, such as Show at 1280 x 800.' })
-        return { id: size, label, checked: current === size, icon: check(current === size), disabled: busy, run: () => void pageAction('viewport', size) }
+        const on = current === size && !(parity && active?.viewport?.preset)
+        return { id: size, label, checked: on, icon: check(on), disabled: busy, run: () => void pageAction('viewport', size) }
       }),
     ]],
+    ...parity ? parityMenuGroups(page, parityWords, change => void emulate(change), busy, !onHost) : [],
     ask,
   ] : [ask]
 
@@ -337,6 +356,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
       </span> : null}
     </form>
     {onHost ? <BrowserMachine machine={onHost.name} /> : null}
+    {parity && page?.profile ? <ProfileChip profile={page.profile} /> : null}
     {onHost ? null : <><button ref={pointButton} type="button" className="files-icon tt-focusable browser-point__toggle" aria-label={pointAtSomething} aria-pressed={pointing}
       title={pointing ? t`Stop pointing at the page` : t`Click something on the page to tell the agent about it`} disabled={!page || page.status === 'unavailable' || !bridge} onClick={togglePoint}><SquareDashedMousePointer size={16} aria-hidden="true" /></button>
     <button type="button" className="files-icon tt-focusable" aria-label={screenshot} title={t`Add a picture of this page to the message`} disabled={!page || busy || !agents || !bridge} onClick={() => void screenshotToMessage()}><ImagePlus size={16} aria-hidden="true" /></button></>}
@@ -358,7 +378,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
   // While the host is away its page stays open there and the agent keeps browsing; the pane says so over the last picture.
   const strip = page && onHost && !onHost.connected ? <ReconnectStrip machine={onHost.name} />
     : page && waiting?.pendingAction ? <RequestStrip key={waiting.id} task={waiting} store={store} bridge={bridge} onAnswered={focusAddress} />
-    : page && working ? <AgentStrip task={working} pageUrl={page.url} store={store} bridge={bridge} onProblem={setProblem} />
+    : page && working ? <AgentStrip task={working} pageUrl={page.url} userActive={parity && page.userActive === true} handoff={parity} store={store} bridge={bridge} onProblem={setProblem} />
       : page && elsewhere ? offer(elsewhere)
         : !page && agentWaiting?.pendingAction ? <RequestStrip key={agentWaiting.id} task={agentWaiting} store={store} bridge={bridge} onAnswered={focusAddress} />
           : !page && agentWorking ? offer(agentWorking) : null
@@ -387,8 +407,12 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
     {page && pointing ? <PointLine hover={hover} /> : null}
 
     {page ? <PageViewport key={page.id} page={page} threadId={threadId} store={store} bridge={bridge} surface={null} cover={cover} onShown={setPageShown} onHost={onHost}
-      refused={browser.placementProblem?.pageId === page.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(page.url)}>{strip}</PageViewport>
+      refused={browser.placementProblem?.pageId === page.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(page.url)}>
+      {parity ? <><DialogStrip page={page} threadId={threadId} store={store} bridge={bridge} /><RecordingLine page={page} threadId={threadId} store={store} bridge={bridge} /></> : null}
+      {parity && page.dialog ? null : strip}</PageViewport>
       : <div className="browser-pane__empty">
+        {parity && !onHost ? <LocalServers threadId={threadId} workspaceId={browser.workspace?.workspaceId ?? null} bridge={bridge} disabled={browser.busy || !bridge} onOpen={open} /> : null}
+        {parity && !onHost ? <BrowserProfiles bridge={bridge} value={profileId} onChange={setProfileId} disabled={browser.busy || !bridge} /> : null}
         {opened.length > 0 ? <section className="browser-pane__opened" aria-labelledby="browser-pane-opened">
           <h2 id="browser-pane-opened">{t({ message: 'Opened this session', comment: 'Heads the addresses this thread\'s browser opened since Sotto started.' })}</h2>
           <ul>{opened.map(url => {
@@ -404,16 +428,22 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
 }
 
 /** The strip at the page's foot while an agent works on it: a steady dot, what it is doing, and Pause or Resume. */
-function AgentStrip({ task, pageUrl, store, bridge, onProblem }: { readonly task: BrowserTask; readonly pageUrl: string; readonly store: BrowserStore; readonly bridge: BrowserBridge | undefined; readonly onProblem: (problem: string | null) => void }): ReactNode {
+function AgentStrip({ task, pageUrl, userActive = false, handoff = false, store, bridge, onProblem }: { readonly task: BrowserTask; readonly pageUrl: string; readonly userActive?: boolean; readonly handoff?: boolean; readonly store: BrowserStore; readonly bridge: BrowserBridge | undefined; readonly onProblem: (problem: string | null) => void }): ReactNode {
   const { t } = useLingui()
   const paused = task.status === 'paused'
   const { lead, last } = browsingWords(task, pageUrl)
+  // With the full browser (ADR-0220), Pause is Take over and Resume is Hand back; the user's own input on the page
+  // holds the agent for a moment, and the strip says so.
+  const shownLead = handoff && paused ? t({ message: 'You have the page. The agent waits until you hand it back', comment: 'The user took a browser page over from the agent.' })
+    : userActive ? t({ message: 'You are using the page. The agent waits until you stop', comment: 'The user is clicking or typing in a page an agent works on.' }) : lead
+  const resume = handoff ? t({ message: 'Hand back', comment: 'Gives a browser page the user took over back to the agent.' }) : t({ message: 'Resume', comment: 'Lets a paused browser task carry on.' })
+  const pause = handoff ? t({ message: 'Take over', comment: 'Takes a browser page over from the agent, which waits.' }) : t({ message: 'Pause', comment: 'Pauses a browser task.' })
   return <div className="browser-pane__strip" data-state={task.status}>
     <span className="browser-pane__dot" aria-hidden="true" />
-    <span className="browser-pane__strip-text"><span className="browser-pane__lead">{lead}</span>{last ? <span className="browser-pane__last"> · {last}</span> : null}</span>
+    <span className="browser-pane__strip-text"><span className="browser-pane__lead">{shownLead}</span>{last && shownLead === lead ? <span className="browser-pane__last"> · {last}</span> : null}</span>
     <button type="button" className="tools-chrome__button tt-focusable" onClick={() => void store.controlTask(bridge, task, paused ? 'resume' : 'pause').then(onProblem)}>
       {paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
-      {paused ? t({ message: 'Resume', comment: 'Lets a paused browser task carry on.' }) : t({ message: 'Pause', comment: 'Pauses a browser task.' })}
+      {paused ? resume : pause}
     </button>
   </div>
 }

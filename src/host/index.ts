@@ -43,6 +43,7 @@ import { CoordinationToolServer } from '../main/agents/threadCoordinationTools'
 import { HostCoordinationRelay } from '../main/agents/threadCoordinationRelay'
 import { MediaToolServer } from '../main/agents/mediaTools'
 import { hostBrowserTools, type HostBrowserTools } from './browser/hostBrowserTools'
+import { BrowserFiles } from '../main/tools/browserFiles'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
@@ -275,6 +276,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...(pluginElevenLabsSounds ? { pluginElevenLabsSounds } : {}),
       ...(plugins ? { pluginGitHubSignIn: plugins.gitHubSignIn } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
+        ...owlFeatures['browser-parity'] ? { parity: true, browserFiles: new BrowserFiles(join(directory, 'browser-files')) } : {},
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
       observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, desktopHostIdOf: clientId => desktops.hostIdOf(clientId), parentCoordinationEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], owletsEnabled: owlFeatures.owlets, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],

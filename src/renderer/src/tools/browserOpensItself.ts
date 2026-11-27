@@ -23,7 +23,8 @@ export function useBrowserOpensItself(enabled: boolean, focusedThreadId: string 
       for (const task of fresh) seen.current.add(task.id)
       if (!enabled || focusedThreadId === null || !chrome.open) return
       // The newest task is first; a test iPhone's task belongs to Tools > iPhone (ADR-0045).
-      const task = fresh.find(item => item.threadId === focusedThreadId && !item.device && item.status === 'working')
+      // A page the agent opened in the background stays there (ADR-0220).
+      const task = fresh.find(item => item.threadId === focusedThreadId && !item.device && !item.background && item.status === 'working')
       if (!task || (chrome.pinnedThreadId ?? focusedThreadId) !== focusedThreadId) return
       if (panel.current?.contains(document.activeElement)) return
       store.setSurface('browser')

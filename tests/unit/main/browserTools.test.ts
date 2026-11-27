@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { EventEmitter } from 'node:events'
-import { BaseWindow, WebContentsView, type BrowserWindow } from 'electron'
-import { BrowserService } from '../../../src/main/tools/browser'
+import { BaseWindow, session, WebContentsView, type BrowserWindow } from 'electron'
+import { BrowserService, type BrowserDependencies } from '../../../src/main/tools/browser'
+import { BrowserProfiles } from '../../../src/main/tools/browserProfiles'
 import { BROWSER_COMMAND_DEADLINE_MS } from '../../../src/main/tools/browserAutomation'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
@@ -24,7 +25,7 @@ vi.mock('electron', async () => {
     getURL() { return this.url }
     isDestroyed() { return this.destroyed }
     loadURL(url: string) { this.url = url; return Promise.resolve() }
-    setWindowOpenHandler = vi.fn(); focus = vi.fn()
+    setWindowOpenHandler = vi.fn(); focus = vi.fn(); openDevTools = vi.fn()
     close() { this.destroyed = true; this.emit('destroyed') }
   }
   class IsolatedSession extends EventEmitter {
@@ -33,6 +34,9 @@ vi.mock('electron', async () => {
     setPermissionRequestHandler = vi.fn(); setPermissionCheckHandler = vi.fn(); setDevicePermissionHandler = vi.fn()
     webRequest = { onBeforeRequest: vi.fn() }
     closeAllConnections = vi.fn().mockResolvedValue(undefined)
+    cookies = { set: vi.fn(async () => undefined) }
+    clearData = vi.fn(async () => undefined); clearStorageData = vi.fn(async () => undefined)
+    constructor(readonly partition = '') { super() }
   }
   const makeImage = (buffer: Buffer, width = 1280, height = 800) => ({
     isEmpty: () => false, getSize: () => ({ width, height }), toDataURL: () => `data:image/png;base64,${buffer.toString('base64')}`,
@@ -48,7 +52,7 @@ vi.mock('electron', async () => {
     showInactive = vi.fn()
     destroy = () => { this.destroyed = true; this.children.clear() }
   }
-  return { BaseWindow: vi.fn(CaptureWindow), screen: { getAllDisplays: () => [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }] }, nativeImage: { createFromDataURL: vi.fn((data: string) => makeImage(Buffer.from(data.split(',')[1]!, 'base64'))), createFromBuffer: vi.fn((buffer: Buffer) => makeImage(buffer)) }, WebContentsView: vi.fn(class { webContents = new Contents(); bounds = { x: 0, y: 0, width: 1280, height: 800 }; setBounds = vi.fn((bounds: typeof this.bounds) => { this.bounds = bounds }); getBounds = () => this.bounds }), session: { fromPartition: () => new IsolatedSession() } }
+  return { BaseWindow: vi.fn(CaptureWindow), screen: { getAllDisplays: () => [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }] }, nativeImage: { createFromDataURL: vi.fn((data: string) => makeImage(Buffer.from(data.split(',')[1]!, 'base64'))), createFromBuffer: vi.fn((buffer: Buffer) => makeImage(buffer)) }, WebContentsView: vi.fn(class { webContents = new Contents(); bounds = { x: 0, y: 0, width: 1280, height: 800 }; setBounds = vi.fn((bounds: typeof this.bounds) => { this.bounds = bounds }); getBounds = () => this.bounds }), session: { fromPartition: vi.fn((partition: string) => new IsolatedSession(partition)) } }
 })
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
@@ -111,19 +115,19 @@ describe('browser service lifecycle', () => {
   })
 })
 
-async function browserFixture(withWindow = false, gone: ReadonlySet<string> = new Set(), byDefault: () => boolean = () => false) {
+async function browserFixture(withWindow = false, gone: ReadonlySet<string> = new Set(), byDefault: () => boolean = () => false, parity = false, extra: Partial<BrowserDependencies> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-actions-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const files = new FilesService({ resolveBinding: threadId => gone.has(threadId) ? null : ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
   const emit = vi.fn(), attached = new Set<WebContentsView>()
   const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, isVisible: vi.fn(() => true), isMinimized: vi.fn(() => false), getContentSize: () => [1200, 800], webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1, focus: vi.fn() }), contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) } }) as unknown as BrowserWindow
-  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault, pointAtSomething: true })
+  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault, pointAtSomething: true, ...parity ? { parity: true } : {}, ...extra })
   cleanup.push(async () => service.dispose())
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
   const target = { threadId: 'a', workspaceId: owner.workspaceId }
   const page = unwrap(await service.create({ ...target, url: 'http://localhost:4321/' }))
   const view = vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView
-  return { service, target: { ...target, pageId: page.id }, view, emit, attached, window, files }
+  return { service, target: { ...target, pageId: page.id }, view, emit, attached, window, files, directory }
 }
 
 describe('browser agent boundaries', () => {
@@ -1074,5 +1078,157 @@ describe('a thread file page (ADR-0085, October 27 amendment)', () => {
     expect(scheme).toMatchObject({ ok: false, error: { code: 'invalid-request', message: expect.stringContaining('or an HTML file in this thread\'s folder') } })
     expect(JSON.stringify([away, data, scheme])).not.toContain('Use the tool\'s documented arguments')
     expect(unwrap(await service.list({ threadId: 'a' })).pages.length).toBe(before)
+  })
+})
+
+describe('the pane\'s full-browser requests (ADR-0220, decision 1)', () => {
+  it('are refused in main while the feature is off, whatever the window sends', async () => {
+    const { service, target } = await browserFixture()
+    for (const result of [
+      await service.answerDialog({ ...target, accept: true }),
+      await service.emulate({ ...target, appearance: 'dark' }),
+      await service.stopRecording(target),
+      await service.localServers({ threadId: target.threadId, workspaceId: target.workspaceId }),
+      await service.devtools(target),
+    ]) expect(result).toMatchObject({ ok: false, error: { code: 'unavailable', message: expect.stringContaining('not on') } })
+  })
+})
+
+describe('developer tools for the user (ADR-0220)', () => {
+  it('opens Chromium\'s own in a window of their own only with the full catalog on', async () => {
+    const off = await browserFixture()
+    expect(await off.service.devtools(off.target)).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    expect(vi.mocked(off.view.webContents.openDevTools)).not.toHaveBeenCalled()
+    const on = await browserFixture(false, new Set(), () => false, true)
+    expect(unwrap(await on.service.devtools(on.target))).toBeUndefined()
+    expect(vi.mocked(on.view.webContents.openDevTools)).toHaveBeenCalledWith({ mode: 'detach', activate: true })
+    expect(await on.service.devtools({ ...on.target, threadId: 'b' })).toMatchObject({ ok: false })
+  })
+})
+
+describe('browser profiles in the service (ADR-0221)', () => {
+  const found = { id: '0123456789abcdef', browser: 'Firefox' as const, name: 'default-release', folder: 'C:/Users/rez/AppData/Roaming/Mozilla/Firefox/Profiles/x.default-release' }
+  async function withProfiles(byDefault = () => false, copy = vi.fn(async () => ({ imported: 12, skipped: 3 }))) {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-profiles-'))
+    cleanup.push(() => rm(folder, { recursive: true, force: true }))
+    const profiles = new BrowserProfiles(join(folder, 'browser-profiles.json'))
+    const fixture = await browserFixture(false, new Set(), byDefault, true, { profiles, browserImport: { sources: async () => [found], copy } })
+    return { ...fixture, profiles, copy }
+  }
+
+  it('is refused in words with the full catalog off, and lists other browsers by name only', async () => {
+    const off = await browserFixture()
+    expect(await off.service.profiles({})).toMatchObject({ ok: false, error: { code: 'unavailable', message: expect.stringContaining('not on') } })
+    expect(await off.service.create({ threadId: off.target.threadId, workspaceId: off.target.workspaceId, url: 'http://localhost:1/', profileId: '6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11' })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    const { service } = await withProfiles()
+    expect(unwrap(await service.profiles({}))).toEqual({ profiles: [], sources: [{ id: found.id, browser: 'Firefox', name: 'default-release' }] })
+  })
+
+  it('copies the chosen browser\'s sign-ins into the new profile\'s own session, once', async () => {
+    const { service, copy } = await withProfiles()
+    const added = unwrap(await service.addProfile({ name: 'Work', importFrom: found.id }))
+    expect(added).toMatchObject({ profile: { name: 'Work' }, imported: 12, skipped: 3 })
+    const [folder, target] = copy.mock.calls[0]! as unknown as [string, unknown]
+    expect(folder).toBe(found.folder)
+    const partitionOf = vi.mocked(session.fromPartition).mock.results.at(-1)!.value as { partition: string; cookies: unknown }
+    expect(partitionOf.partition).toBe(`persist:sotto-profile-${added.profile.id}`)
+    expect(target).toBe(partitionOf.cookies)
+    expect(await service.addProfile({ name: 'work' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('already has that name') } })
+    expect(await service.addProfile({ name: 'Other', importFrom: 'ffffffffffffffff' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('no longer on this computer') } })
+  })
+
+  it('leaves no profile behind when the copy fails', async () => {
+    const { service, profiles } = await withProfiles(() => false, vi.fn(async () => { throw new Error('database is locked') }))
+    const result = await service.addProfile({ name: 'Work', importFrom: found.id })
+    expect(result).toMatchObject({ ok: false, error: { code: 'unavailable', message: expect.stringContaining('Close Firefox') } })
+    expect(JSON.stringify(result)).not.toContain('locked')
+    expect(await profiles.list()).toEqual([])
+  })
+
+  it('opens a page in a profile on its persistent session, private even under the grant', async () => {
+    const { service, target } = await withProfiles(() => true)
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id }))
+    expect(page.profile).toEqual(profile)
+    expect(page.sharedOrigin).toBeNull()
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { partition: string }
+    expect(used.partition).toBe(`persist:sotto-profile-${profile.id}`)
+    // The page opened without a profile is shared by the grant as before.
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.find(other => other.id === target.pageId)?.sharedOrigin).toBe('http://localhost:4321')
+    expect(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://a.example/', profileId: profile.id, device: 'iphone' })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+  })
+
+  it('never lets an agent open a page in a profile', async () => {
+    const { service, target } = await withProfiles()
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const before = vi.mocked(WebContentsView).mock.calls.length
+    const asked = await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', description: 'Read mail', profileId: profile.id })
+    expect(asked).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(vi.mocked(WebContentsView).mock.calls.length).toBe(before)
+    const opened = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', description: 'Read mail' }))
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.find(page => page.id === opened.task.pageId)?.profile ?? null).toBeNull()
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { partition: string }
+    expect(used.partition).not.toContain('sotto-profile-')
+  })
+
+  it('closes a removed profile\'s pages and deletes its data', async () => {
+    const { service, target, emit } = await withProfiles()
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id }))
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { clearData: ReturnType<typeof vi.fn> }
+    expect(unwrap(await service.removeProfile({ id: profile.id })).profiles).toEqual([])
+    expect(emit).toHaveBeenCalledWith({ type: 'closed', threadId: target.threadId, workspaceId: target.workspaceId, pageId: page.id })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.map(other => other.id)).toEqual([target.pageId])
+    expect(used.clearData).toHaveBeenCalled()
+    expect(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id })).toMatchObject({ ok: false, error: { message: expect.stringContaining('was removed') } })
+  })
+})
+
+describe('the full browser catalog in the service (ADR-0220)', () => {
+  it('refuses a full-catalog action while the catalog is off, and says what there is', async () => {
+    const { service, target } = await browserFixture()
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Check the menu' }))
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'hover', selector: '#menu' } })).toMatchObject({ ok: false, error: { code: 'invalid-request', message: expect.stringContaining('no hover action') } })
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'click', ref: 'e1' } })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+  })
+
+  it('closes a page the agent opened in the background, and never one the user opened', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => false, true)
+    expect(await service.agentClose(target)).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('opened by the user') } })
+    const opened = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, port: 4555, path: '/', description: 'Open the second tab', background: true }))
+    expect(opened.task.background).toBe(true)
+    expect(opened.task.pendingAction?.action).toEqual({ type: 'navigate', url: 'http://localhost:4555/' })
+    const listed = unwrap(await service.list({ threadId: target.threadId })).pages.find(page => page.id === opened.task.pageId)
+    expect(listed).toMatchObject({ agentOpened: true, background: true })
+    expect(unwrap(await service.agentClose({ threadId: target.threadId, workspaceId: target.workspaceId, pageId: opened.task.pageId }))).toEqual({ closed: opened.task.pageId })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.map(page => page.id)).toEqual([target.pageId])
+  })
+
+  it('asks before every upload even under the grant, naming the files, and refuses one outside the thread before asking', async () => {
+    const { service, target, directory } = await browserFixture(false, new Set(), () => true, true)
+    await writeFile(join(directory, 'report.pdf'), 'pdf')
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Attach the report' }))
+    const outside = await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: [join(directory, '..', 'elsewhere.txt')] } })
+    expect(outside).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect(unwrap(await service.tasks({ threadId: target.threadId }))[0]?.pendingAction).toBeNull()
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    expect(asked.approvalRequired).toBe(true)
+    expect(asked.task.pendingAction?.description).toContain('report.pdf')
+  })
+
+  it('holds the agent back for a moment after the user’s own input, and lets it read meanwhile', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Enter' }))
+    view.webContents.emit('input-event', {}, { type: 'mouseDown' })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(true)
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'key', key: 'Enter' } })).toMatchObject({ ok: false, error: { code: 'busy', message: expect.stringContaining('The user is using this page') } })
+    expect((await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } })).ok).toBe(true)
+    // A pointer only passing over the page is not taking it over.
+    await new Promise(done => setTimeout(done, 800))
+    view.webContents.emit('input-event', {}, { type: 'mouseMove' })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(false)
   })
 })

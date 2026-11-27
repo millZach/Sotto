@@ -176,6 +176,10 @@ msgstr ""
 msgid "{idleMinutes, plural, other {{sessionMinutes} min · ends after # minutes idle}}"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "{imported, plural, one {# cookie} other {# cookies}}"
+msgstr ""
+
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "{interrupted, plural, other {# interrupted}}"
 msgstr ""
@@ -529,6 +533,10 @@ msgstr ""
 msgid "A folder is not downloaded. It is open in Files, where each file can be."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "A fresh page"
+msgstr ""
+
 #: src/renderer/src/tools/TerminalSurface.tsx
 msgid "A terminal starts in the thread’s working folder and keeps running while you work elsewhere."
 msgstr ""
@@ -555,6 +563,14 @@ msgstr ""
 msgid "Add a picture of this page to the message"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Add a profile that keeps sign-ins"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Add profile"
+msgstr ""
+
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "Add to draft"
 msgstr ""
@@ -566,6 +582,16 @@ msgstr ""
 #. A changed file's Git status.
 #: src/renderer/src/tools/changesStore.ts
 msgid "Added"
+msgstr ""
+
+#. {added} is the profile name; {copied} is a count of cookies, as in 12 cookies.
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Added {added} and copied its sign-ins ({copied}). New pages open in it."
+msgstr ""
+
+#. {added} is the profile name.
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Added {added}. New pages open in it, signed out until you sign in."
 msgstr ""
 
 #. {text} is the line of code itself.
@@ -901,6 +927,7 @@ msgid "Browser for {title}"
 msgstr ""
 
 #: src/renderer/src/tools/browserPageView.tsx
+#: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/browserStore.ts
 msgid "Browser is not available in this window."
 msgstr ""
@@ -942,9 +969,12 @@ msgid "Can't merge #{number} yet"
 msgstr ""
 
 #. Closes the comment on a page element and goes back to pointing.
+#. Dismisses a web page's dialog.
 #: src/renderer/src/tools/AgentContinue.tsx
 #: src/renderer/src/tools/BrowserFeedback.tsx
+#: src/renderer/src/tools/BrowserParity.tsx
 #: src/renderer/src/tools/BrowserPoint.tsx
+#: src/renderer/src/tools/BrowserProfiles.tsx
 #: src/renderer/src/tools/ChangesSurface.tsx
 #: src/renderer/src/tools/PullRequestDialogs.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
@@ -1179,6 +1209,10 @@ msgstr ""
 msgid "Close terminal links"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Close that browser first. Sotto copies its cookies once, and later sign-ins stay separate."
+msgstr ""
+
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Close the app"
 msgstr ""
@@ -1341,6 +1375,10 @@ msgstr ""
 #. {path} is a file's path.
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Copy path: {path}"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Copy sign-ins from"
 msgstr ""
 
 #: src/renderer/src/tools/ToolsPanel.tsx
@@ -1517,6 +1555,10 @@ msgstr ""
 #. {label} names the lines the comment is on, as in "src/app.ts line 4".
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "Delete comment on {label}"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Delete sign-ins"
 msgstr ""
 
 #. A changed file's Git status.
@@ -1925,6 +1967,11 @@ msgstr ""
 msgid "GitHub reports none for this pull request"
 msgstr ""
 
+#. Gives a browser page the user took over back to the agent.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Hand back"
+msgstr ""
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Has every commit on {base}"
 msgstr ""
@@ -2069,8 +2116,20 @@ msgstr ""
 msgid "Just finished"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Keep"
+msgstr ""
+
 #: src/renderer/src/tools/TerminalSurface.tsx
 msgid "Keep running"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Keeps nothing after Sotto closes"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Keeps sign-ins"
 msgstr ""
 
 #. A size of the phone player.
@@ -2102,6 +2161,16 @@ msgstr ""
 
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Latest update"
+msgstr ""
+
+#. Leaves a web page that asked to stay.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Leave"
+msgstr ""
+
+#. A web page asks before it is left.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Leave this page? Changes may not be saved"
 msgstr ""
 
 #: src/renderer/src/tools/BrowserSurface.tsx
@@ -2227,6 +2296,10 @@ msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx
 msgid "Long Markdown is shown as source."
+msgstr ""
+
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Look for local servers again"
 msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts
@@ -2403,6 +2476,10 @@ msgstr ""
 msgid "Move the test iPhone. Drag, or use the arrow keys; hold Shift to move further."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Name the profile first."
+msgstr ""
+
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "Native builds can run on a cloud iPhone. Add a run.cloud key in Settings > Cloud iPhone."
 msgstr ""
@@ -2571,6 +2648,10 @@ msgstr ""
 msgid "No web links in this output."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "No web server started from Sotto is answering. Start one in a terminal here, then look again."
+msgstr ""
+
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "Nobody has reviewed it yet"
 msgstr ""
@@ -2619,6 +2700,15 @@ msgstr ""
 
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Nothing to merge yet"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Nothing. Start signed out"
+msgstr ""
+
+#. Accepts a web page's dialog.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "OK"
 msgstr ""
 
 #. {host} is the name of a paired host, as in forge.
@@ -2766,7 +2856,9 @@ msgid "Open {title} to answer its request"
 msgstr ""
 
 #. {where} is a page address, such as localhost:5173/notes.
+#. {where} is a page address, such as localhost:5173/notes.
 #: src/renderer/src/tools/BrowserPane.tsx
+#: src/renderer/src/tools/BrowserParity.tsx
 msgid "Open {where}"
 msgstr ""
 
@@ -2823,6 +2915,10 @@ msgstr ""
 msgid "Open check"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Open developer tools"
+msgstr ""
+
 #: src/renderer/src/tools/PullRequestDetails.tsx
 msgid "Open files on GitHub"
 msgstr ""
@@ -2837,8 +2933,18 @@ msgstr ""
 msgid "Open in the browser"
 msgstr ""
 
+#. {name} is the name the user gave a browser profile, such as Work.
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Open in the profile {name}, which keeps its sign-ins. The agent sees this page only when you share it."
+msgstr ""
+
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "Open it to see where it stands."
+msgstr ""
+
+#. Heads the choice of browser profile, or none, that a new browser page opens in.
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Open new pages in"
 msgstr ""
 
 #: src/renderer/src/tools/PullRequestDetails.tsx
@@ -2900,6 +3006,21 @@ msgstr ""
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "Page address"
+msgstr ""
+
+#. The browser page is told the reader prefers a dark colour scheme.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Page in dark colours"
+msgstr ""
+
+#. The browser page is told the reader prefers a light colour scheme.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Page in light colours"
+msgstr ""
+
+#. The browser page follows the computer's light or dark setting.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Page in the computer's colours"
 msgstr ""
 
 #: src/renderer/src/tools/BrowserFeedback.tsx
@@ -3047,6 +3168,10 @@ msgstr ""
 msgid "Previous match (Shift+Enter)"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Profile name"
+msgstr ""
+
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Project folder"
 msgstr ""
@@ -3162,6 +3287,11 @@ msgstr ""
 msgid "Reconnecting to {machine}. The page stays open there, and the agent keeps browsing."
 msgstr ""
 
+#. An agent is recording a browser page to a video file.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Recording this page"
+msgstr ""
+
 #: src/renderer/src/tools/FileTree.tsx
 msgid "Refresh"
 msgstr ""
@@ -3229,6 +3359,20 @@ msgstr ""
 
 #: src/renderer/src/tools/ChangesBasePicker.tsx
 msgid "Remote only"
+msgstr ""
+
+#. Removes a browser profile; {named} is the name the user gave it, such as Work.
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Remove {named}"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Remove this profile and delete its sign-ins"
+msgstr ""
+
+#. {removed} is the profile name.
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Removed {removed} and deleted its sign-ins."
 msgstr ""
 
 #. {text} is the line of code itself.
@@ -3358,6 +3502,16 @@ msgstr ""
 msgid "Reviewers wait until it is ready"
 msgstr ""
 
+#. Turns the device the browser page is shown as on its side.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Rotate to landscape"
+msgstr ""
+
+#. Turns the device the browser page is shown as upright.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Rotate to portrait"
+msgstr ""
+
 #. A check on a pull request is running now.
 #. A subagent step that is currently running.
 #: src/renderer/src/tools/AgentsSurface.tsx
@@ -3454,6 +3608,11 @@ msgstr ""
 msgid "Send Ctrl+C (stop the running command)"
 msgstr ""
 
+#. Heads the local web servers that Sotto terminals or agents started, as the browser pane found them.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Servers started from Sotto"
+msgstr ""
+
 #: src/renderer/src/tools/BrowserPane.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
@@ -3483,6 +3642,11 @@ msgstr ""
 #: src/renderer/src/tools/ChangesSurface.tsx
 #: src/renderer/src/tools/DiffBlock.tsx
 msgid "Show all"
+msgstr ""
+
+#. {name} is a device, such as iPhone 12 Pro. The browser page takes its size.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Show as {name}"
 msgstr ""
 
 #. A browser page size in CSS pixels, such as Show at 1280 x 800.
@@ -3754,6 +3918,11 @@ msgstr ""
 msgid "Starting…"
 msgstr ""
 
+#. Stays on a web page that asked before being left.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Stay"
+msgstr ""
+
 #. Heading over the live tool and command steps a subagent took.
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "Steps"
@@ -3769,6 +3938,8 @@ msgstr ""
 #. Stops letting this thread use the browser and test iPhone without asking.
 #. Stops letting this thread use the browser without asking.
 #. Stops letting this thread use the browser without asking.
+#. Stops recording a browser page.
+#: src/renderer/src/tools/BrowserParity.tsx
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 #: src/renderer/src/tools/FileDownload.tsx
@@ -3790,6 +3961,10 @@ msgstr ""
 
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Stop pointing at the page"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Stop recording and keep the video in this thread's browser files"
 msgstr ""
 
 #: src/renderer/src/tools/BrowserPane.tsx
@@ -3822,6 +3997,11 @@ msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts
 msgid "swiped in the page"
+msgstr ""
+
+#. Takes a browser page over from the agent, which waits.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "Take over"
 msgstr ""
 
 #: src/renderer/src/tools/browserSteps.ts
@@ -3906,6 +4086,7 @@ msgid "The browser could not list its pages."
 msgstr ""
 
 #: src/renderer/src/tools/BrowserPane.tsx
+#: src/renderer/src/tools/BrowserParity.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The browser did not answer. Try again."
 msgstr ""
@@ -3981,8 +4162,18 @@ msgstr ""
 msgid "The link could not open. Copy it into your browser."
 msgstr ""
 
+#. Before the words of a web page's confirm or prompt dialog.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "The page asks"
+msgstr ""
+
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "The page changed. Cancel and capture it again before selecting."
+msgstr ""
+
+#. Before the words of a web page's alert dialog.
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "The page says"
 msgstr ""
 
 #: src/renderer/src/tools/browserPageView.tsx
@@ -4058,6 +4249,14 @@ msgstr ""
 
 #: src/renderer/src/tools/terminalView.ts
 msgid "The text size could not be saved. Try the shortcut again."
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "The window could not reach Sotto. Nothing was added."
+msgstr ""
+
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "The window could not reach Sotto. Nothing was removed."
 msgstr ""
 
 #: src/renderer/src/tools/TerminalViewProblem.tsx
@@ -4355,6 +4554,14 @@ msgstr ""
 msgid "This turn is no longer listed."
 msgstr ""
 
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "This window cannot answer the page's dialog."
+msgstr ""
+
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "This window cannot stop the recording."
+msgstr ""
+
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "This working folder is not a Git repository."
 msgstr ""
@@ -4649,6 +4856,10 @@ msgstr ""
 msgid "without whitespace"
 msgstr ""
 
+#: src/renderer/src/tools/BrowserProfiles.tsx
+msgid "Work"
+msgstr ""
+
 #: src/renderer/src/tools/browserSteps.ts
 msgid "worked in the page"
 msgstr ""
@@ -4709,9 +4920,23 @@ msgstr ""
 msgid "Wrap long lines"
 msgstr ""
 
+#. The user is clicking or typing in a page an agent works on.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "You are using the page. The agent waits until you stop"
+msgstr ""
+
 #. {list} is what has to happen first, as in "the failing checks pass and someone approves it".
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
 msgid "You can merge once {list}."
+msgstr ""
+
+#. The user took a browser page over from the agent.
+#: src/renderer/src/tools/BrowserPane.tsx
+msgid "You have the page. The agent waits until you hand it back"
+msgstr ""
+
+#: src/renderer/src/tools/BrowserParity.tsx
+msgid "Your answer to the page"
 msgstr ""
 
 #: src/renderer/src/tools/HostPageView.tsx

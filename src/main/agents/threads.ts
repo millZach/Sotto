@@ -216,7 +216,8 @@ export class SottoThreadHost implements ProviderHost {
     }
     this.inner.useBrowserTools?.({ definitions: tools.definitions,
       call: (id, name, args) => tools.call(thread(id), name, args),
-      mcpServer: id => tools.mcpServer(thread(id)),
+      // Antigravity takes the stable catalog alone: agy drops its largest tool past about 58 KB of them (ADR-0220).
+      mcpServer: id => this.provider === 'antigravity' ? tools.mcpServer(thread(id), { compact: true }) : tools.mcpServer(thread(id)),
     })
   }
   /**

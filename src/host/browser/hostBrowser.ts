@@ -532,8 +532,8 @@ export class HostBrowserPage {
 export class HostPageAutomation extends PageAutomation {
   constructor(debuggerFor: PageDebugger, private readonly host: HostBrowserPage) { super(debuggerFor) }
   /** An agent's click, typing or scroll can change the title with no event for it, so the page reads it again. */
-  override async input(action: PageInput, guard: () => void): Promise<void> {
-    try { await super.input(action, guard) } finally { this.host.refresh() }
+  override async input(action: PageInput, guard: () => void): Promise<string | undefined> {
+    try { return await super.input(action, guard) } finally { this.host.refresh() }
   }
   protected picture(frame: PageFrame): PagePicture {
     return { empty: frame.data.length === 0 || frame.width === 0 || frame.height === 0, width: frame.width, height: frame.height, dataUrl: `data:image/${frame.format};base64,${frame.data}` }

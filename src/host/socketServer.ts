@@ -1555,6 +1555,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'stopGrant': return browser.stopGrant(request.payload)
       case 'input': return browser.input(request.payload)
       case 'available': return browser.available(request.payload)
+      case 'answerDialog': return browser.answerDialog(request.payload)
+      case 'emulate': return browser.emulate(request.payload)
     }
   }
   /**

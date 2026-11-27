@@ -33,7 +33,17 @@ export interface BrowserGrant {
  * The actions ADR-0020 holds for an answer, and so the ones a browser grant can answer instead. On the test iPhone a
  * tap is a click and a key press is typing (ADR-0045), so they ask and are granted the same way.
  */
-export const grantCovers = (type: string): boolean => type === 'navigate' || type === 'click' || type === 'type' || type === 'tap' || type === 'key'
+export const grantCovers = (type: string): boolean => GRANT_COVERS.has(type)
+/**
+ * ADR-0220 adds what changes a page the way a click or typing does: choosing in a menu, dragging, running script in
+ * it and answering its dialog. Hovering, scrolling, waiting, reading and recording ask nothing, as scroll never did.
+ */
+const GRANT_COVERS: ReadonlySet<string> = new Set(['navigate', 'click', 'type', 'tap', 'key', 'select', 'drag', 'evaluate', 'dialog'])
+/**
+ * Giving a page files from this computer sends them off it, so it asks every time, naming the files, whatever grant
+ * the thread holds (ADR-0220, decision 5). Nothing answers it but the user.
+ */
+export const alwaysAsks = (type: string): boolean => type === 'upload'
 
 export class BrowserGrants {
   private readonly grants = new Map<string, BrowserGrant>()

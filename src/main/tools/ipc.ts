@@ -38,7 +38,7 @@ export interface HostedBrowser {
   /** Open in system browser for a host's page: on this computer, at the host's address where the page names its own machine. */
   openExternally(request: { url: string; threadId: string }): Promise<ToolsResult<{ destination: 'external' }>>
 }
-const BROWSER_METHODS = ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point'] as const
+const BROWSER_METHODS = ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point', 'answerDialog', 'emulate', 'stopRecording', 'localServers', 'profiles', 'addProfile', 'removeProfile', 'devtools'] as const
 /** The requests only a host's page takes: a page here is drawn by Electron, not from pictures. */
 const HOST_PAGE_METHODS = ['input', 'watch', 'unwatch', 'available'] as const
 /** What each request a host's page cannot take says instead. */
@@ -47,6 +47,9 @@ const NOT_ON_HOST_PAGE: Partial<Record<typeof BROWSER_METHODS[number], MessageDe
   viewport: msg`A page on the host machine keeps the size of the pane that shows it. Nothing was changed.`,
   capture: msg`Screenshot to message isn't available for a page on the host machine yet. Nothing was captured.`,
   point: msg`Point at something isn't available for a page on the host machine yet. Nothing was changed.`,
+  stopRecording: msg`A page on the host machine does not record. Nothing was changed.`,
+  localServers: msg`Servers on the host machine are not listed here yet. Ask the agent for the address.`,
+  devtools: msg`Developer tools open only for a page on this computer. Nothing was opened.`,
 }
 const NOT_A_HOST_PAGE = msg`Only a page on a paired host takes this. Nothing was changed.`
 
