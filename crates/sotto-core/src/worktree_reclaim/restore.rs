@@ -807,6 +807,46 @@ fn thread_working_directory(data_directory: &Path, metadata: &AgentThreadWorktre
     Ok(changed)
 }
 
+/// The record a thread's working copy has once its folder is put back and read before a Git command runs in it, as Node's
+/// `threadWorkingDirectory` gives it to Pull, Switch branch and Initialize Git, or why the command may not run there:
+/// `thread_working_directory`, which a send's check takes when the files do not settle it.
+pub fn checked_working_copy(data_directory: &Path, metadata: &AgentThreadWorktree) -> Result<Option<AgentThreadWorktree>, String> {
+    thread_working_directory(data_directory, metadata)
+}
+
+/// A shared working copy of `directory`, read as Git has it now, as Node's `discover` finds one for a thread with no record
+/// and finds a folder again once Initialize Git made it a repository: `base`'s choices are kept, and the folder, where any
+/// link in it leads, is its path. Unlike Node's `discover`, a folder that is a worktree Git lists for another checkout is
+/// read as shared, not as that worktree, since this host makes a record of its own for each thread it starts.
+pub fn shared_working_copy(base: Option<&AgentThreadWorktree>, directory: &str) -> Result<AgentThreadWorktree, String> {
+    let path = existing_folder(directory)?;
+    let mut record = base.cloned().unwrap_or_else(|| AgentThreadWorktree {
+        mode: "shared".into(),
+        status: "ready".into(),
+        path: None,
+        repository_root: None,
+        branch: None,
+        base_branch: None,
+        start_from_origin: None,
+        existing_worktree_path: None,
+        reused: None,
+        temporary_branch: None,
+        error: None,
+        git: None,
+        extra: serde_json::Map::new(),
+    });
+    record.mode = "shared".into();
+    record.status = "ready".into();
+    record.path = Some(path);
+    inspect(&record)
+}
+
+/// `path` where any link in it leads, once it is a folder that is there, as Node's `existingWorkingDirectory` gives it, or
+/// why not, in Node's words.
+pub fn existing_folder(path: &str) -> Result<String, String> {
+    existing_working_directory(Path::new(path)).map(|folder| text(&folder)).map_err(|refused| refused.words)
+}
+
 /// The record a send's prompt goes out with, or why it may not go, as Node's `sendWorkingDirectory` and `recordSentBranch`:
 /// never into a deleted, reclaimed or failed working copy, which is put back and inspected first (ADR-0014), and a branch
 /// switched inside the folder is adopted. A ready folder that is there is read from its own files, starting no Git process

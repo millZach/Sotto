@@ -59,6 +59,12 @@ impl CheckoutHolder {
         format!("{} Nothing was changed. {}", self.holding(), self.recovery())
     }
 
+    /// A change to the checkout refused for this holder, naming `thread`, the thread that holds it, where one does, as
+    /// Node's `CheckoutHeldRefusal` carries it.
+    pub(crate) fn refused(&self, thread: Option<&str>) -> ChangeRefused {
+        ChangeRefused { words: self.change_refused(), held_by: Some(thread.map(ToString::to_string)) }
+    }
+
     /// A prompt refused while a change holds its checkout, as Node's `CheckoutSendRefusal.draftMessage`.
     pub(crate) fn draft_refused(&self) -> String {
         format!("{} Your message was not sent. Your text is kept. Send it again when the action finishes.", self.holding())
@@ -67,6 +73,33 @@ impl CheckoutHolder {
     /// A queued follow-up refused while a change holds its checkout, as Node's `CheckoutSendRefusal.queuedMessage`.
     pub(crate) fn queued_refused(&self) -> String {
         format!("{} Your follow-up was not sent. It is kept in the queue. Resume the queue when the action finishes.", self.holding())
+    }
+}
+
+/// A change refused before it ran, in Node's words. When what holds the checkout refused it, as Node's
+/// `CheckoutHeldRefusal`, `held_by` says so, with the thread that holds it where a thread does; a Git command's reply
+/// names that thread (`checkoutHold`, #1823), so a window can offer to open it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ChangeRefused {
+    pub(crate) words: String,
+    pub(crate) held_by: Option<Option<String>>,
+}
+
+impl ChangeRefused {
+    /// The `checkoutHold` the refused command's reply carries, as Node's `gitCommand` gives it, or none when nothing
+    /// holding the checkout refused it.
+    pub(crate) fn checkout_hold(&self) -> Option<serde_json::Value> {
+        self.held_by.as_ref().map(|thread| match thread {
+            Some(thread) => serde_json::json!({ "threadId": thread }),
+            None => serde_json::json!({}),
+        })
+    }
+}
+
+/// A change refused for anything but a hold on its checkout: Git's words, or a folder that cannot be read.
+impl From<String> for ChangeRefused {
+    fn from(words: String) -> Self {
+        Self { words, held_by: None }
     }
 }
 

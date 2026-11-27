@@ -3132,11 +3132,17 @@ fn run_git_impl(
             Err(e) => break Err(e),
         }
     };
-    let (buf, overflowed) = reader.join().unwrap_or_default();
-    let stderr_buf = stderr_reader.join().unwrap_or_default();
     if timed_out {
+        // A hook or a remote helper the command started can hold its pipes open after it is gone, so a timeout settles on
+        // its own grace, as Node's runner does (`spawnCommand`), rather than wait for a close a grandchild may never allow.
+        let grace = Instant::now() + Duration::from_secs(2);
+        while !(reader.is_finished() && stderr_reader.is_finished()) && Instant::now() < grace {
+            std::thread::sleep(Duration::from_millis(15));
+        }
         return Err(GitRunError::Failed("git timed out".into()));
     }
+    let (buf, overflowed) = reader.join().unwrap_or_default();
+    let stderr_buf = stderr_reader.join().unwrap_or_default();
     let status =
         status.map_err(|e| GitRunError::Failed(format!("Could not wait for git: {e}")))?;
     let stdout_str = String::from_utf8_lossy(&buf).into_owned();
@@ -3167,6 +3173,28 @@ pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Dur
         GitRunError::Failed(msg) if msg == "git timed out" => "Git took too long.".into(),
         GitRunError::Failed(msg) if msg.starts_with("git exited with status") => "Git could not finish this action.".into(),
         GitRunError::Failed(msg) => msg,
+    })
+}
+
+/// What Node's runner says when Git itself is missing (`GitUnavailableError`).
+pub(crate) const GIT_MISSING: &str = "git is not installed or is not on PATH.";
+
+/// Git as Node's `runGitStatusCommand` (`src/main/agents/git/gitStatus.ts`) runs it for a Git action: `LC_ALL=C` with
+/// nothing that redirects Git, at most 8,000,000 bytes back, stopped at `deadline`, and failing in Node's words: what Git
+/// said on its error stream, or that it exited, did not finish or is missing.
+pub(crate) fn run_action_git(folder: &str, args: &[&str], deadline: Duration) -> Result<String, String> {
+    run_git_impl(folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline).map(|o| o.stdout).map_err(|e| match e {
+        GitRunError::Unavailable(_) => GIT_MISSING.into(),
+        GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
+        GitRunError::Failed(msg) if msg == "git timed out" => "git did not finish in time.".into(),
+        GitRunError::Failed(msg) => match msg.strip_prefix("git exited with status ") {
+            // `ExitStatus` says "exit code: 1" on Windows and "exit status: 1" elsewhere; a signal has no code.
+            Some(status) => match status.rsplit_once(": ").map(|(_, code)| code).filter(|code| code.parse::<i64>().is_ok()) {
+                Some(code) if !status.starts_with("signal") => format!("git exited with {code}."),
+                _ => "git exited with a signal.".into(),
+            },
+            None => msg,
+        },
     })
 }
 

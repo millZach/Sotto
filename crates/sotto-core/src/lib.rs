@@ -15,6 +15,7 @@ pub mod desktop_hosts;
 pub mod failures_seen;
 pub mod file_uploads;
 pub mod followup_queue;
+pub mod git_local;
 pub mod git_review;
 pub mod host_facts;
 pub mod host_router;
