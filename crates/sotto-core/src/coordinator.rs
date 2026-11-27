@@ -543,6 +543,18 @@ struct CheckoutRead {
     title: String,
 }
 
+/// What the changing thread itself holds its checkout with, which refuses a change before its checkout is read, as Node's
+/// `acquireCheckoutMutationInFolder` checks it first: a question for the user, then a turn.
+fn own_checkout_holder(thread: &AgentThread) -> Option<CheckoutHolder> {
+    if !thread.requests.is_empty() {
+        Some(CheckoutHolder::WaitingAnswer(thread.title.clone()))
+    } else if thread.status == "running" {
+        Some(CheckoutHolder::Turn(thread.title.clone()))
+    } else {
+        None
+    }
+}
+
 /// A change waiting to hold its thread's checkout, as `ActorMessage::HoldCheckout` answers it: why not, in Node's words,
 /// with the thread that holds it.
 fn hold_checkout(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: &str, folder: &str, key: String, sharing: Vec<String>) -> Result<(), ChangeRefused> {
@@ -2627,13 +2639,19 @@ impl CoordinatorActor {
             self.save_workspace();
         }
         self.shell_dirty = true;
+        let shell = self.shell_with_checkout_hold(client, hold);
+        let _ = reply.send(Ok(shell));
+        self.flush_dirty();
+        self.drain_lane(lane);
+    }
+
+    /// The host's state with what holds the checkout that refused a Git command, on this reply alone (`checkoutHold`).
+    fn shell_with_checkout_hold(&self, client: &ClientContext, hold: Value) -> Value {
         let mut shell = self.build_shell(client.may_answer);
         if let Some(obj) = shell.as_object_mut() {
             obj.insert("checkoutHold".into(), hold);
         }
-        let _ = reply.send(Ok(shell));
-        self.flush_dirty();
-        self.drain_lane(lane);
+        shell
     }
 
     /// Ends a command turned down in the host's state, as Node's command path turns one down.
@@ -3025,14 +3043,7 @@ impl CoordinatorActor {
         let existing_cwd = thread
             .working_directory
             .clone()
-            .or_else(|| {
-                let wt = thread.worktree.as_ref()?;
-                let path = wt.path.clone()?;
-                Some(match wt.extra.get("projectRelativePath").and_then(Value::as_str).filter(|place| !place.is_empty()) {
-                    Some(place) => format!("{path}/{place}"),
-                    None => path,
-                })
-            })
+            .or_else(|| thread.worktree.as_ref().and_then(AgentThreadWorktree::project_folder))
             .unwrap_or_else(|| project_path.clone());
         // A worktree already made, which the send puts back and checks before its prompt goes out.
         let recorded = thread.worktree.clone().filter(|_| !needs_worktree);
@@ -3723,11 +3734,7 @@ impl CoordinatorActor {
                         let hold = refused.checkout_hold();
                         self.command_refused(refused.words);
                         if let Some(hold) = hold {
-                            let mut shell = self.build_shell(client.may_answer);
-                            if let Some(obj) = shell.as_object_mut() {
-                                obj.insert("checkoutHold".into(), hold);
-                            }
-                            return Ok(shell);
+                            return Ok(self.shell_with_checkout_hold(client, hold));
                         }
                     }
                 }
@@ -4597,14 +4604,7 @@ impl CoordinatorActor {
         let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
             return self.refuse_sync_command(lane, &client, UNKNOWN_THREAD.into(), reply);
         };
-        let own = if !thread.requests.is_empty() {
-            Some(CheckoutHolder::WaitingAnswer(thread.title.clone()))
-        } else if thread.status == "running" {
-            Some(CheckoutHolder::Turn(thread.title.clone()))
-        } else {
-            None
-        };
-        if let Some(holder) = own {
+        if let Some(holder) = own_checkout_holder(thread) {
             return self.refuse_sync_command(lane, &client, holder.change_refused(), reply);
         }
         let checkout = self.checkout_folder(thread);
@@ -4647,14 +4647,7 @@ impl CoordinatorActor {
         let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
             return self.refuse_sync_command(lane, &client, SELECT_AVAILABLE_THREAD.into(), reply);
         };
-        let own = if !thread.requests.is_empty() {
-            Some(CheckoutHolder::WaitingAnswer(thread.title.clone()))
-        } else if thread.status == "running" {
-            Some(CheckoutHolder::Turn(thread.title.clone()))
-        } else {
-            None
-        };
-        if let Some(holder) = own {
+        if let Some(holder) = own_checkout_holder(thread) {
             return self.refuse_git_command(lane, &client, holder.refused(Some(&thread_id)), reply);
         }
         let checkout = self.checkout_folder(thread);

@@ -757,8 +757,7 @@ fn inspect_with_identity(metadata: &AgentThreadWorktree) -> Result<(AgentThreadW
 /// Whether Restore branch may name `branch` to Git, as Node's pattern for it: nothing that could read as an option or a path.
 fn restorable_branch_name(branch: &str) -> bool {
     // JavaScript's `\s`: Unicode's white space without NEL, and the byte order mark.
-    let space = |c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}';
-    !branch.is_empty() && !branch.starts_with('-') && !branch.contains("..") && !branch.chars().any(|c| space(c) || matches!(c, ':' | '?' | '*' | '~' | '^' | '[' | ']' | '\\'))
+    !branch.is_empty() && !branch.starts_with('-') && !branch.contains("..") && !branch.chars().any(|c| crate::git_local::js_space(c) || matches!(c, ':' | '?' | '*' | '~' | '^' | '[' | ']' | '\\'))
 }
 
 /// Switches a working copy back to `branch`, which the user asked for by hand, as Node's `switchBranch`: the folder is
@@ -787,8 +786,9 @@ fn switch_branch(metadata: &AgentThreadWorktree, branch: &str) -> Result<AgentTh
 /// a send and a Git action run first: a ready or failed worktree is put back on its recorded branch and inspected; one
 /// that cannot be put back keeps a ready record's failure as the answer, and a record that is still not ready answers
 /// with its own error, as Node's `resolveThreadWorkingDirectory` does: nothing works in a folder Git will not confirm.
-/// `None` when nothing in the record changed.
-fn thread_working_directory(data_directory: &Path, metadata: &AgentThreadWorktree) -> Result<Option<AgentThreadWorktree>, String> {
+/// `None` when nothing in the record changed. A send's check takes this when the files do not settle it, and Pull, Switch
+/// branch and Initialize Git take it before Git runs.
+pub fn thread_working_directory(data_directory: &Path, metadata: &AgentThreadWorktree) -> Result<Option<AgentThreadWorktree>, String> {
     let mut changed = None;
     if metadata.path.is_some() && (metadata.status == "ready" || metadata.status == "error") {
         match restore(data_directory, metadata).and_then(|restored| inspect(&restored)) {
@@ -805,13 +805,6 @@ fn thread_working_directory(data_directory: &Path, metadata: &AgentThreadWorktre
         existing_working_directory(Path::new(path)).map_err(|refused| refused.words)?;
     }
     Ok(changed)
-}
-
-/// The record a thread's working copy has once its folder is put back and read before a Git command runs in it, as Node's
-/// `threadWorkingDirectory` gives it to Pull, Switch branch and Initialize Git, or why the command may not run there:
-/// `thread_working_directory`, which a send's check takes when the files do not settle it.
-pub fn checked_working_copy(data_directory: &Path, metadata: &AgentThreadWorktree) -> Result<Option<AgentThreadWorktree>, String> {
-    thread_working_directory(data_directory, metadata)
 }
 
 /// A shared working copy of `directory`, read as Git has it now, as Node's `discover` finds one for a thread with no record

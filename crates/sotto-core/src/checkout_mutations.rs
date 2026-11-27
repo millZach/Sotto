@@ -62,7 +62,8 @@ impl CheckoutHolder {
     /// A change to the checkout refused for this holder, naming `thread`, the thread that holds it, where one does, as
     /// Node's `CheckoutHeldRefusal` carries it.
     pub(crate) fn refused(&self, thread: Option<&str>) -> ChangeRefused {
-        ChangeRefused { words: self.change_refused(), held_by: Some(thread.map(ToString::to_string)) }
+        let held_by = thread.map_or(HeldBy::Sotto, |thread| HeldBy::Thread(thread.to_string()));
+        ChangeRefused { words: self.change_refused(), held_by: Some(held_by) }
     }
 
     /// A prompt refused while a change holds its checkout, as Node's `CheckoutSendRefusal.draftMessage`.
@@ -76,22 +77,29 @@ impl CheckoutHolder {
     }
 }
 
-/// A change refused before it ran, in Node's words. When what holds the checkout refused it, as Node's
-/// `CheckoutHeldRefusal`, `held_by` says so, with the thread that holds it where a thread does; a Git command's reply
-/// names that thread (`checkoutHold`, #1823), so a window can offer to open it.
+/// What holds a checkout that refused a change, as Node's `CheckoutHeldRefusal` names it: a thread, or Sotto's own work,
+/// such as another change, which names none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HeldBy {
+    Sotto,
+    Thread(String),
+}
+
+/// A change refused before it ran, in Node's words, and what holds the checkout when that refused it, as Node's
+/// `CheckoutHeldRefusal`; a Git command's reply names it (`checkoutHold`, #1823), so a window can offer to open the thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ChangeRefused {
     pub(crate) words: String,
-    pub(crate) held_by: Option<Option<String>>,
+    pub(crate) held_by: Option<HeldBy>,
 }
 
 impl ChangeRefused {
     /// The `checkoutHold` the refused command's reply carries, as Node's `gitCommand` gives it, or none when nothing
     /// holding the checkout refused it.
     pub(crate) fn checkout_hold(&self) -> Option<serde_json::Value> {
-        self.held_by.as_ref().map(|thread| match thread {
-            Some(thread) => serde_json::json!({ "threadId": thread }),
-            None => serde_json::json!({}),
+        self.held_by.as_ref().map(|held_by| match held_by {
+            HeldBy::Thread(thread) => serde_json::json!({ "threadId": thread }),
+            HeldBy::Sotto => serde_json::json!({}),
         })
     }
 }

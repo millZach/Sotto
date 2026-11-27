@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use serde_json::{Map, Value};
 
-use crate::ops::{run_action_git, GIT_MISSING};
+use crate::ops::{run_action_git as git, GIT_MISSING};
 use crate::workspace::{clip_utf16, AgentThreadWorktree};
-use crate::worktree_reclaim::{checked_working_copy, existing_folder, inspect, shared_working_copy, with_repository};
+use crate::worktree_reclaim::{existing_folder, inspect, shared_working_copy, thread_working_directory, with_repository};
 
 /// What Node's runner gives a Git command that names no deadline of its own.
 const COMMAND_DEADLINE: Duration = Duration::from_secs(30);
@@ -95,7 +95,7 @@ pub fn run(data_directory: &Path, thread: &ThreadFolder, command: &LocalGitComma
     }
     if let Some(worktree) = current.as_ref() {
         let filled = with_repository(worktree, &thread.project_path);
-        match checked_working_copy(data_directory, &filled) {
+        match thread_working_directory(data_directory, &filled) {
             Ok(read) => current = Some(read.unwrap_or(filled)),
             Err(words) => return (kept(current), Err(words)),
         }
@@ -146,13 +146,7 @@ fn working_folder(worktree: Option<&AgentThreadWorktree>, thread: &ThreadFolder)
     if let Some(worktree) = worktree.filter(|worktree| worktree.status != "ready") {
         return Err(worktree.error.clone().unwrap_or_else(|| "This thread’s working folder is not ready. Retry working-copy setup.".into()));
     }
-    let checkout = worktree.and_then(|worktree| {
-        let path = worktree.path.clone()?;
-        Some(match worktree.extra.get("projectRelativePath").and_then(Value::as_str).filter(|place| !place.is_empty()) {
-            Some(place) => format!("{path}/{place}"),
-            None => path,
-        })
-    });
+    let checkout = worktree.and_then(AgentThreadWorktree::project_folder);
     let directory = thread.working_directory.clone().or(checkout).unwrap_or_else(|| thread.project_path.clone());
     if directory.is_empty() {
         return Err("This thread’s working folder is unavailable.".into());
@@ -186,10 +180,6 @@ impl Pulled {
             format!("Already up to date. {} matches {}.", self.branch, self.upstream)
         }
     }
-}
-
-fn git(cwd: &str, args: &[&str], deadline: Duration) -> Result<String, String> {
-    run_action_git(cwd, args, deadline)
 }
 
 /// Whether `cwd` is in a repository, as Node's status read decides it (`rev-parse --git-common-dir`). Git missing is its
@@ -296,7 +286,7 @@ fn branch_and_upstream(porcelain: &str) -> (Option<String>, Option<String>) {
 }
 
 /// JavaScript's white space, as `trim` and `\s` take it: Unicode's white space without NEL, and the byte order mark.
-fn js_space(c: char) -> bool {
+pub(crate) fn js_space(c: char) -> bool {
     (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
