@@ -1287,6 +1287,10 @@ impl ProviderAdapter for ClaudeAdapter {
             let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
                 return Ok(None);
             };
+            // A personal thread is the user's own Claude Code session, and Node writes nothing for it.
+            if record.extra.get("kind").and_then(Value::as_str) == Some("personal") {
+                return Ok(None);
+            }
             // Node's record always names its model; one that does not has nothing to write on.
             let Some(model) = record.model_id else {
                 return Ok(None);

@@ -58,16 +58,17 @@ impl Default for WritingSettings {
 }
 
 impl WritingSettings {
-    /// The settings as Node's host reads them from the `settings.json` in its data folder for each request: a missing,
-    /// unreadable or damaged file, or a field its schema refuses, is Node's default.
-    pub fn read(data_directory: &std::path::Path) -> Self {
-        let saved = std::fs::read_to_string(data_directory.join("settings.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .filter(Value::is_object)
-            .unwrap_or(Value::Null);
+    /// The settings as Node's host reads them from the `settings.json` in its data folder for each request: a missing
+    /// or damaged file, or a field its schema refuses, is Node's default. `None` when the file is there and cannot be
+    /// read, which Node's store throws on, so its writer asks nothing.
+    pub fn read(data_directory: &std::path::Path) -> Option<Self> {
+        let saved = match std::fs::read(data_directory.join("settings.json")) {
+            Ok(bytes) => serde_json::from_str::<Value>(&String::from_utf8_lossy(&bytes)).ok().filter(Value::is_object).unwrap_or(Value::Null),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
+            Err(_) => return None,
+        };
         let defaults = Self::default();
-        Self {
+        Some(Self {
             commit_messages: saved.get("commitMessages").and_then(Value::as_bool).unwrap_or(defaults.commit_messages),
             git_writing_style: match saved.get("gitWritingStyle").and_then(Value::as_str) {
                 Some("repository") => GitWritingStyle::Repository,
@@ -80,7 +81,7 @@ impl WritingSettings {
                 .and_then(Value::as_str)
                 .filter(|text| text.encode_utf16().count() <= GIT_WRITING_INSTRUCTIONS_MAX)
                 .map_or(defaults.git_writing_instructions, ToString::to_string),
-        }
+        })
     }
 }
 
@@ -164,7 +165,7 @@ impl CommitDrafts {
         Self { data_directory, runtime, threads }
     }
 
-    /// The draft, or `None` when Commit messages is off, the diff is empty or the provider wrote nothing it could keep;
+    /// The draft, or `None` when Commit messages is off or the settings cannot be read, the diff is empty or the provider wrote nothing it could keep;
     /// the Git action then commits under Node's stand-in subject. It blocks on the side call, so it runs on the Git
     /// action's own thread, never inside one of the runtime's tasks.
     pub fn write(&self, thread_id: &str, material: &CommitMaterial) -> Option<String> {
@@ -174,7 +175,7 @@ impl CommitDrafts {
     /// [`Self::write`], for a caller already in the runtime.
     pub async fn draft(&self, thread_id: &str, material: &CommitMaterial) -> Option<String> {
         // Read for every request, so turning drafts off stops the next one without a restart.
-        let settings = WritingSettings::read(&self.data_directory);
+        let settings = WritingSettings::read(&self.data_directory)?;
         if !settings.commit_messages || js_trim(&material.diff.text).is_empty() {
             return None;
         }

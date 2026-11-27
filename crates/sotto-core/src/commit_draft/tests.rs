@@ -57,16 +57,20 @@ fn adds_the_chosen_style_after_the_instruction_as_node_does() {
 #[test]
 fn reads_the_writing_settings_as_nodes_parse_settings_does() {
     let dir = tempfile::tempdir().unwrap();
-    assert_eq!(WritingSettings::read(dir.path()), WritingSettings::default());
+    assert_eq!(WritingSettings::read(dir.path()), Some(WritingSettings::default()));
     let file = dir.path().join("settings.json");
-    fs::write(&file, "{ not json").unwrap();
-    assert_eq!(WritingSettings::read(dir.path()), WritingSettings::default());
-    fs::write(&file, "[]").unwrap();
-    assert_eq!(WritingSettings::read(dir.path()), WritingSettings::default());
+    for damaged in ["{ not json", "[]", "\u{feff}{}"] {
+        fs::write(&file, damaged).unwrap();
+        assert_eq!(WritingSettings::read(dir.path()), Some(WritingSettings::default()), "{damaged}");
+    }
     fs::write(&file, json!({ "commitMessages": "no", "gitWritingStyle": "loud", "gitWritingInstructions": "x".repeat(2_001) }).to_string()).unwrap();
-    assert_eq!(WritingSettings::read(dir.path()), WritingSettings::default());
+    assert_eq!(WritingSettings::read(dir.path()), Some(WritingSettings::default()));
     fs::write(&file, json!({ "commitMessages": false, "gitWritingStyle": "custom", "gitWritingInstructions": "y".repeat(2_000) }).to_string()).unwrap();
-    assert_eq!(WritingSettings::read(dir.path()), WritingSettings { commit_messages: false, git_writing_style: GitWritingStyle::Custom, git_writing_instructions: "y".repeat(2_000) });
+    assert_eq!(WritingSettings::read(dir.path()), Some(WritingSettings { commit_messages: false, git_writing_style: GitWritingStyle::Custom, git_writing_instructions: "y".repeat(2_000) }));
+    // A file that is there and cannot be read, as a folder in its place cannot, is not taken for the defaults.
+    fs::remove_file(&file).unwrap();
+    fs::create_dir(&file).unwrap();
+    assert_eq!(WritingSettings::read(dir.path()), None);
 }
 
 #[test]
@@ -227,11 +231,20 @@ fn a_given_message_skips_the_draft() {
 }
 
 #[test]
-fn nothing_is_asked_while_commit_messages_is_off_or_of_watchers_thread() {
+fn nothing_is_asked_while_commit_messages_is_off_or_unreadable_or_of_watchers_thread() {
     let runtime = runtime();
     let fixture = Fixture::new();
     fs::create_dir_all(fixture.data()).unwrap();
     fs::write(fixture.data().join("settings.json"), json!({ "commitMessages": false }).to_string()).unwrap();
+    let mock = Arc::new(MockProviderAdapter::new("codex"));
+    mock.answer_side_call(answer(Ok(Some("Not asked"))));
+    commit(&fixture, &drafting(&fixture, &runtime, mock.clone(), false), None);
+    assert_eq!(fixture.last_commit(), STAND_IN_SUBJECT);
+    assert!(mock.side_calls().is_empty());
+
+    // Settings that cannot be read ask nothing either, as Node's writer asks nothing when its store throws.
+    let fixture = Fixture::new();
+    fs::create_dir_all(fixture.data().join("settings.json")).unwrap();
     let mock = Arc::new(MockProviderAdapter::new("codex"));
     mock.answer_side_call(answer(Ok(Some("Not asked"))));
     commit(&fixture, &drafting(&fixture, &runtime, mock.clone(), false), None);
@@ -260,12 +273,15 @@ fn a_provider_with_no_side_call_writes_nothing() {
 
 const FAKE_CLAUDE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/fakeClaudeThread.mjs");
 
-/// A connected Claude adapter on the fake, with thread `t` on `fixture-model` in the fixture's repository, and the
-/// fake's side call answering `script`.
+/// A connected Claude adapter on the fake, with thread `t` and the user's own personal session on `fixture-model` in the
+/// fixture's repository, and the fake's side call answering `script`.
 fn claude(fixture: &Fixture, runtime: &tokio::runtime::Runtime, script: serde_json::Value, deadline: Duration) -> Arc<ClaudeAdapter> {
     let data = fixture.data();
     fs::create_dir_all(&data).unwrap();
-    fs::write(data.join("claude-threads.json"), json!({ "t": { "sessionId": "1b4e28ba-2fa1-41d2-883f-0016d3cca427", "cwd": fixture.repo, "modelId": "fixture-model" } }).to_string()).unwrap();
+    fs::write(data.join("claude-threads.json"), json!({
+        "t": { "sessionId": "1b4e28ba-2fa1-41d2-883f-0016d3cca427", "cwd": fixture.repo, "modelId": "fixture-model" },
+        "personal": { "sessionId": "2c5f39cb-3a8d-42e2-994e-1127dde4b538", "cwd": fixture.repo, "modelId": "fixture-model", "kind": "personal" },
+    }).to_string()).unwrap();
     fs::write(data.join("oneshot.json"), script.to_string()).unwrap();
     let mut config = ClaudeAdapterConfig::fake(data, FAKE_CLAUDE.into());
     config.side_writing_deadline = deadline;
@@ -319,12 +335,13 @@ fn claude_code_that_fails_or_outlasts_the_deadline_leaves_nodes_stand_in_subject
 }
 
 #[test]
-fn claude_code_writes_nothing_for_a_thread_it_has_no_record_of_or_while_not_connected() {
+fn claude_code_writes_nothing_for_a_personal_session_a_thread_it_has_no_record_of_or_while_not_connected() {
     let fixture = Fixture::new();
     let runtime = runtime();
     let adapter = claude(&fixture, &runtime, json!({ "text": "Unused" }), Duration::from_secs(60));
     let prompt = commit_message_request(&material(), &WritingSettings::default()).prompt;
     assert_eq!(runtime.block_on(adapter.write_short_text("other".into(), prompt.clone())), Ok(None));
+    assert_eq!(runtime.block_on(adapter.write_short_text("personal".into(), prompt.clone())), Ok(None));
     runtime.block_on(adapter.disconnect()).unwrap();
     assert_eq!(runtime.block_on(adapter.write_short_text("t".into(), prompt)), Ok(None));
     assert!(oneshots(&fixture).is_empty());
