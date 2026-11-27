@@ -78,6 +78,8 @@ pub fn advertised_features() -> Vec<String> {
         "command-changed-thread-records".into(),
         "kept-parts".into(),
         "draft-revisions".into(),
+        // `refresh-thread-worktree` takes `background`, the window's own refresh, as Node offers it to every client.
+        "background-refresh".into(),
         "detail-read-held".into(),
         "provider-opencode".into(),
         "provider-cursor".into(),
@@ -2461,6 +2463,11 @@ async fn handle_ws_request(
             // So is removing a thread's own worktree folder (ADR-0041), with its confirmations as Delete thread… limits them.
             let reclaiming = matches!(cmd.get("type").and_then(Value::as_str), Some("reclaim-thread-worktree" | "preview-reclaim-thread-worktree"));
             if reclaiming && !sotto_core::worktree_reclaim::reclaim_command_shape(cmd) {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
+            // And so are Retry, Refresh and Restore branch of a thread's working copy.
+            let working_copy = matches!(cmd.get("type").and_then(Value::as_str), Some("retry-thread-worktree" | "refresh-thread-worktree" | "restore-thread-branch"));
+            if working_copy && !sotto_core::worktree_reclaim::working_copy_command_shape(cmd) {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
