@@ -266,6 +266,14 @@ Saved answers use version 2 of `request-drafts.json`. Current Sotto reads earlie
 
 When Codex asks you to open a link, for example to sign in to an app, the question shows the link with **Continue** and **Decline**. Open the link yourself, then press **Continue**.
 
+### Secret requests
+
+An Owl feature ([ADR-0219](adr/0219-an-agent-asks-for-a-secret-on-a-private-card.md)). When an agent needs a password, an API key, a token or a pairing code, it asks on a private card in its thread instead of in the chat. The card is titled with what the agent asked for, says why, and has one field, or up to eight, each named; a field the agent marked as shown, such as a user name, shows what you type, and the rest are masked. **Open sign-in page**, when the agent gave one, opens it in your own browser so you can get the value there.
+
+Type the value and press Enter or **Save securely**, or press **Decline**. The value goes to Sotto, not to the agent or its provider, and never into the chat, the thread's history or a log. The agent gets either a reference that Sotto's own tools use once, such as typing it into a password field in Sotto's browser, or a file only you can read, for a command such as `sudo -S`. Either is gone after an hour, or sooner when the agent lets it go, the thread closes or Sotto quits. A card closes by itself after ten minutes unless the agent asked for longer, up to an hour.
+
+The card counts in Needs you. A phone, the popup and Watcher show its words with **Decline** only: the values are always typed in Sotto's main window on the computer that runs the thread. Threads on a paired host and Antigravity threads do not have secret requests yet.
+
 ### Codex's Computer Use
 
 Codex can see and operate the apps on your computer with its Computer Use, as it does in the Codex app. In Sotto it works when two things are true:
