@@ -721,3 +721,19 @@ fn reads_the_folder_as_nodes_status_reader_does() {
     assert_eq!(read_status(&text(&f.repo), false).unwrap().branch, None);
     assert!(!read_status(&text(f.dir.path()), false).unwrap().is_repository);
 }
+
+/// A Git action that prints more than Node's runner keeps is neither stopped nor failed: the first 8,000,000 bytes come
+/// back and every line still reaches the line reader, as Node's `spawnCommand` reads on.
+#[test]
+fn a_git_action_that_prints_more_than_the_limit_keeps_the_first_part_and_finishes() {
+    let f = Fixture::new(false);
+    let line = "x".repeat(99);
+    f.write("big.txt", &format!("{line}\n").repeat(90_000));
+    let oid = f.git(&["hash-object", "-w", "big.txt"]);
+    let seen = Arc::new(Mutex::new(0usize));
+    let counter = Arc::clone(&seen);
+    let lines: LineSink = Arc::new(move |_| *counter.lock().unwrap() += 1);
+    let printed = run_action_git_with(&text(&f.repo), &["cat-file", "blob", &oid], COMMAND_DEADLINE, ActionGitExtras { lines: Some(lines), ..ActionGitExtras::default() }).unwrap();
+    assert_eq!(printed.len(), 8_000_000);
+    assert_eq!(*seen.lock().unwrap(), 90_000);
+}

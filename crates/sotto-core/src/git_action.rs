@@ -125,7 +125,7 @@ pub fn git_action_phases(action: GitStackedAction, feature_branch: bool) -> Vec<
 pub fn git_action_stages(action: GitStackedAction, has_message: bool, has_changes: bool, push_target: Option<&str>, feature_branch: bool, push_before_pr: bool) -> Vec<String> {
     let owned = |lines: &[&str]| lines.iter().map(ToString::to_string).collect::<Vec<_>>();
     let branch = if feature_branch { owned(&["Preparing feature ref..."]) } else { Vec::new() };
-    let push = push_target.map_or_else(|| "Pushing...".to_string(), |target| format!("Pushing to {target}..."));
+    let push = push_target.filter(|target| !target.is_empty()).map_or_else(|| "Pushing...".to_string(), |target| format!("Pushing to {target}..."));
     let pr = owned(&["Preparing PR...", "Generating PR content...", "Creating pull request..."]);
     match action {
         GitStackedAction::Push => return vec![push],

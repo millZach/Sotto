@@ -2981,7 +2981,7 @@ fn run_git_clean(
         true,
         Instant::now() + Duration::from_secs(10),
         TimeoutStop::Kill,
-        None,
+        Readers::default(),
     )
 }
 
@@ -2990,7 +2990,7 @@ fn run_git_status_cmd_with_deadline(
     args: &[&str],
     deadline: Instant,
 ) -> Result<GitRunOutput, GitRunError> {
-    run_git_impl(folder, args, &[], None, None, false, deadline, TimeoutStop::Kill, None)
+    run_git_impl(folder, args, &[], None, None, false, deadline, TimeoutStop::Kill, Readers::default())
 }
 
 fn run_git_status_with_deadline(
@@ -3057,8 +3057,9 @@ fn run_git_impl(
     strip_all_git_env: bool,
     deadline: Instant,
     stop: TimeoutStop,
-    lines: Option<LineSink>,
+    readers: Readers,
 ) -> Result<GitRunOutput, GitRunError> {
+    let Readers { lines, keep_reading } = readers;
     if Instant::now() >= deadline {
         return Err(GitRunError::Failed("git timed out".into()));
     }
@@ -3142,7 +3143,7 @@ fn run_git_impl(
     let reader = std::thread::spawn(move || -> (Vec<u8>, bool) {
         let _reading = stdout_reading;
         match stdout_pipe {
-            Some(stdout) => read_pipe(stdout, max_buffer, true, stdout_lines.as_ref()),
+            Some(stdout) => read_pipe(stdout, max_buffer, !keep_reading, stdout_lines.as_ref()),
             None => (Vec::new(), false),
         }
     });
@@ -3150,7 +3151,7 @@ fn run_git_impl(
         let _reading = reading;
         // As much of what Git said as its output may hold, so the last lines a refusal quotes are there.
         match stderr_pipe {
-            Some(stderr) => read_pipe(stderr, Some(max_buffer.unwrap_or(16 * 1024)), lines.is_none(), lines.as_ref()).0,
+            Some(stderr) => read_pipe(stderr, Some(max_buffer.unwrap_or(16 * 1024)), !keep_reading && lines.is_none(), lines.as_ref()).0,
             None => Vec::new(),
         }
     });
@@ -3168,7 +3169,7 @@ fn run_git_impl(
                     settle_by = Instant::now() + TIMEOUT_GRACE;
                     break stop_at_deadline(&mut child, stop, settle_by);
                 }
-                if reader.is_finished() {
+                if reader.is_finished() && !keep_reading {
                     // Reader stopped early (e.g., max_buffer overflow); kill if still running.
                     let _ = child.kill();
                     break child.wait();
@@ -3194,7 +3195,7 @@ fn run_git_impl(
     let status =
         status.map_err(|e| GitRunError::Failed(format!("Could not wait for git: {e}")))?;
     let stdout_str = String::from_utf8_lossy(&buf).into_owned();
-    if overflowed {
+    if overflowed && !keep_reading {
         return Err(GitRunError::MaxBuffer(stdout_str));
     }
     if !status.success() {
@@ -3215,7 +3216,7 @@ fn run_git_impl(
 pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Duration>) -> Result<String, String> {
     // Node gives a removal no deadline at all; a day stands for none.
     let deadline = Instant::now() + deadline.unwrap_or(Duration::from_secs(86_400));
-    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline, TimeoutStop::Kill, None).map(|o| o.stdout).map_err(|e| match e {
+    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline, TimeoutStop::Kill, Readers::default()).map(|o| o.stdout).map_err(|e| match e {
         GitRunError::Unavailable(_) => "Git is unavailable. Install Git or explicitly choose a shared working copy.".into(),
         GitRunError::MaxBuffer(_) => "Git returned too much output. Nothing was removed.".into(),
         GitRunError::Failed(msg) if msg == "git timed out" => "Git took too long.".into(),
@@ -3237,6 +3238,14 @@ pub(crate) fn run_action_git(folder: &str, args: &[&str], deadline: Duration) ->
 /// Each line a command prints, as it prints it, without its line ending: Node's `onLine`.
 pub(crate) type LineSink = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
+/// What a command's output readers do beyond keeping it: hand each line to `lines`, and, with `keep_reading`, read on
+/// past the output limit, keeping nothing more, rather than stop the command there.
+#[derive(Default)]
+struct Readers {
+    lines: Option<LineSink>,
+    keep_reading: bool,
+}
+
 /// What a Git action may hand Git beyond its arguments, as Node's `GitCommandOptions` carries them: variables of its own,
 /// text on standard input, so a message or a path list is never an argument, and a reader of each line printed.
 #[derive(Default)]
@@ -3248,7 +3257,9 @@ pub(crate) struct ActionGitExtras<'a> {
 
 /// `run_action_git` with what `extras` adds.
 pub(crate) fn run_action_git_with(folder: &str, args: &[&str], deadline: Duration, extras: ActionGitExtras<'_>) -> Result<String, String> {
-    run_git_impl(folder, args, extras.env, extras.stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, extras.lines)
+    // Node's runner keeps the first 8,000,000 bytes and reads on: a Git action is never stopped or failed for printing more.
+    let readers = Readers { lines: extras.lines, keep_reading: true };
+    run_git_impl(folder, args, extras.env, extras.stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers)
         .map(|o| o.stdout)
         .map_err(action_git_words)
 }
