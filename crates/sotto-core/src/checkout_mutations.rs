@@ -59,6 +59,13 @@ impl CheckoutHolder {
         format!("{} Nothing was changed. {}", self.holding(), self.recovery())
     }
 
+    /// A change to the checkout refused for this holder, naming `thread`, the thread that holds it, where one does, as
+    /// Node's `CheckoutHeldRefusal` carries it.
+    pub(crate) fn refused(&self, thread: Option<&str>) -> ChangeRefused {
+        let held_by = thread.map_or(HeldBy::Sotto, |thread| HeldBy::Thread(thread.to_string()));
+        ChangeRefused { words: self.change_refused(), held_by: Some(held_by) }
+    }
+
     /// A prompt refused while a change holds its checkout, as Node's `CheckoutSendRefusal.draftMessage`.
     pub(crate) fn draft_refused(&self) -> String {
         format!("{} Your message was not sent. Your text is kept. Send it again when the action finishes.", self.holding())
@@ -67,6 +74,40 @@ impl CheckoutHolder {
     /// A queued follow-up refused while a change holds its checkout, as Node's `CheckoutSendRefusal.queuedMessage`.
     pub(crate) fn queued_refused(&self) -> String {
         format!("{} Your follow-up was not sent. It is kept in the queue. Resume the queue when the action finishes.", self.holding())
+    }
+}
+
+/// What holds a checkout that refused a change, as Node's `CheckoutHeldRefusal` names it: a thread, or Sotto's own work,
+/// such as another change, which names none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HeldBy {
+    Sotto,
+    Thread(String),
+}
+
+/// A change refused before it ran, in Node's words, and what holds the checkout when that refused it, as Node's
+/// `CheckoutHeldRefusal`; a Git command's reply names it (`checkoutHold`, #1823), so a window can offer to open the thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ChangeRefused {
+    pub(crate) words: String,
+    pub(crate) held_by: Option<HeldBy>,
+}
+
+impl ChangeRefused {
+    /// The `checkoutHold` the refused command's reply carries, as Node's `gitCommand` gives it, or none when nothing
+    /// holding the checkout refused it.
+    pub(crate) fn checkout_hold(&self) -> Option<serde_json::Value> {
+        self.held_by.as_ref().map(|held_by| match held_by {
+            HeldBy::Thread(thread) => serde_json::json!({ "threadId": thread }),
+            HeldBy::Sotto => serde_json::json!({}),
+        })
+    }
+}
+
+/// A change refused for anything but a hold on its checkout: Git's words, or a folder that cannot be read.
+impl From<String> for ChangeRefused {
+    fn from(words: String) -> Self {
+        Self { words, held_by: None }
     }
 }
 

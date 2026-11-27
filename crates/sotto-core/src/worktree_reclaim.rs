@@ -1709,7 +1709,7 @@ pub fn threads_in_checkout(folder: &str, others: &[(String, String)]) -> Result<
 mod restore;
 mod working_copy;
 pub use working_copy::{existing_worktree, project_working_directory, selected_working_copy, WorkingCopySelection};
-pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, working_copy_command_shape, NO_CHECKOUT_TO_SWITCH, RESTORE_BRANCH_NEEDS_CONFIRMATION};
+pub use restore::{existing_folder, inspect, read_working_copy, restore_thread_branch, send_working_copy, shared_working_copy, thread_working_directory, with_repository, working_copy_command_shape, NO_CHECKOUT_TO_SWITCH, RESTORE_BRANCH_NEEDS_CONFIRMATION};
 
 #[cfg(test)]
 mod tests;

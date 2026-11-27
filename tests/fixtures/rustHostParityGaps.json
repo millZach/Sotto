@@ -152,10 +152,6 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "git-init": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "git-link-pull-request": {
       "node": "refused",
       "rust": "invalid_request"
@@ -164,15 +160,7 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "git-pull": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "git-pull-request-action": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "git-switch-branch": {
       "node": "refused",
       "rust": "invalid_request"
     },

@@ -259,6 +259,16 @@ pub struct AgentThreadWorktree {
 }
 
 impl AgentThreadWorktree {
+    /// The project's place in this working copy, as Node's `resolveThreadWorkingDirectory` reads it: the folder with the
+    /// project's path inside it, when the project is a subfolder of its repository. `None` when no folder is recorded.
+    pub fn project_folder(&self) -> Option<String> {
+        let path = self.path.clone()?;
+        Some(match self.extra.get("projectRelativePath").and_then(Value::as_str).filter(|place| !place.is_empty()) {
+            Some(place) => format!("{path}/{place}"),
+            None => path,
+        })
+    }
+
     /// Whether Sotto removed this folder (ADR-0041), as Node reads `worktree.reclaimedAt`: the next send puts it back.
     pub fn reclaimed(&self) -> bool {
         match self.extra.get("reclaimedAt") {

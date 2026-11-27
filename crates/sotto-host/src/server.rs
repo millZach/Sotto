@@ -2475,6 +2475,11 @@ async fn handle_ws_request(
             if choosing && sotto_core::worktree_reclaim::WorkingCopySelection::from_command(cmd).is_none() {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
+            // And so are Pull, Switch branch and Initialize Git.
+            let local_git = matches!(cmd.get("type").and_then(Value::as_str), Some("git-pull" | "git-switch-branch" | "git-init"));
+            if local_git && sotto_core::git_local::LocalGitCommand::from_command(cmd).is_none() {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
