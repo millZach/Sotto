@@ -1011,7 +1011,8 @@ impl ProviderAdapter for CodexAdapter {
                                 provider_id: "codex".into(),
                                 ready: true,
                                 default_reasoning_effort: default_effort,
-                                reasoning_efforts: (!efforts.is_empty()).then_some(efforts),
+                                // Node orders every reported list (`orderReasoningEfforts`), so a side call runs at the least.
+                                reasoning_efforts: (!efforts.is_empty()).then(|| super::order_reasoning_efforts(&efforts)),
                                 runtime_modes: Some(vec![
                                     "approval-required".into(),
                                     "auto-accept-edits".into(),

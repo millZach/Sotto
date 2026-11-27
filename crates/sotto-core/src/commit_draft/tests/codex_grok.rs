@@ -106,6 +106,23 @@ fn codex_drafts_the_commit_in_one_ephemeral_exec_with_everything_switched_off() 
     assert!(!fixture.data().join("violations.jsonl").exists(), "side writing was not ephemeral, read-only, tool-free and on stdin");
 }
 
+/// Node puts every model's reported levels in Sotto's order as it reads Codex's catalog, so a model that reports its
+/// highest first still drafts at its least. Rust's catalog once kept Codex's own order.
+#[test]
+fn codex_drafts_at_the_least_effort_whatever_order_the_model_reports_them_in() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    fs::create_dir_all(fixture.data()).unwrap();
+    fs::write(fixture.data().join("script.json"), json!({ "models": [{ "id": "model", "model": "fixture-model", "displayName": "Fixture Codex", "isDefault": true,
+        "defaultReasoningEffort": "high", "supportedReasoningEfforts": [{ "reasoningEffort": "xhigh" }, { "reasoningEffort": "high" }, { "reasoningEffort": "low" }] }] }).to_string()).unwrap();
+    let adapter = codex(&fixture, &runtime, json!({ "text": "Fix the parser" }), Duration::from_secs(60));
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+    let asked = oneshots(&fixture);
+    let args: Vec<&str> = asked[0]["args"].as_array().unwrap().iter().map(|arg| arg.as_str().unwrap()).collect();
+    assert_eq!(args[12], "model_reasoning_effort=\"low\"", "{args:?}");
+}
+
 #[test]
 fn codex_that_fails_tries_a_tool_or_outlasts_the_deadline_leaves_nodes_stand_in_subject() {
     let runtime = runtime();

@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
 use tokio::process::{ChildStdin, ChildStdout, Command};
 
+use super::order_reasoning_efforts;
 use super::side_process::{keep_only_environment, valid_effort, valid_model_id, SideOutput};
 use crate::cli_lookup::ResolvedCli;
 use crate::side_writing::ShortTextPrompt;
@@ -590,55 +591,9 @@ fn read_offered(model: &Value) -> Option<Offered> {
     Some(Offered { id, efforts: if supports { order_reasoning_efforts(&efforts) } else { Vec::new() } })
 }
 
-/// Node's `effortKey`: lowercased, with hyphens, underscores and white space taken out.
-fn effort_key(id: &str) -> String {
-    id.to_lowercase().chars().filter(|c| !matches!(c, '-' | '_') && !crate::git_local::js_space(*c)).collect()
-}
-
-/// Node's `EFFORT_RANK`: the levels whose place is known, least thorough first.
-fn effort_rank(id: &str) -> Option<u8> {
-    Some(match effort_key(id).as_str() {
-        "off" | "none" => 0,
-        "minimal" => 1,
-        "low" => 2,
-        "medium" => 3,
-        "high" => 4,
-        "xhigh" | "extrahigh" => 5,
-        "max" => 6,
-        "ultra" => 7,
-        "ultracode" => 8,
-        _ => return None,
-    })
-}
-
-/// Node's `orderReasoningEfforts`: repeats dropped, and the list turned round as a whole when its known levels run
-/// highest first, as Grok reports them.
-fn order_reasoning_efforts(ids: &[String]) -> Vec<String> {
-    let mut unique: Vec<String> = Vec::new();
-    for id in ids {
-        if !unique.contains(id) {
-            unique.push(id.clone());
-        }
-    }
-    let ranks: Vec<u8> = unique.iter().filter_map(|id| effort_rank(id)).collect();
-    if ranks.len() > 1 && ranks[0] > ranks[ranks.len() - 1] {
-        unique.reverse();
-    }
-    unique
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn orders_efforts_as_nodes_order_reasoning_efforts_does() {
-        let order = |ids: &[&str]| order_reasoning_efforts(&ids.iter().map(|id| id.to_string()).collect::<Vec<_>>());
-        assert_eq!(order(&["xhigh", "high", "medium", "low"]), ["low", "medium", "high", "xhigh"]);
-        assert_eq!(order(&["low", "high", "low"]), ["low", "high"]);
-        assert_eq!(order(&["Extra_High", "custom", "minimal"]), ["minimal", "custom", "Extra_High"]);
-        assert_eq!(order(&["high", "custom"]), ["high", "custom"]);
-    }
 
     #[test]
     fn reads_a_new_session_as_nodes_session_schema_does() {
