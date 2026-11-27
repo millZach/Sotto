@@ -181,6 +181,11 @@ export interface DesktopEngine {
   hostedGitChangesCall(method: HostedGitChangesMethod, payload: unknown): Promise<ToolsResult<unknown>>
   hostedBrowserCall(request: HostBrowserThreadRequest): Promise<ToolsResult<unknown>>
   hostedBrowserAddress(hostId: string): string | undefined | Promise<string | undefined>
+  /**
+   * One use of a secret reference by Sotto's browser in the thread it was given to (ADR-0219): the value once, then
+   * the reference is gone; null for one that is unknown, used, expired or another thread's. Absent without the feature.
+   */
+  takeSecret?(threadId: string, ref: string): Promise<string | null>
   turnRecordsInfo(): Promise<EngineTurnRecordsInfo>
 
   // E2E-only hooks (inert in packaged builds).

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { BrowserInputRequest, BrowserWatchRequest, HostBrowserFrame } from './hostBrowser'
 import { UNSAFE_URL_CHARACTERS } from './externalLinks'
 import { fileWorkspaceSchema } from './files'
+import { SECRET_REF_PATTERN } from './secretRequests'
 import { toolTargetSchema, type ToolsResult } from './tools'
 
 export const BROWSER_CHANNEL = 'sotto:browser:'
@@ -70,7 +71,9 @@ export const browserActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('inspect') }).strict(), z.object({ type: z.literal('screenshot') }).strict(),
   z.object({ type: z.literal('navigate'), url: browserUrlSchema }).strict(),
   z.object({ type: z.literal('click'), x: coordinate, y: coordinate }).strict(),
-  z.object({ type: z.literal('type'), text: z.string().max(4000) }).strict(),
+  // A secret request's one-use reference (ADR-0219) is typed in its place: the value is looked up as it is typed, never sent or shown.
+  z.object({ type: z.literal('type'), text: z.string().max(4000).optional(), secretRef: z.string().regex(SECRET_REF_PATTERN).optional() }).strict()
+    .refine(action => (action.text === undefined) !== (action.secretRef === undefined), 'Pass text or secretRef, not both.'),
   z.object({ type: z.literal('scroll'), x: coordinate, y: coordinate, deltaX: z.number().finite().min(-4096).max(4096), deltaY: z.number().finite().min(-4096).max(4096) }).strict(),
   z.object({ type: z.literal('viewport'), ...viewportShape }).strict(),
   z.object({ type: z.literal('tap'), x: coordinate, y: coordinate }).strict(),

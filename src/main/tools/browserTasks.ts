@@ -48,6 +48,11 @@ export interface BrowserTaskDependencies {
   readonly filePages?: ThreadFilePages
   /** Read at each refusal, so the window's language is the one it is in now. */
   words(): BrowserTaskWords
+  /**
+   * A secret request's value for its one-use reference (ADR-0219), taken as it is typed and gone from Sotto once
+   * typed; null when the reference is unknown, used, expired or another thread's. Absent, no secret is typed here.
+   */
+  secret?(threadId: string, ref: string): Promise<string | null>
 }
 
 /**
@@ -338,7 +343,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     const where = record.page.device ? `on the test iPhone at ${record.page.url}` : `on ${record.page.url}`
     const description = action.type === 'navigate' ? `${record.initial ? record.page.device ? 'Open this page on the test iPhone and share it with the thread' : 'Open and share this page with the thread' : 'Navigate this page'}: ${action.url}`
       : action.type === 'click' ? `Click at ${action.x}, ${action.y} ${where}` : action.type === 'tap' ? `Tap at ${action.x}, ${action.y} ${where}`
-        : action.type === 'type' ? `Type ${JSON.stringify(action.text)} into the focused field ${where}` : action.type === 'key' ? `Press ${action.key} ${where}` : action.type
+        : action.type === 'type' ? action.secretRef ? `Type a secret you saved into the focused password field ${where}` : `Type ${JSON.stringify(action.text)} into the focused field ${where}` : action.type === 'key' ? `Press ${action.key} ${where}` : action.type
     task.pendingAction = { id: randomUUID(), action, description, expiresAt: Date.now() + 5 * 60_000 }
     this.pending.set(task.id, { generation: record.generation, url: record.page.url, initial: record.initial, ...(target ? { target } : {}) })
     return { task: this.publishTask(task), approvalRequired: true }
@@ -425,7 +430,14 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
         output = 'Navigation started. Inspect the page after it finishes loading.'
       } else if (action.type === 'inspect') output = await record.automation.inspect()
       else if (action.type === 'screenshot') { capture = await record.automation.capture(record.page.url); image = capture.image; output = JSON.stringify({ url: capture.url, width: capture.width, height: capture.height }) }
-      else {
+      else if (action.type === 'type' && action.secretRef) {
+        // Taken only now, so a declined or lapsed request spends nothing. The value is typed and forgotten here.
+        const value = this.base.secret ? await this.base.secret(record.page.workspace.threadId, action.secretRef) : null
+        if (value === null) fail('blocked', this.base.secret ? 'This secretRef is unknown, used or expired. Ask for it again with request_secret.' : 'Secret references are typed only in Sotto\'s browser on this computer.')
+        guard()
+        await record.automation.typeSecret(value!, guard)
+        output = 'type completed.'
+      } else {
         await record.automation.input(action, guard)
         if (action.type === 'viewport') { record.page.viewport = { width: action.width, height: action.height }; this.publish(record) }
         output = `${action.type} completed.`
@@ -443,7 +455,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
       task.output = output
       const grantNote = granted ? ' Not asked: you let this thread use the browser without asking.' : ''
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: action.type === 'type' ? `Entered text in the focused field.${grantNote}` : action.type === 'key' ? `Pressed ${action.key}.${grantNote}` : action.type === 'inspect' ? 'Inspected the page and recent console and network errors.' : granted ? `${output}${grantNote}` : output.slice(0, 2000), url: observedUrl, viewport: record.page.viewport ?? null })
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: action.type === 'type' ? action.secretRef ? `Entered a secret you saved in the focused password field.${grantNote}` : `Entered text in the focused field.${grantNote}` : action.type === 'key' ? `Pressed ${action.key}.${grantNote}` : action.type === 'inspect' ? 'Inspected the page and recent console and network errors.' : granted ? `${output}${grantNote}` : output.slice(0, 2000), url: observedUrl, viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40)
       return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
     } catch (error) {

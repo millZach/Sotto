@@ -8,6 +8,7 @@ import { boundedRecord } from './boundedRecord'
 import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { providerProfile } from './providerProfile'
 import { subagentSummarySchema } from './subagents'
+import { secretRequestCardSchema } from './secretRequests'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
 import { agentActivitySchema, AGENT_VIDEO_MAX_BYTES, AGENT_VIDEO_MIME_TYPES, AGENT_VIDEO_PART_BYTES, AGENT_VIDEO_PARTS_MAX, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
@@ -511,6 +512,9 @@ export const agentRequestSchema = z.object({
   skippable: z.literal(true).optional(),
   delivery: z.literal('uncertain').optional(),
   answerRetryReady: z.literal(true).optional(),
+  /** A **secret request** (CONTEXT.md, ADR-0219): the card's fields by name and label, never a value. Sotto adds it to its
+   * own request; no provider does. A client that predates it shows the request's words and its one choice, Decline. */
+  secretRequest: secretRequestCardSchema.optional(),
   /** When the host's coordinator first showed this request (ADR-0135), so a client can say how long it has waited.
    * The host adds it; no provider does. Absent from hosts that predate it, which say no wait at all. */
   since: z.string().datetime().optional(),

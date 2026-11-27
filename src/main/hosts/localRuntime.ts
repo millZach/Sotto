@@ -18,7 +18,7 @@ export type DesktopLocalRuntime = Omit<Partial<RunningRuntime>, 'agentControl' |
   agentHost: Pick<RunningRuntime['agentHost'],
     'watcherThreadIds' | 'dormantThreadIds' | 'workspaceSnapshot' | 'snapshot' | 'subscribe' | 'subscribeSubagents' |
     'setCheckpointHooks' | 'useBrowserTools' | 'useThreadTools' | 'setMutationGuard' | 'gitActionFinished' |
-    'dispose' | 'disconnect' | 'close' | 'admitsVisuals' | 'addVisual' | 'admitsShownMedia' | 'showMedia' | 'admitsPluginTools' |
+    'dispose' | 'disconnect' | 'close' | 'admitsVisuals' | 'addVisual' | 'admitsShownMedia' | 'showMedia' | 'admitsPluginTools' | 'admitsSecretRequests' |
     'admitsTellWatcher' | 'threadMessage' | 'threadMessages' | 'visual' | 'acquireTerminalStart' | 'setWorktreeInUse' |
     'workingCopyOptions' | 'writeShortTextOn' | 'subagentPage' | 'subagentAssignments' | 'admitsBabysitting' |
     'threadPullRequests' | 'linkThreadPullRequest' | 'preservesDormantThread' | 'rollbackCapability' |

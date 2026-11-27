@@ -44,6 +44,8 @@ export interface BrowserDependencies {
   readonly pointAtSomething?: boolean
   /** Where a thread's own HTML files are served for its agent to open (ADR-0085's October 27 amendment); one is made when absent. */
   filePages?: ThreadFilePages
+  /** A secret request's value for its one-use reference (ADR-0219), from the engine that holds it. */
+  secret?(threadId: string, ref: string): Promise<string | null>
 }
 
 /** Untrusted browsing is wholly separate from the application renderer and its session. */
@@ -59,7 +61,8 @@ export class BrowserService extends BrowserTasks<PageRecord> {
   private readonly pointRequests = new Map<string, number>()
   constructor(private readonly dependencies: BrowserDependencies) {
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => dependencies.byDefault(), words: browserWords,
-      ...dependencies.filePages ? { filePages: dependencies.filePages } : {} })
+      ...dependencies.filePages ? { filePages: dependencies.filePages } : {},
+      ...dependencies.secret ? { secret: (threadId: string, ref: string) => dependencies.secret!(threadId, ref) } : {} })
   }
   protected readPage(record: PageRecord): void {
     if (record.view.webContents.isDestroyed()) return

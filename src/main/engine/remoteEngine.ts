@@ -364,6 +364,7 @@ export async function startOutOfProcessEngine(
       connection.request<ToolsResult<unknown>>('engine:hostedBrowserCall', [request]),
     hostedBrowserAddress: (hostId: string) =>
       connection.request<string | undefined>('engine:hostedBrowserAddress', [hostId]),
+    takeSecret: (threadId: string, ref: string) => connection.request<string | null>('engine:takeSecret', [threadId, ref]),
     turnRecordsInfo: () => connection.request<EngineTurnRecordsInfo>('engine:turnRecordsInfo'),
 
     e2eAgentEvent: (payload: unknown) => { connection.sendPush('engine:e2eAgentEvent', payload) },

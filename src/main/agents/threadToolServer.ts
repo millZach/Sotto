@@ -3,7 +3,9 @@ import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 
 export interface ThreadToolDefinition { name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>;
-  annotations?: { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean } }
+  annotations?: { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean }
+  /** MCP's own metadata, sent as it is: `anthropic/alwaysLoad` keeps Claude Code from hiding a tool behind its tool search. */
+  _meta?: Record<string, unknown> }
 export interface ThreadToolResult {
   content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
   isError?: boolean

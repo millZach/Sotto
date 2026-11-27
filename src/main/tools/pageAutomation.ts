@@ -95,6 +95,11 @@ export abstract class PageAutomation {
   private viewport: { width: number; height: number } | null = null
   private readonly errors: { kind: string; message: string }[] = []
   /**
+   * Secrets typed into this page from a secret request (ADR-0219), held only in memory while it is open, so whatever
+   * the page says back (its words, errors, an evaluated value) reaches the agent with each one masked.
+   */
+  private readonly typedSecrets = new Set<string>()
+  /**
    * `touch` is the test iPhone's (ADR-0045): while attached, the page sees a touch screen and the mouse taps it.
    * `prepareCapture` lends the page a surface to draw into while it is off screen, and returns its release.
    */
@@ -291,7 +296,25 @@ export abstract class PageAutomation {
       returnByValue: true,
     }) as { result?: { value?: unknown } }
     const output = JSON.stringify({ url: this.page.url(), nodes, elements: dom.result?.value ?? [], errors: this.errors, truncated: (result.nodes?.length ?? 0) > 200 })
-    return output.length <= 200_000 ? output : JSON.stringify({ url: this.page.url(), nodes: nodes.slice(0, 100), errors: this.errors.slice(-10), truncated: true })
+    return this.masked(output.length <= 200_000 ? output : JSON.stringify({ url: this.page.url(), nodes: nodes.slice(0, 100), errors: this.errors.slice(-10), truncated: true }))
+  }
+  /** `text` with every secret typed into this page masked, as written and as JSON writes it. */
+  masked(text: string): string {
+    let result = text
+    for (const secret of this.typedSecrets) {
+      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)])) if (form.length >= 3) result = result.split(form).join('••••••••')
+    }
+    return result
+  }
+  /**
+   * Types a secret request's value into the focused password field (ADR-0219). The field was checked when the action
+   * was asked for; the value is remembered only to mask it in what the page says back, and forgotten with the page.
+   */
+  async typeSecret(value: string, guard: () => void): Promise<void> {
+    await this.ready()
+    guard()
+    this.typedSecrets.add(value)
+    await this.send('Input.insertText', { text: value })
   }
   /**
    * One picture of the page as Chromium drew it, within the snapshot deadline. `rect` is in the visual viewport's CSS
@@ -387,6 +410,8 @@ export abstract class PageAutomation {
       // Top-level activeElement can be an iframe or a closed-shadow host while
       // insertText targets an unseen focused descendant. Do not approve that proxy.
       if ((!nativeInput && !editable) || node?.shadowRoots?.some(root => root.shadowRootType !== 'user-agent')) return fail('blocked', 'Typing goes only into a plain text field with focus, and the focused element is not one (it may be a frame or a closed custom element). Click a plain text field, then type.')
+      // A secret goes only where the page masks it, so no screenshot shows it to the agent (ADR-0219).
+      if (action.secretRef && (node?.nodeName !== 'INPUT' || attributes.get('type') !== 'password')) return fail('blocked', 'A secretRef is typed only into a password field, which the page masks. Click a password field, then type it.')
     }
     return JSON.stringify(result.node).slice(0, 16_000)
   }
@@ -438,7 +463,10 @@ export abstract class PageAutomation {
       await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(action.x), y: Math.round(action.y), button: 'left', clickCount: 1 })
       // Press/release is one operation. Always release when Pause arrives mid-click.
       await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(action.x), y: Math.round(action.y), button: 'left', clickCount: 1 })
-    } else if (action.type === 'type') await this.send('Input.insertText', { text: action.text })
+    } else if (action.type === 'type') {
+      if (action.text === undefined) return fail('blocked', 'Pass the text to type.')
+      await this.send('Input.insertText', { text: action.text })
+    }
     else if (action.type === 'scroll') await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: action.x, y: action.y, deltaX: action.deltaX, deltaY: action.deltaY })
     else {
       await this.send('Emulation.setDeviceMetricsOverride', { width: action.width, height: action.height, deviceScaleFactor: 1, mobile: false })
@@ -452,6 +480,7 @@ export abstract class PageAutomation {
   }
   clear(): void { this.errors.length = 0 }
   dispose(): void {
+    // Typed secrets stay masked until the page itself closes: the field still holds them after its sharing ends.
     this.clear()
     this.pointSession++
     this.pointing = null; this.hovered = null; this.hoverRequest++
