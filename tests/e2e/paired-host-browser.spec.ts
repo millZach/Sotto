@@ -52,7 +52,7 @@ test('a thread on a paired host browses in the host\'s Chromium, shown and drive
       await setup.close()
       // The host gave its threads Sotto's browser tools; the agent's call is made here as its provider would make it, by
       // the provider's own session (`workshop`), which the host turns into its thread.
-      expect(native.browserTools?.definitions.map(tool => tool.name)).toEqual(['browser_pages', 'browser_open', 'browser_start', 'browser_action', 'browser_status', 'browser_finish'])
+      expect(native.browserTools?.definitions.map(tool => tool.name)).toEqual(['browser_pages', 'browser_open', 'browser_start', 'browser_action', 'browser_status', 'browser_finish', 'browser_close'])
 
       launched = await launchSotto('success', profile)
       const { app, page } = launched

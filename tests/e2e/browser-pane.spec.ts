@@ -72,6 +72,7 @@ test('the quiet browser pane opens on its own, speaks in one strip, and puts a s
   const host = `127.0.0.1:${address.port}`
   const report: Record<string, unknown> = {}
   try {
+    // The quiet pane as stable has it: the full browser (ADR-0220), which renames Pause and Resume, is browser-parity.spec's.
     await onReleaseTrack('owl', async () => {
       const launched = await launchSotto()
       const { page } = launched
@@ -268,6 +269,6 @@ test('the quiet browser pane opens on its own, speaks in one strip, and puts a s
         await page.screenshot({ path: join(SHOTS, 'failure.png') }).catch(() => undefined)
         throw error
       } finally { await closeSotto(launched) }
-    })
+    }, { held: ['browser-parity'] })
   } finally { await new Promise<void>(done => server.close(() => done())) }
 })
