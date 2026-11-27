@@ -2947,11 +2947,20 @@ impl CoordinatorActor {
             .as_ref()
             .and_then(|w| w.base_branch.clone());
         let existing_worktree = thread.worktree.as_ref().and_then(|w| w.existing_worktree_path.clone());
+        // The thread's own working folder first, as Node's `resolveThreadWorkingDirectory` reads it: for an existing
+        // worktree it is the project's place in it, which the worktree's root is not when the project is a subfolder of
+        // its repository; without one, the worktree with the project's place in it, then the project.
         let existing_cwd = thread
-            .worktree
-            .as_ref()
-            .and_then(|w| w.path.clone())
-            .or_else(|| thread.working_directory.clone())
+            .working_directory
+            .clone()
+            .or_else(|| {
+                let wt = thread.worktree.as_ref()?;
+                let path = wt.path.clone()?;
+                Some(match wt.extra.get("projectRelativePath").and_then(Value::as_str).filter(|place| !place.is_empty()) {
+                    Some(place) => format!("{path}/{place}"),
+                    None => path,
+                })
+            })
             .unwrap_or_else(|| project_path.clone());
         // A worktree already made, which the send puts back and checks before its prompt goes out.
         let recorded = thread.worktree.clone().filter(|_| !needs_worktree);
@@ -7511,6 +7520,42 @@ mod tests {
         let coord = CoordinatorHandle::spawn(base.join("data"), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
         let shell = coord.run_command(client.clone(), json!({ "type": "configure-thread-working-copy", "threadId": holding, "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
         assert_eq!(shell["error"], "This thread already has a working folder. Start a new thread to choose another one.");
+        coord.shutdown().await;
+    }
+
+    /// A project in a subfolder of its repository works in the project's place in an existing worktree at every send, as
+    /// Node's `resolveThreadWorkingDirectory` reads the thread's working folder, not only at the first.
+    #[tokio::test]
+    async fn every_send_into_an_existing_worktree_works_in_the_projects_place_in_it() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let (repo, user) = (base.join("repo"), base.join("user-worktree"));
+        std::fs::create_dir_all(repo.join("app")).unwrap();
+        fixture_git(&repo, &["init", "-q"]);
+        std::fs::write(repo.join("app").join("README.md"), "hello\n").unwrap();
+        fixture_git(&repo, &["add", "."]);
+        fixture_git(&repo, &["commit", "-q", "-m", "First"]);
+        fixture_git(&repo, &["worktree", "add", "-q", "-b", "user-work", &user.to_string_lossy()]);
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(base.join("data"), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "App", "path": repo.join("app").to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let thread_id = "00000000-0000-4000-8000-0000000000a1";
+        run(json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Subfolder", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" })).await.unwrap();
+        run(json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "independent", "existingWorktreePath": user.to_string_lossy() })).await.unwrap();
+        for text in ["First", "Second"] {
+            let shell = run(json!({ "type": "manual-send", "threadId": thread_id, "text": text })).await.unwrap();
+            assert_eq!(shell["error"], Value::Null);
+            mock.complete_turn(thread_id, "Done");
+            wait_until_idle(&coord, thread_id).await;
+        }
+        let place = user.join("app").to_string_lossy().into_owned();
+        assert_eq!(mock.sent_folders(), vec![place.clone(), place]);
         coord.shutdown().await;
     }
 
