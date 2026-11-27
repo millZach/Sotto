@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
+use crate::side_writing::ShortTextPrompt;
 use crate::stores::StoredMessage;
 use crate::workspace::{
     now_iso, provider_label, public_provider_entity_id, AgentCapabilities, AgentModel,
@@ -160,6 +161,14 @@ pub trait ProviderAdapter: Send + Sync {
     /// while `threads.json` still binds the thread, so a record Node made is found under Node's key for it. An adapter
     /// that keeps no record of its own has nothing to forget.
     fn forget_thread(&self, _thread_id: &str) {}
+
+    /// A side call on this thread's own client, account and model (ADR-0026), as Node's adapters' `writeShortText`
+    /// make it: `Ok(None)` when this provider writes nothing for the thread, `Err` when it was asked and failed. Its
+    /// words go no further than the host and are never logged. An adapter with no side call writes nothing, as Node's
+    /// Muse, Devin and Hermes adapters write nothing.
+    fn write_short_text(&self, _thread_id: String, _prompt: ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
+        Box::pin(async { Ok(None) })
+    }
 }
 
 /// Stand-in adapter for providers held by an Owl feature gate or inactive during a referee run.
@@ -254,6 +263,17 @@ pub struct MockProviderAdapter {
     forgotten: Arc<Mutex<Vec<String>>>,
     /// The folder each send went to, in order.
     sent_folders: Arc<Mutex<Vec<String>>>,
+    /// What the next side calls answer, in order; once they run out, it writes nothing.
+    side_answers: Arc<Mutex<std::collections::VecDeque<SideAnswer>>>,
+    /// Each side call asked of it, in order, by thread.
+    side_calls: Arc<Mutex<Vec<(String, ShortTextPrompt)>>>,
+}
+
+/// What one of the mock's side calls answers: what it wrote or why it failed, after an optional wait.
+#[derive(Debug, Clone)]
+pub struct SideAnswer {
+    pub delay: std::time::Duration,
+    pub written: Result<Option<String>, String>,
 }
 
 /// The adapter's ends of a held read: it tells the test the read began, and waits for what the read returns.
@@ -280,7 +300,19 @@ impl MockProviderAdapter {
             held_read: Arc::new(Mutex::new(None)),
             forgotten: Arc::new(Mutex::new(Vec::new())),
             sent_folders: Arc::new(Mutex::new(Vec::new())),
+            side_answers: Arc::default(),
+            side_calls: Arc::default(),
         }
+    }
+
+    /// Queues what the next side call answers.
+    pub fn answer_side_call(&self, answer: SideAnswer) {
+        self.side_answers.lock().unwrap().push_back(answer);
+    }
+
+    /// Each side call asked of it so far, in order, by thread.
+    pub fn side_calls(&self) -> Vec<(String, ShortTextPrompt)> {
+        self.side_calls.lock().unwrap().clone()
     }
 
     /// The threads the host asked this adapter to forget, in order.
@@ -536,6 +568,16 @@ impl ProviderAdapter for MockProviderAdapter {
             };
             let _ = started.send(());
             finish.await.unwrap_or(Ok(None))
+        })
+    }
+
+    fn write_short_text(&self, thread_id: String, prompt: ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
+        self.side_calls.lock().unwrap().push((thread_id, prompt));
+        let answer = self.side_answers.lock().unwrap().pop_front();
+        Box::pin(async move {
+            let Some(answer) = answer else { return Ok(None) };
+            tokio::time::sleep(answer.delay).await;
+            answer.written
         })
     }
 }

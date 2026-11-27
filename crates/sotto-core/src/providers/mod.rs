@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod claude;
+mod claude_side;
 pub mod claude_history;
 pub mod codex;
 pub mod muse;

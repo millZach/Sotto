@@ -35,6 +35,8 @@ pub struct ClaudeAdapterConfig {
     pub claude_home: Option<PathBuf>,
     pub request_timeout_ms: u64,
     pub use_cli_lookup: bool,
+    /// How long a side call has to answer (ADR-0026): Node's 90 seconds, or a test's shorter one.
+    pub side_writing_deadline: Duration,
 }
 
 /// Where Claude Code keeps its transcripts when Sotto names no other folder: `~/.claude` under the home folder Node's
@@ -58,6 +60,7 @@ impl ClaudeAdapterConfig {
             claude_home: None,
             request_timeout_ms: 30_000,
             use_cli_lookup: true,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
 
@@ -73,6 +76,7 @@ impl ClaudeAdapterConfig {
             claude_home: Some(claude_home),
             request_timeout_ms: 2_000,
             use_cli_lookup: false,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
 }
@@ -861,6 +865,22 @@ impl ClaudeAdapter {
         }
     }
 
+    /// The user's Claude Code with its own leading arguments, found as a thread's session finds it, or `None` when it
+    /// is not installed.
+    fn side_command(&self) -> Option<Command> {
+        if !self.config.use_cli_lookup {
+            let mut command = Command::new(&self.config.executable);
+            command.args(&self.config.prefix_args);
+            return Some(command);
+        }
+        let options = crate::cli_lookup::CliLookupOptions::from_process_env();
+        let resolved = crate::cli_lookup::resolve_provider_cli("claude", &self.config.data_directory, &options)?;
+        let mut command = Command::new(&resolved.executable);
+        command.args(&resolved.prefix_args).args(&self.config.prefix_args);
+        resolved.apply_tokio(&mut command);
+        Some(command)
+    }
+
     async fn ensure_thread_session(
         &self,
         req: &SendMessageRequest,
@@ -1262,6 +1282,30 @@ impl ProviderAdapter for ClaudeAdapter {
                 });
             }
             Ok(())
+        })
+    }
+
+    /// Node's `writeShortText`: a side call on this thread's model, at its least effort, in its folder, as a separate
+    /// print run with no session, so the thread's own Claude Code is neither started nor resumed for it. Nothing is
+    /// written while Claude Code is not connected, for a thread it has no record of, or when the client is not found.
+    fn write_short_text(&self, thread_id: String, prompt: crate::side_writing::ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
+        Box::pin(async move {
+            if self.shared.status.lock().unwrap().connection != "connected" {
+                return Ok(None);
+            }
+            let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
+                return Ok(None);
+            };
+            // Node's record always names its model; one that does not has nothing to write on.
+            let Some(model) = record.model_id else {
+                return Ok(None);
+            };
+            let Some(command) = self.side_command() else {
+                return Ok(None);
+            };
+            let effort = crate::side_writing::side_writing_effort(&self.models(), &public_provider_entity_id("claude", "model", &model));
+            let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
+            super::claude_side::write(command, &prompt, &model, effort.as_deref(), Path::new(&cwd), self.config.side_writing_deadline).await.map(Some)
         })
     }
 

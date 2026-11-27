@@ -274,7 +274,7 @@ fn configure_shape(command: &Map<String, Value>) -> Result<(), CoordinatorError>
 
 /// The catalog's model for an ID, as Node's `resolveModel` finds it: the ID itself, or for a Claude long-context
 /// variant (`…[1m]`) the base model it is offered on.
-fn resolve_model<'a>(models: &'a [AgentModel], model_id: &str) -> Option<&'a AgentModel> {
+pub(crate) fn resolve_model<'a>(models: &'a [AgentModel], model_id: &str) -> Option<&'a AgentModel> {
     if let Some(exact) = models.iter().find(|m| m.id == model_id) {
         return Some(exact);
     }
