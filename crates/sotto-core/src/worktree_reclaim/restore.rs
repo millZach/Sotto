@@ -15,7 +15,8 @@ use super::*;
 /// Node's `RESTORE_BRANCH_NEEDS_CONFIRMATION` (`src/shared/agents.ts`).
 pub const RESTORE_BRANCH_NEEDS_CONFIRMATION: &str = "This folder has uncommitted changes. They move with the switch, so confirm it first.";
 const REPAIR_STOPPED: &str = "Sotto could not put back this worktree’s missing files, so Git cannot use it yet. Nothing committed is lost.";
-const NO_CHECKOUT_TO_SWITCH: &str = "This thread has no project checkout to switch.";
+/// Restore branch for a thread with no shared project checkout, as Node's `restoreThreadBranch` says it.
+pub const NO_CHECKOUT_TO_SWITCH: &str = "This thread has no project checkout to switch.";
 const NOTHING_SENT_YET: &str = "Sotto has not sent to this thread yet, so there is no earlier branch to restore.";
 /// How long Git may take to add a worktree, as Node's deadline for `worktree add`.
 const ADD_DEADLINE: Duration = Duration::from_secs(300);
@@ -83,6 +84,21 @@ pub(super) fn with_checked_out_branch(metadata: &AgentThreadWorktree, branch: Op
     record
 }
 
+/// A record of a folder removed on `branch`, or with none on `detached_commit`, at `at`, as Node's `reclaimedRecord` and
+/// the record of a removal this process finished make it.
+pub(super) fn reclaimed_on(metadata: &AgentThreadWorktree, branch: Option<String>, detached_commit: Option<String>, at: String) -> AgentThreadWorktree {
+    let mut record = with_checked_out_branch(metadata, branch);
+    record.status = "ready".into();
+    record.error = None;
+    record.extra.remove("dirty");
+    match detached_commit {
+        Some(commit) => record.extra.insert("detachedCommit".into(), Value::String(commit)),
+        None => record.extra.remove("detachedCommit"),
+    };
+    record.extra.insert("reclaimedAt".into(), Value::String(at));
+    record
+}
+
 /// A record Git has just confirmed: ready, with no error, and, since its folder is there, not reclaimed.
 fn confirmed(mut record: AgentThreadWorktree, dirty: bool) -> AgentThreadWorktree {
     record.status = "ready".into();
@@ -123,7 +139,7 @@ pub fn with_repository(metadata: &AgentThreadWorktree, project_path: &str) -> Ag
 }
 
 /// Whether `path` is a folder Sotto reserved for a thread's worktree: a whole UUID's name directly in `allocation_root`.
-fn reserved_place(path: &Path, allocation_root: &Path) -> bool {
+pub(super) fn reserved_place(path: &Path, allocation_root: &Path) -> bool {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     path_key(&dirname(path)) == path_key(allocation_root) && name.len() == 36 && name.bytes().all(|b| matches!(b, b'a'..=b'f' | b'0'..=b'9' | b'-'))
 }
@@ -434,16 +450,7 @@ fn resume_in_turn(metadata: &AgentThreadWorktree, path: &Path, repository_root: 
         let finished = finished_removals().get(&path_key(path)).cloned();
         match finished {
             Some(finished) if !metadata.reclaimed() && reserved_folder(path).unwrap_or(Reserved::Occupied) != Reserved::Occupied => {
-                let mut record = with_checked_out_branch(metadata, finished.branch);
-                record.status = "ready".into();
-                record.error = None;
-                record.extra.remove("dirty");
-                record.extra.insert("reclaimedAt".into(), Value::String(finished.at));
-                match finished.detached_commit {
-                    Some(commit) => record.extra.insert("detachedCommit".into(), Value::String(commit)),
-                    None => record.extra.remove("detachedCommit"),
-                };
-                record
+                reclaimed_on(metadata, finished.branch, finished.detached_commit, finished.at)
             }
             _ => metadata.clone(),
         }

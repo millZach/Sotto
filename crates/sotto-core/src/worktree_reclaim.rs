@@ -1433,15 +1433,7 @@ fn reclaimed_record(metadata: &AgentThreadWorktree, branch: Option<String>, deta
     if let Some(path) = metadata.path.as_deref() {
         restore::record_finished(Path::new(path), branch.clone(), commit.clone(), at.clone());
     }
-    let mut record = restore::with_checked_out_branch(metadata, branch);
-    record.status = "ready".into();
-    record.error = None;
-    record.extra.remove("dirty");
-    match commit {
-        Some(commit) => record.extra.insert("detachedCommit".into(), Value::String(commit)),
-        None => record.extra.remove("detachedCommit"),
-    };
-    record.extra.insert("reclaimedAt".into(), Value::String(at));
+    let mut record = restore::reclaimed_on(metadata, branch, commit, at);
     if let Some(Value::String(reference)) = record.extra.remove("incomingRef") {
         let incoming = reference
             .strip_prefix("refs/sotto/incoming/")
@@ -1474,11 +1466,7 @@ pub fn reclaim(data_directory: &Path, metadata: &AgentThreadWorktree, options: &
         return Err("Only a worktree Sotto made for this thread can be removed. A shared or reused folder stays.".into());
     }
     let allocation_root = realpath(data_directory).map_err(|e| e.to_string())?.join(THREAD_WORKTREE_FOLDER);
-    let reserved = metadata.path.as_deref().is_some_and(|path| {
-        let name = Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        path_key(&dirname(Path::new(path))) == path_key(&allocation_root) && name.len() == 36 && name.chars().all(|c| matches!(c, 'a'..='f' | '0'..='9' | '-'))
-    });
-    if !reserved {
+    if !metadata.path.as_deref().is_some_and(|path| restore::reserved_place(Path::new(path), &allocation_root)) {
         return Err("This folder is outside Sotto’s reserved worktree folder. Nothing was changed.".into());
     }
     let (facts, identity, _) = reclaim_facts_within(metadata, None)?;
@@ -1693,7 +1681,7 @@ pub fn owns_checkout_alone(folder: &str, others: &[Option<String>]) -> bool {
 }
 
 mod restore;
-pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, RESTORE_BRANCH_NEEDS_CONFIRMATION};
+pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, NO_CHECKOUT_TO_SWITCH, RESTORE_BRANCH_NEEDS_CONFIRMATION};
 
 #[cfg(test)]
 mod tests;

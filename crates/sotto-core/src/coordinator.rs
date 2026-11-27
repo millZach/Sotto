@@ -455,6 +455,8 @@ const RECLAIMED_NOTICE: &str = "Worktree removed. The branch is kept.";
 const RECLAIM_STOPPED: &str = "The host stopped before it could remove this folder. Nothing was removed. Try again.";
 /// What Restore branch says once the checkout is back on the branch of the thread's last send, as Node's coordinator says it.
 const BRANCH_RESTORED_NOTICE: &str = "Branch restored.";
+/// A send whose check of its folder stopped before it finished: this host's own failure, so nothing went and it may go again.
+const SEND_FOLDER_UNCHECKED: &str = "Sotto could not check this thread’s working folder, so nothing was sent and nothing in the folder changed. Send it again.";
 /// A thread this host does not hold, in Node's words (`thread` in `src/main/agents/workspace.ts`).
 const UNKNOWN_THREAD: &str = "This thread is not known to Sotto. Refresh and select it again.";
 /// What a preview of Remove worktree says when the folder could not be read, as Node's coordinator says it.
@@ -2893,7 +2895,7 @@ impl CoordinatorActor {
                         (read.map(|read| read.or_else(|| (filled != recorded).then_some(filled))), held)
                     })
                     .await
-                    .unwrap_or_else(|_| (Err("The working folder is unavailable.".into()), None));
+                    .unwrap_or_else(|_| (Err(SEND_FOLDER_UNCHECKED.into()), None));
                     held_folder = checked.1;
                     match checked.0 {
                         Ok(record) => allocated_worktree = record.map(Box::new),
@@ -4332,7 +4334,7 @@ impl CoordinatorActor {
             return self.refuse_sync_command(lane, &client, words.into(), reply);
         }
         let Some(worktree) = thread.worktree.clone() else {
-            return self.refuse_sync_command(lane, &client, "This thread has no project checkout to switch.".into(), reply);
+            return self.refuse_sync_command(lane, &client, crate::worktree_reclaim::NO_CHECKOUT_TO_SWITCH.into(), reply);
         };
         let with_uncommitted_changes = command.get("withUncommittedChanges") == Some(&Value::Bool(true));
         let project = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
