@@ -737,3 +737,26 @@ fn a_git_action_that_prints_more_than_the_limit_keeps_the_first_part_and_finishe
     assert_eq!(printed.len(), 8_000_000);
     assert_eq!(*seen.lock().unwrap(), 90_000);
 }
+
+/// A commit's and a push's hooks run under Git as Node's runner starts it, with nothing more on its command line: a hook
+/// that names files with a glob finds them, since `--literal-pathspecs` is never passed down to it.
+#[test]
+fn a_hook_that_globs_its_pathspecs_sees_the_files_as_it_does_under_node() {
+    let f = Fixture::new(true);
+    let check = |what: &str| format!("#!/bin/sh\nfound=$({what} -- '*.txt')\nif [ -z \"$found\" ]; then echo \"glob matched nothing\" 1>&2; exit 1; fi\necho \"glob found $found\"\n");
+    hook(&f.repo, "pre-commit", &check("git diff --cached --name-only"));
+    hook(&f.repo, "pre-push", &check("git ls-files"));
+    f.write("work.txt", "second\n");
+    let (events, progress) = Events::new();
+    let mut confirmed = with_message(input(&f.repo, GitStackedAction::CommitPush), "Globbed");
+    confirmed.allow_default_branch = Some(true);
+    let result = run_stacked_action(&confirmed, false, &StandIns::new(), &progress).unwrap();
+    assert_eq!(result.commit.status, "created");
+    assert_eq!(result.push.status, "pushed");
+    assert_eq!(sh_git(&f.remote, &["log", "-1", "--pretty=%s", "main"]), "Globbed");
+    let output: Vec<String> = events.all().into_iter().filter_map(|event| match event {
+        GitActionEvent::HookOutput { text, .. } => Some(text),
+        _ => None,
+    }).collect();
+    assert!(output.contains(&"glob found work.txt".to_string()), "{output:?}");
+}
