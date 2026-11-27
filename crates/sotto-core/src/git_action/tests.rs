@@ -812,3 +812,35 @@ fn a_commit_whose_post_commit_hook_outlasts_the_deadline_is_the_commit_made_and_
     assert_eq!(f.git(&["diff", "--cached", "--name-only"]), "other.txt");
     assert_eq!(f.git(&["show", ":work.txt"]), "second");
 }
+
+/// Git's trace of a commit is kept in a folder only its owner can open, as Node's `mkdtemp` makes one. Unix only: Windows
+/// folders have no mode.
+#[cfg(unix)]
+#[test]
+fn keeps_the_commit_trace_in_a_folder_only_its_owner_can_open() {
+    let f = Fixture::new(false);
+    hook(&f.repo, "pre-commit", "#!/bin/sh\nls -ld \"$(dirname \"$GIT_TRACE2_EVENT\")\"\n");
+    f.write("work.txt", "second\n");
+    let (events, progress) = Events::new();
+    run_stacked_action(&with_message(input(&f.repo, GitStackedAction::Commit), "Traced"), false, &StandIns::new(), &progress).unwrap();
+    let listing = events.all().into_iter().find_map(|event| match event {
+        GitActionEvent::HookOutput { text, .. } if text.contains("sotto-git-trace-") => Some(text),
+        _ => None,
+    });
+    assert!(listing.as_deref().is_some_and(|line| line.starts_with("drwx------")), "{listing:?}");
+}
+
+/// What a hook's child prints after the commit has settled, as when it held Git's output past the deadline, reaches no
+/// one: Node's runner destroys the streams when the command settles.
+#[test]
+fn nothing_a_hook_prints_after_the_commit_settles_is_reported() {
+    COMMIT_DEADLINE.with(|cell| cell.set(Some(Duration::from_secs(1))));
+    let f = Fixture::new(false);
+    hook(&f.repo, "post-commit", "#!/bin/sh\n(sleep 4; echo 'late line' 1>&2) &\nexit 0\n");
+    f.write("work.txt", "second\n");
+    let (events, progress) = Events::new();
+    run_stacked_action(&with_message(input(&f.repo, GitStackedAction::Commit), "Settled"), false, &StandIns::new(), &progress).unwrap();
+    let settled = events.all().len();
+    std::thread::sleep(Duration::from_secs(5));
+    assert_eq!(events.all().len(), settled, "{:?}", &events.all()[settled..]);
+}

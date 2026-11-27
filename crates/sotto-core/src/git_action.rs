@@ -14,13 +14,13 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::git_local::{is_repository, js_trim, last_lines, last_two_lines, refused_with, safe_remote};
+use crate::git_local::{is_repository, js_trim, last_lines, last_two_lines, refused_with, safe_remote, Exclusive};
 use crate::ops::{parse_porcelain_v2_changed, run_action_git as git, run_action_git_with, ActionGitExtras, LineSink};
 use crate::workspace::clip_utf16;
 
@@ -65,7 +65,6 @@ const QUIET_GIT_ENV: [(&str, &str); 6] = [
     ("GH_PROMPT_DISABLED", "1"),
 ];
 
-const IN_PROGRESS: &str = "Git action in progress.";
 const NOT_A_REPOSITORY: &str = "This folder is not a Git repository. Initialize Git first.";
 const DETACHED_PUSH: &str = "Cannot push from detached HEAD.";
 const MERGE_IN_PROGRESS: &str = "A merge or rebase is in progress. Finish or abort it in a terminal before committing here.";
@@ -614,31 +613,6 @@ fn git_with_input(cwd: &str, args: &[&str], input: &[u8]) -> Result<String, Stri
     run_action_git_with(cwd, args, COMMAND_DEADLINE, ActionGitExtras { stdin: Some(input), ..ActionGitExtras::default() })
 }
 
-/// The folders an action is running in, as Node's `GitActions` holds one action per folder at a time.
-fn busy() -> &'static Mutex<HashSet<String>> {
-    static BUSY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    BUSY.get_or_init(Mutex::default)
-}
-
-/// A folder held for one action, let go when it is dropped.
-struct Exclusive(String);
-
-impl Exclusive {
-    fn hold(cwd: &str) -> Result<Self, String> {
-        let mut held = busy().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !held.insert(cwd.to_string()) {
-            return Err(IN_PROGRESS.into());
-        }
-        Ok(Self(cwd.to_string()))
-    }
-}
-
-impl Drop for Exclusive {
-    fn drop(&mut self) {
-        busy().lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&self.0);
-    }
-}
-
 /// T3's `runStackedAction`, as Node runs it: the branch, commit, push and pull request steps in that order, each
 /// reported to `progress` as it starts, after every refusal Node makes before any of them, in Node's order and words.
 /// `fetch` says whether the first read of the folder fetches `origin` first, as Node's does when its fetch is due.
@@ -977,7 +951,7 @@ fn commit(cwd: &str, message: &CommitMessage, progress: &Progress) -> Result<Str
     let head = || git(cwd, &["rev-parse", "-q", "--verify", "HEAD"], COMMAND_DEADLINE).ok().map(|head| js_trim(&head).to_string());
     let before = head();
     let trace_dir = std::env::temp_dir().join(format!("sotto-git-trace-{}", uuid::Uuid::new_v4().simple()));
-    std::fs::create_dir_all(&trace_dir).map_err(|error| error.to_string())?;
+    private_folder(&trace_dir).map_err(|error| error.to_string())?;
     let trace = Arc::new(Mutex::new(HookTrace { path: trace_dir.join("trace.jsonl"), seen: 0, hook: None }));
     let (stop, stopped) = mpsc::channel::<()>();
     let ticker = {
@@ -1019,6 +993,18 @@ fn commit(cwd: &str, message: &CommitMessage, progress: &Progress) -> Result<Str
         Some(sha) => Ok(sha),
         None => Ok(js_trim(&git(cwd, &["rev-parse", "HEAD"], COMMAND_DEADLINE)?).to_string()),
     }
+}
+
+/// A new folder only its owner can open, as Node's `mkdtemp` makes one: mode 700 on Unix.
+#[cfg(unix)]
+fn private_folder(path: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700).create(path)
+}
+
+/// A new folder: Windows folders have no mode.
+#[cfg(not(unix))]
+fn private_folder(path: &Path) -> std::io::Result<()> {
+    std::fs::create_dir(path)
 }
 
 /// The trace, whichever reader held it last.

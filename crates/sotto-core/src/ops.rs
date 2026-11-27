@@ -3071,6 +3071,17 @@ fn run_git_impl(
     prefix: &[&str],
 ) -> Result<GitRunOutput, GitRunError> {
     let Readers { lines, keep_reading } = readers;
+    // Shut once the command settles, so a grandchild still holding the output past then reaches no one, as Node's
+    // runner destroys the streams when it settles. A line being handed over finishes first.
+    let open = std::sync::Arc::new(Mutex::new(true));
+    let lines = lines.map(|sink| -> LineSink {
+        let open = std::sync::Arc::clone(&open);
+        std::sync::Arc::new(move |line: &str| {
+            if *open.lock().unwrap_or_else(std::sync::PoisonError::into_inner) {
+                sink(line);
+            }
+        })
+    });
     if Instant::now() >= deadline {
         return Err(GitRunError::Failed("git timed out".into()));
     }
@@ -3194,6 +3205,7 @@ fn run_git_impl(
         pipes_closed.recv_timeout(settle_by.saturating_duration_since(Instant::now())),
         Err(std::sync::mpsc::RecvTimeoutError::Timeout)
     );
+    *open.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = false;
     if timed_out || held {
         return Err(GitRunError::Failed("git timed out".into()));
     }
@@ -3283,8 +3295,10 @@ fn read_pipe(mut pipe: impl Read, limit: Option<usize>, stop_at_limit: bool, lin
     let mut overflowed = false;
     loop {
         let read = match pipe.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
             Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
         };
         let bytes = &chunk[..read];
         match limit {
@@ -3363,6 +3377,30 @@ mod tests {
     }
 
     use super::*;
+
+    /// A read interrupted by a signal is tried again, as `read_to_end` does, rather than taken for the end of the output.
+    #[test]
+    fn reads_on_past_an_interrupted_read() {
+        struct Interrupted(Vec<std::io::Result<&'static [u8]>>);
+        impl Read for Interrupted {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                match self.0.pop() {
+                    None => Ok(0),
+                    Some(Err(error)) => Err(error),
+                    Some(Ok(bytes)) => {
+                        buf[..bytes.len()].copy_from_slice(bytes);
+                        Ok(bytes.len())
+                    }
+                }
+            }
+        }
+        let pipe = Interrupted(vec![Ok(b"second\n"), Err(std::io::ErrorKind::Interrupted.into()), Ok(b"first\n")]);
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let sink = std::sync::Arc::clone(&seen);
+        let lines: LineSink = std::sync::Arc::new(move |line: &str| sink.lock().unwrap().push(line.to_string()));
+        assert_eq!(read_pipe(pipe, None, true, Some(&lines)), (b"first\nsecond\n".to_vec(), false));
+        assert_eq!(*seen.lock().unwrap(), ["first", "second"]);
+    }
 
     /// A Git action that exits with a Windows code of 0x80000000 or more, which `ExitStatus` writes in hex, is said as
     /// Node says it: the unsigned code in decimal, as libuv hands it over (`spawnCommand`), not as a signal.
