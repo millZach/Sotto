@@ -899,7 +899,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
 const STEP_ICONS: Record<BrowserVerb, LucideIcon> = {
   open: Globe, 'phone-open': Smartphone, start: Play, navigate: Globe, click: MousePointerClick, type: Keyboard, key: CornerDownLeft,
   scroll: ArrowDownUp, tap: Pointer, swipe: MoveHorizontal, inspect: Eye, screenshot: Camera, viewport: Scaling, work: Globe,
-  status: Info, pages: ListChecks, finish: CircleCheck,
+  status: Info, pages: ListChecks, finish: CircleCheck, close: Square, servers: SquareTerminal,
   'cloud-open': Smartphone, 'cloud-tap': Pointer, 'cloud-swipe': MoveHorizontal, 'cloud-type': Keyboard, 'cloud-key': CornerDownLeft,
   'cloud-button': CornerDownLeft, 'cloud-url': Link, 'cloud-inspect': Eye, 'cloud-screenshot': Camera, 'cloud-work': Smartphone,
   'cloud-status': Info, 'cloud-finish': CircleCheck,

@@ -46,6 +46,17 @@ The rest failed for reasons outside this branch, each rerun on its own:
 - `installedProvidersGate` finds this computer's Hermes, which the test does not stub.
 - `bringBackAcrossMachines`, `opencodeTools` and `workspaceStoreWriter` passed when rerun.
 
+## Hands-on check
+
+After a code review, the built app was used by hand on Windows: a secret request typed into a page's password field, browser profiles, dialogs, zoom and downloads, at 1280×800 and 820×560. The secret's canary value was found nowhere outside the page: not in the transcript, Sotto's data folder, the logs or an agent's tool results. Four problems were found and fixed, each with a test:
+
+- A `browser_close` call blanked the thread's workspace until a reload: the browser line had no step for it or for `browser_servers`, and the renderer threw. It now says "closed a page" and "listed the local servers", any tool it does not know falls back to "worked in the page", and a unit test puts every tool in the full catalog into words.
+- Escape did nothing on the page's dialog card. It now answers Cancel from any of the card's controls.
+- At 820×560 a profile page at 125% pushed More under the window's Close button. The profile's name now shrinks to its icon, the zoom chip shows only its magnifier in a narrow row and steps aside in the narrowest row, where **Actual size** in More still says the level. `browser-parity.spec.ts` checks that every control ends inside the row's padding at that size.
+- The secret-files folder stayed behind if Sotto started with secret requests off. It is now emptied at every start.
+
+Ctrl with the wheel is checked against the zoom requests Chromium raises: Electron's `sendInputEvent` follows its wheel with a synthetic end of scroll that Chromium counts as a second notch, so one call gives two steps in the test.
+
 ## Not checked here
 
 - macOS and Linux. The server list's `lsof` and `ss` readers and the Firefox folders there are unit-tested on fixed text only.

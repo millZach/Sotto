@@ -28,6 +28,16 @@ describe('the page\'s dialog in the pane', () => {
     await waitFor(() => expect(adopt).toHaveBeenCalled())
   })
 
+  it('answers Escape as Cancel from any of its controls', async () => {
+    const answerDialog = vi.fn<NonNullable<BrowserBridge['answerDialog']>>(async () => ok(page({ dialog: null })))
+    render(<DialogStrip page={page({ dialog: { type: 'confirm', message: 'Ship it?' } })} threadId="workshop" store={new BrowserStore()} bridge={{ answerDialog } as unknown as BrowserBridge} />)
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    cancel.focus()
+    fireEvent.keyDown(cancel, { key: 'Escape' })
+    await waitFor(() => expect(answerDialog).toHaveBeenCalledWith(expect.objectContaining({ accept: false })))
+    expect(answerDialog).toHaveBeenCalledTimes(1)
+  })
+
   it('takes a prompt\'s text, offers Cancel, and leaves out Cancel for an alert', async () => {
     const answerDialog = vi.fn<NonNullable<BrowserBridge['answerDialog']>>(async () => ok(page()))
     const bridge = { answerDialog } as unknown as BrowserBridge

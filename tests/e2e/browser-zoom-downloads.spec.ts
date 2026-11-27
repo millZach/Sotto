@@ -155,6 +155,34 @@ test('zoom keeps the agent exact, downloads are placed by the user, the cursor s
     await expect(panel.getByRole('button', { name: 'Zoom 125%. Back to 100%' })).toBeVisible()
     await press('0'); await expect.poll(zoomed).toBe(1)
     await expect(panel.getByRole('button', { name: /^Zoom \d+%/u })).toHaveCount(0)
+    // Ctrl with the wheel zooms a step for each zoom request Chromium raises, through the window's own input as a mouse
+    // sends it. Electron's sendInputEvent follows its wheel with a synthetic end of scroll that Chromium raises a second
+    // request for, so the steps are checked against the requests seen rather than against one per call.
+    await app.evaluate(({ webContents }, payload) => {
+      const contents = webContents.getAllWebContents().find(item => item.getURL().startsWith(`http://localhost:${payload.port}/`))!
+      const seen = globalThis as unknown as { zoomRequests: string[] }
+      seen.zoomRequests = []
+      contents.on('zoom-changed', (_event, direction) => seen.zoomRequests.push(direction))
+    }, { port: address.port })
+    const requests = () => app.evaluate(() => (globalThis as unknown as { zoomRequests: string[] }).zoomRequests.splice(0))
+    const wheel = (deltaY: number) => app.evaluate(({ webContents }, payload) => {
+      const contents = webContents.getAllWebContents().find(item => item.getURL().startsWith(`http://localhost:${payload.port}/`))!
+      contents.sendInputEvent({ type: 'mouseWheel', x: 120, y: 120, deltaX: 0, deltaY: payload.deltaY, wheelTicksY: Math.sign(payload.deltaY), canScroll: true, modifiers: ['control'] })
+    }, { port: address.port, deltaY })
+    const levels = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
+    await wheel(120); await expect.poll(zoomed).not.toBe(1)
+    await page.waitForTimeout(300)
+    const wheeledIn = await requests(), wheeled = (await zoomed()) ?? 1
+    expect(wheeledIn.length).toBeGreaterThan(0)
+    expect(wheeledIn.every(direction => direction === 'in')).toBe(true)
+    expect(wheeled).toBe(levels[levels.indexOf(1) + wheeledIn.length])
+    await wheel(-120); await expect.poll(zoomed).toBeLessThan(wheeled)
+    await page.waitForTimeout(300)
+    const wheeledOut = await requests()
+    expect(wheeledOut.every(direction => direction === 'out')).toBe(true)
+    expect(await zoomed()).toBe(levels[levels.indexOf(wheeled) - wheeledOut.length])
+    await zoom('reset'); await expect.poll(zoomed).toBe(1)
+    report.zoomWheel = `Ctrl with the wheel raised ${wheeledIn.length} zoom request(s) in and gave ${Math.round(wheeled * 100)}%; ${wheeledOut.length} out stepped back as many levels`
     // From More, with the keys named.
     await panel.getByRole('button', { name: 'More browser actions' }).click()
     await expect(page.getByRole('menuitem', { name: 'Zoom in' })).toBeVisible()

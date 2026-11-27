@@ -66,7 +66,7 @@ import { ClaudeStreamJsonHost } from '../agents/providers/claude/claude'
 import { CodexAppServerHost } from '../agents/providers/codex/codex'
 import { PullRequestToolServer } from '../agents/pullRequestTools'
 import { SecretToolServer } from '../agents/secretTools'
-import { SecretRequests } from '../secrets/secretRequests'
+import { SecretRequests, sweepSecretFiles } from '../secrets/secretRequests'
 import { registerSecretRequestsIpc } from '../secrets/secretRequestsIpc'
 import { registerRequestDraftIpc } from '../agents/requestDraftIpc'
 import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from '../agents/requestDraftOwners'
@@ -828,7 +828,8 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: pluginThreadOpen, noticed: () => { mailGrants?.noticed() } }) : undefined
   // Secret requests (ADR-0219): an Owl feature, and this computer's threads only. Nothing the last run kept survives it.
   const secretRequests = owlFeatures['secret-requests'] && startupSettings.localHostEnabled ? new SecretRequests({ directory: userDataPath, open: pluginThreadOpen }) : undefined
-  await secretRequests?.sweep()
+  // With the feature on or off: a value an earlier run could not delete never waits for the feature to come back.
+  await (secretRequests ? secretRequests.sweep() : sweepSecretFiles(userDataPath))
   const secretTools = secretRequests ? new SecretToolServer({ admits: threadId => agentHost.admitsSecretRequests(threadId), service: secretRequests }) : undefined
   const pluginProjectOf = (threadId: string): string | null => pluginFolderOfThread(agentControl.watcherSnapshot(), threadId)
   const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer(pluginToolHandlers({

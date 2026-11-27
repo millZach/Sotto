@@ -25,16 +25,27 @@
 .browser-parity__confirm { display: flex; flex: none; gap: 6px; }
 .browser-parity__add { display: grid; gap: 10px; padding: 8px; }
 .browser-parity__add-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.browser-parity__profile-chip { max-width: 12em; }
-.browser-parity__profile-chip > bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The profile's name gives way first in a crowded row: it shrinks to its icon rather than push More under the window's
+   buttons. Its title still names the profile. */
+.browser-pane__row .browser-parity__profile-chip { flex: 0 1 auto; min-width: 13px; max-width: 12em; }
+.browser-parity__profile-chip > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Page zoom (ADR-0222): the percentage beside the address while the page is not at 100%. */
 .browser-parity__zoom { flex: none; gap: 4px; font-variant-numeric: tabular-nums; }
-/* In a narrow pane the row has no room for the percentage, so the chip is its magnifier alone, as Chrome's is; its name
-   and title still say the zoom. */
-.browser-pane__row:has(.browser-parity__zoom) { container: browser-row / inline-size; }
-@container browser-row (max-width: 400px) {
+/* In a narrow pane the percentage would crowd the address, so the chip is its magnifier alone, as Chrome's is; its name
+   and title still say the zoom. The widths are the row's content box: about 415px in a docked panel at 1280px, 330px at
+   the smallest window. */
+.browser-pane__row:has(.browser-parity__zoom, .browser-parity__profile-chip) { container: browser-row / inline-size; }
+@container browser-row (max-width: 460px) {
   .browser-pane__row .browser-parity__zoom { justify-content: center; width: 30px; padding: 0; }
   .browser-pane__row .browser-parity__zoom > span { display: none; }
+  /* The profile chip keeps its name for screen readers, as .tt-visually-hidden does, and shows its icon alone. */
+  .browser-pane__row .browser-parity__profile-chip { margin-right: 0; }
+  .browser-pane__row .browser-parity__profile-chip > bdi { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+}
+/* In the narrowest row even the magnifier would push More under the window's buttons, so the chip steps aside: More's
+   Actual size item still says the zoom, and Ctrl+0 still puts the page back. */
+@container browser-row (max-width: 350px) {
+  .browser-pane__row .browser-parity__zoom { display: none; }
 }
 /* Downloads (ADR-0222): a download asks at the page's foot, and the empty pane lists this session's. */
 .browser-parity__download-icon { flex: none; color: var(--tt-text-muted); }

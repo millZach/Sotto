@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile, mkdir } from 'node:fs/
 import { existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SecretRequests, type SecretOutcome } from '../../../src/main/secrets/secretRequests'
+import { SecretRequests, sweepSecretFiles, type SecretOutcome } from '../../../src/main/secrets/secretRequests'
 import { SECRET_REF_PATTERN, SECRET_REQUEST_ID_PREFIX, requestSecretInputSchema, type RequestSecretInput } from '../../../src/shared/secretRequests'
 
 /** A test may run something once a secret file is on disk, before the service hears the write finished. */
@@ -184,6 +184,15 @@ describe('secret requests', () => {
     expect(await waiting).toEqual({ status: 'cancelled' })
     expect(existsSync(file)).toBe(false)
     expect(await readdir(join(directory, 'secret-files'))).toEqual([])
+  })
+
+  it('empties the folder at start with secret requests off too, so a value never waits for the feature to return', async () => {
+    const { directory } = await setup()
+    await mkdir(join(directory, 'secret-files'), { recursive: true })
+    await writeFile(join(directory, 'secret-files', 'left-behind'), CANARY)
+    await sweepSecretFiles(directory)
+    expect(existsSync(join(directory, 'secret-files'))).toBe(false)
+    await sweepSecretFiles(directory)
   })
 
   it('keeps no file when Sotto closes while the folder is being made', async () => {

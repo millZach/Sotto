@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Check, Globe, RefreshCw, RotateCcw, Square, ZoomIn, ZoomOut } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import { BROWSER_DEVICE_PRESETS, type BrowserBridge, type BrowserPage, type LocalServer } from '../../../shared/browser'
@@ -48,13 +48,19 @@ export function DialogStrip({ page, threadId, store, bridge }: { readonly page: 
       t`This window cannot answer the page's dialog.`, t`The browser did not answer. Try again.`).then(setProblem).finally(() => setBusy(false))
   }
   const submit = (event: FormEvent): void => { event.preventDefault(); answer(true) }
+  // Escape answers as Cancel (Stay, or closes an alert), from any of the card's controls, as every card in Sotto does.
+  const escape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || busy) return
+    event.preventDefault(); event.stopPropagation()
+    answer(false)
+  }
   const lead = dialog.type === 'alert' ? t({ message: 'The page says', comment: 'Before the words of a web page\'s alert dialog.' })
     : dialog.type === 'beforeunload' ? t({ message: 'Leave this page? Changes may not be saved', comment: 'A web page asks before it is left.' })
       : t({ message: 'The page asks', comment: 'Before the words of a web page\'s confirm or prompt dialog.' })
   const ok = dialog.type === 'beforeunload' ? t({ message: 'Leave', comment: 'Leaves a web page that asked to stay.' }) : t({ message: 'OK', comment: 'Accepts a web page\'s dialog.' })
   const cancel = dialog.type === 'beforeunload' ? t({ message: 'Stay', comment: 'Stays on a web page that asked before being left.' }) : t({ message: 'Cancel', comment: 'Dismisses a web page\'s dialog.' })
   // A group, not a dialog: the page stays drawn above it, and focus goes to its first answer.
-  return <form className="browser-pane__strip browser-parity__dialog" data-state="waiting" role="group" aria-labelledby={`browser-dialog-${page.id}`} onSubmit={submit}>
+  return <form className="browser-pane__strip browser-parity__dialog" data-state="waiting" role="group" aria-labelledby={`browser-dialog-${page.id}`} onSubmit={submit} onKeyDown={escape}>
     <span className="browser-pane__dot" aria-hidden="true" />
     <p className="browser-pane__strip-text browser-pane__request" id={`browser-dialog-${page.id}`}>
       <span className="browser-parity__lead">{lead}</span>{dialog.message ? <span className="browser-parity__words">{dialog.message}</span> : null}

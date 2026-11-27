@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AgentActivity } from '../../../src/shared/agentActivity'
-import { sottoBrowserToolOfTitle } from '../../../src/shared/sottoBrowserTools'
+import { SOTTO_BROWSER_TOOLS, sottoBrowserToolOfTitle } from '../../../src/shared/sottoBrowserTools'
 import type { AgentMessage } from '../../../src/shared/agents'
 import {
   BrowserLinesStore, browserLineName, browserLinesByTurn, browserRunHost, browserRunWords, browserStep, browserStepWords, foldBrowserRuns, goingRunKey, PLACE,
@@ -50,6 +50,21 @@ describe('which records are calls to Sotto\'s browser', () => {
 
   it('reads only tool records', () => {
     expect(browserStep(record({ id: 'c', kind: 'command', title: 'mcp__sotto_browser__browser_open' }))).toBeNull()
+  })
+
+  // browser_close and browser_servers came with the full browser (ADR-0220) without words here, and a step with no verb
+  // blanked the thread's pane the moment an agent closed a page.
+  it('puts every one of Sotto\'s browser tools into words, from Claude Code and from Codex', () => {
+    for (const tool of SOTTO_BROWSER_TOOLS) {
+      for (const title of [`mcp__sotto_browser__${tool}`, `sotto_browser / ${tool}`]) {
+        const step = browserStep(record({ id: `${tool}-${title}`, title, text: '{}' }))
+        expect(step, title).not.toBeNull()
+        expect(browserStepSentence(step!), title).toMatch(/^[A-Z]/u)
+        expect(browserStepSentence({ ...step!, failed: true }), title).toMatch(/^Could not /u)
+      }
+    }
+    expect(browserStepSentence(browserStep(claude('x', 'browser_close', { pageId: 'p' }))!)).toBe('Closed a page')
+    expect(browserStepSentence(browserStep(claude('s', 'browser_servers', {}))!)).toBe('Listed the local servers')
   })
 })
 

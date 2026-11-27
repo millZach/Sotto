@@ -448,6 +448,43 @@ test('a browser profile the user adds keeps its sign-ins across a restart, opens
     for (const mode of ['dark', 'light'] as const) { await appearance(page, mode); await shot(first, `profile-page-private-1280x800-${mode}`) }
     await appearance(page, 'dark')
 
+    // The profile's chip and the zoom fit the row, and More stays clear of the window's buttons: a profile page at 125% once
+    // pushed More under Close at the smallest window. There the row leaves the zoom to More.
+    const profileRow = panel.locator('.browser-pane__row', { has: page.locator('.browser-parity__profile-chip') })
+    const fitsRow = async () => {
+      // Every control ends inside the row's own padding, not only inside its box.
+      expect(await profileRow.evaluate(row => {
+        const end = row.getBoundingClientRect().right - parseFloat(getComputedStyle(row).paddingRight)
+        return [...row.children].every(child => child.getBoundingClientRect().right <= end + 1)
+      })).toBe(true)
+      const windowButtons = page.locator('.threads-view__winctl')
+      if (await windowButtons.isVisible()) {
+        const edge = (await windowButtons.boundingBox())!.x
+        const more = (await panel.getByRole('button', { name: 'More browser actions' }).boundingBox())!
+        expect(more.x + more.width).toBeLessThanOrEqual(edge + 1)
+      }
+      await expect(panel.getByTitle(/Open in the profile Work/u)).toBeVisible()
+    }
+    for (let step = 0; step < 2; step++) {
+      await panel.getByRole('button', { name: 'More browser actions' }).click()
+      await page.getByRole('menuitem', { name: 'Zoom in' }).click()
+    }
+    const zoomChip = panel.getByRole('button', { name: /^Zoom 125%/u })
+    await expect(zoomChip).toBeVisible()
+    await fitsRow()
+    await shot(first, 'profile-page-zoomed-1280x800-dark')
+    await size(first, 820, 560)
+    await expect(zoomChip).toBeHidden()
+    await fitsRow()
+    await shot(first, 'profile-page-zoomed-820x560-dark')
+    await panel.getByRole('button', { name: 'More browser actions' }).click()
+    await expect(page.getByRole('menuitem', { name: 'Actual size (now 125%)' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await size(first, 1280, 800)
+    await expect(zoomChip).toBeVisible()
+    await zoomChip.click()
+    await expect(zoomChip).toHaveCount(0)
+
     // Developer tools are the user's, from More, in a window of their own.
     await panel.getByRole('button', { name: 'More browser actions' }).click()
     await page.getByRole('menuitem', { name: 'Open developer tools' }).click()

@@ -2999,6 +2999,11 @@ msgstr "Close without adding a model source"
 msgid "Closed"
 msgstr "Closed"
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "closed a page"
+msgstr "closed a page"
+
 #: src/renderer/src/agents/requests/CloudIphoneRequest.tsx
 msgid "Cloud iPhone problem"
 msgstr "Cloud iPhone problem"
@@ -3505,6 +3510,11 @@ msgstr "could not check the cloud iPhone"
 msgid "could not click in the page"
 msgstr "could not click in the page"
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not close a page"
+msgstr "could not close a page"
+
 #: src/renderer/src/agents/addProject.ts
 msgid "Could not confirm the new project. Choose the folder again to check; it will not be added twice."
 msgstr "Could not confirm the new project. Choose the folder again to check; it will not be added twice."
@@ -3583,6 +3593,11 @@ msgstr "could not list its pages"
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Could not list the folders on {place}. Nothing was changed. Try again."
 msgstr "Could not list the folders on {place}. Nothing was changed. Try again."
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not list the local servers"
+msgstr "could not list the local servers"
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Could not load this thread’s messages."
@@ -5613,6 +5628,11 @@ msgstr "Links from the message above"
 #: src/renderer/src/agents/browserLine.ts
 msgid "listed its pages"
 msgstr "listed its pages"
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "listed the local servers"
+msgstr "listed the local servers"
 
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "Loading files…"

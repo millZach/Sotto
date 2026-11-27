@@ -63,6 +63,14 @@ export function protectOnWindows(folder: string): Promise<void> {
   })
 }
 
+/**
+ * Deletes the secret files a Sotto that stopped without closing left in `directory` (ADR-0219). Run at every start,
+ * with secret requests on or off, so turning the feature off never strands a value on disk until it is on again.
+ */
+export async function sweepSecretFiles(directory: string): Promise<void> {
+  await rm(join(directory, 'secret-files'), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined)
+}
+
 const DECLINED = new Error('Enter the values on the card in Sotto on your computer, or decline it there.')
 const CLOSING = 'Sotto is closing. Nothing was kept.'
 
@@ -98,7 +106,7 @@ export class SecretRequests implements SottoThreadRequests {
   private get folder(): string { return join(this.options.directory, 'secret-files') }
 
   /** Empties the folder of files a Sotto that is no longer running left behind: nothing it holds survives a restart. */
-  async sweep(): Promise<void> { await rm(this.folder, { recursive: true, force: true }).catch(() => undefined) }
+  async sweep(): Promise<void> { await sweepSecretFiles(this.options.directory) }
 
   /** Shows the card and waits for the user. Resolves once: saved, declined, cancelled or timed out. */
   ask(threadId: string, input: RequestSecretInput, wait: SecretWait = {}): Promise<SecretOutcome> {

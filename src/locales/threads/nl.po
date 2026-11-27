@@ -2999,6 +2999,11 @@ msgstr ""
 msgid "Closed"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "closed a page"
+msgstr ""
+
 #: src/renderer/src/agents/requests/CloudIphoneRequest.tsx
 msgid "Cloud iPhone problem"
 msgstr ""
@@ -3505,6 +3510,11 @@ msgstr ""
 msgid "could not click in the page"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not close a page"
+msgstr ""
+
 #: src/renderer/src/agents/addProject.ts
 msgid "Could not confirm the new project. Choose the folder again to check; it will not be added twice."
 msgstr ""
@@ -3582,6 +3592,11 @@ msgstr ""
 #. {place} is "this computer" or a saved host's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Could not list the folders on {place}. Nothing was changed. Try again."
+msgstr ""
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not list the local servers"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -5612,6 +5627,11 @@ msgstr ""
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
 msgid "listed its pages"
+msgstr ""
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "listed the local servers"
 msgstr ""
 
 #: src/renderer/src/agents/FilePicker.tsx
