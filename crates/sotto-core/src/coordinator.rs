@@ -1557,6 +1557,7 @@ impl CoordinatorActor {
             followups.receipts().iter().any(|r| r.thread_id == thread && r.draft_id == draft)
                 || followups.items().iter().any(|i| i.thread_id == thread && i.draft_id == draft)
         });
+        let threads = with_real_worktree_folders(&data_directory, persisted.threads);
         Self {
             data_directory,
             host_id,
@@ -1570,7 +1571,7 @@ impl CoordinatorActor {
             active_project_id: None,
             active_thread_id: None,
             projects: persisted.projects,
-            threads: persisted.threads,
+            threads,
             project_aliases: persisted.project_aliases,
             creations: persisted.creations,
             cleared: persisted.cleared_thread_ids.iter().cloned().collect(),
@@ -3940,12 +3941,16 @@ impl CoordinatorActor {
             .map(ToString::to_string);
 
         let (worktree, working_directory) = if working_copy == "independent" {
-            if let Some(ref existing) = existing_worktree_path {
-                if !Path::new(existing).is_dir() {
+            if let Some(ref typed) = existing_worktree_path {
+                if !Path::new(typed).is_dir() {
                     return Err(CoordinatorError::invalid(
                         "The selected existing worktree folder does not exist.",
                     ));
                 }
+                // Recorded where any link in it leads, as Node's `allocate` records it (`existingWorkingDirectory`).
+                let existing = &crate::worktree_reclaim::realpath(Path::new(typed))
+                    .map(|real| real.to_string_lossy().into_owned())
+                    .map_err(|_| CoordinatorError::invalid("The selected existing worktree folder does not exist."))?;
                 (
                     AgentThreadWorktree {
                         extra: Map::new(),
@@ -6122,6 +6127,39 @@ fn load_thread_bindings(dir: &Path) -> HashMap<String, ThreadBindingRecord> {
     map
 }
 
+/// The threads as they were saved, with each worktree this host made under the data folder as it was named, before it
+/// recorded where a link in that name leads as Node does, named again where it leads: the same folder, so its own
+/// checks read it as the thread's. Only a record named directly in the data folder's reserved place moves, and only
+/// its name; a folder that is itself a link still reads as redirected.
+fn with_real_worktree_folders(data_directory: &Path, mut threads: Vec<AgentThread>) -> Vec<AgentThread> {
+    let Ok(real) = crate::worktree_reclaim::realpath(data_directory) else {
+        return threads;
+    };
+    let named = data_directory.join(crate::worktree_reclaim::THREAD_WORKTREE_FOLDER);
+    let real = real.join(crate::worktree_reclaim::THREAD_WORKTREE_FOLDER);
+    if named == real {
+        return threads;
+    }
+    for thread in &mut threads {
+        let Some(worktree) = thread.worktree.as_mut().filter(|w| w.mode == "independent" && w.reused != Some(true)) else {
+            continue;
+        };
+        let Some((old, name)) = worktree.path.clone().and_then(|path| {
+            let folder = Path::new(&path);
+            let name = folder.file_name().filter(|_| folder.parent() == Some(named.as_path()))?.to_owned();
+            Some((path, name))
+        }) else {
+            continue;
+        };
+        let new = real.join(name).to_string_lossy().into_owned();
+        if thread.working_directory.as_deref() == Some(old.as_str()) {
+            thread.working_directory = Some(new.clone());
+        }
+        worktree.path = Some(new);
+    }
+    threads
+}
+
 fn allocate_independent_worktree(
     data_dir: &Path,
     project_path: &str,
@@ -6130,9 +6168,15 @@ fn allocate_independent_worktree(
     let repo_root = run_git_sync(project_path, &["rev-parse", "--show-toplevel"])
         .map(|s| s.trim().to_string())
         .map_err(|_| "Separate worktrees require a Git repository.".to_string())?;
+    // Both are recorded where any link in them leads, as Node's `allocate` records them with `realpath`: a worktree's own
+    // checks compare its folder with the real data folder, so one named through a link would never read as the thread's.
+    let repo_root = crate::worktree_reclaim::realpath(Path::new(&repo_root))
+        .map(|real| real.to_string_lossy().into_owned())
+        .map_err(|_| "Separate worktrees require a Git repository.".to_string())?;
+    let data_dir = crate::worktree_reclaim::realpath(data_dir).map_err(|e| format!("Could not create thread-worktrees folder: {e}"))?;
     let token = &Uuid::new_v4().simple().to_string()[..8];
     let branch = format!("sotto/{token}");
-    let worktrees_root = data_dir.join("thread-worktrees");
+    let worktrees_root = data_dir.join(crate::worktree_reclaim::THREAD_WORKTREE_FOLDER);
     std::fs::create_dir_all(&worktrees_root)
         .map_err(|e| format!("Could not create thread-worktrees folder: {e}"))?;
     // Node names the folder with a whole UUID (`allocate`), which is how its reclaim knows the folder is Sotto's own.
@@ -6903,6 +6947,80 @@ mod tests {
         assert_ne!(git(&coord.shell(true).await.unwrap()), json!({ "marker": "first" }), "the second hold still keeps the folder");
         let_go("second").await.unwrap().unwrap();
         assert_eq!(git(&coord.shell(true).await.unwrap()), json!({ "marker": "second" }), "the last hold let the folder go");
+        coord.shutdown().await;
+    }
+
+    /// A link at `link` to the folder `target`: a symbolic link, or on Windows a junction, which needs no privilege.
+    fn link_folder(target: &Path, link: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+        #[cfg(windows)]
+        {
+            if std::os::windows::fs::symlink_dir(target, link).is_err() {
+                let made = Command::new("cmd").args(["/C", "mklink", "/J", &link.to_string_lossy(), &target.to_string_lossy()]).output().unwrap();
+                assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stdout));
+            }
+        }
+    }
+
+    /// A data folder reached through a link, as macOS reaches `/var` through `/private/var`: the worktree a thread's first
+    /// send makes is recorded under the folder the link leads to, as Node records it with `realpath`, so Refresh reads it
+    /// as the thread's own and the next send goes out into it.
+    #[tokio::test]
+    async fn a_data_folder_reached_through_a_link_keeps_its_threads_own_worktree() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let (real, data, project) = (base.join("real"), base.join("data"), base.join("project"));
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        link_folder(&real, &data);
+        fixture_git(&project, &["init", "-q"]);
+        std::fs::write(project.join("README.md"), "hello\n").unwrap();
+        fixture_git(&project, &["add", "."]);
+        fixture_git(&project, &["commit", "-q", "-m", "First"]);
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(data.clone(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "Linked", "path": project.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let thread_id = "00000000-0000-4000-8000-00000000000e";
+        run(json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Linked", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" })).await.unwrap();
+        let worktree = |shell: &Value| shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == thread_id).unwrap()["worktree"].clone();
+
+        let shell = run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Hello" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        let path = PathBuf::from(worktree(&shell)["path"].as_str().unwrap());
+        assert_eq!(path.parent().unwrap(), real.join("thread-worktrees"), "recorded where the link leads");
+
+        let shell = run(json!({ "type": "refresh-thread-worktree", "threadId": thread_id })).await.unwrap();
+        assert_eq!((&shell["error"], &worktree(&shell)["status"]), (&Value::Null, &json!("ready")), "{}", worktree(&shell));
+
+        mock.complete_turn(thread_id, "Done");
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while coord.shell(true).await.unwrap()["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id && t["status"] != "idle") {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("the turn never finished");
+        let shell = run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Carry on" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        let sent = shell["deliveries"].as_array().unwrap().iter().rev().find(|d| d["threadId"] == thread_id).cloned().unwrap_or_default();
+        assert_ne!(sent["status"], "failed", "{sent}");
+        coord.shutdown().await;
+
+        // A record saved before, named through the link, is read where the link leads as the host starts.
+        let saved = data.join("workspace.json");
+        let mut workspace: Value = serde_json::from_str(&std::fs::read_to_string(&saved).unwrap()).unwrap();
+        let named = data.join("thread-worktrees").join(path.file_name().unwrap()).to_string_lossy().into_owned();
+        let thread = workspace["snapshot"]["threads"].as_array_mut().unwrap().iter_mut().find(|t| t["id"] == thread_id).unwrap();
+        thread["worktree"]["path"] = json!(named);
+        std::fs::write(&saved, serde_json::to_string(&workspace).unwrap()).unwrap();
+        let coord = CoordinatorHandle::spawn(data.clone(), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let shell = coord.run_command(client.clone(), json!({ "type": "refresh-thread-worktree", "threadId": thread_id }).as_object().unwrap().clone()).await.unwrap();
+        assert_eq!((&worktree(&shell)["status"], &worktree(&shell)["path"]), (&json!("ready"), &json!(path.to_string_lossy())), "{}", worktree(&shell));
         coord.shutdown().await;
     }
 

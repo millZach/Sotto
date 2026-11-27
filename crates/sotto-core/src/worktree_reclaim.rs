@@ -27,7 +27,7 @@ pub const REPAIRING_LOCK_REASON: &str = "Sotto is repairing this folder";
 /// Kept beside Git's lock while Sotto removes a folder: the nested worktrees whose registrations go too.
 const REMOVAL_RECORD: &str = "sotto-removal.json";
 /// Where a thread's worktrees live under the data folder, as Node's `THREAD_WORKTREE_HOME`.
-const THREAD_WORKTREE_FOLDER: &str = "thread-worktrees";
+pub(crate) const THREAD_WORKTREE_FOLDER: &str = "thread-worktrees";
 const DETACHED_NEEDS_BRANCH: &str = "This folder has no branch checked out, so it goes only under a cleanup rule or when its thread is cleared. Switch it to a branch to remove it now. Nothing was changed.";
 const HALF_REMOVED: &str = "Sotto started removing this worktree’s folder and did not finish, so Git cannot use it. Nothing committed is lost. Choose Refresh to finish removing it; sending to the thread then puts it back on its branch or commit.";
 const PARTLY_REMOVED: &str = "This worktree’s folder was only partly removed, so Git cannot use it. Nothing committed is lost. Choose Refresh to put its missing files back from Git, then reinstall its dependencies if it had any.";
@@ -221,7 +221,7 @@ fn path_key(path: &Path) -> String {
 }
 
 /// `fs.realpath`, which names a Windows path without the `\\?\` that Rust's own gives it.
-fn realpath(path: &Path) -> io::Result<PathBuf> {
+pub(crate) fn realpath(path: &Path) -> io::Result<PathBuf> {
     fs::canonicalize(path).map(without_verbatim)
 }
 
