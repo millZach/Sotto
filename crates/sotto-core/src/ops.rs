@@ -3107,7 +3107,9 @@ fn run_git_impl(
     let stderr_reader = std::thread::spawn(move || -> Vec<u8> {
         let mut buf = Vec::new();
         if let Some(stderr) = stderr_pipe {
-            let _ = stderr.take(16 * 1024).read_to_end(&mut buf);
+            // As much of what Git said as its output may hold, so the last lines a refusal quotes are there.
+            let limit = max_buffer.unwrap_or(16 * 1024) as u64;
+            let _ = stderr.take(limit).read_to_end(&mut buf);
         }
         buf
     });

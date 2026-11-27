@@ -450,6 +450,8 @@ const RECLAIM_STOPPED: &str = "The host stopped before it could remove this fold
 const BRANCH_RESTORED_NOTICE: &str = "Branch restored.";
 /// A send whose check of its folder stopped before it finished: this host's own failure, so nothing went and it may go again.
 const SEND_FOLDER_UNCHECKED: &str = "Sotto could not check this thread’s working folder, so nothing was sent and nothing in the folder changed. Send it again.";
+/// A Git command for a thread with no folder to work in, in Node's words (`threadRepositoryFolder`).
+const NO_GIT_FOLDER: &str = "This thread has no working folder to read Git from.";
 /// A command for a thread the coordinator does not show, in Node's words (`thread` in `src/main/agents/control.ts`).
 const SELECT_AVAILABLE_THREAD: &str = "Select an available thread first.";
 /// A thread this host does not hold, in Node's words (`thread` in `src/main/agents/workspace.ts`).
@@ -2623,13 +2625,13 @@ impl CoordinatorActor {
         self.finish_sync_with_refusal(lane, client, outcome.map(|()| None), reply);
     }
 
-    /// Ends a Git command turned down in the host's state, as Node's `gitCommand` turns one down: a refusal because
-    /// something holds the checkout names the thread holding it, where one does, on this reply alone (`checkoutHold`).
+    /// Ends a Git command turned down in the host's state, as Node's `gitCommand` turns one down (`setCommandError`): its
+    /// words are the host's error, and the notice stays as it was, since Node's Git commands bypass the command path that
+    /// says a refusal. A refusal because something holds the checkout names the thread holding it, where one does, on this
+    /// reply alone (`checkoutHold`).
     fn refuse_git_command(&mut self, lane: Option<String>, client: &ClientContext, refused: ChangeRefused, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
-        let Some(hold) = refused.checkout_hold() else {
-            return self.refuse_sync_command(lane, client, refused.words, reply);
-        };
-        self.command_refused(refused.words);
+        let hold = refused.checkout_hold();
+        self.error = Some(refused.words);
         if let Some(ref tid) = lane {
             self.busy_thread_ids.remove(tid);
         } else {
@@ -2639,7 +2641,10 @@ impl CoordinatorActor {
             self.save_workspace();
         }
         self.shell_dirty = true;
-        let shell = self.shell_with_checkout_hold(client, hold);
+        let shell = match hold {
+            Some(hold) => self.shell_with_checkout_hold(client, hold),
+            None => self.build_shell(client.may_answer),
+        };
         let _ = reply.send(Ok(shell));
         self.flush_dirty();
         self.drain_lane(lane);
@@ -3713,8 +3718,9 @@ impl CoordinatorActor {
                     }
                 }
             }
-            // The record follows what Git did, and the folder's status is read again, as Node's `followGitChange` reads it;
-            // a refusal keeps the record read on the way, and one because something holds the checkout names it.
+            // The record follows what Git did, with the folder's status read again before the reply, as Node's
+            // `followGitChange` reads it; a refusal is the error alone, as Node's `gitCommand` sets it, keeps the record read
+            // on the way, and names what holds the checkout when that refused it.
             AsyncCommandOutcome::LocalGit { folder, checkout_held, thread_id, record, result } => {
                 if let Some(folder) = folder {
                     self.held_worktree_folders.release(&folder);
@@ -3726,13 +3732,10 @@ impl CoordinatorActor {
                     self.keep_worktree_record(&thread_id, record);
                 }
                 match result {
-                    Ok(notice) => {
-                        self.notice = notice;
-                        self.read_git_status(&thread_id);
-                    }
+                    Ok(notice) => self.notice = notice,
                     Err(refused) => {
                         let hold = refused.checkout_hold();
-                        self.command_refused(refused.words);
+                        self.error = Some(refused.words);
                         if let Some(hold) = hold {
                             return Ok(self.shell_with_checkout_hold(client, hold));
                         }
@@ -4645,12 +4648,21 @@ impl CoordinatorActor {
         self.error = None;
         let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
         let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
-            return self.refuse_sync_command(lane, &client, SELECT_AVAILABLE_THREAD.into(), reply);
+            return self.refuse_git_command(lane, &client, SELECT_AVAILABLE_THREAD.to_string().into(), reply);
         };
+        // The checkout a change holds, as Node's `threadCheckoutFolder` names it: a thread's own worktree's recorded folder,
+        // even one Sotto removed, which a Git command puts back; otherwise its repository's folder. Read before the
+        // thread's own holders, as Node reads it first.
+        let checkout = match thread.worktree.as_ref() {
+            Some(wt) if wt.mode == "independent" && wt.path.is_some() => wt.path.clone().unwrap_or_default(),
+            _ => self.checkout_folder(thread),
+        };
+        if checkout.is_empty() {
+            return self.refuse_git_command(lane, &client, NO_GIT_FOLDER.to_string().into(), reply);
+        }
         if let Some(holder) = own_checkout_holder(thread) {
             return self.refuse_git_command(lane, &client, holder.refused(Some(&thread_id)), reply);
         }
-        let checkout = self.checkout_folder(thread);
         let candidates = self.checkout_candidates(&thread_id);
         let project_path = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
         let working = crate::git_local::ThreadFolder {
@@ -4669,7 +4681,17 @@ impl CoordinatorActor {
                 Err(refused) => (None, None, Err(refused)),
                 Ok(()) => {
                     let folder = working.worktree.as_ref().and_then(|wt| wt.path.clone()).filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
-                    let (record, result) = crate::git_local::run(&data_directory, &working, &git);
+                    let (mut record, result) = crate::git_local::run(&data_directory, &working, &git);
+                    // The folder's status as Git left it, read before the reply, as Node's `followGitChange` awaits it.
+                    if result.is_ok() {
+                        let read = record.clone().or_else(|| working.worktree.clone()).filter(|wt| wt.status == "ready" && !wt.reclaimed());
+                        if let Some(mut wt) = read {
+                            if let Some(path) = wt.path.clone() {
+                                wt.git = Some(probe_git_worktree(&path));
+                                record = Some(wt);
+                            }
+                        }
+                    }
                     (folder, record, result.map_err(ChangeRefused::from))
                 }
             };
@@ -7489,7 +7511,7 @@ mod tests {
         assert_eq!((&shell["error"], &shell["checkoutHold"]), (&json!(words), &json!({ "threadId": switching })));
         mock.complete_turn(switching, "Done");
         wait_until_idle(&coord, switching).await;
-        run(json!({ "type": "manual-send", "threadId": busy, "text": "Busy here" })).await.unwrap();
+        let notice = run(json!({ "type": "manual-send", "threadId": busy, "text": "Busy here" })).await.unwrap()["notice"].clone();
         for command in [
             json!({ "type": "git-switch-branch", "threadId": switching, "ref": "feature", "create": true }),
             json!({ "type": "git-pull", "threadId": switching }),
@@ -7497,7 +7519,7 @@ mod tests {
         ] {
             let shell = run(command.clone()).await.unwrap();
             let words = "Thread \"Busy\" is working in this folder. Nothing was changed. Wait for it to finish before changing this folder.";
-            assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &json!(words)), "{command}");
+            assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &notice), "{command}: a Git refusal is the error alone");
             assert_eq!(shell["checkoutHold"], json!({ "threadId": busy }), "{command}");
         }
         assert_eq!(branch(), "main", "the checkout stays where the working thread has it");
@@ -7515,6 +7537,7 @@ mod tests {
         assert_eq!(branch(), "feature");
         let thread = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == switching).unwrap().clone();
         assert_eq!((&thread["worktree"]["branch"], &thread["worktree"]["sentBranch"]), (&json!("feature"), &json!("feature")), "a switch made here is the user's own");
+        assert_eq!(thread["worktree"]["git"]["branch"], "feature", "the reply carries the status Git left");
         let shell = run(json!({ "type": "git-switch-branch", "threadId": busy, "ref": "main" })).await.unwrap();
         assert_eq!((&shell["error"], &shell["notice"]), (&Value::Null, &json!("Switched to main.")));
         assert_eq!(branch(), "main");

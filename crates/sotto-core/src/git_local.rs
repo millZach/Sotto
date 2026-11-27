@@ -88,6 +88,9 @@ pub fn run(data_directory: &Path, thread: &ThreadFolder, command: &LocalGitComma
     let mut current = thread.worktree.clone();
     let kept = |current: Option<AgentThreadWorktree>| current.filter(|record| Some(record) != thread.worktree.as_ref());
     if current.is_none() && thread.started {
+        if thread.directory().is_empty() {
+            return (None, Err("This thread’s working folder is unavailable.".into()));
+        }
         match shared_working_copy(None, &thread.directory()) {
             Ok(found) => current = Some(found),
             Err(words) => return (None, Err(words)),
