@@ -142,4 +142,8 @@ fn takes_only_an_available_existing_worktree() {
     assert_eq!(existing_worktree(&fixture.repo(), &text(&fixture.user)).unwrap_err(), NOT_AN_AVAILABLE_WORKTREE);
     assert_eq!(fs::read_to_string(fixture.user.join("draft.txt")).unwrap(), "the user's own work\n");
     assert!(plain.is_dir());
+
+    // A project that is not a repository has no worktrees: the thread works in the project folder, as Node's `allocate`.
+    let record = existing_worktree(&text(&plain), &text(&fixture.user)).unwrap();
+    assert_eq!(serde_json::to_value(&record).unwrap(), json!({ "mode": "shared", "status": "ready", "path": text(&plain) }));
 }

@@ -138,11 +138,31 @@ pub fn selected_working_copy(data_directory: &Path, project_path: &str, selectio
 /// The existing worktree a thread's first send works in, as Node's `allocate` takes one: the folder, where any link in it
 /// leads, must be a worktree the project's repository lists and has not locked or marked prunable; it is recorded as the
 /// user's own (`reused`), with its repository and the project's place in it, and read as Git has it now. Nothing is
-/// made, moved or removed.
+/// made, moved or removed. A project that is not a repository has no worktrees, so the thread works in the project folder
+/// itself, as Node's `allocate` answers then; any other failure of Git is Git's own words.
 pub fn existing_worktree(project_path: &str, existing: &str) -> Result<AgentThreadWorktree, String> {
     let cwd = existing_working_directory(Path::new(project_path)).map_err(|refused| refused.words)?;
-    let root = git(&cwd, &["rev-parse", "--show-toplevel"]).map_err(|_| "Separate worktrees require a Git repository.".to_string())?;
-    let root = PathBuf::from(root.trim());
+    let root = match git(&cwd, &["rev-parse", "--show-toplevel"]) {
+        Ok(root) => PathBuf::from(root.trim()),
+        Err(words) if words.contains("not a git repository") => {
+            return Ok(AgentThreadWorktree {
+                mode: "shared".into(),
+                status: "ready".into(),
+                path: Some(text(&cwd)),
+                repository_root: None,
+                branch: None,
+                base_branch: None,
+                start_from_origin: None,
+                existing_worktree_path: None,
+                reused: None,
+                temporary_branch: None,
+                error: None,
+                git: None,
+                extra: Map::new(),
+            })
+        }
+        Err(words) => return Err(words),
+    };
     let path = existing_working_directory(Path::new(existing)).map_err(|refused| refused.words)?;
     let identity = registry_identity(&root)?;
     let listed = registry(&root, &["worktree", "list", "--porcelain", "-z"], Some(&identity))?;
