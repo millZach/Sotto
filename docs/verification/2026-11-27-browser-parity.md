@@ -55,7 +55,7 @@ After a code review, the built app was used by hand on Windows: a secret request
 - At 820×560 a profile page at 125% pushed More under the window's Close button. The profile's name now shrinks to its icon, the zoom chip shows only its magnifier in a narrow row and steps aside in the narrowest row, where **Actual size** in More still says the level. `browser-parity.spec.ts` checks that every control ends inside the row's padding at that size.
 - The secret-files folder stayed behind if Sotto started with secret requests off. It is now emptied at every start.
 
-Ctrl with the wheel is checked against the zoom requests Chromium raises: Electron's `sendInputEvent` follows its wheel with a synthetic end of scroll that Chromium counts as a second notch, so one call gives two steps in the test.
+Ctrl with the wheel is checked against the zoom requests Chromium raises: Electron's `sendInputEvent` follows its wheel with a synthetic end of scroll that Chromium counts as a second notch, so one call gives two steps in the test. A real mouse gives one: a single Ctrl+wheel notch sent through Windows' own input (`mouse_event`) to the built app raised one request and took the page from 100% to 110%.
 
 ## Not checked here
 
