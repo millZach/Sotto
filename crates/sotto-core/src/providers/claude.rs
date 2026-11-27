@@ -87,9 +87,14 @@ impl ClaudeAdapterConfig {
             return Some(ClaudeLaunch { executable: PathBuf::from(&self.executable), prefix_args: Vec::new(), path: None });
         }
         let options = crate::cli_lookup::CliLookupOptions::from_process_env();
-        let resolved = crate::cli_lookup::resolve_provider_cli("claude", &self.data_directory, &options)?;
+        crate::cli_lookup::resolve_provider_cli("claude", &self.data_directory, &options).map(ClaudeLaunch::from)
+    }
+}
+
+impl From<crate::cli_lookup::ResolvedCli> for ClaudeLaunch {
+    fn from(resolved: crate::cli_lookup::ResolvedCli) -> Self {
         let path = (!resolved.augmented_path.is_empty()).then_some(resolved.augmented_path);
-        Some(ClaudeLaunch { executable: resolved.executable, prefix_args: resolved.prefix_args, path })
+        Self { executable: resolved.executable, prefix_args: resolved.prefix_args, path }
     }
 }
 

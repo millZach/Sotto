@@ -150,6 +150,9 @@ pub struct CliSpec {
     pub follow_realpath: bool,
     pub prefer_codex_vendor: bool,
     pub prefer_muse_maker: bool,
+    /// Only `<name>.exe` on Windows, as Node's lookup looks: npm's `.cmd` and `.bat` launchers are passed over, since
+    /// Windows starts a batch file only through a shell.
+    pub exe_only: bool,
 }
 
 impl CliSpec {
@@ -162,6 +165,7 @@ impl CliSpec {
             follow_realpath: false,
             prefer_codex_vendor: false,
             prefer_muse_maker: false,
+            exe_only: false,
         }
     }
 }
@@ -670,14 +674,16 @@ fn muse_maker_binary(folder: &Path, windows: bool) -> Option<PathBuf> {
     }
 }
 
-fn candidate_filenames(name: &str, alt_names: &[String], windows: bool) -> Vec<String> {
+fn candidate_filenames(name: &str, alt_names: &[String], windows: bool, exe_only: bool) -> Vec<String> {
     let mut names = Vec::new();
     let all = std::iter::once(name).chain(alt_names.iter().map(String::as_str));
     for n in all {
         if windows {
             names.push(format!("{n}.exe"));
-            names.push(format!("{n}.cmd"));
-            names.push(format!("{n}.bat"));
+            if !exe_only {
+                names.push(format!("{n}.cmd"));
+                names.push(format!("{n}.bat"));
+            }
         } else {
             names.push(n.to_string());
         }
@@ -867,7 +873,7 @@ pub fn find_cli(spec: &CliSpec, opts: &CliLookupOptions) -> Option<ResolvedCli> 
     }
     stages.push(spec.last.clone());
 
-    let filenames = candidate_filenames(&spec.name, &spec.alt_names, opts.windows);
+    let filenames = candidate_filenames(&spec.name, &spec.alt_names, opts.windows, spec.exe_only);
     let mut tried: HashSet<String> = HashSet::new();
     let mut skipped_fallbacks: Vec<PathBuf> = Vec::new();
 
@@ -1080,6 +1086,9 @@ pub fn resolve_provider_cli(
         }
         "claude" => {
             let mut spec = CliSpec::simple("claude");
+            // Node's `findClaudeExecutable`: a `claude.cmd` would take a side call's system prompt through a shell, which
+            // refuses its line breaks.
+            spec.exe_only = true;
             if let Some(ref h) = home {
                 spec.first.push(h.join(".local").join("bin"));
                 spec.last.push(h.join(".claude").join("local"));
@@ -1361,10 +1370,12 @@ mod tests {
         fs::create_dir_all(&data).unwrap();
         let windows = cfg!(windows);
         let ext = if windows { ".cmd" } else { "" };
+        // Claude Code is found only by its `.exe` name on Windows.
+        let claude_ext = if windows { ".exe" } else { "" };
         let opts = bare_path_options(&home, &bare_sys_bin, windows);
 
         // Exact forge layout: ~/.local/bin/claude wraps `mise x`, real binary is in mise/installs.
-        let wrapper = home.join(".local/bin").join(format!("claude{ext}"));
+        let wrapper = home.join(".local/bin").join(format!("claude{claude_ext}"));
         make_fake_executable(
             &wrapper,
             "#!/usr/bin/env bash\nmise use -g claude@latest\nexec mise x -- claude \"$@\"\n",
@@ -1375,7 +1386,7 @@ mod tests {
             } else {
                 ".local/share/mise/installs/claude/latest"
             })
-            .join(format!("claude{ext}"));
+            .join(format!("claude{claude_ext}"));
         make_fake_executable(&direct, "#!/bin/sh\necho direct\n");
 
         let resolved = resolve_provider_cli("claude", &data, &opts).unwrap();
@@ -1392,6 +1403,24 @@ mod tests {
         make_fake_executable(&shim, "#!/bin/sh\necho shim\n");
         let resolved_shim = resolve_provider_cli("devin", &data, &opts).unwrap();
         assert_eq!(resolved_shim.executable, shim);
+    }
+
+    /// Node's `findClaudeExecutable` looks for `claude.exe` on Windows and passes over npm's `claude.cmd`
+    /// (`tests/unit/main/cliLookup.test.ts`): Windows starts a batch file only through a shell, which mangles or
+    /// refuses an argument with a line break in it, such as a side call's system prompt.
+    #[test]
+    fn claude_on_windows_is_found_by_its_exe_name_past_npms_cmd_shims() {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        let data = dir.path().join("data");
+        let opts = bare_path_options(&home, &dir.path().join("sysbin"), true);
+        make_fake_executable(&home.join(".local/bin/claude.cmd"), "@echo off\r\n");
+        make_fake_executable(&home.join("AppData/Roaming/npm/claude.bat"), "@echo off\r\n");
+        assert!(resolve_provider_cli("claude", &data, &opts).is_none(), "a shim alone is not Claude Code");
+
+        let claude = home.join(".claude/local/claude.exe");
+        make_fake_executable(&claude, "MZ");
+        assert_eq!(resolve_provider_cli("claude", &data, &opts).unwrap().executable, claude);
     }
 
     #[test]

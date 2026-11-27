@@ -166,6 +166,41 @@ fn read_result(output: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    /// A commit draft's system prompt has blank lines in it (`commit_draft.rs`). Windows starts npm's `claude.cmd` only
+    /// through a shell, and Rust refuses a line break in a batch file's argument, so a lookup that took the shim failed
+    /// every draft with START_FAILED. Node takes `claude.exe` past the shim, and the prompt reaches it whole.
+    #[cfg(windows)]
+    #[test]
+    fn a_multiline_system_prompt_reaches_the_claude_exe_found_past_a_cmd_shim() {
+        use crate::cli_lookup::{find_cli, resolve_provider_cli, CliLookupOptions, CliSpec};
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let shim = home.join(".local").join("bin").join("claude.cmd");
+        std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        std::fs::write(&shim, "@echo off\r\necho {\"type\":\"result\",\"result\":\"the shim\"}\r\n").unwrap();
+        // Claude Code's own `claude.exe`, played by Node running a script that answers with the system prompt it got.
+        let node = find_cli(&CliSpec::simple("node"), &CliLookupOptions::from_process_env()).expect("node").executable;
+        let claude = home.join(".claude").join("local").join("claude.exe");
+        std::fs::create_dir_all(claude.parent().unwrap()).unwrap();
+        if std::fs::hard_link(&node, &claude).is_err() {
+            std::fs::copy(&node, &claude).unwrap();
+        }
+        let answer = dir.path().join("answer.mjs");
+        std::fs::write(&answer, "const args = process.argv.slice(2)\nprocess.stdin.resume()\nprocess.stdin.on('end', () => process.stdout.write(JSON.stringify({ type: 'result', result: args[args.indexOf('--system-prompt') + 1] })))\n").unwrap();
+
+        let env = [("PATH", dir.path().join("sysbin")), ("USERPROFILE", home.clone()), ("APPDATA", home.join("AppData").join("Roaming")), ("LOCALAPPDATA", home.join("AppData").join("Local"))]
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value.to_string_lossy().into_owned()))
+            .collect();
+        let options = CliLookupOptions { env, home: Some(home.clone()), windows: true, macos: false, login_shell_path: Some(None) };
+        let launch = ClaudeLaunch::from(resolve_provider_cli("claude", dir.path(), &options).expect("Claude Code"));
+        let prompt = ShortTextPrompt { instruction: "Line one.\n\nLine \"two\".\r\nThree.".into(), material: "diff".into(), purpose: crate::side_writing::ShortTextPurpose::CommitMessage };
+        let run = SideRun { prompt: &prompt, model: "opus", effort: None, cwd: dir.path(), deadline: Duration::from_secs(60) };
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let written = runtime.block_on(write(&launch, &[answer.to_string_lossy().into_owned()], run));
+        assert_eq!(written, Ok(prompt.instruction.clone()));
+    }
+
     #[test]
     fn checks_the_model_and_effort_as_node_does() {
         for model in ["opus", "claude-opus-5-5", "opus[1m]", "Sonnet[1M]", "us.anthropic/claude:v1.0"] {
