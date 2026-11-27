@@ -290,3 +290,19 @@ fn a_switch_stopped_at_its_deadline_leaves_no_index_lock() {
     assert_eq!(switched, Err("git did not finish in time.".to_string()));
     assert!(!remote.ours.join(".git").join("index.lock").exists(), "Git was stopped without the chance to remove its lock");
 }
+
+/// A folder a Git action holds refuses Pull, Switch branch and Initialize Git until it is let go, as Node's one busy map
+/// in `GitActions` holds all of them.
+#[test]
+fn a_folder_a_git_action_holds_refuses_pull_switch_and_init() {
+    let remote = Remote::new();
+    let empty = tempfile::tempdir().unwrap();
+    let held = [Exclusive::hold(&remote.ours()).unwrap(), Exclusive::hold(&text(empty.path())).unwrap()];
+    assert_eq!(pull(&remote.ours()).unwrap_err(), "Git action in progress.");
+    assert_eq!(switch_branch(&remote.ours(), "topic", false).unwrap_err(), "Git action in progress.");
+    assert_eq!(init(&text(empty.path())).unwrap_err(), "Git action in progress.");
+    drop(held);
+    assert!(pull(&remote.ours()).is_ok());
+    assert_eq!(switch_branch(&remote.ours(), "topic", false).unwrap(), Some("topic".into()));
+    assert!(init(&text(empty.path())).is_ok());
+}

@@ -3,9 +3,12 @@
 //! `threadWorkingDirectory` gives them, and the notice Node's coordinator says for each (`gitCommand` in
 //! `src/main/agents/control.ts`). None of them reaches GitHub. A pull only fast-forwards; a switch never forces, so Git
 //! refuses one that would lose work; nothing answers a prompt. Every refusal is in T3's words, or Git's, and leaves the
-//! folder as it was. The checkout these run in is held by the coordinator while they run.
+//! folder as it was. The checkout these run in is held by the coordinator while they run, and the folder by the hold a Git
+//! action takes, so one Git action or command runs in a folder at a time.
 
+use std::collections::HashSet;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::{Map, Value};
@@ -20,6 +23,33 @@ const COMMAND_DEADLINE: Duration = Duration::from_secs(30);
 const QUICK_DEADLINE: Duration = Duration::from_secs(10);
 /// Node's `PULL_TIMEOUT_MS`.
 const PULL_DEADLINE: Duration = Duration::from_secs(30);
+
+/// The folders a Git action, a pull, a switch or Initialize Git is running in, as Node's `GitActions` holds one of them
+/// per folder at a time in one busy map.
+fn busy() -> &'static Mutex<HashSet<String>> {
+    static BUSY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    BUSY.get_or_init(Mutex::default)
+}
+
+/// A folder held for one Git action or local Git command, let go when it is dropped.
+pub(crate) struct Exclusive(String);
+
+impl Exclusive {
+    /// The folder held, or Node's refusal when something already holds it.
+    pub(crate) fn hold(cwd: &str) -> Result<Self, String> {
+        let mut held = busy().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !held.insert(cwd.to_string()) {
+            return Err("Git action in progress.".into());
+        }
+        Ok(Self(cwd.to_string()))
+    }
+}
+
+impl Drop for Exclusive {
+    fn drop(&mut self) {
+        busy().lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&self.0);
+    }
+}
 
 /// What Initialize Git says once the folder is a repository, as Node's coordinator says it.
 pub const INITIALIZED_NOTICE: &str = "Git initialized.";
@@ -187,7 +217,7 @@ impl Pulled {
 
 /// Whether `cwd` is in a repository, as Node's status read decides it (`rev-parse --git-common-dir`). Git missing is its
 /// own failure, never a folder called "not a repository".
-fn is_repository(cwd: &str) -> Result<bool, String> {
+pub(crate) fn is_repository(cwd: &str) -> Result<bool, String> {
     match git(cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir"], COMMAND_DEADLINE) {
         Ok(_) => Ok(true),
         Err(words) if words == GIT_MISSING => Err(words),
@@ -200,6 +230,7 @@ fn is_repository(cwd: &str) -> Result<bool, String> {
 /// whatever Git checks out by that name. Git refuses a checkout that would overwrite uncommitted work, and nothing is
 /// forced. Answered with the branch the folder is on afterwards, `None` when it is detached.
 pub fn switch_branch(cwd: &str, reference: &str, create: bool) -> Result<Option<String>, String> {
+    let _held = Exclusive::hold(cwd)?;
     if js_trim(reference).is_empty() || reference.starts_with('-') {
         return Err(INVALID_BRANCH_NAME.into());
     }
@@ -241,6 +272,7 @@ pub fn switch_branch(cwd: &str, reference: &str, create: bool) -> Result<Option<
 
 /// `git init` for a folder that is not in a repository yet, as Node's `init`.
 pub fn init(cwd: &str) -> Result<(), String> {
+    let _held = Exclusive::hold(cwd)?;
     if is_repository(cwd)? {
         return Err("This folder is already a Git repository.".into());
     }
@@ -251,6 +283,7 @@ pub fn init(cwd: &str) -> Result<(), String> {
 /// T3's pull, as Node's `pull`: only a branch that tracks an upstream, and only a fast-forward (`git pull --ff-only`), so a
 /// branch that has diverged is refused and nothing is merged or rebased.
 pub fn pull(cwd: &str) -> Result<Pulled, String> {
+    let _held = Exclusive::hold(cwd)?;
     if !is_repository(cwd)? {
         return Err("This folder is not a Git repository.".into());
     }
@@ -293,24 +326,29 @@ pub(crate) fn js_space(c: char) -> bool {
     (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
-fn js_trim(text: &str) -> &str {
+pub(crate) fn js_trim(text: &str) -> &str {
     text.trim_matches(js_space)
 }
 
 /// The last two lines of what Git said, joined, as Node keeps them (`split('\n').slice(-2).join(' ')`).
-fn last_two_lines(text: &str) -> String {
+pub(crate) fn last_two_lines(text: &str) -> String {
+    last_lines(text, 2)
+}
+
+/// The last `count` lines of what Git said, joined with spaces, as Node keeps them (`split('\n').slice(-count)`).
+pub(crate) fn last_lines(text: &str, count: usize) -> String {
     let lines: Vec<&str> = text.split('\n').collect();
-    lines[lines.len().saturating_sub(2)..].join(" ")
+    lines[lines.len().saturating_sub(count)..].join(" ")
 }
 
 /// `{lead} {detail}` with `detail` cut to `max` UTF-16 code units, trimmed, as Node's refusals build it.
-fn refused_with(lead: &str, detail: &str, max: usize) -> String {
+pub(crate) fn refused_with(lead: &str, detail: &str, max: usize) -> String {
     js_trim(&format!("{lead} {}", clip_utf16(detail, max))).to_string()
 }
 
 /// What Git said with any user name or token in a remote's address taken out, as Node's `safeRemote`
 /// (`((?:https?|ssh):\/\/)[^\s/@]+@`, without regard to case).
-fn safe_remote(text: &str) -> String {
+pub(crate) fn safe_remote(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(c) = rest.chars().next() {
