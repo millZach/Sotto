@@ -1680,6 +1680,25 @@ pub fn owns_checkout_alone(folder: &str, others: &[Option<String>]) -> bool {
     true
 }
 
+/// The threads among `others`, each with its checkout folder, that work in `folder`'s checkout, as Node's
+/// `threadsInCheckout` finds them for a change to it: each folder's identity is read once, a missing folder is only the
+/// place it names, as Node's `checkoutIdentity` reads one, and another thread's folder that cannot be read is in no
+/// checkout. When `folder` itself cannot be read, nothing is known of who works in it, and the change does not go.
+pub fn threads_in_checkout(folder: &str, others: &[(String, String)]) -> Result<Vec<String>, String> {
+    let read = |path: &str| match checkout_identity(Path::new(path)) {
+        Ok(identity) => Ok(identity),
+        Err(refused) if refused.missing => Ok(path_key(Path::new(path))),
+        Err(refused) => Err(refused.words),
+    };
+    let identity = read(folder)?;
+    let mut known: HashMap<&str, Option<String>> = HashMap::new();
+    Ok(others
+        .iter()
+        .filter(|(_, other)| known.entry(other.as_str()).or_insert_with(|| read(other).ok()).as_ref() == Some(&identity))
+        .map(|(id, _)| id.clone())
+        .collect())
+}
+
 mod restore;
 pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, working_copy_command_shape, NO_CHECKOUT_TO_SWITCH, RESTORE_BRANCH_NEEDS_CONFIRMATION};
 

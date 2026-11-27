@@ -3,6 +3,7 @@ pub mod answered_requests;
 pub mod attachment_files;
 pub mod attachment_previews;
 pub mod attachment_store;
+pub(crate) mod checkout_mutations;
 pub mod checkpoints;
 pub mod cli_lookup;
 pub mod command_receipts;

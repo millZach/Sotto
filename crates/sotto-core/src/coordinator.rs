@@ -9,6 +9,7 @@ use serde_json::{json, Map, Value};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
+use crate::checkout_mutations::CheckoutHolder;
 use crate::answered_requests::{answer_decision_id, request_questions_digest, AnswerTarget, AnsweredRequest, AnsweredRequests, SAVED_KEY as ANSWERED_REQUESTS_KEY};
 use crate::failures_seen::{FailuresSeen, ThreadsView, SAVED_KEY as FAILURES_SEEN_KEY};
 use crate::followup_queue::{FollowupEdit, FollowupPrompt, FollowupSettle, UNKNOWN_TURN};
@@ -516,6 +517,21 @@ impl FolderHolds {
     }
 }
 
+/// A checkout a change holds: its folder and every thread that works in it, none of which a send goes to meanwhile.
+struct CheckoutHold {
+    folder: String,
+    threads: HashSet<String>,
+}
+
+/// A change waiting to hold its thread's checkout, as `ActorMessage::HoldCheckout` answers it: why not, in Node's words.
+fn hold_checkout(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: &str, folder: &str, sharing: Vec<String>) -> Result<(), String> {
+    let stopped = || "Sotto is closing. Nothing was changed.".to_string();
+    let (reply, answer) = oneshot::channel();
+    let message = ActorMessage::HoldCheckout { thread_id: thread_id.to_string(), folder: folder.to_string(), sharing, reply };
+    self_tx.send(message).map_err(|_| stopped())?;
+    answer.blocking_recv().map_err(|_| stopped())?
+}
+
 /// A removal waiting for its held folder's Git status reads to finish.
 struct FolderWaiter {
     thread_id: String,
@@ -656,6 +672,8 @@ enum AsyncCommandOutcome {
     /// A thread's project checkout back on the branch of its last send, or why not, with any record read on the way.
     BranchRestore {
         folder: Option<String>,
+        /// Whether the thread's checkout was held for the switch.
+        checkout_held: bool,
         thread_id: String,
         result: Result<AgentThreadWorktree, (String, Option<Box<AgentThreadWorktree>>)>,
     },
@@ -780,6 +798,16 @@ enum ActorMessage {
         client: ClientContext,
         outcome: Box<AsyncCommandOutcome>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    },
+    /// A change to a thread's checkout holds it, as Node's `acquireCheckoutMutationInFolder` reserves one: refused, in
+    /// Node's words, while another change holds it, a send in it is on its way, or a thread in it works, waits on an answer
+    /// or holds work; otherwise held until the change finishes, and a send to any thread in it waits. `sharing` is the other
+    /// threads whose folder is in the same checkout.
+    HoldCheckout {
+        thread_id: String,
+        folder: String,
+        sharing: Vec<String>,
+        reply: oneshot::Sender<Result<(), String>>,
     },
     /// A removal of a thread's own worktree folder holds it (ADR-0041): no Git status read starts in it from now, and the
     /// answer waits until one already running has finished, as Node's `gitStatus.hold` and `idle`. Delete thread… also
@@ -1437,6 +1465,8 @@ struct CoordinatorActor {
     /// The Git status reads running, by folder, and the removals waiting for a held folder's reads to finish.
     git_probes_running: HashMap<String, usize>,
     folder_idle_waiters: HashMap<String, Vec<FolderWaiter>>,
+    /// The checkouts a change holds, by the thread that made the change, as Node's `CheckoutMutations` holds them.
+    checkout_holds: HashMap<String, CheckoutHold>,
     /// The follow-up queue, kept in `followups.json` as Node keeps it.
     followups: FollowupStore,
     /// Who queued each follow-up while this host ran, by item ID.
@@ -1598,6 +1628,7 @@ impl CoordinatorActor {
             held_worktree_folders: FolderHolds::default(),
             git_probes_running: HashMap::new(),
             folder_idle_waiters: HashMap::new(),
+            checkout_holds: HashMap::new(),
             followups,
             followup_origins: HashMap::new(),
             followup_answers: HashMap::new(),
@@ -2220,6 +2251,10 @@ impl CoordinatorActor {
                 self.drain_lane(lane);
                 self.pump_followups();
             }
+            ActorMessage::HoldCheckout { thread_id, folder, sharing, reply } => {
+                let held = self.hold_checkout_now(&thread_id, folder, sharing);
+                let _ = reply.send(held);
+            }
             ActorMessage::HoldFolder { thread_id, folder, recheck, reply } => {
                 self.held_worktree_folders.hold(&folder);
                 let waiter = FolderWaiter { thread_id, recheck, reply };
@@ -2830,6 +2865,29 @@ impl CoordinatorActor {
             self.finish_sync_command(lane, &client, Err(CoordinatorError::unavailable("Provider is not available.")), reply);
             return;
         };
+
+        // A change holding the thread's checkout, such as Restore branch switching it, turns the prompt down before it goes,
+        // in Node's words for a prompt or, for a follow-up the queue sent, for that.
+        if let Some(holder) = self.send_checkout_holder(&thread) {
+            let queued = self.followups.items().iter().any(|i| i.thread_id == tid && i.draft_id == draft_id);
+            let words = if queued { holder.queued_refused() } else { holder.draft_refused() };
+            let now = now_iso();
+            self.deliveries.push(AgentDelivery {
+                command_id,
+                draft_id,
+                thread_id: tid,
+                message_id: None,
+                status: "failed".into(),
+                error: Some(words.clone()),
+                created_at: now.clone(),
+                updated_at: now,
+                local_feedback_ms: Some(0),
+                provider_latency_ms: None,
+            });
+            self.error = Some(words);
+            self.finish_sync_command(lane, &client, Ok(()), reply);
+            return;
+        }
 
         let needs_worktree = thread
             .worktree
@@ -3480,9 +3538,12 @@ impl CoordinatorActor {
                     self.read_git_status(&thread_id);
                 }
             }
-            AsyncCommandOutcome::BranchRestore { folder, thread_id, result } => {
+            AsyncCommandOutcome::BranchRestore { folder, checkout_held, thread_id, result } => {
                 if let Some(folder) = folder {
                     self.held_worktree_folders.release(&folder);
+                }
+                if checkout_held {
+                    self.checkout_holds.remove(&thread_id);
                 }
                 match result {
                     Ok(record) => {
@@ -4343,10 +4404,11 @@ impl CoordinatorActor {
         });
     }
 
-    /// Restore branch, as Node's `restoreThreadBranch` and its coordinator: refused while the thread works or waits on an
-    /// answer, as Node's Git actions are (`gitActionFolder`); then, off the coordinator's thread in the thread's lane with
-    /// its folder held, the project checkout goes back to the branch of the thread's last send. Uncommitted work on another
-    /// branch moves only with the user's answer (`withUncommittedChanges`).
+    /// Restore branch, as Node's `restoreThreadBranch` and its coordinator, in the thread's lane: refused while the thread
+    /// waits on an answer or works, then, off the coordinator's thread, while anything holds its checkout or any thread
+    /// that works in it is busy, in Node's words and order (`acquireCheckoutMutationInFolder`). With the checkout held, so
+    /// no send goes to a thread in it, and its folder held, the checkout goes back to the branch of the thread's last send.
+    /// Uncommitted work on another branch moves only with the user's answer (`withUncommittedChanges`).
     fn cmd_restore_thread_branch(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
         if let Err(err) = working_copy_command_shape(command) {
             return self.finish_sync_command(lane, &client, Err(err), reply);
@@ -4356,31 +4418,138 @@ impl CoordinatorActor {
         let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
             return self.refuse_sync_command(lane, &client, UNKNOWN_THREAD.into(), reply);
         };
-        let refusal = if thread.status == "running" {
-            Some("Wait for the thread to finish its turn before changing Git.")
-        } else if !thread.requests.is_empty() {
-            Some("Answer the thread's waiting request before changing Git.")
-        } else if self.in_flight_sends.contains_key(&thread_id) {
-            Some("Wait for active or pending thread work before changing Git.")
+        let own = if !thread.requests.is_empty() {
+            Some(CheckoutHolder::WaitingAnswer(thread.title.clone()))
+        } else if thread.status == "running" {
+            Some(CheckoutHolder::Turn(thread.title.clone()))
         } else {
             None
         };
-        if let Some(words) = refusal {
-            return self.refuse_sync_command(lane, &client, words.into(), reply);
+        if let Some(holder) = own {
+            return self.refuse_sync_command(lane, &client, holder.change_refused(), reply);
         }
-        let Some(worktree) = thread.worktree.clone() else {
-            return self.refuse_sync_command(lane, &client, crate::worktree_reclaim::NO_CHECKOUT_TO_SWITCH.into(), reply);
-        };
+        let checkout = self.checkout_folder(thread);
+        let candidates = self.checkout_candidates(&thread_id);
+        let worktree = thread.worktree.clone();
         let with_uncommitted_changes = command.get("withUncommittedChanges") == Some(&Value::Bool(true));
         let project = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
         let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
         tokio::task::spawn_blocking(move || {
-            let folder = worktree.path.clone().filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
-            let filled = crate::worktree_reclaim::with_repository(&worktree, &project);
-            let result = crate::worktree_reclaim::restore_thread_branch(&data_directory, &filled, with_uncommitted_changes);
-            let outcome = AsyncCommandOutcome::BranchRestore { folder, thread_id, result };
+            let held = crate::worktree_reclaim::threads_in_checkout(&checkout, &candidates).and_then(|sharing| hold_checkout(&self_tx, &thread_id, &checkout, sharing));
+            let checkout_held = held.is_ok();
+            let (folder, result) = match (held, worktree) {
+                (Err(words), _) => (None, Err((words, None))),
+                (Ok(()), None) => (None, Err((crate::worktree_reclaim::NO_CHECKOUT_TO_SWITCH.to_string(), None))),
+                (Ok(()), Some(worktree)) => {
+                    let folder = worktree.path.clone().filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
+                    let filled = crate::worktree_reclaim::with_repository(&worktree, &project);
+                    (folder, crate::worktree_reclaim::restore_thread_branch(&data_directory, &filled, with_uncommitted_changes))
+                }
+            };
+            let outcome = AsyncCommandOutcome::BranchRestore { folder, checkout_held, thread_id, result };
             let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
         });
+    }
+
+    /// The folder whose checkout a thread works in, as Node's `threadCheckoutFolder`: its own worktree's recorded folder,
+    /// which is its identity even while it is missing; for a worktree Sotto removed, its project's; otherwise its working
+    /// folder, or its project's.
+    fn checkout_folder(&self, thread: &AgentThread) -> String {
+        let project = || self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
+        match thread.worktree.as_ref() {
+            Some(wt) if wt.mode == "independent" && wt.reclaimed() => project(),
+            Some(wt) if wt.mode == "independent" && wt.path.is_some() => wt.path.clone().unwrap_or_default(),
+            _ => thread.working_directory.clone().unwrap_or_else(project),
+        }
+    }
+
+    /// Every other thread that may work in a checkout, with its checkout folder, as Node's `threadsInCheckout` takes them:
+    /// not an archived thread, nor one whose own worktree is not made yet or was removed.
+    fn checkout_candidates(&self, thread_id: &str) -> Vec<(String, String)> {
+        self.threads
+            .iter()
+            .filter(|t| t.id != thread_id && !has_time(t.extra.get("archivedAt").and_then(Value::as_str)))
+            .filter(|t| {
+                !t.worktree.as_ref().is_some_and(|wt| wt.mode == "independent" && (wt.path.is_none() && wt.existing_worktree_path.is_none() || wt.reclaimed()))
+            })
+            .map(|t| (t.id.clone(), self.checkout_folder(t)))
+            .collect()
+    }
+
+    /// Holds a thread's checkout for a change, or says in Node's words what holds it, as Node's
+    /// `acquireCheckoutMutationInFolder` reserves it: another change holding it, then a send on its way in it, then each
+    /// thread in it, the changing thread first, that waits on an answer, works, loads its history or holds work.
+    fn hold_checkout_now(&mut self, thread_id: &str, folder: String, sharing: Vec<String>) -> Result<(), String> {
+        let mut threads = vec![thread_id.to_string()];
+        threads.extend(sharing.into_iter().filter(|id| id != thread_id));
+        let title = |id: &str| self.threads.iter().find(|t| t.id == id).map(|t| t.title.clone()).unwrap_or_default();
+        if self.checkout_holds.values().any(|hold| hold.folder == folder || threads.iter().any(|id| hold.threads.contains(id))) {
+            return Err(CheckoutHolder::GitAction.change_refused());
+        }
+        if let Some(sending) = threads.iter().find(|id| self.in_flight_sends.contains_key(id.as_str())) {
+            return Err(CheckoutHolder::Send(title(sending)).change_refused());
+        }
+        for id in &threads {
+            if let Some(holder) = self.threads.iter().find(|t| &t.id == id).and_then(|t| self.checkout_work_holder(t)) {
+                return Err(holder.change_refused());
+            }
+        }
+        let threads = threads.into_iter().collect();
+        self.checkout_holds.insert(thread_id.to_string(), CheckoutHold { folder, threads });
+        Ok(())
+    }
+
+    /// What a thread holds its checkout with, as Node's `checkoutWorkHolder`: a question for the user, a turn, its history
+    /// loading or not loaded, or work of its own that has not gone.
+    fn checkout_work_holder(&self, thread: &AgentThread) -> Option<CheckoutHolder> {
+        let title = thread.title.clone();
+        let history = thread.extra.get("historyStatus").and_then(Value::as_str);
+        if !thread.requests.is_empty() {
+            Some(CheckoutHolder::WaitingAnswer(title))
+        } else if thread.status == "running" {
+            Some(CheckoutHolder::Turn(title))
+        } else if history == Some("loading") {
+            Some(CheckoutHolder::HistoryLoading(title))
+        } else if history == Some("error") {
+            Some(CheckoutHolder::HistoryError(title))
+        } else {
+            self.pending_work_holder(&thread.id, title)
+        }
+    }
+
+    /// Why a thread's own work holds its checkout, as Node's `pendingThreadWorkReason`: a send whose delivery is not
+    /// confirmed, follow-ups that failed or are paused, or any other work `pending_thread_work` counts.
+    fn pending_work_holder(&self, thread_id: &str, title: String) -> Option<CheckoutHolder> {
+        if !self.pending_thread_work(thread_id) {
+            return None;
+        }
+        let items: Vec<_> = self.followups.items().iter().filter(|i| i.thread_id == thread_id && !crate::watcher::is_waiting_wake_up(i)).collect();
+        let node_uncertain = self.agents_json_extra.get("deliveries").and_then(Value::as_array).is_some_and(|deliveries| {
+            deliveries.iter().any(|d| {
+                let flag = |key: &str| d.get(key) == Some(&Value::Bool(true));
+                d.get("threadId").and_then(Value::as_str) == Some(thread_id) && d.get("status").and_then(Value::as_str) == Some("uncertain") && !(flag("setAside") && flag("updatesResumed"))
+            })
+        });
+        Some(if items.iter().any(|i| i.status == "uncertain") || self.deliveries.iter().any(|d| d.thread_id == thread_id && d.status == "uncertain") || node_uncertain {
+            CheckoutHolder::UncertainSend(title)
+        } else if items.iter().any(|i| i.status == "failed") {
+            CheckoutHolder::FailedFollowups(title)
+        } else if items.iter().any(|i| i.status == "paused") {
+            CheckoutHolder::PausedFollowups(title)
+        } else {
+            CheckoutHolder::PendingWork(title)
+        })
+    }
+
+    /// What holds a send's checkout, as Node's send reserves it (`executeGuarded`): a change to a checkout any thread in
+    /// it is sent to waits for, by the thread or by the checkout's folder. A thread whose own worktree is not made yet, or
+    /// was removed, has none to hold.
+    fn send_checkout_holder(&self, thread: &AgentThread) -> Option<CheckoutHolder> {
+        if self.checkout_holds.is_empty() || thread.worktree.as_ref().is_some_and(|wt| wt.mode == "independent" && (wt.path.is_none() && wt.existing_worktree_path.is_none() || wt.reclaimed())) {
+            return None;
+        }
+        let folder = self.checkout_folder(thread);
+        self.checkout_holds.values().any(|hold| hold.threads.contains(&thread.id) || hold.folder == folder).then_some(CheckoutHolder::GitAction)
     }
 
     /// Reads the Git status of a thread's folder off the coordinator's thread, as the window's own read of a thread starts
@@ -6947,6 +7116,76 @@ mod tests {
         assert_ne!(git(&coord.shell(true).await.unwrap()), json!({ "marker": "first" }), "the second hold still keeps the folder");
         let_go("second").await.unwrap().unwrap();
         assert_eq!(git(&coord.shell(true).await.unwrap()), json!({ "marker": "second" }), "the last hold let the folder go");
+        coord.shutdown().await;
+    }
+
+    /// Waits until the host shows `thread_id` idle.
+    async fn wait_until_idle(coord: &CoordinatorHandle, thread_id: &str) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while coord.shell(true).await.unwrap()["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id && t["status"] != "idle") {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the turn never finished");
+    }
+
+    /// Restore branch in a project checkout two threads share, as Node's `acquireCheckoutMutationInFolder` admits it:
+    /// refused in Node's words while the other thread works there, leaving the checkout on its branch; switched once that
+    /// thread is done; and while a change holds the checkout, a send to the other thread waits for it, in Node's words.
+    #[tokio::test]
+    async fn restore_branch_waits_for_every_thread_in_its_checkout() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let project = base.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        fixture_git(&project, &["init", "-q"]);
+        std::fs::write(project.join("README.md"), "hello\n").unwrap();
+        fixture_git(&project, &["add", "."]);
+        fixture_git(&project, &["commit", "-q", "-m", "First"]);
+        fixture_git(&project, &["branch", "feature"]);
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(base.clone(), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "Shared", "path": project.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let (restoring, busy) = ("00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2");
+        for (id, title) in [(restoring, "Restoring"), (busy, "Busy")] {
+            run(json!({ "type": "create-thread", "threadId": id, "projectId": project_id, "title": title, "titleSource": "user",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" })).await.unwrap();
+        }
+        let branch = || String::from_utf8_lossy(&Command::new("git").args(["branch", "--show-current"]).current_dir(&project).output().unwrap().stdout).trim().to_string();
+
+        // The restoring thread's work went to main; then the checkout moved to feature, and the other thread works on it.
+        run(json!({ "type": "manual-send", "threadId": restoring, "text": "On main" })).await.unwrap();
+        mock.complete_turn(restoring, "Done");
+        wait_until_idle(&coord, restoring).await;
+        fixture_git(&project, &["switch", "-q", "feature"]);
+        run(json!({ "type": "manual-send", "threadId": busy, "text": "On feature" })).await.unwrap();
+
+        let shell = run(json!({ "type": "restore-thread-branch", "threadId": restoring })).await.unwrap();
+        let words = "Thread \"Busy\" is working in this folder. Nothing was changed. Wait for it to finish before changing this folder.";
+        assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &json!(words)));
+        assert_eq!(branch(), "feature", "the checkout stays where the working thread has it");
+
+        mock.complete_turn(busy, "Done");
+        wait_until_idle(&coord, busy).await;
+        let shell = run(json!({ "type": "restore-thread-branch", "threadId": restoring })).await.unwrap();
+        assert_eq!((&shell["error"], &shell["notice"]), (&Value::Null, &json!(BRANCH_RESTORED_NOTICE)));
+        assert_eq!(branch(), "main");
+
+        // A change holding the checkout, as Restore branch holds it while it switches: the other thread's send waits.
+        let (reply, held) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckout { thread_id: restoring.into(), folder: project.to_string_lossy().into_owned(), sharing: vec![busy.into()], reply }).unwrap();
+        assert_eq!(held.await.unwrap(), Ok(()));
+        let shell = run(json!({ "type": "manual-send", "threadId": busy, "text": "Mid-switch" })).await.unwrap();
+        let words = "A Git action is running in this folder. Your message was not sent. Your text is kept. Send it again when the action finishes.";
+        assert_eq!(shell["error"], words);
+        let busy_now = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == busy).unwrap().clone();
+        assert_eq!(busy_now["status"], "idle", "nothing went to the provider");
         coord.shutdown().await;
     }
 
