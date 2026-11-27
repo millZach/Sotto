@@ -16,6 +16,22 @@ import { evidenceDirectory } from '../fixtures/evidence'
 // disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/secret-requests.
 
 const SHOTS = evidenceDirectory('artifacts/secret-requests')
+/** The card at the three design sizes in both themes, and with reduced motion, then back to 1280x800 dark. */
+async function matrix(launched: Parameters<typeof captureSotto>[0], page: Page, name: string): Promise<void> {
+  for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+    await resizeContentWindow(launched, width, height, [800, 540])
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      await captureSotto(launched, join(SHOTS, `${name}-${width}x${height}-${appearance}.png`), { mode: 'dom', screenshot: { animations: 'disabled' } })
+    }
+  }
+  await resizeContentWindow(launched, 1280, 800, [800, 540])
+  await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await captureSotto(launched, join(SHOTS, `${name}-1280x800-dark-reduced-motion.png`), { mode: 'dom' })
+  await page.emulateMedia({ reducedMotion: null })
+}
 const CANARY = 'canary-E2E-5d1f9b-s3cr3t'
 const LOGIN = `<!doctype html><html><head><title>Staging sign in</title><style>body{font:16px system-ui;margin:24px}input,button{display:block;margin:8px 0;padding:8px;font:inherit}</style></head>
 <body><h1>Staging</h1><label for="password">Password</label><input id="password" type="password" autofocus>
@@ -26,7 +42,7 @@ async function launch(): Promise<LaunchedSotto> {
   process.env.SOTTO_OWL_FEATURES = 'secret-requests=1'
   try { return await launchSotto() } finally { if (previous === undefined) delete process.env.SOTTO_OWL_FEATURES; else process.env.SOTTO_OWL_FEATURES = previous }
 }
-type ToolReply = { content: { type: string; text?: string }[]; isError?: boolean }
+type ToolReply = { content: { type: string; text?: string | undefined }[]; isError?: boolean | undefined }
 const json = (reply: ToolReply): Record<string, unknown> => JSON.parse(reply.content.find(item => item.type === 'text')!.text!) as Record<string, unknown>
 /** Starts request_secret as the thread's agent would, without waiting: the call returns once the card is answered. */
 async function ask(page: Page, args: Record<string, unknown>): Promise<void> {
@@ -71,7 +87,7 @@ test('an agent asks for a secret on a private card, gets a file or a reference, 
     const sudo = card(page, 'Sudo password')
     await expect(sudo).toBeVisible()
     await expect(sudo.getByText('Private')).toBeVisible()
-    await captureSotto(launched, join(SHOTS, 'card-1280-dark.png'), { mode: 'dom', screenshot: { animations: 'disabled' } })
+    await matrix(launched, page, 'card')
     await sudo.getByLabel('Value').focus()
     await page.keyboard.type(CANARY)
     await page.keyboard.press('Enter')
@@ -93,7 +109,7 @@ test('an agent asks for a secret on a private card, gets a file or a reference, 
     await expect(database.getByLabel('User name')).toHaveAttribute('type', 'text')
     await expect(database.getByLabel('Password')).toHaveAttribute('type', 'password')
     await expect(database.getByRole('button', { name: 'Open sign-in page' })).toBeVisible()
-    await captureSotto(launched, join(SHOTS, 'fields-1280-dark.png'), { mode: 'dom', screenshot: { animations: 'disabled' } })
+    await matrix(launched, page, 'fields')
     await database.getByRole('button', { name: 'Decline' }).focus()
     await page.keyboard.press('Enter')
     const declined = await answered(page); replies.push(declined)

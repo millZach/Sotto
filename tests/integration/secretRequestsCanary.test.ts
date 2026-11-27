@@ -192,6 +192,8 @@ describe('a secret request\'s value, sent through every way it is delivered', ()
     for (const text of seen) expect(text).not.toContain(encoded)
     const walk = async (folder: string): Promise<string[]> => (await Promise.all((await readdir(folder, { withFileTypes: true }))
       .map(entry => entry.isDirectory() ? walk(join(folder, entry.name)) : [join(folder, entry.name)]))).flat()
+    // Closing lets go of every secret file; they are removed as it returns, so the folder is read once they are gone.
+    await vi.waitFor(async () => expect(await readdir(join(userData, 'secret-files')).catch(() => [])).toEqual([]))
     for (const file of await walk(userData)) expect(await readFile(file, 'utf8')).not.toContain(CANARY)
     expect(seen.length).toBeGreaterThan(10)
   })
