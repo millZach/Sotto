@@ -276,6 +276,13 @@ const FAKE_CLAUDE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixt
 /// A connected Claude adapter on the fake, with thread `t` and the user's own personal session on `fixture-model` in the
 /// fixture's repository, and the fake's side call answering `script`.
 fn claude(fixture: &Fixture, runtime: &tokio::runtime::Runtime, script: serde_json::Value, deadline: Duration) -> Arc<ClaudeAdapter> {
+    let mut config = ClaudeAdapterConfig::fake(fixture.data(), FAKE_CLAUDE.into());
+    config.side_writing_deadline = deadline;
+    claude_on(fixture, runtime, script, config)
+}
+
+/// `claude` on a configuration of the test's own.
+fn claude_on(fixture: &Fixture, runtime: &tokio::runtime::Runtime, script: serde_json::Value, config: ClaudeAdapterConfig) -> Arc<ClaudeAdapter> {
     let data = fixture.data();
     fs::create_dir_all(&data).unwrap();
     fs::write(data.join("claude-threads.json"), json!({
@@ -283,8 +290,6 @@ fn claude(fixture: &Fixture, runtime: &tokio::runtime::Runtime, script: serde_js
         "personal": { "sessionId": "2c5f39cb-3a8d-42e2-994e-1127dde4b538", "cwd": fixture.repo, "modelId": "fixture-model", "kind": "personal" },
     }).to_string()).unwrap();
     fs::write(data.join("oneshot.json"), script.to_string()).unwrap();
-    let mut config = ClaudeAdapterConfig::fake(data, FAKE_CLAUDE.into());
-    config.side_writing_deadline = deadline;
     let adapter = Arc::new(ClaudeAdapter::new(config));
     let (events, _) = tokio::sync::mpsc::unbounded_channel();
     runtime.block_on(adapter.connect(events)).unwrap();
@@ -316,6 +321,50 @@ fn claude_code_drafts_the_commit_in_one_print_run_with_no_tools() {
     let folder = crate::worktree_reclaim::existing_folder(&fixture.repo.to_string_lossy()).unwrap();
     assert_eq!(asked[0]["cwd"].as_str().unwrap().to_lowercase(), folder.to_lowercase());
     assert!(!fixture.data().join("violations.jsonl").exists(), "side writing ran with tools or a prompt surface");
+}
+
+/// Node starts a thread's Claude Code and its side call on one environment, `claudeEnvironment`: the allow-list and
+/// `NO_COLOR`. Rust's session once kept the host's whole environment, so `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY` or
+/// Bedrock routing reached the thread and not its draft.
+#[test]
+fn the_thread_and_its_draft_start_claude_code_on_the_same_environment_nodes() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    // A stand-in that writes down the names in its environment, then is the fake.
+    let recorder = fixture.dir.path().join("record-environment.mjs");
+    let fake = std::path::PathBuf::from(FAKE_CLAUDE);
+    let script = r#"import { appendFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+const [root, ...args] = process.argv.slice(2)
+const side = args[args.indexOf('--output-format') + 1] === 'json'
+const keys = Object.keys(process.env).filter(key => !key.startsWith('=')).map(key => key.toLowerCase()).sort()
+appendFileSync(join(root, 'environments.jsonl'), JSON.stringify({ side, keys }) + '\n')
+await import(pathToFileURL(FAKE).href)
+"#;
+    fs::write(&recorder, script.replace("FAKE", &serde_json::to_string(&fake.to_string_lossy()).unwrap())).unwrap();
+    let mut config = ClaudeAdapterConfig::fake(fixture.data(), FAKE_CLAUDE.into());
+    config.prefix_args[0] = recorder.to_string_lossy().into_owned();
+    let adapter = claude_on(&fixture, &runtime, json!({ "text": "Fix the parser" }), config);
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+
+    let recorded: Vec<serde_json::Value> = fs::read_to_string(fixture.data().join("environments.jsonl")).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+    // The fake's own transcript folder, which only the fake's sessions are told.
+    let keys = |entry: &serde_json::Value| -> Vec<String> {
+        entry["keys"].as_array().unwrap().iter().map(|key| key.as_str().unwrap().to_string()).filter(|key| key != "sotto_fake_claude_home").collect()
+    };
+    let session: Vec<_> = recorded.iter().filter(|entry| entry["side"] == false).collect();
+    let side: Vec<_> = recorded.iter().filter(|entry| entry["side"] == true).collect();
+    assert!(!session.is_empty() && side.len() == 1, "{recorded:?}");
+    let drafted = keys(side[0]);
+    for entry in &session {
+        assert_eq!(keys(entry), drafted, "the session and the side call started on different environments");
+    }
+    assert!(drafted.contains(&"no_color".to_string()) && drafted.contains(&"path".to_string()), "{drafted:?}");
+    for key in &drafted {
+        assert!(key == "no_color" || crate::providers::claude::ENVIRONMENT_KEYS.contains(&key.as_str()), "{key} is not on Node's list");
+    }
 }
 
 #[test]

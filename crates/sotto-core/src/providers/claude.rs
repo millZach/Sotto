@@ -101,6 +101,36 @@ pub(crate) struct ClaudeLaunch {
     pub(crate) path: Option<String>,
 }
 
+/// Node's `ENVIRONMENT_KEYS` (`src/main/agents/subscriptionClaude.ts`), lowercase: the native OS identity and networking
+/// a Claude Code process keeps, not provider keys, other account folders, Node injection flags or cloud-provider routing.
+pub(crate) const ENVIRONMENT_KEYS: &[&str] = &[
+    "path", "pathext", "systemroot", "windir", "temp", "tmp", "user", "logname", "username", "userprofile", "homedrive", "homepath", "home",
+    "appdata", "localappdata", "programdata", "allusersprofile", "xdg_config_home", "xdg_cache_home", "xdg_data_home",
+    "lang", "lc_all", "lc_ctype", "tz", "https_proxy", "http_proxy", "no_proxy",
+    "ssl_cert_file", "ssl_cert_dir", "node_extra_ca_certs",
+    "disable_auto_compact", "disable_compact", "claude_autocompact_pct_override", "claude_code_auto_compact_window",
+];
+
+impl ClaudeLaunch {
+    /// The user's Claude Code with its own leading arguments, on the environment Node's `claudeEnvironment` gives every
+    /// Claude Code process Sotto starts, a thread's session and its side call alike: the allow-list above, the PATH the
+    /// lookup found the client on (Node's `withCliPath`) and `NO_COLOR`.
+    pub(crate) fn command(&self) -> Command {
+        let mut command = Command::new(&self.executable);
+        command.args(&self.prefix_args).env_clear();
+        for (key, value) in std::env::vars_os() {
+            if key.to_str().is_some_and(|key| ENVIRONMENT_KEYS.contains(&key.to_ascii_lowercase().as_str())) {
+                command.env(key, value);
+            }
+        }
+        if let Some(path) = &self.path {
+            command.env("PATH", path);
+        }
+        command.env("NO_COLOR", "1");
+        command
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ClaudeThreadRecord {
@@ -235,14 +265,9 @@ impl ClaudeSessionProcess {
         let launch = config.launch().ok_or_else(|| {
             "Install Claude Code and sign in before connecting this provider.".to_string()
         })?;
-        let mut cmd = Command::new(&launch.executable);
-        cmd.args(&launch.prefix_args);
-        if let Some(path) = &launch.path {
-            cmd.env("PATH", path);
-        }
+        let mut cmd = launch.command();
         cmd.args(&args)
             .current_dir(cwd)
-            .env("NO_COLOR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

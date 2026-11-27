@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
 
 use super::claude::ClaudeLaunch;
 use crate::side_writing::ShortTextPrompt;
@@ -20,16 +19,6 @@ use crate::side_writing::ShortTextPrompt;
 const OUTPUT_LIMIT: usize = 256 * 1024;
 /// How long Node waits for a stopped run to close before it answers.
 const STOP_GRACE: Duration = Duration::from_secs(2);
-
-/// Node's `ENVIRONMENT_KEYS`: the native OS identity and networking a Claude Code process keeps, not provider keys,
-/// other account folders, Node injection flags or cloud-provider routing.
-const ENVIRONMENT_KEYS: &[&str] = &[
-    "path", "pathext", "systemroot", "windir", "temp", "tmp", "user", "logname", "username", "userprofile", "homedrive", "homepath", "home",
-    "appdata", "localappdata", "programdata", "allusersprofile", "xdg_config_home", "xdg_cache_home", "xdg_data_home",
-    "lang", "lc_all", "lc_ctype", "tz", "https_proxy", "http_proxy", "no_proxy",
-    "ssl_cert_file", "ssl_cert_dir", "node_extra_ca_certs",
-    "disable_auto_compact", "disable_compact", "claude_autocompact_pct_override", "claude_code_auto_compact_window",
-];
 
 const START_FAILED: &str = "Could not start Claude Code. Check its installation and try again.";
 
@@ -86,19 +75,9 @@ pub(crate) async fn write(launch: &ClaudeLaunch, prefix_args: &[String], run: Si
     if !valid_model(model) || effort.is_some_and(|effort| !valid_effort(effort)) {
         return Err("Choose a valid Claude model before asking it to write.".into());
     }
-    let mut command = Command::new(&launch.executable);
-    command.args(&launch.prefix_args).args(prefix_args).env_clear();
-    for (key, value) in std::env::vars_os() {
-        if key.to_str().is_some_and(|key| ENVIRONMENT_KEYS.contains(&key.to_ascii_lowercase().as_str())) {
-            command.env(key, value);
-        }
-    }
-    // The PATH the CLI lookup found the client on, as Node's `withCliPath` adds it.
-    if let Some(path) = &launch.path {
-        command.env("PATH", path);
-    }
+    let mut command = launch.command();
     command
-        .env("NO_COLOR", "1")
+        .args(prefix_args)
         .args(arguments(prompt, model, effort))
         .current_dir(cwd)
         .stdin(Stdio::piped())
