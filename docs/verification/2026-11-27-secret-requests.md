@@ -16,6 +16,8 @@ November 27, 2026, on `feat/browser-parity-and-secret-requests`, from `origin/ma
 
 The card has no motion of its own, so reduced motion draws it the same.
 
+Devin's approval profile lets `sotto_secrets` through without Devin's own question, as it does Sotto's other tools. That made it version 7, since Sotto refuses a version 6 file it wrote that has changed; `tests/unit/main/devinPolicy.test.ts` checks the list and the file's name.
+
 ## Not checked here
 
 - A phone, the popup and Watcher showing the card with Decline only: unit tests cover the request's words and Decline.
