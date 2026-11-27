@@ -25,6 +25,8 @@ export const SECRET_FIELDS_MAX = 8
 const shortWords = z.string().trim().min(1).max(120)
 const reasonWords = z.string().trim().min(1).max(600)
 const fieldName = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/u, 'Name a field with letters, digits and underscores, starting with a letter.')
+  // A name every object already has, such as toString or constructor, would read as the object's own and not the field's.
+  .refine(name => !Object.hasOwn(Object.prototype, name), 'Name a field with a word of your own, not one like toString or constructor.')
 const fieldInputSchema = z.object({
   name: fieldName.describe('How the result names this value, such as api_key.'),
   label: shortWords.describe('What the user is asked for, such as "API key".'),

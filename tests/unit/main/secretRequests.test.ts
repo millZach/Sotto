@@ -1,16 +1,24 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SecretRequests, type SecretOutcome } from '../../../src/main/secrets/secretRequests'
-import { SECRET_REF_PATTERN, SECRET_REQUEST_ID_PREFIX, type RequestSecretInput } from '../../../src/shared/secretRequests'
+import { SECRET_REF_PATTERN, SECRET_REQUEST_ID_PREFIX, requestSecretInputSchema, type RequestSecretInput } from '../../../src/shared/secretRequests'
+
+/** A test may run something once a secret file is on disk, before the service hears the write finished. */
+const writes = vi.hoisted(() => ({ afterWrite: undefined as (() => void) | undefined }))
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, writeFile: async (...args: Parameters<typeof actual.writeFile>) => { await actual.writeFile(...args); writes.afterWrite?.() } }
+})
 
 const CANARY = 'canary-7f3a-SECRET-value'
 const folders: string[] = []
 const services: SecretRequests[] = []
 afterEach(async () => {
+  writes.afterWrite = undefined
   for (const service of services.splice(0)) service.close()
   for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true })
   vi.useRealTimers()
@@ -176,6 +184,68 @@ describe('secret requests', () => {
     expect(await waiting).toEqual({ status: 'cancelled' })
     expect(existsSync(file)).toBe(false)
     expect(await readdir(join(directory, 'secret-files'))).toEqual([])
+  })
+
+  it('keeps no file when Sotto closes while the folder is being made', async () => {
+    let unblock: () => void = () => undefined
+    let reached: () => void = () => undefined
+    const protecting = new Promise<void>(done => { reached = done })
+    const { service, directory } = await setup({ protect: () => { reached(); return new Promise<void>(done => { unblock = done }) } })
+    const outcome = service.ask('thread-a', { ...ask, delivery: 'file' })
+    const saving = service.save('thread-a', shown(service).id, { value: CANARY })
+    await protecting
+    service.close()
+    unblock()
+    await expect(saving).rejects.toThrow('Nothing was kept')
+    expect(await outcome).toEqual({ status: 'cancelled' })
+    expect(await readdir(join(directory, 'secret-files'))).toEqual([])
+    expect(service.held()).toEqual({ waiting: 0, refs: 0, files: 0 })
+  })
+
+  it('deletes a file written as Sotto closes, before the save returns', async () => {
+    const { service, directory } = await setup()
+    const outcome = service.ask('thread-a', { ...ask, delivery: 'file', fields: [{ name: 'user', label: 'User name' }, { name: 'password', label: 'Password' }] })
+    let onDisk: string[] = []
+    // The first file is on disk and the service has not heard yet: Sotto closes then.
+    writes.afterWrite = () => { writes.afterWrite = undefined; onDisk = readdirSync(join(directory, 'secret-files')); service.close() }
+    await expect(service.save('thread-a', shown(service).id, { user: 'rez', password: CANARY })).rejects.toThrow('Nothing was kept')
+    expect(onDisk).toHaveLength(1)
+    expect(await outcome).toEqual({ status: 'cancelled' })
+    expect(await readdir(join(directory, 'secret-files'))).toEqual([])
+    expect(service.held()).toEqual({ waiting: 0, refs: 0, files: 0 })
+  })
+
+  it('deletes a released file before it returns', async () => {
+    const { service } = await setup()
+    const outcome = service.ask('thread-a', { ...ask, delivery: 'file' })
+    await service.save('thread-a', shown(service).id, { value: CANARY })
+    const file = ((await outcome) as Extract<SecretOutcome, { delivery: 'file' }>).files.value!
+    expect(service.release('thread-a', { files: [file] })).toBe(1)
+    expect(existsSync(file)).toBe(false)
+  })
+
+  it('takes fields named like members every object has as plain names, and refuses them from an agent', async () => {
+    const names = ['toString', 'constructor', '__proto__']
+    for (const name of names) {
+      expect(requestSecretInputSchema.safeParse({ ...ask, fields: [{ name, label: 'Key' }] }).success).toBe(false)
+    }
+    // A card made some other way still saves by its own names, and never reads a value from the object's prototype.
+    const { service } = await setup()
+    const outcome = service.ask('thread-a', { ...ask, fields: names.map(name => ({ name, label: `The ${name}` })) })
+    await expect(service.save('thread-a', shown(service).id, {})).rejects.toThrow('Enter The toString, or decline the card.')
+    const values = Object.fromEntries(names.map(name => [name, `${CANARY}-${name}`])) as Record<string, string>
+    await service.save('thread-a', shown(service).id, values)
+    const result = await outcome as Extract<SecretOutcome, { delivery: 'secretRef' }>
+    expect(Object.keys(result.refs)).toEqual(names)
+    for (const name of names) {
+      expect(Object.hasOwn(result.refs, name)).toBe(true)
+      expect(service.take('thread-a', result.refs[name]!)).toBe(`${CANARY}-${name}`)
+    }
+
+    const files = service.ask('thread-a', { ...ask, delivery: 'file', fields: names.map(name => ({ name, label: `The ${name}` })) })
+    await service.save('thread-a', shown(service).id, values)
+    const written = await files as Extract<SecretOutcome, { delivery: 'file' }>
+    for (const name of names) expect(await readFile(written.files[name]!, 'utf8')).toBe(`${CANARY}-${name}`)
   })
 
   it('offers a sign-in page only as an http or https address without credentials', async () => {

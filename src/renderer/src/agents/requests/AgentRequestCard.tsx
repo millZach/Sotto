@@ -37,6 +37,11 @@ export interface AgentRequestCardProps {
   readonly ownerTitle: string
   /** Popup links for the Watcher target open its room, as the popup's own Open does. */
   readonly watcher?: boolean
+  /**
+   * Watcher's room: a secret request shows its words and Decline, as the popup and a phone do, and never takes a value
+   * there; the values are typed on the thread's own card (ADR-0219, decision 4).
+   */
+  readonly secretWordsOnly?: boolean
   readonly draftOwner?: RequestDraftOwner
   readonly request: AgentRequest
   /** Why the choices cannot be used right now (disconnected, busy); null when they can. */
@@ -68,7 +73,7 @@ export interface AgentRequestCardProps {
 export function AgentRequestCard(props: AgentRequestCardProps): ReactNode {
   // A secret request's values are typed on its own card, never in the answer store (ADR-0219).
   const secrets = useOwlFeature('secret-requests')
-  return showsSecretCard(props.request, secrets) ? <SecretRequestCard ownerId={props.ownerId} request={props.request} blocked={props.blocked} /> : <ProviderRequestCard {...props} />
+  return showsSecretCard(props.request, secrets && props.secretWordsOnly !== true) ? <SecretRequestCard ownerId={props.ownerId} request={props.request} blocked={props.blocked} /> : <ProviderRequestCard {...props} />
 }
 
 function ProviderRequestCard({ ownerId, ownerTitle, watcher, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, providerId, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {

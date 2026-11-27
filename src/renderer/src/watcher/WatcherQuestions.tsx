@@ -73,7 +73,7 @@ function WatcherQuestionCard({ question }: { readonly question: WatcherQuestion 
       </span>
     </div>
     <AgentRequestCard ownerId={question.watcherThreadId} ownerTitle={watcher?.title ?? 'Watcher'} request={request} providerId={watcher?.providerId}
-      blocked={null} onSubmit={submit} />
+      blocked={null} onSubmit={submit} secretWordsOnly />
   </section>
 }
 

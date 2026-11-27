@@ -4,14 +4,22 @@ import { request as httpsRequest } from 'node:https'
 import { basename } from 'node:path'
 import type { LocalServer } from '../../shared/browser'
 
-/** A port some process listens on, on this computer's loopback or every address. */
-export interface Listener { readonly port: number; readonly pid: number }
+/** The loopback address a server answers on: IPv4's, or IPv6's for a server that listens only there. */
+export type LoopbackAddress = '127.0.0.1' | '::1'
+/** A port some process listens on, on this computer's loopback or every address, and the loopback that reaches it. */
+export interface Listener { readonly port: number; readonly pid: number; readonly address: LoopbackAddress }
 /** A process and its parent, enough to walk up to Sotto. */
 export interface ProcessEntry { readonly pid: number; readonly parentPid: number; readonly name: string }
 
 const PROBE_MS = 1000
 const PROBE_BYTES = 64 * 1024
-const LOCAL_ADDRESSES = new Set(['127.0.0.1', '0.0.0.0', '::1', '::', '[::1]', '[::]', '*', 'localhost'])
+/** The addresses that reach a listener from this computer, by the loopback each is reached on. */
+const LOCAL_ADDRESSES = new Map<string, LoopbackAddress>([
+  ['127.0.0.1', '127.0.0.1'], ['0.0.0.0', '127.0.0.1'], ['*', '127.0.0.1'], ['localhost', '127.0.0.1'],
+  ['::1', '::1'], ['::', '::1'], ['[::1]', '::1'], ['[::]', '::1'],
+])
+/** IPv4's loopback is asked first, as a browser opening `localhost` usually is. */
+const LOOPBACKS: readonly LoopbackAddress[] = ['127.0.0.1', '::1']
 
 function run(command: string, args: readonly string[]): Promise<string> {
   return new Promise(resolve => {
@@ -25,15 +33,21 @@ const portOf = (address: string): { host: string; port: number } | null => {
   return Number.isInteger(port) && port > 0 && port < 65536 ? { host: address.slice(0, at), port } : null
 }
 
-/** `netstat -ano -p TCP` and `-p TCPv6` on Windows: listening sockets and the process that owns each. */
+/**
+ * `netstat -ano -p TCP` and `-p TCPv6` on Windows: listening sockets and the process that owns each. The state column
+ * is in the system's language (ABHÖREN in German), so a listening socket is told by its shape instead: no connection
+ * has a remote port of 0. The process ID is the last column.
+ */
 export function parseNetstat(text: string): Listener[] {
   const found: Listener[] = []
   for (const line of text.split(/\r?\n/u)) {
     const columns = line.trim().split(/\s+/u)
-    if (columns.length < 5 || columns[0] !== 'TCP' || columns[3] !== 'LISTENING') continue
+    if (columns.length < 5 || columns[0] !== 'TCP') continue
     const local = portOf(columns[1]!)
-    const pid = Number(columns[4])
-    if (local && LOCAL_ADDRESSES.has(local.host) && Number.isInteger(pid)) found.push({ port: local.port, pid })
+    const remote = /^(?:0\.0\.0\.0|\[::\]|\*):0$/u.test(columns[2]!)
+    const pid = Number(columns[columns.length - 1])
+    const address = local ? LOCAL_ADDRESSES.get(local.host) : undefined
+    if (local && address && remote && Number.isInteger(pid) && pid > 0) found.push({ port: local.port, pid, address })
   }
   return found
 }
@@ -45,7 +59,8 @@ export function parseLsof(text: string): Listener[] {
     if (line.startsWith('p')) pid = Number(line.slice(1))
     else if (line.startsWith('n') && pid) {
       const local = portOf(line.slice(1))
-      if (local && LOCAL_ADDRESSES.has(local.host)) found.push({ port: local.port, pid })
+      const address = local ? LOCAL_ADDRESSES.get(local.host) : undefined
+      if (local && address) found.push({ port: local.port, pid, address })
     }
   }
   return found
@@ -58,7 +73,8 @@ export function parseSs(text: string): Listener[] {
     if (columns.length < 5) continue
     const local = portOf(columns[3]!.replace(/%[^:\]]+/u, ''))
     const pid = /pid=(\d+)/u.exec(line)?.[1]
-    if (local && LOCAL_ADDRESSES.has(local.host) && pid) found.push({ port: local.port, pid: Number(pid) })
+    const address = local ? LOCAL_ADDRESSES.get(local.host) : undefined
+    if (local && address && pid) found.push({ port: local.port, pid: Number(pid), address })
   }
   return found
 }
@@ -99,25 +115,61 @@ async function processes(): Promise<Map<number, ProcessEntry>> {
   return parseProcesses(await run('ps', ['-A', '-o', 'pid=,ppid=,comm=']))
 }
 
-/** The page a server answers at its root, if it is one: its title, or null for anything that is not a web page. */
-function probe(port: number, secure: boolean): Promise<string | null> {
+/** A page's title as Sotto shows it: untrusted words on one line, or empty for a page with none. */
+function titleOf(body: string): string {
+  // eslint-disable-next-line no-control-regex -- Untrusted page words, shown on one line.
+  const title = /<title[^>]*>([^<]*)<\/title>/iu.exec(body)?.[1]?.replace(/[\x00-\x1f\x7f‪-‮⁦-⁩]/gu, ' ').replace(/\s+/gu, ' ').trim() ?? ''
+  return title.slice(0, 300)
+}
+
+/**
+ * The page a server answers at its root on one loopback address, if it is one: its title, or null for anything that is
+ * not a web page. The answer settles once: on the page's end, on its first 64 KiB, on an error, or at `deadlineMs`
+ * from the start however the server trickles its page, and the request is closed then.
+ */
+export function probeLocalPage(address: LoopbackAddress, port: number, secure: boolean, deadlineMs = PROBE_MS): Promise<string | null> {
   return new Promise(resolve => {
-    const options = { host: '127.0.0.1', port, path: '/', method: 'GET', timeout: PROBE_MS, headers: { accept: 'text/html' }, ...(secure ? { rejectUnauthorized: false, servername: 'localhost' } : {}) }
+    let settled = false
+    const settle = (title: string | null): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      request.destroy()
+      resolve(title)
+    }
+    const deadline = setTimeout(() => settle(null), deadlineMs)
+    const options = { host: address, port, path: '/', method: 'GET', headers: { accept: 'text/html' }, ...(secure ? { rejectUnauthorized: false, servername: 'localhost' } : {}) }
     const request = (secure ? httpsRequest : httpRequest)(options, response => {
-      if (!String(response.headers['content-type'] ?? '').includes('text/html')) { response.destroy(); resolve(null); return }
+      if (!String(response.headers['content-type'] ?? '').toLowerCase().includes('text/html')) { settle(null); return }
       let body = ''
       response.setEncoding('utf8')
-      response.on('data', (chunk: string) => { body += chunk; if (body.length > PROBE_BYTES) response.destroy() })
-      response.on('close', () => {
-        // eslint-disable-next-line no-control-regex -- Untrusted page words, shown on one line.
-        const title = /<title[^>]*>([^<]*)<\/title>/iu.exec(body)?.[1]?.replace(/[\x00-\x1f\x7f‪-‮⁦-⁩]/gu, ' ').replace(/\s+/gu, ' ').trim() ?? ''
-        resolve(title.slice(0, 300))
-      })
+      const read = (): void => settle(titleOf(body))
+      response.on('data', (chunk: string) => { body += chunk; if (body.length > PROBE_BYTES) read() })
+      response.on('end', read)
+      // A page cut short still says it is a web page, and what it is called if that came first.
+      response.on('close', read)
     })
-    request.on('timeout', () => { request.destroy(); resolve(null) })
-    request.on('error', () => resolve(null))
+    request.on('error', () => settle(null))
     request.end()
   })
+}
+
+/**
+ * Each port a process started from Sotto listens on, with that process and the loopback addresses that reach it, IPv4's
+ * first. Another process listening on the same port at another address is never asked.
+ */
+export function probeTargets(listening: readonly Listener[], table: ReadonlyMap<number, ProcessEntry>, sottoPid: number, sottoName: string): Map<number, { pid: number; addresses: LoopbackAddress[] }> {
+  const ports = new Map<number, { pid: number; addresses: LoopbackAddress[] }>()
+  for (const listener of listening) {
+    const known = ports.get(listener.port)
+    if (known) {
+      if (known.pid === listener.pid && !known.addresses.includes(listener.address)) known.addresses.push(listener.address)
+      continue
+    }
+    if (startedFromSotto(listener.pid, table, sottoPid, sottoName)) ports.set(listener.port, { pid: listener.pid, addresses: [listener.address] })
+  }
+  for (const target of ports.values()) target.addresses.sort((a, b) => LOOPBACKS.indexOf(a) - LOOPBACKS.indexOf(b))
+  return ports
 }
 
 /**
@@ -127,13 +179,14 @@ function probe(port: number, secure: boolean): Promise<string | null> {
  */
 export async function findLocalServers(sottoPid = process.pid, sottoName = basename(process.execPath)): Promise<LocalServer[]> {
   const [listening, table] = await Promise.all([listeners(), processes()])
-  const ports = new Map<number, number>()
-  for (const listener of listening) if (!ports.has(listener.port) && startedFromSotto(listener.pid, table, sottoPid, sottoName)) ports.set(listener.port, listener.pid)
-  const found = await Promise.all([...ports].slice(0, 40).map(async ([port, pid]): Promise<LocalServer | null> => {
-    const plain = await probe(port, false)
-    const title = plain ?? await probe(port, true)
-    if (title === null) return null
-    return { port, url: `${plain !== null ? 'http' : 'https'}://localhost:${port}/`, title, process: table.get(pid)?.name.slice(0, 200) ?? '' }
+  const ports = probeTargets(listening, table, sottoPid, sottoName)
+  const found = await Promise.all([...ports].slice(0, 40).map(async ([port, { pid, addresses }]): Promise<LocalServer | null> => {
+    for (const address of addresses) {
+      const plain = await probeLocalPage(address, port, false)
+      const title = plain ?? await probeLocalPage(address, port, true)
+      if (title !== null) return { port, url: `${plain !== null ? 'http' : 'https'}://localhost:${port}/`, title, process: table.get(pid)?.name.slice(0, 200) ?? '' }
+    }
+    return null
   }))
   return found.filter((server): server is LocalServer => server !== null).sort((a, b) => a.port - b.port)
 }

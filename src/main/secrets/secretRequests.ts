@@ -64,6 +64,15 @@ export function protectOnWindows(folder: string): Promise<void> {
 }
 
 const DECLINED = new Error('Enter the values on the card in Sotto on your computer, or decline it there.')
+const CLOSING = 'Sotto is closing. Nothing was kept.'
+
+/** A field's value as the card sent it: its own property only, so a field named like `toString` is never the object's. */
+const fieldValue = (values: Readonly<Record<string, string>>, name: string): string => {
+  const value: unknown = Object.hasOwn(values, name) ? values[name] : undefined
+  return typeof value === 'string' ? value : ''
+}
+/** Deletes a file now. On the way out a promise may never run, so a secret file is never left to one. */
+const removeNow = (file: string): void => { try { rmSync(file, { force: true }) } catch { /* Swept at the next start. */ } }
 
 /**
  * Secret requests waiting on the user, and the values the user gave (ADR-0219). Each card is one of Sotto's own
@@ -161,18 +170,19 @@ export class SecretRequests implements SottoThreadRequests {
     const waiting = this.waiting.get(requestId)
     if (!waiting || waiting.threadId !== threadId) throw new Error('This request is no longer waiting. The agent may have stopped; nothing was saved.')
     if (waiting.saving) throw new Error('This card is already being saved.')
-    for (const field of waiting.fields) if (!(values[field.name] ?? '').trim()) throw new Error(`Enter ${field.label}, or decline the card.`)
+    for (const field of waiting.fields) if (!fieldValue(values, field.name).trim()) throw new Error(`Enter ${field.label}, or decline the card.`)
     waiting.saving = true
     const expiresAt = this.now() + (this.options.keepMs ?? SECRET_KEEP_MS)
     try {
       if (waiting.delivery === 'secretRef') {
-        const refs: Record<string, string> = {}
-        for (const field of waiting.fields) refs[field.name] = this.keepRef(threadId, values[field.name]!, expiresAt)
+        // Without a prototype, a field named like `constructor` or `__proto__` is a key like any other.
+        const refs = Object.create(null) as Record<string, string>
+        for (const field of waiting.fields) refs[field.name] = this.keepRef(threadId, fieldValue(values, field.name), expiresAt)
         if (!this.end(requestId, { status: 'saved', delivery: 'secretRef', refs })) { for (const ref of Object.values(refs)) this.dropRef(ref); throw new Error('The agent stopped waiting before the card was saved. Nothing was kept.') }
         return
       }
-      const files: Record<string, string> = {}
-      try { for (const field of waiting.fields) files[field.name] = await this.keepFile(threadId, values[field.name]!, expiresAt) }
+      const files = Object.create(null) as Record<string, string>
+      try { for (const field of waiting.fields) files[field.name] = await this.keepFile(threadId, fieldValue(values, field.name), expiresAt) }
       catch (error) { for (const file of Object.values(files)) this.dropFile(file); throw error }
       if (!this.end(requestId, { status: 'saved', delivery: 'file', files })) { for (const file of Object.values(files)) this.dropFile(file); throw new Error('The agent stopped waiting before the card was saved. Nothing was kept.') }
     } finally { const still = this.waiting.get(requestId); if (still) still.saving = false }
@@ -219,7 +229,7 @@ export class SecretRequests implements SottoThreadRequests {
     this.closed = true
     for (const id of [...this.waiting.keys()]) this.end(id, { status: 'cancelled' })
     for (const ref of [...this.refs.keys()]) this.dropRef(ref)
-    for (const [file, kept] of [...this.files]) { clearTimeout(kept.timer); this.files.delete(file); try { rmSync(file, { force: true }) } catch { /* Swept at the next start. */ } }
+    for (const file of [...this.files.keys()]) this.dropFile(file)
   }
 
   /** What is held now, for tests and for the window's count: never a value. */
@@ -249,21 +259,34 @@ export class SecretRequests implements SottoThreadRequests {
     this.prepared.catch(() => { this.prepared = undefined })
     return this.prepared
   }
+  /**
+   * Writes one value to its own file. Sotto may close while the folder is made or the file written: then nothing is
+   * kept, and a file already on disk is deleted before this returns, since close() could not know of it.
+   */
   private async keepFile(threadId: string, value: string, expiresAt: number): Promise<string> {
+    if (this.closed) throw new Error(CLOSING)
     const folder = await this.prepare()
+    if (this.closed) throw new Error(CLOSING)
     const file = resolve(join(folder, randomBytes(16).toString('hex')))
     // `wx` never follows or replaces a path that is already there.
-    await writeFile(file, value, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+    try { await writeFile(file, value, { encoding: 'utf8', flag: 'wx', mode: 0o600 }) }
+    catch (error) {
+      // A write that failed part way may have left part of the value; a path that was already there is not ours.
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') removeNow(file)
+      throw error
+    }
+    if (this.closed) { removeNow(file); throw new Error(CLOSING) }
     const timer = setTimeout(() => this.dropFile(file), Math.max(0, expiresAt - this.now()))
     timer.unref?.()
     this.files.set(file, { threadId, expiresAt, timer })
     return file
   }
+  /** Forgets a file and deletes it before returning, so a quit right after leaves nothing behind. */
   private dropFile(file: string): void {
     const kept = this.files.get(file)
     if (kept) clearTimeout(kept.timer)
     this.files.delete(file)
-    void rm(file, { force: true }).catch(() => undefined)
+    removeNow(file)
   }
   /** Ends a waiting card with its outcome. False when it had already ended, so a late save keeps nothing. */
   private end(id: string, outcome: SecretOutcome): boolean {

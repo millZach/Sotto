@@ -80,6 +80,22 @@ describe('a secret request card', () => {
     await waitFor(() => expect(answer).toHaveBeenCalledWith({ answer: 'decline', threadId: 'host:h:thread-a', requestId: 'sotto:secret:1' }))
   })
 
+  it('takes fields named like members every object has as plain fields, and sends each as its own value', async () => {
+    const { answer } = bridge()
+    const names = ['toString', 'constructor', '__proto__']
+    const { user } = card(secretRequest({ fields: names.map(name => ({ name, label: `The ${name}`, secret: true })) }))
+    for (const name of names) expect(screen.getByLabelText(`The ${name}`)).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Save securely' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter The toString, or decline the card.')
+    expect(answer).not.toHaveBeenCalled()
+    for (const name of names) await user.type(screen.getByLabelText(`The ${name}`), `${FAKE}-${name}`)
+    await user.click(screen.getByRole('button', { name: 'Save securely' }))
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(1))
+    const sent = answer.mock.calls[0]![0] as Extract<SecretRequestAnswer, { answer: 'save' }>
+    expect(Object.entries(sent.values)).toEqual(names.map(name => [name, `${FAKE}-${name}`]))
+    expect(Object.getPrototypeOf(sent.values)).toBe(Object.prototype)
+  })
+
   it('opens the sign-in page in the user\'s browser', async () => {
     const { openExternalLink } = bridge()
     const { user } = card(secretRequest({ url: 'https://dashboard.stripe.com/test/apikeys' }))
@@ -113,5 +129,16 @@ describe('a secret request card', () => {
     gate.on = false
     card()
     expect(screen.queryByLabelText('Value')).toBeNull()
+  })
+
+  it('shows the request\'s words and Decline alone in Watcher\'s room, though the main window has the card\'s channel', async () => {
+    const { answer } = bridge()
+    const onSubmit = vi.fn(async () => ({ error: null }))
+    render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={secretRequest()} blocked={null} onSubmit={onSubmit} store={new RequestAnswerStore()} secretWordsOnly />)
+    expect(screen.queryByLabelText('Value')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save securely' })).toBeNull()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Decline' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(answer).not.toHaveBeenCalled()
   })
 })

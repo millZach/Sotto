@@ -13,7 +13,8 @@ interface HostPageRecord extends TaskPage {
   seen: HostPageState
 }
 
-export interface HostBrowserServiceDependencies extends Omit<BrowserTaskDependencies, 'words' | 'byDefault'> {
+/** A paired host's browser takes no secret reference (ADR-0219, decision 9). */
+export interface HostBrowserServiceDependencies extends Omit<BrowserTaskDependencies, 'words' | 'byDefault' | 'secret'> {
   readonly browser: HostBrowser
   /** The last **Let agents use the browser without asking** a desktop sent, as the host's settings file holds it. */
   readonly withoutAsking: boolean
@@ -42,7 +43,9 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
   constructor(private readonly dependencies: HostBrowserServiceDependencies) {
     const setting = { withoutAsking: dependencies.withoutAsking, saved: dependencies.withoutAsking }
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => setting.withoutAsking, words: () => HOST_WORDS,
-      ...dependencies.filePages ? { filePages: dependencies.filePages } : {} })
+      ...dependencies.filePages ? { filePages: dependencies.filePages } : {},
+      // The full catalog and where its saved screenshots go (ADR-0220), from the host's own `browser-parity` answer.
+      ...dependencies.parity ? { parity: true } : {}, ...dependencies.browserFiles ? { browserFiles: dependencies.browserFiles } : {} })
     this.setting = setting
   }
 

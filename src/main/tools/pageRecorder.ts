@@ -1,5 +1,4 @@
-import { BrowserWindow, session } from 'electron'
-import { randomUUID } from 'node:crypto'
+import { BrowserWindow, session, type Session } from 'electron'
 import { RECORDING_LIMIT } from './browserFiles'
 
 /**
@@ -22,6 +21,22 @@ window.sottoFinish = () => drawing.then(() => new Promise(done => { if (!recorde
   track.requestFrame(); recorder.stop() }))
 </script>`
 
+/** The recorder's partition: in memory, so nothing of it is on disk, and one for every recording Sotto makes. */
+const RECORDER_PARTITION = 'sotto-recorder'
+let recorderSession: Session | undefined
+/**
+ * The recorder's own session, made the first time a recording starts: it never shares the app's session or the
+ * browser's, answers no permission request, and loads nothing but the recorder page's own `data:` address.
+ */
+function recorderPartition(): Session {
+  if (recorderSession) return recorderSession
+  const own = session.fromPartition(RECORDER_PARTITION)
+  own.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  own.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith('data:') }))
+  recorderSession = own
+  return own
+}
+
 /** One recording in progress. `frame` takes each picture; `finish` ends it and answers the WebM's bytes. */
 export class PageRecording {
   private readonly window: BrowserWindow
@@ -33,13 +48,11 @@ export class PageRecording {
   readonly startedAt = Date.now()
   /** `full`: the recording reached its limit and should stop; called once. */
   constructor(private readonly full: () => void) {
-    // A partition of its own and nothing on disk: the recorder never shares the app's session or the browser's.
-    const own = session.fromPartition(`sotto-recorder-${randomUUID()}`)
-    own.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
-    own.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith('data:') }))
     this.window = new BrowserWindow({ show: false, width: 64, height: 64, skipTaskbar: true, focusable: false,
-      webPreferences: { session: own, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: false, javascript: true } })
+      webPreferences: { session: recorderPartition(), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: false, javascript: true } })
     this.ready = this.window.loadURL(`data:text/html;base64,${Buffer.from(RECORDER_PAGE).toString('base64')}`)
+    // Closed before the page loaded, the load fails; a recording that took no picture and never finished waits on nothing.
+    void this.ready.catch(() => undefined)
     // A page that stops changing sends no more pictures; the last one is drawn again each second so the video keeps time.
     this.keepAlive = setInterval(() => { if (this.last) this.frame(this.last, true) }, 1000)
   }

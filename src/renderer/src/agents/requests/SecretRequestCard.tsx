@@ -26,8 +26,8 @@ export function SecretRequestCard({ ownerId, request, blocked }: SecretRequestCa
   const card = request.secretRequest
   const baseId = useId()
   const titleId = `${baseId}-title`, privacyId = `${baseId}-privacy`, errorId = `${baseId}-error`
-  // The values live in this card's state only, and go with it.
-  const [values, setValues] = useState<Record<string, string>>({})
+  // The values live in this card's state only, and go with it. A map, so a field named like `toString` is only a key.
+  const [values, setValues] = useState<ReadonlyMap<string, string>>(() => new Map())
   const [sending, setSending] = useState<'save' | 'decline' | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   // Enter and a click can both send before a render.
@@ -35,14 +35,14 @@ export function SecretRequestCard({ ownerId, request, blocked }: SecretRequestCa
   const firstField = useRef<HTMLInputElement>(null)
   const bridge = window.sotto?.secretRequests
   const disabled = sending !== null || blocked !== null || !bridge
-  const missing = card.fields.filter(field => !(values[field.name] ?? '').trim())
+  const missing = card.fields.filter(field => !(values.get(field.name) ?? '').trim())
   const send = async (answer: 'save' | 'decline'): Promise<void> => {
     if (!bridge || inFlight.current || disabled) return
     if (answer === 'save' && missing.length) { setProblem(t({ message: `Enter ${missing[0]!.label}, or decline the card.`, comment: '{0} is what the agent asked for, such as API key.' })); firstEmpty()?.focus(); return }
     inFlight.current = true; setSending(answer); setProblem(null)
     try {
-      const result = await bridge.answer(answer === 'save' ? { answer, threadId: ownerId, requestId: request.id, values } : { answer, threadId: ownerId, requestId: request.id })
-      if (result.ok) setValues({})
+      const result = await bridge.answer(answer === 'save' ? { answer, threadId: ownerId, requestId: request.id, values: Object.fromEntries(values) } : { answer, threadId: ownerId, requestId: request.id })
+      if (result.ok) setValues(new Map())
       else setProblem(result.message)
     } catch { setProblem(t`Sotto did not answer. Nothing was saved; try again.`) }
     finally { inFlight.current = false; setSending(null) }
@@ -76,9 +76,9 @@ export function SecretRequestCard({ ownerId, request, blocked }: SecretRequestCa
             // A masked field keeps the value from a screen reader too; a shown one is for a user name or an address.
             type={field.secret ? 'password' : 'text'} autoComplete={field.secret ? 'new-password' : 'off'} autoCorrect="off" autoCapitalize="off" spellCheck={false}
             data-1p-ignore="true" data-lpignore="true" data-bwignore="true" placeholder={field.placeholder}
-            value={values[field.name] ?? ''} disabled={disabled} aria-describedby={describedBy}
+            value={values.get(field.name) ?? ''} disabled={disabled} aria-describedby={describedBy}
             aria-invalid={problem !== null && missing.some(item => item.name === field.name) || undefined}
-            onChange={event => { const value = event.currentTarget.value; setProblem(null); setValues(current => ({ ...current, [field.name]: value })) }} />
+            onChange={event => { const value = event.currentTarget.value; setProblem(null); setValues(current => new Map(current).set(field.name, value)) }} />
         </div>
       })}
       <p id={privacyId} className="secret-request__privacy tt-paragraph">{privacy}</p>

@@ -268,6 +268,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // With Work across machines off it still keeps them, reading that record without stepping any move.
     let heldMoves: HostThreadMoveSources | null | undefined
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
+    // Screenshots an agent saved here go after a week (ADR-0220, decision 7): a start removes the older ones, best effort.
+    const browserFiles = owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] && owlFeatures['browser-parity'] ? new BrowserFiles(join(directory, 'browser-files')) : undefined
+    void browserFiles?.sweep().catch(() => undefined)
     const runtime = startedRuntime = await createAgentRuntime({
       ...(pluginAccountCopies ? { pluginAccountCopies } : {}),
       ...(pluginMeshySpending ? { pluginMeshySpending } : {}),
@@ -276,7 +279,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...(pluginElevenLabsSounds ? { pluginElevenLabsSounds } : {}),
       ...(plugins ? { pluginGitHubSignIn: plugins.gitHubSignIn } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
-        ...owlFeatures['browser-parity'] ? { parity: true, browserFiles: new BrowserFiles(join(directory, 'browser-files')) } : {},
+        ...browserFiles ? { parity: true, browserFiles } : {},
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
       observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, desktopHostIdOf: clientId => desktops.hostIdOf(clientId), parentCoordinationEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], owletsEnabled: owlFeatures.owlets, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],

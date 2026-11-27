@@ -88,9 +88,9 @@ function fakeBridge(state: WatcherRoomState): { bridge: WatcherBridge; publish: 
   return { bridge, publish: next => { current = next; for (const listener of listeners) listener(next) } }
 }
 
-function renderRoom(room: WatcherRoomState, state: AgentState) {
+function renderRoom(room: WatcherRoomState, state: AgentState, owlFeatures?: Readonly<Record<string, boolean>>) {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled: true }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
+    update: owlFeatures ? { watcherEnabled: true, owlFeatures: { watcher: true, ...owlFeatures } } : { watcherEnabled: true }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => ({ ...state, error: null }))
   const use = (next: AgentState): void => {
     const connection = agentContextFixture(next, command, { threadDrafts: new ThreadDraftStore(command) })
@@ -203,6 +203,27 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
     expect(card).toHaveTextContent('forge')
     fireEvent.click(within(card).getByRole('button', { name: 'Allow once' }))
     await waitFor(() => expect(view.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'answer', threadId: far, requestId: id, permissionChoice: 'once' })))
+  })
+
+  it('shows a watched thread’s secret request as its words and Decline alone, with nowhere to type a value (ADR-0219)', async () => {
+    const id = `sotto:secret:ask-${sequence}`
+    const asked: AgentRequest = { id, kind: 'permission', text: 'Stripe test key: To run checkout tests.\nThe agent asks for a value it will not see.', options: [],
+      permissionChoices: [{ id: 'decline', label: 'Decline', kind: 'deny' }], context: { toolName: 'Sotto', action: 'Stripe test key' },
+      secretRequest: { label: 'Stripe test key', reason: 'To run checkout tests.', fields: [{ name: 'value', label: 'Stripe test key', secret: true }], delivery: 'secretRef', expiresAt: NOW + 600_000 } }
+    // The main window has the card's channel and the Owl feature is on: Watcher still takes no value.
+    const answer = vi.fn(async () => ({ ok: true as const }))
+    Object.defineProperty(window, 'sotto', { configurable: true, value: { secretRequests: { answer } } })
+    try {
+      const view = renderRoom(roomState([place(id, 'watcher-2', { kind: 'permission' })]), agentState([asked]), { 'secret-requests': true })
+      const card = await askCard('Permission request from Footer links')
+      // The words the popup and a phone show for it, and nothing that takes one.
+      expect(card).toHaveTextContent('Stripe test key')
+      expect(card.querySelector('input, textarea')).toBeNull()
+      expect(within(card).queryByRole('button', { name: 'Save securely' })).toBeNull()
+      fireEvent.click(within(card).getByRole('button', { name: 'Decline' }))
+      await waitFor(() => expect(view.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'answer', threadId: 'footer-links', requestId: id, permissionChoice: 'decline' })))
+      expect(answer).not.toHaveBeenCalled()
+    } finally { Reflect.deleteProperty(window, 'sotto') }
   })
 
   it('shows one card for a request two wake-ups named, under the newer', async () => {
