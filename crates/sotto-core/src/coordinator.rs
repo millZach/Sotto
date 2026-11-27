@@ -2498,6 +2498,8 @@ impl CoordinatorActor {
                 self.finish_sync_command(lane, &client, Ok(()), reply);
             }
             "create-thread" => {
+                // A command in a lane starts with no error of its own, as Node's command path clears it.
+                self.error = None;
                 let res = self.cmd_create_thread(&command, false);
                 self.finish_sync_command(lane, &client, res, reply);
             }
