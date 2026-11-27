@@ -16,6 +16,8 @@ pub(crate) enum CheckoutHolder {
     FailedFollowups(String),
     PausedFollowups(String),
     UncertainSend(String),
+    /// A thread's working copy being chosen or set up, which reads the checkout (`preparation`).
+    Preparation(String),
 }
 
 impl CheckoutHolder {
@@ -32,6 +34,7 @@ impl CheckoutHolder {
             Self::FailedFollowups(title) => format!("Thread \"{title}\" has queued follow-ups that did not send."),
             Self::PausedFollowups(title) => format!("Thread \"{title}\" has paused follow-ups."),
             Self::UncertainSend(title) => format!("Thread \"{title}\" has a message whose delivery is unconfirmed."),
+            Self::Preparation(title) => format!("Sotto is setting up the working copy for thread \"{title}\"."),
         }
     }
 
@@ -43,7 +46,7 @@ impl CheckoutHolder {
             Self::FailedFollowups(_) | Self::PausedFollowups(_) => "Resume or remove them, then try again.",
             Self::UncertainSend(_) => "Open it and refresh to check whether it was sent, then try again.",
             Self::PendingWork(_) => "Open it to review that work, or archive it, then try again.",
-            Self::HistoryLoading(_) => "Try again in a moment.",
+            Self::HistoryLoading(_) | Self::Preparation(_) => "Try again in a moment.",
             Self::GitAction | Self::Send(_) | Self::Turn(_) => "Wait for it to finish before changing this folder.",
         }
     }

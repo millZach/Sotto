@@ -128,10 +128,6 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "configure-thread-working-copy": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "continue-agent": {
       "node": "refused",
       "rust": "invalid_request"

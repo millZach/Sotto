@@ -452,6 +452,10 @@ const BRANCH_RESTORED_NOTICE: &str = "Branch restored.";
 const SEND_FOLDER_UNCHECKED: &str = "Sotto could not check this thread’s working folder, so nothing was sent and nothing in the folder changed. Send it again.";
 /// A thread this host does not hold, in Node's words (`thread` in `src/main/agents/workspace.ts`).
 const UNKNOWN_THREAD: &str = "This thread is not known to Sotto. Refresh and select it again.";
+/// A change to the working folder of Watcher's own thread, as Node's `configureThreadWorkingCopy` refuses it.
+const WATCHER_FOLDER_FIXED: &str = "Watcher’s working folder cannot be changed.";
+/// A command to an earlier Watcher conversation, as Node's `WatcherHistoryRefusal` says it.
+const WATCHER_HISTORY_REFUSED: &str = "This earlier Watcher conversation is read only history. Open Watcher to continue.";
 /// What a preview of Remove worktree says when the folder could not be read, as Node's coordinator says it.
 const RECLAIM_PREVIEW_FAILED: &str = "The folder could not be checked. Nothing was removed. Check the host connection and try again.";
 
@@ -520,15 +524,33 @@ impl FolderHolds {
 /// A checkout a change holds: its folder and every thread that works in it, none of which a send goes to meanwhile.
 struct CheckoutHold {
     folder: String,
+    /// The checkout's identity, as Node's `checkoutIdentity` keys its guard, which a read of the checkout is held by.
+    key: String,
     threads: HashSet<String>,
 }
 
+/// A choice of a thread's working copy reading a checkout (`configure-thread-working-copy`), as Node's
+/// `reserveWorkingCopySelection` holds it: by the checkout's identity, and with the thread's title for a change it holds back.
+struct CheckoutRead {
+    key: String,
+    title: String,
+}
+
 /// A change waiting to hold its thread's checkout, as `ActorMessage::HoldCheckout` answers it: why not, in Node's words.
-fn hold_checkout(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: &str, folder: &str, sharing: Vec<String>) -> Result<(), String> {
+fn hold_checkout(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: &str, folder: &str, key: String, sharing: Vec<String>) -> Result<(), String> {
     let stopped = || "Sotto is closing. Nothing was changed.".to_string();
     let (reply, answer) = oneshot::channel();
-    let message = ActorMessage::HoldCheckout { thread_id: thread_id.to_string(), folder: folder.to_string(), sharing, reply };
+    let message = ActorMessage::HoldCheckout { thread_id: thread_id.to_string(), folder: folder.to_string(), key, sharing, reply };
     self_tx.send(message).map_err(|_| stopped())?;
+    answer.blocking_recv().map_err(|_| stopped())?
+}
+
+/// A choice of a thread's working copy waiting to read the checkout keyed `key`, as `ActorMessage::HoldCheckoutRead`
+/// answers it: why not, in Node's words.
+fn hold_checkout_read(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: &str, key: String) -> Result<(), String> {
+    let stopped = || "Sotto is closing. Nothing was changed.".to_string();
+    let (reply, answer) = oneshot::channel();
+    self_tx.send(ActorMessage::HoldCheckoutRead { thread_id: thread_id.to_string(), key, reply }).map_err(|_| stopped())?;
     answer.blocking_recv().map_err(|_| stopped())?
 }
 
@@ -677,6 +699,13 @@ enum AsyncCommandOutcome {
         thread_id: String,
         result: Result<AgentThreadWorktree, (String, Option<Box<AgentThreadWorktree>>)>,
     },
+    /// A thread's working copy as the user chose it before its first send, or why not, with whether a checkout read was
+    /// held while it was chosen.
+    WorkingCopyChosen {
+        thread_id: String,
+        read_held: bool,
+        result: Result<AgentThreadWorktree, String>,
+    },
     /// What deleting a thread with its own worktree folder would do: why it is kept, and the folder's facts.
     DeletePreview {
         thread_id: String,
@@ -806,7 +835,16 @@ enum ActorMessage {
     HoldCheckout {
         thread_id: String,
         folder: String,
+        key: String,
         sharing: Vec<String>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// A choice of a thread's working copy reads the checkout keyed `key`, as Node's `reserveWorkingCopySelection` takes
+    /// a read of it: refused, in Node's words, while a change holds it; otherwise held until the choice is made, and a
+    /// change to it waits. A send does not.
+    HoldCheckoutRead {
+        thread_id: String,
+        key: String,
         reply: oneshot::Sender<Result<(), String>>,
     },
     /// A removal of a thread's own worktree folder holds it (ADR-0041): no Git status read starts in it from now, and the
@@ -1467,6 +1505,8 @@ struct CoordinatorActor {
     folder_idle_waiters: HashMap<String, Vec<FolderWaiter>>,
     /// The checkouts a change holds, by the thread that made the change, as Node's `CheckoutMutations` holds them.
     checkout_holds: HashMap<String, CheckoutHold>,
+    /// The checkouts a choice of working copy reads, by the thread whose working copy it is.
+    checkout_reads: HashMap<String, CheckoutRead>,
     /// The follow-up queue, kept in `followups.json` as Node keeps it.
     followups: FollowupStore,
     /// Who queued each follow-up while this host ran, by item ID.
@@ -1629,6 +1669,7 @@ impl CoordinatorActor {
             git_probes_running: HashMap::new(),
             folder_idle_waiters: HashMap::new(),
             checkout_holds: HashMap::new(),
+            checkout_reads: HashMap::new(),
             followups,
             followup_origins: HashMap::new(),
             followup_answers: HashMap::new(),
@@ -2251,8 +2292,12 @@ impl CoordinatorActor {
                 self.drain_lane(lane);
                 self.pump_followups();
             }
-            ActorMessage::HoldCheckout { thread_id, folder, sharing, reply } => {
-                let held = self.hold_checkout_now(&thread_id, folder, sharing);
+            ActorMessage::HoldCheckout { thread_id, folder, key, sharing, reply } => {
+                let held = self.hold_checkout_now(&thread_id, folder, key, sharing);
+                let _ = reply.send(held);
+            }
+            ActorMessage::HoldCheckoutRead { thread_id, key, reply } => {
+                let held = self.hold_checkout_read_now(&thread_id, key);
                 let _ = reply.send(held);
             }
             ActorMessage::HoldFolder { thread_id, folder, recheck, reply } => {
@@ -2455,6 +2500,8 @@ impl CoordinatorActor {
             // Git and the disk in the thread's lane too.
             "retry-thread-worktree" | "refresh-thread-worktree" => self.cmd_update_thread_worktree(lane, client, &command, reply),
             "restore-thread-branch" => self.cmd_restore_thread_branch(lane, client, &command, reply),
+            // Choosing a thread's working copy before its first send reads its folder with Git in the thread's lane.
+            "configure-thread-working-copy" => self.cmd_configure_thread_working_copy(lane, client, &command, reply),
 
             // Slow provider / git-worktree commands run outside the owner loop while holding only their lane.
             "configure" => self.spawn_cmd_configure(lane, client, &command, reply),
@@ -2897,6 +2944,7 @@ impl CoordinatorActor {
             .worktree
             .as_ref()
             .and_then(|w| w.base_branch.clone());
+        let existing_worktree = thread.worktree.as_ref().and_then(|w| w.existing_worktree_path.clone());
         let existing_cwd = thread
             .worktree
             .as_ref()
@@ -2928,8 +2976,11 @@ impl CoordinatorActor {
             let mut allocated_worktree = None;
             let mut held_folder = None;
             let cwd = if needs_worktree {
-                let alloc = tokio::task::spawn_blocking(move || {
-                    allocate_independent_worktree(&data_dir, &project_path, base_branch.as_deref())
+                // An existing worktree the user chose is taken as it is, as Node's `allocate` takes one; otherwise a new
+                // one is made.
+                let alloc = tokio::task::spawn_blocking(move || match existing_worktree {
+                    Some(existing) => crate::worktree_reclaim::existing_worktree(&project_path, &existing),
+                    None => allocate_independent_worktree(&data_dir, &project_path, base_branch.as_deref()),
                 })
                 .await
                 .map_err(|_| "Could not create worktree.".to_string())
@@ -3558,6 +3609,25 @@ impl CoordinatorActor {
                         }
                         self.command_refused(words);
                     }
+                }
+            }
+            // The chosen working copy is the thread's record, the shared folder its working folder, and its status is read
+            // now, so the toolbar knows it is a repository without waiting, as Node's `configureThreadWorkingCopy`.
+            AsyncCommandOutcome::WorkingCopyChosen { thread_id, read_held, result } => {
+                if read_held {
+                    self.checkout_reads.remove(&thread_id);
+                }
+                match result {
+                    Ok(record) => {
+                        if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                            thread.working_directory = record.path.clone().filter(|_| record.mode == "shared");
+                            thread.worktree = Some(record);
+                            self.save_workspace();
+                            self.shell_dirty = true;
+                            self.read_git_status(&thread_id);
+                        }
+                    }
+                    Err(words) => self.command_refused(words),
                 }
             }
             // As Node's send fails before its prompt goes out: the delivery failed, with the words for why, and the host's
@@ -4435,7 +4505,7 @@ impl CoordinatorActor {
         let project = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
         let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
         tokio::task::spawn_blocking(move || {
-            let held = crate::worktree_reclaim::threads_in_checkout(&checkout, &candidates).and_then(|sharing| hold_checkout(&self_tx, &thread_id, &checkout, sharing));
+            let held = crate::worktree_reclaim::threads_in_checkout(&checkout, &candidates).and_then(|(key, sharing)| hold_checkout(&self_tx, &thread_id, &checkout, key, sharing));
             let checkout_held = held.is_ok();
             let (folder, result) = match (held, worktree) {
                 (Err(words), _) => (None, Err((words, None))),
@@ -4447,6 +4517,52 @@ impl CoordinatorActor {
                 }
             };
             let outcome = AsyncCommandOutcome::BranchRestore { folder, checkout_held, thread_id, result };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+        });
+    }
+
+    /// Chooses a thread's working copy before its first send, as Node's `configureThreadWorkingCopy`, in the thread's lane:
+    /// refused for Watcher's own threads, a thread Sotto does not know, and one that has started or already has a folder of
+    /// its own, in Node's words and order. Then, off the coordinator's thread, with a read of the chosen folder's checkout
+    /// held so no change to it starts meanwhile, the shared project folder is read with Git, or the worktree to make or
+    /// take at the first send is recorded. No folder is made, changed or removed.
+    fn cmd_configure_thread_working_copy(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        let Some(selection) = crate::worktree_reclaim::WorkingCopySelection::from_command(command) else {
+            return self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message())), reply);
+        };
+        self.error = None;
+        let thread_id = command.get("threadId").and_then(Value::as_str).unwrap_or_default().to_string();
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return self.refuse_sync_command(lane, &client, UNKNOWN_THREAD.into(), reply);
+        };
+        let watcher = match thread.kind.as_deref() {
+            Some("watcher-history") => Some(WATCHER_HISTORY_REFUSED),
+            Some("watcher") => Some(WATCHER_FOLDER_FIXED),
+            _ => None,
+        };
+        if let Some(words) = watcher {
+            return self.refuse_sync_command(lane, &client, words.into(), reply);
+        }
+        // This host keeps no creation of its own threads, so one with none has not started, as Node's `unstarted` one.
+        let creation = self.creations.iter().find(|c| c.get("threadId").and_then(Value::as_str) == Some(thread_id.as_str()));
+        let unstarted = creation.is_none_or(|c| c.get("phase").and_then(Value::as_str) == Some("unstarted"));
+        let own_folder = thread.worktree.as_ref().is_some_and(|wt| wt.mode == "independent" && wt.path.is_some());
+        if thread.native_session_started || !unstarted || own_folder {
+            return self.refuse_sync_command(lane, &client, "This thread already has a working folder. Start a new thread to choose another one.".into(), reply);
+        }
+        let Some(project) = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()) else {
+            return self.refuse_sync_command(lane, &client, "Choose an available project.".into(), reply);
+        };
+        let folder = selection.read_folder(&project).map(ToString::to_string);
+        let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
+        tokio::task::spawn_blocking(move || {
+            let held = match &folder {
+                Some(folder) => crate::worktree_reclaim::checkout_key(folder).and_then(|key| hold_checkout_read(&self_tx, &thread_id, key)).map(|()| true),
+                None => Ok(false),
+            };
+            let read_held = held == Ok(true);
+            let result = held.and_then(|_| crate::worktree_reclaim::selected_working_copy(&data_directory, &project, &selection));
+            let outcome = AsyncCommandOutcome::WorkingCopyChosen { thread_id, read_held, result };
             let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
         });
     }
@@ -4479,12 +4595,16 @@ impl CoordinatorActor {
     /// Holds a thread's checkout for a change, or says in Node's words what holds it, as Node's
     /// `acquireCheckoutMutationInFolder` reserves it: another change holding it, then a send on its way in it, then each
     /// thread in it, the changing thread first, that waits on an answer, works, loads its history or holds work.
-    fn hold_checkout_now(&mut self, thread_id: &str, folder: String, sharing: Vec<String>) -> Result<(), String> {
+    fn hold_checkout_now(&mut self, thread_id: &str, folder: String, key: String, sharing: Vec<String>) -> Result<(), String> {
         let mut threads = vec![thread_id.to_string()];
         threads.extend(sharing.into_iter().filter(|id| id != thread_id));
         let title = |id: &str| self.threads.iter().find(|t| t.id == id).map(|t| t.title.clone()).unwrap_or_default();
-        if self.checkout_holds.values().any(|hold| hold.folder == folder || threads.iter().any(|id| hold.threads.contains(id))) {
+        if self.checkout_holds.values().any(|hold| hold.folder == folder || hold.key == key || threads.iter().any(|id| hold.threads.contains(id))) {
             return Err(CheckoutHolder::GitAction.change_refused());
+        }
+        // A working copy being chosen reads this checkout, and Node's guard refuses a change while anything reads it.
+        if let Some(read) = self.checkout_reads.values().find(|read| read.key == key) {
+            return Err(CheckoutHolder::Preparation(read.title.clone()).change_refused());
         }
         if let Some(sending) = threads.iter().find(|id| self.in_flight_sends.contains_key(id.as_str())) {
             return Err(CheckoutHolder::Send(title(sending)).change_refused());
@@ -4495,7 +4615,18 @@ impl CoordinatorActor {
             }
         }
         let threads = threads.into_iter().collect();
-        self.checkout_holds.insert(thread_id.to_string(), CheckoutHold { folder, threads });
+        self.checkout_holds.insert(thread_id.to_string(), CheckoutHold { folder, key, threads });
+        Ok(())
+    }
+
+    /// Holds a read of the checkout keyed `key` while a thread's working copy is chosen, or says in Node's words what
+    /// change holds it, as Node's `acquireIdentity(key, 'read')`: only a change refuses a read, and a read never holds a send.
+    fn hold_checkout_read_now(&mut self, thread_id: &str, key: String) -> Result<(), String> {
+        if self.checkout_holds.values().any(|hold| hold.key == key) {
+            return Err(CheckoutHolder::GitAction.change_refused());
+        }
+        let title = self.threads.iter().find(|t| t.id == thread_id).map(|t| t.title.clone()).unwrap_or_default();
+        self.checkout_reads.insert(thread_id.to_string(), CheckoutRead { key, title });
         Ok(())
     }
 
@@ -7179,13 +7310,154 @@ mod tests {
 
         // A change holding the checkout, as Restore branch holds it while it switches: the other thread's send waits.
         let (reply, held) = oneshot::channel();
-        coord.tx.send(ActorMessage::HoldCheckout { thread_id: restoring.into(), folder: project.to_string_lossy().into_owned(), sharing: vec![busy.into()], reply }).unwrap();
+        let key = crate::worktree_reclaim::checkout_key(&project.to_string_lossy()).unwrap();
+        coord.tx.send(ActorMessage::HoldCheckout { thread_id: restoring.into(), folder: project.to_string_lossy().into_owned(), key, sharing: vec![busy.into()], reply }).unwrap();
         assert_eq!(held.await.unwrap(), Ok(()));
         let shell = run(json!({ "type": "manual-send", "threadId": busy, "text": "Mid-switch" })).await.unwrap();
         let words = "A Git action is running in this folder. Your message was not sent. Your text is kept. Send it again when the action finishes.";
         assert_eq!(shell["error"], words);
         let busy_now = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == busy).unwrap().clone();
         assert_eq!(busy_now["status"], "idle", "nothing went to the provider");
+        coord.shutdown().await;
+    }
+
+    /// A project in a fresh repository with one commit, and a worktree of it the user made on `user-work` holding work of
+    /// their own, and a coordinator with the mock provider on a data folder beside them.
+    async fn working_copy_workspace(base: &Path) -> (CoordinatorHandle, Arc<MockProviderAdapter>, ClientContext, String, PathBuf, PathBuf) {
+        let (project, user) = (base.join("project"), base.join("user-worktree"));
+        std::fs::create_dir_all(&project).unwrap();
+        fixture_git(&project, &["init", "-q"]);
+        std::fs::write(project.join("README.md"), "hello\n").unwrap();
+        fixture_git(&project, &["add", "."]);
+        fixture_git(&project, &["commit", "-q", "-m", "First"]);
+        fixture_git(&project, &["worktree", "add", "-q", "-b", "user-work", &user.to_string_lossy()]);
+        std::fs::write(user.join("draft.txt"), "the user's own work\n").unwrap();
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(base.join("data"), "00000000-0000-4000-8000-000000000001".into(), false, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let shell = coord.run_command(client.clone(), json!({ "type": "create-project", "provider": "codex", "title": "Chosen", "path": project.to_string_lossy(), "useExisting": true }).as_object().unwrap().clone()).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        (coord, mock, client, project_id, project, user)
+    }
+
+    /// Choosing a thread's working copy before its first send, as Node's `configureThreadWorkingCopy`: the shared project
+    /// folder is recorded where it is and read now, with its folder the thread's; a new worktree, and an existing one with
+    /// its branch, are recorded for the first send, which takes the existing one as the user's own and makes nothing. Once
+    /// the thread has started, or for a thread Sotto does not know, Node's words refuse it; a command in any other shape
+    /// is `invalid_request`. The user's work is never touched.
+    #[tokio::test]
+    async fn chooses_a_threads_working_copy_before_its_first_send_as_node_does() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let (coord, mock, client, project_id, project, user) = working_copy_workspace(&base).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let thread_id = "00000000-0000-4000-8000-0000000000c1";
+        run(json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Choosing", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" })).await.unwrap();
+        let shown = |shell: &Value| shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == thread_id).unwrap().clone();
+
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "shared" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        let thread = shown(&shell);
+        assert_eq!((&thread["worktree"]["mode"], &thread["worktree"]["status"], &thread["worktree"]["branch"]), (&json!("shared"), &json!("ready"), &json!("main")));
+        assert_eq!((&thread["worktree"]["path"], &thread["workingDirectory"]), (&json!(project.to_string_lossy()), &json!(project.to_string_lossy())));
+
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "independent", "baseBranch": "main", "startFromOrigin": false })).await.unwrap();
+        let thread = shown(&shell);
+        assert_eq!(thread["worktree"], json!({ "mode": "independent", "status": "pending", "baseBranch": "main", "startFromOrigin": false }));
+        assert_eq!(thread.get("workingDirectory"), None, "a worktree still to make has no folder yet");
+
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "independent", "existingWorktreePath": user.to_string_lossy() })).await.unwrap();
+        let thread = shown(&shell);
+        assert_eq!(thread["worktree"], json!({ "mode": "independent", "status": "pending", "existingWorktreePath": user.to_string_lossy(), "branch": "user-work" }));
+
+        // The first send works in the existing worktree as the user's own, and makes no worktree of its own.
+        run(json!({ "type": "manual-send", "threadId": thread_id, "text": "Work there" })).await.unwrap();
+        mock.complete_turn(thread_id, "Done");
+        wait_until_idle(&coord, thread_id).await;
+        let shell = run(json!({ "type": "refresh" })).await.unwrap();
+        let thread = shown(&shell);
+        assert_eq!((&thread["worktree"]["status"], &thread["worktree"]["reused"], &thread["worktree"]["branch"]), (&json!("ready"), &json!(true), &json!("user-work")));
+        assert_eq!((&thread["worktree"]["path"], &thread["workingDirectory"]), (&json!(user.to_string_lossy()), &json!(user.to_string_lossy())));
+        assert!(!base.join("data").join(crate::worktree_reclaim::THREAD_WORKTREE_FOLDER).exists(), "no worktree of Sotto's own was made");
+        assert_eq!(std::fs::read_to_string(user.join("draft.txt")).unwrap(), "the user's own work\n");
+
+        let already = "This thread already has a working folder. Start a new thread to choose another one.";
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "shared" })).await.unwrap();
+        assert_eq!((&shell["error"], &shell["notice"]), (&json!(already), &json!(already)));
+        assert_eq!(shown(&shell)["worktree"]["path"], json!(user.to_string_lossy()), "the record stays as it was");
+
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": "00000000-0000-4000-8000-0000000000ff", "workingCopy": "shared" })).await.unwrap();
+        assert_eq!(shell["error"], UNKNOWN_THREAD);
+        for bad in [
+            json!({ "type": "configure-thread-working-copy", "threadId": thread_id }),
+            json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "shared", "baseBranch": "" }),
+            json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "independent", "startFromOrigin": "yes" }),
+        ] {
+            let err = run(bad.clone()).await.unwrap_err();
+            assert_eq!(err.code, HostErrorCode::InvalidRequest, "{bad}");
+        }
+
+        // A thread whose first send made its own worktree has a folder of its own, so it keeps it.
+        let made = "00000000-0000-4000-8000-0000000000c2";
+        run(json!({ "type": "create-thread", "threadId": made, "projectId": project_id, "title": "Made", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" })).await.unwrap();
+        run(json!({ "type": "manual-send", "threadId": made, "text": "Make one" })).await.unwrap();
+        mock.complete_turn(made, "Done");
+        wait_until_idle(&coord, made).await;
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": made, "workingCopy": "shared" })).await.unwrap();
+        assert_eq!(shell["error"], already);
+        coord.shutdown().await;
+    }
+
+    /// While a working copy is chosen, a read of the chosen checkout is held, as Node's `reserveWorkingCopySelection`
+    /// holds one: a change to it, Restore branch here, waits with Node's words, and a choice waits for a change that holds
+    /// it. A choice lets its read go once made, so the next change reaches its own checks.
+    #[tokio::test]
+    async fn choosing_a_working_copy_holds_its_checkout_from_changes() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let (coord, _mock, client, project_id, project, _user) = working_copy_workspace(&base).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let (choosing, restoring) = ("00000000-0000-4000-8000-0000000000d1", "00000000-0000-4000-8000-0000000000d2");
+        for (id, title, copy) in [(choosing, "Choosing", "independent"), (restoring, "Restoring", "shared")] {
+            run(json!({ "type": "create-thread", "threadId": id, "projectId": project_id, "title": title, "titleSource": "user",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": copy })).await.unwrap();
+        }
+
+        // A choice made lets its read go: Restore branch gets past the guard to its own word for a thread with no send.
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": choosing, "workingCopy": "shared" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        let shell = run(json!({ "type": "restore-thread-branch", "threadId": restoring })).await.unwrap();
+        assert_eq!(shell["error"], "Sotto has not sent to this thread yet, so there is no earlier branch to restore.");
+
+        // A choice reading the checkout holds Restore branch back.
+        let key = crate::worktree_reclaim::checkout_key(&project.to_string_lossy()).unwrap();
+        let (reply, held) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckoutRead { thread_id: choosing.into(), key: key.clone(), reply }).unwrap();
+        assert_eq!(held.await.unwrap(), Ok(()));
+        let shell = run(json!({ "type": "restore-thread-branch", "threadId": restoring })).await.unwrap();
+        let words = "Sotto is setting up the working copy for thread \"Choosing\". Nothing was changed. Try again in a moment.";
+        assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &json!(words)));
+
+        // The thread's next read is of another checkout, which lets this one go; then a change holding this checkout holds
+        // a choice of it back, and the record stays as it was.
+        let (reply, held) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckoutRead { thread_id: choosing.into(), key: "another checkout".into(), reply }).unwrap();
+        assert_eq!(held.await.unwrap(), Ok(()));
+        let (reply, held) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckout { thread_id: restoring.into(), folder: project.to_string_lossy().into_owned(), key, sharing: vec![], reply }).unwrap();
+        assert_eq!(held.await.unwrap(), Ok(()));
+        let other = "00000000-0000-4000-8000-0000000000d3";
+        run(json!({ "type": "create-thread", "threadId": other, "projectId": project_id, "title": "Other", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" })).await.unwrap();
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": other, "workingCopy": "shared" })).await.unwrap();
+        let words = "A Git action is running in this folder. Nothing was changed. Wait for it to finish before changing this folder.";
+        assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &json!(words)));
+        let thread = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == other).unwrap().clone();
+        assert_eq!(thread["worktree"], json!({ "mode": "independent", "status": "pending" }));
         coord.shutdown().await;
     }
 

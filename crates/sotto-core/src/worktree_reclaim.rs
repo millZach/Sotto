@@ -1680,26 +1680,35 @@ pub fn owns_checkout_alone(folder: &str, others: &[Option<String>]) -> bool {
     true
 }
 
+/// The checkout `folder` is in, as Node's `checkoutIdentity` names it for the checkout guard: the checkout's root, or, for a
+/// missing folder, only the place it names. Any other failure to read it is its words.
+pub fn checkout_key(folder: &str) -> Result<String, String> {
+    match checkout_identity(Path::new(folder)) {
+        Ok(identity) => Ok(identity),
+        Err(refused) if refused.missing => Ok(path_key(Path::new(folder))),
+        Err(refused) => Err(refused.words),
+    }
+}
+
 /// The threads among `others`, each with its checkout folder, that work in `folder`'s checkout, as Node's
 /// `threadsInCheckout` finds them for a change to it: each folder's identity is read once, a missing folder is only the
 /// place it names, as Node's `checkoutIdentity` reads one, and another thread's folder that cannot be read is in no
 /// checkout. When `folder` itself cannot be read, nothing is known of who works in it, and the change does not go.
-pub fn threads_in_checkout(folder: &str, others: &[(String, String)]) -> Result<Vec<String>, String> {
-    let read = |path: &str| match checkout_identity(Path::new(path)) {
-        Ok(identity) => Ok(identity),
-        Err(refused) if refused.missing => Ok(path_key(Path::new(path))),
-        Err(refused) => Err(refused.words),
-    };
-    let identity = read(folder)?;
+/// Answered with the checkout's identity (`checkout_key`), which the change holds it by.
+pub fn threads_in_checkout(folder: &str, others: &[(String, String)]) -> Result<(String, Vec<String>), String> {
+    let identity = checkout_key(folder)?;
     let mut known: HashMap<&str, Option<String>> = HashMap::new();
-    Ok(others
+    let sharing = others
         .iter()
-        .filter(|(_, other)| known.entry(other.as_str()).or_insert_with(|| read(other).ok()).as_ref() == Some(&identity))
+        .filter(|(_, other)| known.entry(other.as_str()).or_insert_with(|| checkout_key(other).ok()).as_ref() == Some(&identity))
         .map(|(id, _)| id.clone())
-        .collect())
+        .collect();
+    Ok((identity, sharing))
 }
 
 mod restore;
+mod working_copy;
+pub use working_copy::{existing_worktree, selected_working_copy, WorkingCopySelection};
 pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, working_copy_command_shape, NO_CHECKOUT_TO_SWITCH, RESTORE_BRANCH_NEEDS_CONFIRMATION};
 
 #[cfg(test)]
