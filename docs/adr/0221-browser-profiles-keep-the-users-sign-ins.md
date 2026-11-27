@@ -27,3 +27,11 @@ A **browser profile** is defined in `CONTEXT.md`.
 ## Consequences
 
 A user signs in once and stays signed in across runs, in a profile they chose, and can bring their Firefox or Zen sign-ins. An agent never holds a signed-in page the user did not hand it. Chromium and Safari users sign in again in Sotto's profile until decision 5 is revisited.
+
+## November 27 amendment: a shared profile page stays on its site
+
+A review found that a page in a profile, once the user shared it, followed the thread's browser grant to any site, as a fresh page does (ADR-0029, October 5 amendment). A signed-in page is the user's accounts, so it now keeps to what the user handed over.
+
+- **Sharing stays with the site the user shared.** When a shared page in a profile goes to another origin, by a link, a redirect or the page's own script, it becomes private again, grant or not, and says so with **Share with agent**.
+- **An agent's navigate to another site asks every time.** "Take this page, signed in with your Work profile, to another site and share it there" asks the user even under the grant, with **Allow once** alone; **Allow this thread** is not offered, and a request to allow it for the thread is refused. Allowed, the page is shared at the new site.
+- **Downloads ask.** Decision 3's "no downloads" holds while the full catalog is off. With it on, a profile page's download waits for the user to place it, as every page's does ([ADR-0222](0222-the-browser-zooms-downloads-shows-the-agents-cursor-and-takes-drawings.md), decision 3).

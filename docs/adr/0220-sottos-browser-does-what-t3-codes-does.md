@@ -31,4 +31,18 @@ No mock-up round was held. ADR-0011's rule asks for one when the direction is no
 
 ## Consequences
 
-An agent can test a web app in Sotto's browser the way it would in T3 Code's, by ref, and a user can watch, answer the page and take it over. Antigravity threads keep the stable catalog until `agy` takes the larger set. The server list reads system commands on every platform; a Linux or macOS without `ss` or `lsof` lists no servers, and the pane says none is answering. Recording on a paired host, a prompt on this computer, zoom, downloads, passkeys and drawing on the page remain open, each with its reason in the research note.
+An agent can test a web app in Sotto's browser the way it would in T3 Code's, by ref, and a user can watch, answer the page and take it over. Antigravity threads keep the stable catalog until `agy` takes the larger set. The server list reads system commands on every platform; a Linux or macOS without `ss` or `lsof` lists no servers, and the pane says none is answering. Recording on a paired host and a prompt on this computer remain open, each with its reason in the research note. Zoom, downloads, the agent's cursor, drawing on the page and passkeys are [ADR-0222](0222-the-browser-zooms-downloads-shows-the-agents-cursor-and-takes-drawings.md).
+
+## November 27 amendment: what a review tightened
+
+A review of this branch by Gemini, spot-checked by the orchestrator against the code, found places where the decisions above were not held to. Each is now held as follows.
+
+- **Decision 3.** An Antigravity thread's call to a full-catalog action is refused over the tool server's `tools/call` as well as when listed, so a name it learned elsewhere does not reach the full catalog. `browser_close` is refused with the rest of the pane's and agent's full-browser requests while the feature is off.
+- **Decision 5.** An upload gives the page copies made when the agent asked, checked again at **Allow once** (ADR-0222, decision 11). **Allow this thread** is not offered for an upload, and a request to allow one for the thread is refused, since an upload asks every time. Holding a file chooser for `upload` lasts for the agent's own action alone; Chromium's interception is turned off after it, and when the page navigates, so the user's own file chooser opens as before.
+- **Decision 6.** A secret keeps `evaluate` off until a new document commits in the main frame, not until a navigation merely starts, and the page's address, title and every result are masked against it in more of its forms (ADR-0222, decision 12). The host's page follows the same rule.
+- **Decision 8.** The agent's `navigate` waits for the user as every other action does, and each of the user's inputs moves the moment the strip says the page is free again, so it says so once the user has stopped, not 750 ms after they began.
+- **Decision 9.** A dialog's words are masked against a typed secret before an agent is told them, and are not told at all while a secret is in the document.
+- **Decision 12.** `browser_close` leaves the page open while the user has taken it over, has stopped sharing it or is using it, as every other action waits.
+- **Decision 4.** Servers are found on `::1` too, and by the shape of `netstat`'s lines rather than its words, which are in the system's language; a page's content type is read without regard to case, and each probe has one deadline.
+- **Decision 2.** A snapshot's text is cut at 180,000 characters in all, and an element's attributes are read as name and value pairs, so a value that reads like a name is not taken for one.
+- **Decision 13.** A paired host's browser service is given the feature's answer and its browser files folder, and sweeps that folder when it starts.

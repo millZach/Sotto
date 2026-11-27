@@ -1,6 +1,6 @@
 # What T3 Code's browser does that Sotto's did not
 
-November 27, 2026. Rez asked that Sotto's browser do everything T3 Code's does. This note compares the two, feature by feature, as the ground for [ADR-0220](../adr/0220-sottos-browser-does-what-t3-codes-does.md) and [ADR-0221](../adr/0221-browser-profiles-keep-the-users-sign-ins.md), and records what was built and what was not, with the reason.
+November 27, 2026. Rez asked that Sotto's browser do everything T3 Code's does. This note compares the two, feature by feature, as the ground for [ADR-0220](../adr/0220-sottos-browser-does-what-t3-codes-does.md), [ADR-0221](../adr/0221-browser-profiles-keep-the-users-sign-ins.md) and [ADR-0222](../adr/0222-the-browser-zooms-downloads-shows-the-agents-cursor-and-takes-drawings.md), and records what was built and what was not, with the reason.
 
 ## What was read
 
@@ -52,14 +52,14 @@ November 27, 2026. Rez asked that Sotto's browser do everything T3 Code's does. 
 | Device presets and colour scheme from the menu | `PreviewMoreMenu` | Partial | Has | More lists eight presets, Rotate, and the page's colour scheme. |
 | Who has the page; the agent waits while a person is in control | Tab owner, human in control | Partial | Has | **Take over** and **Hand back**; the user's own click, key or wheel holds the agent for a moment (decision 8). |
 | A floating player | `ThreadPreviewMiniPlayer`, picture-in-picture | Has | Has | Sotto's **browser player** and **Float the browser over the thread**. |
-| Point at an element and tell the agent | Annotation | Partial | Partial | Sotto's **Point at something** sends an element and a comment. T3 Code's annotation also draws on the page and takes speech; not built (below). |
+| Point at an element and tell the agent | Annotation | Partial | Has | **Point at something** sends an element and a comment. **Draw on the page** marks a frozen picture of it with pen, box, arrow, circle and note, with a comment that dictation can fill (ADR-0222, decisions 8 and 9). Nothing goes into the page. |
 | Profiles that keep sign-ins | Default (kept), Incognito, named profiles | Missing | Has | Sotto's pages kept nothing between runs. Now the user adds named profiles that keep sign-ins; **A fresh page** keeps nothing, as Incognito. ADR-0221. |
 | Copy sign-ins from another browser | Import wizard | Missing | Partial | Firefox and Zen, on Windows, macOS and Linux. Not Chromium browsers or Safari (below). |
 | Developer tools | `openDevTools` | Missing | Has | **Open developer tools** in More, in a window of their own; the user's only. |
-| Page zoom | `ZoomIndicator`, zoom keys | Missing | Missing | Below. |
-| Downloads | Allowed, placed by the user | Missing | Missing | Below. |
-| Passkeys | A bridge to the system's passkeys | Missing | Missing | Below. |
-| An agent's cursor drawn where it acts | `AgentBrowserCursor` | Missing | Missing | Below. |
+| Page zoom | `ZoomIndicator`, zoom keys | Missing | Has | Ctrl or Command with = - 0, Ctrl with the wheel, and More; a chip beside the address away from 100%. An agent's points, sizes and screenshots stay in CSS pixels (ADR-0222, decisions 1 and 2). |
+| Downloads | Allowed, placed by the user | Missing | Has | Every download waits for **Save to Downloads**, **Save as…** or **Cancel**, an agent's included; the empty pane lists them. An agent gets a path only for a file the user saved in the thread's folder (decisions 3 to 5). |
+| Passkeys | A bridge to the system's passkeys | Missing | Has | No bridge: Chromium's own WebAuthn reaches Windows Hello from Sotto's page, which has no preload (decision 10). |
+| An agent's cursor drawn where it acts | `AgentBrowserCursor` | Missing | Has | Chromium's overlay draws an arrow and a click's ring, with no script in the page; never in a picture the agent gets, and in recordings. Reduced motion jumps (decisions 6 and 7). |
 
 ### On a paired host
 
@@ -76,8 +76,7 @@ Antigravity threads keep the stable catalog. `agy` drops a session's largest too
 - **Copying sign-ins from Chrome, Edge, Brave, Arc, Opera, Vivaldi and Helium, and from Safari.** On Windows, current Chromium browsers seal cookies with app-bound encryption, which only the browser itself can open; T3 Code cannot import them either, and imports only Helium among Chromium browsers there, whose cookies use the older per-user encryption. On macOS and Linux they need the browser's key from the Keychain or the Secret Service, and Safari's cookies need Full Disk Access. Those paths decrypt the user's credentials and could not be verified from this Windows computer, and an unverified decryptor of someone's sign-ins is the wrong thing to ship. Firefox and Zen keep cookies unencrypted in a database Sotto reads with Node's own `node:sqlite`, on all three platforms.
 - **An agent choosing a profile.** By Rez's rule: a signed-in profile is the user's to use. An agent's own pages open in the thread's session, which keeps nothing; a page in a profile starts private, and the agent sees it only once the user shares it.
 - **Profiles on a paired host.** A host's Chromium runs with a temporary profile deleted when it closes (ADR-0198). Keeping sign-ins there, or carrying them over the host connection, is a decision of its own.
-- **Page zoom.** Zoom changes the scale between CSS pixels and the screen, which every coordinate an agent gives, the emulated sizes and the presets rely on. The pane's sizes and presets cover how a page looks at another size; zoom waits for a design that keeps agent coordinates exact.
-- **Downloads.** Sotto's browser blocks them and says to open the page in the system browser. Letting a page write to the user's disk, and deciding whether an agent may read what it wrote, is a permission decision of its own.
-- **Passkeys.** T3 Code bridges a page's WebAuthn requests to the system's authenticator through its own preload. In Sotto the page has no preload by design (untrusted pages have no bridge to Sotto), so a passkey bridge needs its own security review.
-- **Drawing and speech on the page.** **Point at something** already sends an element with a comment. Drawing would put Sotto's script into the page under test, which Point avoids, and speech would add a recording path to the browser.
-- **An agent's cursor.** Each action is a step with a picture in Tools and the player. Drawing a cursor over the native page needs either Sotto's script in the page or a window over it.
+- **Zoom, downloads and the agent's cursor on a paired host.** A host's page is drawn from its screencast over the host connection, and its Chromium has no Save dialog or folder of the user's on this computer. Zoom there needs the host to scale its screencast, downloads need a way to bring a file across the connection, and the cursor needs this computer's style sent to the host. Each is a change to the host protocol of its own.
+- **Passkeys on macOS and Linux.** Chromium's WebAuthn is the same code there, but whether Touch ID or a Linux security key answers Sotto's page was not checked from this Windows computer.
+
+Built since ADR-0220 left them open, in [ADR-0222](../adr/0222-the-browser-zooms-downloads-shows-the-agents-cursor-and-takes-drawings.md): page zoom (Chromium already takes input and gives screenshots in CSS pixels, so only an agent's fixed size is scaled), downloads (each waits for the user, and an agent reads one only if the user saved it in the thread's folder), passkeys (no bridge is needed), drawing on the page (on a frozen picture, so nothing goes into the page, with dictation for the comment), and the agent's cursor (Chromium's own overlay, so neither script in the page nor a window over it).
