@@ -49,9 +49,10 @@ const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string
 // The profile's own version, in its file name. Version 2 added `otel`, version 3 lets Sotto's own tools through, version 4
 // added `sotto_watcher` (#2073 added it without a new version) and the to-do list's tool, and version 5 takes that tool away
 // with the list (ADR-0188, reversed), and version 6 pins off what Devin CLI 3000.14 added: three more imports, the
-// background daemon and a starting permission mode. An owned profile is never rewritten (a changed one is refused), so
-// changing what it says means a new file. Earlier files are left where they are, unused.
-const PROFILE_VERSION = 6
+// background daemon and a starting permission mode, and version 7 lets `sotto_secrets` through (ADR-0219). An owned
+// profile is never rewritten (a changed one is refused), so changing what it says means a new file. Earlier files are
+// left where they are, unused.
+const PROFILE_VERSION = 7
 // `version` below is Devin's own config schema version, not the profile's.
 const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,
