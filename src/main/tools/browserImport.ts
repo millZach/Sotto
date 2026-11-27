@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { copyFile, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { BrowserImportSource } from '../../shared/browser'
@@ -62,13 +62,18 @@ export async function findImportSources(roots = importRoots()): Promise<FoundImp
   return found.slice(0, 40)
 }
 
-type MozCookie = { host: string; name: string; value: string; path: string; expiry: number | bigint; isSecure: number | bigint; isHttpOnly: number | bigint; sameSite: number | bigint; originAttributes: string }
+/** A row of Firefox's `moz_cookies`. Most columns may be NULL in a file another program wrote. */
+type MozCookie = { host: string | null; name: string | null; value: string | null; path: string | null; expiry: number | bigint | null; isSecure: number | bigint | null; isHttpOnly: number | bigint | null; sameSite: number | bigint | null; originAttributes: string | null }
 const SAME_SITE = new Map<number, Electron.CookiesSetDetails['sameSite']>([[0, 'no_restriction'], [1, 'lax'], [2, 'strict']])
 
-/** One Firefox cookie as Electron sets it, or null for one Sotto leaves behind: expired, partitioned or in a container. */
+/**
+ * One Firefox cookie as Electron sets it, or null for one Sotto leaves behind: expired, partitioned, in a container, or
+ * missing its host, name or value.
+ */
 export function cookieDetails(cookie: MozCookie, now = Date.now()): Electron.CookiesSetDetails | null {
   if (cookie.originAttributes !== '') return null
-  const host = String(cookie.host)
+  if (typeof cookie.host !== 'string' || typeof cookie.name !== 'string' || typeof cookie.value !== 'string') return null
+  const host = cookie.host
   const bare = host.replace(/^\./u, '')
   if (!bare || /[\s/]/u.test(bare)) return null
   let expiry = Number(cookie.expiry)
@@ -76,7 +81,7 @@ export function cookieDetails(cookie: MozCookie, now = Date.now()): Electron.Coo
   if (expiry > 100_000_000_000) expiry /= 1000
   if (expiry > 0 && expiry * 1000 <= now) return null
   const secure = Number(cookie.isSecure) === 1
-  const path = cookie.path.startsWith('/') ? cookie.path : '/'
+  const path = typeof cookie.path === 'string' && cookie.path.startsWith('/') ? cookie.path : '/'
   const named = SAME_SITE.get(Number(cookie.sameSite)) ?? 'unspecified'
   const hostOnly = !host.startsWith('.') || cookie.name.startsWith('__Host-')
   return {
@@ -88,28 +93,56 @@ export function cookieDetails(cookie: MozCookie, now = Date.now()): Electron.Coo
   }
 }
 
+/** Each import's own folder under the scratch root starts with this; a start of Sotto removes any left behind. */
+const SCRATCH_PREFIX = 'import-'
+/** The scratch folders of imports running now, which a sweep leaves alone. */
+const importing = new Set<string>()
+/** Windows may hold a file a moment after SQLite closes it, so removal tries again for half a second. */
+const removeScratch = (path: string): Promise<void> => rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => undefined)
+
 /**
- * Copies a Firefox or Zen profile's cookies into a profile's session, once (ADR-0221). The database is copied to a
- * folder of Sotto's own first, so the other browser's file is only ever read, and the copy is deleted after. Values go
- * from that copy straight into Chromium's cookie store; nothing is logged or kept anywhere else.
+ * Copies a Firefox or Zen profile's cookies into a profile's session, once (ADR-0221). The database is copied first to
+ * a folder of its own under `scratchRoot`, a folder in Sotto's private data, so the other browser's file is only ever
+ * read, and the copy is deleted after; a copy a crash left behind goes at the next start (`sweepImportScratch`). Values
+ * go from that copy straight into Chromium's cookie store; nothing is logged or kept anywhere else.
  */
-export async function importCookies(folder: string, target: CookieTarget, now = Date.now()): Promise<{ imported: number; skipped: number }> {
-  const scratch = await mkdtemp(join(tmpdir(), 'sotto-import-'))
+export async function importCookies(folder: string, target: CookieTarget, scratchRoot: string, now = Date.now()): Promise<{ imported: number; skipped: number }> {
+  await mkdir(scratchRoot, { recursive: true, mode: 0o700 })
+  const scratch = await mkdtemp(join(scratchRoot, SCRATCH_PREFIX))
+  importing.add(scratch)
   try {
+    await chmod(scratch, 0o700).catch(() => undefined)
     const copy = join(scratch, 'cookies.sqlite')
     await copyFile(join(folder, 'cookies.sqlite'), copy)
-    for (const suffix of ['-wal', '-shm']) await copyFile(join(folder, `cookies.sqlite${suffix}`), `${copy}${suffix}`).catch(() => undefined)
+    // The write-ahead log holds what Firefox has not yet written into the database, so the copy reads stale cookies
+    // without it: a log that is there but cannot be read fails the import, and the user is told to close the browser.
+    // The shared-memory index is SQLite's own and is rebuilt from the log, so it is not copied.
+    try { await copyFile(join(folder, 'cookies.sqlite-wal'), `${copy}-wal`) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     const database = new DatabaseSync(copy)
     let rows: MozCookie[]
     try { rows = database.prepare('SELECT host, name, value, path, expiry, isSecure, isHttpOnly, sameSite, originAttributes FROM moz_cookies').all() as MozCookie[] } finally { database.close() }
     let imported = 0; let skipped = 0
     for (const row of rows) {
-      const details = cookieDetails(row, now)
-      if (!details) { skipped++; continue }
-      try { await target.set(details); imported++ } catch { skipped++ }
+      // One odd row is skipped; it never ends the import.
+      try {
+        const details = cookieDetails(row, now)
+        if (!details) { skipped++; continue }
+        await target.set(details); imported++
+      } catch { skipped++ }
     }
     return { imported, skipped }
   } finally {
-    await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
+    await removeScratch(scratch)
+    importing.delete(scratch)
+  }
+}
+
+/** Removes the copies imports left under `scratchRoot` when Sotto stopped part way; a start of Sotto runs it. Best effort. */
+export async function sweepImportScratch(scratchRoot: string): Promise<void> {
+  const entries = await readdir(scratchRoot, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    const path = join(scratchRoot, entry.name)
+    if (entry.isDirectory() && entry.name.startsWith(SCRATCH_PREFIX) && !importing.has(path)) await removeScratch(path)
   }
 }

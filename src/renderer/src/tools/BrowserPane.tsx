@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Check, Code, ExternalLink, Globe, Hand, History, ImagePlus, MoreHorizontal, Pause, PictureInPicture2, Play, Plus, RotateCw, Share2, SquareDashedMousePointer, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Code, ExternalLink, Globe, Hand, History, ImagePlus, MoreHorizontal, Pause, PenLine, PictureInPicture2, Play, Plus, RotateCw, Share2, SquareDashedMousePointer, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
-import { BROWSER_WAITING_TO_OPEN, type BrowserBridge, type BrowserPage, type BrowserPointPick, type BrowserTask } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, asksEveryTime, type BrowserBridge, type BrowserCapture, type BrowserPage, type BrowserPointPick, type BrowserTask } from '../../../shared/browser'
 import { threadTakesSottoTools } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
@@ -11,7 +11,11 @@ import { outlinedCapture, PointComment, PointLine, pointedWords, themeRgb, type 
 import { browserPages, normalizeAddress, pageLabel, useThreadBrowserTasks, useOpenedAddresses, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { BrowserMachine } from './HostPageView'
-import { DialogStrip, emulateFor, LocalServers, parityMenuGroups, RecordingLine, useBrowserParity, useParityMenuWords } from './BrowserParity'
+import { DialogStrip, emulateFor, LocalServers, parityMenuGroups, RecordingLine, useBrowserParity, useParityMenuWords, useZoomWords, ZoomChip, zoomFor, zoomMenuGroup } from './BrowserParity'
+import { BrowserDraw } from './BrowserDraw'
+import { DownloadStrip, DownloadsList, useBrowserDownloads } from './BrowserDownloads'
+import { useReducedMotion } from '../state/reducedMotion'
+import { useOptionalApp } from '../state/AppContext'
 import { BrowserProfiles, ProfileChip } from './BrowserProfiles'
 import { browsingWords, shortAddress } from './browserSteps'
 import type { BrowserSurfaceProps } from './BrowserSurface'
@@ -37,6 +41,28 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
   // The full browser (ADR-0220; Owl): dialogs, recording, devices, colours and local servers in the pane.
   const parity = useBrowserParity()
   const parityWords = useParityMenuWords()
+  const zoomWords = useZoomWords()
+  const mac = useOptionalApp()?.platform === 'darwin'
+  // A page's downloads ask the user here (ADR-0222); a host's pages do not download yet.
+  const downloads = useBrowserDownloads(bridge, threadId, browser?.workspace?.workspaceId ?? null, parity && !onHost)
+  const reducedMotion = useReducedMotion()
+  // The agent's cursor is drawn in the theme's accent, and jumps rather than glides with reduced motion (ADR-0222).
+  useEffect(() => {
+    if (!parity || onHost || !bridge?.cursorStyle) return
+    let sent = ''
+    const send = (): void => {
+      const color = themeRgb('--tt-accent')
+      if (!color) return
+      const key = `${color.r},${color.g},${color.b},${reducedMotion}`
+      if (key === sent) return
+      sent = key
+      void bridge.cursorStyle!({ color, reducedMotion }).catch(() => undefined)
+    }
+    send()
+    const observer = new MutationObserver(send)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'style', 'class'] })
+    return () => observer.disconnect()
+  }, [parity, onHost, bridge, reducedMotion])
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const agentToolsUnavailable = !threadTakesSottoTools(owningThread)
@@ -72,6 +98,9 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
   const [picked, setPicked] = useState<BrowserPointPick | null>(null)
   const [pageShown, setPageShown] = useState(false)
   const pointButton = useRef<HTMLButtonElement>(null)
+  // Draw on the page (ADR-0222): a frozen picture of the page in its place, marked up in Sotto's editor, with a comment.
+  const [drawing, setDrawing] = useState<BrowserCapture | null>(null)
+  const drawButton = useRef<HTMLButtonElement>(null)
   const pickedRef = useRef(picked)
   pickedRef.current = picked
   const pointingRef = useRef(pointing)
@@ -85,8 +114,8 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
     const page = store.thread(threadId)?.pages.find(item => item.id === activeIdRef.current)
     if (tell && bridge && page) void bridge.point({ threadId, workspaceId: page.workspace.workspaceId, pageId: page.id, on: false }).catch(() => undefined)
   }, [bridge, store, threadId])
-  // Another page, or none, ends point mode; main ends it for the page that is going.
-  useEffect(() => { setPointing(false); setHover(null); setPicked(null) }, [activeId])
+  // Another page, or none, ends point mode and drawing; main ends pointing for the page that is going.
+  useEffect(() => { setPointing(false); setHover(null); setPicked(null); setDrawing(null) }, [activeId])
   useEffect(() => {
     if (!bridge || !activeId) return
     return bridge.onEvent(event => {
@@ -222,6 +251,14 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
     } catch { setProblem(t`The browser did not answer. Try again.`) }
     finally { setBusy(false) }
   }
+  const zoom = async (step: 'in' | 'out' | 'reset'): Promise<void> => {
+    if (!active) return
+    setBusy(true); setProblem(null)
+    try {
+      const error = await zoomFor(store, bridge, threadId, active, step, t`Browser is not available in this window.`, t`The browser did not answer. Try again.`)
+      if (activeIdRef.current === active.id) setProblem(error)
+    } finally { setBusy(false) }
+  }
   const emulate = async (change: Parameters<typeof emulateFor>[4]): Promise<void> => {
     if (!active) return
     setBusy(true); setProblem(null)
@@ -272,6 +309,7 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
       }),
     ]],
     ...parity ? parityMenuGroups(page, parityWords, change => void emulate(change), busy, !onHost) : [],
+    ...parity && !onHost && bridge?.zoom ? [zoomMenuGroup(page, zoomWords, mac, step => void zoom(step), busy)] : [],
     ask,
   ] : [ask]
 
@@ -335,6 +373,41 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
     focusPoint()
     return null
   }
+  const drawOnPage = t({ message: 'Draw on the page', comment: 'Freezes a picture of the browser page so the user can draw on it and send it to the agent with a comment.' })
+  const focusDraw = (): void => { requestAnimationFrame(() => drawButton.current?.focus()) }
+  const startDrawing = async (): Promise<void> => {
+    if (!bridge || !active) return
+    if (pointing) leavePoint()
+    setBusy(true); setProblem(null)
+    try {
+      const result = await bridge.capture({ threadId, workspaceId: active.workspace.workspaceId, pageId: active.id })
+      if (activeIdRef.current !== active.id) return
+      if (!result.ok) { setProblem(result.error.message); return }
+      setDrawing(result.value)
+    } catch { setProblem(t`The browser did not answer. Try again.`) } finally { setBusy(false) }
+  }
+  // Add to message: the marked picture and the comment go into the draft as browser feedback, as a screenshot does.
+  const addDrawing = async (capture: BrowserCapture, image: File, comment: string, name: string): Promise<string | null> => {
+    if (!agents) return t`The draft for this thread is not available.`
+    const thread = agents.state?.host.threads.find(item => item.id === threadId)
+    const model = resolveModel(agents.state?.host.models ?? [], thread?.modelId)
+    const marked = await new Promise<string | null>(resolve => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(image)
+    })
+    if (!marked) return t`Could not make the marked copy. Nothing was added.`
+    // One draft item, as Point at something makes: the marked picture carrying the comment, removed as one.
+    const label = t({ message: `Drawing on ${name}`, comment: 'Names the marked picture of a browser page in the message draft. {name} is the page\'s title or address.' })
+    return appendBrowserFeedback(agents.threadDrafts, threadId, { ...capture, image: marked, element: null }, comment, model?.supportsImages === true, { pointed: { label: label.slice(0, 200), box: null, drawn: true } })
+  }
+  const drawingAdded = (): void => {
+    const threadTitle = agents?.state?.host.threads.find(item => item.id === threadId)?.title
+    onStatus(threadTitle !== undefined ? t({ message: `Added to the draft for ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t`Added to the draft for this thread`)
+    setDrawing(null)
+    focusDraw()
+  }
   const row = <div className={pages.length > 1 ? 'browser-pane__row' : 'tools-chrome browser-pane__row'} data-loading={page?.status === 'loading' || undefined}>
     <button type="button" className="files-icon tt-focusable" aria-label={back} title={back} disabled={!page?.canGoBack || browser.busy} onClick={() => page && void store.history(bridge, threadId, page.id, 'back')}><ArrowLeft size={16} aria-hidden="true" /></button>
     <button type="button" className="files-icon tt-focusable" aria-label={forward} title={forward} disabled={!page?.canGoForward || browser.busy} onClick={() => page && void store.history(bridge, threadId, page.id, 'forward')}><ArrowRight size={16} aria-hidden="true" /></button>
@@ -357,8 +430,12 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
     </form>
     {onHost ? <BrowserMachine machine={onHost.name} /> : null}
     {parity && page?.profile ? <ProfileChip profile={page.profile} /> : null}
+    {parity && !onHost && page && page.zoom !== undefined && Math.abs(page.zoom - 1) > 0.001 ? <ZoomChip zoom={page.zoom} busy={busy} onReset={() => void zoom('reset')} /> : null}
     {onHost ? null : <><button ref={pointButton} type="button" className="files-icon tt-focusable browser-point__toggle" aria-label={pointAtSomething} aria-pressed={pointing}
       title={pointing ? t`Stop pointing at the page` : t`Click something on the page to tell the agent about it`} disabled={!page || page.status === 'unavailable' || !bridge} onClick={togglePoint}><SquareDashedMousePointer size={16} aria-hidden="true" /></button>
+    {parity ? <button ref={drawButton} type="button" className="files-icon tt-focusable browser-point__toggle" aria-label={drawOnPage} aria-pressed={drawing !== null}
+      title={t`Draw on a picture of this page and send it to the agent with a comment`} disabled={!page || page.status === 'unavailable' || busy || !agents || !bridge}
+      onClick={() => drawing ? (setDrawing(null), focusDraw()) : void startDrawing()}><PenLine size={16} aria-hidden="true" /></button> : null}
     <button type="button" className="files-icon tt-focusable" aria-label={screenshot} title={t`Add a picture of this page to the message`} disabled={!page || busy || !agents || !bridge} onClick={() => void screenshotToMessage()}><ImagePlus size={16} aria-hidden="true" /></button></>}
     <PaneMenu groups={menu} label={t`More browser actions`} buttonClassName="files-icon" className="browser-pane__more" icon={<MoreHorizontal size={16} aria-hidden="true" />} />
   </div>
@@ -389,8 +466,10 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
     event.preventDefault(); event.stopPropagation()
     leavePoint(); pointButton.current?.focus()
   }
-  const cover = page && picked ? <PointComment key={picked.capture.captureId ?? 'pick'} pick={picked} onAdd={(comment, signal) => addPoint(picked, comment, signal)}
-    onCancel={() => { setPicked(null); focusPoint() }} /> : null
+  const cover = page && drawing ? <BrowserDraw key={drawing.captureId ?? 'draw'} capture={drawing} name={pageLabel(page)} onAdd={(image, comment) => addDrawing(drawing, image, comment, pageLabel(page))}
+    onCancel={() => { setDrawing(null); focusDraw() }} onAdded={drawingAdded} />
+    : page && picked ? <PointComment key={picked.capture.captureId ?? 'pick'} pick={picked} onAdd={(comment, signal) => addPoint(picked, comment, signal)}
+      onCancel={() => { setPicked(null); focusPoint() }} /> : null
 
   return <div className="browser-surface browser-pane" onKeyDown={onKeyDown}>
     {tabs}
@@ -408,11 +487,13 @@ export function BrowserPane({ threadId, store, bridge, onStatus, onFloat, host: 
 
     {page ? <PageViewport key={page.id} page={page} threadId={threadId} store={store} bridge={bridge} surface={null} cover={cover} onShown={setPageShown} onHost={onHost}
       refused={browser.placementProblem?.pageId === page.id ? browser.placementProblem.message : null} onOpenExternally={() => openExternally(page.url)}>
-      {parity ? <><DialogStrip page={page} threadId={threadId} store={store} bridge={bridge} /><RecordingLine page={page} threadId={threadId} store={store} bridge={bridge} /></> : null}
+      {parity ? <><DialogStrip page={page} threadId={threadId} store={store} bridge={bridge} /><RecordingLine page={page} threadId={threadId} store={store} bridge={bridge} />
+        {onHost || drawing ? null : <DownloadStrip page={page} downloads={downloads.downloads} onAct={downloads.act} />}</> : null}
       {parity && page.dialog ? null : strip}</PageViewport>
       : <div className="browser-pane__empty">
         {parity && !onHost ? <LocalServers threadId={threadId} workspaceId={browser.workspace?.workspaceId ?? null} bridge={bridge} disabled={browser.busy || !bridge} onOpen={open} /> : null}
         {parity && !onHost ? <BrowserProfiles bridge={bridge} value={profileId} onChange={setProfileId} disabled={browser.busy || !bridge} /> : null}
+        {parity && !onHost ? <DownloadsList downloads={downloads.downloads} onAct={downloads.act} /> : null}
         {opened.length > 0 ? <section className="browser-pane__opened" aria-labelledby="browser-pane-opened">
           <h2 id="browser-pane-opened">{t({ message: 'Opened this session', comment: 'Heads the addresses this thread\'s browser opened since Sotto started.' })}</h2>
           <ul>{opened.map(url => {
@@ -485,7 +566,8 @@ function RequestStrip({ task, store, bridge, onAnswered }: { readonly task: Brow
     <p className="browser-pane__strip-text browser-pane__request">{task.pendingAction?.description}</p>
     <div className="browser-pane__answers">
       <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={busy || paused} onClick={() => answer(true)}>{t`Allow once`}</button>
-      <button type="button" className="tt-button tt-focusable" disabled={busy || paused} title={t`Let this thread open, navigate, click and type in Sotto's browser without asking, and see every page in its browser, until you stop it or Sotto closes.`} onClick={() => answer(true, true)}>{t`Allow this thread to use the browser`}</button>
+      {/* An action that asks every time is answered once; it never becomes the thread's grant. */}
+      {task.pendingAction && asksEveryTime(task.pendingAction) ? null : <button type="button" className="tt-button tt-focusable" disabled={busy || paused} title={t`Let this thread open, navigate, click and type in Sotto's browser without asking, and see every page in its browser, until you stop it or Sotto closes.`} onClick={() => answer(true, true)}>{t`Allow this thread to use the browser`}</button>}
       <button type="button" className="tt-button tt-focusable" disabled={busy} onClick={() => answer(false)}>{t`Deny`}</button>
     </div>
     {problem ? <p className="browser-review-problem" role="alert">{problem}</p> : null}

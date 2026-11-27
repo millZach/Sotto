@@ -130,7 +130,7 @@ async function dispatchCloud(cloud: CloudIphoneService, name: string, data: unkn
 }
 
 /** What the browser tools ask of a browser, wherever it runs; the test iPhone is this computer's alone. */
-export type BrowserAgentService = Pick<BrowserTasks<TaskPage>, 'list' | 'tasks' | 'agentOpen' | 'startTask' | 'action' | 'finishTask' | 'waitForAction' | 'agentClose'> & Partial<Pick<BrowserService, 'phoneOpen' | 'localServers'>>
+export type BrowserAgentService = Pick<BrowserTasks<TaskPage>, 'list' | 'tasks' | 'agentOpen' | 'startTask' | 'action' | 'finishTask' | 'waitForAction' | 'agentClose'> & Partial<Pick<BrowserTasks<TaskPage>, 'masked'>> & Partial<Pick<BrowserService, 'phoneOpen' | 'localServers' | 'agentDownloads'>>
 /**
  * A paired host's threads get the browser and nothing of the test iPhone or the cloud iPhone (ADR-0198, decision 2).
  * With the full catalog they also close their pages; servers are this computer's, so `browser_servers` stays here.
@@ -152,11 +152,13 @@ export function createHostBrowserAgentServer(service: BrowserAgentService, parit
 }
 function browserAgentServer(definitions: readonly BrowserToolDefinition[], instructions: string | undefined, service: () => BrowserAgentService | undefined, cloudService?: () => CloudIphoneService | undefined, parity = false): BrowserAgentServer {
   const compact = parity ? definitions.map(tool => browserToolDefinitions.find(stable => stable.name === tool.name)).filter((tool): tool is BrowserToolDefinition => tool !== undefined) : definitions
-  return new BrowserAgentServer(definitions, async (threadId, name, args, context) => {
+  return new BrowserAgentServer(definitions, async (threadId, name, args, context, compactThread) => {
     const browser = service()
     if (!browser) return unavailable()
-    if (!definitions.some(tool => tool.name === name)) return unavailable()
-    const catalog: Record<string, z.ZodType> = parity ? parityInputs : inputs
+    const listed = compactThread ? compact : definitions
+    if (!listed.some(tool => tool.name === name)) return unavailable()
+    // A thread listed the stable catalog is held to it, so a full-catalog action is refused even by a shared name.
+    const catalog: Record<string, z.ZodType> = parity && !compactThread ? parityInputs : inputs
     const schema = catalog[name]
     if (!schema) return unavailable()
     const input = schema.safeParse(args)
@@ -174,9 +176,13 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
       const page = currentPages.find(page => page.id === pageId)
       return !!page?.sharedOrigin && page.sharedOrigin === new URL(page.url).origin
     }
-    if (name === 'browser_pages') return text({ pages: pages.map(page => observable(page.id)
-      ? { pageId: page.id, url: page.url, title: page.title, status: page.status, viewport: page.viewport, ...(page.device ? { device: page.device } : {}), shared: true }
-      : { pageId: page.id, shared: false }) })
+    if (name === 'browser_pages') {
+      // Downloads by name and state (ADR-0222): where one went is said only when the user saved it in this thread's folder.
+      const downloads = parity && !compactThread && browser.agentDownloads ? await browser.agentDownloads(threadId) : []
+      return text({ pages: pages.map(page => observable(page.id)
+        ? { pageId: page.id, url: browser.masked?.(page.id, page.url) ?? page.url, title: browser.masked?.(page.id, page.title) ?? page.title, status: page.status, viewport: page.viewport, ...(page.device ? { device: page.device } : {}), shared: true }
+        : { pageId: page.id, shared: false }), ...(downloads.length ? { downloads } : {}) })
+    }
     if (name === 'browser_status') {
       const request = inputs.browser_status.parse(args)
       const tasks = await browser.tasks(target)

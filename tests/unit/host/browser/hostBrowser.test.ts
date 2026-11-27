@@ -71,3 +71,23 @@ describe('a page\'s picture stream', () => {
     pipe.close()
   })
 })
+
+describe('a host page\'s document that holds a typed secret (ADR-0220, decision 6)', () => {
+  it('is gone only when a new document commits in the main frame, shared or not', async () => {
+    const toBrowser = new PassThrough(), fromBrowser = new PassThrough()
+    toBrowser.on('data', () => undefined)
+    const pipe = new DevToolsPipe(toBrowser, fromBrowser)
+    const page = new HostBrowserPage(pipe, 'target', 'session', 'workspace', () => undefined)
+    let committed = 0
+    page.automation.documentCommitted = () => { committed++ }
+    const event = (method: string, params: Record<string, unknown>): void => { fromBrowser.write(JSON.stringify({ method, params, sessionId: 'session' }) + '\0') }
+    event('Page.frameNavigated', { frame: { id: 'ad', parentId: 'main', url: 'https://ads.example/' } })
+    event('Page.navigatedWithinDocument', { frameId: 'main', url: 'https://shop.example/#pay' })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(committed).toBe(0)
+    event('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/thanks' } })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(committed).toBe(1)
+    pipe.close()
+  })
+})

@@ -391,8 +391,8 @@ export class BrowserStore {
     if (event.type === 'task') { this.receiveTask(event.task); return }
     // A thread this window has not listed learns its grant when it is listed.
     if (event.type === 'browser-grant') { this.patch(event.threadId, { grant: event.grant }); return }
-    // Point at something belongs to the pane that turned it on, which listens for it itself.
-    if (event.type === 'point') return
+    // Point at something belongs to the pane that turned it on, which listens for it itself, as downloads belong to theirs.
+    if (event.type === 'point' || event.type === 'download') return
     if (event.type === 'page') {
       const thread = this.threads.get(event.page.workspace.threadId)
       if (!thread || (thread.workspace !== null && thread.workspace.workspaceId !== event.page.workspace.workspaceId)) return

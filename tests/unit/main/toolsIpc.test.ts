@@ -11,20 +11,20 @@ describe('tools IPC and preload boundary', () => {
   it('requires exact trusted main WebContents, exact mainFrame, URL and one argument for every method', () => {
     const operation = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     const make = (methods: string[]) => Object.fromEntries([...methods.map(method => [method, operation]), ['dispose', vi.fn()]])
-    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point', 'answerDialog', 'emulate', 'stopRecording', 'localServers', 'profiles', 'addProfile', 'removeProfile', 'devtools']), gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) } as unknown as Parameters<typeof registerToolsIpc>[1]
+    const services = { terminal: make(['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage']), browser: make(['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point', 'answerDialog', 'emulate', 'stopRecording', 'localServers', 'profiles', 'addProfile', 'removeProfile', 'devtools', 'zoom', 'downloads', 'download', 'cursorStyle']), gitChanges: make(['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint']) } as unknown as Parameters<typeof registerToolsIpc>[1]
     const registry = ipcRegistry()
     const { ipc, handlers } = registry
     const { main } = registry
     const { url, webContents: sender } = main
     const { mainFrame } = sender
     const cleanup = registerToolsIpc(ipc, services, () => [{ role: 'main', url, webContents: sender }])
-    expect(handlers.size).toBe(48)
+    expect(handlers.size).toBe(52)
     for (const [channel, handler] of handlers) {
       for (const event of [{ sender: { ...sender }, senderFrame: mainFrame }, { sender, senderFrame: { ...mainFrame } }, { sender, senderFrame: { parent: {}, url } }, { sender, senderFrame: null }]) expect(() => handler(event, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
       expect(() => handler({ sender, senderFrame: mainFrame }, {}, {})).toThrow()
       handler({ sender, senderFrame: mainFrame }, channel === 'sotto:terminal:focus' ? false : {})
     }
-    expect(operation).toHaveBeenCalledTimes(43)
+    expect(operation).toHaveBeenCalledTimes(47)
     sender.getURL = () => 'https://example.invalid'
     for (const handler of handlers.values()) expect(() => handler({ sender, senderFrame: mainFrame }, {})).toThrow('TOOLS_MAIN_WINDOW_REQUIRED')
     cleanup(); expect(handlers.size).toBe(0)
@@ -49,7 +49,7 @@ describe('tools IPC and preload boundary', () => {
     const input = { type: 'text', text: 'hello' }
     expect((await call('input', { ...page, input })).ok).toBe(true)
     expect(request).toHaveBeenLastCalledWith({ method: 'input', payload: { ...page, input } })
-    for (const refused of ['mount', 'viewport', 'capture', 'point']) {
+    for (const refused of ['mount', 'viewport', 'capture', 'point', 'zoom', 'downloads', 'download']) {
       const answer = await call(refused, { ...page, bounds: null })
       expect(answer.ok).toBe(false)
       expect(answer.error?.message).toMatch(/host machine/u)

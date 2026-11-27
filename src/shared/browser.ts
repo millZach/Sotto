@@ -86,6 +86,41 @@ export const browserAddProfileSchema = z.object({ name: profileName, importFrom:
 export const browserAddProfileResultSchema = z.object({ profile: browserProfileSchema, imported: z.number().int().min(0), skipped: z.number().int().min(0) }).strict()
 export const browserRemoveProfileSchema = z.object({ id: z.string().uuid() }).strict()
 export const browserNoPayloadSchema = z.object({}).strict()
+/**
+ * Page zoom steps (ADR-0222): Chromium's own zoom, at the steps T3 Code's and Chrome's browsers take. It is the user's,
+ * and Chromium keeps it per site within a session, as Chrome does.
+ */
+/**
+ * Whether a waiting action asks every time, so only Allow once answers it and "Allow this thread" is not offered: an
+ * upload (ADR-0220, decision 5), or an agent taking a page in a browser profile to another site (ADR-0221). A host
+ * that does not say so still has its uploads asked about every time.
+ */
+export const asksEveryTime = (pending: { readonly action: { readonly type: string }; readonly everyTime?: true | undefined }): boolean => pending.everyTime === true || pending.action.type === 'upload'
+export const BROWSER_ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5] as const
+/** The zoom one step in or out from `current`, or 100% again. */
+export function nextZoom(current: number, direction: 'in' | 'out' | 'reset'): number {
+  if (direction === 'reset') return 1
+  if (direction === 'in') return BROWSER_ZOOM_LEVELS.find(level => level > current + 0.001) ?? 5
+  return [...BROWSER_ZOOM_LEVELS].reverse().find(level => level < current - 0.001) ?? 0.25
+}
+/**
+ * A download a page started (ADR-0222). It waits, paused in Sotto's own data folder, until the user saves it to a
+ * folder they choose or cancels it; `byAgent` when an agent's action started it. `folder` is where the user saved it.
+ */
+export const browserDownloadSchema = z.object({
+  id: z.string().uuid(), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid().nullable(),
+  file: z.string().min(1).max(255), host: z.string().max(300),
+  state: z.enum(['asking', 'saving', 'saved', 'cancelled', 'failed']),
+  receivedBytes: z.number().int().min(0), totalBytes: z.number().int().min(0),
+  byAgent: z.boolean(), folder: z.string().max(4096).nullable(),
+  /** Open is offered: a program or script is only shown in its folder. */
+  opens: z.boolean(), startedAt: z.number(),
+}).strict()
+export type BrowserDownload = z.infer<typeof browserDownloadSchema>
+export const browserDownloadActionSchema = toolTargetSchema.extend({ downloadId: z.string().uuid(), action: z.enum(['save', 'save-as', 'cancel', 'open', 'show', 'dismiss']) })
+/** The agent's cursor as the window draws it (ADR-0222): the theme's accent, and whether it glides or jumps. */
+export const browserCursorStyleSchema = z.object({ color: z.object({ r: z.number().int().min(0).max(255), g: z.number().int().min(0).max(255), b: z.number().int().min(0).max(255) }).strict(), reducedMotion: z.boolean() }).strict()
+export type BrowserCursorStyle = z.infer<typeof browserCursorStyleSchema>
 /** What ADR-0220 adds to a page: its dialog, colour scheme, recording, and whether it opened behind the one shown. */
 const browserPageParityShape = {
   /** The browser profile the user opened it in (ADR-0221); absent or null is the thread's own session, which keeps nothing. */
@@ -99,11 +134,14 @@ const browserPageParityShape = {
   agentOpened: z.boolean().optional(),
   /** The user is using this page now (ADR-0220): an agent's input waits until they stop. */
   userActive: z.boolean().optional(),
+  /** The page's zoom (ADR-0222), 1 at 100%; absent on the test iPhone, whose zoom only fits it to the player. */
+  zoom: z.number().min(0.2).max(5.1).optional(),
 }
 const browserUrlSchema = z.string().refine(value => safeBrowserUrl(value) !== null, 'Use a complete HTTP or HTTPS URL without credentials.').transform(value => safeBrowserUrl(value)!)
 /** The pane's new page. Only the user names a profile (ADR-0221): no agent tool takes `profileId`. */
 export const browserCreateSchema = toolTargetSchema.extend({ url: browserUrlSchema, device: browserDeviceSchema.optional(), profileId: z.string().uuid().optional() })
 export const browserRequestSchema = toolTargetSchema.extend({ pageId: z.string().uuid() })
+export const browserZoomSchema = browserRequestSchema.extend({ zoom: z.enum(['in', 'out', 'reset']) })
 export const browserNavigateSchema = browserRequestSchema.extend({ url: browserUrlSchema })
 export const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(32768), y: z.number().finite().min(0).max(32768), width: z.number().finite().positive().max(32768), height: z.number().finite().positive().max(32768) }).strict()
 export const browserMountSchema = browserRequestSchema.extend({ bounds: browserBoundsSchema.nullable() })
@@ -269,7 +307,8 @@ export const browserTaskSchema = z.object({
   status: z.enum(['working', 'paused', 'completed', 'failed']), description: z.string().max(300), updatedAt: z.number(),
   steps: z.array(z.object({ id: z.string(), action: z.string(), status: z.enum(['completed', 'failed']), at: z.number(), detail: z.string().max(2000), url: z.string().optional(), viewport: z.object({ width: z.number(), height: z.number() }).nullable().optional() })).max(40),
   thumbnail: z.string().nullable(), summary: z.string().nullable(), unchecked: z.array(z.string()),
-  pendingAction: z.object({ id: z.string().uuid(), action: browserActionSchema, description: z.string(), expiresAt: z.number() }).nullable(),
+  // `everyTime`: the action asks every time, whatever grant the thread holds, so only Allow once answers it (ADR-0220, ADR-0221).
+  pendingAction: z.object({ id: z.string().uuid(), action: browserActionSchema, description: z.string(), expiresAt: z.number(), everyTime: z.literal(true).optional() }).nullable(),
   output: z.string().max(200_000).nullable(),
   /** The task's page kind, so a task on the test iPhone floats in the phone player before its page is listed. */
   device: browserDeviceSchema.nullable().optional(),
@@ -278,7 +317,7 @@ export const browserTaskSchema = z.object({
   evidence: z.array(z.object({ id: z.string(), at: z.number(), url: z.string(), viewport: z.object({ width: z.number(), height: z.number() }).nullable(), image: z.string().max(2_000_000), width: z.number(), height: z.number() })).max(3).optional(),
 }).strict()
 export const browserAgentResultSchema = z.object({ task: browserTaskSchema, output: z.string().max(200_000).optional(), image: z.string().max(16_000_000).optional(), approvalRequired: z.boolean() }).strict()
-export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict(), z.object({ type: z.literal('browser-grant'), threadId: z.string(), grant: browserGrantSchema.nullable() }).strict(), z.object({ type: z.literal('point'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid(), point: browserPointStateSchema }).strict()])
+export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict(), z.object({ type: z.literal('browser-grant'), threadId: z.string(), grant: browserGrantSchema.nullable() }).strict(), z.object({ type: z.literal('point'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid(), point: browserPointStateSchema }).strict(), z.object({ type: z.literal('download'), download: browserDownloadSchema, gone: z.literal(true).optional() }).strict()])
 export type BrowserTask = z.infer<typeof browserTaskSchema>
 export type BrowserAction = z.infer<typeof browserActionSchema>
 export type BrowserAgentResult = z.infer<typeof browserAgentResultSchema>
@@ -310,6 +349,14 @@ export interface BrowserBridge {
   addProfile?(request: z.infer<typeof browserAddProfileSchema>): Promise<ToolsResult<z.infer<typeof browserAddProfileResultSchema>>>
   /** The user removes a profile: its pages close and its sign-ins and site data are deleted (ADR-0221). */
   removeProfile?(request: z.infer<typeof browserRemoveProfileSchema>): Promise<ToolsResult<z.infer<typeof browserProfilesSchema>>>
+  /** The user zooms a page on this computer in, out or back to 100% (ADR-0222). */
+  zoom?(request: z.infer<typeof browserZoomSchema>): Promise<ToolsResult<BrowserPage>>
+  /** This thread's downloads this run (ADR-0222). */
+  downloads?(request: z.infer<typeof toolTargetSchema>): Promise<ToolsResult<BrowserDownload[]>>
+  /** The user's answer to a download: save it, choose where, cancel it, open it, show it in its folder, or take it off the list. */
+  download?(request: z.infer<typeof browserDownloadActionSchema>): Promise<ToolsResult<BrowserDownload | null>>
+  /** How the agent's cursor is drawn: the theme's accent, and reduced motion (ADR-0222). */
+  cursorStyle?(request: BrowserCursorStyle): Promise<ToolsResult<void>>
   /** The user's Stop: ends the thread's browser grant, so it asks again (ADR-0029). */
   stopGrant(request: z.infer<typeof toolTargetSchema>): Promise<ToolsResult<void>>
   viewport(request: z.infer<typeof browserViewportSchema>): Promise<ToolsResult<BrowserPage>>

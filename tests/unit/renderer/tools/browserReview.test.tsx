@@ -447,6 +447,18 @@ describe('browser feedback', () => {
       expect(item!.browserFeedback!.context).not.toContain('Match the header')
     } finally { vi.unstubAllGlobals() }
   })
+  it('adds a drawing on the page as one draft item that says the user drew on it (ADR-0222)', async () => {
+    vi.stubGlobal('sotto', { agents: { stageAttachment: vi.fn(async (request: AgentAttachmentStageRequest) => handleOf(request.bytes, 'drawn', request.name)) } })
+    try {
+      const drafts = new ThreadDraftStore(vi.fn(async () => null), 60_000)
+      expect(await appendBrowserFeedback(drafts, 'visual-gate', capture, 'Move this up', true, { pointed: { label: 'Drawing on Preview', box: null, drawn: true } })).toBeNull()
+      expect(drafts.draft('visual-gate').text).toBe('')
+      const [item] = drafts.draft('visual-gate').attachments
+      expect(item).toMatchObject({ name: 'Drawing on Preview', browserFeedback: { label: 'Drawing on Preview', comment: 'Move this up' } })
+      expect(item!.browserFeedback!.context).toContain('The user drew on this screenshot to show what they mean.')
+      expect(item!.browserFeedback!.context).not.toContain('Selected element')
+    } finally { vi.unstubAllGlobals() }
+  })
   it('shows a staging refusal in its own words, without the channel Electron names', async () => {
     vi.stubGlobal('sotto', { agents: { stageAttachment: vi.fn(async () => { throw new Error("Error invoking remote method 'sotto:agents:stage-attachment': Error: This host is disconnected. Connect again before attaching images. Nothing was attached.") }) } })
     try {

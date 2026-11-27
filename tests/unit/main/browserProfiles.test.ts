@@ -5,11 +5,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { BrowserProfiles, profilePartition } from '../../../src/main/tools/browserProfiles'
-import { cookieDetails, findImportSources, importCookies, importRoots, parseProfilesIni } from '../../../src/main/tools/browserImport'
+import { cookieDetails, findImportSources, importCookies, importRoots, parseProfilesIni, sweepImportScratch } from '../../../src/main/tools/browserImport'
 import { BROWSER_PROFILES_MAX, browserAddProfileSchema } from '../../../src/shared/browser'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'sotto-profiles-')) })
+/** The folder in Sotto's private data where imports stage their copies, as main names it. */
+const scratchRoot = (): string => join(root, 'userData', 'browser-import')
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
 describe('browser profiles (ADR-0221)', () => {
@@ -115,14 +117,96 @@ describe('copying sign-ins from Firefox or Zen (ADR-0221)', () => {
     ])
     const before = await readFile(join(profile, 'cookies.sqlite'))
     const set = vi.fn(async (details: { name?: string | undefined }) => { if (details.name === 'refused') throw new Error('Failed to set cookie') })
-    expect(await importCookies(profile, { set })).toEqual({ imported: 1, skipped: 2 })
+    expect(await importCookies(profile, { set }, scratchRoot())).toEqual({ imported: 1, skipped: 2 })
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com/', name: 'sid', value: 'secret-session', domain: '.example.com' }))
     expect(await readFile(join(profile, 'cookies.sqlite'))).toEqual(before)
-    expect((await readdir(tmpdir())).filter(name => name.startsWith('sotto-import-'))).toEqual([])
+    expect(await readdir(scratchRoot())).toEqual([])
   })
 
   it('says it failed, and keeps nothing, when the database cannot be read', async () => {
-    await expect(importCookies(join(root, 'missing'), { set: vi.fn() })).rejects.toThrow()
-    expect((await readdir(tmpdir())).filter(name => name.startsWith('sotto-import-'))).toEqual([])
+    await expect(importCookies(join(root, 'missing'), { set: vi.fn() }, scratchRoot())).rejects.toThrow()
+    expect(await readdir(scratchRoot())).toEqual([])
+  })
+
+  it('stages its copy in a folder of its own under Sotto\'s scratch folder, never the system\'s, and removes it after', async () => {
+    const profile = join(root, 'profile')
+    await mkdir(profile)
+    firefoxCookies(profile, [{ name: 'sid', value: 'v', host: 'example.com', expiry: Math.floor(Date.now() / 1000) + 3600 }])
+    const tmpBefore = (await readdir(tmpdir())).filter(name => name.startsWith('sotto-import-'))
+    let staged: string[] = []
+    const set = vi.fn(async () => {
+      const [folder, ...others] = await readdir(scratchRoot())
+      expect(others).toEqual([])
+      expect(folder).toMatch(/^import-/u)
+      staged = await readdir(join(scratchRoot(), folder!))
+      if (process.platform !== 'win32') expect((await stat(join(scratchRoot(), folder!))).mode & 0o777).toBe(0o700)
+    })
+    expect(await importCookies(profile, { set }, scratchRoot())).toEqual({ imported: 1, skipped: 0 })
+    expect(staged).toContain('cookies.sqlite')
+    expect(await readdir(scratchRoot())).toEqual([])
+    expect((await readdir(tmpdir())).filter(name => name.startsWith('sotto-import-'))).toEqual(tmpBefore)
+  })
+
+  it('skips a row with a NULL name or path and imports the rest', async () => {
+    const profile = join(root, 'profile')
+    await mkdir(profile)
+    const later = Math.floor(Date.now() / 1000) + 3600
+    firefoxCookies(profile, [{ name: 'first', value: 'a', host: 'example.com', expiry: later }])
+    const database = new DatabaseSync(join(profile, 'cookies.sqlite'))
+    database.prepare('INSERT INTO moz_cookies (name, value, host, path, expiry) VALUES (NULL, ?, ?, ?, ?)').run('x', 'example.com', '/', later)
+    database.prepare('INSERT INTO moz_cookies (name, value, host, path, expiry) VALUES (?, ?, ?, NULL, ?)').run('nopath', 'b', 'example.com', later)
+    database.prepare('INSERT INTO moz_cookies (name, value, host, path, expiry) VALUES (?, ?, ?, ?, ?)').run('last', 'c', 'example.com', '/', later)
+    database.close()
+    const set = vi.fn<(details: { name?: string | undefined }) => Promise<void>>(async () => undefined)
+    expect(await importCookies(profile, { set }, scratchRoot())).toEqual({ imported: 3, skipped: 1 })
+    expect(set.mock.calls.map(([details]) => details.name)).toEqual(['first', 'nopath', 'last'])
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ name: 'nopath', path: '/' }))
+  })
+
+  it('fails, and keeps nothing, when the write-ahead log is there but cannot be copied, rather than import stale cookies', async () => {
+    const profile = join(root, 'profile')
+    await mkdir(profile)
+    firefoxCookies(profile, [{ name: 'sid', value: 'v', host: 'example.com', expiry: Math.floor(Date.now() / 1000) + 3600 }])
+    // A folder where the log should be: copying it fails with an error other than its not being there.
+    await mkdir(join(profile, 'cookies.sqlite-wal'))
+    const set = vi.fn(async () => undefined)
+    await expect(importCookies(profile, { set }, scratchRoot())).rejects.toThrow()
+    expect(set).not.toHaveBeenCalled()
+    expect(await readdir(scratchRoot())).toEqual([])
+  })
+
+  it('reads cookies Firefox holds only in its write-ahead log, and never copies the shared-memory index', async () => {
+    const profile = join(root, 'profile')
+    await mkdir(profile)
+    const later = Math.floor(Date.now() / 1000) + 3600
+    firefoxCookies(profile, [{ name: 'old', value: 'a', host: 'example.com', expiry: later }])
+    // Firefox is running: its newest cookie is in the log, not yet in the database.
+    const running = new DatabaseSync(join(profile, 'cookies.sqlite'))
+    try {
+      running.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0')
+      running.prepare('INSERT INTO moz_cookies (name, value, host, path, expiry) VALUES (?, ?, ?, ?, ?)').run('new', 'b', 'example.com', '/', later)
+      expect((await stat(join(profile, 'cookies.sqlite-wal'))).size).toBeGreaterThan(0)
+      const set = vi.fn<(details: { name?: string | undefined }) => Promise<void>>(async () => undefined)
+      expect(await importCookies(profile, { set }, scratchRoot())).toEqual({ imported: 2, skipped: 0 })
+      expect(set.mock.calls.map(([details]) => details.name)).toEqual(['old', 'new'])
+    } finally { running.close() }
+
+    const quiet = join(root, 'quiet')
+    await mkdir(quiet)
+    firefoxCookies(quiet, [{ name: 'sid', value: 'v', host: 'example.com', expiry: later }])
+    await writeFile(join(quiet, 'cookies.sqlite-shm'), 'an index from another browser')
+    let staged: string[] = []
+    const set = vi.fn(async () => { const [folder] = await readdir(scratchRoot()); staged = await readdir(join(scratchRoot(), folder!)) })
+    expect(await importCookies(quiet, { set }, scratchRoot())).toEqual({ imported: 1, skipped: 0 })
+    expect(staged).toEqual(['cookies.sqlite'])
+  })
+
+  it('removes copies an import left behind at the next start, and nothing else', async () => {
+    await mkdir(join(scratchRoot(), 'import-abc123'), { recursive: true })
+    await writeFile(join(scratchRoot(), 'import-abc123', 'cookies.sqlite'), 'left behind')
+    await writeFile(join(scratchRoot(), 'notes.txt'), 'not an import')
+    await sweepImportScratch(scratchRoot())
+    expect(await readdir(scratchRoot())).toEqual(['notes.txt'])
+    await expect(sweepImportScratch(join(root, 'never-made'))).resolves.toBeUndefined()
   })
 })

@@ -84,6 +84,39 @@ describe('the full browser catalog (ADR-0220)', () => {
     expect((await list(claude)).result.tools.map(tool => tool.name)).toEqual(['browser_open', 'browser_close'])
   })
 
+  it('refuses a compact thread a full-catalog tool and a full-catalog action, over tools/call too', async () => {
+    const browser = service()
+    const server = createBrowserAgentServer(() => browser as unknown as BrowserService, undefined, true); servers.push(server)
+    type Answer = { result?: { isError?: boolean }; error?: unknown }
+    const call = async (endpoint: Awaited<ReturnType<typeof server.mcpServer>>, name: string, args: unknown): Promise<Answer> => (await (await fetch(endpoint.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...Object.fromEntries(endpoint.headers.map(header => [header.name, header.value])) }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json()) as Answer
+    const direct = async (name: string, args: unknown): Promise<Answer> => ({ result: await server.call('owner', name, args) })
+    const antigravity = await server.mcpServer('owner', { compact: true })
+    const hover = { pageId, taskId, action: { type: 'hover', selector: '#menu' } }
+    // A tool only the full catalog has is not there for this thread, whether asked over HTTP or directly.
+    for (const result of [await call(antigravity, 'browser_close', { pageId }), await direct('browser_close', { pageId })]) expect(result.result?.isError ?? result.error !== undefined).toBe(true)
+    expect(browser.agentClose).not.toHaveBeenCalled()
+    for (const result of [await call(antigravity, 'browser_servers', {}), await direct('browser_servers', {})]) expect(result.result?.isError ?? result.error !== undefined).toBe(true)
+    expect(browser.localServers).not.toHaveBeenCalled()
+    // browser_action is in both catalogs: its arguments are read as the stable catalog's, so hover is refused.
+    for (const result of [await call(antigravity, 'browser_action', hover), await direct('browser_action', hover)]) expect(result.result?.isError).toBe(true)
+    expect(browser.action).not.toHaveBeenCalled()
+    // A stable action still runs.
+    expect((await call(antigravity, 'browser_action', { pageId, taskId, action: { type: 'inspect' } })).result?.isError).not.toBe(true)
+    expect(browser.action).toHaveBeenCalledOnce()
+    // The same thread asking again without compact gets the full catalog back.
+    await server.mcpServer('owner')
+    expect((await server.call('owner', 'browser_action', hover)).isError).not.toBe(true)
+    expect(decode(await server.call('owner', 'browser_close', { pageId }))).toEqual({ closed: pageId })
+  })
+
+  it('lists no downloads to a compact thread, and names them without a path otherwise', async () => {
+    const browser = { ...service(), agentDownloads: vi.fn(async () => [{ file: 'report.pdf', state: 'asking' as const, byAgent: true }]) }
+    const server = createBrowserAgentServer(() => browser as unknown as BrowserService, undefined, true); servers.push(server)
+    expect(decode(await server.call('owner', 'browser_pages', {})).downloads).toEqual([{ file: 'report.pdf', state: 'asking', byAgent: true }])
+    await server.mcpServer('owner', { compact: true })
+    expect(decode(await server.call('owner', 'browser_pages', {})).downloads).toBeUndefined()
+  })
+
   it('asks for the compact catalog for an Antigravity thread alone, and for one argument otherwise', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-browser-compact-'))
     servers.push({ close: () => rm(root, { recursive: true, force: true }) })

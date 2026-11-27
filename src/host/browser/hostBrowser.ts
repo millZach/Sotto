@@ -473,6 +473,8 @@ export class HostBrowserPage {
       if (!frame) return
       if (frame.parentId) { this.blankUnsafeFrame(frame.id, frame.url ?? ''); return }
       this.mainFrame = frame.id ?? this.mainFrame
+      // A new document committed, shared or not: one that held a typed secret is gone (ADR-0220, decision 6).
+      this.automation.documentCommitted()
       const url = safeBrowserUrl(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
       if (url && url !== this.current.url) this.update({ url })
       this.refresh()

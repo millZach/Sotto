@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
-import { browserAddProfileSchema, browserRequestSchema, browserMountSchema, browserNoPayloadSchema, browserOpenLinkSchema, browserRemoveProfileSchema, safeBrowserUrl, type BrowserProfile, type BrowserPage, type BrowserEvent, type BrowserBounds, browserViewportSchema, browserCaptureSchema, browserPointModeSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserAgentResult, type BrowserCapture, type BrowserPointState } from '../../shared/browser'
+import { browserAddProfileSchema, browserCursorStyleSchema, browserDownloadActionSchema, browserRequestSchema, browserMountSchema, browserNoPayloadSchema, browserOpenLinkSchema, browserRemoveProfileSchema, browserZoomSchema, nextZoom, safeBrowserUrl, type BrowserDownload, type BrowserProfile, type BrowserPage, type BrowserEvent, type BrowserBounds, browserViewportSchema, browserCaptureSchema, browserPointModeSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserAgentResult, type BrowserCapture, type BrowserPointState } from '../../shared/browser'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
 import { BrowserAutomation, type PointTarget } from './browserAutomation'
@@ -15,6 +15,7 @@ import { profilePartition, ProfileProblem, type BrowserProfiles } from './browse
 import { findImportSources, importCookies, type CookieTarget, type FoundImportSource } from './browserImport'
 import { toolTargetSchema } from '../../shared/tools'
 import { blockSpellcheckDictionaryDownloads } from '../security'
+import { BrowserDownloads, type BrowserDownloadsDependencies } from './browserDownloads'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
 /**
@@ -60,6 +61,19 @@ export interface BrowserDependencies {
   readonly profiles?: BrowserProfiles
   /** Other browsers' profiles to copy sign-ins from, and the copy itself; tests give their own. */
   readonly browserImport?: { sources(): Promise<FoundImportSource[]>; copy(folder: string, target: CookieTarget): Promise<{ imported: number; skipped: number }> }
+  /** Sotto's own folder where another browser's cookie file is copied to be read, and deleted after (ADR-0221). */
+  readonly importScratch?: string
+  /** Where a page's downloads wait for the user and are saved, and the system's Save dialog and shell (ADR-0222), with the full catalog on. */
+  readonly downloads?: Omit<BrowserDownloadsDependencies, 'emit'>
+}
+const hostOf = (url: string): string => { try { return new URL(url).host } catch { return '' } }
+/** The keys that zoom a page, as Chrome's do: Ctrl (Command on a Mac) with =, + or -, and 0 for its own size. */
+function zoomKey(input: Electron.Input): 'in' | 'out' | 'reset' | null {
+  if (input.type !== 'keyDown' || input.alt || !(input.control || input.meta)) return null
+  if (input.key === '=' || input.key === '+' || input.code === 'NumpadAdd') return 'in'
+  if (input.key === '-' || input.key === '_' || input.code === 'NumpadSubtract') return 'out'
+  if (input.key === '0' || input.code === 'Numpad0') return 'reset'
+  return null
 }
 /** The input events that mean the user is using a page (ADR-0220, decision 8); a pointer passing over does not. */
 const USER_INPUT = new Set(['mouseDown', 'keyDown', 'rawKeyDown', 'char', 'mouseWheel', 'gestureScrollBegin', 'touchStart'])
@@ -79,11 +93,32 @@ export class BrowserService extends BrowserTasks<PageRecord> {
   private readonly recordings = new Map<PageRecord, { readonly recording: PageRecording; readonly release: () => void; stopping?: Promise<string> }>()
   /** A recording that stopped itself at its limit, kept until the agent asks for it. */
   private readonly finishedRecordings = new Map<string, string>()
+  /** The pages' downloads (ADR-0222), with the full catalog on. */
+  private readonly downloadList: BrowserDownloads | null
+  /** The agent's cursor style from the window (ADR-0222), given to every page; null until the window sends it. */
+  private cursor: { color: { r: number; g: number; b: number }; reducedMotion: boolean } | null = null
   constructor(private readonly dependencies: BrowserDependencies) {
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => dependencies.byDefault(), words: browserWords,
       ...dependencies.filePages ? { filePages: dependencies.filePages } : {},
       ...dependencies.secret ? { secret: (threadId: string, ref: string) => dependencies.secret!(threadId, ref) } : {},
       ...dependencies.parity ? { parity: true } : {}, ...dependencies.browserFiles ? { browserFiles: dependencies.browserFiles } : {} })
+    this.downloadList = dependencies.parity && dependencies.downloads
+      ? new BrowserDownloads({ ...dependencies.downloads, emit: (download, gone) => { if (!this.disposed) dependencies.emit({ type: 'download', download, ...(gone ? { gone: true as const } : {}) }) } })
+      : null
+    // A download nobody answered in an earlier run is not kept.
+    void this.downloadList?.sweep()
+  }
+  /**
+   * A link that downloads starts a navigation that never commits: the page is still the document it was, so it shows
+   * that address again and stops loading. Sharing is not given back if the download's address had ended it.
+   */
+  private stayed(record: PageRecord): void {
+    const contents = record.view.webContents
+    if (contents.isDestroyed() || record.page.status !== 'loading') return
+    const url = safeBrowserUrl(contents.getURL())
+    if (url) record.page.url = url
+    record.page.status = 'ready'; record.page.error = null
+    this.publish(record)
   }
   protected readPage(record: PageRecord): void {
     if (record.view.webContents.isDestroyed()) return
@@ -92,6 +127,12 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     if (url && record.page.status !== 'loading' && record.page.status !== 'unavailable') record.page.url = url
     record.page.canGoBack = contents.navigationHistory.canGoBack()
     record.page.canGoForward = contents.navigationHistory.canGoForward()
+    // Page zoom (ADR-0222): the user's, per site as Chrome keeps it. The test iPhone's zoom is its fit, not the user's.
+    if (this.parity && !record.page.device) {
+      const zoom = contents.getZoomFactor()
+      record.page.zoom = Math.round(zoom * 100) / 100
+      record.automation.setZoom(zoom)
+    }
   }
   private issue(record: PageRecord, message: string, unavailable = false): void {
     if (!this.pages.has(record.page.id) || this.disposed) return
@@ -114,9 +155,18 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
     isolated.setPermissionCheckHandler(() => false)
     isolated.setDevicePermissionHandler(() => false)
-    isolated.on('will-download', (event, _item, contents) => {
-      event.preventDefault()
+    isolated.on('will-download', (event, item, contents) => {
       const record = [...this.pages.values()].find(record => record.view.webContents === contents)
+      if (record) this.stayed(record)
+      // With the full catalog a download waits, paused in Sotto's own folder, for the user to say where it goes (ADR-0222).
+      if (this.downloadList && record && !this.disposed) {
+        let host = ''
+        try { const from = new URL(item.getURL()); host = ['http:', 'https:'].includes(from.protocol) ? from.host : new URL(record.page.url).host } catch { /* No host to show. */ }
+        const { threadId, workspaceId } = record.page.workspace
+        this.downloadList.start(item, { threadId, workspaceId, pageId: record.page.id, host, byAgent: this.agentCaused(record.page.id) })
+        return
+      }
+      event.preventDefault()
       if (record) this.issue(record, t`Downloads are blocked here. Open this page externally to download.`)
     })
     // No file://, Sotto custom protocols, application assets or OS protocol handlers.
@@ -149,6 +199,7 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     const record: PageRecord = { view, generation: 0, automation: new BrowserAutomation(view.webContents, () => this.prepareCapture(record), phone), initial, selection: null, zoom: 1, madePrivate: profile !== null, point: null, page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: phone ? 'iphone' : null, ...profile ? { profile } : {} } }
     this.pages.set(record.page.id, record)
     this.track(record)
+    if (!phone) record.automation.cursor = this.cursor
     const contents = view.webContents
     // The user's own input (an agent's runs while its action holds the page) hands the page to them for a moment.
     contents.on('input-event', (_event, input) => { if (USER_INPUT.has(input.type) && !this.executing.has(record.page.id)) this.userUsed(record) })
@@ -177,6 +228,9 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     // Escape pressed while the page has the keyboard leaves Point at something, as it does in Sotto's own window.
     // Enter picks the element the keyboard is on, as a click picks the one under the pointer; the page does not get it.
     contents.on('before-input-event', (event, input) => {
+      // Ctrl or Command with =, - or 0 zooms the page, as in Chrome; the page does not get those keys (ADR-0222).
+      const zoom = this.parity && !phone ? zoomKey(input) : null
+      if (zoom) { event.preventDefault(); this.zoomPage(record, zoom); return }
       if (!record.point || input.type !== 'keyDown') return
       if (input.key === 'Enter') { if (record.automation.pickFocused()) event.preventDefault(); return }
       if (input.key !== 'Escape') return
@@ -189,6 +243,10 @@ export class BrowserService extends BrowserTasks<PageRecord> {
       this.issue(record, t`A new-window request was blocked. Use a link destination action or open this page externally.`)
       return { action: 'deny' }
     })
+    // Ctrl with the wheel asks to zoom too, a step at a time as the keys do (ADR-0222).
+    if (this.parity && !phone) contents.on('zoom-changed', (_event, direction) => this.zoomPage(record, direction === 'in' ? 'in' : 'out'))
+    // Only a new document committing ends the one a secret was typed into (ADR-0220, decision 6).
+    contents.on('did-navigate', () => record.automation.documentCommitted())
     const moving = (url: string, mainFrame: boolean): boolean => mainFrame && this.moved(record, url)
     contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
       if (!moving(url, mainFrame)) return
@@ -440,7 +498,12 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     const profiles = this.dependencies.parity ? this.dependencies.profiles : undefined
     return profiles ?? fail('unavailable', t`Browser profiles are not on in this version of Sotto.`)
   }
-  private importer() { return this.dependencies.browserImport ?? { sources: () => findImportSources(), copy: importCookies } }
+  private importer() {
+    return this.dependencies.browserImport ?? { sources: () => findImportSources(), copy: (folder: string, target: CookieTarget) => {
+      const scratch = this.dependencies.importScratch ?? fail('unavailable', 'Copying sign-ins is not available in this build.')
+      return importCookies(folder, target, scratch)
+    } }
+  }
   private async importSources() {
     return (await this.importer().sources().catch(() => [])).map(({ id, browser, name }) => ({ id, browser, name }))
   }
@@ -489,6 +552,66 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     this.sessions.delete(`profile:${id}`)
     await this.profileStore().remove(id)
   }
+  /**
+   * The user's zoom (ADR-0222): the pane's control or Ctrl with =, - or 0. Chromium keeps zoom per site in a session, as
+   * Chrome does, so every page on that site in the working copy shows it, an agent's included; an agent's coordinates,
+   * screenshots and viewport stay in the page's CSS pixels at any zoom. The test iPhone keeps its own fit.
+   */
+  zoom(payload: unknown) { return this.run(async () => {
+    this.fullBrowser()
+    const request = parse(browserZoomSchema, payload)
+    const record = await this.owned(request, false)
+    if (record.page.device) return fail('blocked', t`The test iPhone keeps its own size.`)
+    this.zoomPage(record, request.zoom)
+    return this.publish(record)
+  }) }
+  private zoomPage(record: PageRecord, direction: 'in' | 'out' | 'reset'): void {
+    const contents = record.view.webContents
+    if (contents.isDestroyed() || record.page.device) return
+    contents.setZoomFactor(nextZoom(contents.getZoomFactor(), direction))
+    // A page's zoom is its site's in its session: every page on that site changes with it, and what an agent held changed.
+    const session = contents.session, host = hostOf(record.page.url)
+    for (const other of this.pages.values()) {
+      if (other.page.device || other.view.webContents.isDestroyed() || other.view.webContents.session !== session || hostOf(other.page.url) !== host) continue
+      other.generation++
+      this.invalidate(other)
+      this.publish(other)
+    }
+  }
+  /** A thread's downloads this run, for the pane (ADR-0222). */
+  downloads(payload: unknown) { return this.run(async (): Promise<BrowserDownload[]> => {
+    this.fullBrowser()
+    const request = parse(toolTargetSchema, payload)
+    await this.owner(request.threadId, request.workspaceId)
+    return this.downloadStore().list(request.threadId)
+  }) }
+  /** The user's answer to a download: Save, Save as, Cancel, Open, Show in folder or Remove from the list (ADR-0222). */
+  download(payload: unknown) { return this.run(async () => {
+    this.fullBrowser()
+    const request = parse(browserDownloadActionSchema, payload)
+    await this.owner(request.threadId, request.workspaceId)
+    return this.downloadStore().act(request.threadId, request.downloadId, request.action)
+  }) }
+  /** What an agent may know of its thread's downloads: names and states, and a path only inside the thread's folder (ADR-0222). */
+  async agentDownloads(threadId: string): Promise<{ file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[]> {
+    if (!this.downloadList) return []
+    const owner = await this.owner(threadId).catch(() => null)
+    return owner ? this.downloadList.agentView(threadId, owner.workingDirectory) : []
+  }
+  protected actionNote(record: PageRecord, since: number): string | undefined {
+    const started = this.downloadList?.list(record.page.workspace.threadId).filter(download => download.pageId === record.page.id && download.startedAt >= since) ?? []
+    if (!started.length) return undefined
+    return `The page started downloading ${started.map(download => JSON.stringify(download.file)).join(', ')}. Sotto asks the user where to save it, and you are not told where it goes unless they save it in this thread's folder; browser_pages lists it.`
+  }
+  private downloadStore(): BrowserDownloads {
+    return this.downloadList ?? fail('unavailable', t`Downloads are not on in this version of Sotto.`)
+  }
+  /** The window's accent and motion setting for the agent's cursor (ADR-0222); every page draws it so from now on. */
+  cursorStyle(payload: unknown) { return this.run(async () => {
+    this.fullBrowser()
+    this.cursor = parse(browserCursorStyleSchema, payload)
+    for (const record of this.pages.values()) if (!record.page.device) record.automation.cursor = this.cursor
+  }) }
   /** Loopback servers started from Sotto, for the pane and `browser_servers` (ADR-0220). */
   localServers(payload: unknown) { return this.run(async () => {
     this.fullBrowser()
@@ -496,8 +619,9 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     return findLocalServers()
   }) }
   protected destroy(record: PageRecord): Promise<void> {
-    // A recording on a closing page is kept, as its record_stop would keep it.
-    if (this.recordings.has(record)) void this.stopRecordingOf(record, true).catch(() => undefined)
+    // A recording on a closing page is kept, as its record_stop would keep it, and no record_stop can ask for it now.
+    if (this.recordings.has(record)) void this.stopRecordingOf(record, true).then(() => this.finishedRecordings.delete(record.page.id), () => undefined)
+    this.finishedRecordings.delete(record.page.id)
     const slot = slotOf(record)
     if (this.desiredPageId[slot] === record.page.id) { this.desiredPageId[slot] = null; this.mountVersion[slot]++ }
     if (this.isMounted(record)) this.removeMountedView(slot)
@@ -666,8 +790,11 @@ export class BrowserService extends BrowserTasks<PageRecord> {
   }) }
   dispose(): void {
     this.disposed = true
+    // A download still waiting is cancelled and its part deleted now: nobody chose where it goes.
+    this.downloadList?.dispose()
     for (const [record, active] of this.recordings) { active.recording.close(); active.release(); void record.automation.stopScreencast() }
     this.recordings.clear()
+    this.finishedRecordings.clear()
     this.detach()
     for (const record of this.pages.values()) void this.destroy(record)
     for (const isolated of this.sessions.values()) {

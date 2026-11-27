@@ -13,6 +13,8 @@ export interface BrowserAgentTools {
   call(threadId: string, name: string, args: unknown, context?: ThreadToolCallContext): Promise<BrowserToolResult>
   mcpServer(threadId: string, options?: BrowserServerOptions): Promise<BrowserMcpServer>
 }
+/** A call as the server makes it, told whether the thread takes the stable catalog alone (ADR-0220, decision 3). */
+export type BrowserToolInvoke = (threadId: string, name: string, args: unknown, context: ThreadToolCallContext, compact: boolean) => Promise<BrowserToolResult>
 const BROWSER_INSTRUCTIONS = 'Use these tools for the browser the user sees in Sotto. A pending action needs the user in Tools; never approve it yourself. Browser calls wait for that answer. If a call is interrupted or times out, read the task status before requesting the action again. To check a web or Expo-web build on a phone, use iphone_open: the test iPhone is a phone-sized page in this browser, not iOS.'
 
 /** A paired host's threads (ADR-0198): the browser runs on the host, and there is no test iPhone there yet. */
@@ -23,13 +25,15 @@ export class BrowserAgentServer extends ThreadToolServer implements BrowserAgent
   /** Threads whose client asked for the stable catalog alone (ADR-0220, decision 3). */
   private readonly compactThreads: Set<string>
   /**
-   * `compact` is the stable catalog a thread asking for it is listed instead of `definitions`; its tools are still
-   * called the same way, so nothing it may call changes.
+   * `compact` is the stable catalog a thread asking for it is listed instead of `definitions`. It is also all that
+   * thread may call: a full-catalog tool is unavailable to it, and its arguments are read as the stable catalog's, so a
+   * full-catalog action is refused even under a tool name both catalogs share.
    */
-  constructor(definitions: readonly BrowserToolDefinition[], invoke: BrowserAgentTools['call'], instructions = BROWSER_INSTRUCTIONS, compact: readonly BrowserToolDefinition[] = definitions) {
+  constructor(definitions: readonly BrowserToolDefinition[], invoke: BrowserToolInvoke, instructions = BROWSER_INSTRUCTIONS, compact: readonly BrowserToolDefinition[] = definitions) {
     const compactThreads = new Set<string>()
     super({ name: BROWSER_MCP_SERVER, serverName: 'sotto-browser', instructions, unavailable: 'This browser tool is unavailable.',
-      failed: 'The browser action could not be completed. Check the browser in Tools before retrying.' }, definitions, invoke,
+      failed: 'The browser action could not be completed. Check the browser in Tools before retrying.' }, definitions,
+    (threadId, name, args, context) => invoke(threadId, name, args, context, compactThreads.has(threadId)),
     threadId => compactThreads.has(threadId) ? compact : definitions)
     this.compactThreads = compactThreads
   }

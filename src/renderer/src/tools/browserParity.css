@@ -27,3 +27,28 @@
 .browser-parity__add-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .browser-parity__profile-chip { max-width: 12em; }
 .browser-parity__profile-chip > bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Page zoom (ADR-0222): the percentage beside the address while the page is not at 100%. */
+.browser-parity__zoom { flex: none; gap: 4px; font-variant-numeric: tabular-nums; }
+/* In a narrow pane the row has no room for the percentage, so the chip is its magnifier alone, as Chrome's is; its name
+   and title still say the zoom. */
+.browser-pane__row:has(.browser-parity__zoom) { container: browser-row / inline-size; }
+@container browser-row (max-width: 400px) {
+  .browser-pane__row .browser-parity__zoom { justify-content: center; width: 30px; padding: 0; }
+  .browser-pane__row .browser-parity__zoom > span { display: none; }
+}
+/* Downloads (ADR-0222): a download asks at the page's foot, and the empty pane lists this session's. */
+.browser-parity__download-icon { flex: none; color: var(--tt-text-muted); }
+.browser-pane__strip.browser-parity__download { padding-block: 8px; }
+.browser-parity__download .browser-parity__words { max-height: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser-parity__more { color: var(--tt-text-muted); }
+.browser-pane__opened.browser-parity__downloads { margin: 0 auto 28px; }
+.browser-parity__downloads h2:focus { outline: none; }
+.browser-parity__downloads h2:focus-visible { box-shadow: 0 0 0 2px var(--tt-focus-ring); border-radius: var(--tt-radius-tag); }
+/* A narrow pane puts a row's buttons on a line of their own, so the file's name is not cut to a few letters. */
+.browser-parity__download-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-height: 40px; padding: 4px 4px 4px 8px; border-radius: var(--tt-radius-control); color: var(--tt-text); }
+.browser-parity__download-row > svg { flex: none; color: var(--tt-text-muted); }
+.browser-parity__download-words { display: grid; flex: 1 1 14rem; min-width: 0; }
+.browser-parity__download-name { overflow: hidden; font-size: var(--tt-type-body); text-overflow: ellipsis; white-space: nowrap; }
+.browser-parity__download-note { overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-small); text-overflow: ellipsis; white-space: nowrap; }
+.browser-parity__download-actions { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-inline-start: auto; }
+.browser-parity__download-actions .files-icon { width: 26px; height: 26px; border-radius: var(--tt-radius-control); }

@@ -4,7 +4,7 @@ import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
 import { BrowserGrants, alwaysAsks, grantCovers } from './browserGrants'
-import { uploadPaths, type BrowserFiles } from './browserFiles'
+import { uploadPaths, type BrowserFiles, type StagedUpload } from './browserFiles'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { isTargeted, type PageAutomation, type TargetedAction } from './pageAutomation'
 import { ThreadFilePages } from './threadFilePages'
@@ -16,6 +16,8 @@ export const USER_ACTIVE_MS = 750
 const NAVIGATION_WAIT_MS = 15_000
 /** The actions that only read or wait, which a page in the user's hands still answers. */
 const READS = new Set(['inspect', 'snapshot', 'screenshot', 'wait_for', 'record_stop'])
+/** How long after an agent's action a download it set off still counts as the agent's (ADR-0222). */
+export const AGENT_DOWNLOAD_MS = 3_000
 /**
  * How far a swipe must travel. Shorter, Chromium reads it as a tap and clicks what it started on, and a swipe asks
  * nothing, so a short one would be a tap the browser grant never covered.
@@ -46,6 +48,10 @@ export interface BrowserTaskWords {
   readonly changedOrExpired: string
   readonly grantNeedsAllow: string
   readonly stillRunning: string
+  /** "Allow this thread" pressed for an action that asks every time, such as upload. */
+  readonly asksEveryTime?: string
+  /** An upload's copies changed between asking and Allow. */
+  readonly filesChanged?: string
 }
 
 export interface BrowserTaskDependencies {
@@ -80,7 +86,13 @@ export interface BrowserTaskDependencies {
 export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   protected readonly pages = new Map<string, R>()
   protected readonly taskRecords = new Map<string, BrowserTask>()
-  private readonly pending = new Map<string, { generation: number; url: string; initial: boolean; target?: string }>()
+  private readonly pending = new Map<string, { generation: number; url: string; initial: boolean; target?: string; staged?: StagedUpload }>()
+  /** Upload copies a page was given, kept while it may still read them and deleted when it closes (ADR-0220, decision 5). */
+  private readonly givenUploads = new Map<string, StagedUpload[]>()
+  /** When an agent's action last ended on each page, so a download it set off is known as the agent's (ADR-0222). */
+  private readonly agentActedAt = new Map<string, number>()
+  /** Each page's timer for the end of the user's hold, moved on by every input (ADR-0220, decision 8). */
+  private readonly userTimers = new Map<string, ReturnType<typeof setTimeout>>()
   protected readonly executing = new Set<string>()
   private readonly taskListeners = new Set<() => void>()
   /** Per-thread browser grants: on by default, until the user stops one or turns the setting off (ADR-0029). */
@@ -111,6 +123,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   /** Stops the page's recording and answers where the video is. */
   /** Stops a page's recording and keeps the video. `keep` holds its path for the agent's record_stop: the user stopped it. */
   protected stopRecordingOf?(record: R, keep?: boolean): Promise<string>
+  /** Words added to an action's output about what it set off on the page since `since`, such as a download (ADR-0222). */
+  protected actionNote?(record: R, since: number): string | undefined
   /** The last time the user's own click, key or wheel reached each page (ADR-0220, decision 8). */
   private readonly userInput = new Map<string, number>()
   /** Whether this browser offers the full catalog (ADR-0220). */
@@ -131,10 +145,36 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     if (!this.parity) return
     const was = this.userActive(record)
     this.userInput.set(record.page.id, Date.now())
+    // Every input moves the hold's end, so the page is told free once the user has really stopped, not 750 ms after they began.
+    const timer = this.userTimers.get(record.page.id)
+    if (timer) clearTimeout(timer)
+    this.userTimers.set(record.page.id, setTimeout(() => {
+      this.userTimers.delete(record.page.id)
+      if (this.pages.has(record.page.id) && !this.disposed && !this.userActive(record)) this.publish(record)
+    }, USER_ACTIVE_MS + 20))
     if (was) return
     record.automation.forgetRefs()
     this.publish(record)
-    setTimeout(() => { if (this.pages.has(record.page.id) && !this.userActive(record)) this.publish(record) }, USER_ACTIVE_MS + 20)
+  }
+  /** Whether a download that starts on this page now was set off by an agent's action (ADR-0222). */
+  protected agentCaused(pageId: string): boolean {
+    return this.executing.has(pageId) || Date.now() - (this.agentActedAt.get(pageId) ?? 0) < AGENT_DOWNLOAD_MS
+  }
+  /** What the engine keeps for a page goes with it. */
+  private forgetPage(pageId: string): void {
+    this.userInput.delete(pageId)
+    this.agentActedAt.delete(pageId)
+    const timer = this.userTimers.get(pageId)
+    if (timer) clearTimeout(timer)
+    this.userTimers.delete(pageId)
+    for (const staged of this.givenUploads.get(pageId) ?? []) void this.base.browserFiles?.discard(staged)
+    this.givenUploads.delete(pageId)
+  }
+  /** A waiting request is forgotten, and the upload copies it made with it unless the page was given them. */
+  private forgetPending(taskId: string, given = false): void {
+    const scope = this.pending.get(taskId)
+    this.pending.delete(taskId)
+    if (scope?.staged && !given) void this.base.browserFiles?.discard(scope.staged)
   }
   private userActive(record: R): boolean { return Date.now() - (this.userInput.get(record.page.id) ?? 0) < USER_ACTIVE_MS }
   protected abstract step(record: R, direction: 'back' | 'forward'): void | Promise<void>
@@ -149,9 +189,16 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       record.page.appearance = record.automation.colorScheme()
       record.page.userActive = this.userActive(record)
     }
-    const page = { ...record.page }
+    const page = this.view(record)
     if (!this.disposed && this.pages.has(record.page.id)) this.base.emit({ type: 'page', page })
     return page
+  }
+  /**
+   * A page as it leaves the engine, for the window and the agent alike: a secret typed into it is masked in its title
+   * and address, as a page that echoes it there, or a sign-in form sent by GET, would otherwise pass it on (ADR-0219).
+   */
+  private view(record: R): BrowserPage {
+    return { ...record.page, url: record.automation.masked(record.page.url), title: record.automation.masked(record.page.title) }
   }
   /** The thread's working copy. A thread Sotto no longer lists takes its browser grant with it. */
   protected async owner(threadId: string, expected?: string): Promise<FileWorkspace> {
@@ -174,8 +221,10 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     const request = parse(toolListRequestSchema, payload)
     const owner = await this.owner(request.threadId, request.workspaceId)
     this.listed.add(owner.threadId)
-    return { workspace: owner, pages: [...this.pages.values()].filter(record => record.page.workspace.workspaceId === owner.workspaceId && record.page.workspace.threadId === owner.threadId).map(record => ({ ...record.page })), grant: this.grantView(owner.threadId) }
+    return { workspace: owner, pages: [...this.pages.values()].filter(record => record.page.workspace.workspaceId === owner.workspaceId && record.page.workspace.threadId === owner.threadId).map(record => this.view(record)), grant: this.grantView(owner.threadId) }
   }) }
+  /** `text` about a page, its address or title, with any secret typed into that page masked, as the agent is told it (ADR-0219). */
+  masked(pageId: string, text: string): string { return this.pages.get(pageId)?.automation.masked(text) ?? text }
   /** The user's Stop: the thread asks again, whichever its grant's source. Always allowed, even for a thread that has gone. */
   stopGrant(payload: unknown) { return this.run(async () => {
     const request = parse(toolTargetSchema, payload)
@@ -219,8 +268,21 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   private followSharing(record: R, url: string): void {
     const origin = new URL(url).origin
     if (!record.page.sharedOrigin || record.page.sharedOrigin === origin) return
+    // A page in a browser profile is signed in as the user. Its sharing stays with the site the user shared, grant or
+    // not: leaving that site makes the page private again, until the user shares it or answers an agent's navigate
+    // there (ADR-0221, November 27 amendment).
+    if (record.page.profile) { this.revoke(record); record.madePrivate = true; return }
     if (this.grants.active(record.page.workspace.threadId)) record.page.sharedOrigin = origin
     else this.revoke(record)
+  }
+  /**
+   * Whether an action asks the user every time, whatever grant the thread holds: an upload (ADR-0220, decision 5), and an
+   * agent's navigate that takes a page in a browser profile to another site (ADR-0221, November 27 amendment).
+   */
+  private asksEveryTime(record: R, action: BrowserAction): boolean {
+    if (alwaysAsks(action.type)) return true
+    if (action.type !== 'navigate' || !record.page.profile || record.initial) return false
+    try { return new URL(action.url).origin !== record.page.sharedOrigin } catch { return true }
   }
   /** The page's main frame is moving to `url`: what waited on the old page lapses, and its sharing follows or ends. */
   protected moved(record: R, url: string): boolean {
@@ -271,7 +333,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     const request = parse(browserRequestSchema, payload)
     const record = await this.owned(request, false)
     await this.destroy(record)
-    this.userInput.delete(record.page.id)
+    this.forgetPage(record.page.id)
     this.base.emit({ type: 'closed', ...request })
   }) }
   /**
@@ -279,12 +341,18 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
    * recording on it stops and is kept.
    */
   agentClose(payload: unknown) { return this.run(async () => {
+    this.fullBrowser()
     const request = parse(browserAgentCloseSchema, payload)
     const record = await this.owned(request, false)
     if (!record.page.agentOpened) return fail('blocked', 'This page was opened by the user, so it stays open. Finish your task on it instead.')
+    // The user holding the page, by Take over, Stop sharing or using it now, keeps it open as it keeps out every other action.
+    if ([...this.taskRecords.values()].some(task => task.pageId === record.page.id && task.status === 'paused')) return fail('blocked', 'The user took this page over, so it stays open. Wait until they hand it back.')
+    if (!record.initial && (record.madePrivate || !record.page.sharedOrigin)) return fail('blocked', 'The user stopped sharing this page, so it stays open. Ask them to share it, or leave it to them.')
+    if (this.parity && this.userActive(record)) return fail('busy', 'The user is using this page right now, so it stays open. Wait a moment, then try again.')
+    if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
     const kept = record.page.recording && this.stopRecordingOf ? await this.stopRecordingOf(record).catch(() => null) : null
     await this.destroy(record)
-    this.userInput.delete(record.page.id)
+    this.forgetPage(record.page.id)
     this.base.emit({ type: 'closed', ...request })
     return { closed: request.pageId, ...(kept ? { recording: kept } : {}) }
   }) }
@@ -328,6 +396,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       task.status = 'failed'; task.summary = 'This browser page closed.'; task.output = null; task.thumbnail = null; task.evidence = []; this.publishTask(task)
     }
     this.invalidate(record)
+    this.forgetPage(record.page.id)
   }
   private publishTask(task: BrowserTask): BrowserTask {
     task.updatedAt = Date.now()
@@ -347,7 +416,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   }
   protected invalidate(record: R): void {
     for (const task of this.taskRecords.values()) if (task.pageId === record.page.id && task.pendingAction) {
-      task.pendingAction = null; this.pending.delete(task.id)
+      task.pendingAction = null; this.forgetPending(task.id)
       task.output = 'The page changed. Request the action again.'
       this.publishTask(task)
     }
@@ -380,7 +449,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     const owner = await this.owner(request.threadId, request.workspaceId)
     const tasks = [...this.taskRecords.values()].filter(task => task.threadId === owner.threadId && task.workspaceId === owner.workspaceId)
     for (const task of tasks) if (task.pendingAction && task.pendingAction.expiresAt < Date.now()) {
-      task.pendingAction = null; this.pending.delete(task.id); task.output = 'This browser action expired. Request it again.'; this.publishTask(task)
+      task.pendingAction = null; this.forgetPending(task.id); task.output = 'This browser action expired. Request it again.'; this.publishTask(task)
     }
     return structuredClone(tasks)
   }) }
@@ -444,34 +513,40 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     if (background) task.background = true
     return this.requestAction(record, task, { type: 'navigate', url: request.url })
   }
-  private async requestAction(record: R, task: BrowserTask, action: BrowserAction): Promise<BrowserAgentResult> {
-    if (task.pendingAction) return fail('busy', 'A browser action is waiting for the user. Read the task before requesting another action.')
-    const generation = record.generation
-    const target = targeted(action) ? await record.automation.target(action) : undefined
-    this.working(task)
-    if (generation !== record.generation || task.pendingAction) return fail('blocked', 'The page changed. Inspect it and request the action again.')
-    if (!record.initial) this.shared(record)
+  private async requestAction(record: R, task: BrowserTask, action: BrowserAction, staged?: StagedUpload): Promise<BrowserAgentResult> {
+    let target: string | undefined
+    try {
+      if (task.pendingAction) return fail('busy', 'A browser action is waiting for the user. Read the task before requesting another action.')
+      const generation = record.generation
+      target = targeted(action) ? await record.automation.target(action) : undefined
+      this.working(task)
+      if (generation !== record.generation || task.pendingAction) return fail('blocked', 'The page changed. Inspect it and request the action again.')
+      if (!record.initial) this.shared(record)
+    } catch (error) { if (staged) void this.base.browserFiles?.discard(staged); throw error }
+    const everyTime = this.asksEveryTime(record, action)
     // A browser grant answers navigate, click and type exactly as the user's own one-time answer would (ADR-0029).
-    if (grantCovers(action.type) && !alwaysAsks(action.type) && this.grants.active(record.page.workspace.threadId)) return this.perform(record, task, action, record.initial, target, true)
-    const description = this.describe(record, action)
-    task.pendingAction = { id: randomUUID(), action, description, expiresAt: Date.now() + 5 * 60_000 }
-    this.pending.set(task.id, { generation: record.generation, url: record.page.url, initial: record.initial, ...(target ? { target } : {}) })
+    if (grantCovers(action.type) && !everyTime && this.grants.active(record.page.workspace.threadId)) return this.perform(record, task, action, record.initial, target, true)
+    const description = record.automation.masked(this.describe(record, action, staged))
+    task.pendingAction = { id: randomUUID(), action, description, expiresAt: Date.now() + 5 * 60_000, ...(everyTime ? { everyTime: true } : {}) }
+    this.pending.set(task.id, { generation: record.generation, url: record.page.url, initial: record.initial, ...(target ? { target } : {}), ...(staged ? { staged } : {}) })
     return { task: this.publishTask(task), approvalRequired: true }
   }
   /** The pending request's words: what will happen, where, and for upload which files. */
-  private describe(record: R, action: BrowserAction): string {
+  private describe(record: R, action: BrowserAction, staged?: StagedUpload): string {
     const where = record.page.device ? `on the test iPhone at ${record.page.url}` : `on ${record.page.url}`
     const at = (target: { x?: number | undefined; y?: number | undefined; ref?: string | undefined; selector?: string | undefined }): string =>
       target.ref ? `element ${target.ref}` : target.selector ? `the element ${JSON.stringify(target.selector)}` : `${target.x}, ${target.y}`
     switch (action.type) {
-      case 'navigate': return `${record.initial ? record.page.device ? 'Open this page on the test iPhone and share it with the thread' : 'Open and share this page with the thread' : 'Navigate this page'}: ${action.url}`
+      case 'navigate': return `${record.initial ? record.page.device ? 'Open this page on the test iPhone and share it with the thread' : 'Open and share this page with the thread' : this.asksEveryTime(record, action) ? `Take this page, signed in with your ${record.page.profile?.name ?? 'browser'} profile, to another site and share it there` : 'Navigate this page'}: ${action.url}`
       case 'click': return `${action.clickCount === 2 ? 'Double-click' : action.clickCount === 3 ? 'Triple-click' : action.button === 'right' ? 'Right-click' : action.button === 'middle' ? 'Middle-click' : 'Click'} ${action.x !== undefined ? 'at ' : ''}${at(action)} ${where}`
       case 'tap': return `Tap at ${action.x}, ${action.y} ${where}`
       case 'type': return action.secretRef ? `Type a secret you saved into the focused password field ${where}` : `Type ${JSON.stringify(action.text)} into ${action.ref || action.selector ? at(action) : 'the focused field'} ${where}`
       case 'key': return `Press ${[...action.modifiers ?? [], action.key].join('+')} ${where}`
       case 'select': return `Choose ${action.values.map(value => JSON.stringify(value)).join(', ')} in ${at(action)} ${where}`
       case 'drag': return `Drag from ${at(action.from)} to ${at(action.to)} ${where}`
-      case 'upload': return action.paths.length ? `Give ${record.page.url} ${action.paths.length === 1 ? 'this file' : `these ${action.paths.length} files`} from your computer: ${action.paths.join(', ')}` : `Cancel the page's file chooser ${where}`
+      case 'upload': return action.paths.length
+        ? `Give ${record.page.url} ${action.paths.length === 1 ? 'a copy of this file' : `copies of these ${action.paths.length} files`}, made when the agent asked: ${(staged?.files ?? []).map(file => `${file.name} (${file.source})`).join(', ') || action.paths.join(', ')}`
+        : `Cancel the page's file chooser ${where}`
       case 'evaluate': return `Run this script in the page ${where}: ${action.expression.slice(0, 600)}${action.expression.length > 600 ? '…' : ''}`
       case 'dialog': return `${action.accept ? 'Accept' : 'Dismiss'} the page's dialog${action.promptText !== undefined ? ` with ${JSON.stringify(action.promptText)}` : ''} ${where}`
       default: return action.type
@@ -488,11 +563,16 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     if (request.action.type === 'swipe' && Math.hypot(request.action.toX - request.action.x, request.action.toY - request.action.y) < SWIPE_MINIMUM) return fail('blocked', `A swipe must move at least ${SWIPE_MINIMUM} pixels. Use tap to tap.`)
     if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
     if (request.action.type === 'upload') {
-      // Checked before asking, so the user is asked about the files that will really be sent.
+      if (request.action.paths.length === 0) return this.requestAction(record, task, request.action)
+      // Checked, then copied into Sotto's own folder before asking: the user is asked about those copies, and only they
+      // are given, so changing or relinking the files meanwhile changes nothing (ADR-0220, decision 5).
+      const files = this.base.browserFiles ?? fail('unavailable', 'Giving a page files is not available here.')
       const owner = await this.owner(request.threadId, request.workspaceId)
-      const checked = await uploadPaths(request.action.paths, owner.workingDirectory, this.base.browserFiles?.folder(owner.threadId))
+      const checked = await uploadPaths(request.action.paths, owner.workingDirectory, files.folder(owner.threadId))
       if (!checked.ok) return fail('blocked', checked.message)
-      return this.requestAction(record, task, { ...request.action, paths: checked.paths })
+      const staged = await files.stage(checked.paths, [owner.workingDirectory, files.folder(owner.threadId)])
+      if (!staged.ok) return fail('blocked', staged.message)
+      return this.requestAction(record, task, { ...request.action, paths: staged.upload.files.map(file => file.path) }, staged.upload)
     }
     if (grantCovers(request.action.type)) return this.requestAction(record, task, request.action)
     if (task.pendingAction) return fail('busy', 'Answer the pending browser action first.')
@@ -506,7 +586,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     task.status = request.control === 'pause' ? 'paused' : 'working'
     // Taking the page over, or handing it back, moves its elements as far as the agent knows (ADR-0220, decision 8).
     record.automation.forgetRefs()
-    if (request.control === 'pause') { task.pendingAction = null; this.pending.delete(task.id) }
+    if (request.control === 'pause') { task.pendingAction = null; this.forgetPending(task.id) }
     return this.publishTask(task)
   }) }
   answerAction(payload: unknown) { return this.run(async () => {
@@ -516,16 +596,19 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     this.working(task)
     if (!pending || pending.id !== request.actionId || !scope || pending.expiresAt < Date.now() || scope.generation !== record.generation || scope.url !== record.page.url) return fail('blocked', this.base.words().changedOrExpired)
     if (request.forThread && !request.allow) return fail('blocked', this.base.words().grantNeedsAllow)
+    // An action that asks every time is answered once: it never becomes the thread's grant.
+    if (request.forThread && (pending.everyTime || this.asksEveryTime(record, pending.action))) return fail('blocked', this.base.words().asksEveryTime ?? 'This action asks every time, so it cannot be allowed for the whole thread. Answer it once.')
     if (this.executing.has(record.page.id)) return fail('busy', this.base.words().stillRunning)
-    task.pendingAction = null; this.pending.delete(task.id)
-    if (!request.allow) { task.output = 'The user declined this action.'; return this.publishTask(task) }
+    task.pendingAction = null
+    if (!request.allow) { this.forgetPending(task.id); task.output = 'The user declined this action.'; return this.publishTask(task) }
+    this.pending.delete(task.id)
     const threadId = record.page.workspace.threadId
     if (request.forThread) {
       this.grants.grant(threadId)
       this.base.emit({ type: 'browser-grant', threadId, grant: this.grantView(threadId) })
       this.shareThreadPages(threadId)
     }
-    try { return (await this.perform(record, task, pending.action, scope.initial, scope.target)).task }
+    try { return (await this.perform(record, task, pending.action, scope.initial, scope.target, false, scope.staged)).task }
     finally { if (request.forThread) await this.performWaitingActions(threadId) }
   }) }
   /**
@@ -537,17 +620,17 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   private async performWaitingActions(threadId: string): Promise<void> {
     for (const task of [...this.taskRecords.values()]) {
       const pending = task.pendingAction, scope = this.pending.get(task.id), record = this.pages.get(task.pageId)
-      if (task.threadId !== threadId || task.status !== 'working' || !pending || !grantCovers(pending.action.type) || alwaysAsks(pending.action.type) || !scope || !record || pending.expiresAt < Date.now()
+      if (task.threadId !== threadId || task.status !== 'working' || !pending || !grantCovers(pending.action.type) || pending.everyTime || !scope || !record || this.asksEveryTime(record, pending.action) || pending.expiresAt < Date.now()
         || scope.generation !== record.generation || scope.url !== record.page.url || this.executing.has(record.page.id) || !this.grants.active(threadId)) continue
-      task.pendingAction = null; this.pending.delete(task.id)
+      task.pendingAction = null; this.forgetPending(task.id)
       // One action failing is that task's own failed step; it does not undo the answer the user just gave.
       await this.perform(record, task, pending.action, scope.initial, scope.target, true).catch(() => undefined)
     }
   }
-  private async perform(record: R, task: BrowserTask, action: BrowserAction, initial = false, approvedTarget?: string, granted = false): Promise<BrowserAgentResult> {
-    if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
+  private async perform(record: R, task: BrowserTask, action: BrowserAction, initial = false, approvedTarget?: string, granted = false, staged?: StagedUpload): Promise<BrowserAgentResult> {
+    if (this.executing.has(record.page.id)) { if (staged) void this.base.browserFiles?.discard(staged); return fail('busy', 'A browser action is still running.') }
     this.executing.add(record.page.id)
-    const generation = record.generation
+    const generation = record.generation, startedAt = Date.now()
     const observedUrl = action.type === 'navigate' ? action.url : record.page.url
     const guard = (checkGeneration = true): void => {
       this.working(task)
@@ -559,13 +642,14 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       guard()
       if (targeted(action) && (!approvedTarget || await record.automation.target(action) !== approvedTarget)) fail('blocked', 'The target changed. Inspect the page and request the action again.')
       guard()
-      // The user is clicking or typing in this page right now; an agent's input waits until they stop (ADR-0220).
-      if (!READS.has(action.type) && action.type !== 'navigate' && this.userActive(record)) fail('busy', 'The user is using this page right now. Wait a moment, take a snapshot, then try again.')
+      // The user is clicking or typing in this page right now; an agent's input, a navigate included, waits until they stop (ADR-0220).
+      if (!READS.has(action.type) && this.userActive(record)) fail('busy', 'The user is using this page right now. Wait a moment, take a snapshot, then try again.')
       let output = '', image: string | undefined, capture: BrowserCapture | undefined
       if (action.type === 'navigate') {
         record.initial = false
-        // An agent's new page is shared by its Open and share answer, or by the browser grant that stands for it.
-        if (initial) record.page.sharedOrigin = new URL(action.url).origin
+        // An agent's new page is shared by its Open and share answer, or by the browser grant that stands for it. A page
+        // in a profile is shared with another site only by the user's answer to this navigate (ADR-0221).
+        if (initial || (record.page.profile && !granted)) record.page.sharedOrigin = new URL(action.url).origin
         this.load(record, action.url)
         if (record.page.sharedOrigin) record.automation.observe()
         output = this.parity ? await this.loaded(record, action.waitUntil ?? 'load', action.timeoutMs ?? NAVIGATION_WAIT_MS) : 'Navigation started. Inspect the page after it finishes loading.'
@@ -586,7 +670,16 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       else if (action.type === 'dialog') {
         const answered = await record.automation.answerDialog(action.accept, action.promptText)
         output = `${action.accept ? 'Accepted' : 'Dismissed'} the ${answered.type} dialog.${answered.type === 'prompt' && action.promptText === undefined && action.accept ? ' It was given its default text.' : ''}`
-      } else if (action.type === 'upload') output = await record.automation.upload(action, action.paths, guard)
+      } else if (action.type === 'upload') {
+        if (action.paths.length) {
+          // The copies the user was asked about, looked at again now: one changed or swapped since is not given.
+          const files = this.base.browserFiles
+          if (!staged || !files) fail('blocked', 'This upload was not copied when it was asked for. Ask again.')
+          if (!await files!.verify(staged!)) fail('blocked', this.base.words().filesChanged ?? 'The files changed after you were asked. Nothing was given to the page. Ask the agent to try again.')
+        }
+        output = await record.automation.upload(action, action.paths, guard)
+        if (staged) { this.givenUploads.set(record.page.id, [...this.givenUploads.get(record.page.id) ?? [], staged]); staged = undefined }
+      }
       else if (action.type === 'appearance') {
         await record.automation.emulateAppearance(action.colorScheme === 'auto' ? null : action.colorScheme)
         this.publish(record)
@@ -607,7 +700,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
         const value = this.base.secret ? await this.base.secret(record.page.workspace.threadId, action.secretRef) : null
         if (value === null) fail('blocked', this.base.secret ? 'This secretRef is unknown, used or expired. Ask for it again with request_secret.' : 'Secret references are typed only in Sotto\'s browser on this computer.')
         guard()
-        await record.automation.typeSecret(value!, guard)
+        await record.automation.typeSecret(value!, guard, action, action.clear === true)
         output = 'type completed.'
       } else {
         const said = await record.automation.input(action, guard)
@@ -622,7 +715,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       if (capture) {
         const evidence = await record.automation.evidence(capture)
         guard()
-        if (evidence) task.evidence = [...(task.evidence ?? []), { id: randomUUID(), at: Date.now(), url: record.page.url, viewport: record.page.viewport ?? null, ...evidence }].slice(-3)
+        if (evidence) task.evidence = [...(task.evidence ?? []), { id: randomUUID(), at: Date.now(), url: record.automation.masked(record.page.url), viewport: record.page.viewport ?? null, ...evidence }].slice(-3)
       }
       // Revocation during an asynchronous capture must not release page evidence.
       if (action.type !== 'navigate') guard(reading)
@@ -630,17 +723,27 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       const thumbnail = action.type === 'navigate' || (this.parity && record.automation.dialog()) ? null : await record.automation.thumbnail(image).catch(() => null)
       if (action.type !== 'navigate') guard(reading)
       if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
+      const note = this.actionNote?.(record, startedAt)
+      if (note) output = `${output} ${note}`
+      // Whatever the page says back, its address included, goes on with a secret typed into it masked (ADR-0219).
+      output = record.automation.masked(output)
       task.output = output
       const grantNote = granted ? ' Not asked: you let this thread use the browser without asking.' : ''
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: this.stepDetail(action, output, grantNote), url: observedUrl, viewport: record.page.viewport ?? null })
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: this.stepDetail(action, output, grantNote), url: record.automation.masked(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40)
       return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
     } catch (error) {
       task.output = 'The browser action did not finish. Inspect the page before trying again.'
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: observedUrl, viewport: record.page.viewport ?? null })
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: record.automation.masked(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40); this.publishTask(task)
       throw error
-    } finally { this.executing.delete(record.page.id); for (const listener of this.taskListeners) listener() }
+    } finally {
+      this.executing.delete(record.page.id)
+      if (this.pages.has(record.page.id)) this.agentActedAt.set(record.page.id, Date.now())
+      // Copies made for an upload that was not given go now.
+      if (staged) void this.base.browserFiles?.discard(staged)
+      for (const listener of this.taskListeners) listener()
+    }
   }
   /** A completed step as the user reads it in Tools: what happened, never a value typed or read back. */
   private stepDetail(action: BrowserAction, output: string, grantNote: string): string {
@@ -675,7 +778,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
         const task = this.taskRecords.get(taskId)
         if (!this.disposed && task?.pendingAction?.id === actionId && task.pendingAction.expiresAt > Date.now()) return
         const expired = task?.pendingAction?.id === actionId
-        if (expired) { task.pendingAction = null; this.pending.delete(taskId); task.output = 'This browser request expired. Ask the user before requesting it again.' }
+        if (expired) { task.pendingAction = null; this.forgetPending(taskId); task.output = 'This browser request expired. Ask the user before requesting it again.' }
         if (task && this.executing.has(task.pageId)) return
         this.taskListeners.delete(check)
         if (timer) clearTimeout(timer)
@@ -694,12 +797,14 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     this.working(task)
     if (this.executing.has(task.pageId) || task.pendingAction) return fail('busy', 'Finish the pending browser action first.')
     task.status = request.status; task.summary = request.summary; task.unchecked = request.unchecked
-    task.pendingAction = null; this.pending.delete(task.id)
+    task.pendingAction = null; this.forgetPending(task.id)
     return this.publishTask(task)
   }) }
   /** The browser is shutting down: every task, grant and served file goes, and every wait ends. Pages are the subclass's. */
   protected disposeTasks(): void {
-    this.taskRecords.clear(); this.pending.clear(); this.userInput.clear()
+    for (const taskId of [...this.pending.keys()]) this.forgetPending(taskId)
+    for (const pageId of [...this.givenUploads.keys(), ...this.userTimers.keys()]) this.forgetPage(pageId)
+    this.taskRecords.clear(); this.pending.clear(); this.userInput.clear(); this.agentActedAt.clear()
     this.grants.clear()
     this.filePages.dispose()
     for (const listener of this.taskListeners) listener()

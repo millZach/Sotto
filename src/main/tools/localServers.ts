@@ -9,7 +9,11 @@ export type LoopbackAddress = '127.0.0.1' | '::1'
 /** A port some process listens on, on this computer's loopback or every address, and the loopback that reaches it. */
 export interface Listener { readonly port: number; readonly pid: number; readonly address: LoopbackAddress }
 /** A process and its parent, enough to walk up to Sotto. */
-export interface ProcessEntry { readonly pid: number; readonly parentPid: number; readonly name: string }
+/**
+ * One process: its parent, its program's name, and on Windows when it started (`started`, Windows file time), since
+ * Windows keeps a process's parent ID after the parent exits and may give that ID to a new process.
+ */
+export interface ProcessEntry { readonly pid: number; readonly parentPid: number; readonly name: string; readonly started?: number }
 
 const PROBE_MS = 1000
 const PROBE_BYTES = 64 * 1024
@@ -78,27 +82,36 @@ export function parseSs(text: string): Listener[] {
   }
   return found
 }
-/** `ps -A -o pid=,ppid=,comm=`, or the same columns from PowerShell on Windows. */
-export function parseProcesses(text: string): Map<number, ProcessEntry> {
+/** `ps -A -o pid=,ppid=,comm=`, or from PowerShell on Windows the same with each process's start (`withStart`) before its name. */
+export function parseProcesses(text: string, withStart = false): Map<number, ProcessEntry> {
   const table = new Map<number, ProcessEntry>()
+  const row = withStart ? /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.+?)\s*$/u : /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/u
   for (const line of text.split(/\r?\n/u)) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/u.exec(line)
-    if (match) table.set(Number(match[1]), { pid: Number(match[1]), parentPid: Number(match[2]), name: basename(match[3]!.replace(/\\/gu, '/')) })
+    const match = row.exec(line)
+    if (!match) continue
+    const started = withStart ? Number(match[3]) : 0
+    const name = basename((withStart ? match[4] : match[3])!.replace(/\\/gu, '/'))
+    table.set(Number(match[1]), { pid: Number(match[1]), parentPid: Number(match[2]), name, ...started > 0 ? { started } : {} })
   }
   return table
 }
 
 /**
  * Whether `pid` was started from Sotto: one of Sotto's own processes is among its parents. Sotto's own processes, which
- * run Sotto's executable, are left out themselves, so its tool servers never list as the user's.
+ * run Sotto's executable, are left out themselves, so its tool servers never list as the user's. A parent that started
+ * after its child is not its parent: Windows gave the exited parent's ID to that newer process, which could be Sotto,
+ * and a server started before Sotto, such as one a test or the user runs, would otherwise list as Sotto's.
  */
 export function startedFromSotto(pid: number, table: ReadonlyMap<number, ProcessEntry>, sottoPid: number, sottoName: string): boolean {
   const own = (entry: ProcessEntry | undefined): boolean => !!entry && entry.name.toLowerCase() === sottoName.toLowerCase()
+  const parentOf = (child: ProcessEntry, parent: ProcessEntry | undefined): boolean => !parent || child.started === undefined || parent.started === undefined || parent.started <= child.started
   if (pid === sottoPid || own(table.get(pid))) return false
   let current = table.get(pid)
   for (let depth = 0; current && depth < 64; depth++) {
+    const parent = table.get(current.parentPid)
+    if (!parentOf(current, parent)) return false
     if (current.parentPid === sottoPid) return true
-    current = table.get(current.parentPid)
+    current = parent
   }
   return false
 }
@@ -110,7 +123,7 @@ async function listeners(): Promise<Listener[]> {
 }
 async function processes(): Promise<Map<number, ProcessEntry>> {
   if (process.platform === 'win32') {
-    return parseProcesses(await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name | ForEach-Object { "{0} {1} {2}" -f $_.ProcessId, $_.ParentProcessId, $_.Name }']))
+    return parseProcesses(await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,CreationDate | ForEach-Object { "{0} {1} {2} {3}" -f $_.ProcessId, $_.ParentProcessId, $(if ($_.CreationDate) { $_.CreationDate.ToFileTimeUtc() } else { 0 }), $_.Name }']), true)
   }
   return parseProcesses(await run('ps', ['-A', '-o', 'pid=,ppid=,comm=']))
 }

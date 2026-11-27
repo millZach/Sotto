@@ -131,7 +131,7 @@ interface History { readonly past: readonly (readonly MarkupShape[])[]; readonly
  * text, or deleted; the drawing tools only ever draw, so a stroke across a mark stays a stroke. Text on a mark belongs to
  * it and follows it, and text off every mark is free (part 5, November 3).
  */
-export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, callouts, calloutsHeading }: {
+export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, callouts, calloutsHeading, addLabel, copyNote, side }: {
   readonly name: string
   /** The picture the viewer already holds; the editor reads nothing more. */
   readonly source: string
@@ -142,6 +142,11 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
   /** The callouts the agent placed on the picture, and the heading that says whose they are. */
   readonly callouts?: readonly AgentMediaCallout[] | undefined
   readonly calloutsHeading?: string | undefined
+  /** Where the marked copy goes, in the primary button's words, and the note under the marks that says so; a reply by default. */
+  readonly addLabel?: string | undefined
+  readonly copyNote?: string | undefined
+  /** More in the side panel, under the marks, such as the browser's comment field (ADR-0222). Its fields keep their own keys. */
+  readonly side?: ReactNode
 }): ReactNode {
   const { t } = useLingui()
   const markWords = useMarkWords()
@@ -458,6 +463,8 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
     if ((event.target as Element).closest?.('.markup-editor__note-input')) return
+    // A field of the side panel's own types freely; Escape still cancels and the add chord still adds from it.
+    if ((event.target as Element).closest?.('[data-markup-own-keys]') && event.key !== 'Escape' && !(chords.add && chordMatches(event, chords.add, platform))) return
     if (event.key === 'Escape') {
       event.preventDefault(); event.stopPropagation()
       // A drag stops first, then the selection lets go, and only then does the editor cancel.
@@ -504,7 +511,7 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
       <button type="button" className="markup-editor__tool markup-editor__tool--icon tt-focusable" aria-disabled={history.future.length === 0} aria-label={t`Redo`} title={t`Redo (${modKey}+Shift+Z)`} onClick={redo}><Redo2 size={16} aria-hidden="true" /></button>
       <span className="markup-editor__space" />
       <button type="button" className="markup-editor__action tt-focusable" onClick={onCancel} title={t`Cancel (Esc)`}>{t`Cancel`}</button>
-      <button type="button" className="markup-editor__action markup-editor__action--primary tt-focusable" aria-disabled={adding || (marks.length === 0 && !kept)} title={t`Add to reply (${modKey}+Enter)`} onClick={() => void add()}>{t`Add to reply`}</button>
+      <button type="button" className="markup-editor__action markup-editor__action--primary tt-focusable" aria-disabled={adding || (marks.length === 0 && !kept)} title={`${addLabel ?? t`Add to reply`} (${modKey}+Enter)`} onClick={() => void add()}>{addLabel ?? t`Add to reply`}</button>
     </header>
     <div className="markup-editor__body">
       <div ref={wrap} className="markup-editor__room">
@@ -556,7 +563,8 @@ export function MarkupEditor({ name, source, size, reply, onCancel, onAdded, cal
         {callouts?.length ? <label className="markup-editor__option markup-editor__keep">
           <input type="checkbox" checked={keepCallouts && showCallouts} disabled={!showCallouts} onChange={event => setKeepCallouts(event.currentTarget.checked)} />
           {t`Keep the callouts in the copy`}</label> : null}
-        <p className="markup-editor__copy-note tt-paragraph">{t`The marked copy goes into your reply. The picture in the thread stays as it was.`}</p>
+        {side}
+        <p className="markup-editor__copy-note tt-paragraph">{copyNote ?? t`The marked copy goes into your reply. The picture in the thread stays as it was.`}</p>
       </aside>
     </div>
     <p className="markup-editor__status" role="status" aria-live="polite">{status}</p>

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -8,6 +8,8 @@ import { EventEmitter } from 'node:events'
 import { BaseWindow, session, WebContentsView, type BrowserWindow } from 'electron'
 import { BrowserService, type BrowserDependencies } from '../../../src/main/tools/browser'
 import { BrowserProfiles } from '../../../src/main/tools/browserProfiles'
+import { BrowserFiles } from '../../../src/main/tools/browserFiles'
+import { AGENT_DOWNLOAD_MS } from '../../../src/main/tools/browserTasks'
 import { BROWSER_COMMAND_DEADLINE_MS } from '../../../src/main/tools/browserAutomation'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
@@ -22,6 +24,9 @@ vi.mock('electron', async () => {
     capturePage = vi.fn(async () => ({ isEmpty: () => false, getSize: () => ({ width: 1280, height: 800 }), toDataURL: () => 'data:image/png;base64,YQ==', resize: () => ({ toJPEG: () => Buffer.from('thumbnail') }) }))
     getBackgroundThrottling = vi.fn(() => true)
     setBackgroundThrottling = vi.fn()
+    zoomFactor = 1
+    getZoomFactor() { return this.zoomFactor }
+    setZoomFactor(zoom: number) { this.zoomFactor = zoom }
     getURL() { return this.url }
     isDestroyed() { return this.destroyed }
     loadURL(url: string) { this.url = url; return Promise.resolve() }
@@ -1205,17 +1210,110 @@ describe('the full browser catalog in the service (ADR-0220)', () => {
     expect(unwrap(await service.list({ threadId: target.threadId })).pages.map(page => page.id)).toEqual([target.pageId])
   })
 
+  // Uploads give the page private copies made when the agent asked (ADR-0220, decision 5, as amended by ADR-0222).
+  const uploadFixture = async () => {
+    const store = await mkdtemp(join(tmpdir(), 'sotto-browser-files-'))
+    cleanup.push(() => rm(store, { recursive: true, force: true }))
+    const browserFiles = new BrowserFiles(join(store, 'browser-files'))
+    const fixture = await browserFixture(false, new Set(), () => true, true, { browserFiles })
+    // The page's #file is a file input.
+    const send = vi.mocked(fixture.view.webContents.debugger.sendCommand)
+    const plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => method === 'DOM.describeNode' ? { node: { backendNodeId: 7, nodeName: 'INPUT', attributes: ['id', 'file', 'type', 'file'] } } : plain(method, params))
+    unwrap(await fixture.service.share({ ...fixture.target, enabled: true }))
+    const task = unwrap(await fixture.service.startTask({ ...fixture.target, description: 'Attach the report' }))
+    const given = (): string[] | undefined => (send.mock.calls.find(([method]) => method === 'DOM.setFileInputFiles')?.[1] as { files?: string[] } | undefined)?.files
+    return { ...fixture, store, browserFiles, task, given }
+  }
+
   it('asks before every upload even under the grant, naming the files, and refuses one outside the thread before asking', async () => {
-    const { service, target, directory } = await browserFixture(false, new Set(), () => true, true)
+    const { service, target, directory, task, given, store } = await uploadFixture()
     await writeFile(join(directory, 'report.pdf'), 'pdf')
-    unwrap(await service.share({ ...target, enabled: true }))
-    const task = unwrap(await service.startTask({ ...target, description: 'Attach the report' }))
     const outside = await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: [join(directory, '..', 'elsewhere.txt')] } })
     expect(outside).toMatchObject({ ok: false, error: { code: 'blocked' } })
     expect(unwrap(await service.tasks({ threadId: target.threadId }))[0]?.pendingAction).toBeNull()
     const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
     expect(asked.approvalRequired).toBe(true)
-    expect(asked.task.pendingAction?.description).toContain('report.pdf')
+    expect(asked.task.pendingAction?.description).toContain('a copy of this file, made when the agent asked: report.pdf')
+    // The approval is only ever once: the thread's grant never covers an upload.
+    const request = { ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }
+    expect(await service.answerAction({ ...request, forThread: true })).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('asks every time') } })
+    unwrap(await service.answerAction(request))
+    const files = given()!
+    expect(files).toHaveLength(1)
+    // The page gets Sotto's copy in its private folder, never the thread's own file.
+    expect(files[0]!.startsWith(store)).toBe(true)
+    expect(files[0]!.endsWith('report.pdf')).toBe(true)
+    expect(await readFile(files[0]!, 'utf8')).toBe('pdf')
+  })
+
+  it('gives the copy made when the agent asked, whatever the thread\'s file became before Allow', async () => {
+    const { service, target, directory, task, given } = await uploadFixture()
+    await writeFile(join(directory, 'report.pdf'), 'the report')
+    await writeFile(join(directory, '..', `secret-${task.id}.txt`), 'not the thread\'s')
+    cleanup.push(() => rm(join(directory, '..', `secret-${task.id}.txt`), { force: true }))
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    // Between asking and Allow the file is swapped for a link to a file outside the thread's folder.
+    await rm(join(directory, 'report.pdf'))
+    let linked = true
+    await symlink(join(directory, '..', `secret-${task.id}.txt`), join(directory, 'report.pdf'), 'file').catch(() => { linked = false })
+    if (!linked) await writeFile(join(directory, 'report.pdf'), 'not the thread\'s')
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }))
+    expect(await readFile(given()![0]!, 'utf8')).toBe('the report')
+  })
+
+  it('refuses at request time a file that is a link out of the thread\'s folder', async () => {
+    const { service, target, directory, task } = await uploadFixture()
+    const outside = join(directory, '..', `outside-${task.id}`)
+    await mkdir(outside)
+    await writeFile(join(outside, 'secret.txt'), 'elsewhere')
+    cleanup.push(() => rm(outside, { recursive: true, force: true }))
+    // A file link needs a privilege on Windows; a folder junction does not, and leads out the same way.
+    const file = await symlink(join(outside, 'secret.txt'), join(directory, 'link.txt'), 'file').then(() => true, () => false)
+    await symlink(outside, join(directory, 'linked'), 'junction')
+    for (const path of [...file ? ['link.txt'] : [], join('linked', 'secret.txt')]) {
+      expect(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: [path] } })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+      expect(unwrap(await service.tasks({ threadId: target.threadId }))[0]?.pendingAction).toBeNull()
+    }
+  })
+
+  it('gives the copy made when the agent asked after its folder is swapped for a junction out', async () => {
+    const { service, target, directory, task, given } = await uploadFixture()
+    await mkdir(join(directory, 'docs'))
+    await writeFile(join(directory, 'docs', 'report.pdf'), 'the report')
+    const outside = join(directory, '..', `swap-${task.id}`)
+    await mkdir(outside)
+    await writeFile(join(outside, 'report.pdf'), 'not the thread\'s')
+    cleanup.push(() => rm(outside, { recursive: true, force: true }))
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: [join('docs', 'report.pdf')] } }))
+    await rm(join(directory, 'docs'), { recursive: true })
+    await symlink(outside, join(directory, 'docs'), 'junction')
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }))
+    expect(await readFile(given()![0]!, 'utf8')).toBe('the report')
+  })
+
+  it('refuses at Allow when the private copy no longer matches what was shown', async () => {
+    const { service, target, directory, task, given, store } = await uploadFixture()
+    await writeFile(join(directory, 'report.pdf'), 'the report')
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    // Something changes Sotto's own copy before Allow.
+    const copies: string[] = []
+    const walk = async (folder: string): Promise<void> => { for (const entry of await readdir(folder, { withFileTypes: true })) { const path = join(folder, entry.name); if (entry.isDirectory()) await walk(path); else copies.push(path) } }
+    await walk(store)
+    const copy = copies.find(path => path.endsWith('report.pdf'))!
+    await writeFile(copy, 'changed')
+    expect(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('changed after you were asked') } })
+    expect(given()).toBeUndefined()
+  })
+
+  it('deletes the private copies when the user declines', async () => {
+    const { service, target, directory, task, store } = await uploadFixture()
+    await writeFile(join(directory, 'report.pdf'), 'the report')
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: false }))
+    const copies: string[] = []
+    const walk = async (folder: string): Promise<void> => { for (const entry of await readdir(folder, { withFileTypes: true }).catch(() => [])) { const path = join(folder, entry.name); if (entry.isDirectory()) await walk(path); else copies.push(path) } }
+    await vi.waitFor(async () => { copies.length = 0; await walk(store); expect(copies).toEqual([]) })
   })
 
   it('holds the agent back for a moment after the user’s own input, and lets it read meanwhile', async () => {
@@ -1229,6 +1327,296 @@ describe('the full browser catalog in the service (ADR-0220)', () => {
     // A pointer only passing over the page is not taking it over.
     await new Promise(done => setTimeout(done, 800))
     view.webContents.emit('input-event', {}, { type: 'mouseMove' })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(false)
+  })
+})
+
+describe('page zoom in the service (ADR-0222)', () => {
+  it('zooms a page in steps, puts it back at 100%, and is refused with the full catalog off', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => false, true)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'in' })).zoom).toBe(1.1)
+    expect(view.webContents.getZoomFactor()).toBe(1.1)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'in' })).zoom).toBe(1.25)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'reset' })).zoom).toBe(1)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'out' })).zoom).toBe(0.9)
+    const off = await browserFixture()
+    expect(await off.service.zoom({ ...off.target, zoom: 'in' })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+
+  it('zooms on Ctrl with =, - and 0 and on Ctrl with the wheel, and keeps those keys from the page', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => false, true)
+    const key = (input: Partial<Electron.Input>): ReturnType<typeof vi.fn> => {
+      const preventDefault = vi.fn()
+      view.webContents.emit('before-input-event', { preventDefault }, { type: 'keyDown', control: false, meta: false, alt: false, shift: false, key: '', code: '', ...input })
+      return preventDefault
+    }
+    expect(key({ control: true, key: '=' })).toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1.1)
+    expect(key({ meta: true, key: '-' })).toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1)
+    key({ control: true, code: 'NumpadAdd', key: '+' }); key({ control: true, key: '+' })
+    expect(view.webContents.getZoomFactor()).toBe(1.25)
+    expect(key({ control: true, key: '0' })).toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1)
+    // Alt with them, or a plain key, is the page's.
+    expect(key({ control: true, alt: true, key: '=' })).not.toHaveBeenCalled()
+    expect(key({ key: '=' })).not.toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1)
+    view.webContents.emit('zoom-changed', {}, 'out')
+    expect(view.webContents.getZoomFactor()).toBe(0.9)
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.zoom).toBe(0.9)
+  })
+
+  it('lapses an action waiting for the user when the page zooms, since its point moved', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => false, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Save' }))
+    const pending = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    expect(await service.answerAction({ ...target, taskId: task.id, actionId: pending.task.pendingAction!.id, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+  })
+
+  it('keeps an agent\'s viewport in CSS pixels at the page\'s zoom', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Check the layout' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    expect(view.webContents.getZoomFactor()).toBe(1.75)
+    const override = () => vi.mocked(view.webContents.debugger.sendCommand).mock.calls.filter(([method]) => method === 'Emulation.setDeviceMetricsOverride').at(-1)?.[1]
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'viewport', width: 1280, height: 800 } }))
+    expect(override()).toEqual({ width: 2240, height: 1400, deviceScaleFactor: 1, mobile: false })
+    // The user zooms back: the override follows, so the page still lays out at 1280 by 800.
+    unwrap(await service.zoom({ ...target, zoom: 'reset' }))
+    expect(override()).toEqual({ width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
+  })
+})
+
+/** Electron's DownloadItem as the service is handed one in `will-download`. */
+class ServiceDownloadItem extends EventEmitter {
+  savePath = ''; paused = false; cancelled = false
+  constructor(private readonly name: string, private readonly address = 'https://files.example/report.pdf') { super() }
+  getURL(): string { return this.address }
+  getFilename(): string { return this.name }
+  getTotalBytes(): number { return 4 }
+  getReceivedBytes(): number { return 0 }
+  setSavePath(path: string): void { this.savePath = path }
+  pause(): void { this.paused = true }
+  resume(): void { this.paused = false }
+  cancel(): void { this.cancelled = true }
+}
+
+describe('downloads in the service (ADR-0222)', () => {
+  const withDownloads = async (byDefault: () => boolean = () => false) => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-service-downloads-'))
+    cleanup.push(() => rm(root, { recursive: true, force: true }))
+    const downloads = { pendingFolder: join(root, 'pending'), downloadsFolder: () => join(root, 'Downloads'), chooseSavePath: vi.fn(async () => null), openPath: vi.fn(async () => ''), showItemInFolder: vi.fn() }
+    const fixture = await browserFixture(false, new Set(), byDefault, true, { downloads })
+    const isolated = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as EventEmitter
+    const started = (name: string): { item: ServiceDownloadItem; preventDefault: ReturnType<typeof vi.fn> } => {
+      const item = new ServiceDownloadItem(name), preventDefault = vi.fn()
+      isolated.emit('will-download', { preventDefault }, item, fixture.view.webContents)
+      return { item, preventDefault }
+    }
+    return { ...fixture, root, downloads, isolated, started }
+  }
+
+  it('holds a page\'s download for the user to place, lists it for the pane and tells the window', async () => {
+    const { service, target, started, root, emit } = await withDownloads()
+    const { item, preventDefault } = started('report.pdf')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(item.paused).toBe(true)
+    expect(item.savePath.startsWith(join(root, 'pending'))).toBe(true)
+    const [listed] = unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))
+    expect(listed).toMatchObject({ file: 'report.pdf', state: 'asking', host: 'files.example', byAgent: false, pageId: target.pageId })
+    expect(emit).toHaveBeenCalledWith({ type: 'download', download: expect.objectContaining({ id: listed!.id, state: 'asking' }) })
+    expect(unwrap(await service.download({ threadId: target.threadId, workspaceId: target.workspaceId, downloadId: listed!.id, action: 'cancel' }))).toMatchObject({ state: 'cancelled' })
+    expect(item.cancelled).toBe(true)
+  })
+
+  it('shows the page it stayed on after a link that downloads, not the download\'s address', async () => {
+    const { service, target, view, started } = await withDownloads()
+    const before = view.webContents.getURL()
+    view.webContents.emit('did-start-navigation', {}, 'https://files.example/report.pdf', false, true)
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]).toMatchObject({ url: 'https://files.example/report.pdf', status: 'loading' })
+    started('report.pdf')
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]).toMatchObject({ url: before, status: 'ready' })
+  })
+
+  it('keeps one thread\'s downloads from another', async () => {
+    const { service, target, started } = await withDownloads()
+    started('report.pdf')
+    const [listed] = unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))
+    expect(await service.download({ threadId: 'b', workspaceId: target.workspaceId, downloadId: listed!.id, action: 'save' })).toMatchObject({ ok: false })
+  })
+
+  it('marks a download an agent\'s click started, tells the agent its name, and never where it is', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Download the report' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') started('report.pdf')
+      return plain(method, params)
+    })
+    const clicked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    expect(clicked.output).toContain('The page started downloading "report.pdf". Sotto asks the user where to save it')
+    expect(unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))[0]).toMatchObject({ byAgent: true, state: 'asking' })
+    expect(await service.agentDownloads(target.threadId)).toEqual([{ file: 'report.pdf', state: 'asking', byAgent: true }])
+    // A download a moment after the agent's action is still the agent's; one long after is the user's.
+    started('later.zip')
+    const now = Date.now()
+    const later = vi.spyOn(Date, 'now').mockReturnValue(now + AGENT_DOWNLOAD_MS + 1)
+    started('mine.zip')
+    later.mockRestore()
+    const listed = unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))
+    expect(listed.find(download => download.file === 'later.zip')?.byAgent).toBe(true)
+    expect(listed.find(download => download.file === 'mine.zip')?.byAgent).toBe(false)
+  })
+
+  it('blocks a download with the full catalog on but no downloads, as before', async () => {
+    const { view } = await browserFixture(false, new Set(), () => false, true)
+    const isolated = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as EventEmitter
+    const preventDefault = vi.fn()
+    isolated.emit('will-download', { preventDefault }, new ServiceDownloadItem('a.txt'), view.webContents)
+    expect(preventDefault).toHaveBeenCalled()
+  })
+
+  it('refuses the pane\'s download requests with the full catalog off', async () => {
+    const { service, target } = await browserFixture()
+    expect(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+})
+
+describe('the agent\'s cursor in the service (ADR-0222)', () => {
+  it('draws the cursor in the window\'s accent once the window says it, and refuses a malformed style', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Save' }))
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    expect(view.webContents.debugger.sendCommand).not.toHaveBeenCalledWith('Overlay.highlightQuad', expect.anything())
+    unwrap(await service.cursorStyle({ color: { r: 1, g: 2, b: 3 }, reducedMotion: true }))
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledWith('Overlay.highlightQuad', expect.objectContaining({ color: { r: 1, g: 2, b: 3, a: 0.95 } }))
+    expect(await service.cursorStyle({ color: { r: 300, g: 2, b: 3 }, reducedMotion: true })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+  })
+})
+
+describe('a page in a browser profile keeps its sharing on the site the user shared (ADR-0221, November 27)', () => {
+  const withProfile = async (byDefault: () => boolean) => {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-profile-pin-'))
+    cleanup.push(() => rm(folder, { recursive: true, force: true }))
+    const fixture = await browserFixture(false, new Set(), byDefault, true, { profiles: new BrowserProfiles(join(folder, 'browser-profiles.json')) })
+    const { service, target } = fixture
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id }))
+    const pageTarget = { threadId: target.threadId, workspaceId: target.workspaceId, pageId: page.id }
+    unwrap(await service.share({ ...pageTarget, enabled: true }))
+    return { ...fixture, pageTarget }
+  }
+  const sharedOrigin = async (service: BrowserService, pageTarget: { threadId: string; pageId: string }) => unwrap(await service.list({ threadId: pageTarget.threadId })).pages.find(page => page.id === pageTarget.pageId)?.sharedOrigin
+
+  it('makes the page private when it goes to another site, even under the grant', async () => {
+    const { service, pageTarget } = await withProfile(() => true)
+    expect(await sharedOrigin(service, pageTarget)).toBe('https://mail.example.com')
+    unwrap(await service.navigate({ ...pageTarget, url: 'https://evil.example/' }))
+    expect(await sharedOrigin(service, pageTarget)).toBeNull()
+  })
+
+  it('asks every time before an agent takes it to another site, and shares only the site the user allowed', async () => {
+    const { service, pageTarget } = await withProfile(() => true)
+    const task = unwrap(await service.startTask({ ...pageTarget, description: 'Check the calendar' }))
+    // The same site runs under the grant.
+    expect(unwrap(await service.action({ ...pageTarget, taskId: task.id, action: { type: 'navigate', url: 'https://mail.example.com/inbox', waitUntil: 'none' } })).approvalRequired).toBe(false)
+    const asked = unwrap(await service.action({ ...pageTarget, taskId: task.id, action: { type: 'navigate', url: 'https://calendar.example.com/', waitUntil: 'none' } }))
+    expect(asked.approvalRequired).toBe(true)
+    expect(asked.task.pendingAction).toMatchObject({ everyTime: true, description: expect.stringContaining('signed in with your Work profile, to another site') })
+    const answer = { ...pageTarget, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }
+    expect(await service.answerAction({ ...answer, forThread: true })).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('asks every time') } })
+    unwrap(await service.answerAction(answer))
+    expect(await sharedOrigin(service, pageTarget)).toBe('https://calendar.example.com')
+    // And the next site asks again.
+    expect(unwrap(await service.action({ ...pageTarget, taskId: task.id, action: { type: 'navigate', url: 'https://mail.example.com/', waitUntil: 'none' } })).approvalRequired).toBe(true)
+  })
+
+  it('leaves a page without a profile following the grant as before', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    unwrap(await service.navigate({ ...target, url: 'https://other.example/' }))
+    expect(await sharedOrigin(service, target)).toBe('https://other.example')
+  })
+})
+
+describe('an agent closing its page while the user holds it (Gemini\'s review)', () => {
+  const opened = async () => {
+    const fixture = await browserFixture(false, new Set(), () => false, true)
+    const { service, target } = fixture
+    const result = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, port: 4555, path: '/', description: 'Open the second tab', background: true }))
+    const page = { threadId: target.threadId, workspaceId: target.workspaceId, pageId: result.task.pageId }
+    const view = vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView
+    const answered = service.answerAction({ ...page, taskId: result.task.id, actionId: result.task.pendingAction!.id, allow: true })
+    // The page finishes loading, as Chromium would say.
+    await vi.waitFor(() => expect(view.webContents.getURL()).toBe('http://localhost:4555/'))
+    view.webContents.emit('did-finish-load')
+    unwrap(await answered)
+    return { ...fixture, page, task: result.task, agentView: view }
+  }
+
+  it('stays open while the user has taken it over', async () => {
+    const { service, page, task } = await opened()
+    unwrap(await service.controlTask({ ...page, taskId: task.id, control: 'pause' }))
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('took this page over') } })
+    unwrap(await service.controlTask({ ...page, taskId: task.id, control: 'resume' }))
+    expect(unwrap(await service.agentClose(page))).toEqual({ closed: page.pageId })
+  })
+
+  it('stays open once the user stops sharing it', async () => {
+    const { service, page, task } = await opened()
+    // Stop sharing pauses a working task, which keeps the page open by itself; with the task finished, sharing still does.
+    unwrap(await service.share({ ...page, enabled: false }))
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    unwrap(await service.share({ ...page, enabled: true }))
+    unwrap(await service.controlTask({ ...page, taskId: task.id, control: 'resume' }))
+    unwrap(await service.finishTask({ ...page, taskId: task.id, status: 'completed', summary: 'Opened.', unchecked: [] }))
+    unwrap(await service.share({ ...page, enabled: false }))
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('stopped sharing') } })
+  })
+
+  it('stays open while the user is using it', async () => {
+    const { service, page, agentView } = await opened()
+    agentView.webContents.emit('input-event', {}, { type: 'keyDown' })
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'busy', message: expect.stringContaining('using this page') } })
+  })
+
+  it('is refused with the full catalog off', async () => {
+    const { service, target } = await browserFixture()
+    expect(await service.agentClose(target)).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+
+  it('holds an agent\'s navigate too while the user is using the page', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Go to settings' }))
+    view.webContents.emit('input-event', {}, { type: 'mouseDown' })
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'navigate', url: 'http://localhost:4321/settings', waitUntil: 'none' } })).toMatchObject({ ok: false, error: { code: 'busy' } })
+  })
+})
+
+describe('the user\'s hold on a page (Gemini\'s review)', () => {
+  it('lasts until the user has stopped, however long they keep using the page', async () => {
+    const { service, target, view, emit } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const active = () => emit.mock.calls.filter(([event]) => event.type === 'page' && event.page.id === target.pageId).map(([event]) => event.page.userActive)
+    view.webContents.emit('input-event', {}, { type: 'mouseDown' })
+    await new Promise(done => setTimeout(done, 500))
+    view.webContents.emit('input-event', {}, { type: 'keyDown' })
+    await new Promise(done => setTimeout(done, 500))
+    // 1000 ms after the first input, 500 after the last: still held, and the page was never told it was free.
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(true)
+    expect(active().at(-1)).toBe(true)
+    await vi.waitFor(() => expect(active().at(-1)).toBe(false), { timeout: 1500, interval: 50 })
     expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(false)
   })
 })

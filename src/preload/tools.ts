@@ -3,7 +3,7 @@ import { filePathSchema } from '../shared/files'
 import { toolListRequestSchema, toolTargetSchema, toolsResultSchema } from '../shared/tools'
 import { TERMINAL_CHANNEL, TERMINAL_EVENT, terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, terminalResizeSchema, terminalImageSchema, terminalSnapshotSchema, terminalListingSchema, terminalListRequestSchema, terminalEventSchema, type TerminalBridge } from '../shared/terminal'
 import { browserInputSchema, browserWatchSchema, hostBrowserFrameSchema, hostBrowserResultSchemas } from '../shared/hostBrowser'
-import { BROWSER_CHANNEL, BROWSER_EVENT, BROWSER_FRAME_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, browserPointModeSchema, browserDialogAnswerSchema, browserEmulateSchema, localServerSchema, browserProfilesSchema, browserAddProfileSchema, browserAddProfileResultSchema, browserRemoveProfileSchema, browserNoPayloadSchema, type BrowserBridge } from '../shared/browser'
+import { BROWSER_CHANNEL, BROWSER_EVENT, BROWSER_FRAME_EVENT, browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, browserPageSchema, browserListingSchema, browserOpenResultSchema, browserEventSchema, browserTaskSchema, browserShareSchema, browserControlTaskSchema, browserAnswerActionSchema, browserViewportSchema, browserCaptureSchema, browserCaptureResultSchema, browserPointModeSchema, browserDialogAnswerSchema, browserEmulateSchema, localServerSchema, browserProfilesSchema, browserAddProfileSchema, browserAddProfileResultSchema, browserRemoveProfileSchema, browserNoPayloadSchema, browserZoomSchema, browserDownloadSchema, browserDownloadActionSchema, browserCursorStyleSchema, type BrowserBridge } from '../shared/browser'
 import { GIT_CHANGES_CHANNEL, GIT_CHANGES_EVENT, gitPathRequestSchema, gitReviewRequestSchema, gitReviewSchema, gitWatchRequestSchema, gitListingSchema, gitChangedSchema, type GitChangesBridge } from '../shared/gitChanges'
 import type { IpcRendererAdapter } from './index'
 import { checkpointListingSchema, checkpointRequestSchema, checkpointRevertSchema, checkpointSchema, checkpointInspectionSchema } from '../shared/checkpoints'
@@ -19,6 +19,8 @@ const browserPageResult = toolsResultSchema(browserPageSchema)
 const localServersResult = toolsResultSchema(z.array(localServerSchema).max(40))
 const browserProfilesResult = toolsResultSchema(browserProfilesSchema)
 const browserAddProfileResult = toolsResultSchema(browserAddProfileResultSchema)
+const browserDownloadsResult = toolsResultSchema(z.array(browserDownloadSchema).max(100))
+const browserDownloadResult = toolsResultSchema(browserDownloadSchema.nullable())
 const browserCaptureResult = toolsResultSchema(browserCaptureResultSchema)
 const browserPointResult = toolsResultSchema(z.object({ pointing: z.boolean() }).strict())
 const browserListingResult = toolsResultSchema(browserListingSchema)
@@ -80,6 +82,10 @@ export function createToolsBridges(renderer: IpcRendererAdapter): { terminal: Te
       addProfile: request => call(BROWSER_CHANNEL + 'addProfile', browserAddProfileSchema, browserAddProfileResult, request),
       removeProfile: request => call(BROWSER_CHANNEL + 'removeProfile', browserRemoveProfileSchema, browserProfilesResult, request),
       devtools: request => call(BROWSER_CHANNEL + 'devtools', browserRequestSchema, voidResult, request),
+      zoom: request => call(BROWSER_CHANNEL + 'zoom', browserZoomSchema, browserPageResult, request),
+      downloads: request => call(BROWSER_CHANNEL + 'downloads', toolTargetSchema, browserDownloadsResult, request),
+      download: request => call(BROWSER_CHANNEL + 'download', browserDownloadActionSchema, browserDownloadResult, request),
+      cursorStyle: request => call(BROWSER_CHANNEL + 'cursorStyle', browserCursorStyleSchema, voidResult, request),
       openLink: request => call(BROWSER_CHANNEL + 'openLink', browserOpenLinkSchema, browserOpenResult, request),
       onEvent: listener => subscribe(BROWSER_EVENT, browserEventSchema, listener),
       input: request => call(BROWSER_CHANNEL + 'input', browserInputSchema, voidResult, request),

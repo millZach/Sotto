@@ -64,6 +64,18 @@ const WAIT_POLL_MS = 100
 const SWIPE_STEPS = 10
 /** How long one point-mode command may take before the page counts as not answering. */
 const POINT_DEADLINE = 5_000
+/** The most a snapshot says back, under the task output's 200,000 characters (ADR-0220). */
+export const SNAPSHOT_TOTAL = 180_000
+/** The agent's cursor (ADR-0222): an arrow with its tip at the point, in CSS pixels, as a quad for Chromium's overlay. */
+export const CURSOR_ARROW = [0, 0, 0, 17, 4.5, 12.5, 12, 12] as const
+/** How long the cursor stays after an action, and how long a click's ring shows. */
+export const CURSOR_LINGER_MS = 1_200
+const CURSOR_RING_MS = 220
+/** The glide to a new point: this many steps, this far apart. Reduced motion jumps. */
+const CURSOR_STEPS = 6
+const CURSOR_STEP_MS = 16
+/** The agent's cursor colour and whether it may glide, from the window's theme and motion setting (ADR-0222). */
+export interface CursorStyle { readonly color: { r: number; g: number; b: number }; readonly reducedMotion: boolean }
 
 /** What point mode reports: the element under the pointer, by its tag and accessible name, and the one clicked. */
 export interface PointHandlers {
@@ -83,6 +95,11 @@ export function cssIdentifier(value: string): string {
     if (index === 0 && character === '-' && value.length === 1) return '\\-'
     return /[a-zA-Z0-9_\-\u0080-￿]/u.test(character) ? character : `\\${character}`
   }).join('')
+}
+/** An attribute's value from CDP's flat list of names and values, walked in pairs. */
+export function attributeOf(attributes: readonly string[] | undefined, name: string): string | undefined {
+  for (let index = 0; index + 1 < (attributes?.length ?? 0); index += 2) if (attributes![index]!.toLowerCase() === name) return attributes![index + 1]
+  return undefined
 }
 /** The words an element's markup holds, without its tags, scripts or styles. */
 function markupText(html: string): string {
@@ -116,13 +133,30 @@ export abstract class PageAutomation {
   private session = 0
   /** The viewport the agent set, if any. Chromium drops it with the attachment, so a fresh one sets it again. */
   private viewport: { width: number; height: number; mobile: boolean } | null = null
+  /**
+   * The page's zoom (ADR-0222). Chromium lays out a desktop viewport override in device pixels at the page's zoom, so a
+   * width set at 175% would be 175% too narrow in CSS pixels; the override is sent multiplied by it, and the agent's
+   * size stays the one it asked for. A mobile preset is not zoomed.
+   */
+  private zoom = 1
+  /** The agent's cursor (ADR-0222), when the window gave its style; null draws none. */
+  cursor: CursorStyle | null = null
+  private cursorAt: { x: number; y: number } | null = null
+  private cursorShown = false
+  private cursorTimer: ReturnType<typeof setTimeout> | null = null
+  /** Which attachment has the DOM and Overlay domains on for the cursor. */
+  private cursorSession = -1
   private readonly errors: { kind: string; message: string }[] = []
   /**
    * Secrets typed into this page from a secret request (ADR-0219), held only in memory while it is open, so whatever
    * the page says back (its words, errors, an evaluated value) reaches the agent with each one masked.
    */
   private readonly typedSecrets = new Set<string>()
-  /** A secret was typed into the document loaded now, so `evaluate` could read it there (ADR-0220, decision 6). */
+  /**
+   * A secret was typed into the document loaded now, so `evaluate` could read it there (ADR-0220, decision 6). Only a
+   * cross-document navigation that commits clears it: a hash change, a load that never commits, Stop sharing or a new
+   * attachment leave the field, and its value, where it was.
+   */
   private secretInDocument = false
   /**
    * The full catalog (ADR-0220): the page's dialogs, file chooser and load events reach Sotto through the Page domain,
@@ -192,7 +226,7 @@ export abstract class PageAutomation {
         this.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }),
         this.send('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' }),
       )
-      if (this.viewport) commands.push(this.send('Emulation.setDeviceMetricsOverride', { ...this.viewport, deviceScaleFactor: 1 }))
+      if (this.viewport) commands.push(this.send('Emulation.setDeviceMetricsOverride', this.metrics(this.viewport)))
       const enabling = Promise.all(commands).then(() => undefined)
       // A setup that failed is not kept: the next action tries it again rather than failing on the old answer.
       enabling.catch(() => { if (this.enabled === enabling) this.enabled = null })
@@ -347,12 +381,16 @@ export abstract class PageAutomation {
       this.onChange?.()
     } else if (method === 'Page.javascriptDialogClosed') {
       this.dialogOpen = null
+      // What waited for the dialog to close: the system's file chooser given back, and a cursor left up taken off.
+      if (this.interceptUntil !== 0 && !this.chooser) void this.stopIntercepting()
+      if (this.cursorShown) this.lingerCursor()
       this.onChange?.()
     } else if (method === 'Page.fileChooserOpened' && typeof params.backendNodeId === 'number') {
       this.chooser = { backendNodeId: params.backendNodeId, multiple: params.mode === 'selectMultiple', seq: ++this.dialogSeq }
       for (const waiter of [...this.dialogWaiters]) waiter()
       this.onChange?.()
-    } else if (method === 'Page.domContentEventFired') this.loadedAt.domContent = Date.now()
+    } else if (method === 'Page.frameNavigated' && !(params.frame as { parentId?: unknown } | undefined)?.parentId) this.documentCommitted()
+    else if (method === 'Page.domContentEventFired') this.loadedAt.domContent = Date.now()
     else if (method === 'Page.loadEventFired') this.loadedAt.load = Date.now()
     else if (method === 'Page.screencastFrame' && typeof params.data === 'string') {
       void this.page.sendCommand('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => undefined)
@@ -383,11 +421,15 @@ export abstract class PageAutomation {
     const output = JSON.stringify({ url: this.page.url(), nodes, elements: dom.result?.value ?? [], errors: this.errors, truncated: (result.nodes?.length ?? 0) > 200 })
     return this.masked(output.length <= 200_000 ? output : JSON.stringify({ url: this.page.url(), nodes: nodes.slice(0, 100), errors: this.errors.slice(-10), truncated: true }))
   }
-  /** `text` with every secret typed into this page masked, as written and as JSON writes it. */
+  /**
+   * `text` with every secret typed into this page masked: as written, as JSON writes it, and as an address or a form
+   * sent by GET carries it, so a sign-in form that puts the password in its address does not hand it on.
+   */
   masked(text: string): string {
     let result = text
     for (const secret of this.typedSecrets) {
-      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)])) if (form.length >= 3) result = result.split(form).join('••••••••')
+      const encoded = encodeURIComponent(secret)
+      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1), encoded, encoded.replace(/%20/gu, '+')])) if (form.length >= 3) result = result.split(form).join('••••••••')
     }
     return result
   }
@@ -405,14 +447,15 @@ export abstract class PageAutomation {
     const page = read.result?.value ?? {}
     const sections = [
       `URL: ${this.page.url()}`, `Title: ${page.title ?? ''}`, `Ready state: ${page.state ?? 'unknown'}`,
-      ...(this.dialogOpen ? [`Open dialog: ${this.dialogOpen.type} ${JSON.stringify(this.dialogOpen.message)}`] : []),
+      ...(this.dialogOpen ? [`Open dialog: ${this.dialogOpen.type}${this.secretInDocument ? '' : ` ${JSON.stringify(this.dialogOpen.message)}`}`] : []),
       ...(this.chooser ? ['A file chooser is open: answer it with upload and no target.'] : []),
       '', '## Accessibility tree (act on an element by its ref)', formatted.tree || '(empty)', ...(formatted.truncated ? ['(The tree is longer; scroll or use a selector for the rest.)'] : []),
       '', '## Visible text', page.text ?? '',
       '', '## Console (latest last)', ...(this.consoleLog.length ? this.consoleLog.slice(-50).map(entry => `[${entry.level}] ${entry.text}`) : ['(none)']),
       '', '## Errors (console and network)', ...(this.errors.length ? this.errors.map(entry => `[${entry.kind}] ${entry.message}`) : ['(none)']),
     ]
-    return this.masked(sections.join('\n'))
+    const said = this.masked(sections.join('\n'))
+    return said.length > SNAPSHOT_TOTAL ? `${said.slice(0, SNAPSHOT_TOTAL)}\n(The snapshot was cut at ${SNAPSHOT_TOTAL} characters. Use wait_for, a selector or scroll for the rest.)` : said
   }
   /** A JavaScript expression run in the page (ADR-0220), its value said back as JSON, cut at `EVALUATE_LIMIT` and masked. */
   async evaluate(expression: string, awaitPromise = false): Promise<string> {
@@ -420,7 +463,7 @@ export abstract class PageAutomation {
     if (this.secretInDocument) return fail('blocked', 'This page holds a secret you saved, so evaluate is off here until the page loads another document. Use snapshot, click and type instead.')
     await this.ready()
     const result = await this.raceDialog(this.send('Runtime.evaluate', { expression, awaitPromise, returnByValue: true, userGesture: true })) as { result?: { type?: string; value?: unknown; description?: string; unserializableValue?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } } | 'dialog'
-    if (result === 'dialog') return this.masked(`The page opened a ${this.dialogOpen?.type ?? 'dialog'} ${JSON.stringify(this.dialogOpen?.message ?? '')} while evaluating. Answer it with the dialog action.`)
+    if (result === 'dialog') return this.masked(`The page opened a ${this.dialogOpen?.type ?? 'dialog'} ${this.secretInDocument ? '' : `${JSON.stringify(this.dialogOpen?.message ?? '')} `}while evaluating. Answer it with the dialog action.`)
     if (result.exceptionDetails) return this.masked(`Threw: ${(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'An error').slice(0, 4000)}`)
     const value = result.result
     const said = value?.type === 'undefined' ? 'undefined' : value?.unserializableValue ?? (value && 'value' in value ? JSON.stringify(value.value) ?? 'undefined' : value?.description ?? 'undefined')
@@ -512,9 +555,8 @@ export abstract class PageAutomation {
     } else {
       backendNodeId = await this.nodeOf(target)
       const node = await this.send('DOM.describeNode', { backendNodeId }) as { node?: { nodeName?: string; attributes?: string[] } }
-      const attributes = node.node?.attributes ?? []
-      const type = attributes[attributes.indexOf('type') + 1]
-      if (node.node?.nodeName !== 'INPUT' || attributes.indexOf('type') < 0 || type?.toLowerCase() !== 'file') return fail('blocked', 'That element is not a file input. Snapshot the page and name an <input type="file">.')
+      // CDP gives attributes as one flat list of names and values: a value can be the word "type" too.
+      if (node.node?.nodeName !== 'INPUT' || attributeOf(node.node.attributes, 'type')?.toLowerCase() !== 'file') return fail('blocked', 'That element is not a file input. Snapshot the page and name an <input type="file">.')
     }
     await this.send('DOM.setFileInputFiles', { files: [...paths], backendNodeId })
     return paths.length ? `Gave the input ${paths.length} file${paths.length === 1 ? '' : 's'}.` : 'Cleared the file input.'
@@ -537,7 +579,10 @@ export abstract class PageAutomation {
   }
   /** Most actions cannot run while the page has a dialog open; it holds the page's script until answered. */
   private noDialog(): void {
-    if (this.dialogOpen) fail('blocked', `The page has a ${this.dialogOpen.type} dialog open: ${JSON.stringify(this.dialogOpen.message.slice(0, 300))}. Answer it with the dialog action first.`)
+    if (!this.dialogOpen) return
+    // The page's words are masked, and left out while the document holds a secret, since its script could copy the value into them.
+    const words = this.secretInDocument ? '' : `: ${JSON.stringify(this.masked(this.dialogOpen.message).slice(0, 300))}`
+    fail('blocked', `The page has a ${this.dialogOpen.type} dialog open${words}. Answer it with the dialog action first.`)
   }
   /** A command that a dialog opening interrupts: the page waits for the dialog, so the command returns once it is answered. */
   private async raceDialog<T>(command: Promise<T>): Promise<T | 'dialog'> {
@@ -590,16 +635,52 @@ export abstract class PageAutomation {
     return this.pointOfNode(await this.nodeOf(target))
   }
   /**
-   * Types a secret request's value into the focused password field (ADR-0219). The field was checked when the action
-   * was asked for; the value is remembered only to mask it in what the page says back, and forgotten with the page.
+   * Types a secret request's value into a password field (ADR-0219): the one a ref or selector names, focused first, or
+   * the focused one. The field was checked when the action was asked for, and again here: right before the value goes,
+   * the page's focused element must be that password field, or nothing is typed. `clear` replaces what it held. The
+   * value is remembered only to mask it in what the page says back, and forgotten with the page.
    */
-  async typeSecret(value: string, guard: () => void): Promise<void> {
+  async typeSecret(value: string, guard: () => void, target: BrowserTargetFields = {}, clear = false): Promise<void> {
+    this.noDialog()
     await this.ready()
     guard()
+    const named = target.ref !== undefined || target.selector !== undefined ? await this.nodeOf(target) : null
+    if (named !== null) {
+      await this.passwordField(named)
+      await this.send('DOM.focus', { backendNodeId: named })
+    }
+    const field = await this.focusedPassword(named)
+    if (clear) await this.selectAll()
+    guard()
+    // The last look: a page script could have moved the focus while the field was being focused or cleared.
+    if (await this.focusedPassword(field) !== field) return fail('blocked', 'The password field lost focus. Nothing was typed.')
     this.typedSecrets.add(value)
     this.secretInDocument = true
     await this.send('Input.insertText', { text: value })
   }
+  /** Refuses a node that is not an `<input type="password">` the page masks. */
+  private async passwordField(backendNodeId: number): Promise<void> {
+    const described = await this.send('DOM.describeNode', { backendNodeId, depth: 1, pierce: true }) as { node?: { nodeName?: string; attributes?: string[]; shadowRoots?: { shadowRootType?: string }[] } }
+    const node = described.node
+    if (node?.nodeName !== 'INPUT' || attributeOf(node.attributes, 'type')?.toLowerCase() !== 'password' || node.shadowRoots?.some(root => root.shadowRootType !== 'user-agent')) {
+      return fail('blocked', 'A secretRef is typed only into a password field, which the page masks. Name a password field, or click one, then type it.')
+    }
+  }
+  /** The page's focused element, which must be a password field, and `expected` when one is given. Nothing is typed otherwise. */
+  private async focusedPassword(expected: number | null): Promise<number> {
+    const focused = await this.send('Runtime.evaluate', { expression: 'document.activeElement', objectGroup: 'sotto-browser-secret' }) as { result?: { objectId?: string; subtype?: string } }
+    const objectId = focused.result?.objectId
+    if (!objectId || focused.result?.subtype === 'null') return fail('blocked', 'Nothing on the page has focus. Nothing was typed.')
+    const described = await this.cleaningUp(() => this.send('DOM.describeNode', { objectId }), () => this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-secret' })) as { node?: { backendNodeId?: number } }
+    const backendNodeId = described.node?.backendNodeId ?? fail('blocked', 'Nothing on the page has focus. Nothing was typed.')
+    if (expected !== null && backendNodeId !== expected) return fail('blocked', 'The password field named did not take the focus. Nothing was typed.')
+    await this.passwordField(backendNodeId)
+    return backendNodeId
+  }
+  /** A cross-document navigation committed: the document that held a typed secret is gone (ADR-0220, decision 6). */
+  documentCommitted(): void { this.secretInDocument = false }
+  /** Whether the document loaded now holds a secret typed from a secret request. */
+  holdsSecret(): boolean { return this.secretInDocument }
   /**
    * One picture of the page as Chromium drew it, within the snapshot deadline. `rect` is in the visual viewport's CSS
    * pixels. PNG at full size by default; a JPEG at a smaller `scale` is what a host makes its smaller pictures from,
@@ -622,6 +703,15 @@ export abstract class PageAutomation {
   }
   private async frame(rect: BrowserBounds | undefined, encoding: PageEncoding, fullPage = false): Promise<PageFrame> {
     await this.ready()
+    // The agent's cursor is Sotto's, not the page's: no picture of the page shows it (ADR-0222). It comes back after,
+    // as the picture each action ends with would otherwise take it away as soon as it arrived.
+    const showing = this.cursorShown ? this.cursorAt : null
+    await this.hideCursor()
+    try { return await this.drawn(rect, encoding, fullPage) } finally {
+      if (showing && this.cursorAt === showing && this.cursorOn()) await this.drawCursor(showing).then(() => this.lingerCursor(), () => undefined)
+    }
+  }
+  private async drawn(rect: BrowserBounds | undefined, encoding: PageEncoding, fullPage: boolean): Promise<PageFrame> {
     const viewport = await this.visibleViewport()
     if (fullPage) {
       // The whole document from its top, up to 8192 pixels tall, as wide as the page shows it.
@@ -736,28 +826,36 @@ export abstract class PageAutomation {
     await this.ready()
     guard()
     const release = this.prepareCapture()
+    let intercepting = false
     try {
       // An agent's click or key may open a file chooser; it is held for `upload` instead of shown (ADR-0220).
       if (this.parity && (action.type === 'click' || action.type === 'tap' || (action.type === 'key' && (action.key === 'Enter' || action.key === 'Space' || action.key === ' ')))) {
         this.interceptUntil = Date.now() + 60_000
+        intercepting = true
         await this.send('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => undefined)
       }
       const outcome = await this.raceDialog(this.dispatch(action))
       const opened = (): string | undefined => this.dialogOpen
-        ? `The page opened a ${this.dialogOpen.type} dialog: ${JSON.stringify(this.masked(this.dialogOpen.message))}. Answer it with the dialog action.`
+        ? `The page opened a ${this.dialogOpen.type} dialog${this.secretInDocument ? '' : `: ${JSON.stringify(this.masked(this.dialogOpen.message))}`}. Answer it with the dialog action.`
         : this.chooser ? 'The page opened a file chooser. Answer it with upload and the files, or paths: [] to cancel.' : undefined
       if (outcome === 'dialog' && opened()) return opened()
       if (action.type === 'scroll' || action.type === 'swipe' || action.type === 'tap' || action.type === 'hover' || action.type === 'drag') await this.raceDialog(this.settled())
       // The chooser's news comes a moment after the click that opened it.
-      if (this.parity && this.interceptUntil && !opened()) await this.raceDialog(new Promise(resolve => setTimeout(resolve, CHOOSER_GRACE_MS)))
+      if (intercepting && !opened()) await this.raceDialog(new Promise(resolve => setTimeout(resolve, CHOOSER_GRACE_MS)))
       if (opened()) return opened()
-      if (this.parity && this.interceptUntil && !this.chooser) {
-        // No chooser came: the user's own clicks open the system's again.
-        this.interceptUntil = 0
-        await this.send('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined)
-      }
       return typeof outcome === 'string' ? outcome : undefined
-    } finally { release() }
+    } finally {
+      // Unless a chooser waits for `upload`, the user's own clicks open the system's again, whatever ended the action:
+      // a failure or Pause included. A dialog the action opened holds the page, and a command sent now would wait in
+      // front of its answer, so the chooser is given back once the dialog closes.
+      if (intercepting && !this.chooser && !this.dialogOpen) await this.stopIntercepting()
+      release()
+    }
+  }
+  private async stopIntercepting(): Promise<void> {
+    this.interceptUntil = 0
+    if (this.page.isGone() || !this.page.isAttached()) return
+    await this.page.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined)
   }
   /**
    * Two frames, or half a second if the page draws none, as a headless page may not. Best effort: a tap that starts
@@ -769,9 +867,11 @@ export abstract class PageAutomation {
   private async dispatch(action: PageInput): Promise<string | undefined> {
     const send = (method: string, params: Record<string, unknown>): Promise<unknown> => this.send(method, params)
     if (action.type === 'tap') {
+      await this.moveCursor({ x: action.x, y: action.y })
       // Start and end are one operation, as a click's press and release are.
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(action.x), y: Math.round(action.y) }] })
       await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      this.markClick({ x: action.x, y: action.y })
     } else if (action.type === 'swipe') {
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(action.x), y: Math.round(action.y) }] })
       await this.cleaningUp(async () => {
@@ -784,6 +884,7 @@ export abstract class PageAutomation {
       for (const event of keyEvents(action.key, action.modifiers ?? [])) await send('Input.dispatchKeyEvent', event)
     } else if (action.type === 'click') {
       const { x, y } = await this.pointOf(action)
+      await this.moveCursor({ x, y })
       const button = action.button ?? 'left', held = action.modifiers?.length ? { modifiers: modifierMask(action.modifiers) } : {}
       // The full catalog moves the pointer there first, so the page sees it arrive as a person's would.
       if (this.parity) await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y), ...held })
@@ -792,8 +893,10 @@ export abstract class PageAutomation {
         // Press/release is one operation. Always release when Pause arrives mid-click.
         await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(x), y: Math.round(y), button, clickCount: count, ...held })
       }
+      this.markClick({ x, y })
     } else if (action.type === 'hover') {
       const { x, y } = await this.pointOf(action)
+      await this.moveCursor({ x, y })
       await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(x), y: Math.round(y) })
     } else if (action.type === 'type') {
       if (action.text === undefined) return fail('blocked', 'Pass the text to type.')
@@ -808,19 +911,24 @@ export abstract class PageAutomation {
       let point: { x: number; y: number }
       if (action.x !== undefined && action.y !== undefined) point = { x: action.x, y: action.y }
       else { const viewport = await this.visibleViewport(); point = { x: Math.round(viewport.clientWidth / 2), y: Math.round(viewport.clientHeight / 2) } }
+      if (action.x !== undefined) await this.moveCursor(point)
       await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: point.x, y: point.y, deltaX: action.deltaX, deltaY: action.deltaY })
     } else if (action.type === 'select') {
       const node = action.x !== undefined && action.y !== undefined ? await this.nodeAt({ x: action.x, y: action.y }) : await this.nodeOf(action)
+      if (action.x !== undefined && action.y !== undefined) await this.moveCursor({ x: action.x, y: action.y })
       return this.selectValues(node ?? fail('blocked', 'Nothing on the page is at that point.'), action.values)
     } else if (action.type === 'drag') {
-      return this.drag(await this.pointOf(action.from), await this.pointOf(action.to))
+      const from = await this.pointOf(action.from), to = await this.pointOf(action.to)
+      await this.moveCursor(from)
+      try { return await this.drag(from, to) } finally { this.placeCursor(to) }
     } else if (action.fill) {
       await this.send('Emulation.clearDeviceMetricsOverride')
       this.viewport = null
     } else {
       const size = action.preset ? presetSize(action.preset, action.orientation) : { width: action.width!, height: action.height!, mobile: false }
-      await this.send('Emulation.setDeviceMetricsOverride', { width: size.width, height: size.height, deviceScaleFactor: 1, mobile: size.mobile })
-      this.viewport = size
+      const viewport = { width: size.width, height: size.height, mobile: size.mobile }
+      await this.send('Emulation.setDeviceMetricsOverride', this.metrics(viewport))
+      this.viewport = viewport
     }
     return undefined
   }
@@ -883,27 +991,119 @@ export abstract class PageAutomation {
   }
   /** Forgets the last snapshot's refs: the user took the page over, so its elements may have moved (ADR-0220). */
   forgetRefs(): void { this.refs = new Map() }
+  /** The override Chromium is sent for a viewport, so the page lays out at the agent's size in CSS pixels at any zoom. */
+  private metrics(viewport: { width: number; height: number; mobile: boolean }): Record<string, unknown> {
+    const scale = viewport.mobile ? 1 : this.zoom
+    return { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale), deviceScaleFactor: 1, mobile: viewport.mobile }
+  }
+  /** The page's zoom changed (ADR-0222): an agent's desktop viewport is sent again at it, so it keeps its CSS size. */
+  setZoom(zoom: number): void {
+    if (!Number.isFinite(zoom) || zoom <= 0 || Math.abs(zoom - this.zoom) < 0.001) return
+    this.zoom = zoom
+    const viewport = this.viewport
+    if (!viewport || viewport.mobile || !this.enabled || this.page.isGone() || !this.page.isAttached()) return
+    void this.send('Emulation.setDeviceMetricsOverride', this.metrics(viewport)).catch(() => undefined)
+  }
+  /**
+   * The agent's cursor goes to `point` (ADR-0222): Chromium's overlay draws an arrow there, so no script goes into the
+   * page, and recordings show it as the page draws it. It glides there in a few steps, or jumps with reduced motion.
+   * Nothing is drawn without a style from the window, while pointing, or with the full catalog off; a failure to draw
+   * never fails the action.
+   */
+  private async moveCursor(point: { x: number; y: number }): Promise<void> {
+    if (!this.cursorOn()) return
+    try {
+      await this.cursorReady()
+      const from = this.cursorAt
+      const steps = from && !this.cursor!.reducedMotion && this.cursorShown ? CURSOR_STEPS : 1
+      for (let step = 1; step <= steps; step++) {
+        const x = from && steps > 1 ? from.x + (point.x - from.x) * step / steps : point.x
+        const y = from && steps > 1 ? from.y + (point.y - from.y) * step / steps : point.y
+        await this.drawCursor({ x, y })
+        if (step < steps) await new Promise(resolve => setTimeout(resolve, CURSOR_STEP_MS))
+      }
+      this.cursorAt = point
+      this.lingerCursor()
+    } catch { /* The cursor is decoration. */ }
+  }
+  /** The cursor is put at `point` without gliding, as after a drag, whose own steps moved it. */
+  private placeCursor(point: { x: number; y: number }): void {
+    if (!this.cursorOn()) return
+    this.cursorAt = point
+    void this.cursorReady().then(() => this.drawCursor(point)).then(() => this.lingerCursor(), () => undefined)
+  }
+  /** A click's ring at `point`, for a moment, then the arrow again. Not drawn as motion: it shows and goes. */
+  private markClick(point: { x: number; y: number }): void {
+    if (!this.cursorOn()) return
+    const color = this.cursor!.color
+    void this.page.sendCommand('Overlay.highlightRect', { x: Math.round(point.x - 10), y: Math.round(point.y - 10), width: 20, height: 20, color: { ...color, a: 0.25 }, outlineColor: { ...color, a: 0.95 } })
+      .then(() => { this.cursorShown = true; this.lingerCursor() }, () => undefined)
+    setTimeout(() => { if (this.cursorShown && this.cursorAt && this.cursorOn()) void this.drawCursor(this.cursorAt).catch(() => undefined) }, CURSOR_RING_MS)
+  }
+  // Nothing is drawn while the page's dialog is open: the page cannot draw then, and the overlay's commands would wait
+  // in front of the dialog's answer.
+  private cursorOn(): boolean { return this.parity && this.cursor !== null && this.pointing === null && this.dialogOpen === null && !this.page.isGone() && this.page.isAttached() }
+  private async cursorReady(): Promise<void> {
+    if (this.cursorSession === this.session) return
+    const session = this.session
+    await this.send('DOM.enable')
+    await this.send('Overlay.enable')
+    this.cursorSession = session
+  }
+  private async drawCursor(point: { x: number; y: number }): Promise<void> {
+    const color = this.cursor?.color ?? { r: 37, g: 99, b: 235 }
+    const quad = CURSOR_ARROW.map((value, index) => Math.round((index % 2 === 0 ? point.x : point.y) + value))
+    // Shown before it is sent: a picture asked for meanwhile then hides it after it is drawn, as commands keep order.
+    this.cursorShown = true
+    await this.page.sendCommand('Overlay.highlightQuad', { quad, color: { ...color, a: 0.95 }, outlineColor: { r: 255, g: 255, b: 255, a: 1 } })
+  }
+  /** The cursor goes a moment after the last action. */
+  private lingerCursor(): void {
+    if (this.cursorTimer) clearTimeout(this.cursorTimer)
+    this.cursorTimer = setTimeout(() => { this.cursorTimer = null; void this.hideCursor() }, CURSOR_LINGER_MS)
+  }
+  /** The cursor off, as before an agent's screenshot, which never shows it. */
+  async hideCursor(): Promise<void> {
+    if (!this.cursorShown) return
+    this.cursorShown = false
+    if (this.cursorTimer) { clearTimeout(this.cursorTimer); this.cursorTimer = null }
+    if (this.page.isGone() || !this.page.isAttached() || this.pointing) return
+    // With a dialog open the page draws nothing new; the cursor is taken off once it is answered.
+    if (this.dialogOpen) { this.cursorShown = true; return }
+    await this.page.sendCommand('Overlay.hideHighlight').catch(() => undefined)
+  }
   async resetViewport(): Promise<void> {
     await this.ready()
     await this.send('Emulation.clearDeviceMetricsOverride')
     this.viewport = null
   }
-  /** A new document: its errors, console, refs and any chooser go with the old one. */
+  /**
+   * A navigation started: the old document's errors, console, refs and any chooser go with it, and the system's file
+   * chooser is the user's again. Whether a secret is in the document is left to `documentCommitted`.
+   */
   clear(): void {
     this.errors.length = 0; this.consoleLog.length = 0
     this.refs = new Map()
-    this.secretInDocument = false
+    const intercepting = this.interceptUntil !== 0 || this.chooser !== null
     if (this.chooser) { this.chooser = null; this.onChange?.() }
+    if (intercepting) void this.stopIntercepting()
+    this.cursorAt = null
+    if (this.cursorShown) void this.hideCursor()
   }
   dispose(): void {
-    // Typed secrets stay masked until the page itself closes: the field still holds them after its sharing ends.
+    // Typed secrets stay masked until the page itself closes: the field still holds them after its sharing ends, and so
+    // does the document, so evaluate stays off when the page is shared again.
     this.clear()
+    if (this.cursorTimer) { clearTimeout(this.cursorTimer); this.cursorTimer = null }
+    this.cursorShown = false
     this.screencast = null
     this.dialogOpen = null
     this.pointSession++
     this.pointing = null; this.hovered = null; this.hoverRequest++
     if (this.page.isGone()) return
     this.page.offEvent(this.onMessage)
+    // The listener is gone, so the next action sets up afresh and listens again, attached or not.
+    this.enabled = null
     if (this.page.isAttached()) this.page.detach()
   }
 }

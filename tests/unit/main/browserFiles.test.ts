@@ -68,3 +68,79 @@ describe('files an agent may upload (ADR-0220, decision 5)', () => {
     expect(await uploadPaths(['link.txt'], folder, undefined)).toMatchObject({ ok: false, message: expect.stringContaining('outside this thread') })
   })
 })
+
+describe('the private copies an upload gives a page (ADR-0222, for Gemini\'s review)', () => {
+  const setup = async () => {
+    const files = new BrowserFiles(join(root, 'browser-files'))
+    const work = join(root, 'work')
+    await mkdir(work, { recursive: true })
+    return { files, work }
+  }
+
+  it('copies each file when the agent asks, and verifies the copies are still what was shown', async () => {
+    const { files, work } = await setup()
+    await writeFile(join(work, 'report.pdf'), 'the report')
+    const staged = await files.stage([join(work, 'report.pdf')], [work])
+    if (!staged.ok) throw new Error(staged.message)
+    const [copy] = staged.upload.files
+    expect(copy).toMatchObject({ name: 'report.pdf', source: join(work, 'report.pdf'), size: 10 })
+    expect(copy!.path.startsWith(join(root, 'browser-files'))).toBe(true)
+    expect(await readFile(copy!.path, 'utf8')).toBe('the report')
+    // The thread's own file changing later changes nothing given.
+    await writeFile(join(work, 'report.pdf'), 'something else')
+    expect(await files.verify(staged.upload)).toBe(true)
+    expect(await readFile(copy!.path, 'utf8')).toBe('the report')
+  })
+
+  it('fails verification when the copy itself changes, is replaced by a link, or goes', async () => {
+    const { files, work } = await setup()
+    await writeFile(join(work, 'a.txt'), 'aaaa')
+    for (const change of ['content', 'gone'] as const) {
+      const staged = await files.stage([join(work, 'a.txt')], [work])
+      if (!staged.ok) throw new Error(staged.message)
+      const copy = staged.upload.files[0]!.path
+      if (change === 'content') await writeFile(copy, 'bbbb')
+      else await rm(copy)
+      expect(await files.verify(staged.upload)).toBe(false)
+    }
+    const staged = await files.stage([join(work, 'a.txt')], [work])
+    if (!staged.ok) throw new Error(staged.message)
+    const copy = staged.upload.files[0]!.path
+    await writeFile(join(root, 'elsewhere.txt'), 'aaaa')
+    await rm(copy)
+    if (await symlink(join(root, 'elsewhere.txt'), copy, 'file').then(() => true, () => false)) expect(await files.verify(staged.upload)).toBe(false)
+  })
+
+  it('refuses a file reached through a junction or link out of the roots, and a folder', async () => {
+    const { files, work } = await setup()
+    const outside = join(root, 'outside')
+    await mkdir(outside)
+    await writeFile(join(outside, 'secret.txt'), 'secret')
+    await symlink(outside, join(work, 'linked'), 'junction')
+    const through = await files.stage([join(work, 'linked', 'secret.txt')], [work])
+    expect(through.ok).toBe(false)
+    await mkdir(join(work, 'docs'))
+    expect((await files.stage([join(work, 'docs')], [work])).ok).toBe(false)
+    if (await symlink(join(outside, 'secret.txt'), join(work, 'link.txt'), 'file').then(() => true, () => false)) {
+      expect((await files.stage([join(work, 'link.txt')], [work])).ok).toBe(false)
+    }
+    // Nothing refused leaves a copy behind.
+    expect(await readdir(join(root, 'browser-files', 'staged-uploads')).then(entries => entries.length, () => 0)).toBe(0)
+  })
+
+  it('discards copies, never anything outside its own folder, and sweeps every copy at start', async () => {
+    const { files, work } = await setup()
+    await writeFile(join(work, 'a.txt'), 'a')
+    const staged = await files.stage([join(work, 'a.txt')], [work])
+    if (!staged.ok) throw new Error(staged.message)
+    await files.discard({ folder: work, files: [] })
+    expect((await stat(join(work, 'a.txt'))).isFile()).toBe(true)
+    const again = await files.stage([join(work, 'a.txt')], [work])
+    if (!again.ok) throw new Error(again.message)
+    await files.discard(staged.upload)
+    await expect(stat(staged.upload.folder)).rejects.toThrow()
+    await files.sweep()
+    await expect(stat(again.upload.folder)).rejects.toThrow()
+    expect(await files.verify({ folder: work, files: [] })).toBe(false)
+  })
+})

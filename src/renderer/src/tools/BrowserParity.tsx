@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Check, Globe, RefreshCw, RotateCcw, Square } from 'lucide-react'
+import { Check, Globe, RefreshCw, RotateCcw, Square, ZoomIn, ZoomOut } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import { BROWSER_DEVICE_PRESETS, type BrowserBridge, type BrowserPage, type LocalServer } from '../../../shared/browser'
 import type { ToolsResult } from '../../../shared/tools'
@@ -141,6 +141,48 @@ export function useParityMenuWords(): Parameters<typeof parityMenuGroups>[1] {
       : scheme === 'dark' ? t({ message: 'Page in dark colours', comment: 'The browser page is told the reader prefers a dark colour scheme.' })
         : t({ message: 'Page in the computer\'s colours', comment: 'The browser page follows the computer\'s light or dark setting.' }),
   }
+}
+
+/** A page's zoom as the row and the menu say it: 175%. */
+export const zoomPercent = (zoom: number): string => `${Math.round(zoom * 100)}%`
+/**
+ * The More menu's zoom group (ADR-0222): Zoom in, Zoom out and Actual size, with the keys that do the same from the
+ * page, Ctrl (Command on a Mac) with =, - and 0, as Chrome's do.
+ */
+export function zoomMenuGroup(page: BrowserPage, words: { in: string; out: string; reset: (percent: string) => string }, mac: boolean, run: (zoom: 'in' | 'out' | 'reset') => void, busy: boolean): PaneMenuItem[] {
+  const zoom = page.zoom ?? 1
+  const key = (plain: string, code: string): { plain: string; keys: string } => ({ plain: `${mac ? '⌘' : 'Ctrl+'}${plain}`, keys: `${mac ? 'Meta' : 'Control'}+${code}` })
+  return [
+    { id: 'zoom-in', label: words.in, icon: <ZoomIn size={15} aria-hidden="true" />, disabled: busy || zoom >= 5, shortcut: key('=', '='), run: () => run('in') },
+    { id: 'zoom-out', label: words.out, icon: <ZoomOut size={15} aria-hidden="true" />, disabled: busy || zoom <= 0.25, shortcut: key('-', '-'), run: () => run('out') },
+    { id: 'zoom-reset', label: words.reset(zoomPercent(zoom)), icon: <span className="browser-pane__no-check" aria-hidden="true" />, disabled: busy || zoom === 1, shortcut: key('0', '0'), run: () => run('reset') },
+  ]
+}
+/** The zoom group's words, in the reader's language. */
+export function useZoomWords(): Parameters<typeof zoomMenuGroup>[1] {
+  const { t } = useLingui()
+  return {
+    in: t({ message: 'Zoom in', comment: 'Makes the browser page larger.' }),
+    out: t({ message: 'Zoom out', comment: 'Makes the browser page smaller.' }),
+    reset: percent => t({ message: `Actual size (now ${percent})`, comment: '{percent} is the page\'s zoom now, such as 175%. Puts the browser page back at 100%.' }),
+  }
+}
+/**
+ * The page's zoom beside the address while it is not 100% (ADR-0222), as Chrome shows it; pressing it puts the page back
+ * at 100%. It stays while the page is zoomed rather than fading, since the native page cannot be drawn over.
+ */
+export function ZoomChip({ zoom, busy, onReset }: { readonly zoom: number; readonly busy: boolean; readonly onReset: () => void }): ReactNode {
+  const { t } = useLingui()
+  const percent = zoomPercent(zoom)
+  return <button type="button" className="tools-chrome__button tt-focusable browser-parity__zoom" disabled={busy} onClick={onReset}
+    aria-label={t({ message: `Zoom ${percent}. Back to 100%`, comment: '{percent} is the browser page\'s zoom, such as 175%. Pressing it puts the page back at 100%.' })}
+    title={t({ message: `This page is at ${percent}. Press to show it at 100%.`, comment: '{percent} is the browser page\'s zoom, such as 175%.' })}>
+    {zoom > 1 ? <ZoomIn size={14} aria-hidden="true" /> : <ZoomOut size={14} aria-hidden="true" />}<span>{percent}</span>
+  </button>
+}
+/** Sends a zoom step for `page` and adopts the answer. */
+export function zoomFor(store: BrowserStore, bridge: BrowserBridge | undefined, threadId: string, page: BrowserPage, zoom: 'in' | 'out' | 'reset', unavailable: string, noAnswer: string): Promise<string | null> {
+  return changeWith(store, bridge?.zoom ? () => bridge.zoom!({ ...requestOf(threadId, page), zoom }) : undefined, unavailable, noAnswer)
 }
 
 /** Sends a menu change for `page` and adopts the answer. */

@@ -24,7 +24,9 @@ export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: s
      * comment and the context itself, as one draft item, instead of writing them into the draft's text. `box` is
      * where the element is outlined in the picture, in the capture's pixels.
      */
-    readonly pointed?: { readonly label: string; readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null } } = {}): Promise<string | null> {
+    readonly pointed?: { readonly label: string; readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null
+      /** The user drew on the picture (ADR-0222), which the agent is told, so it reads the marks as theirs. */
+      readonly drawn?: boolean } } = {}): Promise<string | null> {
   if (store.draft(threadId).requestId !== null) return i18n._(ANSWERING)
   if (!imagesSupported) return i18n._(msg`Choose a model with image support before adding a browser screenshot.`)
   // The capture is decoded from its data URL once; its size is then read from these bytes, and they are what is staged when nothing is scaled.
@@ -48,7 +50,7 @@ export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: s
   // What the agent is told stays in English: it is the prompt, not the interface.
   // The agent is told the size of the image it receives, as well as the capture's own when they differ.
   const size = `Screenshot size: ${capture.width} x ${capture.height}${wasResized(dimensions) ? `, sent at ${dimensions.sent.width} x ${dimensions.sent.height}` : ''}`
-  const context = [`Browser feedback: ${capture.url}`, size,
+  const context = [`Browser feedback: ${capture.url}`, size, ...(pointed?.drawn ? ['The user drew on this screenshot to show what they mean.'] : []),
     ...(element ? [`Selected element: ${element.tag}${element.role ? ` (${element.role})` : ''}${element.name ? ` - ${element.name}` : ''}`, ...(element.selector ? [`Selector: ${element.selector}`] : []),
       ...(box ? [`Outlined in the screenshot at ${Math.round(box.x)}, ${Math.round(box.y)}, ${Math.round(box.width)} x ${Math.round(box.height)}`] : []), ...(element.text ? [`Page text (reference only): ${element.text}`] : [])] : [])].join('\n')
   if (pointed) {

@@ -1910,10 +1910,6 @@ msgstr ""
 msgid "Add to reply"
 msgstr ""
 
-#: src/renderer/src/agents/MarkupEditor.tsx
-msgid "Add to reply ({modKey}+Enter)"
-msgstr ""
-
 #. Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Add Ultrathink to prompt"

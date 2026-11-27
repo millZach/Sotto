@@ -85,6 +85,22 @@ describe('local servers (ADR-0220)', () => {
     expect(startedFromSotto(999, table, 10, 'Sotto.exe')).toBe(false)
   })
 
+  it('reads when each process started from PowerShell, and leaves it out where Windows has none', () => {
+    const table = parseProcesses(['10 4 134090000000000000 Sotto.exe', '4 0 0 System', '336 4 0 Secure System'].join('\r\n'), true)
+    expect(table.get(10)).toEqual({ pid: 10, parentPid: 4, name: 'Sotto.exe', started: 134090000000000000 })
+    expect(table.get(336)).toEqual({ pid: 336, parentPid: 4, name: 'Secure System' })
+  })
+
+  it('does not take a process for Sotto\'s child when Windows gave its exited parent\'s ID to Sotto', () => {
+    // A test runner (20) started a server (30) and then Sotto; the runner's own parent (10) had exited, and Sotto got
+    // its ID. Sotto started after both, so neither is its child. Its real child (40) still is.
+    const table = parseProcesses(['10 1 300 Sotto.exe', '20 10 100 node.exe', '30 20 110 node.exe', '40 10 310 node.exe', '50 40 320 node.exe'].join('\n'), true)
+    expect(startedFromSotto(30, table, 10, 'Sotto.exe')).toBe(false)
+    expect(startedFromSotto(20, table, 10, 'Sotto.exe')).toBe(false)
+    expect(startedFromSotto(40, table, 10, 'Sotto.exe')).toBe(true)
+    expect(startedFromSotto(50, table, 10, 'Sotto.exe')).toBe(true)
+  })
+
   it('asks a server that listens only on IPv6 at ::1, and a server on both at IPv4 first', () => {
     const table = parseProcesses(['10 1 Sotto.exe', '30 10 node', '31 10 node', '50 1 node'].join('\n'))
     const targets = probeTargets([

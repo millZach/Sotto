@@ -38,7 +38,7 @@ export interface HostedBrowser {
   /** Open in system browser for a host's page: on this computer, at the host's address where the page names its own machine. */
   openExternally(request: { url: string; threadId: string }): Promise<ToolsResult<{ destination: 'external' }>>
 }
-const BROWSER_METHODS = ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point', 'answerDialog', 'emulate', 'stopRecording', 'localServers', 'profiles', 'addProfile', 'removeProfile', 'devtools'] as const
+const BROWSER_METHODS = ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point', 'answerDialog', 'emulate', 'stopRecording', 'localServers', 'profiles', 'addProfile', 'removeProfile', 'devtools', 'zoom', 'downloads', 'download', 'cursorStyle'] as const
 /** The requests only a host's page takes: a page here is drawn by Electron, not from pictures. */
 const HOST_PAGE_METHODS = ['input', 'watch', 'unwatch', 'available'] as const
 /** What each request a host's page cannot take says instead. */
@@ -50,6 +50,9 @@ const NOT_ON_HOST_PAGE: Partial<Record<typeof BROWSER_METHODS[number], MessageDe
   stopRecording: msg`A page on the host machine does not record. Nothing was changed.`,
   localServers: msg`Servers on the host machine are not listed here yet. Ask the agent for the address.`,
   devtools: msg`Developer tools open only for a page on this computer. Nothing was opened.`,
+  zoom: msg`A page on the host machine is drawn at the pane's size, so it does not zoom yet. Nothing was changed.`,
+  downloads: msg`A page on the host machine does not download here yet. Nothing was changed.`,
+  download: msg`A page on the host machine does not download here yet. Nothing was changed.`,
 }
 const NOT_A_HOST_PAGE = msg`Only a page on a paired host takes this. Nothing was changed.`
 

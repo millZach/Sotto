@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState, type KeyboardEvent, ty
 import { Globe, Minimize2, PanelRight, Pause, Play, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
-import type { BrowserBounds, BrowserBridge, BrowserPage, BrowserTask } from '../../../shared/browser'
+import { asksEveryTime, type BrowserBounds, type BrowserBridge, type BrowserPage, type BrowserTask } from '../../../shared/browser'
 import { useOwlFeature } from '../state/owlFeature'
 import { pageLabel, useThreadBrowser, useThreadBrowserTasks, type ThreadBrowser } from './browserStore'
 import { useBrowserPageMount } from './useBrowserPageMount'
@@ -238,7 +238,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
         <p>{task.pendingAction.description}</p>
         <div className="browser-player__request-row">
           <button type="button" className="tt-button tt-button--primary tt-focusable" disabled={answering || task.status === 'paused'} onClick={() => answer(true)}>{t`Allow once`}</button>
-          <button type="button" className="tt-button tt-focusable" aria-label={t`Allow this thread to use the browser without asking`} title={t`Allow this thread to use the browser without asking`} disabled={answering || task.status === 'paused'} onClick={() => answer(true, true)}>{t`Allow this thread`}</button>
+          {asksEveryTime(task.pendingAction) ? null : <button type="button" className="tt-button tt-focusable" aria-label={t`Allow this thread to use the browser without asking`} title={t`Allow this thread to use the browser without asking`} disabled={answering || task.status === 'paused'} onClick={() => answer(true, true)}>{t`Allow this thread`}</button>}
           <button type="button" className="tt-button tt-focusable" disabled={answering} onClick={() => answer(false)}>{t`Deny`}</button>
         </div>
       </div> : null}

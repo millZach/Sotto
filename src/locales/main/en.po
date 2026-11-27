@@ -392,8 +392,16 @@ msgid "A new-window request was blocked. Use a link destination action or open t
 msgstr "A new-window request was blocked. Use a link destination action or open this page externally."
 
 #: src/main/tools/ipc.ts
+msgid "A page on the host machine does not download here yet. Nothing was changed."
+msgstr "A page on the host machine does not download here yet. Nothing was changed."
+
+#: src/main/tools/ipc.ts
 msgid "A page on the host machine does not record. Nothing was changed."
 msgstr "A page on the host machine does not record. Nothing was changed."
+
+#: src/main/tools/ipc.ts
+msgid "A page on the host machine is drawn at the pane's size, so it does not zoom yet. Nothing was changed."
+msgstr "A page on the host machine is drawn at the pane's size, so it does not zoom yet. Nothing was changed."
 
 #: src/main/tools/ipc.ts
 msgid "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
@@ -921,6 +929,10 @@ msgstr "Download stopped. Nothing was saved."
 #: src/main/tools/browser.ts
 msgid "Downloads are blocked here. Open this page externally to download."
 msgstr "Downloads are blocked here. Open this page externally to download."
+
+#: src/main/tools/browser.ts
+msgid "Downloads are not on in this version of Sotto."
+msgstr "Downloads are not on in this version of Sotto."
 
 #: src/main/omarchy/setup.ts
 msgid "Each shortcut can be in only one row, once. Pick other keys."
