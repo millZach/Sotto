@@ -3,6 +3,8 @@ pub mod claude;
 mod claude_side;
 pub mod claude_history;
 pub mod codex;
+mod codex_side;
+mod side_process;
 pub mod muse;
 pub mod opencode;
 

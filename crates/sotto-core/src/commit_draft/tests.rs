@@ -397,3 +397,5 @@ fn claude_code_writes_nothing_for_a_personal_session_a_thread_it_has_no_record_o
     assert_eq!(runtime.block_on(adapter.write_short_text("t".into(), prompt)), Ok(None));
     assert!(oneshots(&fixture).is_empty());
 }
+
+mod codex_grok;
