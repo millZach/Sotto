@@ -246,3 +246,21 @@ fn refuses_a_folder_that_is_not_ready_or_gone() {
     let thread = ThreadFolder { worktree: None, working_directory: Some(gone.clone()), project_path: folder, started: false };
     assert_eq!(run(dir.path(), &thread, &LocalGitCommand::Init).1, Err(format!("The folder {gone} is not there any more. Move it back, or add the project again from where it is now.")));
 }
+
+/// A Git write stopped at its deadline is sent SIGTERM, as Node's `child.kill()` sends it, so Git removes the
+/// `index.lock` it holds before it goes and the next Git write in the checkout is not refused. SIGKILL would leave the
+/// lock behind. Unix only: Windows has no SIGTERM, and Node's stop there is TerminateProcess, as this host's is.
+#[cfg(unix)]
+#[test]
+fn a_switch_stopped_at_its_deadline_leaves_no_index_lock() {
+    let remote = Remote::new();
+    sh_git(&remote.ours, &["checkout", "-q", "-b", "slow"]);
+    fs::write(remote.ours.join(".gitattributes"), "*.slow filter=slow\n").unwrap();
+    commit(&remote.ours, "big.slow", "slow\n");
+    sh_git(&remote.ours, &["checkout", "-q", "main"]);
+    // Checking `big.slow` out passes it through a filter that takes longer than the deadline, with the index locked.
+    sh_git(&remote.ours, &["config", "filter.slow.smudge", "sleep 5; cat"]);
+    let switched = git(&remote.ours(), &["checkout", "slow", "--"], Duration::from_secs(1));
+    assert_eq!(switched, Err("git did not finish in time.".to_string()));
+    assert!(!remote.ours.join(".git").join("index.lock").exists(), "Git was stopped without the chance to remove its lock");
+}

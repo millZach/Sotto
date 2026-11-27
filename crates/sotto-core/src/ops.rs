@@ -2977,6 +2977,7 @@ fn run_git_clean(
         max_buffer,
         true,
         Instant::now() + Duration::from_secs(10),
+        TimeoutStop::Kill,
     )
 }
 
@@ -2985,7 +2986,7 @@ fn run_git_status_cmd_with_deadline(
     args: &[&str],
     deadline: Instant,
 ) -> Result<GitRunOutput, GitRunError> {
-    run_git_impl(folder, args, &[], None, None, false, deadline)
+    run_git_impl(folder, args, &[], None, None, false, deadline, TimeoutStop::Kill)
 }
 
 fn run_git_status_with_deadline(
@@ -3002,6 +3003,47 @@ fn run_git_status_with_deadline(
         })
 }
 
+/// How long a command stopped at its deadline is given to finish before it settles, as Node's `spawnCommand` gives it.
+const TIMEOUT_GRACE: Duration = Duration::from_secs(2);
+
+/// How Git is stopped at its deadline.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TimeoutStop {
+    /// Killed at once.
+    Kill,
+    /// Sent SIGTERM, as Node's `spawnCommand` stops a Git action with `child.kill()`, so Git removes the `index.lock` it
+    /// holds before it goes; one still running when the grace ends is killed. Windows has no SIGTERM: there Node's
+    /// `child.kill()` is TerminateProcess, and so is this.
+    Terminate,
+}
+
+/// Stops `child`, which has run past its deadline, as `stop` says, and reaps it. A Git sent SIGTERM has until `grace` to
+/// go by itself.
+fn stop_at_deadline(child: &mut std::process::Child, stop: TimeoutStop, grace: Instant) -> std::io::Result<std::process::ExitStatus> {
+    #[cfg(unix)]
+    if stop == TimeoutStop::Terminate {
+        extern "C" {
+            fn kill(pid: i32, signal: i32) -> i32;
+        }
+        const SIGTERM: i32 = 15;
+        // SAFETY: `kill` takes two integers and touches no memory of ours. The child has not been reaped, so its pid is
+        // still its own and the signal reaches no other process.
+        if unsafe { kill(child.id() as i32, SIGTERM) } == 0 {
+            while Instant::now() < grace {
+                if let Some(status) = child.try_wait()? {
+                    return Ok(status);
+                }
+                std::thread::sleep(Duration::from_millis(15));
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (stop, grace);
+    let _ = child.kill();
+    child.wait()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run_git_impl(
     folder: &str,
     args: &[&str],
@@ -3010,6 +3052,7 @@ fn run_git_impl(
     max_buffer: Option<usize>,
     strip_all_git_env: bool,
     deadline: Instant,
+    stop: TimeoutStop,
 ) -> Result<GitRunOutput, GitRunError> {
     if Instant::now() >= deadline {
         return Err(GitRunError::Failed("git timed out".into()));
@@ -3115,14 +3158,16 @@ fn run_git_impl(
     });
 
     let mut timed_out = false;
+    // When a command stopped at its deadline settles: Node's runner gives it two seconds from the stop (`spawnCommand`).
+    let mut settle_by = deadline;
     let status = loop {
         match child.try_wait() {
             Ok(Some(st)) => break Ok(st),
             Ok(None) => {
                 if Instant::now() >= deadline {
                     timed_out = true;
-                    let _ = child.kill();
-                    break child.wait();
+                    settle_by = Instant::now() + TIMEOUT_GRACE;
+                    break stop_at_deadline(&mut child, stop, settle_by);
                 }
                 if reader.is_finished() {
                     // Reader stopped early (e.g., max_buffer overflow); kill if still running.
@@ -3137,8 +3182,7 @@ fn run_git_impl(
     if timed_out {
         // A hook or a remote helper the command started can hold its pipes open after it is gone, so a timeout settles on
         // its own grace, as Node's runner does (`spawnCommand`), rather than wait for a close a grandchild may never allow.
-        let grace = Instant::now() + Duration::from_secs(2);
-        while !(reader.is_finished() && stderr_reader.is_finished()) && Instant::now() < grace {
+        while !(reader.is_finished() && stderr_reader.is_finished()) && Instant::now() < settle_by {
             std::thread::sleep(Duration::from_millis(15));
         }
         return Err(GitRunError::Failed("git timed out".into()));
@@ -3169,7 +3213,7 @@ fn run_git_impl(
 pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Duration>) -> Result<String, String> {
     // Node gives a removal no deadline at all; a day stands for none.
     let deadline = Instant::now() + deadline.unwrap_or(Duration::from_secs(86_400));
-    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline).map(|o| o.stdout).map_err(|e| match e {
+    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline, TimeoutStop::Kill).map(|o| o.stdout).map_err(|e| match e {
         GitRunError::Unavailable(_) => "Git is unavailable. Install Git or explicitly choose a shared working copy.".into(),
         GitRunError::MaxBuffer(_) => "Git returned too much output. Nothing was removed.".into(),
         GitRunError::Failed(msg) if msg == "git timed out" => "Git took too long.".into(),
@@ -3182,10 +3226,10 @@ pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Dur
 pub(crate) const GIT_MISSING: &str = "git is not installed or is not on PATH.";
 
 /// Git as Node's `runGitStatusCommand` (`src/main/agents/git/gitStatus.ts`) runs it for a Git action: `LC_ALL=C` with
-/// nothing that redirects Git, at most 8,000,000 bytes back, stopped at `deadline`, and failing in Node's words: what Git
-/// said on its error stream, or that it exited, did not finish or is missing.
+/// nothing that redirects Git, at most 8,000,000 bytes back, stopped at `deadline` with SIGTERM so Git can remove its
+/// locks, and failing in Node's words: what Git said on its error stream, or that it exited, did not finish or is missing.
 pub(crate) fn run_action_git(folder: &str, args: &[&str], deadline: Duration) -> Result<String, String> {
-    run_git_impl(folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline).map(|o| o.stdout).map_err(|e| match e {
+    run_git_impl(folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate).map(|o| o.stdout).map_err(|e| match e {
         GitRunError::Unavailable(_) => GIT_MISSING.into(),
         GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
         GitRunError::Failed(msg) if msg == "git timed out" => "git did not finish in time.".into(),
