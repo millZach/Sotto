@@ -190,5 +190,11 @@ pub fn existing_worktree(project_path: &str, existing: &str) -> Result<AgentThre
     })
 }
 
+/// The folder a thread works in within the working copy it was given, as Node's `workingDirectory`: the project's place in
+/// the worktree (`projectRelativePath`), where any link in it leads, and refused if it would lead outside the worktree.
+pub fn project_working_directory(metadata: &AgentThreadWorktree) -> Result<String, String> {
+    working_directory(metadata).map(|folder| text(&folder))
+}
+
 #[cfg(test)]
 mod tests;

@@ -641,6 +641,8 @@ enum AsyncCommandOutcome {
         attachments: Vec<StagedAttachmentEntry>,
         elapsed_ms: u64,
         allocated_worktree: Option<Box<AgentThreadWorktree>>,
+        /// The project's place in an existing worktree the send took, which is the thread's folder.
+        allocated_folder: Option<String>,
         /// The thread's folder, held while the send put it back or read it with Git.
         held_folder: Option<String>,
         result: Result<SendMessageAck, String>,
@@ -2974,21 +2976,25 @@ impl CoordinatorActor {
         tokio::spawn(async move {
             let started = Instant::now();
             let mut allocated_worktree = None;
+            let mut allocated_folder = None;
             let mut held_folder = None;
             let cwd = if needs_worktree {
                 // An existing worktree the user chose is taken as it is, as Node's `allocate` takes one; otherwise a new
                 // one is made.
+                // Its folder is the project's place in it, as Node's `workingDirectory` reads it.
                 let alloc = tokio::task::spawn_blocking(move || match existing_worktree {
-                    Some(existing) => crate::worktree_reclaim::existing_worktree(&project_path, &existing),
-                    None => allocate_independent_worktree(&data_dir, &project_path, base_branch.as_deref()),
+                    Some(existing) => crate::worktree_reclaim::existing_worktree(&project_path, &existing)
+                        .and_then(|wt| crate::worktree_reclaim::project_working_directory(&wt).map(|folder| (wt, Some(folder)))),
+                    None => allocate_independent_worktree(&data_dir, &project_path, base_branch.as_deref()).map(|wt| (wt, None)),
                 })
                 .await
                 .map_err(|_| "Could not create worktree.".to_string())
                 .and_then(|r| r);
                 match alloc {
-                    Ok(wt) => {
-                        let path = wt.path.clone().unwrap_or_default();
+                    Ok((wt, folder)) => {
+                        let path = folder.clone().or_else(|| wt.path.clone()).unwrap_or_default();
                         allocated_worktree = Some(Box::new(wt));
+                        allocated_folder = folder;
                         path
                     }
                     Err(err) => {
@@ -3003,6 +3009,7 @@ impl CoordinatorActor {
                                 attachments,
                                 elapsed_ms: started.elapsed().as_millis() as u64,
                                 allocated_worktree: None,
+                                allocated_folder: None,
                                 held_folder: None,
                                 result: Err(err),
                             }),
@@ -3072,6 +3079,7 @@ impl CoordinatorActor {
                     attachments,
                     elapsed_ms: started.elapsed().as_millis() as u64,
                     allocated_worktree,
+                    allocated_folder,
                     held_folder,
                     result,
                 }),
@@ -3382,6 +3390,7 @@ impl CoordinatorActor {
                 attachments,
                 elapsed_ms,
                 allocated_worktree,
+                allocated_folder,
                 held_folder,
                 result,
             } => {
@@ -3393,7 +3402,7 @@ impl CoordinatorActor {
                     if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
                         // A folder the thread already works in stays its own, as Node's `workingDirectory ??=` keeps it.
                         if t.working_directory.is_none() {
-                            t.working_directory = wt.path.clone();
+                            t.working_directory = allocated_folder.or_else(|| wt.path.clone());
                         }
                         t.worktree = Some(*wt);
                         self.save_workspace();
@@ -4547,7 +4556,10 @@ impl CoordinatorActor {
         let creation = self.creations.iter().find(|c| c.get("threadId").and_then(Value::as_str) == Some(thread_id.as_str()));
         let unstarted = creation.is_none_or(|c| c.get("phase").and_then(Value::as_str) == Some("unstarted"));
         let own_folder = thread.worktree.as_ref().is_some_and(|wt| wt.mode == "independent" && wt.path.is_some());
-        if thread.native_session_started || !unstarted || own_folder {
+        // A thread Node saved without `nativeSessionStarted` reads here as not started, but Node reads it as started: a turn
+        // or a sent message says it is.
+        let started = session_started(thread) || thread.last_user_message_id.is_some();
+        if started || !unstarted || own_folder {
             return self.refuse_sync_command(lane, &client, "This thread already has a working folder. Start a new thread to choose another one.".into(), reply);
         }
         let Some(project) = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()) else {
@@ -4575,6 +4587,8 @@ impl CoordinatorActor {
         match thread.worktree.as_ref() {
             Some(wt) if wt.mode == "independent" && wt.reclaimed() => project(),
             Some(wt) if wt.mode == "independent" && wt.path.is_some() => wt.path.clone().unwrap_or_default(),
+            // A draft pointed at an existing worktree is in that worktree's checkout, as Node's `threadRepositoryFolder`.
+            Some(wt) if wt.path.is_none() && wt.existing_worktree_path.is_some() => wt.existing_worktree_path.clone().unwrap_or_default(),
             _ => thread.working_directory.clone().unwrap_or_else(project),
         }
     }
@@ -7458,6 +7472,45 @@ mod tests {
         assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &json!(words)));
         let thread = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == other).unwrap().clone();
         assert_eq!(thread["worktree"], json!({ "mode": "independent", "status": "pending" }));
+        coord.shutdown().await;
+    }
+
+    /// A thread waiting to take an existing worktree is in that worktree's checkout, as Node's `threadRepositoryFolder`
+    /// names it: a change holding the worktree holds its first send back. A thread
+    /// whose saved record has a sent message but no `nativeSessionStarted`, which Node reads as started, keeps its folder.
+    #[tokio::test]
+    async fn a_thread_choosing_an_existing_worktree_is_in_its_checkout() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let (coord, _mock, client, project_id, _project, user) = working_copy_workspace(&base).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let (choosing, holding) = ("00000000-0000-4000-8000-0000000000e1", "00000000-0000-4000-8000-0000000000e2");
+        for (id, title) in [(choosing, "Choosing"), (holding, "Holding")] {
+            run(json!({ "type": "create-thread", "threadId": id, "projectId": project_id, "title": title, "titleSource": "user",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" })).await.unwrap();
+        }
+        run(json!({ "type": "configure-thread-working-copy", "threadId": choosing, "workingCopy": "independent", "existingWorktreePath": user.to_string_lossy() })).await.unwrap();
+
+        // A change holding the existing worktree holds the send back.
+        let blocked = "A Git action is running in this folder. Your message was not sent. Your text is kept. Send it again when the action finishes.";
+        let (reply, held) = oneshot::channel();
+        let key = crate::worktree_reclaim::checkout_key(&user.to_string_lossy()).unwrap();
+        coord.tx.send(ActorMessage::HoldCheckout { thread_id: "00000000-0000-4000-8000-0000000000e9".into(), folder: user.to_string_lossy().into_owned(), key, sharing: vec![], reply }).unwrap();
+        assert_eq!(held.await.unwrap(), Ok(()));
+        let shell = run(json!({ "type": "manual-send", "threadId": choosing, "text": "Mid-change" })).await.unwrap();
+        assert_eq!(shell["error"], blocked);
+        coord.shutdown().await;
+
+        // Saved by Node with a sent message and no `nativeSessionStarted`: started, so its folder stays.
+        let path = base.join("data").join("workspace.json");
+        let mut workspace: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let thread = workspace["snapshot"]["threads"].as_array_mut().unwrap().iter_mut().find(|t| t["id"] == holding).unwrap();
+        thread.as_object_mut().unwrap().remove("nativeSessionStarted");
+        thread["lastUserMessageId"] = json!("00000000-0000-4000-8000-0000000000f1");
+        std::fs::write(&path, serde_json::to_string(&workspace).unwrap()).unwrap();
+        let coord = CoordinatorHandle::spawn(base.join("data"), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let shell = coord.run_command(client.clone(), json!({ "type": "configure-thread-working-copy", "threadId": holding, "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
+        assert_eq!(shell["error"], "This thread already has a working folder. Start a new thread to choose another one.");
         coord.shutdown().await;
     }
 

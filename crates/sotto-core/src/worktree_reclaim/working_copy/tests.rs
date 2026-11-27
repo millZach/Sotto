@@ -111,6 +111,23 @@ fn records_the_chosen_working_copy_as_node_does() {
     assert_eq!(fs::read_to_string(fixture.user.join("draft.txt")).unwrap(), "the user's own work\n");
 }
 
+/// A project in a subfolder of its repository works in the same subfolder of the existing worktree, as Node's
+/// `allocate` records `projectRelativePath` and `workingDirectory` reads it.
+#[test]
+fn works_in_the_projects_place_in_an_existing_worktree() {
+    let fixture = Fixture::new();
+    let app = fixture.repo.join("packages").join("app");
+    fs::create_dir_all(&app).unwrap();
+    fs::write(app.join("index.txt"), "app\n").unwrap();
+    sh_git(&fixture.repo, &["add", "."]);
+    sh_git(&fixture.repo, &["commit", "-q", "-m", "App"]);
+    let other = fixture.base.join("other-worktree");
+    sh_git(&fixture.repo, &["worktree", "add", "-q", "-b", "other-work", &text(&other)]);
+    let record = existing_worktree(&text(&app), &text(&other)).unwrap();
+    assert_eq!(record.extra.get("projectRelativePath"), Some(&json!("packages/app")));
+    assert_eq!(project_working_directory(&record).unwrap(), text(&other.join("packages").join("app")));
+}
+
 /// The project folder gone is Node's words for it, and nothing is recorded.
 #[test]
 fn a_missing_project_folder_is_refused() {
