@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 
 use super::codex::CodexLaunch;
-use super::side_process::SideOutput;
+use super::side_process::{valid_effort, valid_model_id, SideOutput};
 use crate::git_local::js_trim;
 use crate::side_writing::ShortTextPrompt;
 
@@ -52,18 +52,6 @@ fn side_writing_arguments() -> Vec<String> {
     settings.into_iter().flat_map(|setting| ["-c".to_string(), setting]).collect()
 }
 
-/// Node's model check, ``/^[a-z0-9][a-z0-9._:/-]{0,159}$/iu``.
-fn valid_model(model: &str) -> bool {
-    let mut chars = model.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphanumeric()) && model.len() <= 160 && chars.all(|c| c.is_ascii_alphanumeric() || "._:/-".contains(c))
-}
-
-/// Node's effort check, ``/^[a-z][a-z0-9_-]{0,31}$/u``.
-fn valid_effort(effort: &str) -> bool {
-    let mut chars = effort.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase()) && effort.len() <= 32 && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
-}
-
 /// The run's arguments after the client's own, in Node's order.
 fn arguments(model: &str, effort: Option<&str>, cwd: &str) -> Vec<String> {
     let mut args: Vec<String> = ["exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--json", "--color", "never", "--cd", cwd, "--model", model]
@@ -92,7 +80,7 @@ pub(crate) struct SideRun<'a> {
 /// answered, as Node stops it.
 pub(crate) async fn write(launch: &CodexLaunch, prefix_args: &[String], run: SideRun<'_>) -> Result<String, String> {
     let SideRun { prompt, model, effort, cwd, deadline } = run;
-    if !valid_model(model) || effort.is_some_and(|effort| !valid_effort(effort)) {
+    if !valid_model_id(model) || effort.is_some_and(|effort| !valid_effort(effort)) {
         return Err("Choose a valid Codex model before asking it to write.".into());
     }
     let mut command = launch.command();
@@ -244,17 +232,5 @@ mod tests {
         assert!(settings.contains(&"features.shell_tool=false") && settings.contains(&"mcp_servers={}") && settings.contains(&"notify=[]"));
         assert_eq!(settings.last(), Some(&"approval_policy=\"never\""));
         assert!(!arguments("gpt-5.5", None, "/work").iter().any(|arg| arg.starts_with("model_reasoning_effort")));
-    }
-
-    #[test]
-    fn checks_the_model_and_effort_as_node_does() {
-        for model in ["gpt-5.5", "o3", "Fixture-Model", "a/b:c_d.e"] {
-            assert!(valid_model(model), "{model}");
-        }
-        for model in ["", "-gpt", "gpt 5", "opus[1m]", &"a".repeat(161)] {
-            assert!(!valid_model(model), "{model}");
-        }
-        assert!(valid_effort("low") && valid_effort("x_high-2"));
-        assert!(!valid_effort("Low") && !valid_effort("") && !valid_effort("1low") && !valid_effort(&"a".repeat(33)));
     }
 }

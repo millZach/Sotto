@@ -1390,7 +1390,7 @@ impl ProviderAdapter for AcpAdapter {
             };
             let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
             let writing = self.config.data_directory.join("writing").join("grok");
-            let run = super::grok_side::SideRun { prompt: &prompt, model: &model, cwd: Path::new(&cwd), deadline: self.config.side_writing_deadline, writing: &writing };
+            let run = super::grok_side::SideRun { prompt: &prompt, model: &model, cwd: Path::new(&cwd), deadline: self.config.side_writing_deadline, homes_folder: &writing };
             super::grok_side::write(self.config.launch().as_ref(), &self.config.prefix_args, run).await.map(Some)
         })
     }

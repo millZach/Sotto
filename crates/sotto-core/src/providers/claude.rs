@@ -122,12 +122,8 @@ impl ClaudeLaunch {
     /// lookup found the client on (Node's `withCliPath`) and `NO_COLOR`.
     pub(crate) fn command(&self) -> Command {
         let mut command = Command::new(&self.executable);
-        command.args(&self.prefix_args).env_clear();
-        for (key, value) in std::env::vars_os() {
-            if key.to_str().is_some_and(|key| ENVIRONMENT_KEYS.contains(&key.to_ascii_lowercase().as_str())) {
-                command.env(key, value);
-            }
-        }
+        command.args(&self.prefix_args);
+        super::side_process::keep_only_environment(&mut command, ENVIRONMENT_KEYS);
         if let Some(path) = &self.path {
             command.env("PATH", path);
         }

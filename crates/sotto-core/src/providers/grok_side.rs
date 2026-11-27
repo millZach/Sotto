@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
 use tokio::process::{ChildStdin, ChildStdout, Command};
 
-use super::side_process::SideOutput;
+use super::side_process::{keep_only_environment, valid_effort, valid_model_id, SideOutput};
 use crate::cli_lookup::ResolvedCli;
 use crate::side_writing::ShortTextPrompt;
 
@@ -52,16 +52,6 @@ pub(crate) const SIDE_ENVIRONMENT_KEYS: &[&str] = &[
     "ssl_cert_file", "ssl_cert_dir",
 ];
 
-/// Starts `command` on only the host's variables `keys` names, in the case the host has them.
-fn keep_only(command: &mut Command, keys: &[&str]) {
-    command.env_clear();
-    for (key, value) in std::env::vars_os() {
-        if key.to_str().is_some_and(|key| keys.contains(&key.to_ascii_lowercase().as_str())) {
-            command.env(key, value);
-        }
-    }
-}
-
 /// The host's own setting for `key`, when it is an absolute path, as Node reads `GROK_HOME` and `GROK_AUTH_PATH`.
 fn absolute_setting(key: &str) -> Option<PathBuf> {
     std::env::var_os(key).map(PathBuf::from).filter(|path| path.is_absolute())
@@ -71,7 +61,7 @@ fn absolute_setting(key: &str) -> Option<PathBuf> {
 /// sign-in file when the host names them absolutely, no API-key sign-in, no self-update, and every tool request refused
 /// and never remembered. The PATH the lookup found the client on is the caller's to add after this.
 pub(crate) fn session_environment(command: &mut Command) {
-    keep_only(command, SESSION_ENVIRONMENT_KEYS);
+    keep_only_environment(command, SESSION_ENVIRONMENT_KEYS);
     for key in ["GROK_HOME", "GROK_AUTH_PATH"] {
         if let Some(path) = absolute_setting(key) {
             command.env(key, path);
@@ -88,7 +78,7 @@ pub(crate) fn session_environment(command: &mut Command) {
 /// and every memory, sub-agent, file, web, tool search, LSP, managed MCP, telemetry and imported Cursor or Claude feature
 /// switched off.
 fn side_environment(command: &mut Command, home: &Path) {
-    keep_only(command, SIDE_ENVIRONMENT_KEYS);
+    keep_only_environment(command, SIDE_ENVIRONMENT_KEYS);
     let native_home = absolute_setting("GROK_HOME")
         .unwrap_or_else(|| crate::cli_lookup::CliLookupOptions::from_process_env().home.unwrap_or_default().join(".grok"));
     let auth_path = absolute_setting("GROK_AUTH_PATH").unwrap_or_else(|| native_home.join("auth.json"));
@@ -196,29 +186,30 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
 // The call.
 
 /// One side call: what it asks, on which model, in which folder, how long it may take, and the folder its throwaway
-/// homes go in (Node's `writing/grok` in the host's data folder).
+/// homes go in.
 pub(crate) struct SideRun<'a> {
     pub(crate) prompt: &'a ShortTextPrompt,
     pub(crate) model: &'a str,
     pub(crate) cwd: &'a Path,
     pub(crate) deadline: Duration,
-    pub(crate) writing: &'a Path,
+    /// Node's `writing/grok` in the host's data folder.
+    pub(crate) homes_folder: &'a Path,
 }
 
 /// The side call on the user's Grok, `launch` as the lookup found it, after `prefix_args`: what Grok wrote, or why it did
 /// not, in Node's words. Its home is removed however it ends.
 pub(crate) async fn write(launch: Option<&ResolvedCli>, prefix_args: &[String], run: SideRun<'_>) -> Result<String, String> {
-    if !identifier(run.model) {
+    if !valid_model_id(run.model) {
         return Err("Choose a valid Grok model before asking it to write.".into());
     }
     let Some(launch) = launch else {
         return Err("Install Grok CLI and sign in with your Grok subscription first.".into());
     };
-    std::fs::create_dir_all(run.writing).map_err(|_| START_FAILED.to_string())?;
-    sweep_leftover_sessions(run.writing).await;
-    let directory = make_session_folder(run.writing).await.map_err(|_| START_FAILED.to_string())?;
+    std::fs::create_dir_all(run.homes_folder).map_err(|_| START_FAILED.to_string())?;
+    sweep_leftover_sessions(run.homes_folder).await;
+    let directory = make_session_folder(run.homes_folder).await.map_err(|_| START_FAILED.to_string())?;
     let outcome = write_in(launch, prefix_args, &run, &directory).await;
-    remove_session(&directory, run.writing).await;
+    remove_session(&directory, run.homes_folder).await;
     outcome
 }
 
@@ -329,6 +320,12 @@ enum Received {
     Closed,
 }
 
+/// What Grok's `model_changed` notification says a session is on.
+struct Selection {
+    model: String,
+    effort: Option<String>,
+}
+
 /// Node's `GrokRpc` for a side call: one request at a time, everything Grok says in between read and acted on.
 struct Rpc {
     stdin: ChildStdin,
@@ -337,7 +334,8 @@ struct Rpc {
     session_id: String,
     text: String,
     last_text_at: Option<Instant>,
-    selection: Option<(String, Option<String>)>,
+    /// The model and effort Grok last said the session is on.
+    selection: Option<Selection>,
     failed: Option<String>,
 }
 
@@ -383,7 +381,7 @@ impl Rpc {
         const UNCONFIRMED: &str = "Grok did not confirm the requested model and reasoning effort. Check the connection and try again.";
         let deadline = tokio::time::Instant::now() + SELECTION_WAIT;
         loop {
-            if self.selection.as_ref().is_some_and(|(chosen, chosen_effort)| chosen == model && effort.is_none_or(|effort| chosen_effort.as_deref() == Some(effort))) {
+            if self.selection.as_ref().is_some_and(|chosen| chosen.model == model && effort.is_none_or(|effort| chosen.effort.as_deref() == Some(effort))) {
                 return Ok(());
             }
             match tokio::time::timeout_at(deadline, self.receive()).await {
@@ -471,7 +469,7 @@ impl Rpc {
             Some("_x.ai/session_notification") if for_this_session && kind == Some("model_changed") => {
                 if let Some(model) = update.and_then(|update| update.get("model_id")).and_then(Value::as_str) {
                     let effort = update.and_then(|update| update.get("reasoning_effort")).and_then(Value::as_str).map(String::from);
-                    self.selection = Some((model.to_string(), effort));
+                    self.selection = Some(Selection { model: model.to_string(), effort });
                 }
             }
             _ => {}
@@ -493,18 +491,6 @@ fn js_truthy(value: &Value) -> bool {
 
 // ---------------------------------------------------------------------------------------------------------------------
 // What Grok answers, as Node's schemas read it.
-
-/// Node's `IDENTIFIER`: 1 to 160 characters, a letter or digit first, then letters, digits and `._:/-`, in either case.
-fn identifier(text: &str) -> bool {
-    let mut chars = text.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphanumeric()) && text.len() <= 160 && chars.all(|c| c.is_ascii_alphanumeric() || "._:/-".contains(c))
-}
-
-/// Node's `EFFORT`: 1 to 32 characters, a lowercase letter first, then lowercase letters, digits, `_` and `-`.
-fn effort_name(text: &str) -> bool {
-    let mut chars = text.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase()) && text.len() <= 32 && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
-}
 
 /// What Node's `/api.?key/iu` finds in a sign-in method's name.
 fn names_an_api_key(method: &str) -> bool {
@@ -555,7 +541,7 @@ struct NewSession {
 fn read_session(created: &Value) -> Option<NewSession> {
     let session_id = string_of(created.get("sessionId")?, 1, 300)?.to_string();
     let models = created.get("models")?;
-    let current_model = models.get("currentModelId")?.as_str().filter(|id| identifier(id))?.to_string();
+    let current_model = models.get("currentModelId")?.as_str().filter(|id| valid_model_id(id))?.to_string();
     let available = models.get("availableModels")?.as_array()?;
     if available.is_empty() || available.len() > 300 {
         return None;
@@ -579,22 +565,22 @@ fn read_session(created: &Value) -> Option<NewSession> {
 
 /// One of `availableModels`, as Node's schema reads it.
 fn read_offered(model: &Value) -> Option<Offered> {
-    let id = model.get("modelId")?.as_str().filter(|id| identifier(id))?.to_string();
+    let id = model.get("modelId")?.as_str().filter(|id| valid_model_id(id))?.to_string();
     string_of(model.get("name")?, 1, 300)?;
     let mut supports = false;
     let mut efforts = Vec::new();
     if let Some(meta) = model.get("_meta") {
         meta.as_object()?;
-        if !optional(meta, "supportsReasoningEffort", Value::is_boolean) || !optional(meta, "reasoningEffort", |effort| effort.as_str().is_some_and(effort_name)) {
+        if !optional(meta, "supportsReasoningEffort", Value::is_boolean) || !optional(meta, "reasoningEffort", |effort| effort.as_str().is_some_and(valid_effort)) {
             return None;
         }
         supports = meta.get("supportsReasoningEffort") == Some(&Value::Bool(true));
         if let Some(listed) = meta.get("reasoningEfforts") {
             let listed = listed.as_array().filter(|listed| listed.len() <= 30)?;
             for entry in listed {
-                let named = |key: &str| entry.get(key).and_then(Value::as_str).filter(|name| effort_name(name));
+                let named = |key: &str| entry.get(key).and_then(Value::as_str).filter(|name| valid_effort(name));
                 let id = named("id")?;
-                if !entry.is_object() || !optional(entry, "value", |value| value.as_str().is_some_and(effort_name)) || !optional(entry, "default", Value::is_boolean) {
+                if !entry.is_object() || !optional(entry, "value", |value| value.as_str().is_some_and(valid_effort)) || !optional(entry, "default", Value::is_boolean) {
                     return None;
                 }
                 efforts.push(named("value").unwrap_or(id).to_string());
@@ -691,12 +677,6 @@ mod tests {
         for named in ["cached_token", "api__key", "api\nkey", "key-api"] {
             assert!(!names_an_api_key(named), "{named}");
         }
-    }
-
-    #[test]
-    fn checks_the_model_as_node_does() {
-        assert!(identifier("grok-code-fast-1") && identifier("A/b:c.d_e"));
-        assert!(!identifier("") && !identifier("-grok") && !identifier("grok 5") && !identifier(&"a".repeat(161)));
     }
 
     /// The homes an earlier run left are removed, and one made since this host started, as a running call's is, is kept.

@@ -9,6 +9,31 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
+/// Starts `command` on only the host's variables `keys` names (lowercase), in the case the host has them, as Node's
+/// allow-lists filter `process.env` for each client Sotto starts.
+pub(crate) fn keep_only_environment(command: &mut tokio::process::Command, keys: &[&str]) {
+    command.env_clear();
+    for (key, value) in std::env::vars_os() {
+        if key.to_str().is_some_and(|key| keys.contains(&key.to_ascii_lowercase().as_str())) {
+            command.env(key, value);
+        }
+    }
+}
+
+/// The model check Node's Codex and Grok side calls both make, Codex's ``/^[a-z0-9][a-z0-9._:/-]{0,159}$/iu`` and Grok's
+/// `IDENTIFIER`: 1 to 160 characters, a letter or digit first, then letters, digits and `._:/-`, in either case.
+pub(crate) fn valid_model_id(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric()) && text.len() <= 160 && chars.all(|c| c.is_ascii_alphanumeric() || "._:/-".contains(c))
+}
+
+/// The effort check every Node side call makes, ``/^[a-z][a-z0-9_-]{0,31}$/u`` and Grok's `EFFORT`: 1 to 32 characters,
+/// a lowercase letter first, then lowercase letters, digits, `_` and `-`.
+pub(crate) fn valid_effort(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase()) && text.len() <= 32 && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
 /// The client printed more than its limit, standard output and error together.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OverLimit;
@@ -99,6 +124,18 @@ mod tests {
 
     fn runtime() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
+    }
+
+    #[test]
+    fn checks_the_model_and_effort_as_node_does() {
+        for model in ["gpt-5.5", "o3", "Fixture-Model", "a/b:c_d.e", "grok-code-fast-1"] {
+            assert!(valid_model_id(model), "{model}");
+        }
+        for model in ["", "-gpt", "gpt 5", "opus[1m]", &"a".repeat(161)] {
+            assert!(!valid_model_id(model), "{model}");
+        }
+        assert!(valid_effort("low") && valid_effort("x_high-2"));
+        assert!(!valid_effort("Low") && !valid_effort("") && !valid_effort("1low") && !valid_effort(&"a".repeat(33)));
     }
 
     #[test]

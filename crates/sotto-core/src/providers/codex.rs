@@ -115,12 +115,8 @@ impl CodexLaunch {
     /// it, and the PATH the lookup found the client on (Node's `withCliPath`).
     pub(crate) fn command(&self) -> Command {
         let mut command = Command::new(&self.cli.executable);
-        command.args(&self.cli.prefix_args).env_clear();
-        for (key, value) in std::env::vars_os() {
-            if key.to_str().is_some_and(|key| NATIVE_ENVIRONMENT_KEYS.contains(&key.to_ascii_lowercase().as_str())) {
-                command.env(key, value);
-            }
-        }
+        command.args(&self.cli.prefix_args);
+        super::side_process::keep_only_environment(&mut command, NATIVE_ENVIRONMENT_KEYS);
         if let Some(home) = &self.codex_home {
             command.env("CODEX_HOME", home);
         }
