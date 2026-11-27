@@ -350,9 +350,11 @@ await import(pathToFileURL(FAKE).href)
     assert_eq!(fixture.last_commit(), "Fix the parser");
 
     let recorded: Vec<serde_json::Value> = fs::read_to_string(fixture.data().join("environments.jsonl")).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
-    // The fake's own transcript folder, which only the fake's sessions are told.
+    // The fake's own transcript folder, which only the fake's sessions are told, and the text encoding macOS gives
+    // every process however its environment was cleared, which Node's Claude Code is given too.
     let keys = |entry: &serde_json::Value| -> Vec<String> {
-        entry["keys"].as_array().unwrap().iter().map(|key| key.as_str().unwrap().to_string()).filter(|key| key != "sotto_fake_claude_home").collect()
+        entry["keys"].as_array().unwrap().iter().map(|key| key.as_str().unwrap().to_string())
+            .filter(|key| key != "sotto_fake_claude_home" && key != "__cf_user_text_encoding").collect()
     };
     let session: Vec<_> = recorded.iter().filter(|entry| entry["side"] == false).collect();
     let side: Vec<_> = recorded.iter().filter(|entry| entry["side"] == true).collect();
