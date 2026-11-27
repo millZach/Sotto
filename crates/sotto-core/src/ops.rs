@@ -2978,6 +2978,7 @@ fn run_git_clean(
         true,
         Instant::now() + Duration::from_secs(10),
         TimeoutStop::Kill,
+        None,
     )
 }
 
@@ -2986,7 +2987,7 @@ fn run_git_status_cmd_with_deadline(
     args: &[&str],
     deadline: Instant,
 ) -> Result<GitRunOutput, GitRunError> {
-    run_git_impl(folder, args, &[], None, None, false, deadline, TimeoutStop::Kill)
+    run_git_impl(folder, args, &[], None, None, false, deadline, TimeoutStop::Kill, None)
 }
 
 fn run_git_status_with_deadline(
@@ -3053,6 +3054,7 @@ fn run_git_impl(
     strip_all_git_env: bool,
     deadline: Instant,
     stop: TimeoutStop,
+    lines: Option<LineSink>,
 ) -> Result<GitRunOutput, GitRunError> {
     if Instant::now() >= deadline {
         return Err(GitRunError::Failed("git timed out".into()));
@@ -3133,33 +3135,21 @@ fn run_git_impl(
     // Nothing is sent on it: each reader holds a sender until it ends, so the channel closes once both pipes have.
     let (reading, pipes_closed) = std::sync::mpsc::channel::<()>();
     let stdout_reading = reading.clone();
+    let stdout_lines = lines.clone();
     let reader = std::thread::spawn(move || -> (Vec<u8>, bool) {
         let _reading = stdout_reading;
-        let mut buf = Vec::new();
-        let mut overflowed = false;
-        if let Some(mut stdout) = stdout_pipe {
-            if let Some(limit) = max_buffer {
-                let mut limited = stdout.take((limit as u64).saturating_add(1));
-                let _ = limited.read_to_end(&mut buf);
-                if buf.len() > limit {
-                    buf.truncate(limit);
-                    overflowed = true;
-                }
-            } else {
-                let _ = stdout.read_to_end(&mut buf);
-            }
+        match stdout_pipe {
+            Some(stdout) => read_pipe(stdout, max_buffer, true, stdout_lines.as_ref()),
+            None => (Vec::new(), false),
         }
-        (buf, overflowed)
     });
     let stderr_reader = std::thread::spawn(move || -> Vec<u8> {
         let _reading = reading;
-        let mut buf = Vec::new();
-        if let Some(stderr) = stderr_pipe {
-            // As much of what Git said as its output may hold, so the last lines a refusal quotes are there.
-            let limit = max_buffer.unwrap_or(16 * 1024) as u64;
-            let _ = stderr.take(limit).read_to_end(&mut buf);
+        // As much of what Git said as its output may hold, so the last lines a refusal quotes are there.
+        match stderr_pipe {
+            Some(stderr) => read_pipe(stderr, Some(max_buffer.unwrap_or(16 * 1024)), lines.is_none(), lines.as_ref()).0,
+            None => Vec::new(),
         }
-        buf
     });
 
     let mut timed_out = false;
@@ -3222,7 +3212,7 @@ fn run_git_impl(
 pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Duration>) -> Result<String, String> {
     // Node gives a removal no deadline at all; a day stands for none.
     let deadline = Instant::now() + deadline.unwrap_or(Duration::from_secs(86_400));
-    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline, TimeoutStop::Kill).map(|o| o.stdout).map_err(|e| match e {
+    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline, TimeoutStop::Kill, None).map(|o| o.stdout).map_err(|e| match e {
         GitRunError::Unavailable(_) => "Git is unavailable. Install Git or explicitly choose a shared working copy.".into(),
         GitRunError::MaxBuffer(_) => "Git returned too much output. Nothing was removed.".into(),
         GitRunError::Failed(msg) if msg == "git timed out" => "Git took too long.".into(),
@@ -3238,7 +3228,68 @@ pub(crate) const GIT_MISSING: &str = "git is not installed or is not on PATH.";
 /// nothing that redirects Git, at most 8,000,000 bytes back, stopped at `deadline` with SIGTERM so Git can remove its
 /// locks, and failing in Node's words: what Git said on its error stream, or that it exited, did not finish or is missing.
 pub(crate) fn run_action_git(folder: &str, args: &[&str], deadline: Duration) -> Result<String, String> {
-    run_git_impl(folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate).map(|o| o.stdout).map_err(action_git_words)
+    run_action_git_with(folder, args, deadline, ActionGitExtras::default())
+}
+
+/// Each line a command prints, as it prints it, without its line ending: Node's `onLine`.
+pub(crate) type LineSink = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+/// What a Git action may hand Git beyond its arguments, as Node's `GitCommandOptions` carries them: variables of its own,
+/// text on standard input, so a message or a path list is never an argument, and a reader of each line printed.
+#[derive(Default)]
+pub(crate) struct ActionGitExtras<'a> {
+    pub env: &'a [(String, String)],
+    pub stdin: Option<&'a [u8]>,
+    pub lines: Option<LineSink>,
+}
+
+/// `run_action_git` with what `extras` adds.
+pub(crate) fn run_action_git_with(folder: &str, args: &[&str], deadline: Duration, extras: ActionGitExtras<'_>) -> Result<String, String> {
+    run_git_impl(folder, args, extras.env, extras.stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, extras.lines)
+        .map(|o| o.stdout)
+        .map_err(action_git_words)
+}
+
+/// Reads a pipe to its end, keeping at most `limit` bytes (`None` for all of it), and hands each line to `lines` as it
+/// comes, split on `\n` with a `\r` before it dropped, and what is left once the pipe closes, as Node's runner does.
+/// Answered with what was kept and whether there was more than `limit`. Past `limit` it stops reading when
+/// `stop_at_limit` says so, and otherwise reads on, keeping nothing more, so every line still reaches `lines`.
+fn read_pipe(mut pipe: impl Read, limit: Option<usize>, stop_at_limit: bool, lines: Option<&LineSink>) -> (Vec<u8>, bool) {
+    let mut kept = Vec::new();
+    let mut partial: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut overflowed = false;
+    loop {
+        let read = match pipe.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => read,
+        };
+        let bytes = &chunk[..read];
+        match limit {
+            Some(limit) if kept.len() + bytes.len() > limit => {
+                let room = limit.saturating_sub(kept.len());
+                kept.extend_from_slice(&bytes[..room]);
+                overflowed = true;
+            }
+            _ => kept.extend_from_slice(bytes),
+        }
+        if let Some(sink) = lines {
+            partial.extend_from_slice(bytes);
+            while let Some(end) = partial.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = partial.drain(..=end).collect();
+                let line = &line[..line.len() - 1];
+                let line = line.strip_suffix(b"\r").unwrap_or(line);
+                sink(&String::from_utf8_lossy(line));
+            }
+        }
+        if overflowed && stop_at_limit {
+            break;
+        }
+    }
+    if let (Some(sink), false) = (lines, partial.is_empty()) {
+        sink(&String::from_utf8_lossy(&partial));
+    }
+    (kept, overflowed)
 }
 
 /// A Git action's failure in Node's runner's words.

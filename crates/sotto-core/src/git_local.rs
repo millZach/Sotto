@@ -293,24 +293,24 @@ pub(crate) fn js_space(c: char) -> bool {
     (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
-fn js_trim(text: &str) -> &str {
+pub(crate) fn js_trim(text: &str) -> &str {
     text.trim_matches(js_space)
 }
 
 /// The last two lines of what Git said, joined, as Node keeps them (`split('\n').slice(-2).join(' ')`).
-fn last_two_lines(text: &str) -> String {
+pub(crate) fn last_two_lines(text: &str) -> String {
     let lines: Vec<&str> = text.split('\n').collect();
     lines[lines.len().saturating_sub(2)..].join(" ")
 }
 
 /// `{lead} {detail}` with `detail` cut to `max` UTF-16 code units, trimmed, as Node's refusals build it.
-fn refused_with(lead: &str, detail: &str, max: usize) -> String {
+pub(crate) fn refused_with(lead: &str, detail: &str, max: usize) -> String {
     js_trim(&format!("{lead} {}", clip_utf16(detail, max))).to_string()
 }
 
 /// What Git said with any user name or token in a remote's address taken out, as Node's `safeRemote`
 /// (`((?:https?|ssh):\/\/)[^\s/@]+@`, without regard to case).
-fn safe_remote(text: &str) -> String {
+pub(crate) fn safe_remote(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(c) = rest.chars().next() {
