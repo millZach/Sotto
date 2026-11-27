@@ -1,9 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { createReadStream, createWriteStream } from 'node:fs'
-import { lstat, mkdir, open, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, realpath, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { Transform } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
 
 /** How long a saved screenshot or recording is kept before a start of Sotto removes it (ADR-0220, decision 7). */
 export const BROWSER_FILES_KEPT_MS = 7 * 24 * 60 * 60_000
@@ -64,7 +61,7 @@ export class BrowserFiles {
           if (!opened.isFile() || !same || real !== source || !allowed.some(root => inside(root, source))) throw new StageProblem(`${name} changed while Sotto was checking it. Nothing was given to the page.`)
           const path = join(folder, String(index), name)
           await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-          const digest = await copyHashing(handle.fd, path)
+          const digest = await copyHashing(handle, path)
           files.push({ name, source, path, size: opened.size, digest })
         } finally { await handle.close().catch(() => undefined) }
       }
@@ -110,16 +107,37 @@ export class BrowserFiles {
 }
 
 class StageProblem extends Error {}
-/** Copies an open file to `to`, which must not exist yet, and answers the SHA-256 of what was copied. */
-async function copyHashing(fd: number, to: string): Promise<string> {
-  const hash = createHash('sha256')
-  const tap = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); done(null, chunk) } })
-  await pipeline(createReadStream('', { fd, autoClose: false, start: 0 }), tap, createWriteStream(to, { flags: 'wx', mode: 0o600 }))
+/**
+ * Copies an open file to `to`, which must not exist yet, and answers the SHA-256 of what was copied. It reads and writes
+ * in chunks through file handles rather than streams, since a paired host bundles this file and its reviewed Node
+ * imports have no `node:stream`.
+ */
+async function copyHashing(from: FileHandle, to: string): Promise<string> {
+  const hash = createHash('sha256'), chunk = Buffer.allocUnsafe(1024 * 1024)
+  const target = await open(to, 'wx', 0o600)
+  try {
+    for (let position = 0; ;) {
+      const { bytesRead } = await from.read(chunk, 0, chunk.length, position)
+      if (bytesRead === 0) break
+      const piece = chunk.subarray(0, bytesRead)
+      hash.update(piece)
+      await target.write(piece, 0, bytesRead)
+      position += bytesRead
+    }
+  } finally { await target.close() }
   return hash.digest('hex')
 }
 async function hashOf(path: string): Promise<string> {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
+  const hash = createHash('sha256'), chunk = Buffer.allocUnsafe(1024 * 1024)
+  const file = await open(path, 'r')
+  try {
+    for (let position = 0; ;) {
+      const { bytesRead } = await file.read(chunk, 0, chunk.length, position)
+      if (bytesRead === 0) break
+      hash.update(chunk.subarray(0, bytesRead))
+      position += bytesRead
+    }
+  } finally { await file.close() }
   return hash.digest('hex')
 }
 

@@ -31,9 +31,16 @@ export class BrowserAgentServer extends ThreadToolServer implements BrowserAgent
    */
   constructor(definitions: readonly BrowserToolDefinition[], invoke: BrowserToolInvoke, instructions = BROWSER_INSTRUCTIONS, compact: readonly BrowserToolDefinition[] = definitions) {
     const compactThreads = new Set<string>()
-    super({ name: BROWSER_MCP_SERVER, serverName: 'sotto-browser', instructions, unavailable: 'This browser tool is unavailable.',
+    const unavailable = 'This browser tool is unavailable.'
+    super({ name: BROWSER_MCP_SERVER, serverName: 'sotto-browser', instructions, unavailable,
       failed: 'The browser action could not be completed. Check the browser in Tools before retrying.' }, definitions,
-    (threadId, name, args, context) => invoke(threadId, name, args, context, compactThreads.has(threadId)),
+    // A compact thread may call only what it is listed: a full-catalog tool is as unavailable to it as one that does
+    // not exist. Other servers keep their own answer for a tool a thread is not listed, so this stays here.
+    (threadId, name, args, context) => {
+      const stable = compactThreads.has(threadId)
+      if (stable && !compact.some(tool => tool.name === name)) return Promise.resolve({ isError: true, content: [{ type: 'text', text: unavailable }] })
+      return invoke(threadId, name, args, context, stable)
+    },
     threadId => compactThreads.has(threadId) ? compact : definitions)
     this.compactThreads = compactThreads
   }

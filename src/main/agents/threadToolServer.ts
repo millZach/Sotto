@@ -84,9 +84,7 @@ export class ThreadToolServer {
     private readonly invoke: (threadId: string, name: string, args: unknown, context: ThreadToolCallContext) => Promise<ThreadToolResult>,
     private readonly listFor?: (threadId: string) => readonly ThreadToolDefinition[]) {}
   async call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> {
-    // A thread may call only what it is listed: a tool hidden from it is as unavailable as one that does not exist.
-    const listed = this.listFor ? this.listFor(threadId) : this.definitions
-    if (this.closed || !listed.some(tool => tool.name === name)) return { isError: true, content: [{ type: 'text', text: this.identity.unavailable }] }
+    if (this.closed || !this.definitions.some(tool => tool.name === name)) return { isError: true, content: [{ type: 'text', text: this.identity.unavailable }] }
     try { return await this.invoke(threadId, name, args, context) }
     catch { return { isError: true, content: [{ type: 'text', text: this.identity.failed }] } }
   }

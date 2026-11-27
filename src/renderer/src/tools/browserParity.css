@@ -17,7 +17,7 @@
 .browser-parity__profile-row { display: flex; align-items: center; gap: 6px; }
 .browser-parity__profile-row > .browser-parity__profile { flex: 1 1 auto; }
 .browser-parity__profile-row > .files-icon { flex: none; width: 26px; height: 26px; border-radius: var(--tt-radius-control); }
-.browser-parity__profile { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 34px; padding: 0 8px; border-radius: var(--tt-radius-control); color: var(--tt-text); font-size: var(--tt-type-body); cursor: pointer; }
+.browser-parity__profile { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 34px; padding: 0 8px; border-radius: var(--tt-radius-control); color: var(--tt-text); font-size: var(--tt-type-body); }
 .browser-parity__profile:hover { background: var(--tt-hover); }
 .browser-parity__profile > input { flex: none; margin: 0; accent-color: var(--tt-accent); }
 .browser-parity__profile-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
