@@ -934,6 +934,11 @@ impl AcpAdapter {
         }
 
         if let Some(rec) = self.shared.records.lock().unwrap().get_mut(thread_id) {
+            if let Some(model) = raw_model.as_ref().filter(|_| flavor == AcpFlavor::Grok) {
+                // Node's `alias.nativeModelId = modelId` once Grok takes the change: the model the session is on, which
+                // its side call runs on, must not stay the one Node last saw.
+                rec.extra.insert("nativeModelId".into(), Value::String(model.clone()));
+            }
             if raw_model.is_some() {
                 rec.model_id = raw_model;
             }

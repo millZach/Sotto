@@ -243,6 +243,48 @@ fn grok_drafts_the_commit_in_a_tool_free_session_on_a_throwaway_home() {
     assert!(!fixture.data().join("violations.jsonl").exists(), "side writing opened a session with tools");
 }
 
+/// Node's Grok side call runs on `nativeModelId`, which Node moves with the thread's model once Grok takes a change. Rust
+/// once moved only `modelId`, so a thread Node had seen on another model drafted on that one, or not at all.
+#[test]
+fn grok_drafts_on_the_model_this_host_moved_the_thread_to() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    let config = AcpAdapterConfig::fake(AcpFlavor::Grok, fixture.data(), FAKE_GROK.into());
+    let adapter = grok_on(&fixture, &runtime, json!({ "text": "Fix the parser" }), config);
+    // Thread `t` as Node last saved it, on a model the side call's Grok no longer offers.
+    let records = fixture.data().join("grok-threads.json");
+    let mut saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(&records).unwrap()).unwrap();
+    saved["t"]["modelId"] = json!("older-model");
+    saved["t"]["nativeModelId"] = json!("older-model");
+    fs::write(&records, saved.to_string()).unwrap();
+    let adapter = {
+        drop(adapter);
+        let adapter = Arc::new(AcpAdapter::new(AcpAdapterConfig::fake(AcpFlavor::Grok, fixture.data(), FAKE_GROK.into())));
+        let (events, _) = tokio::sync::mpsc::unbounded_channel();
+        runtime.block_on(adapter.connect(events)).unwrap();
+        adapter
+    };
+    // A send on `fixture-model` moves the thread there, whatever becomes of the turn itself.
+    let send = crate::provider::SendMessageRequest {
+        thread_id: "t".into(),
+        record_seed: crate::provider::ThreadRecordSeed { project_id: "project-1".into(), title: "Fix the build".into(), created_at: "2026-11-27T10:00:00.000Z".into() },
+        message_id: "m-1".into(),
+        cwd: fixture.repo.to_string_lossy().into_owned(),
+        model_id: Some("fixture-model".into()),
+        reasoning_effort: None,
+        runtime_mode: Some("approval-required".into()),
+        text: "Hello".into(),
+        command_id: "c-1".into(),
+        draft_id: "d-1".into(),
+        attachments: Vec::new(),
+    };
+    let _ = runtime.block_on(async { tokio::time::timeout(Duration::from_secs(20), adapter.send_message(send)).await });
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+    let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(&records).unwrap()).unwrap();
+    assert_eq!((&saved["t"]["modelId"], &saved["t"]["nativeModelId"]), (&json!("fixture-model"), &json!("fixture-model")));
+}
+
 #[test]
 fn grok_that_fails_or_outlasts_the_deadline_leaves_nodes_stand_in_subject_and_no_home() {
     let runtime = runtime();
