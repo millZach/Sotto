@@ -43,6 +43,19 @@ Nothing here moves except the cursor's glide, which reduced motion turns into a 
 - `tests/unit/renderer/tools/browserZoomDownloads.test.tsx` (new): the zoom menu and chip, the download strip and list, the hook, the drawing editor's focus and Add, and "Allow this thread" hidden for an action that asks every time. `browserReview.test.tsx`: a drawing added as one draft item that says the user drew on it.
 - `tests/unit/main/toolsIpc.test.ts`: 52 tools channels, the four new ones (zoom, downloads, download, cursorStyle) held to the main window and refused with the feature off.
 
+## Gates
+
+On `ebdac66fd`: `npm run typecheck`, `npm run lint`, `npm run notices:verify` (202 components), `npm run e2e:list` (693 tests in 305 files) and `npm run build` passed. The branch's journeys (`browser-zoom-downloads`, `browser-parity`, `secret-requests`, `browser-pane` and `paired-host-browser`) passed 6 of 7; `paired-host-browser.spec.ts:99`, a picture redrawn at a smaller pane, fails the same way on `origin/main` at 9220d0129. `npm run test:desktop-smoke` passed 12 and failed `daily-workspace.spec.ts:169`, and `npm run design:verify` passed 6 and failed `settings-providers-light`, `setup-welcome` and `scale-100-help`, as on `origin/main` (see the [first verification](2026-11-27-browser-parity.md#gates)).
+
+The full `npm test -- --maxWorkers=2` run on `cecd8d007` found what this work broke, fixed in `ebdac66fd`:
+
+- `hostProviderJob`, `pluginChangeTools` and `pluginMailSendTool`: refusing a tool a thread is not listed had gone into the shared thread tool server, so Watcher and a host's jobs lost their own answers. It is now the browser server's alone, for a thread on the stable catalog.
+- `hostBuildScripts` and `stableHostPromotion`: upload copies used streams, which put `node:stream` in the paired host's bundle, outside its reviewed imports. They now copy in chunks through file handles.
+- `pointerCursor`: a profile row had the pointer cursor, which Sotto keeps for links.
+- `socketHostBrowser`: its fake page did not mask text as a real one does.
+
+On `ebdac66fd` the full run passed 22,328 tests and failed 13. `socketHost` (two answer receipts) and `trackedFileEncoding` (its 60-second scan, under the run's load) passed when rerun on their own. The rest fail for reasons outside this branch, as before: `threadWorktreeReclaim` and `threadWorktreeInterruptedRemoval` fail on a clean main, `gitRepository` needs a Git with `gc --no-detach`, `liveChildSteps` needs the right to make symlinks, and `installedProvidersGate` finds this computer's Hermes.
+
 ## Not checked here
 
 - macOS and Linux: zoom keys under Command, Touch ID or a Linux security key for passkeys, and the system Save dialog there.
