@@ -38,6 +38,7 @@ import { subagentAssignmentsPageSchema, subagentPageSchema } from '../../src/sha
 import { agentThreadWordsSchema } from '../../src/shared/threadWords'
 import { toolsResultSchema } from '../../src/shared/tools'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema } from '../../src/shared/usageDashboard'
+import { stopProcessTree } from '../fixtures/stopProcessTree'
 import { ClientFold } from '../referee/fold'
 import { PROFILES } from '../referee/scenario'
 import { DESKTOP_DEFLATE_OFFER, openSocket, pairClient, startHost } from '../referee/wire'
@@ -124,10 +125,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host foundation parity with TypeScri
   }, 180_000)
 
   afterAll(async () => {
-    if (child && child.exitCode === null) {
-      child.kill()
-      await new Promise(r => child?.once('exit', r))
-    }
+    if (child) await stopProcessTree(child)
     if (dir) await rm(dir, { recursive: true, force: true })
     if (freshDir) await rm(freshDir, { recursive: true, force: true })
   })
