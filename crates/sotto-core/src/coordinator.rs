@@ -292,7 +292,7 @@ fn resolve_model<'a>(models: &'a [AgentModel], model_id: &str) -> Option<&'a Age
 }
 
 /// Whether a thread's provider session has started, as Node reads `nativeSessionStarted !== false`: a record that does
-/// not say, from a build that did not write it, counts as started once the thread has a turn.
+/// not say, from a build that did not write it, has started, and so does one with a turn.
 fn session_started(thread: &AgentThread) -> bool {
     thread.native_session_started || thread.last_turn.is_some()
 }
@@ -4285,8 +4285,8 @@ impl CoordinatorActor {
     /// Every other thread's folder, as Node's `checkoutIsUnreferenced` names it to ask whether it works in a checkout: its
     /// working folder, its worktree's, the one it reused, or its project's, and `None` for one with no folder at all. A
     /// thread whose folder Sotto removed works nowhere. Node also passes over a thread whose own worktree is not made yet
-    /// when its record says its session never started; this host reads an omitted flag as not started and cannot tell the
-    /// two apart, so it passes over none of them, which can only keep a folder that Node would remove.
+    /// when its record says its session never started; this host passes over none of them, which can only keep a folder
+    /// that Node would remove.
     fn other_thread_folders(&self, thread_id: &str) -> Vec<Option<String>> {
         self.threads
             .iter()
@@ -4585,8 +4585,7 @@ impl CoordinatorActor {
         let creation = self.creations.iter().find(|c| c.get("threadId").and_then(Value::as_str) == Some(thread_id.as_str()));
         let unstarted = creation.is_none_or(|c| c.get("phase").and_then(Value::as_str) == Some("unstarted"));
         let own_folder = thread.worktree.as_ref().is_some_and(|wt| wt.mode == "independent" && wt.path.is_some());
-        // A thread Node saved without `nativeSessionStarted` reads here as not started, but Node reads it as started: a turn
-        // or a sent message says it is.
+        // A turn or a sent message says a thread has started whatever its record says.
         let started = session_started(thread) || thread.last_user_message_id.is_some();
         if started || !unstarted || own_folder {
             return self.refuse_sync_command(lane, &client, "This thread already has a working folder. Start a new thread to choose another one.".into(), reply);
@@ -7671,6 +7670,29 @@ mod tests {
         let (reply, answer) = oneshot::channel();
         coord.tx.send(ActorMessage::HoldCheckout { thread_id: choosing.into(), folder: folder.to_string_lossy().into_owned(), key, sharing: vec![], reply }).unwrap();
         assert_eq!(answer.await.unwrap(), Err(words.to_string()));
+        coord.shutdown().await;
+    }
+
+    /// A thread saved without `nativeSessionStarted`, by a build that did not write it, has started, as Node reads it,
+    /// even with no message or turn: its working copy is not chosen again.
+    #[tokio::test]
+    async fn a_thread_saved_without_saying_it_started_keeps_its_folder() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let (coord, _mock, client, project_id, _project, _user) = working_copy_workspace(&base).await;
+        let thread_id = "00000000-0000-4000-8000-0000000000a3";
+        coord.run_command(client.clone(), json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Earlier", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" }).as_object().unwrap().clone()).await.unwrap();
+        coord.shutdown().await;
+
+        let path = base.join("data").join("workspace.json");
+        let mut workspace: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let thread = workspace["snapshot"]["threads"].as_array_mut().unwrap().iter_mut().find(|t| t["id"] == thread_id).unwrap();
+        thread.as_object_mut().unwrap().remove("nativeSessionStarted");
+        std::fs::write(&path, serde_json::to_string(&workspace).unwrap()).unwrap();
+        let coord = CoordinatorHandle::spawn(base.join("data"), "00000000-0000-4000-8000-000000000001".into(), false, mock_providers()).unwrap();
+        let shell = coord.run_command(client.clone(), json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "shared" }).as_object().unwrap().clone()).await.unwrap();
+        assert_eq!(shell["error"], "This thread already has a working folder. Start a new thread to choose another one.");
         coord.shutdown().await;
     }
 
