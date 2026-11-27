@@ -425,22 +425,14 @@ fn required_id<'a>(command: &'a Map<String, Value>, key: &str, max: usize) -> Re
     }
 }
 
-/// Whether a working-copy command is one Node's strict command schema reads (`agentCommandSchema` in
-/// `src/shared/agents.ts`): a thread ID, and `background` or `withUncommittedChanges` only as a boolean, on the command
-/// that takes it.
+/// A Retry, Refresh or Restore branch command in Node's strict command schema's shape
+/// (`worktree_reclaim::working_copy_command_shape`), or `invalid_request`.
 fn working_copy_command_shape(command: &Map<String, Value>) -> Result<(), CoordinatorError> {
-    let refused = || CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message());
-    required_id(command, "threadId", THREAD_ID_MAX).map_err(|_| refused())?;
-    let flag = match command.get("type").and_then(Value::as_str) {
-        Some("refresh-thread-worktree") => Some("background"),
-        Some("restore-thread-branch") => Some("withUncommittedChanges"),
-        _ => None,
-    };
-    let unread = command.iter().any(|(key, value)| key != "type" && key != "threadId" && (Some(key.as_str()) != flag || !value.is_boolean()));
-    if unread {
-        return Err(refused());
+    if crate::worktree_reclaim::working_copy_command_shape(command) {
+        Ok(())
+    } else {
+        Err(CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message()))
     }
-    Ok(())
 }
 
 /// The threads on this host Watcher watches, asked as a thread is checked for deleting (ADR-0140 decision 3), as Node's
@@ -3259,7 +3251,10 @@ impl CoordinatorActor {
                 }
                 if let Some(wt) = allocated_worktree {
                     if let Some(t) = self.threads.iter_mut().find(|t| t.id == thread_id) {
-                        t.working_directory = wt.path.clone();
+                        // A folder the thread already works in stays its own, as Node's `workingDirectory ??=` keeps it.
+                        if t.working_directory.is_none() {
+                            t.working_directory = wt.path.clone();
+                        }
                         t.worktree = Some(*wt);
                         self.save_workspace();
                     }

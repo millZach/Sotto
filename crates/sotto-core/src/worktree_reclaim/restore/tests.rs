@@ -267,3 +267,19 @@ fn restore_branch_goes_back_to_the_sent_branch_as_node_does() {
     assert_eq!(restore(&gone, true).unwrap_err().0, "That branch name cannot be restored. Switch it in the folder itself.");
     assert_eq!(sh_git(&fixture.repo, &["branch", "--show-current"]), "elsewhere");
 }
+
+/// A failed record whose folder Git still will not confirm is never sent into: its own error is the answer, as Node's
+/// `resolveThreadWorkingDirectory` gives it, and what is at the folder's place is kept.
+#[test]
+fn a_failed_record_is_not_worked_in() {
+    let fixture = Fixture::new();
+    let mut failed = fixture.reclaimed();
+    fs::create_dir_all(&fixture.path).unwrap();
+    fs::write(fixture.path.join("mine.txt"), "the user's\n").unwrap();
+    failed.status = "error".into();
+    failed.error = Some("Setup failed.".into());
+    assert_eq!(send(&fixture, &failed).unwrap_err(), "Setup failed.");
+    failed.error = None;
+    assert_eq!(send(&fixture, &failed).unwrap_err(), "This thread’s working folder is not ready. Retry working-copy setup.");
+    assert_eq!(fs::read_to_string(fixture.path.join("mine.txt")).unwrap(), "the user's\n");
+}

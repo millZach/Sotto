@@ -2465,6 +2465,11 @@ async fn handle_ws_request(
             if reclaiming && !sotto_core::worktree_reclaim::reclaim_command_shape(cmd) {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
+            // And so are Retry, Refresh and Restore branch of a thread's working copy.
+            let working_copy = matches!(cmd.get("type").and_then(Value::as_str), Some("retry-thread-worktree" | "refresh-thread-worktree" | "restore-thread-branch"));
+            if working_copy && !sotto_core::worktree_reclaim::working_copy_command_shape(cmd) {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {

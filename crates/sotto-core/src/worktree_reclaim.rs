@@ -1681,7 +1681,7 @@ pub fn owns_checkout_alone(folder: &str, others: &[Option<String>]) -> bool {
 }
 
 mod restore;
-pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, NO_CHECKOUT_TO_SWITCH, RESTORE_BRANCH_NEEDS_CONFIRMATION};
+pub use restore::{read_working_copy, restore_thread_branch, send_working_copy, with_repository, working_copy_command_shape, NO_CHECKOUT_TO_SWITCH, RESTORE_BRANCH_NEEDS_CONFIRMATION};
 
 #[cfg(test)]
 mod tests;

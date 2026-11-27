@@ -125,6 +125,20 @@ fn with_sent_branch(mut record: AgentThreadWorktree, branch: Option<String>) -> 
     record
 }
 
+/// Whether a Retry, Refresh or Restore branch command is one Node's strict command schema reads (`agentCommandSchema` in
+/// `src/shared/agents.ts`): a thread ID, and `background` or `withUncommittedChanges` only as a boolean, on the command
+/// that takes it. The socket server reads it before anything turns the command down or keeps its receipt, as Node's does.
+pub fn working_copy_command_shape(command: &serde_json::Map<String, Value>) -> bool {
+    let flag = match command.get("type").and_then(Value::as_str) {
+        Some("retry-thread-worktree") => None,
+        Some("refresh-thread-worktree") => Some("background"),
+        Some("restore-thread-branch") => Some("withUncommittedChanges"),
+        _ => return false,
+    };
+    let thread_id = command.get("threadId").and_then(Value::as_str).is_some_and(|id| !id.is_empty() && id.encode_utf16().count() <= 512);
+    thread_id && command.iter().all(|(key, value)| key == "type" || key == "threadId" || (Some(key.as_str()) == flag && value.is_boolean()))
+}
+
 /// A record with the repository its worktree belongs to. Node records it whenever it takes an existing worktree
 /// (`allocate`); this host's own records of one did not, so it is the project's, read as Node reads it then. Inspection
 /// needs it to check that the folder is still that repository's checkout.
@@ -771,21 +785,25 @@ fn switch_branch(metadata: &AgentThreadWorktree, branch: &str) -> Result<AgentTh
 
 /// The record a thread's working copy has once its folder is put back and read, as Node's `threadWorkingDirectory`, which
 /// a send and a Git action run first: a ready or failed worktree is put back on its recorded branch and inspected; one
-/// that cannot be put back keeps a ready record's failure as the answer, and a failed record keeps its own unless its
-/// folder is not there. `None` when nothing in the record changed.
+/// that cannot be put back keeps a ready record's failure as the answer, and a record that is still not ready answers
+/// with its own error, as Node's `resolveThreadWorkingDirectory` does: nothing works in a folder Git will not confirm.
+/// `None` when nothing in the record changed.
 fn thread_working_directory(data_directory: &Path, metadata: &AgentThreadWorktree) -> Result<Option<AgentThreadWorktree>, String> {
-    let Some(path) = metadata.path.as_deref() else {
-        return Ok(None);
-    };
     let mut changed = None;
-    if metadata.status == "ready" || metadata.status == "error" {
+    if metadata.path.is_some() && (metadata.status == "ready" || metadata.status == "error") {
         match restore(data_directory, metadata).and_then(|restored| inspect(&restored)) {
             Ok(inspected) => changed = (inspected != *metadata).then_some(inspected),
             Err(words) if metadata.status == "ready" => return Err(words),
             Err(_) => {}
         }
     }
-    existing_working_directory(Path::new(path)).map_err(|refused| refused.words)?;
+    let current = changed.as_ref().unwrap_or(metadata);
+    if current.status != "ready" {
+        return Err(current.error.clone().unwrap_or_else(|| "This thread’s working folder is not ready. Retry working-copy setup.".into()));
+    }
+    if let Some(path) = current.path.as_deref() {
+        existing_working_directory(Path::new(path)).map_err(|refused| refused.words)?;
+    }
     Ok(changed)
 }
 
