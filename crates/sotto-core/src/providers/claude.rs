@@ -35,6 +35,8 @@ pub struct ClaudeAdapterConfig {
     pub claude_home: Option<PathBuf>,
     pub request_timeout_ms: u64,
     pub use_cli_lookup: bool,
+    /// How long a side call has to answer (ADR-0026): Node's 90 seconds, or a test's shorter one.
+    pub side_writing_deadline: Duration,
 }
 
 /// Where Claude Code keeps its transcripts when Sotto names no other folder: `~/.claude` under the home folder Node's
@@ -58,6 +60,7 @@ impl ClaudeAdapterConfig {
             claude_home: None,
             request_timeout_ms: 30_000,
             use_cli_lookup: true,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
 
@@ -73,7 +76,63 @@ impl ClaudeAdapterConfig {
             claude_home: Some(claude_home),
             request_timeout_ms: 2_000,
             use_cli_lookup: false,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
+    }
+
+    /// The user's Claude Code as the CLI lookup finds it, or the configured client when no lookup is made; `None` when
+    /// the lookup finds none. The configured leading arguments are the caller's to add.
+    fn launch(&self) -> Option<ClaudeLaunch> {
+        if !self.use_cli_lookup {
+            return Some(ClaudeLaunch { executable: PathBuf::from(&self.executable), prefix_args: Vec::new(), path: None });
+        }
+        let options = crate::cli_lookup::CliLookupOptions::from_process_env();
+        crate::cli_lookup::resolve_provider_cli("claude", &self.data_directory, &options).map(ClaudeLaunch::from)
+    }
+}
+
+impl From<crate::cli_lookup::ResolvedCli> for ClaudeLaunch {
+    fn from(resolved: crate::cli_lookup::ResolvedCli) -> Self {
+        let path = (!resolved.augmented_path.is_empty()).then_some(resolved.augmented_path);
+        Self { executable: resolved.executable, prefix_args: resolved.prefix_args, path }
+    }
+}
+
+/// How the user's Claude Code starts: the program, its own leading arguments, and the PATH it was found on, as Node's
+/// `withCliPath` adds it.
+pub(crate) struct ClaudeLaunch {
+    pub(crate) executable: PathBuf,
+    pub(crate) prefix_args: Vec<String>,
+    pub(crate) path: Option<String>,
+}
+
+/// Node's `ENVIRONMENT_KEYS` (`src/main/agents/subscriptionClaude.ts`), lowercase: the native OS identity and networking
+/// a Claude Code process keeps, not provider keys, other account folders, Node injection flags or cloud-provider routing.
+pub(crate) const ENVIRONMENT_KEYS: &[&str] = &[
+    "path", "pathext", "systemroot", "windir", "temp", "tmp", "user", "logname", "username", "userprofile", "homedrive", "homepath", "home",
+    "appdata", "localappdata", "programdata", "allusersprofile", "xdg_config_home", "xdg_cache_home", "xdg_data_home",
+    "lang", "lc_all", "lc_ctype", "tz", "https_proxy", "http_proxy", "no_proxy",
+    "ssl_cert_file", "ssl_cert_dir", "node_extra_ca_certs",
+    "disable_auto_compact", "disable_compact", "claude_autocompact_pct_override", "claude_code_auto_compact_window",
+];
+
+impl ClaudeLaunch {
+    /// The user's Claude Code with its own leading arguments, on the environment Node's `claudeEnvironment` gives every
+    /// Claude Code process Sotto starts, a thread's session and its side call alike: the allow-list above, the PATH the
+    /// lookup found the client on (Node's `withCliPath`) and `NO_COLOR`.
+    pub(crate) fn command(&self) -> Command {
+        let mut command = Command::new(&self.executable);
+        command.args(&self.prefix_args).env_clear();
+        for (key, value) in std::env::vars_os() {
+            if key.to_str().is_some_and(|key| ENVIRONMENT_KEYS.contains(&key.to_ascii_lowercase().as_str())) {
+                command.env(key, value);
+            }
+        }
+        if let Some(path) = &self.path {
+            command.env("PATH", path);
+        }
+        command.env("NO_COLOR", "1");
+        command
     }
 }
 
@@ -208,30 +267,12 @@ impl ClaudeSessionProcess {
             }
         }
 
-        let resolved = if config.use_cli_lookup {
-            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
-            Some(
-                crate::cli_lookup::resolve_provider_cli("claude", &config.data_directory, &opts)
-                    .ok_or_else(|| {
-                        "Install Claude Code and sign in before connecting this provider."
-                            .to_string()
-                    })?,
-            )
-        } else {
-            None
-        };
-        let mut cmd = match &resolved {
-            Some(res) => {
-                let mut c = Command::new(&res.executable);
-                c.args(&res.prefix_args);
-                res.apply_tokio(&mut c);
-                c
-            }
-            None => Command::new(&config.executable),
-        };
+        let launch = config.launch().ok_or_else(|| {
+            "Install Claude Code and sign in before connecting this provider.".to_string()
+        })?;
+        let mut cmd = launch.command();
         cmd.args(&args)
             .current_dir(cwd)
-            .env("NO_COLOR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -1262,6 +1303,35 @@ impl ProviderAdapter for ClaudeAdapter {
                 });
             }
             Ok(())
+        })
+    }
+
+    /// Node's `writeShortText`: a side call on this thread's model, at its least effort, in its folder, as a separate
+    /// print run with no session, so the thread's own Claude Code is neither started nor resumed for it. Nothing is
+    /// written while Claude Code is not connected, for a thread it has no record of, or when the client is not found.
+    fn write_short_text(&self, thread_id: String, prompt: crate::side_writing::ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
+        Box::pin(async move {
+            if self.shared.status.lock().unwrap().connection != "connected" {
+                return Ok(None);
+            }
+            let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
+                return Ok(None);
+            };
+            // A personal thread is the user's own Claude Code session, and Node writes nothing for it.
+            if record.extra.get("kind").and_then(Value::as_str) == Some("personal") {
+                return Ok(None);
+            }
+            // Node's record always names its model; one that does not has nothing to write on.
+            let Some(model) = record.model_id else {
+                return Ok(None);
+            };
+            let Some(launch) = self.config.launch() else {
+                return Ok(None);
+            };
+            let effort = crate::side_writing::side_writing_effort(&self.models(), &public_provider_entity_id("claude", "model", &model));
+            let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
+            let run = super::claude_side::SideRun { prompt: &prompt, model: &model, effort: effort.as_deref(), cwd: Path::new(&cwd), deadline: self.config.side_writing_deadline };
+            super::claude_side::write(&launch, &self.config.prefix_args, run).await.map(Some)
         })
     }
 
