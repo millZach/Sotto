@@ -38,6 +38,7 @@ import {
   listenEngineServer,
 } from '../../src/main/engine/transport'
 import { publicProviderEntityId } from '../../src/shared/agents'
+import { stopProcessTree } from '../fixtures/stopProcessTree'
 import {
   councilChangedSchema,
   councilCommandResultSchema,
@@ -241,10 +242,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       const code = await exited
       expect(code).toBe(0)
     } finally {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGTERM')
-        await exited.catch(() => undefined)
-      }
+      await stopProcessTree(child)
       await server.close()
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -271,10 +269,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       const code = await exited
       expect(code).toBe(0)
     } finally {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGTERM')
-        await exited.catch(() => undefined)
-      }
+      await stopProcessTree(child)
       await server.close()
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -690,10 +685,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(await closePromise).toBe(true)
       expect(await exited).toBe(0)
     } finally {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGTERM')
-        await exited.catch(() => undefined)
-      }
+      await stopProcessTree(child)
       await server.close()
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -804,10 +796,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
     } finally {
       if (prevGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL
       else process.env.GIT_CONFIG_GLOBAL = prevGlobal
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGTERM')
-        await exited.catch(() => undefined)
-      }
+      await stopProcessTree(child)
       await server.close()
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
@@ -1087,7 +1076,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
     } finally {
       tsCheckpoints.dispose()
       await client?.close().catch(() => undefined)
-      if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      if (child) await stopProcessTree(child)
       await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(repoDir, { recursive: true, force: true }).catch(() => undefined)
@@ -1212,7 +1201,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(await exited).toBe(0)
       conn.close()
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await stopProcessTree(child)
       await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -1434,7 +1423,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(afterReload.map(a => a.id).sort()).toEqual([meshyAcc.id, elevenAcc.id].sort())
       expect(afterReload.find(a => a.id === meshyAcc.id)?.spending).toEqual({ askBefore: false, monthlyLimit: 2500 })
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await stopProcessTree(child)
       await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -1638,7 +1627,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       const tsLegacy = tsFile.councils.find(c => c.id === legacyId)
       expect(tsLegacy && !('phase' in tsLegacy) && tsLegacy.rounds[0]?.question).toBeUndefined()
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await stopProcessTree(child)
       await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -1863,8 +1852,8 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       await tsSettles.load()
       expect([...(tsSettles.of(`host:${afterLocalProj.hostId}:parent-1`)?.settled ?? [])]).toEqual([remoteThread.id])
     } finally {
-      if (engineChild.exitCode === null && engineChild.signalCode === null) engineChild.kill('SIGTERM')
-      if (hostChild.exitCode === null && hostChild.signalCode === null) hostChild.kill('SIGTERM')
+      await stopProcessTree(engineChild)
+      await stopProcessTree(hostChild)
       await server.close().catch(() => undefined)
       await rm(desktopDir, { recursive: true, force: true }).catch(() => undefined)
       await rm(remoteDir, { recursive: true, force: true }).catch(() => undefined)
@@ -2135,7 +2124,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust local desktop engine (sotto-engine, Phase 
       expect(diskTold.events).toHaveLength(2)
       for (const ev of diskTold.events) watcherEventSchema.parse(ev)
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+      await stopProcessTree(child)
       await server.close().catch(() => undefined)
       await rm(dataDir, { recursive: true, force: true }).catch(() => undefined)
     }

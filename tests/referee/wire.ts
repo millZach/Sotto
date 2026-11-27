@@ -7,11 +7,13 @@ import { request as httpRequest } from 'node:http'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { deflateAccepted, SocketFrames } from '../../src/host/socketFrames'
+import { stopProcessTree } from '../fixtures/stopProcessTree'
 
 /**
  * How to start a host: its command line with `{data}` and `{provider}` in place of the data folder and the provider whose
  * fake it runs. Any program that prints the shipped host's ready line (`{ ..., port, event: "ready" }` on stdout) once
- * it listens on loopback, writes `host-listener.json` with its admin bearer, and stops on SIGTERM can be named here.
+ * it listens on loopback, writes `host-listener.json` with its admin bearer, and stops on SIGTERM can be named here. On
+ * Windows, where a signal skips the host's own shutdown, it is ended with everything it started (`stopProcessTree`).
  */
 export type HostCommand = readonly string[]
 
@@ -35,7 +37,7 @@ export async function startHost(command: HostCommand, data: string, provider: st
   child.stderr!.setEncoding('utf8').on('data', (chunk: string) => { stderr = (stderr + chunk).slice(-20_000) })
   const exited = new Promise<void>(resolve => child.once('exit', () => resolve()))
   const port = await new Promise<number>((resolve, reject) => {
-    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`The host did not say it was ready within ${deadlineMs} ms.\n${stderr}`)) }, deadlineMs)
+    const timer = setTimeout(() => { void stopProcessTree(child); reject(new Error(`The host did not say it was ready within ${deadlineMs} ms.\n${stderr}`)) }, deadlineMs)
     child.once('error', error => { clearTimeout(timer); reject(error) })
     void exited.then(() => { clearTimeout(timer); reject(new Error(`The host exited before it was ready.\n${stderr}`)) })
     createInterface({ input: child.stdout! }).on('line', line => {
@@ -46,13 +48,7 @@ export async function startHost(command: HostCommand, data: string, provider: st
   })
   return {
     port, stderr: () => stderr,
-    stop: async () => {
-      if (child.exitCode !== null || child.signalCode !== null) return
-      child.kill('SIGTERM')
-      const killed = setTimeout(() => child.kill('SIGKILL'), 20_000)
-      await exited
-      clearTimeout(killed)
-    },
+    stop: () => stopProcessTree(child),
   }
 }
 

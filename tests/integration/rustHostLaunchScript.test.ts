@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { LAUNCH_SCRIPT_SOURCE } from '../../src/main/hosts/launchScript'
 
@@ -31,11 +31,30 @@ async function findRustHostBinary(): Promise<string> {
   throw new Error(`Could not find compiled Rust ${exe}. Run cargo build -p sotto-host --bin sotto-host first.`)
 }
 
+/** What the system needs to run a program, and nothing that says where a user installed one. */
+const SYSTEM_VARIABLES = new Set(['SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'TMPDIR', 'USER', 'LOGNAME', 'LANG', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'])
+
+/**
+ * The script starts the Rust host with every provider turned on, so it runs with a home, app folders and PATH inside
+ * the test's own folder. With the user's, the host found the real OpenCode under their home and began setting up
+ * Hermes, and on Windows, where stop-host's signal skips the host's own shutdown, both outlived the test.
+ */
+function isolatedEnvironment(root: string): NodeJS.ProcessEnv {
+  const home = join(root, 'home')
+  const system = Object.fromEntries(Object.entries(process.env).filter(([name]) => SYSTEM_VARIABLES.has(name.toUpperCase())))
+  return {
+    ...system, HOME: home, USERPROFILE: home, APPDATA: join(home, 'AppData', 'Roaming'), LOCALAPPDATA: join(home, 'AppData', 'Local'),
+    XDG_CONFIG_HOME: join(home, '.config'), XDG_DATA_HOME: join(home, '.local', 'share'), XDG_CACHE_HOME: join(home, '.cache'),
+    PATH: process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32') : '/usr/bin:/bin',
+  }
+}
+
 function runLaunchScript(cfg: Record<string, unknown>): Promise<Record<string, unknown>[]> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, ['--input-type=commonjs', '-', JSON.stringify(cfg)], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      env: isolatedEnvironment(dirname(String(cfg.installPath))),
     })
     let stdout = ''
     let stderr = ''

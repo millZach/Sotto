@@ -17,6 +17,7 @@ import {
   type AgentHostSnapshot,
   type AgentThread,
 } from '../../src/shared/agents'
+import { stopProcessTree } from '../fixtures/stopProcessTree'
 import { ClientFold, FOLDED_PUSHES } from '../referee/fold'
 import { drive, nativeSession, prepareFake, type RefereeProvider } from '../referee/providers'
 import { CLIENTS, PROFILES, THREAD, type ClientName } from '../referee/scenario'
@@ -638,11 +639,7 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host native Codex and Claude Code ad
       expect(client.fold.problems).toEqual([])
     } finally {
       client?.socket.close()
-      child.kill('SIGTERM')
-      await new Promise<void>(resolveExit => {
-        const force = setTimeout(() => { child.kill('SIGKILL'); resolveExit() }, 3_000)
-        child.once('exit', () => { clearTimeout(force); resolveExit() })
-      })
+      await stopProcessTree(child)
       await rm(root, { recursive: true, force: true }).catch(() => undefined)
     }
   }, 60_000)
