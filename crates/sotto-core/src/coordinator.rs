@@ -4090,34 +4090,18 @@ impl CoordinatorActor {
             .map(ToString::to_string);
 
         let (worktree, working_directory) = if working_copy == "independent" {
-            if let Some(ref typed) = existing_worktree_path {
-                if !Path::new(typed).is_dir() {
-                    return Err(CoordinatorError::invalid(
-                        "The selected existing worktree folder does not exist.",
-                    ));
-                }
-                // Recorded where any link in it leads, as Node's `allocate` records it (`existingWorkingDirectory`).
-                let existing = &crate::worktree_reclaim::realpath(Path::new(typed))
-                    .map(|real| real.to_string_lossy().into_owned())
-                    .map_err(|_| CoordinatorError::invalid("The selected existing worktree folder does not exist."))?;
-                (
-                    AgentThreadWorktree {
-                        extra: Map::new(),
-                        mode: "independent".into(),
-                        status: "ready".into(),
-                        path: Some(existing.clone()),
-                        repository_root: None,
-                        branch: None,
-                        base_branch,
-                        start_from_origin,
-                        existing_worktree_path: Some(existing.clone()),
-                        reused: Some(true),
-                        temporary_branch: Some(false),
-                        error: None,
-                        git: None,
-                    },
-                    Some(existing.clone()),
-                )
+            if let Some(existing) = existing_worktree_path {
+                // A draft pointed at a worktree that exists waits for its first send to take it, with that worktree's
+                // branch when the project offers it, so the toolbar can name it, as Node's `selectedWorkingCopy` records it.
+                // Until then it has no folder of its own, so its working copy may still be chosen again.
+                let selection = crate::worktree_reclaim::WorkingCopySelection {
+                    shared: false,
+                    base_branch,
+                    start_from_origin,
+                    existing_worktree_path: Some(existing),
+                };
+                let record = crate::worktree_reclaim::selected_working_copy(&self.data_directory, &project.path, &selection).map_err(CoordinatorError::invalid)?;
+                (record, None)
             } else {
                 // Separate worktree is allocated on first send (AGENTS.md / ADR-0014),
                 // never silently reusing the shared checkout.
@@ -7556,6 +7540,28 @@ mod tests {
         }
         let place = user.join("app").to_string_lossy().into_owned();
         assert_eq!(mock.sent_folders(), vec![place.clone(), place]);
+        coord.shutdown().await;
+    }
+
+    /// A draft made on an existing worktree is recorded as Node's create-thread records it, waiting for its first send to
+    /// take the worktree, with its branch and no folder yet, so its working copy may still be chosen again before then.
+    #[tokio::test]
+    async fn a_draft_made_on_an_existing_worktree_may_choose_again_before_its_first_send() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let (coord, _mock, client, project_id, project, user) = working_copy_workspace(&base).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let thread_id = "00000000-0000-4000-8000-0000000000a2";
+        let shell = run(json!({ "type": "create-thread", "threadId": thread_id, "projectId": project_id, "title": "Draft", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent", "existingWorktreePath": user.to_string_lossy() })).await.unwrap();
+        let shown = |shell: &Value| shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == thread_id).unwrap().clone();
+        let thread = shown(&shell);
+        assert_eq!(thread["worktree"], json!({ "mode": "independent", "status": "pending", "existingWorktreePath": user.to_string_lossy(), "branch": "user-work" }));
+        assert_eq!(thread.get("workingDirectory"), None, "no folder until the first send takes the worktree");
+
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "shared" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        assert_eq!(shown(&shell)["workingDirectory"], json!(project.to_string_lossy()));
         coord.shutdown().await;
     }
 
