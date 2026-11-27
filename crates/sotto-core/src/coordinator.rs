@@ -474,20 +474,25 @@ fn remove_folder_for_delete(
     let folder = worktree.path.clone().unwrap_or_default();
     let (reason, _) = crate::worktree_reclaim::worktree_deletion_hold(worktree, crate::worktree_reclaim::owns_checkout_alone(&folder, others));
     if let Some(reason) = reason {
-        return (None, Err((reason, None)));
+        return (None, Err((Some(reason), None)));
+    }
+    // A change or a choice of working copy holding the folder's checkout refuses the removal with no reason the thread is
+    // kept for, as Node's `acquire` throws out of `deleteThreads`.
+    if let Err(words) = hold_checkout_removal(self_tx, thread_id, &folder) {
+        return (None, Err((None, Some(words))));
     }
     match hold_folder(self_tx, thread_id, &folder, true) {
         Some(None) => {}
-        Some(Some(late)) => return (None, Err((late, None))),
-        None => return (None, Err((KeptReason::WorktreeError, None))),
+        Some(Some(late)) => return (None, Err((Some(late), None))),
+        None => return (None, Err((Some(KeptReason::WorktreeError), None))),
     }
-    let result = crate::worktree_reclaim::reclaim(data_directory, worktree, options).map_err(|words| (KeptReason::WorktreeError, Some(words)));
+    let result = crate::worktree_reclaim::reclaim(data_directory, worktree, options).map_err(|words| (Some(KeptReason::WorktreeError), Some(words)));
     (Some(folder), result)
 }
 
 /// Delete thread…'s removal of a thread's own worktree folder: the record it left, or why the thread is kept, with Node's
-/// words for a removal that failed.
-type DeleteRemoval = Result<AgentThreadWorktree, (KeptReason, Option<String>)>;
+/// words for a removal that failed; no reason when a hold on the folder's checkout refused the removal.
+type DeleteRemoval = Result<AgentThreadWorktree, (Option<KeptReason>, Option<String>)>;
 
 /// A removal waiting for its folder to be held, as `ActorMessage::HoldFolder` answers it; `None` when the coordinator
 /// has stopped.
@@ -551,6 +556,16 @@ fn hold_checkout_read(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: 
     let stopped = || "Sotto is closing. Nothing was changed.".to_string();
     let (reply, answer) = oneshot::channel();
     self_tx.send(ActorMessage::HoldCheckoutRead { thread_id: thread_id.to_string(), key, reply }).map_err(|_| stopped())?;
+    answer.blocking_recv().map_err(|_| stopped())?
+}
+
+/// A removal of a thread's own worktree folder waiting to hold the checkout `folder` is in as a change, as
+/// `ActorMessage::HoldCheckoutRemoval` answers it: why not, in Node's words.
+fn hold_checkout_removal(self_tx: &mpsc::UnboundedSender<ActorMessage>, thread_id: &str, folder: &str) -> Result<(), String> {
+    let key = crate::worktree_reclaim::checkout_key(folder)?;
+    let stopped = || RECLAIM_STOPPED.to_string();
+    let (reply, answer) = oneshot::channel();
+    self_tx.send(ActorMessage::HoldCheckoutRemoval { thread_id: thread_id.to_string(), key, reply }).map_err(|_| stopped())?;
     answer.blocking_recv().map_err(|_| stopped())?
 }
 
@@ -845,6 +860,15 @@ enum ActorMessage {
     /// a read of it: refused, in Node's words, while a change holds it; otherwise held until the choice is made, and a
     /// change to it waits. A send does not.
     HoldCheckoutRead {
+        thread_id: String,
+        key: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// A removal of a thread's own worktree folder holds its checkout keyed `key` as a change, as Node's removals take
+    /// `acquire(folder, 'mutation', { kind: 'remove-folder' })`: refused, in Node's words, while another change holds it
+    /// or a choice of working copy reads it; otherwise held until the removal finishes, and a choice of it or another
+    /// change to it waits.
+    HoldCheckoutRemoval {
         thread_id: String,
         key: String,
         reply: oneshot::Sender<Result<(), String>>,
@@ -1509,6 +1533,8 @@ struct CoordinatorActor {
     checkout_holds: HashMap<String, CheckoutHold>,
     /// The checkouts a choice of working copy reads, by the thread whose working copy it is.
     checkout_reads: HashMap<String, CheckoutRead>,
+    /// The checkouts a removal of a thread's own worktree folder holds, by the thread, each by its checkout's identity.
+    checkout_removals: HashMap<String, String>,
     /// The follow-up queue, kept in `followups.json` as Node keeps it.
     followups: FollowupStore,
     /// Who queued each follow-up while this host ran, by item ID.
@@ -1672,6 +1698,7 @@ impl CoordinatorActor {
             folder_idle_waiters: HashMap::new(),
             checkout_holds: HashMap::new(),
             checkout_reads: HashMap::new(),
+            checkout_removals: HashMap::new(),
             followups,
             followup_origins: HashMap::new(),
             followup_answers: HashMap::new(),
@@ -2300,6 +2327,10 @@ impl CoordinatorActor {
             }
             ActorMessage::HoldCheckoutRead { thread_id, key, reply } => {
                 let held = self.hold_checkout_read_now(&thread_id, key);
+                let _ = reply.send(held);
+            }
+            ActorMessage::HoldCheckoutRemoval { thread_id, key, reply } => {
+                let held = self.hold_checkout_removal_now(&thread_id, key);
                 let _ = reply.send(held);
             }
             ActorMessage::HoldFolder { thread_id, folder, recheck, reply } => {
@@ -3587,6 +3618,7 @@ impl CoordinatorActor {
                 if let Some(folder) = folder {
                     self.held_worktree_folders.release(&folder);
                 }
+                self.checkout_removals.remove(&thread_id);
                 match result {
                     Ok(record) => {
                         self.keep_worktree_record(&thread_id, record);
@@ -3675,9 +3707,11 @@ impl CoordinatorActor {
                 if let Some(folder) = folder {
                     self.held_worktree_folders.release(&folder);
                 }
+                self.checkout_removals.remove(&thread_id);
                 match result {
                     // Node's words for a kept thread are its coordinator's own answer alone, which a paired client is not sent.
-                    Err((reason, _error)) => eprintln!("[Sotto] thread-clear-kept {}", reason.code()),
+                    Err((Some(reason), _error)) => eprintln!("[Sotto] thread-clear-kept {}", reason.code()),
+                    Err((None, _error)) => {}
                     Ok(record) => {
                         self.keep_worktree_record(&thread_id, record);
                         self.finish_delete(&thread_id, &title);
@@ -4421,6 +4455,8 @@ impl CoordinatorActor {
             let mut held = None;
             let result = if !crate::worktree_reclaim::owns_checkout_alone(&folder, &others) {
                 Err("Another thread works in this folder too, so it stays.".to_string())
+            } else if let Err(words) = hold_checkout_removal(&self_tx, &thread_id, &folder) {
+                Err(words)
             } else if hold_folder(&self_tx, &thread_id, &folder, false).is_none() {
                 Err(RECLAIM_STOPPED.to_string())
             } else {
@@ -4609,6 +4645,9 @@ impl CoordinatorActor {
         if self.checkout_holds.values().any(|hold| hold.folder == folder || hold.key == key || threads.iter().any(|id| hold.threads.contains(id))) {
             return Err(CheckoutHolder::GitAction.change_refused());
         }
+        if self.checkout_removals.values().any(|held| held == &key) {
+            return Err(CheckoutHolder::RemoveFolder.change_refused());
+        }
         // A working copy being chosen reads this checkout, and Node's guard refuses a change while anything reads it.
         if let Some(read) = self.checkout_reads.values().find(|read| read.key == key) {
             return Err(CheckoutHolder::Preparation(read.title.clone()).change_refused());
@@ -4632,8 +4671,28 @@ impl CoordinatorActor {
         if self.checkout_holds.values().any(|hold| hold.key == key) {
             return Err(CheckoutHolder::GitAction.change_refused());
         }
+        if self.checkout_removals.values().any(|held| held == &key) {
+            return Err(CheckoutHolder::RemoveFolder.change_refused());
+        }
         let title = self.threads.iter().find(|t| t.id == thread_id).map(|t| t.title.clone()).unwrap_or_default();
         self.checkout_reads.insert(thread_id.to_string(), CheckoutRead { key, title });
+        Ok(())
+    }
+
+    /// Holds the checkout keyed `key` for a removal of a thread's own worktree folder, or says in Node's words what holds
+    /// it, as Node's `acquireIdentity(key, 'mutation')` checks: another change holding it first, then a choice of working
+    /// copy reading it.
+    fn hold_checkout_removal_now(&mut self, thread_id: &str, key: String) -> Result<(), String> {
+        if self.checkout_holds.values().any(|hold| hold.key == key) {
+            return Err(CheckoutHolder::GitAction.change_refused());
+        }
+        if self.checkout_removals.values().any(|held| held == &key) {
+            return Err(CheckoutHolder::RemoveFolder.change_refused());
+        }
+        if let Some(read) = self.checkout_reads.values().find(|read| read.key == key) {
+            return Err(CheckoutHolder::Preparation(read.title.clone()).change_refused());
+        }
+        self.checkout_removals.insert(thread_id.to_string(), key);
         Ok(())
     }
 
@@ -7562,6 +7621,56 @@ mod tests {
         let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": thread_id, "workingCopy": "shared" })).await.unwrap();
         assert_eq!(shell["error"], Value::Null);
         assert_eq!(shown(&shell)["workingDirectory"], json!(project.to_string_lossy()));
+        coord.shutdown().await;
+    }
+
+    /// Removing a thread's own worktree folder holds its checkout as a change, as Node's removals take a `remove-folder`
+    /// mutation of it: Remove worktree and Delete thread… are refused, in Node's words, while another thread's choice of
+    /// working copy reads the checkout, and the folder stays; while a removal holds it, a choice of it and another change
+    /// to it are refused, and the choosing thread's record stays as it was.
+    #[tokio::test]
+    async fn removing_a_worktree_and_choosing_it_wait_for_each_other() {
+        let dir = tempdir().unwrap();
+        let (coord, client, thread_id, folder) = workspace_with_own_worktree(dir.path()).await;
+        let run = |command: Value| coord.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({ "type": "refresh" })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let choosing = "00000000-0000-4000-8000-0000000000b1";
+        run(json!({ "type": "create-thread", "threadId": choosing, "projectId": project_id, "title": "Choosing", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "independent" })).await.unwrap();
+        let held = |shell: &Value| shell["host"]["threads"].as_array().unwrap().iter().any(|t| t["id"] == thread_id.as_str());
+
+        // A choice reading the worktree's checkout holds both removals back.
+        let key = crate::worktree_reclaim::checkout_key(&folder.to_string_lossy()).unwrap();
+        let (reply, answer) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckoutRead { thread_id: choosing.into(), key: key.clone(), reply }).unwrap();
+        assert_eq!(answer.await.unwrap(), Ok(()));
+        let words = "Sotto is setting up the working copy for thread \"Choosing\". Nothing was changed. Try again in a moment.";
+        let shell = run(json!({ "type": "reclaim-thread-worktree", "threadId": thread_id })).await.unwrap();
+        assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &json!(words)));
+        assert!(folder.join("README.md").exists(), "the folder stays");
+        run(json!({ "type": "settle-thread", "threadId": thread_id })).await.unwrap();
+        let shell = run(json!({ "type": "delete-thread", "threadId": thread_id })).await.unwrap();
+        assert!(held(&shell), "the thread is kept");
+        assert_eq!(shell["error"], Value::Null, "Node's refusal words stay on the coordinator's own answer");
+        assert!(folder.join("README.md").exists(), "the folder stays");
+
+        // The choice's next read is of another checkout, which lets this one go; then a removal holding it holds back a
+        // choice of it and another change to it.
+        let (reply, answer) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckoutRead { thread_id: choosing.into(), key: "another checkout".into(), reply }).unwrap();
+        assert_eq!(answer.await.unwrap(), Ok(()));
+        let (reply, answer) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckoutRemoval { thread_id: "00000000-0000-4000-8000-0000000000b9".into(), key: key.clone(), reply }).unwrap();
+        assert_eq!(answer.await.unwrap(), Ok(()));
+        let words = "Sotto is removing this folder. Nothing was changed. Wait for it to finish before changing this folder.";
+        let shell = run(json!({ "type": "configure-thread-working-copy", "threadId": choosing, "workingCopy": "independent", "existingWorktreePath": folder.to_string_lossy() })).await.unwrap();
+        assert_eq!((&shell["error"], &shell["notice"]), (&json!(words), &json!(words)));
+        let thread = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == choosing).unwrap().clone();
+        assert_eq!(thread["worktree"], json!({ "mode": "independent", "status": "pending" }));
+        let (reply, answer) = oneshot::channel();
+        coord.tx.send(ActorMessage::HoldCheckout { thread_id: choosing.into(), folder: folder.to_string_lossy().into_owned(), key, sharing: vec![], reply }).unwrap();
+        assert_eq!(answer.await.unwrap(), Err(words.to_string()));
         coord.shutdown().await;
     }
 

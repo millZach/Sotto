@@ -7,6 +7,8 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CheckoutHolder {
     GitAction,
+    /// A removal of a thread's own worktree folder (`remove-folder`).
+    RemoveFolder,
     Send(String),
     Turn(String),
     WaitingAnswer(String),
@@ -25,6 +27,7 @@ impl CheckoutHolder {
     fn holding(&self) -> String {
         match self {
             Self::GitAction => "A Git action is running in this folder.".into(),
+            Self::RemoveFolder => "Sotto is removing this folder.".into(),
             Self::Send(title) => format!("A message is being sent in thread \"{title}\" in this folder."),
             Self::Turn(title) => format!("Thread \"{title}\" is working in this folder."),
             Self::PendingWork(title) => format!("Thread \"{title}\" has pending work in this folder."),
@@ -47,7 +50,7 @@ impl CheckoutHolder {
             Self::UncertainSend(_) => "Open it and refresh to check whether it was sent, then try again.",
             Self::PendingWork(_) => "Open it to review that work, or archive it, then try again.",
             Self::HistoryLoading(_) | Self::Preparation(_) => "Try again in a moment.",
-            Self::GitAction | Self::Send(_) | Self::Turn(_) => "Wait for it to finish before changing this folder.",
+            Self::GitAction | Self::RemoveFolder | Self::Send(_) | Self::Turn(_) => "Wait for it to finish before changing this folder.",
         }
     }
 
