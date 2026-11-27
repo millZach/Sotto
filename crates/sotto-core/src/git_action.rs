@@ -969,7 +969,13 @@ fn hook_name_of(argv: &[&str]) -> String {
 /// `git commit` with its hooks, as Node's `commit` runs it: the message on standard input, so no argument or file
 /// carries it; each line Git and its hooks print passed on as the running hook's output; and the hooks named from Git's
 /// own trace of its processes, read every 200 ms while it runs and once after. Answered with the commit made.
+///
+/// A commit is made once HEAD moves, before its post-commit hook runs, so one whose command failed after that, as when
+/// the hook leaves a child holding Git's output past the deadline, is still the commit made: answering that it failed
+/// would put the index back as it was before it, which undoes the commit in the next one.
 fn commit(cwd: &str, message: &CommitMessage, progress: &Progress) -> Result<String, String> {
+    let head = || git(cwd, &["rev-parse", "-q", "--verify", "HEAD"], COMMAND_DEADLINE).ok().map(|head| js_trim(&head).to_string());
+    let before = head();
     let trace_dir = std::env::temp_dir().join(format!("sotto-git-trace-{}", uuid::Uuid::new_v4().simple()));
     std::fs::create_dir_all(&trace_dir).map_err(|error| error.to_string())?;
     let trace = Arc::new(Mutex::new(HookTrace { path: trace_dir.join("trace.jsonl"), seen: 0, hook: None }));
@@ -999,13 +1005,20 @@ fn commit(cwd: &str, message: &CommitMessage, progress: &Progress) -> Result<Str
     let _ = ticker.join();
     lock(&trace).read(progress);
     remove_trace(&trace_dir);
-    if let Err(detail) = made {
-        return Err(refused_with("Commit failed.", &last_lines(&detail, 3), 600));
-    }
+    let landed = match made {
+        Ok(_) => None,
+        Err(detail) => match head() {
+            Some(after) if Some(&after) != before.as_ref() => Some(after),
+            _ => return Err(refused_with("Commit failed.", &last_lines(&detail, 3), 600)),
+        },
+    };
     if let Some(hook_name) = lock(&trace).hook.take() {
         progress(GitActionEvent::HookFinished { hook_name });
     }
-    Ok(js_trim(&git(cwd, &["rev-parse", "HEAD"], COMMAND_DEADLINE)?).to_string())
+    match landed {
+        Some(sha) => Ok(sha),
+        None => Ok(js_trim(&git(cwd, &["rev-parse", "HEAD"], COMMAND_DEADLINE)?).to_string()),
+    }
 }
 
 /// The trace, whichever reader held it last.

@@ -789,3 +789,26 @@ fn a_long_message_and_a_hook_that_prints_a_lot_settle_within_the_commit_deadline
     assert_eq!(settled.unwrap().commit.status, "created");
     assert_eq!(f.git(&["log", "-1", "--pretty=%B"]), format!("Long message\n\n{}", body.trim()));
 }
+
+/// A post-commit hook that leaves a child holding Git's output past the commit's deadline: the commit landed before the
+/// hook ran, so it is the commit made, in Node's words for one, and the index is put back as it is after a commit,
+/// never as it was before it, which would undo the commit in the next one.
+#[test]
+fn a_commit_whose_post_commit_hook_outlasts_the_deadline_is_the_commit_made_and_keeps_its_index() {
+    COMMIT_DEADLINE.with(|cell| cell.set(Some(Duration::from_secs(1))));
+    let f = Fixture::new(false);
+    hook(&f.repo, "post-commit", "#!/bin/sh\n(sleep 6; echo 'late line' 1>&2) &\nexit 0\n");
+    f.write("other.txt", "staged, not chosen\n");
+    f.git(&["add", "other.txt"]);
+    f.write("work.txt", "second\n");
+    let mut chosen = with_message(input(&f.repo, GitStackedAction::Commit), "Landed");
+    chosen.file_paths = Some(vec!["work.txt".into()]);
+    let result = run(&chosen, &StandIns::new()).unwrap();
+    let head = f.git(&["rev-parse", "HEAD"]);
+    assert_eq!(result.commit, CommitStep { status: "created", sha: Some(head.clone()), subject: Some("Landed".into()) });
+    assert_eq!(result.toast.title, format!("Committed {}", &head[..7]));
+    assert_eq!(f.git(&["log", "-1", "--pretty=%s"]), "Landed");
+    // The commit's file matches HEAD in the index, and the file left out is still staged as it was.
+    assert_eq!(f.git(&["diff", "--cached", "--name-only"]), "other.txt");
+    assert_eq!(f.git(&["show", ":work.txt"]), "second");
+}
