@@ -477,6 +477,11 @@ export interface AppSettings {
    */
   localApps: boolean
   /**
+   * Run scheduled tasks (Owl `scheduled-tasks`, ADR-0218): their schedules, signed webhooks and GitHub triggers start runs
+   * on this computer. Off, nothing starts, and every task, run and playbook is kept.
+   */
+  scheduledTasksEnabled: boolean
+  /**
    * Host-local, read only by a headless host (ADR-0053): Tailscale Serve carries the host's tailnet listener for paired
    * desktops' tailnet connections while this or `phoneAccess` is on. The host's administrative route sets it; nothing on
    * a desktop does, so it is not on the settings allow-list.
@@ -628,6 +633,7 @@ const fieldSchemas = {
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
   localApps: z.boolean(),
+  scheduledTasksEnabled: z.boolean(),
   tailnetConnections: z.boolean(),
   memoryEnabled: z.boolean(),
   cloudIphoneMonthlyMinutes: z.number().int().min(10).max(100_000),
@@ -777,6 +783,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   phoneAccessName: '',
   // Off by default: no token is written and nothing else listens until the owner turns it on (ADR-0180).
   localApps: false,
+  // Off by default: no task starts, no webhook listener opens and GitHub is not asked until the owner turns it on (ADR-0218).
+  scheduledTasksEnabled: false,
   // Off until a desktop turns it on over SSH, at Add host or in Edit connection (ADR-0053).
   tailnetConnections: false,
   // Off for the beta: memory does not ship in the first one.
@@ -969,6 +977,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
     localApps: parseField(persisted, 'localApps', defaults),
+    scheduledTasksEnabled: parseField(persisted, 'scheduledTasksEnabled', defaults),
     tailnetConnections: parseField(persisted, 'tailnetConnections', defaults),
     memoryEnabled: parseField(persisted, 'memoryEnabled', defaults),
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),

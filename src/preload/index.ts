@@ -65,6 +65,10 @@ import { THREAD_MOVE_ANSWER, THREAD_MOVE_PREPARE, THREAD_MOVE_START, THREAD_MOVE
   threadMovePrepareRequestSchema, threadMovePrepareSchema, threadMovesViewSchema, threadMoveStartRequestSchema, threadMoveStartSchema,
   type ThreadMovesBridge } from '../shared/threadMoves'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
+import {
+  SCHEDULED_TASKS_CHANGED, SCHEDULED_TASKS_COMMAND, SCHEDULED_TASKS_READ, SCHEDULED_TASKS_RENDERER_ARGUMENT, scheduledTaskCommandSchema, scheduledTaskResultSchema,
+  scheduledTasksStateSchema, type ScheduledTasksBridge,
+} from '../shared/scheduledTasks'
 import { COUNCIL_CHANGED, COUNCIL_COMMAND, COUNCIL_ESTIMATE, COUNCIL_READ, COUNCIL_RENDERER_ARGUMENT, councilChangedSchema, councilCommandResultSchema, councilCommandSchema, councilEstimateRequestSchema,
   councilEstimateSchema, councilViewsSchema, type CouncilBridge } from '../shared/council'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
@@ -518,6 +522,8 @@ export function createSottoBridge(
   parentCoordinationEnabled = false,
   /** Mods (ADR-0217): only while the `mods` Owl feature is on. */
   modsEnabled = false,
+  /** Scheduled tasks and playbooks (ADR-0218): only while the `scheduled-tasks` Owl feature is on. */
+  scheduledTasksEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -606,6 +612,12 @@ export function createSottoBridge(
       remove: async id => invokeParsed(renderer, MODS_REMOVE, modRemoveResultSchema, modIdRequestSchema.parse({ id })),
       onChanged: listener => subscribe(renderer, MODS_CHANGED, modsListSchema, listener),
       onAllOff: listener => subscribe(renderer, MODS_ALL_OFF, modsAllOffSchema, () => listener()),
+    }) } : {}),
+    // Scheduled tasks (ADR-0218): only while the Owl list turns them on. No answer carries a webhook secret.
+    ...(scheduledTasksEnabled ? { scheduledTasks: Object.freeze<ScheduledTasksBridge>({
+      read: async () => invokeParsed(renderer, SCHEDULED_TASKS_READ, scheduledTasksStateSchema),
+      command: async command => invokeParsed(renderer, SCHEDULED_TASKS_COMMAND, scheduledTaskResultSchema, scheduledTaskCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, SCHEDULED_TASKS_CHANGED, scheduledTasksStateSchema, listener),
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
     // once and nothing returned carries one.
@@ -1082,7 +1094,8 @@ export function exposeRendererBridge(
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
       parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
-      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(COORDINATION_RENDERER_ARGUMENT), arguments_.includes(MODS_RENDERER_ARGUMENT)))
+      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(COORDINATION_RENDERER_ARGUMENT), arguments_.includes(MODS_RENDERER_ARGUMENT),
+      arguments_.includes(SCHEDULED_TASKS_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {

@@ -15,6 +15,7 @@ import { MODS_ALL_OFF, MODS_RENDERER_ARGUMENT } from '../shared/mods'
 import { DYNAMIC_THREADS_RENDERER_ARGUMENT } from '../shared/dynamicThreads'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import { COUNCIL_RENDERER_ARGUMENT } from '../shared/council'
+import { SCHEDULED_TASKS_RENDERER_ARGUMENT } from '../shared/scheduledTasks'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
 import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
 import { startDeadProxy, VISUAL_SCHEME_PRIVILEGES } from './agents/visualSeal'
@@ -857,7 +858,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
       const featureArguments = [...(dictationTiming && (mainRenderer || widgetRenderer) ? [DICTATION_TIMING_ARGUMENT] : []), ...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
         ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
-        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(parentCoordinationEnabled ? [COORDINATION_RENDERER_ARGUMENT] : []), ...(owlFeatures.mods ? [MODS_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []),
+        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(parentCoordinationEnabled ? [COORDINATION_RENDERER_ARGUMENT] : []), ...(owlFeatures.mods ? [MODS_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []), ...(owlFeatures['scheduled-tasks'] ? [SCHEDULED_TASKS_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         // A Dynamic thread overseer's record and Give it to another model… (ADR-0191), only while its Owl feature is on.

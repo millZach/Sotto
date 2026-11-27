@@ -9,6 +9,7 @@ export type DesktopLocalRuntime = Omit<Partial<RunningRuntime>, 'agentControl' |
   agentControl: LocalHostControl & Pick<RunningRuntime['agentControl'],
     'attachmentPreview' | 'stageAttachment' | 'stageAttachmentFile' | 'attachmentContent' | 'gitRefs' | 'gitChangedFiles' | 'gitPullRequest' | 'gitPullRequestList' |
     'subscribeThreadDetail' | 'questionPage' | 'questionPageOpened' | 'useCouncil' | 'commandFromCouncil' | 'refreshCouncilObservation' |
+    'useAutomation' | 'commandFromAutomation' | 'refreshAutomationObservation' |
     'hostId' | 'configuration' | 'command' | 'onThreadsDeleted' | 'checkClientsAfresh' | 'privacyChanged' |
     'dispose' | 'closed' | 'hasPendingThreadWork' | 'watcherObservationsEnabled' | 'useSottoRequests' |
     'refreshRequestDraft' | 'requestDraftView' | 'requestAnswerRecovery' | 'threadMedia' | 'threadMediaVideo' | 'threadActivity' |

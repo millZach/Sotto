@@ -34,6 +34,7 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Continue an agent as its own thread](#continue-an-agent-as-its-own-thread)
 - [Fork a thread from a reply](#fork-a-thread-from-a-reply)
 - [The Council](#the-council)
+- [Scheduled tasks and playbooks](#scheduled-tasks-and-playbooks)
 - [The popup](#the-popup)
 - [Sotto Owl](#sotto-owl)
 
@@ -1626,6 +1627,36 @@ A draft, request or unrelated activity in the Builder holds automatic continuati
 **Export to a new folder** writes the selected round's frozen files and manifest; an existing destination is refused. It does not roll the Builder's folder back. With local history off, temporary evidence is still written while Climb runs, then removed at **Settle**, quit or next start; results and prompts are not retained in Sotto's history. Provider thread history follows that provider's own settings. With history on, canonical evidence stays within the disclosed 1 GiB per-Climb bound. Disposable judge copies are removed after each result.
 
 Capture is limited to 10,000 files and 100 MiB per set, with 20 MiB per binary. This first judge path accepts complete text and PNG, JPEG, GIF or WebP images, up to 400,000 text characters, eight images, 10 MiB per image and 50 MiB of images per turn. An unsupported file or larger selection holds the Climb without truncation; start again with a narrower selection. Command judges, automatic rollback, forked Builders and remote origins are not part of this first slice.
+
+## Scheduled tasks and playbooks
+
+In Sotto Owl, **Settings → Scheduled tasks**, below Council, starts a prompt or a playbook on its own: on a schedule, when a program on this computer sends a signed webhook, or when a new GitHub issue or pull request opens ([ADR-0218](adr/0218-scheduled-tasks-and-playbooks-run-on-the-computer-that-keeps-them.md)). Nothing starts until you turn on **Run scheduled tasks on this computer** at the top of the page. Turned off, nothing starts, no webhook is listened for and GitHub isn't asked, and your tasks, runs and playbooks stay as they are. A task runs on the computer that keeps it, in that computer's projects and threads; a computer that doesn't host agents says so and runs none. Running tasks on a paired or headless host is not part of this first slice.
+
+**A task.** Press **New task**. Give it a name, then choose what it runs: **A prompt** you write, or **A playbook** and the inputs it asks for. Choose where: **A new thread each time**, in a project, on a model, with its effort, its permissions and its working copy (the project's checkout or a worktree of its own), or, for a prompt, **One thread** it is sent to whenever that thread is free. Choose its **Schedule**: **On days of the week** at up to twelve times, such as `09:00, 17:30`, in a time zone, your own at first; **Every so often**, so many minutes, hours or days apart; **Once**, at a date and time; or **Only when started**, by Run now, a webhook or GitHub. A time the clock skips when summer time starts runs that much later, and a time it shows twice runs once. **A missed time**, one that passed while Sotto was closed or scheduled tasks were off, is **Run once, late** or **Skip it**; either way only the newest one counts, and the rest are listed together as missed, never fired. **A time that comes while the last run is going** is **Skip it** or **Run once the last run ends**. Press **Save task**; a line under the form says what to fix first. Escape closes the form without saving.
+
+Each task's row says when it runs next and what starts it. **Run now** starts it at once, **Pause** stops its times, its webhook and GitHub until **Resume**, and nothing that came meanwhile is run later; runs already going carry on. **More** holds **Change**, **Make a webhook secret**, **Allow its playbook's commands** and **Remove**. A task whose project, model, thread or playbook has gone says so on its row and starts nothing until you change it.
+
+**Runs.** **Runs** lists the newest runs, each with how it started, its steps and their state, **Open thread** for the thread a step worked in and **Cancel** while it goes; cancelling stops the turn its step started. A prompt runs in its thread as Sotto's message, never as yours, and a run's thread asks for permissions in the thread like any other. At most three runs go at once on this computer, one per task. A step that fails is tried again after 30 seconds and then longer, as many times as its playbook allows; a run that failed or stopped offers **Go on from where it stopped**.
+
+**Waiting for you.** A run that needs you stands at the top of the page: a decision in its playbook (**Go on** or **Decline**, with a note when it asks for one), a command that looks like it would spend, publish, delete or overwrite work (**Allow once** or **Don’t run it**), a playbook whose commands you haven't allowed in this version (**Allow this version** or **Cancel the run**), or a step Sotto can't be sure about. Only you answer these; a webhook, an issue or an agent can't.
+
+**Restarts.** Sotto writes a run down before each step and again once the step's result is in, so after a restart a run carries on from its first unfinished step and never does a finished one again. A step that was mid-way when Sotto stopped, such as a command that was running or a prompt whose arrival the provider never confirmed, is shown as uncertain: open its thread, then choose **Do it again** or **Go on as done**. Sotto never repeats it on its own.
+
+**Playbooks.** A playbook is a JSON file in Sotto's playbooks folder, which **Open playbooks folder** opens. **Add the example playbook** writes `triage-and-fix.json`: an agent triages an issue, you decide whether to fix it, an agent fixes it in a worktree of its own, `npm test` runs there, and you decide whether it goes to a pull request. Each step is an `agent` step (a prompt, in a new thread or one an earlier step made), a `code` step (one program and its arguments, run without a shell, with a timeout) or a `decision` you answer. Steps read the playbook's inputs and earlier steps' answers as `{{inputs.issue}}` or `{{steps.triage.output.summary}}`; a code step's arguments can't hold them, and it reads them from `SOTTO_PLAYBOOK_INPUTS` and `SOTTO_PLAYBOOK_OUTPUTS` instead. A playbook with code steps runs commands only once you allow it on the task, and asks again whenever its file changes. A file that doesn't check out is listed with why.
+
+**Webhooks.** Turn on **A signed webhook** under **Started from outside** on a task, save it, then choose **More → Make a webhook secret**: Sotto puts the task's secret on the clipboard and keeps it in this computer's credential store, never in its window. The **Webhooks** group shows the address it listens on, on `127.0.0.1` only. Send a JSON object of at most 64 KB to `/v1/scheduled-tasks/<task id>/runs` with these headers:
+
+```
+X-Sotto-Delivery: a new ID for each request, 8 to 128 letters, digits, dots, colons, dashes or underscores
+X-Sotto-Timestamp: the time in Unix seconds
+X-Sotto-Signature: sha256= and the hex HMAC-SHA256 of "<timestamp>.<delivery>.<body>" with the secret
+```
+
+A delivery ID the task has seen starts nothing again, a request more than five minutes off this computer's clock or from a web page is refused, and a task takes at most 30 requests a minute. What the webhook sends is data: a prompt shows it below your prompt, marked as outside words, and a playbook fills only inputs you left empty on the task.
+
+**GitHub.** Turn on **New GitHub issues or pull requests** and choose issues, pull requests or both, optionally a label and another repository than the project's. Every two minutes while scheduled tasks are on, Sotto asks GitHub through `gh` on your own sign-in for ones opened since you saved it, and each starts one run with its title, body and link as data. A read that fails says so on the task.
+
+Nothing about tasks is logged but an event's name: no prompt, payload, issue or secret. A run that finishes, is cancelled or declined keeps none of what started it.
 
 
 ## The popup

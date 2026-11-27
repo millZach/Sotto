@@ -273,6 +273,10 @@ msgstr "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
 msgid "{days, plural, one {# day} other {# days}}"
 msgstr "{days, plural, one {# day} other {# days}}"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "{days, plural, one {Every day} other {Every # days}}"
+msgstr "{days, plural, one {Every day} other {Every # days}}"
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{defaultModelName} at {defaultEffort} is {roleName}’s default."
 msgstr "{defaultModelName} at {defaultEffort} is {roleName}’s default."
@@ -308,6 +312,10 @@ msgstr "{failedName} did not update"
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "{failedNames} did not update."
 msgstr "{failedNames} did not update."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "{file} (can’t be read)"
+msgstr "{file} (can’t be read)"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{fileCount, plural, other {Only the first 40 of {filesShown} files were read.}}"
@@ -360,6 +368,18 @@ msgstr "{hostName} stopped answering while {name} was signing in. If its tile st
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "{hours, plural, one {# hour ago} other {# hours ago}}"
 msgstr "{hours, plural, one {# hour ago} other {# hours ago}}"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "{hours, plural, one {Every hour} other {Every # hours}}"
+msgstr "{hours, plural, one {Every hour} other {Every # hours}}"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "{input} (required)"
+msgstr "{input} (required)"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "{input} should be a number."
+msgstr "{input} should be a number."
 
 #. {installed} is a version number.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -427,6 +447,10 @@ msgstr "{keys} on its own would show the popup while you type. Add ⌥ Option, �
 msgid "{keys} on its own would show the popup while you type. Add Alt or Ctrl."
 msgstr "{keys} on its own would show the popup while you type. Add Alt or Ctrl."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "{label} (required)"
+msgstr "{label} (required)"
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "{label} details"
 msgstr "{label} details"
@@ -481,6 +505,10 @@ msgstr "{minutes, plural, one {# minute} other {# minutes}}"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{minutes, plural, one {Checks origin every minute for ahead and behind, while this window is in front.} other {Checks origin every # minutes for ahead and behind, while this window is in front.}}"
 msgstr "{minutes, plural, one {Checks origin every minute for ahead and behind, while this window is in front.} other {Checks origin every # minutes for ahead and behind, while this window is in front.}}"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "{minutes, plural, one {Every minute} other {Every # minutes}}"
+msgstr "{minutes, plural, one {Every minute} other {Every # minutes}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "{minutes, plural, other {{sessionMinutes} min}}"
@@ -747,6 +775,10 @@ msgstr "{phones, plural, one {Phones on, # paired} other {Phones on, # paired}}"
 msgid "{problem} {kept} still works."
 msgstr "{problem} {kept} still works."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "{provider} · {model} (not connected)"
+msgstr "{provider} · {model} (not connected)"
+
 #. {provider} is a provider, such as Claude Code. Heads its older models in a model list.
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "{provider} · Legacy"
@@ -878,6 +910,10 @@ msgstr "{version} on {host}."
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "{waiting, plural, one {# update} other {# updates}}"
 msgstr "{waiting, plural, one {# update} other {# updates}}"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "{weekdays} at {times} ({zone})"
+msgstr "{weekdays} at {times} ({zone})"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "{working, plural, one {{name}’s host starts at boot once its threads finish. # still working.} other {{name}’s host starts at boot once its threads finish. # still working.}}"
@@ -1035,9 +1071,17 @@ msgstr "A machine no longer saved"
 msgid "A merged thread stays put until you settle it."
 msgstr "A merged thread stays put until you settle it."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A missed time"
+msgstr "A missed time"
+
 #: src/renderer/src/features/settings/ModelRouterSettings.tsx
 msgid "A new model re-reads the whole conversation at full price, and a smaller one loses the earlier reasoning. On, a thread keeps the model its first message got and later messages change only the effort."
 msgstr "A new model re-reads the whole conversation at full price, and a smaller one loses the earlier reasoning. On, a thread keeps the model its first message got and later messages change only the effort."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A new thread each time"
+msgstr "A new thread each time"
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
@@ -1047,6 +1091,14 @@ msgstr "A paired phone reads threads, replies, and answers questions and permiss
 msgid "A phone cannot run the host"
 msgstr "A phone cannot run the host"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A playbook"
+msgstr "A playbook"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "A playbook is a JSON file of ordered steps: agent turns, commands and your decisions. Sotto reads it from the playbooks folder; nothing from outside can add a step."
+msgstr "A playbook is a JSON file of ordered steps: agent turns, commands and your decisions. Sotto reads it from the playbooks folder; nothing from outside can add a step."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "A port is a number from 1 to 65535."
 msgstr "A port is a number from 1 to 65535."
@@ -1055,9 +1107,17 @@ msgstr "A port is a number from 1 to 65535."
 msgid "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
 msgstr "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A program on this computer posts JSON to the task’s address, signed with its secret. What it sends is data for the run, never an instruction."
+msgstr "A program on this computer posts JSON to the task’s address, signed with its secret. What it sends is data for the run, never an instruction."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "A project that is gone"
 msgstr "A project that is gone"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A prompt"
+msgstr "A prompt"
 
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "A question or a permission is waiting for you."
@@ -1066,6 +1126,10 @@ msgstr "A question or a permission is waiting for you."
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A short sound when recording starts and stops."
 msgstr "A short sound when recording starts and stops."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A signed webhook"
+msgstr "A signed webhook"
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "A theme with the id \"{id}\" is already installed."
@@ -1095,6 +1159,10 @@ msgstr "A thread working when Sotto closes, for an update, a quit, a crash or a 
 msgid "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time."
 msgstr "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A trigger that comes while the last run is going"
+msgstr "A trigger that comes while the last run is going"
+
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "A unit"
@@ -1103,6 +1171,10 @@ msgstr "A unit"
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "A worker never starts wider than your new-thread default, “{ceilingName}”, and a delegated thread never wider than the thread that delegates."
 msgstr "A worker never starts wider than your new-thread default, “{ceilingName}”, and a delegated thread never wider than the thread that delegates."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "A worktree of its own"
+msgstr "A worktree of its own"
 
 #. {price} is a price in US dollars, such as $0.05.
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
@@ -1234,6 +1306,11 @@ msgstr "Add selection to prompt"
 msgid "Add selection to prompt shortcut"
 msgstr "Add selection to prompt shortcut"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Add the example playbook"
+msgstr "Add the example playbook"
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Add theme"
@@ -1305,6 +1382,18 @@ msgstr "All four permission modes: on Allow edits Sotto answers Antigravity’s 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "All shortcuts are back to their defaults."
 msgstr "All shortcuts are back to their defaults."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Allow its playbook’s commands"
+msgstr "Allow its playbook’s commands"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Allow once"
+msgstr "Allow once"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Allow this version"
+msgstr "Allow this version"
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Already added as {name}"
@@ -1508,6 +1597,10 @@ msgstr "as {user}, port {port}"
 msgid "as {user}, port from your SSH configuration"
 msgstr "as {user}, port from your SSH configuration"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "As new threads start"
+msgstr "As new threads start"
+
 #. Shows the preview in the color scheme the window is in now
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "As set"
@@ -1609,6 +1702,10 @@ msgstr "Asks the npm registry for each client’s latest version when it connect
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Asks you before it edits a file or runs a command that changes something."
 msgstr "Asks you before it edits a file or runs a command that changes something."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "At"
+msgstr "At"
 
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
 msgid "At <0>{address}</0>, last reached at {when}."
@@ -1786,6 +1883,8 @@ msgstr "Can't use now"
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -1815,6 +1914,10 @@ msgstr "Cancel recording"
 msgid "Cancel the {name} update on {host}"
 msgstr "Cancel the {name} update on {host}"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Cancel the run"
+msgstr "Cancel the run"
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Cancel update"
 msgstr "Cancel update"
@@ -1827,14 +1930,27 @@ msgstr "Cancel, and leave {name}’s host as it is"
 msgid "Cancel, and leave start at boot on {name} as it is"
 msgstr "Cancel, and leave start at boot on {name} as it is"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "cancelled"
+msgstr "cancelled"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Cancelled"
+msgstr "Cancelled"
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Cancelled a deployment’s build"
 msgstr "Cancelled a deployment’s build"
 
 #. Goes back to change which host to add.
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "Change"
 msgstr "Change"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Change {name}"
+msgstr "Change {name}"
 
 #: src/renderer/src/features/settings/ModsSettings.tsx
 msgid "Change how Sotto looks"
@@ -2023,6 +2139,7 @@ msgstr "Choose a device"
 msgid "Choose a device, or choose Another SSH host… to type one."
 msgstr "Choose a device, or choose Another SSH host… to type one."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Choose a model"
 msgstr "Choose a model"
@@ -2030,6 +2147,34 @@ msgstr "Choose a model"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Choose a model for the setup thread."
 msgstr "Choose a model for the setup thread."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose a playbook"
+msgstr "Choose a playbook"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose a playbook. Add one to the playbooks folder first if none is listed."
+msgstr "Choose a playbook. Add one to the playbooks folder first if none is listed."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose a project"
+msgstr "Choose a project"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose a thread"
+msgstr "Choose a thread"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose a time to come."
+msgstr "Choose a time to come."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose an interval between 5 minutes and 28 days."
+msgstr "Choose an interval between 5 minutes and 28 days."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose at least one day."
+msgstr "Choose at least one day."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Choose Every project to copy it."
@@ -2043,6 +2188,10 @@ msgstr "Choose files"
 msgid "Choose from your devices"
 msgstr "Choose from your devices"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose issues, pull requests or both."
+msgstr "Choose issues, pull requests or both."
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Choose model. {modelName} oversees new threads"
 msgstr "Choose model. {modelName} oversees new threads"
@@ -2054,6 +2203,18 @@ msgstr "Choose model. New threads start with model routing"
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Choose the light theme and the dark theme on their own."
 msgstr "Choose the light theme and the dark theme on their own."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose the model its threads use."
+msgstr "Choose the model its threads use."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose the project its threads start in."
+msgstr "Choose the project its threads start in."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Choose the thread it sends to."
+msgstr "Choose the thread it sends to."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Choose Watcher’s model. Now {name}"
@@ -2710,6 +2871,18 @@ msgstr "Dark theme"
 msgid "dash"
 msgstr "dash"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Days"
+msgstr "Days"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Decline"
+msgstr "Decline"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Declined"
+msgstr "Declined"
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
 msgstr "DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
@@ -2899,9 +3072,21 @@ msgstr "Dismiss what Sotto said about {name}"
 msgid "Dismiss what Sotto said about start at boot on {name}"
 msgstr "Dismiss what Sotto said about start at boot on {name}"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Do it again"
+msgstr "Do it again"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Don’t run it"
+msgstr "Don’t run it"
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Don't see your machine? Install Tailscale on it and sign in as {account}."
 msgstr "Don't see your machine? Install Tailscale on it and sign in as {account}."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "done"
+msgstr "done"
 
 #. A setup step that has finished.
 #. A setup step that has finished.
@@ -2978,6 +3163,10 @@ msgstr "Each account’s secret is sent to the computers you paired as hosts, on
 msgid "Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it."
 msgstr "Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Each run waits until the thread is free, and never answers its questions."
+msgstr "Each run waits until the thread is free, and never answers its questions."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer."
 msgstr "Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer."
@@ -3012,6 +3201,7 @@ msgstr "Edits that only change spacing are hidden."
 
 #. A worker role field: the model's reasoning effort
 #. A worker role field: the model's reasoning effort
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Effort"
 msgstr "Effort"
@@ -3049,6 +3239,14 @@ msgstr "ElevenLabs is turning requests away for now, so the key could not be che
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Enable {label}"
 msgstr "Enable {label}"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Ended"
+msgstr "Ended"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Ended unknown"
+msgstr "Ended unknown"
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Enter <0>{machine}</0>."
@@ -3111,6 +3309,10 @@ msgstr "Error text"
 msgid "Esc hides the popup, so it can’t show it. Pick other keys."
 msgstr "Esc hides the popup, so it can’t show it. Pick other keys."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Every"
+msgstr "Every"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Every {keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
 msgstr "Every {keepMainEvery} and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases."
@@ -3139,6 +3341,10 @@ msgstr "Every shortcut in Sotto, in one place"
 msgid "Every shortcut is at its default."
 msgstr "Every shortcut is at its default."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Every so often"
+msgstr "Every so often"
+
 #. An example commit subject and pull request title
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Example"
@@ -3166,10 +3372,15 @@ msgstr "Exporting is not available in this window."
 msgid "Eyes"
 msgstr "Eyes"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "failed"
+msgstr "failed"
+
 #. A setup step that failed.
 #. A setup step that failed.
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 #: src/renderer/src/features/settings/phoneParts.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "Failed"
 msgstr "Failed"
 
@@ -3184,6 +3395,10 @@ msgstr "Files start as headers; press one to read it."
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Files start open."
 msgstr "Files start open."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Filled from a webhook’s or GitHub’s data when it names {input}, unless you set it here."
+msgstr "Filled from a webhook’s or GitHub’s data when it names {input}, unless you set it here."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Filter by action or keys"
@@ -3214,6 +3429,7 @@ msgid "Finish the steps above first."
 msgstr "Finish the steps above first."
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "Finished"
 msgstr "Finished"
 
@@ -3373,6 +3589,14 @@ msgstr "Git & worktrees"
 msgid "Git fetch interval"
 msgstr "Git fetch interval"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "GitHub"
+msgstr "GitHub"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "GitHub {issue}"
+msgstr "GitHub {issue}"
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
 msgstr "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
@@ -3384,6 +3608,10 @@ msgstr "GitHub’s sign-in on your other computers"
 #: src/renderer/src/features/settings/ModsSettings.tsx
 msgid "Give the sidebar a warm wood look"
 msgstr "Give the sidebar a warm wood look"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Give the task a name."
+msgstr "Give the task a name."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — the one set that works outside Sotto."
@@ -3417,6 +3645,18 @@ msgstr "Gmail did not accept this address and app password. {kept} Check the add
 msgid "Gmail is turning sign-ins away for now, so the app password could not be checked. {kept} Wait a few minutes, then try again."
 msgstr "Gmail is turning sign-ins away for now, so the app password could not be checked. {kept} Wait a few minutes, then try again."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Go on"
+msgstr "Go on"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Go on as done"
+msgstr "Go on as done"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Go on from where it stopped"
+msgstr "Go on from where it stopped"
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Group threads in the sidebar"
@@ -3439,6 +3679,10 @@ msgstr "Have my agent fix this"
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "Have my agent set this up"
 msgstr "Have my agent set this up"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Held for you"
+msgstr "Held for you"
 
 #: src/renderer/src/features/settings/HermesChatGptSource.tsx
 msgid "Hermes could not finish signing out. Try again."
@@ -3562,6 +3806,14 @@ msgstr "Hosts are not available in this window."
 msgid "Hosts could not be read. Reopen Settings and try again."
 msgstr "Hosts could not be read. Reopen Settings and try again."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Hours"
+msgstr "Hours"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Hours and minutes, such as 09:00, 17:30"
+msgstr "Hours and minutes, such as 09:00, 17:30"
+
 #. A sample message to Watcher in the Appearance preview
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "How are my threads doing?"
@@ -3652,6 +3904,10 @@ msgstr "IMAP port"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "in “{0}”"
 msgstr "in “{0}”"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "In {file}.json"
+msgstr "In {file}.json"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "In a thread"
@@ -3766,6 +4022,10 @@ msgstr "Installing…"
 msgid "Instructions saved."
 msgstr "Instructions saved."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Issues"
+msgstr "Issues"
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "It could not be copied. Select it and copy it instead."
 msgstr "It could not be copied. Select it and copy it instead."
@@ -3810,10 +4070,18 @@ msgstr "It restarted once under its systemd unit and Sotto connects to it again 
 msgid "It restarted once under its systemd unit and Sotto is connecting to it again."
 msgstr "It restarted once under its systemd unit and Sotto is connecting to it again."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "It was not done again on its own. Look at its thread, then choose."
+msgstr "It was not done again on its own. Look at its thread, then choose."
+
 #. Stands in for the name of the account on a host, as in "start the host for {who}".
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "its account"
 msgstr "its account"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its address shows once the webhook listener runs."
+msgstr "Its address shows once the webhook listener runs."
 
 #: src/renderer/src/features/settings/ModsSettings.tsx
 msgid "Its look is longer than 64 KB, so none of it is painted."
@@ -3831,9 +4099,33 @@ msgstr "Its messages and activity leave Sotto and can’t be brought back."
 msgid "Its mod.json is missing or unreadable, so it paints nothing. It needs a name, such as { \"name\": \"Oak sidebar\" }."
 msgstr "Its mod.json is missing or unreadable, so it paints nothing. It needs a name, such as { \"name\": \"Oak sidebar\" }."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its model is no longer offered here. Choose another."
+msgstr "Its model is no longer offered here. Choose another."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its playbook can’t be read. See Playbooks below."
+msgstr "Its playbook can’t be read. See Playbooks below."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its playbook changed since you allowed its commands. Its next command waits for you."
+msgstr "Its playbook changed since you allowed its commands. Its next command waits for you."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its playbook is no longer in the playbooks folder."
+msgstr "Its playbook is no longer in the playbooks folder."
+
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Its price is on openrouter.ai."
 msgstr "Its price is on openrouter.ai."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its project is no longer on this computer. Choose another."
+msgstr "Its project is no longer on this computer. Choose another."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its provider is not connected, so its runs fail until it is."
+msgstr "Its provider is not connected, so its runs fail until it is."
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Its record could not be cleared. Its counts may remain. Try again."
@@ -3851,6 +4143,10 @@ msgstr "Its record on this computer"
 msgid "Its record was cleared. Pieces from now on are counted here."
 msgstr "Its record was cleared. Pieces from now on are counted here."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its schedule, triggers and history are removed, and a run still going is cancelled. The threads its runs made are kept."
+msgstr "Its schedule, triggers and history are removed, and a run still going is cancelled. The threads its runs made are kept."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Its Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on {name} to see the account."
 msgstr "Its Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on {name} to see the account."
@@ -3863,6 +4159,22 @@ msgstr "Its Sotto runs no plugin tools, so its threads do not use GitHub through
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Its text came back in {0} s on Sotto’s test clips."
 msgstr "Its text came back in {0} s on Sotto’s test clips."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its thread is asking you"
+msgstr "Its thread is asking you"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its thread is no longer on this computer. Choose another."
+msgstr "Its thread is no longer on this computer. Choose another."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Its thread is on another computer. A task runs only on the computer that keeps it."
+msgstr "Its thread is on another computer. A task runs only on the computer that keeps it."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Its threads ask you as any thread would. A scheduled task never answers for you."
+msgstr "Its threads ask you as any thread would. A scheduled task never answers for you."
 
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "Its turn has ended and nothing it started is still going."
@@ -3893,6 +4205,7 @@ msgid "Keep host"
 msgstr "Keep host"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "Keep it"
 msgstr "Keep it"
 
@@ -3980,6 +4293,10 @@ msgstr "Language saved."
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Last selected"
 msgstr "Last selected"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Late, for a missed time"
+msgstr "Late, for a missed time"
 
 #: src/renderer/src/features/settings/CouncilSettings.tsx
 msgid "Layout"
@@ -4071,6 +4388,10 @@ msgstr "Linger, first"
 msgid "Links and Sotto’s browser"
 msgstr "Links and Sotto’s browser"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Listening on {address}, on this computer only."
+msgstr "Listening on {address}, on this computer only."
+
 #: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Listening. Say something."
 msgstr "Listening. Say something."
@@ -4153,6 +4474,10 @@ msgstr "Make a mod"
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Make a new code"
 msgstr "Make a new code"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Make a webhook secret"
+msgstr "Make a webhook secret"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Make one at {ELEVENLABS_KEYS_PAGE}. Sotto checks it with ElevenLabs before saving it, without making anything, and never shows it again."
@@ -4261,6 +4586,7 @@ msgid "Minimize the theme editor"
 msgstr "Minimize the theme editor"
 
 #: src/renderer/src/features/settings/CouncilSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 msgid "Minutes"
 msgstr "Minutes"
 
@@ -4296,6 +4622,10 @@ msgstr "mise on {host} does not list {name} {to} yet, so Sotto could not install
 msgid "mise stopped with an error. {installed} is still installed."
 msgstr "mise stopped with an error. {installed} is still installed."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Missed"
+msgstr "Missed"
+
 #. A composer chip standing for the model
 #. A worker role field: the model it runs on
 #. A worker role field: the model it runs on
@@ -4305,6 +4635,7 @@ msgstr "mise stopped with an error. {installed} is still installed."
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostSetupView.tsx
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Model"
@@ -4352,8 +4683,13 @@ msgid "More for {0}"
 msgstr "More for {0}"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "More for {name}"
 msgstr "More for {name}"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Morning review"
+msgstr "Morning review"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Most {roleName} workers Watcher starts for one request on its own"
@@ -4423,6 +4759,7 @@ msgid "Muted text"
 msgstr "Muted text"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 msgid "Name"
 msgstr "Name"
 
@@ -4472,6 +4809,19 @@ msgstr "New app password"
 msgid "New Bridge password"
 msgstr "New Bridge password"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "New GitHub issues or pull requests"
+msgstr "New GitHub issues or pull requests"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "New scheduled task"
+msgstr "New scheduled task"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "New task"
+msgstr "New task"
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "New thread"
 msgstr "New thread"
@@ -4514,6 +4864,10 @@ msgstr "New threads, replies, the browser & visuals"
 msgid "New token"
 msgstr "New token"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "New webhook secret"
+msgstr "New webhook secret"
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "New workers start here"
 msgstr "New workers start here"
@@ -4547,6 +4901,10 @@ msgstr "Next thread waiting on you"
 msgid "Next thread waiting on you shortcut"
 msgstr "Next thread waiting on you shortcut"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Next: {time}"
+msgstr "Next: {time}"
+
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls between Dictate or Threads and Watcher"
@@ -4566,6 +4924,10 @@ msgstr "Night falls speed"
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "Night wood"
 msgstr "Night wood"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "No"
+msgstr "No"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No connected provider can do this work."
@@ -4620,6 +4982,14 @@ msgstr "No other computer is paired. Pair one in Settings › Hosts & phones, an
 msgid "No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here."
 msgstr "No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "No playbooks yet."
+msgstr "No playbooks yet."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "No playbooks yet. Add the example or write one in the playbooks folder."
+msgstr "No playbooks yet. Add the example or write one in the playbooks folder."
+
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "No provider is connected yet."
 msgstr "No provider is connected yet."
@@ -4635,6 +5005,18 @@ msgstr "No remote hosts yet."
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "No restart"
 msgstr "No restart"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "No runs yet."
+msgstr "No runs yet."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "No scheduled tasks yet."
+msgstr "No scheduled tasks yet."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "No secret yet: make one from More."
+msgstr "No secret yet: make one from More."
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "No sessions yet."
@@ -4746,6 +5128,10 @@ msgstr "Not installed."
 msgid "Not installed. Hosts still work over SSH without it."
 msgstr "Not installed. Hosts still work over SSH without it."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Not listening. The listener starts on this computer only while scheduled tasks are on and a task has its webhook on."
+msgstr "Not listening. The listener starts on this computer only while scheduled tasks are on and a task has its webhook on."
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Not now"
@@ -4771,6 +5157,10 @@ msgstr "Not read yet. The switch shows once Sotto reaches {name} over SSH."
 msgid "Not read."
 msgstr "Not read."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Not set"
+msgstr "Not set"
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not set up"
 msgstr "Not set up"
@@ -4780,6 +5170,10 @@ msgstr "Not set up"
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not signed in"
 msgstr "Not signed in"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "not started"
+msgstr "not started"
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Not started"
@@ -4859,6 +5253,10 @@ msgstr "Off, a thread makes sounds without asking until the month’s limit is r
 msgid "Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting."
 msgstr "Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Off, nothing starts and every task and run is kept. A time that passes while it is off counts as missed."
+msgstr "Off, nothing starts and every task and run is kept. A time that passes while it is off counts as missed."
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Off, one theme paints light and dark."
 msgstr "Off, one theme paints light and dark."
@@ -4924,6 +5322,10 @@ msgstr "On a row in the thread list: Open, Open beside, Rename, Regenerate title
 msgid "On a row in the thread list."
 msgstr "On a row in the thread list."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "On days of the week"
+msgstr "On days of the week"
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
 msgstr "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
@@ -4940,6 +5342,10 @@ msgstr "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull r
 msgid "On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back."
 msgstr "On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "On schedule"
+msgstr "On schedule"
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so."
 msgstr "On Windows, Codex’s Computer Use can be stopped by its own sandbox below Full access. If it is, nothing is changed and the worker says so."
@@ -4952,6 +5358,14 @@ msgstr "On your iPhone, open Sotto and tap <0>Add computer</0>."
 msgid "On your iPhone, tap <0>Add computer</0>, enter <1>{machine}</1>, then this code."
 msgstr "On your iPhone, tap <0>Add computer</0>, enter <1>{machine}</1>, then this code."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Once"
+msgstr "Once"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Once, at {time}"
+msgstr "Once, at {time}"
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "One client updates at a time. Your threads keep working, and move to the new version when they are idle."
 msgstr "One client updates at a time. Your threads keep working, and move to the new version when they are idle."
@@ -4959,6 +5373,14 @@ msgstr "One client updates at a time. Your threads keep working, and move to the
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "One restart, now"
 msgstr "One restart, now"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "One that passed while Sotto was closed or scheduled tasks were off."
+msgstr "One that passed while Sotto was closed or scheduled tasks were off."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "One thread"
+msgstr "One thread"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "One word or name per line, so AI cleanup spells them your way."
@@ -4984,6 +5406,19 @@ msgstr "Only this computer’s threads are listed. Your other computers keep no 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Only threads in {titles} may use it. Watcher belongs to no project, so it cannot."
 msgstr "Only threads in {titles} may use it. Watcher belongs to no project, so it cannot."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Only when started"
+msgstr "Only when started"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Only with the label"
+msgstr "Only with the label"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Only you answer these. A webhook, an issue or an agent can’t."
+msgstr "Only you answer these. A webhook, an issue or an agent can’t."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Open a thread’s menu"
@@ -5022,6 +5457,11 @@ msgstr "Open OpenCode installation guide"
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Open phone access for {name}"
 msgstr "Open phone access for {name}"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Open playbooks folder"
+msgstr "Open playbooks folder"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Open Providers"
@@ -5085,6 +5525,7 @@ msgstr "Open the Usage page."
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
 #: src/renderer/src/features/settings/ModsSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "Open thread"
 msgstr "Open thread"
 
@@ -5198,6 +5639,10 @@ msgstr "Owl body saved."
 msgid "Owl eyes saved."
 msgstr "Owl eyes saved."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "owner/name. Empty uses the project’s."
+msgstr "owner/name. Empty uses the project’s."
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Painting the window now."
 msgstr "Painting the window now."
@@ -5292,6 +5737,14 @@ msgstr "Paste the token"
 msgid "Paste your run.cloud key"
 msgstr "Paste your run.cloud key"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Pause"
+msgstr "Pause"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Paused"
+msgstr "Paused"
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Performance".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -5299,6 +5752,7 @@ msgid "Performance"
 msgstr "Performance"
 
 #. A worker role field: what its workers may do without asking
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Permissions"
 msgstr "Permissions"
@@ -5408,6 +5862,14 @@ msgstr "Pick a machine Sotto can reach over SSH, then add it."
 msgid "Pieces"
 msgstr "Pieces"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Playbook"
+msgstr "Playbook"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Playbooks"
+msgstr "Playbooks"
+
 #. A Settings page, named in its rail and its heading: outside services such as GitHub that threads can use. Other messages name it as "Settings > Plugins".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -5434,6 +5896,10 @@ msgstr "port {port}, user from your SSH configuration"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Port <0>(optional)</0>"
 msgstr "Port <0>(optional)</0>"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "POST a JSON object to a task’s address with X-Sotto-Delivery (a new ID each time), X-Sotto-Timestamp (Unix seconds) and X-Sotto-Signature: sha256= and the HMAC-SHA256 of timestamp.delivery.body with the task’s secret. A delivery ID seen before starts nothing again."
+msgstr "POST a JSON object to a task’s address with X-Sotto-Delivery (a new ID each time), X-Sotto-Timestamp (Unix seconds) and X-Sotto-Signature: sha256= and the HMAC-SHA256 of timestamp.delivery.body with the task’s secret. A delivery ID seen before starts nothing again."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Posted a comment"
@@ -5516,6 +5982,7 @@ msgstr "Proactive panels"
 
 #. The project whose default is being chosen
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 msgid "Project"
 msgstr "Project"
 
@@ -5549,6 +6016,14 @@ msgstr "Projects whose threads may use {name}"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Promoted a deployment to production"
 msgstr "Promoted a deployment to production"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Prompt"
+msgstr "Prompt"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Prompts and playbooks that start on their own"
+msgstr "Prompts and playbooks that start on their own"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Proton address"
@@ -5603,6 +6078,10 @@ msgstr "Providers on {hostName}"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Pull request title"
 msgstr "Pull request title"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Pull requests"
+msgstr "Pull requests"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Put the cursor in the focused pane’s composer."
@@ -5721,6 +6200,10 @@ msgstr "Reading OpenRouter’s speech models…"
 msgid "Reading phone access on {name}…"
 msgstr "Reading phone access on {name}…"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Reading scheduled tasks…"
+msgstr "Reading scheduled tasks…"
+
 #: src/renderer/src/features/settings/ModsSettings.tsx
 msgid "Reading the mods folder…"
 msgstr "Reading the mods folder…"
@@ -5798,6 +6281,7 @@ msgstr "Remote hosts"
 #: src/renderer/src/features/settings/ModsSettings.tsx
 #: src/renderer/src/features/settings/phoneParts.tsx
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "Remove"
 msgstr "Remove"
 
@@ -5809,6 +6293,10 @@ msgstr "Remove “{name}”?"
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Remove {name}"
 msgstr "Remove {name}"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Remove {name}?"
+msgstr "Remove {name}?"
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Remove {phoneName}?"
@@ -6011,6 +6499,10 @@ msgstr "Replies, reasoning, approvals and Antigravity’s questions, steering, i
 msgid "Reports no limits, so it would be chosen blind"
 msgstr "Reports no limits, so it would be chosen blind"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Repository"
+msgstr "Repository"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Repository conventions"
 msgstr "Repository conventions"
@@ -6147,6 +6639,10 @@ msgstr "Restore settled thread shortcut"
 msgid "Restore shortcut defaults"
 msgstr "Restore shortcut defaults"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Resume"
+msgstr "Resume"
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Resume threads after a restart"
@@ -6179,6 +6675,27 @@ msgstr "Round table"
 msgid "routed"
 msgstr "routed"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Run now"
+msgstr "Run now"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Run once the last run ends"
+msgstr "Run once the last run ends"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Run once, late"
+msgstr "Run once, late"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Run scheduled tasks"
+msgstr "Run scheduled tasks"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Run scheduled tasks on this computer"
+msgstr "Run scheduled tasks on this computer"
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Run the local host"
@@ -6195,6 +6712,18 @@ msgstr "Run threads on other machines over your tailnet or SSH. Sotto sets each 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "run.cloud key"
 msgstr "run.cloud key"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "running"
+msgstr "running"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Running"
+msgstr "Running"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Runs"
+msgstr "Runs"
 
 #. placeholder {0}: programName(running)
 #. placeholder {1}: programName(chosen)
@@ -6257,6 +6786,10 @@ msgstr "Save key"
 msgid "Save name"
 msgstr "Save name"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Save task"
+msgstr "Save task"
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Save token"
 msgstr "Save token"
@@ -6278,12 +6811,24 @@ msgid "Saving the connection."
 msgstr "Saving the connection."
 
 #: src/renderer/src/features/settings/HostDialog.tsx
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 msgid "Saving…"
 msgstr "Saving…"
 
 #: src/renderer/src/features/settings/ModsSettings.tsx
 msgid "Say what to change. A thread in the Mods project writes the mod, and Sotto paints it as soon as its files are saved."
 msgstr "Say what to change. A thread in the Mods project writes the mod, and Sotto paints it as soon as its files are saved."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Schedule"
+msgstr "Schedule"
+
+#. A Settings page, named in its rail and its heading: prompts and playbooks Sotto starts on a schedule. Other messages name it as "Settings > Scheduled tasks".
+#. A Settings page, named in its rail and its heading: prompts and playbooks Sotto starts on a schedule. Other messages name it as "Settings > Scheduled tasks".
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Scheduled tasks"
+msgstr "Scheduled tasks"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
@@ -6365,6 +6910,10 @@ msgstr "Sends your audio to the model you pick. Off, dictation is transcribed on
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sent an email"
 msgstr "Sent an email"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Sent as written, as Sotto’s message. A webhook’s or GitHub’s data goes below it, marked as outside words."
+msgstr "Sent as written, as Sotto’s message. A webhook’s or GitHub’s data goes below it, marked as outside words."
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Sent only to a host that keeps no audio."
@@ -6717,6 +7266,14 @@ msgstr "Signing out…"
 msgid "Sixteen characters, made at {GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again."
 msgstr "Sixteen characters, made at {GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Skip it"
+msgstr "Skip it"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Skipped"
+msgstr "Skipped"
+
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
 msgstr "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
@@ -6774,9 +7331,17 @@ msgstr "Sotto added it on 10000, because another app had 8443. Port 443 stays fr
 msgid "Sotto added it. Port 443 stays free for other apps."
 msgstr "Sotto added it. Port 443 stays free for other apps."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Sotto asks GitHub through gh every couple of minutes while scheduled tasks are on. Only ones opened after you save start runs."
+msgstr "Sotto asks GitHub through gh every couple of minutes while scheduled tasks are on. Only ones opened after you save start runs."
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto browser"
 msgstr "Sotto browser"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Sotto can’t tell whether this step took effect."
+msgstr "Sotto can’t tell whether this step took effect."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto cannot change sign-in startup here."
@@ -7255,6 +7820,10 @@ msgstr "Start the host"
 msgid "Start the subject with the area in square brackets..."
 msgstr "Start the subject with the area in square brackets..."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Started from outside"
+msgstr "Started from outside"
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Starting {name}’s host at boot…"
 msgstr "Starting {name}’s host at boot…"
@@ -7327,6 +7896,10 @@ msgstr "Steer now"
 msgid "Step {step} of {steps}"
 msgstr "Step {step} of {steps}"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Steps"
+msgstr "Steps"
+
 #. Stops the agent installing or fixing a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Stop"
@@ -7384,6 +7957,10 @@ msgstr "Stop the running turn"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Stop the running turn shortcut"
 msgstr "Stop the running turn shortcut"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Stopped"
+msgstr "Stopped"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Stopped. Anything the agent installed on {host} stays there, and the thread {thread} stays in your Threads list."
@@ -7549,6 +8126,10 @@ msgstr "Tailscale Serve on port 8443"
 msgid "Tailscale, SSH server not checked"
 msgstr "Tailscale, SSH server not checked"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Tasks"
+msgstr "Tasks"
+
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Tell me when main freezes"
 msgstr "Tell me when main freezes"
@@ -7586,6 +8167,14 @@ msgstr "Text"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "That account is no longer here. Nothing was changed."
 msgstr "That account is no longer here. Nothing was changed."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "That could not be done. Nothing was changed."
+msgstr "That could not be done. Nothing was changed."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "That could not be done. Nothing was changed. Try again."
+msgstr "That could not be done. Nothing was changed. Try again."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "That could not be saved. Nothing was changed. Try again."
@@ -7856,6 +8445,10 @@ msgstr "The microphone test could not start."
 msgid "The model that turns your speech into text. Choosing one switches dictation to it."
 msgstr "The model that turns your speech into text. Choosing one switches dictation to it."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "The model’s default"
+msgstr "The model’s default"
+
 #. {clientName} is a provider's client, such as Claude Code.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "The models {clientName} offers you now."
@@ -7913,6 +8506,10 @@ msgstr "The password in Bridge, under this account’s Mailbox details. It is no
 msgid "The pasted text was cut to fit the 4,000-character limit."
 msgstr "The pasted text was cut to fit the 4,000-character limit."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "The playbook {playbook} runs commands on this computer. Allow this version of it to run them for this task."
+msgstr "The playbook {playbook} runs commands on this computer. Allow this version of it to run them for this task."
+
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "The popup has no shortcut. Show it from the tray."
 msgstr "The popup has no shortcut. Show it from the tray."
@@ -7924,6 +8521,10 @@ msgstr "The popup still has no shortcut."
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "The popup’s shortcut needs a key besides the modifiers, such as Space or a letter."
 msgstr "The popup’s shortcut needs a key besides the modifiers, such as Space or a letter."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "The project’s checkout"
+msgstr "The project’s checkout"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "The provider"
@@ -8012,6 +8613,10 @@ msgstr "the sign-in page"
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
 msgstr "The sign-in page could not open. Nothing was changed. Try again."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "The switch could not be saved. Try again."
+msgstr "The switch could not be saved. Try again."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "The terminal’s own keys, while a terminal holds them."
@@ -8201,6 +8806,10 @@ msgstr "This computer, other computers, and your iPhone"
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
 msgstr "This computer's client ID on {editingName}: <0>{clientId}</0>"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "This computer’s credential store is locked or missing, so no webhook secret can be kept."
+msgstr "This computer’s credential store is locked or missing, so no webhook secret can be kept."
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "This computer’s credential store is locked, so the API key could not be read to send. Unlock it, and Sotto tries again."
 msgstr "This computer’s credential store is locked, so the API key could not be read to send. Unlock it, and Sotto tries again."
@@ -8283,6 +8892,10 @@ msgstr "Those themes could not be added."
 msgid "Those themes could not be saved."
 msgstr "Those themes could not be saved."
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Thread"
+msgstr "Thread"
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Thread providers"
@@ -8348,6 +8961,18 @@ msgstr "Threads with OpenCode"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."
 msgstr "Threads, pairing and settings for this host live here."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Time zone"
+msgstr "Time zone"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Times"
+msgstr "Times"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Times follow this zone’s clock, summer time included."
+msgstr "Times follow this zone’s clock, summer time included."
 
 #. Read between two version numbers: from one version to another.
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
@@ -8448,6 +9073,10 @@ msgstr "Trust the SSH host {name}?"
 msgid "Trust this SSH host?"
 msgstr "Trust this SSH host?"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "try {attempt} of {attempts}"
+msgstr "try {attempt} of {attempts}"
+
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
@@ -8535,6 +9164,10 @@ msgstr "Typing speed saved."
 msgid "Ultracode effort"
 msgstr "Ultracode effort"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "uncertain"
+msgstr "uncertain"
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "under $0.01"
 msgstr "under $0.01"
@@ -8553,6 +9186,7 @@ msgstr "Undo already uses {keys}. Pick other keys."
 
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 msgid "Unit"
 msgstr "Unit"
 
@@ -8925,7 +9559,12 @@ msgstr "Waiting for {name}’s threads"
 msgid "Waiting for microphone permission..."
 msgstr "Waiting for microphone permission..."
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "waiting for you"
+msgstr "waiting for you"
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
 msgid "Waiting for you"
 msgstr "Waiting for you"
 
@@ -8961,6 +9600,10 @@ msgstr "Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes."
 msgstr "Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes."
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Waiting to start"
+msgstr "Waiting to start"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Waiting to update"
@@ -9093,6 +9736,18 @@ msgstr "Watcher’s model: the same choice as the model chip under its composer.
 msgid "Web links in threads"
 msgstr "Web links in threads"
 
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "webhook"
+msgstr "webhook"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Webhook"
+msgstr "Webhook"
+
+#: src/renderer/src/features/settings/ScheduledTasksSettings.tsx
+msgid "Webhooks"
+msgstr "Webhooks"
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "What {name}'s updater printed"
 msgstr "What {name}'s updater printed"
@@ -9117,6 +9772,10 @@ msgstr "What changes on {name}"
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "What it may use"
 msgstr "What it may use"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "What it runs"
+msgstr "What it runs"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "What it spends"
@@ -9176,6 +9835,10 @@ msgstr "When a turn ends, or you open a new thread, the thread's own model sugge
 msgid "When finished"
 msgstr "When finished"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "When it runs"
+msgstr "When it runs"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "When you read Changes"
 msgstr "When you read Changes"
@@ -9187,6 +9850,10 @@ msgstr "When your computer starts"
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Where a new project goes. Each computer has its own folder."
 msgstr "Where a new project goes. Each computer has its own folder."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Where it runs"
+msgstr "Where it runs"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Where its secret is kept"
@@ -9262,6 +9929,7 @@ msgstr "Workers is how many Watcher starts for one request: usually the first nu
 msgid "Workers never start wider than your new-thread default, so these start on “{heldName}”. <0>Change it in Threads</0>"
 msgstr "Workers never start wider than your new-thread default, so these start on “{heldName}”. <0>Change it in Threads</0>"
 
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working copy"
 msgstr "Working copy"
@@ -9290,6 +9958,22 @@ msgstr "Works once. Expires in <0>{expires}</0>"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Worktrees, commits, pull requests, Changes & fetching"
 msgstr "Worktrees, commits, pull requests, Changes & fetching"
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Write the prompt it sends."
+msgstr "Write the prompt it sends."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Write the repository as owner/name, or leave it empty to use the project’s."
+msgstr "Write the repository as owner/name, or leave it empty to use the project’s."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Write up to 12 times as hours and minutes, such as 09:00, 17:30."
+msgstr "Write up to 12 times as hours and minutes, such as 09:00, 17:30."
+
+#: src/renderer/src/features/settings/ScheduledTaskEditor.tsx
+msgid "Yes"
+msgstr "Yes"
 
 #. A sample reply from a thread in the Appearance preview
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
