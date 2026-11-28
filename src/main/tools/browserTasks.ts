@@ -824,10 +824,12 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       task.steps = task.steps.slice(-40)
       return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
     } catch (error) {
-      // A spent reference is said in the task too: an action the user allowed answers the agent with the task, not the error.
+      // A spent reference is said in the task too: an action the user allowed answers the agent with the task, not the
+      // error. The step the user reads in Tools says it in the user's words, with no tool's name in them.
       const said = spent ? record.automation.masked(spentWords(error)) : null
       task.output = said ?? 'The browser action did not finish. Inspect the page before trying again.'
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: record.automation.maskedUrl(observedUrl), viewport: record.page.viewport ?? null })
+      const detail = said === null ? task.output : this.base.words().secretSpent ?? SECRET_SPENT_FOR_USER
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail, url: record.automation.maskedUrl(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40); this.publishTask(task)
       if (said !== null) throw new SecretSpent(error instanceof ToolFailure ? error.code : 'unavailable', said)
       throw error

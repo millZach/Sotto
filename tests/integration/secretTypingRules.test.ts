@@ -273,6 +273,11 @@ describe('a type the user allowed that fails once the value is taken (the second
     // The user who pressed Allow is told in their own words, with no tool's name (the third review, Q-N4).
     expect(answered).toEqual({ ok: false, error: expect.objectContaining({ message: expect.stringContaining('can\'t be used again') }) })
     expect(JSON.stringify(answered)).not.toMatch(/secretRef|request_secret/u)
+    // So is the failed step the user reads in the page's task (the fourth review, P-N3).
+    const failed = latestTask(staging.taskId)!.steps.at(-1)!
+    expect(failed.status).toBe('failed')
+    expect(failed.detail).toContain('can\'t be used again')
+    expect(failed.detail).not.toMatch(/secretRef|request_secret/u)
   })
 
   it('still tells the agent its reference is used when the user stopped sharing the page as it was taken (the third review, Q-N4)', async () => {
