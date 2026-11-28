@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -72,15 +73,71 @@ pub fn provider_label(provider: &str) -> &'static str {
     }
 }
 
-pub fn public_provider_entity_id(provider: &str, kind: &str, raw_id: &str) -> String {
-    format!("native:{provider}:{kind}:{raw_id}")
+fn encode_uri_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        let unescaped = byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')');
+        if unescaped {
+            out.push(byte as char);
+        } else {
+            out.push('%');
+            out.push(char::from(HEX_UPPER[(byte >> 4) as usize]));
+            out.push(char::from(HEX_UPPER[(byte & 0x0f) as usize]));
+        }
+    }
+    out
 }
 
-pub fn parse_public_provider_entity_id(id: &str) -> Option<(&str, &str, &str)> {
+const HEX_UPPER: &[u8; 16] = b"0123456789ABCDEF";
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn decode_uri_component(value: &str) -> Option<Cow<'_, str>> {
+    if !value.as_bytes().contains(&b'%') {
+        return Some(Cow::Borrowed(value));
+    }
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return None;
+            }
+            let hi = hex_nibble(bytes[i + 1])?;
+            let lo = hex_nibble(bytes[i + 2])?;
+            out.push((hi << 4) | lo);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok().map(Cow::Owned)
+}
+
+/// Public model and project IDs, matching Node's `publicProviderEntityId` (`src/shared/agents.ts`).
+pub fn public_provider_entity_id(provider: &str, kind: &str, raw_id: &str) -> String {
+    format!("native:{provider}:{kind}:{}", encode_uri_component(raw_id))
+}
+
+/// Parses a public model or project ID, percent-decoding the native value as Node's `parsePublicProviderEntityId` does.
+pub fn parse_public_provider_entity_id(id: &str) -> Option<(&str, &str, Cow<'_, str>)> {
     let rest = id.strip_prefix("native:")?;
     let (provider, rest) = rest.split_once(':')?;
     let (kind, raw_id) = rest.split_once(':')?;
-    (!provider.is_empty() && !kind.is_empty() && !raw_id.is_empty()).then_some((provider, kind, raw_id))
+    if provider.is_empty() || kind.is_empty() || raw_id.is_empty() {
+        return None;
+    }
+    Some((provider, kind, decode_uri_component(raw_id)?))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1059,5 +1116,34 @@ mod tests {
         assert_eq!(delta["messageDeltas"][0]["id"], "m1");
         assert_eq!(delta["messageDeltas"][0]["appendText"], " world");
         assert_eq!(delta["activityDeltas"][0]["record"]["status"], "completed");
+    }
+
+    #[test]
+    fn public_provider_entity_id_encodes_and_decodes_like_node() {
+        let encoded = public_provider_entity_id("opencode", "model", "opencode/fixture-model");
+        assert_eq!(encoded, "native:opencode:model:opencode%2Ffixture-model");
+        let parsed = parse_public_provider_entity_id(&encoded).unwrap();
+        assert_eq!(parsed, ("opencode", "model", Cow::Owned("opencode/fixture-model".into())));
+
+        // Legacy unencoded IDs still decode cleanly without allocating.
+        let unencoded = parse_public_provider_entity_id("native:opencode:model:opencode/fixture-model").unwrap();
+        assert_eq!(unencoded, ("opencode", "model", Cow::Borrowed("opencode/fixture-model")));
+
+        let bracketed = public_provider_entity_id("claude", "model", "opus[1m]");
+        assert_eq!(bracketed, "native:claude:model:opus%5B1m%5D");
+        assert_eq!(
+            parse_public_provider_entity_id(&bracketed).map(|(p, k, v)| (p, k, v.into_owned())),
+            Some(("claude", "model", "opus[1m]".into()))
+        );
+
+        let unicode = public_provider_entity_id("opencode", "model", "prov/café");
+        assert_eq!(
+            parse_public_provider_entity_id(&unicode).map(|(_, _, v)| v.into_owned()),
+            Some("prov/café".into())
+        );
+
+        assert!(parse_public_provider_entity_id("native:opencode:model:bad%2").is_none());
+        assert!(parse_public_provider_entity_id("native:opencode:model:bad%ZZ").is_none());
+        assert!(parse_public_provider_entity_id("native:opencode:model:%FF").is_none());
     }
 }

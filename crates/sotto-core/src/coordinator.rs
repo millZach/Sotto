@@ -279,10 +279,10 @@ pub(crate) fn resolve_model<'a>(models: &'a [AgentModel], model_id: &str) -> Opt
         return Some(exact);
     }
     let parsed = parse_public_provider_entity_id(model_id);
-    if parsed.is_some_and(|(provider, kind, _)| provider != "claude" || kind != "model") || parsed.is_none() && model_id.starts_with("native:") {
+    if parsed.as_ref().is_some_and(|(provider, kind, _)| *provider != "claude" || *kind != "model") || parsed.is_none() && model_id.starts_with("native:") {
         return None;
     }
-    let value = parsed.map_or(model_id, |(_, _, value)| value);
+    let value = parsed.as_ref().map_or(model_id, |(_, _, value)| value.as_ref());
     let cut = value.len().checked_sub("[1m]".len()).filter(|&at| at > 0 && value.is_char_boundary(at))?;
     if !value[cut..].eq_ignore_ascii_case("[1m]") {
         return None;

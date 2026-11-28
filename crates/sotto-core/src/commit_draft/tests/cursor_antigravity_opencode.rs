@@ -589,14 +589,19 @@ fn opencode_drafts_on_a_configured_model_omits_default_variant_and_ignores_marke
         "generate": { "text": "Marked sessions stay ignored" }
     });
     let adapter = opencode(&fixture, &runtime, "opencode/fixture-model", true, script, Duration::from_secs(60));
-    // Create a real Rust-created session (carrying `metadata.sotto.thread` and `model.id`), switch its model via
-    // `configure_thread` to `opencode/default-only`, and verify drafting uses the new model without `variant`.
+    // Create a real Rust-created session using TypeScript's percent-encoded public model IDs
+    // (`native:opencode:model:opencode%2F...`), switch its model via `configure_thread` to `opencode/default-only`,
+    // and verify drafting uses the new model without `variant`.
+    assert!(adapter
+        .models()
+        .iter()
+        .any(|m| m.id == "native:opencode:model:opencode%2Ffixture-model"));
     let send = crate::provider::SendMessageRequest {
         thread_id: "t-created".into(),
         record_seed: crate::provider::ThreadRecordSeed { project_id: "project-1".into(), title: "Fix the build".into(), created_at: "2026-11-27T10:00:00.000Z".into() },
         message_id: "m-1".into(),
         cwd: fixture.repo.to_string_lossy().into_owned(),
-        model_id: Some("opencode/fixture-model".into()),
+        model_id: Some("native:opencode:model:opencode%2Ffixture-model".into()),
         reasoning_effort: Some("high".into()),
         runtime_mode: Some("approval-required".into()),
         text: "Hello".into(),
@@ -606,7 +611,12 @@ fn opencode_drafts_on_a_configured_model_omits_default_variant_and_ignores_marke
     };
     runtime.block_on(adapter.send_message(send)).unwrap();
     runtime
-        .block_on(adapter.configure_thread("t-created".into(), Some("opencode/default-only".into()), None, None))
+        .block_on(adapter.configure_thread(
+            "t-created".into(),
+            Some("native:opencode:model:opencode%2Fdefault-only".into()),
+            None,
+            None,
+        ))
         .unwrap();
 
     // Verify `session.create` sent `metadata.sotto.thread` and `model.id`.
