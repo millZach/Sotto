@@ -251,9 +251,8 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     // Ctrl with the wheel asks to zoom too, a step at a time as the keys do (ADR-0222).
     if (this.parity && !phone) contents.on('zoom-changed', (_event, direction) => this.zoomPage(record, direction === 'in' ? 'in' : 'out'))
     // Only a new document committing ends the one a secret was typed into, or the agent ran script in (ADR-0220,
-    // decision 6). Every address a frame reaches is the page's history, which a typed secret must not be in.
-    contents.on('did-navigate', (_event, url) => record.automation.documentCommitted(url))
-    contents.on('did-frame-navigate', (_event, url, _code, _status, mainFrame) => { if (!mainFrame) record.automation.addressChanged(url) })
+    // decision 6). Sotto's browser keeps no back-forward cache, so going back commits a new document too.
+    contents.on('did-navigate', () => record.automation.documentCommitted())
     const moving = (url: string, mainFrame: boolean): boolean => mainFrame && this.moved(record, url)
     contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
       if (!moving(url, mainFrame)) return
@@ -265,7 +264,6 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     // started from, never finished loading, and a shared page could not be inspected at the address it reached.
     contents.on('did-redirect-navigation', (_event, url, _inPlace, mainFrame) => { if (moving(url, mainFrame)) this.publish(record) })
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => {
-      record.automation.addressChanged(url)
       if (!moving(url, mainFrame)) return
       record.page.status = 'ready'
       this.publish(record)

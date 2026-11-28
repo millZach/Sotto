@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
 import { attributeOf, CURSOR_ARROW, PageAutomation, SNAPSHOT_TOTAL, type PageDebugger, type PageEventListener, type PageFrame, type PagePicture } from '../../../src/main/tools/pageAutomation'
+import { ToolFailure } from '../../../src/main/tools/common'
 
 type Handler = (method: string, params: Record<string, unknown>) => unknown
 
@@ -245,7 +246,7 @@ describe('a document that holds a typed secret (ADR-0220, decision 6)', () => {
 
   it('keeps evaluate off through a hash change, a load that never commits, Stop sharing and a new attachment', async () => {
     const { fake, automation_ } = await typed()
-    await expect(automation_.evaluate('document.querySelector("#password").value')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('holds a secret') })
+    await expect(automation_.evaluate('document.querySelector("#password").value')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('typed into this page') })
     // A navigation starting (the desktop's did-start-navigation, a load) clears the page's refs and errors, not this.
     automation_.clear()
     fake.emit('Page.navigatedWithinDocument', { frameId: 'main', url: 'https://shop.example/checkout#pay' })
@@ -259,15 +260,15 @@ describe('a document that holds a typed secret (ADR-0220, decision 6)', () => {
     expect(fake.calls('Runtime.evaluate').some(params => String(params.expression).includes('.value'))).toBe(false)
   })
 
-  it('turns evaluate back on once a new document commits in the main frame', async () => {
+  it('takes a new document in the main frame as one no secret is in, while evaluate stays off for the page', async () => {
     const { fake, automation_ } = await typed()
     fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/thanks' } })
     expect(automation_.holdsSecret()).toBe(false)
     fake.handle = (method) => method === 'Runtime.evaluate' ? { result: { type: 'number', value: 2 } } : {}
-    expect(await automation_.evaluate('1 + 1')).toBe('2')
+    await expect(automation_.evaluate('1 + 1')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('new page') })
   })
 
-  it('turns evaluate back on when the desktop says a new document committed', async () => {
+  it('takes the desktop\'s word that a new document committed', async () => {
     const { automation_ } = await typed()
     automation_.documentCommitted()
     expect(automation_.holdsSecret()).toBe(false)
@@ -276,8 +277,34 @@ describe('a document that holds a typed secret (ADR-0220, decision 6)', () => {
   it('still masks the secret in what the page says back once the document has gone', async () => {
     const { fake, automation_ } = await typed()
     automation_.documentCommitted()
-    fake.handle = (method) => method === 'Runtime.evaluate' ? { result: { type: 'string', value: 'echo hunter2-secret' } } : {}
-    expect(await automation_.evaluate('window.name')).toBe('"echo ••••••••"')
+    const base = fake.handle
+    fake.handle = (method, params) => method === 'Accessibility.getFullAXTree' ? { nodes: [] }
+      : method === 'Runtime.evaluate' && String(params.expression).includes('document.title') ? { result: { value: { title: 'Account', text: 'echo hunter2-secret', state: 'complete' } } }
+        : base(method, params)
+    const said = await automation_.snapshotText()
+    expect(said).toContain('echo ••••••••')
+    expect(said).not.toContain('hunter2')
+  })
+
+  it('leaves out what a field holds while the document holds the secret, so an edited value cannot come out a piece at a time', async () => {
+    const fake = page(), base = fake.handle, automation_ = automation(fake)
+    // The site's "show password" button made the field a text field, and an edit took the first character off.
+    const tree = { nodes: [
+      { nodeId: '1', role: { value: 'RootWebArea' }, childIds: ['2'] },
+      { nodeId: '2', parentId: '1', role: { value: 'textbox' }, name: { value: 'Password' }, value: { value: 'unter2-secret' }, backendDOMNodeId: 7, childIds: ['3'] },
+      { nodeId: '3', parentId: '2', role: { value: 'StaticText' }, name: { value: 'unter2-secret' } },
+    ] }
+    fake.handle = (method, params) => method === 'Accessibility.getFullAXTree' ? tree
+      : method === 'Runtime.evaluate' && String(params.expression).includes('document.title') ? { result: { value: { title: 'Sign in', text: '', state: 'complete' } } }
+        : base(method, params)
+    await automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
+    const said = await automation_.snapshotText()
+    expect(said).toContain('textbox "Password" [value hidden')
+    expect(said).not.toContain('unter2')
+    expect(await automation_.inspect()).not.toContain('unter2')
+    // Another document holds no secret, and its fields read as before.
+    automation_.documentCommitted()
+    expect(await automation_.snapshotText()).toContain('value="unter2-secret"')
   })
 })
 
@@ -401,6 +428,23 @@ describe('what is masked (ADR-0219)', () => {
       expect(automation_.masked(`before ${form} after`)).toBe('before •••••••• after')
     }
   })
+
+  it('masks a typed secret in an address however it is escaped, a stray % beside it included', async () => {
+    const fake = page(), automation_ = automation(fake)
+    await automation_.typeSecret(given('pa!ss~\'1'), go, { selector: '#password' })
+    for (const escaped of [
+      // The second review's address: a stray % first, then lower-case hex.
+      'pa%21ss%7e%271', 'pa%21ss%7E%271', 'pa!ss~\'1', 'p%61!ss%7E\'1', '%70%61%21%73%73%7e%27%31',
+      // Escaped twice, as an address carried inside another one is.
+      'pa%2521ss%257e%25271',
+    ]) expect(automation_.masked(`https://shop.example/session?discount=100%&p=${escaped}&next=1`)).toBe('https://shop.example/session?discount=100%&p=••••••••&next=1')
+    // A value with a space and a letter outside ASCII, as a form, an address and JSON each write them.
+    const other = page(), others = automation(other), wide = 'pä ss wörd'
+    await others.typeSecret(given(wide), go, { selector: '#password' })
+    for (const form of [encodeURIComponent(wide), encodeURIComponent(wide).replace(/%20/gu, '+').toLowerCase(), JSON.stringify(wide).slice(1, -1), 'p\\u00e4 ss w\\u00F6rd', 'p%C3%A4 ss+w%c3%b6rd']) {
+      expect(others.masked(`[${form}]`)).toBe('[••••••••]')
+    }
+  })
 })
 
 describe('where a secret is not typed (the review of the browser-parity branch)', () => {
@@ -477,16 +521,40 @@ describe('where a secret is not typed (the review of the browser-parity branch)'
     await expect(others.evaluate('location.search')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('address') })
   })
 
-  it('keeps a document the back-forward cache restores as the one it was, script and secret alike', async () => {
+  it('takes a document the back-forward cache gives back, after another one, as one the agent scripted and a secret was typed in', async () => {
+    // A: the agent runs a script. B: another document commits, which clears it. Back to A, from the cache.
     const fake = at('https://github.com'), automation_ = automation(fake), take = counted()
     fake.handle = ((base: Handler) => (method: string, params: Record<string, unknown>) => method === 'Runtime.evaluate' && params.userGesture ? { result: { type: 'string', value: 'ok' } } : base(method, params))(fake.handle)
     await automation_.evaluate('addEventListener("keydown", () => undefined)')
+    fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://github.com/elsewhere' } })
     fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://github.com/login' }, type: 'BackForwardCacheRestore' })
     await expect(automation_.typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('ran a script') })
+    expect(take.calls).toBe(0)
+    // A: a secret is typed. B commits. Back to A, whose field still holds it.
     const holding = page(), holder = automation(holding)
     await holder.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
-    holding.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://github.com/login' }, type: 'BackForwardCacheRestore' })
+    holding.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/next' } })
+    expect(holder.holdsSecret()).toBe(false)
+    holding.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/checkout' }, type: 'BackForwardCacheRestore' })
     expect(holder.holdsSecret()).toBe(true)
+  })
+
+  it('says the reference is used when anything stops the typing after the value was taken', async () => {
+    const fake = at('https://github.com')
+    let taken = false
+    // The page changes while the value is on its way from the engine, as a navigation that starts then would.
+    const guard = (): void => { if (taken) throw new ToolFailure('blocked', 'The page changed. Inspect it before trying again.') }
+    await expect(automation(fake).typeSecret(async () => { taken = true; return 'hunter2-secret' }, guard, { selector: '#password' }, false, 'https://github.com'))
+      .rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('this secretRef is used') })
+    expect(fake.calls('Input.insertText')).toEqual([])
+  })
+
+  it('leaves a page not recording when its recording fails to start, so a secret can still be typed there', async () => {
+    const fake = page(), base = fake.handle, automation_ = automation(fake)
+    fake.handle = (method, params) => { if (method === 'Page.startScreencast') throw new ToolFailure('unavailable', 'The page did not answer in time.'); return base(method, params) }
+    await expect(automation_.startScreencast(() => undefined)).rejects.toMatchObject({ code: 'unavailable' })
+    await automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
+    expect(fake.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }])
   })
 
   it('types nothing while the page records, and starts no recording on a page that holds a secret', async () => {
@@ -514,11 +582,57 @@ describe('where a secret is not typed (the review of the browser-parity branch)'
       expect(automation_.holdsSecret()).toBe(false)
       await expect(automation_.evaluate('btoa(navigation.entries().map(entry => entry.url).join())')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('address') })
     }
-    // An address that never held it leaves evaluate to come back with the next document, as before.
+    // An address that never held it keeps evaluate off too: a site can write the value back into the next document, as
+    // one that fills a failed sign-in form in again does, and a script could send it on in any encoding.
     const plain = page(), plainly = automation(plain)
     await plainly.typeSecret(given(secret), go, { selector: '#password' })
     plain.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/thanks' } })
-    plain.handle = (method) => method === 'Runtime.evaluate' ? { result: { type: 'number', value: 2 } } : {}
-    expect(await plainly.evaluate('1 + 1')).toBe('2')
+    plain.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/account' } })
+    await expect(plainly.evaluate('btoa(document.querySelector("input[type=password]").value)')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('new page') })
+    // A new page has evaluate.
+    const fresh = page(), freshly = automation(fresh)
+    fresh.handle = (method) => method === 'Runtime.evaluate' ? { result: { type: 'number', value: 2 } } : {}
+    expect(await freshly.evaluate('1 + 1')).toBe('2')
+  })
+
+  it('compares wait_for\'s words and address with a typed secret masked, so it cannot test the secret a character at a time', async () => {
+    const secret = 'Cobalt-7731'
+    let href = '', body = ''
+    const fake = page(), base = fake.handle, automation_ = automation(fake)
+    fake.handle = (method, params) => {
+      const expression = typeof params.expression === 'string' ? params.expression : ''
+      if (method === 'Runtime.evaluate' && expression === 'location.href') return { result: { value: href } }
+      if (method === 'Runtime.evaluate' && expression.includes('document.body')) {
+        // The page answers what it is asked: the words themselves, or whether they include the ones given.
+        const asked = /\.includes\(("(?:[^"\\]|\\.)*")\)$/u.exec(expression)
+        return { result: { value: asked ? body.includes(JSON.parse(asked[1]!) as string) : body } }
+      }
+      return base(method, params)
+    }
+    await automation_.typeSecret(given(secret), go, { selector: '#password' })
+    href = `https://shop.example/session?password=${encodeURIComponent(secret)}`
+    body = `Signed in. Your password ${secret} was accepted.`
+    // The right first character and a wrong one look the same.
+    for (const probe of ['password=C', 'password=X']) await expect(automation_.waitFor({ type: 'wait_for', urlIncludes: probe, timeoutMs: 100 }, go)).rejects.toMatchObject({ code: 'blocked' })
+    for (const probe of ['password Co', 'password Xo']) await expect(automation_.waitFor({ type: 'wait_for', text: probe, timeoutMs: 100 }, go)).rejects.toMatchObject({ code: 'blocked' })
+    // Waiting for words that are not the secret still works.
+    expect(await automation_.waitFor({ type: 'wait_for', urlIncludes: 'shop.example/session?password=', timeoutMs: 100 }, go)).toContain('Seen')
+    expect(await automation_.waitFor({ type: 'wait_for', text: 'Signed in.', timeoutMs: 100 }, go)).toContain('Seen')
+  })
+
+  it('refuses a selector that tests part of an attribute\'s value on a page a secret was typed into', async () => {
+    const fake = page(), automation_ = automation(fake)
+    await automation_.typeSecret(given('Cobalt-7731'), go, { selector: '#password' })
+    for (const selector of ['input[value^="C"]', 'a[href*="password=C"]', 'input[value$=1 i]', '[data-x~="C"]', '[lang|=C]', 'a[href*/**/="C"]', ':is(input[value^="C"])']) {
+      await expect(automation_.waitFor({ type: 'wait_for', selector, timeoutMs: 100 }, go)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('part of') })
+      await expect(automation_.input({ type: 'click', selector }, go)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('part of') })
+    }
+    // A whole value tests only a value guessed whole, and an id or a class nothing: they still reach the page.
+    for (const selector of ['input[name="password"]', '#password']) {
+      await expect(automation_.input({ type: 'click', selector }, go)).rejects.not.toMatchObject({ message: expect.stringContaining('part of') })
+    }
+    // A page no secret was typed into takes any selector.
+    const plain = page(), plainly = automation(plain)
+    await expect(plainly.input({ type: 'click', selector: 'input[value^="C"]' }, go)).rejects.not.toMatchObject({ message: expect.stringContaining('part of') })
   })
 })

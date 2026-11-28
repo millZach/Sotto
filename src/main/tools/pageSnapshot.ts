@@ -25,28 +25,55 @@ export const SNAPSHOT_TEXT = 20_000
 // eslint-disable-next-line no-control-regex -- Untrusted page words, quoted on one line.
 const oneLine = (value: unknown, max: number): string => String(value ?? '').replace(/[\x00-\x1f\x7f‪-‮⁦-⁩]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, max)
 
+/** Roles whose value is text the user or an agent typed. */
+const FIELD_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton'])
+/** What a field's value reads as while its page holds a typed secret. */
+export const FIELD_VALUE_HIDDEN = '[value hidden: this page holds a secret you saved]'
+/**
+ * The nodes inside a field, as the text it holds, which Chromium lists under it. While a page holds a typed secret they
+ * are not read out: a site's "show password" button and an edit to the field would let its value out a piece at a time,
+ * past a mask that matches only the whole of it.
+ */
+export function fieldContents(nodes: readonly AXNode[]): Set<string> {
+  const byId = new Map(nodes.map(node => [node.nodeId, node]))
+  const inside = new Set<string>()
+  const add = (node: AXNode): void => {
+    for (const childId of node.childIds ?? []) {
+      if (inside.has(childId)) continue
+      inside.add(childId)
+      const child = byId.get(childId)
+      if (child) add(child)
+    }
+  }
+  for (const node of nodes) if (FIELD_ROLES.has(oneLine(node.role?.value, 60))) add(node)
+  return inside
+}
+
 /**
  * The page's accessibility tree as an agent reads it (ADR-0220): one indented line per element that means something,
  * its role, its name in quotes, its value and states, and a ref to act on it by. Refs count from 1 in each snapshot and
- * stand for the DOM node, so an action by ref reaches exactly the element the snapshot named.
+ * stand for the DOM node, so an action by ref reaches exactly the element the snapshot named. `hideFields` leaves out
+ * what each field holds, for a page that holds a typed secret.
  */
-export function formatSnapshot(nodes: readonly AXNode[], maxLines = SNAPSHOT_LINES): { tree: string; refs: Map<string, number>; truncated: boolean } {
+export function formatSnapshot(nodes: readonly AXNode[], maxLines = SNAPSHOT_LINES, hideFields = false): { tree: string; refs: Map<string, number>; truncated: boolean } {
   const byId = new Map(nodes.map(node => [node.nodeId, node]))
   const root = nodes.find(node => !node.parentId) ?? nodes[0]
   const refs = new Map<string, number>()
   const lines: string[] = []
+  const hidden = hideFields ? fieldContents(nodes) : new Set<string>()
   let truncated = false
   const visit = (node: AXNode, depth: number): void => {
     if (lines.length >= maxLines) { truncated = true; return }
     const role = oneLine(node.role?.value, 60)
-    const name = oneLine(node.name?.value, 200)
+    const name = hidden.has(node.nodeId) ? '' : oneLine(node.name?.value, 200)
     const listed = !node.ignored && role !== '' && role !== 'RootWebArea' && !(PASS_THROUGH.has(role) && !(role !== 'StaticText' && name))
     let childDepth = depth
     if (listed) {
       const words = [`- ${role}`]
       if (name) words.push(JSON.stringify(name))
-      const value = oneLine(node.value?.value, 200)
-      if (value && value !== name) words.push(`value=${JSON.stringify(value)}`)
+      const value = hidden.has(node.nodeId) ? '' : oneLine(node.value?.value, 200)
+      if (value && hideFields && FIELD_ROLES.has(role)) words.push(FIELD_VALUE_HIDDEN)
+      else if (value && value !== name) words.push(`value=${JSON.stringify(value)}`)
       for (const state of STATES) {
         const property = node.properties?.find(entry => entry.name === state)?.value?.value
         if (property === true || property === 'true' || property === 'mixed') words.push(`[${state}${property === 'mixed' ? '=mixed' : ''}]`)

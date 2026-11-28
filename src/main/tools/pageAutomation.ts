@@ -1,6 +1,6 @@
 import { presetSize, type BrowserAction, type BrowserAppearance, type BrowserBounds, type BrowserCapture, type BrowserDialog, type BrowserTargetFields } from '../../shared/browser'
 import { ToolFailure, fail } from './common'
-import { SNAPSHOT_TEXT, formatSnapshot, keyEvents, modifierMask, type AXNode } from './pageSnapshot'
+import { SNAPSHOT_TEXT, fieldContents, formatSnapshot, keyEvents, modifierMask, type AXNode } from './pageSnapshot'
 
 /**
  * The page's debugger, as a page automation drives it: Electron's own on the desktop, a DevTools session over a pipe
@@ -96,6 +96,50 @@ export function cssIdentifier(value: string): string {
     return /[a-zA-Z0-9_\-\u0080-￿]/u.test(character) ? character : `\\${character}`
   }).join('')
 }
+/** What a typed secret is replaced by wherever it is found. */
+const MASK = '••••••••'
+const regExpCharacter = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&')
+/** A pattern for two hex digits, either case, as an address may escape a byte in either. */
+const hexPair = (byte: number): string => [...byte.toString(16).padStart(2, '0')].map(digit => /[a-f]/u.test(digit) ? `[${digit}${digit.toUpperCase()}]` : digit).join('')
+const utf8 = new TextEncoder()
+/**
+ * Every way `secret` is found written in what a page says back (ADR-0219): each character as itself; as an address or a
+ * form escapes it, in hex of either case, once or twice over, a space as `+` too, so an address that escapes some
+ * characters and not others, or has a stray `%` beside them, is found as well; and as JSON escapes it. One pattern per
+ * secret, made when it is typed.
+ */
+export function secretPattern(secret: string): RegExp {
+  const characters = [...secret].map(character => {
+    const bytes = [...utf8.encode(character)]
+    const ways = new Set([
+      regExpCharacter(character),
+      bytes.map(byte => `%${hexPair(byte)}`).join(''),
+      bytes.map(byte => `%25${hexPair(byte)}`).join(''),
+      regExpCharacter(JSON.stringify(character).slice(1, -1)),
+      Array.from({ length: character.length }, (_, index) => character.charCodeAt(index)).map(unit => `\\\\u${hexPair(unit >> 8)}${hexPair(unit & 0xff)}`).join(''),
+      ...character === ' ' ? ['\\+'] : [],
+    ])
+    return `(?:${[...ways].join('|')})`
+  })
+  return new RegExp(characters.join(''), 'gu')
+}
+/**
+ * Whether a CSS selector compares part of an attribute's value (`^=`, `$=`, `*=`, `~=`, `|=`), which could test a value
+ * a character at a time. It is looked for as written and with comments left out, since the operator's two halves may
+ * have one between them, and what looks like a comment may be inside a string. Errs toward yes.
+ */
+export function comparesPartOfAttribute(selector: string): boolean {
+  const operator = /[~|^$*]\s*=/u
+  return operator.test(selector) || operator.test(selector.replace(/\/\*[\s\S]*?(?:\*\/|$)/gu, ''))
+}
+/** What a refusal ends with once a secret request's value was taken (ADR-0219): the reference is used up. */
+export const SECRET_SPENT = 'this secretRef is used. Ask for it again with request_secret.'
+/** An error's own words as a sentence, for a refusal that goes on to say the reference is spent. */
+function sentenceOf(error: unknown): string {
+  const words = (error instanceof Error && error.message.trim()) || 'The typing stopped.'
+  return /[.!?]$/u.test(words) ? words : `${words}.`
+}
+
 /** An attribute's value from CDP's flat list of names and values, walked in pairs. */
 export function attributeOf(attributes: readonly string[] | undefined, name: string): string | undefined {
   for (let index = 0; index + 1 < (attributes?.length ?? 0); index += 2) if (attributes![index]!.toLowerCase() === name) return attributes![index + 1]
@@ -148,14 +192,16 @@ export abstract class PageAutomation {
   private cursorSession = -1
   private readonly errors: { kind: string; message: string }[] = []
   /**
-   * Secrets typed into this page from a secret request (ADR-0219), held only in memory while it is open, so whatever
-   * the page says back (its words, errors, an evaluated value) reaches the agent with each one masked.
+   * Secrets typed into this page from a secret request (ADR-0219), each with the pattern that finds it, held only in
+   * memory while the page is open, so whatever the page says back (its words, errors, an evaluated value) reaches the
+   * agent with each one masked. Once one is here, `evaluate` stays off for the page's life (`evaluate`), and `wait_for`
+   * and selectors cannot test it (`waitFor`, `checkedSelector`).
    */
-  private readonly typedSecrets = new Set<string>()
+  private readonly typedSecrets = new Map<string, RegExp>()
   /**
-   * A secret was typed into the document loaded now, so `evaluate` could read it there (ADR-0220, decision 6). Only a
-   * cross-document navigation that commits clears it: a hash change, a load that never commits, Stop sharing or a new
-   * attachment leave the field, and its value, where it was.
+   * A secret was typed into the document loaded now, so a picture of the page could show it (ADR-0222, decision 12).
+   * Only a cross-document navigation that commits clears it: a hash change, a load that never commits, Stop sharing or
+   * a new attachment leave the field, and its value, where it was.
    */
   private secretInDocument = false
   /**
@@ -164,12 +210,8 @@ export abstract class PageAutomation {
    * only a cross-document navigation that commits clears it (ADR-0222, decision 12).
    */
   private scriptedDocument = false
-  /**
-   * A secret typed here has been in the page's own address, as a sign-in form sent by GET puts it. The address stays in
-   * the page's history, where any later document at that site can read it (`navigation.entries()`, `document.referrer`),
-   * so `evaluate` stays off for as long as the page is open.
-   */
-  private secretInAddress = false
+  /** The agent has run its own script in some document of this page, which the back-forward cache could give back. */
+  private scriptedEver = false
   /**
    * The full catalog (ADR-0220): the page's dialogs, file chooser and load events reach Sotto through the Page domain,
    * which the pane can then answer. Off, the Page domain stays off and dialogs stay Electron's, as before.
@@ -402,14 +444,12 @@ export abstract class PageAutomation {
       for (const waiter of [...this.dialogWaiters]) waiter()
       this.onChange?.()
     } else if (method === 'Page.frameNavigated') {
-      const frame = params.frame as { parentId?: unknown; url?: unknown; urlFragment?: unknown } | undefined
-      const url = `${typeof frame?.url === 'string' ? frame.url : ''}${typeof frame?.urlFragment === 'string' ? frame.urlFragment : ''}`
-      // A frame's address is history the page keeps too; only the main frame's commit is a new document. One the
-      // back-forward cache gives back is the document that was, with its script and its fields.
-      if (frame?.parentId || params.type === 'BackForwardCacheRestore') this.addressChanged(url)
-      else this.documentCommitted(url)
-    } else if (method === 'Page.navigatedWithinDocument' && typeof params.url === 'string') this.addressChanged(params.url)
-    else if (method === 'Page.domContentEventFired') this.loadedAt.domContent = Date.now()
+      // Only the main frame's commit is a new document. One the back-forward cache gives back is the document that was,
+      // with its script and its fields.
+      if ((params.frame as { parentId?: unknown } | undefined)?.parentId) return
+      if (params.type === 'BackForwardCacheRestore') this.documentRestored()
+      else this.documentCommitted()
+    } else if (method === 'Page.domContentEventFired') this.loadedAt.domContent = Date.now()
     else if (method === 'Page.loadEventFired') this.loadedAt.load = Date.now()
     else if (method === 'Page.screencastFrame' && typeof params.data === 'string') {
       void this.page.sendCommand('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => undefined)
@@ -431,8 +471,10 @@ export abstract class PageAutomation {
   colorScheme(): BrowserAppearance | null { return this.appearance }
   async inspect(): Promise<string> {
     await this.ready()
-    const result = await this.send('Accessibility.getFullAXTree') as { nodes?: { ignored?: boolean; role?: { value?: unknown }; name?: { value?: unknown }; backendDOMNodeId?: number }[] }
-    const nodes = (result.nodes ?? []).filter(node => !node.ignored).slice(0, 200).map(node => ({ role: String(node.role?.value ?? '').slice(0, 100), name: String(node.name?.value ?? '').slice(0, 300), nodeId: node.backendDOMNodeId }))
+    const result = await this.send('Accessibility.getFullAXTree') as { nodes?: AXNode[] }
+    // What a field holds is not read out while the page holds a typed secret (`fieldContents`).
+    const hidden = this.secretInDocument ? fieldContents(result.nodes ?? []) : new Set<string>()
+    const nodes = (result.nodes ?? []).filter(node => !node.ignored && !hidden.has(node.nodeId)).slice(0, 200).map(node => ({ role: String(node.role?.value ?? '').slice(0, 100), name: String(node.name?.value ?? '').slice(0, 300), nodeId: node.backendDOMNodeId }))
     const dom = await this.send('Runtime.evaluate', {
       expression: `Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3')).slice(0,100).map(el => { const r=el.getBoundingClientRect(); return { tag:el.tagName.toLowerCase(), role:el.getAttribute('role')||'', name:(el.getAttribute('aria-label')||el.innerText||el.getAttribute('placeholder')||'').slice(0,200), x:r.x,y:r.y,width:r.width,height:r.height, disabled:!!el.disabled }; })`,
       returnByValue: true,
@@ -441,17 +483,13 @@ export abstract class PageAutomation {
     return this.masked(output.length <= 200_000 ? output : JSON.stringify({ url: this.page.url(), nodes: nodes.slice(0, 100), errors: this.errors.slice(-10), truncated: true }))
   }
   /**
-   * `text` with every secret typed into this page masked: as written, as JSON writes it, and as an address or a form
-   * sent by GET carries it, so a sign-in form that puts the password in its address does not hand it on.
+   * `text` with every secret typed into this page masked: as written, as JSON writes it, and however an address or a form
+   * sent by GET escapes it (`secretPattern`), so a sign-in form that puts the password in its address does not hand it on.
+   * A match shorter than three characters is left, as one that short is as likely the page's own words.
    */
   masked(text: string): string {
     let result = text
-    for (const secret of this.typedSecrets) {
-      const encoded = encodeURIComponent(secret)
-      // A form sent by GET also escapes ! ' ( ) and ~, which encodeURIComponent leaves.
-      const formEncoded = encoded.replace(/[!'()~]/gu, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`).replace(/%20/gu, '+')
-      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1), encoded, encoded.replace(/%20/gu, '+'), formEncoded])) if (form.length >= 3) result = result.split(form).join('••••••••')
-    }
+    for (const pattern of this.typedSecrets.values()) result = result.replace(pattern, found => found.length >= 3 ? MASK : found)
     return result
   }
   /**
@@ -462,7 +500,8 @@ export abstract class PageAutomation {
     this.noDialog()
     await this.ready()
     const result = await this.send('Accessibility.getFullAXTree') as { nodes?: AXNode[] }
-    const formatted = formatSnapshot(result.nodes ?? [])
+    // While the document holds a typed secret, what its fields hold is left out (`fieldContents`).
+    const formatted = formatSnapshot(result.nodes ?? [], undefined, this.secretInDocument)
     this.refs = formatted.refs
     const read = await this.send('Runtime.evaluate', { expression: `({ title: document.title, text: document.body ? document.body.innerText.slice(0, ${SNAPSHOT_TEXT}) : '', state: document.readyState })`, returnByValue: true }) as { result?: { value?: { title?: string; text?: string; state?: string } } }
     const page = read.result?.value ?? {}
@@ -481,11 +520,12 @@ export abstract class PageAutomation {
   /** A JavaScript expression run in the page (ADR-0220), its value said back as JSON, cut at `EVALUATE_LIMIT` and masked. */
   async evaluate(expression: string, awaitPromise = false): Promise<string> {
     this.noDialog()
-    if (this.secretInDocument) return fail('blocked', 'This page holds a secret you saved, so evaluate is off here until the page loads another document. Use snapshot, click and type instead.')
-    if (this.secretInAddress) return fail('blocked', 'A secret you saved was in this page\'s address, which its history keeps, so evaluate is off on this page until it closes. Use snapshot, click and type, or open a new page.')
+    // Not only while the secret's document is open: its history and referrer keep an address a form sent it in, and a
+    // site can write it back into a later document (a sign-in form filled again), so a script could read it back there.
+    if (this.typedSecrets.size) return fail('blocked', 'A secret you saved was typed into this page, so evaluate is off on it until it closes: its history keeps the addresses it went to, and a site can write the secret back into a later document. Use snapshot, click and type, or open a new page.')
     await this.ready()
     // From here the script may run, so no secret goes into this document: anything it left listening could take it.
-    this.scriptedDocument = true
+    this.scriptedDocument = this.scriptedEver = true
     const result = await this.raceDialog(this.send('Runtime.evaluate', { expression, awaitPromise, returnByValue: true, userGesture: true })) as { result?: { type?: string; value?: unknown; description?: string; unserializableValue?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } } | 'dialog'
     if (result === 'dialog') return this.masked(`The page opened a ${this.dialogOpen?.type ?? 'dialog'} ${this.secretInDocument ? '' : `${JSON.stringify(this.dialogOpen?.message ?? '')} `}while evaluating. Answer it with the dialog action.`)
     if (result.exceptionDetails) return this.masked(`Threw: ${(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'An error').slice(0, 4000)}`)
@@ -495,17 +535,23 @@ export abstract class PageAutomation {
   }
   /**
    * Waits for an element, words or an address (ADR-0220), looking every 100 ms until `timeoutMs`. Says how long it took,
-   * or fails in words when it never came.
+   * or fails in words when it never came. On a page a secret was typed into, words and addresses are compared with it
+   * masked, as the agent reads them, so a wait cannot test the secret a character at a time.
    */
   async waitFor(action: Extract<BrowserAction, { type: 'wait_for' }>, guard: () => void): Promise<string> {
     this.noDialog()
+    if (action.selector !== undefined) this.checkedSelector(action.selector)
     await this.ready()
     const timeout = action.timeoutMs ?? 5000, started = Date.now(), visible = (action.state ?? 'visible') === 'visible'
     const VISIBLE = 'function() { const element = this.nodeType === 1 ? this : this.parentElement; if (!element || !element.isConnected) return false; const box = element.getBoundingClientRect(); const style = getComputedStyle(element); return box.width > 0 && box.height > 0 && style.visibility !== \'hidden\' && style.display !== \'none\' }'
     const check = async (): Promise<boolean> => {
       if (action.urlIncludes !== undefined) {
         const href = await this.send('Runtime.evaluate', { expression: 'location.href', returnByValue: true }) as { result?: { value?: unknown } }
-        return String(href.result?.value ?? this.page.url()).includes(action.urlIncludes) === visible
+        return this.masked(String(href.result?.value ?? this.page.url())).includes(action.urlIncludes) === visible
+      }
+      if (action.text !== undefined && this.typedSecrets.size) {
+        const words = await this.send('Runtime.evaluate', { expression: 'document.body ? document.body.innerText : \'\'', returnByValue: true }) as { result?: { value?: unknown } }
+        return this.masked(String(words.result?.value ?? '')).includes(action.text) === visible
       }
       if (action.text !== undefined) {
         const found = await this.send('Runtime.evaluate', { expression: `!!document.body && document.body.innerText.includes(${JSON.stringify(action.text)})`, returnByValue: true }) as { result?: { value?: unknown } }
@@ -595,7 +641,11 @@ export abstract class PageAutomation {
     if (this.secretInDocument) return fail('blocked', 'This page holds a secret you saved, so it is not recorded until it loads another document. Use snapshot, whose words are masked.')
     await this.ready()
     this.screencast = onFrame
-    await this.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 })
+    // A recording that did not start leaves the page not recording, so it does not refuse a secret for one.
+    try { await this.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 }) } catch (error) {
+      if (this.screencast === onFrame) this.screencast = null
+      throw error
+    }
   }
   async stopScreencast(): Promise<void> {
     if (!this.screencast) return
@@ -618,6 +668,14 @@ export abstract class PageAutomation {
     command.catch(() => undefined)
     try { return await Promise.race([command, opened]) } finally { this.dialogWaiters.delete(waiter!) }
   }
+  /**
+   * `selector`, unless it compares part of an attribute (`^=`, `*=` and the like) on a page a secret was typed into: a
+   * site that copies the field's value into an attribute, as some forms do, would answer it a character at a time.
+   */
+  private checkedSelector(selector: string): string {
+    if (this.typedSecrets.size && comparesPartOfAttribute(selector)) fail('blocked', 'A secret you saved was typed into this page, so a selector here cannot match part of an attribute (^=, $=, *=, ~= or |=), which could spell the secret out. Use a ref from snapshot, or a whole value as in [name="email"].')
+    return selector
+  }
   /** The DOM node a ref or a selector names (ADR-0220), or a refusal that says what to do instead. */
   private async nodeOf(target: BrowserTargetFields): Promise<number> {
     if (target.ref !== undefined) {
@@ -626,7 +684,7 @@ export abstract class PageAutomation {
       return backendNodeId
     }
     if (target.selector === undefined) return fail('invalid-request', 'Name the element by ref or selector.')
-    const found = await this.send('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(target.selector)})`, objectGroup: 'sotto-browser-node' }) as { result?: { objectId?: string; subtype?: string }; exceptionDetails?: unknown }
+    const found = await this.send('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(this.checkedSelector(target.selector))})`, objectGroup: 'sotto-browser-node' }) as { result?: { objectId?: string; subtype?: string }; exceptionDetails?: unknown }
     try {
       if (found.exceptionDetails) return fail('invalid-request', 'That selector is not valid CSS.')
       if (!found.result?.objectId || found.result.subtype === 'null') return fail('blocked', 'Nothing on the page matches that selector. Take a snapshot to see what is there.')
@@ -690,16 +748,21 @@ export abstract class PageAutomation {
     this.secretMayGo()
     guard()
     const value = await take() ?? fail('blocked', 'This secretRef is unknown, used or expired. Ask for it again with request_secret.')
-    // The value crossed to the engine and back: the page had that long to move the focus or load another site.
-    const spent = 'Nothing was typed, and this secretRef is used. Ask for it again with request_secret.'
-    guard()
-    this.secretMayGo()
-    if (await this.focusedPassword(field).catch(() => null) !== field) return fail('blocked', `The password field lost focus. ${spent}`)
-    if (origin !== undefined && await this.documentOrigin() !== origin) return fail('blocked', `This page is no longer on ${origin}, the site this secret is for. ${spent}`)
-    guard()
-    this.typedSecrets.add(value)
+    // The value crossed to the engine and back: the page had that long to move the focus or load another site. From
+    // here the reference is spent, so whatever stops the typing says so, a check's own words first.
+    try {
+      guard()
+      this.secretMayGo()
+      if (await this.focusedPassword(field).catch(() => null) !== field) fail('blocked', 'The password field lost focus.')
+      if (origin !== undefined && await this.documentOrigin() !== origin) fail('blocked', `This page is no longer on ${origin}, the site this secret is for.`)
+      guard()
+    } catch (error) { return fail(error instanceof ToolFailure ? error.code : 'blocked', `${sentenceOf(error)} Nothing was typed, and ${SECRET_SPENT}`) }
+    this.typedSecrets.set(value, secretPattern(value))
     this.secretInDocument = true
-    await this.send('Input.insertText', { text: value })
+    try { await this.send('Input.insertText', { text: value }) } catch (error) {
+      // Whether the page took any of it is not known, so the document is still taken to hold it.
+      return fail(error instanceof ToolFailure ? error.code : 'unavailable', `${sentenceOf(error)} The secret may not have been typed, and ${SECRET_SPENT}`)
+    }
   }
   /** Refuses a secret where something of the agent's could catch it: a document it ran script in, or a recording. */
   private secretMayGo(): void {
@@ -731,21 +794,20 @@ export abstract class PageAutomation {
     return backendNodeId
   }
   /**
-   * A cross-document navigation committed at `url`: the document that held a typed secret is gone (ADR-0220, decision
-   * 6), and so is any script the agent ran in it.
+   * A new document committed in the main frame: the one that held a typed secret is gone (ADR-0220, decision 6), and so
+   * is any script the agent ran in it.
    */
-  documentCommitted(url?: string): void {
+  documentCommitted(): void {
     this.secretInDocument = false
     this.scriptedDocument = false
-    if (url !== undefined) this.addressChanged(url)
   }
-  /** The page's address changed, within its document or with a new one: an address that holds a typed secret is kept in its history. */
-  addressChanged(url: string): void {
-    if (!this.typedSecrets.size) return
-    // Escaped however the page or a form chose, the address holds the value once it is decoded.
-    let decoded = url
-    try { decoded = decodeURIComponent(url.replace(/\+/gu, ' ')) } catch { /* An address that does not decode is matched as it is. */ }
-    if (this.masked(url) !== url || this.masked(decoded) !== decoded) this.secretInAddress = true
+  /**
+   * The back-forward cache gave back an earlier document, script and field values as they were. Which one is not known
+   * here, so it is taken as one the agent scripted, if it scripted any, and one a secret was typed into, if one was.
+   */
+  documentRestored(): void {
+    if (this.scriptedEver) this.scriptedDocument = true
+    if (this.typedSecrets.size) this.secretInDocument = true
   }
   /** Whether the document loaded now holds a secret typed from a secret request, so no picture of it goes to the agent. */
   holdsSecret(): boolean { return this.secretInDocument }

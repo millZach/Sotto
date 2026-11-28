@@ -176,14 +176,14 @@ describe('a secret typed into a page with the full catalog on', () => {
   })
 
   it('keeps evaluate off through a hash change, Stop sharing and sharing again', async () => {
-    expect((await act({ type: 'evaluate', expression: 'document.querySelector("#password").value' }))).toMatchObject({ isError: true, text: expect.stringContaining('holds a secret') })
+    expect((await act({ type: 'evaluate', expression: 'document.querySelector("#password").value' }))).toMatchObject({ isError: true, text: expect.stringContaining('typed into this page') })
     contents().emit('did-start-navigation', {}, 'http://127.0.0.1:5173/login#pay', true, true)
     contents().emit('did-navigate-in-page', {}, 'http://127.0.0.1:5173/login#pay', true)
     expect((await act({ type: 'evaluate', expression: '1 + 1' })).isError).toBe(true)
     unwrapped(await browser.share({ ...pageRequest(), enabled: false }))
     unwrapped(await browser.share({ ...pageRequest(), enabled: true }))
     unwrapped(await browser.controlTask({ ...pageRequest(), taskId: target.taskId, control: 'resume' }))
-    expect((await act({ type: 'evaluate', expression: '1 + 1' }))).toMatchObject({ isError: true, text: expect.stringContaining('holds a secret') })
+    expect((await act({ type: 'evaluate', expression: '1 + 1' }))).toMatchObject({ isError: true, text: expect.stringContaining('typed into this page') })
   })
 
   it('passes on none of a dialog\'s words while the document holds the secret', async () => {
@@ -211,7 +211,7 @@ describe('a secret typed into a page with the full catalog on', () => {
     const pages = await call('browser_pages', {})
     expect(pages.text).toContain('Welcome back ••••••••')
     expect(pages.text).toContain('password=••••••••')
-    // A new document committed, but its address holds the value, and the page's history keeps it: evaluate stays off.
+    // A new document committed, but a secret was typed into this page: its history keeps the address, so evaluate stays off.
     const evaluated = await act({ type: 'evaluate', expression: 'btoa(location.search)' })
     expect(evaluated).toMatchObject({ isError: true, text: expect.stringContaining('address') })
     await call('browser_status', {})

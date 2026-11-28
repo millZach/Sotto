@@ -72,6 +72,37 @@ describe('a page\'s picture stream', () => {
   })
 })
 
+describe('a host browser keeps no back-forward cache (ADR-0222, November 27 amendment)', () => {
+  it('starts Chromium with the back-forward cache off, as the desktop\'s browser runs', async () => {
+    let args: readonly string[] = []
+    const browser = new HostBrowser({ find: async () => '/usr/bin/chromium', profileRoot: root, spawn: (_file, list) => { args = list; return exitingBrowser() } })
+    await expect(browser.open('workspace')).rejects.toThrow()
+    const disabled = args.filter(arg => arg.startsWith('--disable-features=')).flatMap(arg => arg.slice('--disable-features='.length).split(','))
+    expect(disabled).toContain('BackForwardCache')
+    // One switch only: Chromium takes the last --disable-features it is given.
+    expect(args.filter(arg => arg.startsWith('--disable-features='))).toHaveLength(1)
+    await browser.close()
+  })
+
+  it('takes a document given back from the cache, after another, as the one it was', async () => {
+    const toBrowser = new PassThrough(), fromBrowser = new PassThrough()
+    toBrowser.on('data', () => undefined)
+    const pipe = new DevToolsPipe(toBrowser, fromBrowser)
+    const page = new HostBrowserPage(pipe, 'target', 'session', 'workspace', () => undefined)
+    const seen: string[] = []
+    page.automation.documentCommitted = () => { seen.push('committed') }
+    page.automation.documentRestored = () => { seen.push('restored') }
+    const event = (method: string, params: Record<string, unknown>): void => { fromBrowser.write(JSON.stringify({ method, params, sessionId: 'session' }) + '\0') }
+    // A, then B, then Back to A from the cache.
+    event('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/login' } })
+    event('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/next' } })
+    event('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/login' }, type: 'BackForwardCacheRestore' })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(seen).toEqual(['committed', 'committed', 'restored'])
+    pipe.close()
+  })
+})
+
 describe('a host page\'s document that holds a typed secret (ADR-0220, decision 6)', () => {
   it('is gone only when a new document commits in the main frame, shared or not', async () => {
     const toBrowser = new PassThrough(), fromBrowser = new PassThrough()
