@@ -189,8 +189,13 @@ function cover(text: string, reading: number, needle: Needle, covered: Uint8Arra
  * `text` with each run of characters that holds one of `secrets`, in any of the four readings, replaced by `MASK`. A
  * secret found wholly inside a copy of `keep`, the page's own origin, is left: the agent knows the site it was given,
  * and a PIN that is also the page's port would otherwise mask every address on it.
+ *
+ * With `max`, only the first `max` characters of `text` are said, and a run the cut would fall inside is masked whole:
+ * the text is masked before it is cut, so no cut leaves the start of a secret. Masks are shorter or longer than what
+ * they replace, so the cut is counted in `text`, never in what is said; a text the page itself cut must run far enough
+ * past `max` that a secret starting before `max` is in it whole.
  */
-export function maskSecrets(text: string, secrets: Iterable<SecretMatcher | null>, keep = ''): string {
+export function maskSecrets(text: string, secrets: Iterable<SecretMatcher | null>, keep = '', max = text.length): string {
   if (!text) return text
   const covered = new Uint8Array(text.length), kept = keptCounts(text, keep)
   let found = false
@@ -198,11 +203,13 @@ export function maskSecrets(text: string, secrets: Iterable<SecretMatcher | null
     if (!secret) continue
     for (const reading of READINGS) if (cover(text, reading, reading & ESCAPED_ONCE ? secret.spaced : secret.plain, covered, kept)) found = true
   }
-  if (!found) return text
+  let length = Math.max(0, Math.min(max, text.length))
+  if (!found) return text.slice(0, length)
+  if (length > 0 && covered[length - 1]) { const end = covered.indexOf(0, length); length = end < 0 ? text.length : end }
   const parts: string[] = []
-  for (let at = 0; at < text.length;) {
+  for (let at = 0; at < length;) {
     const end = covered.indexOf(covered[at] ? 0 : 1, at)
-    const stop = end < 0 ? text.length : end
+    const stop = end < 0 || end > length ? length : end
     parts.push(covered[at] ? MASK : text.slice(at, stop))
     at = stop
   }

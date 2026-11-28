@@ -277,9 +277,10 @@ export class BrowserService extends BrowserTasks<PageRecord> {
       this.publish(record)
     })
     contents.on('page-title-updated', (_event, title) => {
-      // Strip controls/bidi marks; URL always remains separately visible in app chrome.
+      // Strip controls/bidi marks; URL always remains separately visible in app chrome. A secret typed into the page is
+      // masked first, so neither the cut nor a mark taken out of it leaves part of it (ADR-0219); `view` masks again.
       // eslint-disable-next-line no-control-regex -- Untrusted title display sanitization.
-      record.page.title = title.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 512)
+      record.page.title = record.automation.masked(title).replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 512)
       this.publish(record)
     })
     contents.on('did-fail-load', (_event, code, _description, url, mainFrame) => {

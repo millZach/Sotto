@@ -211,6 +211,11 @@ describe('a secret typed into a page with the full catalog on', () => {
     const pages = await call('browser_pages', {})
     expect(pages.text).toContain('Welcome back ••••••••')
     expect(pages.text).toContain('password=••••••••')
+    // A title longer than is kept, the secret where it is cut, is masked before the cut, so no start of it is left.
+    contents().emit('page-title-updated', {}, `${'t'.repeat(505)}${CANARY}`)
+    const long = await call('browser_pages', {})
+    expect(long.text).not.toContain(CANARY.slice(0, 7))
+    expect(long.text).toMatch(/t{5}•{7}/u)
     // A new document committed, but a secret was typed into this page: its history keeps the address, so evaluate stays off.
     const evaluated = await act({ type: 'evaluate', expression: 'btoa(location.search)' })
     expect(evaluated).toMatchObject({ isError: true, text: expect.stringContaining('address') })

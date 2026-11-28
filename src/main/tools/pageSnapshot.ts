@@ -57,9 +57,10 @@ export function fieldContents(nodes: readonly AXNode[]): Set<string> {
  * The page's accessibility tree as an agent reads it (ADR-0220): one indented line per element that means something,
  * its role, its name in quotes, its value and states, and a ref to act on it by. Refs count from 1 in each snapshot and
  * stand for the DOM node, so an action by ref reaches exactly the element the snapshot named. `hideFields` leaves out
- * what each field holds, for a page that holds a typed secret.
+ * what each field holds, for a page that holds a typed secret. `mask` is given each name and value whole, before it is
+ * put on one line and cut, so neither the cut nor the spaces it closes up can leave part of a secret out of a mask.
  */
-export function formatSnapshot(nodes: readonly AXNode[], maxLines = SNAPSHOT_LINES, hideFields = false): { tree: string; refs: Map<string, number>; truncated: boolean } {
+export function formatSnapshot(nodes: readonly AXNode[], maxLines = SNAPSHOT_LINES, hideFields = false, mask: (words: string) => string = words => words): { tree: string; refs: Map<string, number>; truncated: boolean } {
   const byId = new Map(nodes.map(node => [node.nodeId, node]))
   const root = nodes.find(node => !node.parentId) ?? nodes[0]
   const refs = new Map<string, number>()
@@ -69,13 +70,13 @@ export function formatSnapshot(nodes: readonly AXNode[], maxLines = SNAPSHOT_LIN
   const visit = (node: AXNode, depth: number): void => {
     if (lines.length >= maxLines) { truncated = true; return }
     const role = oneLine(node.role?.value, 60)
-    const name = hidden.has(node.nodeId) ? '' : oneLine(node.name?.value, 200)
+    const name = hidden.has(node.nodeId) ? '' : oneLine(mask(String(node.name?.value ?? '')), 200)
     const listed = !node.ignored && role !== '' && role !== 'RootWebArea' && !(PASS_THROUGH.has(role) && !(role !== 'StaticText' && name))
     let childDepth = depth
     if (listed) {
       const words = [`- ${role}`]
       if (name) words.push(JSON.stringify(name))
-      const value = hidden.has(node.nodeId) ? '' : oneLine(node.value?.value, 200)
+      const value = hidden.has(node.nodeId) ? '' : oneLine(mask(String(node.value?.value ?? '')), 200)
       if (value && hideFields && FIELD_ROLES.has(role)) words.push(FIELD_VALUE_HIDDEN)
       else if (value && value !== name) words.push(`value=${JSON.stringify(value)}`)
       for (const state of STATES) {

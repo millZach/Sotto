@@ -294,8 +294,8 @@ describe('browser agent boundaries', () => {
     const capture = unwrap(await service.capture(target))
     const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
     const lookups = [
-      { element: { tag: 'button', role: '', name: 'Save', text: 'Save', selector: '#save' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
-      { element: { tag: 'button', role: '', name: 'Save anyway', text: 'Save anyway', selector: '#save-anyway' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
+      { element: { tag: 'button', role: '', name: 'Save', text: 'Save', id: 'save' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
+      { element: { tag: 'button', role: '', name: 'Save anyway', text: 'Save anyway', id: 'save-anyway' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
     ]
     vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => args[0] === 'Runtime.evaluate' ? { result: { value: lookups.shift() ?? lookups[0] } } : original(...args))
     expect(await service.capture({ ...target, captureId: capture.captureId, point: { x: 10, y: 10 } })).toMatchObject({ ok: false, error: { code: 'blocked' } })
@@ -316,7 +316,7 @@ describe('browser agent boundaries', () => {
     const capture = unwrap(await service.capture(target))
     const command = vi.mocked(view.webContents.debugger.sendCommand)
     const original = command.getMockImplementation()!
-    command.mockImplementation(async (...args) => args[0] === 'Runtime.evaluate' ? { result: { value: { element: { tag: 'button', role: '', name: 'Save', text: 'Save', selector: '#save' }, bounds: { x: 10, y: 20, width: 100, height: 40 } } } } : original(...args))
+    command.mockImplementation(async (...args) => args[0] === 'Runtime.evaluate' ? { result: { value: { element: { tag: 'button', role: '', name: 'Save', text: 'Save', id: 'save' }, bounds: { x: 10, y: 20, width: 100, height: 40 } } } } : original(...args))
     command.mockClear()
     const selected = unwrap(await service.capture({ ...target, captureId: capture.captureId, point: { x: 30, y: 30 } }))
     expect(selected).toMatchObject({ image: capture.image, url: capture.url, element: { name: 'Save', selector: '#save' } })

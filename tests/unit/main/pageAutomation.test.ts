@@ -2,8 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { attributeOf, CURSOR_ARROW, DOUBLE_TAP_GAP_MS, PageAutomation, SNAPSHOT_TOTAL, type PageDebugger, type PageEventListener, type PageFrame, type PageInput, type PagePicture } from '../../../src/main/tools/pageAutomation'
 import { ToolFailure } from '../../../src/main/tools/common'
-import { maskSecrets } from '../../../src/main/tools/secretMask'
+import { maskSecrets, secretMatcher } from '../../../src/main/tools/secretMask'
 import { SECRET_VALUE_MAX } from '../../../src/shared/secretRequests'
+import { SNAPSHOT_TEXT, type AXNode } from '../../../src/main/tools/pageSnapshot'
 
 // The real matcher, wrapped so a test can make it fail once and see what the page then says back.
 vi.mock('../../../src/main/tools/secretMask', async importOriginal => {
@@ -693,9 +694,11 @@ describe('masking a typed secret stays linear and cannot throw (the third review
     let said = ''
     expect(() => { said = automation_.masked(`Your password is ${secret}`) }).not.toThrow()
     expect(said).toBe('••••••••')
-    // What the page says back goes through the same mask: the snapshot is all mask, not the page's raw words.
-    vi.mocked(maskSecrets).mockImplementationOnce(() => { throw new RangeError(secret) })
-    const snapshot = await automation_.snapshotText()
+    // What the page says back goes through the same mask, each part before it is cut and the whole after: with every
+    // check failing, the snapshot is all mask, not the page's raw words.
+    const real = vi.mocked(maskSecrets).getMockImplementation()!
+    vi.mocked(maskSecrets).mockImplementation(() => { throw new RangeError(secret) })
+    const snapshot = await automation_.snapshotText().finally(() => vi.mocked(maskSecrets).mockImplementation(real))
     expect(snapshot).toBe('••••••••')
     expect(vi.mocked(maskSecrets)).toHaveBeenCalled()
   })
@@ -888,5 +891,149 @@ describe('where a secret is not typed (the review of the browser-parity branch)'
     // A page no secret was typed into takes any selector.
     const plain = page(), plainly = automation(plain)
     await expect(plainly.input({ type: 'click', selector: 'input[value^="C"]' }, go)).rejects.not.toMatchObject({ message: expect.stringContaining('part of') })
+  })
+})
+
+describe('page words are masked before they are cut or tidied (after the third review)', () => {
+  const secret = 'hunter2-secret'
+  /**
+   * A page whose body's visible text is `body` and whose tree is `tree`, each read cut where its expression asks, as
+   * `innerText.slice` cuts it in the page; `more` answers anything else first.
+   */
+  const showing = (body: string, tree: AXNode[] = [], more: Handler = () => undefined): FakePage => {
+    const fake = page(), base = fake.handle
+    fake.handle = (method, params) => {
+      const answer = more(method, params)
+      if (answer !== undefined) return answer
+      if (method === 'Accessibility.getFullAXTree') return { nodes: tree }
+      const expression = String(params.expression ?? ''), cut = /innerText\.slice\(0, ?(\d+)\)/u.exec(expression)
+      const visible = cut ? body.slice(0, Number(cut[1])) : body
+      if (method === 'Runtime.evaluate' && expression.startsWith('({ title')) return { result: { value: { title: 'Checkout', text: visible, state: 'complete' } } }
+      if (method === 'Runtime.evaluate' && expression.startsWith('document.body ?')) return { result: { value: visible } }
+      return base(method, params)
+    }
+    return fake
+  }
+  const typedOn = async (fake: FakePage, value = secret): Promise<TestAutomation> => {
+    const automation_ = automation(fake)
+    await automation_.typeSecret(given(value), go, { selector: '#password' })
+    return automation_
+  }
+
+  it('reads the visible text past its cut, so a secret the cut would split is masked whole', async () => {
+    const snapshot = await (await typedOn(showing(`${'a'.repeat(SNAPSHOT_TEXT - 5)}${secret} and more`))).snapshotText()
+    expect(snapshot).not.toContain('hunte')
+    expect(snapshot).toContain(`${'a'.repeat(10)}••••••••`)
+  })
+
+  it('cuts the visible text where the page\'s own words reach the cap, however much shorter the masks before it are', async () => {
+    // Each of 400 copies is 40 characters shorter once masked, so a cut counted in the masked text would reach 16,000
+    // characters past the cap, into the copy the page's own read cut in two.
+    const long = 'L0ng-secret-'.repeat(4), overread = long.length * 15, many = `${long} `.repeat(400)
+    const body = `${many}${'b'.repeat(SNAPSHOT_TEXT + overread - many.length - 20)}${long}`
+    const snapshot = await (await typedOn(showing(body), long)).snapshotText()
+    expect(snapshot).not.toContain('L0ng-sec')
+    expect(snapshot).toContain(`${'b'.repeat(10)}\n`)
+  })
+
+  it('masks a name in the tree before its spaces are closed up and it is cut', async () => {
+    const spaced = 'correct  horse-staple'
+    const tree = (name: string): AXNode[] => [
+      { nodeId: '1', role: { value: 'RootWebArea' }, childIds: ['2'] },
+      { nodeId: '2', parentId: '1', role: { value: 'heading' }, name: { value: name }, backendDOMNodeId: 21 },
+    ]
+    const closed = await (await typedOn(showing('', tree(`Wrong password: ${spaced}`)), spaced)).snapshotText()
+    expect(closed).not.toContain('correct horse')
+    expect(closed).toContain('Wrong password: ••••••••')
+    const cut = await (await typedOn(showing('', tree(`${'h'.repeat(195)}${secret}`)))).snapshotText()
+    expect(cut).not.toContain('hunte')
+  })
+
+  it('looks for words only in the visible text a snapshot carries, read past its cut, so a wait cannot test a secret the cut splits', async () => {
+    const automation_ = await typedOn(showing(`${'w'.repeat(SNAPSHOT_TEXT - 5)}${secret} ${'w'.repeat(40_000)} far-below`))
+    // The start of the secret, which a read cut at the cap would end on.
+    await expect(automation_.waitFor({ type: 'wait_for', text: 'hunte', timeoutMs: 1 }, go)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('Not seen') })
+    // Words past what a snapshot carries are not read every 100 ms.
+    await expect(automation_.waitFor({ type: 'wait_for', text: 'far-below', timeoutMs: 1 }, go)).rejects.toMatchObject({ code: 'blocked' })
+    await expect(automation_.waitFor({ type: 'wait_for', text: 'wwww', timeoutMs: 1 }, go)).resolves.toContain('Seen')
+  })
+
+  it('reads a console message, an error and a dialog past their cuts, and masks a dialog before its tabs are spaces', async () => {
+    const fake = showing('')
+    const automation_ = await typedOn(fake)
+    fake.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: `${'c'.repeat(495)}${secret}` }] })
+    fake.emit('Runtime.exceptionThrown', { exceptionDetails: { exception: { description: `${'e'.repeat(1995)}${secret}` } } })
+    // A snapshot says both; inspect says the errors.
+    const snapshot = await automation_.snapshotText(), inspected = await automation_.inspect()
+    for (const said of [snapshot, inspected]) {
+      expect(said).not.toContain('hunte')
+      expect(said).toContain(`${'e'.repeat(5)}••••••••`)
+    }
+    expect(snapshot).toContain(`${'c'.repeat(5)}••••••••`)
+    fake.emit('Page.javascriptDialogOpening', { type: 'alert', message: `${'d'.repeat(1995)}${secret}` })
+    expect(automation_.dialog()?.message).toMatch(/d{5}••••••••$/u)
+
+    const tabbed = 'tab\there-secret', other = showing('')
+    const elsewhere = await typedOn(other, tabbed)
+    other.emit('Page.javascriptDialogOpening', { type: 'prompt', message: `Wrong password: ${tabbed}`, defaultPrompt: tabbed })
+    expect(elsewhere.dialog()).toEqual({ type: 'prompt', message: 'Wrong password: ••••••••', defaultPrompt: '••••••••' })
+  })
+
+  it('masks what inspect reads of each name before the name is cut', async () => {
+    const tree: AXNode[] = [{ nodeId: '1', role: { value: 'heading' }, name: { value: `${'n'.repeat(295)}${secret}` }, backendDOMNodeId: 21 }]
+    const fake = showing('', tree, (method, params) => {
+      const expression = String(params.expression ?? ''), cut = /\.slice\(0,(\d+)\), x:/u.exec(expression)
+      if (method === 'Runtime.evaluate' && expression.startsWith('Array.from(document.querySelectorAll') && cut) return { result: { value: [{ tag: 'a', role: '', name: `${'m'.repeat(195)}${secret}`.slice(0, Number(cut[1])), x: 0, y: 0, width: 1, height: 1, disabled: false }] } }
+      return undefined
+    })
+    const said = await (await typedOn(fake)).inspect()
+    expect(said).not.toContain('hunte')
+    expect(said).toContain(`${'n'.repeat(5)}••••••••`)
+    expect(said).toContain(`${'m'.repeat(5)}••••••••`)
+  })
+
+  it('masks the element the user picks or comments on, which goes into their message to the agent', async () => {
+    const spaced = 'correct  horse-staple'
+    // Markup longer than is read (200,000 characters and the overread), with a secret that cut leaves five characters of.
+    const at = 200_000 + spaced.length * 15 - 5, tags = '<i></i>'.repeat(Math.floor((at - 3) / 7))
+    const long = `<p>${tags}${'a'.repeat(at - 3 - tags.length)}${spaced}</p>`
+    const fake = showing('', [], (method, params) => {
+      if (method === 'DOM.describeNode' && (params.backendNodeId === 30 || params.backendNodeId === 31)) return { node: { nodeType: 1, localName: 'p', attributes: ['id', spaced, 'aria-label', `Your password: ${spaced}`] } }
+      if (method === 'Accessibility.getPartialAXTree') return { nodes: [{ role: { value: 'paragraph' }, name: { value: `Your password: ${spaced}` } }] }
+      if (method === 'DOM.getBoxModel') return { model: { border: [0, 0, 10, 0, 10, 10, 0, 10] } }
+      if (method === 'DOM.getOuterHTML') return { outerHTML: params.backendNodeId === 31 ? long : `<p>${'x'.repeat(980)}<b>${spaced.replace(' ', '&nbsp;')}</b></p>` }
+      const expression = String(params.expression ?? '')
+      if (method === 'Runtime.evaluate' && expression.includes('document.elementFromPoint')) {
+        const cuts = [...expression.matchAll(/\.slice\(0,(\d+)\)/gu)].map(match => Number(match[1]))
+        const element = { tag: 'p', role: spaced, name: `${'y'.repeat(495)}${spaced}`.slice(0, cuts[0]), text: `${'z'.repeat(995)}${spaced}`.slice(0, cuts[1]) }
+        return { result: { value: { element: expression.includes('id: el.id') ? { ...element, id: spaced } : { ...element, selector: `#${spaced}` }, bounds: { x: 0, y: 0, width: 10, height: 10 } } } }
+      }
+      return undefined
+    })
+    const automation_ = await typedOn(fake, spaced)
+    const picked = await automation_.pointed({ backendNodeId: 30 }), commented = await automation_.elementAt({ x: 5, y: 5 })
+    for (const said of [JSON.stringify(picked), JSON.stringify(commented)]) {
+      expect(said).not.toContain('correct')
+      expect(said).toContain('••••••••')
+    }
+    expect(picked?.element).toMatchObject({ name: 'Your password: ••••••••', selector: '#••••••••', text: expect.stringMatching(/x{5} ••••••••$/u) })
+    expect(commented?.element).toMatchObject({ role: '••••••••', selector: '#••••••••', name: expect.stringMatching(/y{5}••••••••$/u), text: expect.stringMatching(/z{5}••••••••$/u) })
+    expect((await automation_.pointed({ backendNodeId: 31 }))?.element.text).not.toContain('corr')
+  })
+})
+
+describe('the masker cuts a text without splitting a secret (after the third review)', () => {
+  const hunter = secretMatcher('hunter2-secret')
+  it('counts the cut in the text, and runs it on to the end of a mask it would fall inside', () => {
+    const text = 'say hunter2-secret now'
+    expect(maskSecrets(text, [hunter], '', 6)).toBe('say ••••••••')
+    expect(maskSecrets(text, [hunter], '', 4)).toBe('say ')
+    expect(maskSecrets(text, [hunter], '', 19)).toBe('say •••••••• ')
+    expect(maskSecrets(text, [hunter], '', 0)).toBe('')
+    expect(maskSecrets(text, [hunter], '', 1_000)).toBe('say •••••••• now')
+    // A cut in a text that holds no secret is a plain cut.
+    expect(maskSecrets('nothing here', [hunter], '', 7)).toBe('nothing')
+    // Escaped, a secret is longer than itself; the cut still takes the whole escape.
+    expect(maskSecrets(`a ${encodeURIComponent(encodeURIComponent('hunter2-secret'))} b`, [hunter], '', 3)).toBe('a ••••••••')
   })
 })

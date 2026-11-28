@@ -37,9 +37,17 @@ export type PageInput = Extract<BrowserAction, { type: 'click' | 'type' | 'scrol
 /** The actions that reach one element, or the page's open dialog or file chooser, so what they reach is recorded when asked and checked when run. */
 export type TargetedAction = Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' | 'select' | 'drag' | 'upload' | 'dialog' }>
 export const isTargeted = (action: BrowserAction): action is TargetedAction => ['click', 'type', 'tap', 'key', 'select', 'drag', 'upload', 'dialog'].includes(action.type)
-/** A dialog's untrusted words as Sotto shows them: no control or direction-changing characters, at most 2000. */
+/** How much of a dialog's words Sotto shows. */
+const DIALOG_WORDS = 2000
+/** A dialog's untrusted words as Sotto shows them: no control or direction-changing characters. */
 // eslint-disable-next-line no-control-regex -- Untrusted page words shown in Sotto's own chrome.
-const pageWords = (value: unknown): string => String(value ?? '').replace(/[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/gu, ' ').slice(0, 2000)
+const pageWords = (value: string): string => value.replace(/[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/gu, ' ')
+/** How much of a console message and of an error the agent is told. */
+const CONSOLE_WORDS = 500, ERROR_WORDS = 2000
+/** How much of an element's name and words a pick, a comment on the page or inspect says. */
+const ELEMENT_NAME = 500, ELEMENT_TEXT = 1000, INSPECT_NAME = 300, INSPECT_ELEMENT_NAME = 200
+/** The most of an element's markup read for its words. */
+const ELEMENT_MARKUP = 200_000
 /** Run on an element: scrolls its nearest scrolling container, or the page, and returns how far that moved. */
 const SCROLL_ELEMENT = `function(dx, dy) {
   const root = document.scrollingElement || document.documentElement
@@ -166,10 +174,13 @@ export function attributeOf(attributes: readonly string[] | undefined, name: str
   for (let index = 0; index + 1 < (attributes?.length ?? 0); index += 2) if (attributes![index]!.toLowerCase() === name) return attributes![index + 1]
   return undefined
 }
-/** The words an element's markup holds, without its tags, scripts or styles. */
-function markupText(html: string): string {
-  return html.replace(/<(script|style|template)\b[\s\S]*?<\/\1>/giu, ' ').replace(/<[^>]*>/gu, ' ')
-    .replace(/&nbsp;/gu, ' ').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&#39;/gu, '\'').replace(/&amp;/gu, '&')
+/**
+ * The words an element's markup holds, without its tags, scripts or styles. `mask` is given them once tags and entities
+ * are gone and before runs of spaces close up, so a secret written with `&amp;` or two spaces is found.
+ */
+function markupText(html: string, mask: (words: string) => string = words => words): string {
+  return mask(html.replace(/<(script|style|template)\b[\s\S]*?<\/\1>/giu, ' ').replace(/<[^>]*>/gu, ' ')
+    .replace(/&nbsp;/gu, ' ').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&#39;/gu, '\'').replace(/&amp;/gu, '&'))
     .replace(/\s+/gu, ' ').trim()
 }
 
@@ -211,6 +222,7 @@ export abstract class PageAutomation {
   private cursorTimer: ReturnType<typeof setTimeout> | null = null
   /** Which attachment has the DOM and Overlay domains on for the cursor. */
   private cursorSession = -1
+  /** What the page's console and network reported, each read `overread` past what is said of it (`told`). */
   private readonly errors: { kind: string; message: string }[] = []
   /**
    * Secrets typed into this page from a secret request (ADR-0219), each with the matcher that finds it once `masked`
@@ -246,7 +258,9 @@ export abstract class PageAutomation {
   onChange: (() => void) | null = null
   /** Refs from the latest snapshot to the DOM nodes they name; a navigation or a handoff forgets them. */
   private refs = new Map<string, number>()
+  /** The page's console messages, each read `overread` past what is said of it (`told`). */
   private readonly consoleLog: { level: string; text: string }[] = []
+  /** The dialog the page has open, its words as the page gave them, read `overread` past what is said (`dialogWords`). */
   private dialogOpen: (BrowserDialog & { readonly seq: number }) | null = null
   private dialogSeq = 0
   private readonly dialogWaiters = new Set<() => void>()
@@ -331,7 +345,7 @@ export abstract class PageAutomation {
     if (method === 'Runtime.consoleAPICalled') {
       const args = params.args as { value?: unknown; description?: string }[] | undefined
       const words = args?.map(arg => typeof arg.value === 'string' ? arg.value : arg.value !== undefined ? JSON.stringify(arg.value) : arg.description ?? '').join(' ') ?? ''
-      this.consoleLog.push({ level: String(params.type ?? 'log'), text: words.slice(0, 500) })
+      this.consoleLog.push({ level: String(params.type ?? 'log'), text: words.slice(0, CONSOLE_WORDS + this.overread) })
       if (this.consoleLog.length > CONSOLE_KEPT) this.consoleLog.shift()
       if (params.type === 'error') message = words || 'The page reported an error.'
     }
@@ -343,7 +357,7 @@ export abstract class PageAutomation {
       handlers.pick({ backendNodeId: params.backendNodeId })
     }
     if (message) {
-      this.errors.push({ kind: method.startsWith('Network.') ? 'network' : 'console', message: message.slice(0, 2000) })
+      this.errors.push({ kind: method.startsWith('Network.') ? 'network' : 'console', message: message.slice(0, ERROR_WORDS + this.overread) })
       if (this.errors.length > 40) this.errors.shift()
     }
   }
@@ -434,7 +448,11 @@ export abstract class PageAutomation {
       return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
     }, () => null)
     const html = await this.bounded<{ outerHTML?: string }>('DOM.getOuterHTML', { backendNodeId }).then(result => result.outerHTML ?? '', () => '')
-    return { element: { ...described.element, text: markupText(html.slice(0, 200_000)).slice(0, 1000) }, box }
+    // Markup cut short has its words cut back from that end by as much as a secret takes written out, as the part
+    // of one the cut left is there; they are masked before they are tidied and again before they are cut (`told`).
+    const cut = html.length > ELEMENT_MARKUP + this.overread
+    const words = markupText(cut ? html.slice(0, ELEMENT_MARKUP + this.overread) : html, text => this.masked(text))
+    return { element: { ...described.element, text: this.told(cut ? words.slice(0, Math.max(0, words.length - this.overread)) : words, ELEMENT_TEXT) }, box }
   }
   private async describe(node: { nodeId: number } | { backendNodeId: number }): Promise<Omit<PointedElement, 'box'> | null> {
     const described = await this.bounded<{ node?: { nodeName?: string; localName?: string; nodeType?: number; attributes?: string[] } }>('DOM.describeNode', node)
@@ -445,17 +463,20 @@ export abstract class PageAutomation {
     for (let index = 0; index + 1 < (found.attributes?.length ?? 0); index += 2) attributes.set(found.attributes![index]!, found.attributes![index + 1]!)
     const tree = await this.bounded<{ nodes?: { ignored?: boolean; role?: { value?: unknown }; name?: { value?: unknown } }[] }>('Accessibility.getPartialAXTree', { ...node, fetchRelatives: false }).catch(() => ({ nodes: [] }))
     const accessible = tree.nodes?.[0]
-    const role = String(accessible?.role?.value ?? attributes.get('role') ?? '').slice(0, 100)
+    // A pick goes into the user's message to the agent, so its words are masked as the agent's own reads are: before
+    // they are tidied or cut, and again after.
+    const role = this.told(String(accessible?.role?.value ?? attributes.get('role') ?? ''), 100)
     // eslint-disable-next-line no-control-regex -- Untrusted page words shown in Sotto's own chrome.
-    const name = String(accessible?.name?.value || attributes.get('aria-label') || attributes.get('alt') || '').replace(/[\x00-\x1f\x7f‪-‮⁦-⁩]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, 500)
+    const name = this.masked(this.masked(String(accessible?.name?.value || attributes.get('aria-label') || attributes.get('alt') || '')).replace(/[\x00-\x1f\x7f‪-‮⁦-⁩]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, ELEMENT_NAME))
     const id = attributes.get('id')
-    return { element: { tag, role: ['generic', 'none', 'presentation'].includes(role) ? '' : role, name, text: '', selector: id ? `#${cssIdentifier(id)}` : tag } }
+    return { element: { tag, role: ['generic', 'none', 'presentation'].includes(role) ? '' : role, name, text: '', selector: id ? `#${cssIdentifier(this.masked(id))}` : tag } }
   }
   /** The Page domain's news for the full catalog: dialogs, the file chooser, loads and recorded frames. */
   private onPageEvent(method: string, params: Record<string, unknown>): void {
     if (method === 'Page.javascriptDialogOpening') {
       const type = ['alert', 'confirm', 'prompt', 'beforeunload'].includes(String(params.type)) ? String(params.type) as BrowserDialog['type'] : 'alert'
-      this.dialogOpen = { type, message: pageWords(params.message), ...(type === 'prompt' ? { defaultPrompt: pageWords(params.defaultPrompt) } : {}), seq: ++this.dialogSeq }
+      const words = (value: unknown): string => String(value ?? '').slice(0, DIALOG_WORDS + this.overread)
+      this.dialogOpen = { type, message: words(params.message), ...(type === 'prompt' ? { defaultPrompt: words(params.defaultPrompt) } : {}), seq: ++this.dialogSeq }
       for (const waiter of [...this.dialogWaiters]) waiter()
       this.onChange?.()
     } else if (method === 'Page.javascriptDialogClosed') {
@@ -486,8 +507,14 @@ export abstract class PageAutomation {
     if (!this.dialogOpen) return null
     const dialog = this.dialogOpen
     // The page's words go to the pane: a secret the page echoes is masked there as everywhere (ADR-0219).
-    return { type: dialog.type, message: this.masked(dialog.message), ...(dialog.defaultPrompt !== undefined ? { defaultPrompt: this.masked(dialog.defaultPrompt) } : {}) }
+    return { type: dialog.type, message: this.dialogWords(dialog.message), ...(dialog.defaultPrompt !== undefined ? { defaultPrompt: this.dialogWords(dialog.defaultPrompt) } : {}) }
   }
+  /**
+   * A dialog's words as the pane and the agent are told them: masked, then cut at `DIALOG_WORDS` and tidied
+   * (`pageWords`), then masked again, since a secret the page wrote with a tab in it reads as the secret once the tab
+   * is a space.
+   */
+  private dialogWords(words: string): string { return this.masked(pageWords(this.told(words, DIALOG_WORDS))) }
   /** Whether the page's DOMContentLoaded came at or after `at`, as a navigation's readiness wait asks. */
   domContentSince(at: number): boolean { return this.loadedAt.domContent >= at }
   /** Whether an agent's file chooser waits for `upload`. */
@@ -499,13 +526,17 @@ export abstract class PageAutomation {
     const result = await this.send('Accessibility.getFullAXTree') as { nodes?: AXNode[] }
     // What a field holds is not read out while the page holds a typed secret (`fieldContents`).
     const hidden = this.secretInDocument ? fieldContents(result.nodes ?? []) : new Set<string>()
-    const nodes = (result.nodes ?? []).filter(node => !node.ignored && !hidden.has(node.nodeId)).slice(0, 200).map(node => ({ role: String(node.role?.value ?? '').slice(0, 100), name: String(node.name?.value ?? '').slice(0, 300), nodeId: node.backendDOMNodeId }))
+    // Each name is masked before it is cut, and read far enough past the cut to be masked whole (`told`).
+    const nodes = (result.nodes ?? []).filter(node => !node.ignored && !hidden.has(node.nodeId)).slice(0, 200).map(node => ({ role: String(node.role?.value ?? '').slice(0, 100), name: this.told(String(node.name?.value ?? ''), INSPECT_NAME), nodeId: node.backendDOMNodeId }))
     const dom = await this.send('Runtime.evaluate', {
-      expression: `Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3')).slice(0,100).map(el => { const r=el.getBoundingClientRect(); return { tag:el.tagName.toLowerCase(), role:el.getAttribute('role')||'', name:(el.getAttribute('aria-label')||el.innerText||el.getAttribute('placeholder')||'').slice(0,200), x:r.x,y:r.y,width:r.width,height:r.height, disabled:!!el.disabled }; })`,
+      expression: `Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3')).slice(0,100).map(el => { const r=el.getBoundingClientRect(); return { tag:el.tagName.toLowerCase(), role:el.getAttribute('role')||'', name:(el.getAttribute('aria-label')||el.innerText||el.getAttribute('placeholder')||'').slice(0,${INSPECT_ELEMENT_NAME + this.overread}), x:r.x,y:r.y,width:r.width,height:r.height, disabled:!!el.disabled }; })`,
       returnByValue: true,
     }) as { result?: { value?: unknown } }
-    const output = JSON.stringify({ url: this.page.url(), nodes, elements: dom.result?.value ?? [], errors: this.errors, truncated: (result.nodes?.length ?? 0) > 200 })
-    return this.masked(output.length <= 200_000 ? output : JSON.stringify({ url: this.page.url(), nodes: nodes.slice(0, 100), errors: this.errors.slice(-10), truncated: true }))
+    const listed: unknown = dom.result?.value
+    const elements = Array.isArray(listed) ? listed.map((element: unknown) => element && typeof element === 'object' ? { ...element, name: this.told(String((element as { name?: unknown }).name ?? ''), INSPECT_ELEMENT_NAME) } : element) : []
+    const errors = this.errors.map(entry => ({ kind: entry.kind, message: this.told(entry.message, ERROR_WORDS) }))
+    const output = JSON.stringify({ url: this.page.url(), nodes, elements, errors, truncated: (result.nodes?.length ?? 0) > 200 })
+    return this.masked(output.length <= 200_000 ? output : JSON.stringify({ url: this.page.url(), nodes: nodes.slice(0, 100), errors: errors.slice(-10), truncated: true }))
   }
   /**
    * `text` with every secret typed into this page masked: as written, as JSON writes it, and however an address or a form
@@ -518,16 +549,39 @@ export abstract class PageAutomation {
    */
   masked(text: string, origin?: string): string {
     if (!this.typedSecrets.size) return text
-    try {
-      const matchers: (SecretMatcher | null)[] = []
-      for (const [secret, known] of this.typedSecrets) {
-        const matcher = known === undefined ? secretMatcher(secret) : known
-        if (known === undefined) this.typedSecrets.set(secret, matcher)
-        matchers.push(matcher)
-      }
-      return maskSecrets(text, matchers, origin ?? (this.page.isGone() ? '' : originOf(this.page.url())))
-    } catch { return MASK }
+    try { return maskSecrets(text, this.matchers(), origin ?? this.origin()) } catch { return MASK }
   }
+  /**
+   * The page's words as the agent is told them, at most `max` characters: masked before they are cut, and a secret the
+   * cut would split masked whole, so no cut leaves the start of one. Words the page itself cuts are read `overread`
+   * past `max` for this. Never throws, as `masked`.
+   */
+  told(text: string, max: number): string {
+    if (!this.typedSecrets.size) return text.slice(0, max)
+    try { return maskSecrets(text, this.matchers(), this.origin(), max) } catch { return MASK }
+  }
+  /**
+   * How much further than a cap the page's words are read while a secret is typed here, so a secret that starts before
+   * the cap is read whole and masked (`told`). The longest a secret is written is fifteen characters to each of its
+   * own: a character of three UTF-8 bytes, each escaped twice as `%25` and two hex digits.
+   */
+  private get overread(): number {
+    let longest = 0
+    for (const secret of this.typedSecrets.keys()) longest = Math.max(longest, secret.length)
+    return longest * 15
+  }
+  /** The matcher for each secret typed here, each made once. */
+  private matchers(): (SecretMatcher | null)[] {
+    const matchers: (SecretMatcher | null)[] = []
+    for (const [secret, known] of this.typedSecrets) {
+      const matcher = known === undefined ? secretMatcher(secret) : known
+      if (known === undefined) this.typedSecrets.set(secret, matcher)
+      matchers.push(matcher)
+    }
+    return matchers
+  }
+  /** The page's own origin, which masking leaves whole, or nothing once the page is gone. */
+  private origin(): string { return this.page.isGone() ? '' : originOf(this.page.url()) }
   /** An address as the agent and the window are told it: masked as the page's words are, with its own origin left whole. */
   maskedUrl(url: string): string { return this.masked(url, originOf(url)) }
   /**
@@ -538,19 +592,20 @@ export abstract class PageAutomation {
     this.noDialog()
     await this.ready()
     const result = await this.send('Accessibility.getFullAXTree') as { nodes?: AXNode[] }
-    // While the document holds a typed secret, what its fields hold is left out (`fieldContents`).
-    const formatted = formatSnapshot(result.nodes ?? [], undefined, this.secretInDocument)
+    // While the document holds a typed secret, what its fields hold is left out (`fieldContents`). Each name and value
+    // is masked before it is put on one line and cut, as the whole snapshot is after.
+    const formatted = formatSnapshot(result.nodes ?? [], undefined, this.secretInDocument, words => this.masked(words))
     this.refs = formatted.refs
-    const read = await this.send('Runtime.evaluate', { expression: `({ title: document.title, text: document.body ? document.body.innerText.slice(0, ${SNAPSHOT_TEXT}) : '', state: document.readyState })`, returnByValue: true }) as { result?: { value?: { title?: string; text?: string; state?: string } } }
+    const read = await this.send('Runtime.evaluate', { expression: `({ title: document.title, text: document.body ? document.body.innerText.slice(0, ${SNAPSHOT_TEXT + this.overread}) : '', state: document.readyState })`, returnByValue: true }) as { result?: { value?: { title?: string; text?: string; state?: string } } }
     const page = read.result?.value ?? {}
     const sections = [
       `URL: ${this.page.url()}`, `Title: ${page.title ?? ''}`, `Ready state: ${page.state ?? 'unknown'}`,
-      ...(this.dialogOpen ? [`Open dialog: ${this.dialogOpen.type}${this.secretInDocument ? '' : ` ${JSON.stringify(this.dialogOpen.message)}`}`] : []),
+      ...(this.dialogOpen ? [`Open dialog: ${this.dialogOpen.type}${this.secretInDocument ? '' : ` ${JSON.stringify(this.dialogWords(this.dialogOpen.message))}`}`] : []),
       ...(this.chooser ? ['A file chooser is open: answer it with upload and no target.'] : []),
       '', '## Accessibility tree (act on an element by its ref)', formatted.tree || '(empty)', ...(formatted.truncated ? ['(The tree is longer; scroll or use a selector for the rest.)'] : []),
-      '', '## Visible text', page.text ?? '',
-      '', '## Console (latest last)', ...(this.consoleLog.length ? this.consoleLog.slice(-50).map(entry => `[${entry.level}] ${entry.text}`) : ['(none)']),
-      '', '## Errors (console and network)', ...(this.errors.length ? this.errors.map(entry => `[${entry.kind}] ${entry.message}`) : ['(none)']),
+      '', '## Visible text', this.told(String(page.text ?? ''), SNAPSHOT_TEXT),
+      '', '## Console (latest last)', ...(this.consoleLog.length ? this.consoleLog.slice(-50).map(entry => `[${entry.level}] ${this.told(entry.text, CONSOLE_WORDS)}`) : ['(none)']),
+      '', '## Errors (console and network)', ...(this.errors.length ? this.errors.map(entry => `[${entry.kind}] ${this.told(entry.message, ERROR_WORDS)}`) : ['(none)']),
     ]
     const said = this.masked(sections.join('\n'))
     return said.length > SNAPSHOT_TOTAL ? `${said.slice(0, SNAPSHOT_TOTAL)}\n(The snapshot was cut at ${SNAPSHOT_TOTAL} characters. Use wait_for, a selector or scroll for the rest.)` : said
@@ -565,7 +620,7 @@ export abstract class PageAutomation {
     // From here the script may run, so no secret goes into this document: anything it left listening could take it.
     this.scriptedDocument = this.scriptedEver = true
     const result = await this.raceDialog(this.send('Runtime.evaluate', { expression, awaitPromise, returnByValue: true, userGesture: true })) as { result?: { type?: string; value?: unknown; description?: string; unserializableValue?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } } | 'dialog'
-    if (result === 'dialog') return this.masked(`The page opened a ${this.dialogOpen?.type ?? 'dialog'} ${this.secretInDocument ? '' : `${JSON.stringify(this.dialogOpen?.message ?? '')} `}while evaluating. Answer it with the dialog action.`)
+    if (result === 'dialog') return this.masked(`The page opened a ${this.dialogOpen?.type ?? 'dialog'} ${this.secretInDocument ? '' : `${JSON.stringify(this.dialogWords(this.dialogOpen?.message ?? ''))} `}while evaluating. Answer it with the dialog action.`)
     if (result.exceptionDetails) return this.masked(`Threw: ${(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'An error').slice(0, 4000)}`)
     const value = result.result
     const said = value?.type === 'undefined' ? 'undefined' : value?.unserializableValue ?? (value && 'value' in value ? JSON.stringify(value.value) ?? 'undefined' : value?.description ?? 'undefined')
@@ -574,7 +629,8 @@ export abstract class PageAutomation {
   /**
    * Waits for an element, words or an address (ADR-0220), looking every 100 ms until `timeoutMs`. Says how long it took,
    * or fails in words when it never came. On a page a secret was typed into, words and addresses are compared with it
-   * masked, as the agent reads them, so a wait cannot test the secret a character at a time.
+   * masked, as the agent reads them, so a wait cannot test the secret a character at a time, and words are looked for
+   * only in the visible text a snapshot carries.
    */
   async waitFor(action: Extract<BrowserAction, { type: 'wait_for' }>, guard: () => void): Promise<string> {
     this.noDialog()
@@ -587,9 +643,11 @@ export abstract class PageAutomation {
         const href = await this.send('Runtime.evaluate', { expression: 'location.href', returnByValue: true }) as { result?: { value?: unknown } }
         return this.masked(String(href.result?.value ?? this.page.url())).includes(action.urlIncludes) === visible
       }
+      // Only the visible text a snapshot carries is read, `SNAPSHOT_TEXT` and the overread, not the whole of a long page
+      // every 100 ms.
       if (action.text !== undefined && this.typedSecrets.size) {
-        const words = await this.send('Runtime.evaluate', { expression: 'document.body ? document.body.innerText : \'\'', returnByValue: true }) as { result?: { value?: unknown } }
-        return this.masked(String(words.result?.value ?? '')).includes(action.text) === visible
+        const words = await this.send('Runtime.evaluate', { expression: `document.body ? document.body.innerText.slice(0, ${SNAPSHOT_TEXT + this.overread}) : ''`, returnByValue: true }) as { result?: { value?: unknown } }
+        return this.told(String(words.result?.value ?? ''), SNAPSHOT_TEXT).includes(action.text) === visible
       }
       if (action.text !== undefined) {
         const found = await this.send('Runtime.evaluate', { expression: `!!document.body && document.body.innerText.includes(${JSON.stringify(action.text)})`, returnByValue: true }) as { result?: { value?: unknown } }
@@ -630,7 +688,7 @@ export abstract class PageAutomation {
     await this.send('Page.handleJavaScriptDialog', { accept, ...(promptText !== undefined && open.type === 'prompt' ? { promptText } : {}) })
     if (this.dialogOpen === open) this.dialogOpen = null
     this.onChange?.()
-    return { type: open.type, message: this.masked(open.message), ...(open.defaultPrompt !== undefined ? { defaultPrompt: this.masked(open.defaultPrompt) } : {}) }
+    return { type: open.type, message: this.dialogWords(open.message), ...(open.defaultPrompt !== undefined ? { defaultPrompt: this.dialogWords(open.defaultPrompt) } : {}) }
   }
   /** What the agent asked about, so the answer reaches only that dialog or chooser. */
   private pendingKey(kind: 'dialog' | 'chooser'): string {
@@ -695,7 +753,7 @@ export abstract class PageAutomation {
   private noDialog(): void {
     if (!this.dialogOpen) return
     // The page's words are masked, and left out while the document holds a secret, since its script could copy the value into them.
-    const words = this.secretInDocument ? '' : `: ${JSON.stringify(this.masked(this.dialogOpen.message).slice(0, 300))}`
+    const words = this.secretInDocument ? '' : `: ${JSON.stringify(this.dialogWords(this.dialogOpen.message).slice(0, 300))}`
     fail('blocked', `The page has a ${this.dialogOpen.type} dialog open${words}. Answer it with the dialog action first.`)
   }
   /** A command that a dialog opening interrupts: the page waits for the dialog, so the command returns once it is answered. */
@@ -945,9 +1003,14 @@ export abstract class PageAutomation {
   abstract thumbnail(image?: string): Promise<string | null>
   async elementAt(point: { x: number; y: number }): Promise<{ element: NonNullable<BrowserCapture['element']>; bounds: BrowserBounds } | null> {
     await this.ready()
-    const expression = `(() => { const el = document.elementFromPoint(${point.x}, ${point.y}); if (!el) return null; const r=el.getBoundingClientRect(); return { element: { tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '', name: (el.getAttribute('aria-label') || el.getAttribute('alt') || '').slice(0,500), text: (el.innerText || '').slice(0,1000), selector: el.id ? '#' + CSS.escape(el.id) : el.tagName.toLowerCase() }, bounds: { x:r.x, y:r.y, width:r.width, height:r.height } }; })()`
-    const result = await this.send('Runtime.evaluate', { expression, returnByValue: true }) as { result?: { value?: { element: NonNullable<BrowserCapture['element']>; bounds: BrowserBounds } } }
-    return result.result?.value ?? null
+    const expression = `(() => { const el = document.elementFromPoint(${point.x}, ${point.y}); if (!el) return null; const r=el.getBoundingClientRect(); return { element: { tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '', name: (el.getAttribute('aria-label') || el.getAttribute('alt') || '').slice(0,${ELEMENT_NAME + this.overread}), text: (el.innerText || '').slice(0,${ELEMENT_TEXT + this.overread}), id: el.id || '' }, bounds: { x:r.x, y:r.y, width:r.width, height:r.height } }; })()`
+    const result = await this.send('Runtime.evaluate', { expression, returnByValue: true }) as { result?: { value?: { element: Record<'tag' | 'role' | 'name' | 'text' | 'id', unknown>; bounds: BrowserBounds } } }
+    const found = result.result?.value
+    if (!found) return null
+    // A comment on the page goes into the user's message to the agent, so the element's words are masked before they
+    // are cut, as the agent's own reads are, and its id before it is written as a selector.
+    const { element } = found, tag = String(element.tag ?? ''), id = String(element.id ?? '')
+    return { element: { tag, role: this.masked(String(element.role ?? '')), name: this.told(String(element.name ?? ''), ELEMENT_NAME), text: this.told(String(element.text ?? ''), ELEMENT_TEXT), selector: id ? `#${cssIdentifier(this.masked(id))}` : tag }, bounds: found.bounds }
   }
   async capture(url: string, point?: { x: number; y: number }, region?: BrowserBounds, fullPage = false): Promise<BrowserCapture> {
     this.noDialog()
@@ -1055,7 +1118,7 @@ export abstract class PageAutomation {
       }
       const outcome = await this.raceDialog(this.dispatch(action))
       const opened = (): string | undefined => this.dialogOpen
-        ? `The page opened a ${this.dialogOpen.type} dialog${this.secretInDocument ? '' : `: ${JSON.stringify(this.masked(this.dialogOpen.message))}`}. Answer it with the dialog action.`
+        ? `The page opened a ${this.dialogOpen.type} dialog${this.secretInDocument ? '' : `: ${JSON.stringify(this.dialogWords(this.dialogOpen.message))}`}. Answer it with the dialog action.`
         : this.chooser ? 'The page opened a file chooser. Answer it with upload and the files, or paths: [] to cancel.' : undefined
       if (outcome === 'dialog' && opened()) return opened()
       if (action.type === 'scroll' || action.type === 'swipe' || action.type === 'tap' || action.type === 'hover' || action.type === 'drag') await this.raceDialog(this.settled())
