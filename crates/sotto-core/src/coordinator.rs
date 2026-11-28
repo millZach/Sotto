@@ -788,8 +788,6 @@ enum AsyncCommandOutcome {
     },
     /// `git-pull-request-action` finished running `gh pr <action>` and re-reading the PR.
     PullRequestActed {
-        thread_id: String,
-        url: String,
         action: crate::pull_requests::GitPullRequestAction,
         result: Result<Option<Box<crate::pull_requests::PullRequestView>>, String>,
     },
@@ -830,8 +828,6 @@ struct PullRequestReadPlan {
     folder: String,
     reference: String,
     service: Arc<crate::pull_requests::GitPullRequests>,
-    linked_sources: Vec<(String, String)>,
-    branch_pr_key: Option<String>,
 }
 
 enum ActorMessage {
@@ -923,10 +919,12 @@ enum ActorMessage {
         thread_id: String,
         reply: oneshot::Sender<Result<(String, Arc<crate::pull_requests::GitPullRequests>), PullRequestOpError>>,
     },
-    /// Updates an already-linked pull request record after a fresh `git-pull-request` read if title/state/draft moved.
+    /// Observes a fresh `git-pull-request` read across workspace links/worktree PR state and returns the
+    /// thread's live `(linked_source, is_branch_pr)` after the read completes.
     SyncPullRequestLink {
         thread_id: String,
         view: Box<crate::pull_requests::PullRequestView>,
+        reply: oneshot::Sender<(Option<String>, bool)>,
     },
     CheckRequestAnswer {
         client: ClientContext,
@@ -1387,18 +1385,14 @@ impl CoordinatorHandle {
             }
             Err(err) => return Err(PullRequestOpError::unavailable(err.read_failure())),
         };
-        let key = crate::pull_requests::pull_request_key(&view.url);
-        let linked = key
-            .as_deref()
-            .and_then(|k| plan.linked_sources.iter().find(|(lk, _)| lk == k).map(|(_, s)| s.as_str()));
-        let branch = key.is_some() && plan.branch_pr_key == key;
-        let detail = view.to_detail_json(linked, branch);
-        if linked.is_some() {
-            let _ = self.tx.send(ActorMessage::SyncPullRequestLink {
-                thread_id: request.thread_id,
-                view: Box::new(view),
-            });
-        }
+        let (sync_tx, sync_rx) = oneshot::channel();
+        let _ = self.tx.send(ActorMessage::SyncPullRequestLink {
+            thread_id: request.thread_id,
+            view: Box::new(view.clone()),
+            reply: sync_tx,
+        });
+        let (linked, branch) = sync_rx.await.unwrap_or((None, false));
+        let detail = view.to_detail_json(linked.as_deref(), branch);
         Ok(detail)
     }
 
@@ -2530,10 +2524,15 @@ impl CoordinatorActor {
                 let res = self.prepare_pull_request_list(&thread_id);
                 let _ = reply.send(res);
             }
-            ActorMessage::SyncPullRequestLink { thread_id, view } => {
-                if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
-                    if let Some(key) = crate::pull_requests::pull_request_key(&view.url) {
-                        let existing_source = thread
+            ActorMessage::SyncPullRequestLink { thread_id, view, reply } => {
+                if self.observe_pull_request(&view) {
+                    self.save_workspace();
+                    self.shell_dirty = true;
+                }
+                let key = crate::pull_requests::pull_request_key(&view.url);
+                let answer = self.threads.iter().find(|t| t.id == thread_id).map_or((None, false), |thread| {
+                    let linked = key.as_deref().and_then(|k| {
+                        thread
                             .extra
                             .get("pullRequests")
                             .and_then(Value::as_array)
@@ -2543,31 +2542,19 @@ impl CoordinatorActor {
                                         .and_then(Value::as_str)
                                         .and_then(crate::pull_requests::pull_request_key)
                                         .as_deref()
-                                        == Some(key.as_str())
+                                        == Some(k)
                                 })
                             })
-                            .and_then(|item| {
-                                let changed = item.get("title").and_then(Value::as_str) != Some(view.title.as_str())
-                                    || item.get("state").and_then(Value::as_str) != Some(view.state.as_str())
-                                    || item.get("draft").and_then(Value::as_bool) != Some(view.draft);
-                                changed
-                                    .then(|| item.get("source").and_then(Value::as_str).unwrap_or("linked").to_string())
-                            });
-                        if let Some(source) = existing_source {
-                            link_pull_request_record_with_state(
-                                thread,
-                                view.number,
-                                &view.url,
-                                &view.title,
-                                &view.state,
-                                view.draft,
-                                &source,
-                            );
-                            self.save_workspace();
-                            self.shell_dirty = true;
-                        }
-                    }
-                }
+                            .map(|item| item.get("source").and_then(Value::as_str).unwrap_or("linked").to_string())
+                    });
+                    let branch = key.is_some()
+                        && branch_pull_request_url(thread)
+                            .as_deref()
+                            .and_then(crate::pull_requests::pull_request_key)
+                            == key;
+                    (linked, branch)
+                });
+                let _ = reply.send(answer);
             }
             ActorMessage::CheckRequestAnswer { client, target, reply } => self.start_request_answer_check(client, target, reply),
             ActorMessage::RequestAnswerRead { client, target, revision, read, reply } => {
@@ -4121,40 +4108,12 @@ impl CoordinatorActor {
                     self.error = Some(msg);
                 }
             },
-            AsyncCommandOutcome::PullRequestActed { thread_id, url, action, result } => match result {
+            AsyncCommandOutcome::PullRequestActed { action, result } => match result {
                 Ok(after) => {
                     if let Some(view) = after {
-                        if let Some(key) = crate::pull_requests::pull_request_key(&url) {
-                            if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
-                                let existing_source = thread
-                                    .extra
-                                    .get("pullRequests")
-                                    .and_then(Value::as_array)
-                                    .and_then(|arr| {
-                                        arr.iter().find(|item| {
-                                            item.get("url")
-                                                .and_then(Value::as_str)
-                                                .and_then(crate::pull_requests::pull_request_key)
-                                                .as_deref()
-                                                == Some(key.as_str())
-                                        })
-                                    })
-                                    .and_then(|item| item.get("source").and_then(Value::as_str))
-                                    .map(ToString::to_string);
-                                if let Some(source) = existing_source {
-                                    link_pull_request_record_with_state(
-                                        thread,
-                                        view.number,
-                                        &view.url,
-                                        &view.title,
-                                        &view.state,
-                                        view.draft,
-                                        &source,
-                                    );
-                                    self.save_workspace();
-                                    self.shell_dirty = true;
-                                }
-                            }
+                        if self.observe_pull_request(&view) {
+                            self.save_workspace();
+                            self.shell_dirty = true;
                         }
                     }
                     self.notice = action.done_notice().to_string();
@@ -5445,6 +5404,69 @@ impl CoordinatorActor {
         Err(format!("This thread has no working folder to read {what} from."))
     }
 
+    fn observe_pull_request(&mut self, view: &crate::pull_requests::PullRequestView) -> bool {
+        let Some(key) = crate::pull_requests::pull_request_key(&view.url) else {
+            return false;
+        };
+        let mut dirty = false;
+        let clipped_title = crate::workspace::clip_utf16(&view.title, 500);
+        for thread in &mut self.threads {
+            let existing_source = thread
+                .extra
+                .get("pullRequests")
+                .and_then(Value::as_array)
+                .and_then(|arr| {
+                    arr.iter().find(|item| {
+                        item.get("url")
+                            .and_then(Value::as_str)
+                            .and_then(crate::pull_requests::pull_request_key)
+                            .as_deref()
+                            == Some(key.as_str())
+                    })
+                })
+                .and_then(|item| {
+                    let changed = item.get("title").and_then(Value::as_str) != Some(clipped_title)
+                        || item.get("state").and_then(Value::as_str) != Some(view.state.as_str())
+                        || item.get("draft").and_then(Value::as_bool) != Some(view.draft);
+                    changed.then(|| item.get("source").and_then(Value::as_str).unwrap_or("linked").to_string())
+                });
+            if let Some(source) = existing_source {
+                link_pull_request_record_with_state(
+                    thread,
+                    view.number,
+                    &view.url,
+                    &view.title,
+                    &view.state,
+                    view.draft,
+                    &source,
+                );
+                dirty = true;
+            }
+            if matches!(view.state.as_str(), "merged" | "closed") {
+                if let Some(pr_obj) = thread
+                    .worktree
+                    .as_mut()
+                    .and_then(|wt| wt.git.as_mut())
+                    .and_then(Value::as_object_mut)
+                    .and_then(|git| git.get_mut("pullRequest"))
+                    .and_then(Value::as_object_mut)
+                {
+                    let matches_branch_pr = pr_obj
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .and_then(crate::pull_requests::pull_request_key)
+                        .as_deref()
+                        == Some(key.as_str());
+                    if matches_branch_pr && pr_obj.get("state").and_then(Value::as_str) != Some(view.state.as_str()) {
+                        pr_obj.insert("state".into(), Value::String(view.state.clone()));
+                        dirty = true;
+                    }
+                }
+            }
+        }
+        dirty
+    }
+
     fn prepare_pull_request_read(
         &self,
         thread_id: &str,
@@ -5462,33 +5484,16 @@ impl CoordinatorActor {
             .and_then(|item| item.get("url"))
             .and_then(Value::as_str)
             .map(ToString::to_string);
-        let Some(chosen) = reference.or_else(|| branch_url.clone()).or(last_linked) else {
+        let Some(chosen) = reference.or(branch_url).or(last_linked) else {
             return Ok(None);
         };
         let folder = self
             .thread_repository_folder(thread, "pull requests")
             .map_err(|_| PullRequestOpError::unavailable(crate::pull_requests::GitPullRequestReadFailure::Unreadable))?;
-        let linked_sources: Vec<(String, String)> = thread
-            .extra
-            .get("pullRequests")
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| {
-                        let key = item.get("url").and_then(Value::as_str).and_then(crate::pull_requests::pull_request_key)?;
-                        let source = item.get("source").and_then(Value::as_str).unwrap_or("linked").to_string();
-                        Some((key, source))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let branch_pr_key = branch_url.as_deref().and_then(crate::pull_requests::pull_request_key);
         Ok(Some(PullRequestReadPlan {
             folder,
             reference: chosen,
             service: Arc::clone(&self.pull_requests),
-            linked_sources,
-            branch_pr_key,
         }))
     }
 
@@ -5531,16 +5536,47 @@ impl CoordinatorActor {
         let thread_id = cmd.thread_id;
         let reference = cmd.reference;
         tokio::task::spawn_blocking(move || {
+            struct Guard {
+                self_tx: mpsc::UnboundedSender<ActorMessage>,
+                lane: Option<String>,
+                client: Option<ClientContext>,
+                reply: Option<oneshot::Sender<Result<Value, CoordinatorError>>>,
+                thread_id: String,
+            }
+            impl Drop for Guard {
+                fn drop(&mut self) {
+                    if let (Some(client), Some(reply)) = (self.client.take(), self.reply.take()) {
+                        let _ = self.self_tx.send(ActorMessage::AsyncCommandDone {
+                            lane: self.lane.take(),
+                            client,
+                            outcome: Box::new(AsyncCommandOutcome::PullRequestLinked {
+                                thread_id: self.thread_id.clone(),
+                                result: Err("Could not read the pull request.".into()),
+                            }),
+                            reply,
+                        });
+                    }
+                }
+            }
+            let mut guard = Guard {
+                self_tx: self_tx.clone(),
+                lane,
+                client: Some(client),
+                reply: Some(reply),
+                thread_id: thread_id.clone(),
+            };
             let result = service
                 .view(&folder, &reference)
                 .map(Box::new)
                 .map_err(|err| err.message().to_string());
-            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
-                lane,
-                client,
-                outcome: Box::new(AsyncCommandOutcome::PullRequestLinked { thread_id, result }),
-                reply,
-            });
+            if let (Some(client), Some(reply)) = (guard.client.take(), guard.reply.take()) {
+                let _ = guard.self_tx.send(ActorMessage::AsyncCommandDone {
+                    lane: guard.lane.take(),
+                    client,
+                    outcome: Box::new(AsyncCommandOutcome::PullRequestLinked { thread_id, result }),
+                    reply,
+                });
+            }
         });
     }
 
@@ -5613,8 +5649,6 @@ impl CoordinatorActor {
         };
         let self_tx = self.self_tx.clone();
         let service = Arc::clone(&self.pull_requests);
-        let thread_id = cmd.thread_id;
-        let url = cmd.url.clone();
         let action = cmd.action;
         let press = crate::pull_requests::GitPullRequestPress {
             url: cmd.url,
@@ -5623,17 +5657,48 @@ impl CoordinatorActor {
             match_head_commit,
         };
         tokio::task::spawn_blocking(move || {
+            struct Guard {
+                self_tx: mpsc::UnboundedSender<ActorMessage>,
+                lane: Option<String>,
+                client: Option<ClientContext>,
+                reply: Option<oneshot::Sender<Result<Value, CoordinatorError>>>,
+                action: crate::pull_requests::GitPullRequestAction,
+            }
+            impl Drop for Guard {
+                fn drop(&mut self) {
+                    if let (Some(client), Some(reply)) = (self.client.take(), self.reply.take()) {
+                        let _ = self.self_tx.send(ActorMessage::AsyncCommandDone {
+                            lane: self.lane.take(),
+                            client,
+                            outcome: Box::new(AsyncCommandOutcome::PullRequestActed {
+                                action: self.action,
+                                result: Err("Pull request action stopped unexpectedly.".into()),
+                            }),
+                            reply,
+                        });
+                    }
+                }
+            }
+            let mut guard = Guard {
+                self_tx: self_tx.clone(),
+                lane,
+                client: Some(client),
+                reply: Some(reply),
+                action,
+            };
             let result = service
                 .act(&folder, &press)
                 .map(|v| v.map(Box::new))
                 .map_err(|err| err.message().to_string());
             crate::ops::invalidate_refs_cache(&folder);
-            let _ = self_tx.send(ActorMessage::AsyncCommandDone {
-                lane,
-                client,
-                outcome: Box::new(AsyncCommandOutcome::PullRequestActed { thread_id, url, action, result }),
-                reply,
-            });
+            if let (Some(client), Some(reply)) = (guard.client.take(), guard.reply.take()) {
+                let _ = guard.self_tx.send(ActorMessage::AsyncCommandDone {
+                    lane: guard.lane.take(),
+                    client,
+                    outcome: Box::new(AsyncCommandOutcome::PullRequestActed { action, result }),
+                    reply,
+                });
+            }
         });
     }
 
@@ -5655,10 +5720,10 @@ impl CoordinatorActor {
             return self.refuse_git_command(lane, &client, "Use a pull request URL, 123, or #123.".to_string().into(), reply);
         }
         let creation = self.creations.iter().find(|c| c.get("threadId").and_then(Value::as_str) == Some(cmd.thread_id.as_str()));
-        let unstarted = creation.and_then(|c| c.get("phase").and_then(Value::as_str)).is_none_or(|p| p == "unstarted");
-        let draft = !session_started(thread)
-            && unstarted
-            && !matches!(thread.worktree.as_ref(), Some(wt) if wt.mode == "independent" && wt.path.is_some());
+        let unstarted = creation.is_none_or(|c| c.get("phase").and_then(Value::as_str) == Some("unstarted"));
+        let own_folder = thread.worktree.as_ref().is_some_and(|wt| wt.mode == "independent" && wt.path.is_some());
+        let started = session_started(thread) || thread.last_user_message_id.is_some();
+        let draft = !started && unstarted && !own_folder;
         if cmd.mode == crate::pull_requests::PullRequestCheckoutMode::Worktree && !draft {
             return self.refuse_git_command(
                 lane,
@@ -5778,26 +5843,16 @@ impl CoordinatorActor {
                                 start_from_origin: None,
                                 existing_worktree_path: Some(existing_path.clone()),
                             };
-                            let chosen = crate::worktree_reclaim::selected_working_copy(&data_directory, &project_path, &selection)
-                                .unwrap_or_else(|_| AgentThreadWorktree {
-                                    mode: "independent".into(),
-                                    status: "pending".into(),
-                                    path: None,
-                                    repository_root: None,
-                                    branch: Some(prepared.branch.clone()),
-                                    base_branch: None,
-                                    start_from_origin: None,
-                                    existing_worktree_path: Some(existing_path.clone()),
-                                    reused: None,
-                                    temporary_branch: None,
-                                    error: None,
-                                    git: None,
-                                    extra: Map::new(),
-                                });
-                            (
-                                chosen,
-                                format!("PR #{} is checked out in another worktree already. This thread will work there.", view.number),
-                            )
+                            match crate::worktree_reclaim::selected_working_copy(&data_directory, &project_path, &selection) {
+                                Ok(chosen) => (
+                                    chosen,
+                                    format!("PR #{} is checked out in another worktree already. This thread will work there.", view.number),
+                                ),
+                                Err(err) => {
+                                    send_outcome(&mut guard, None, None, None, Err(ChangeRefused::from(err)));
+                                    return;
+                                }
+                            }
                         } else {
                             let mut extra = Map::new();
                             extra.insert("checkoutBranch".into(), Value::Bool(true));
@@ -5830,7 +5885,8 @@ impl CoordinatorActor {
             }
 
             // Local mode: hold checkout, optionally switch draft to shared, run `gh pr checkout`, refresh Git status.
-            let target_checkout = if draft && !matches!(working.worktree.as_ref(), Some(wt) if wt.mode == "shared") && !project_path.is_empty() {
+            let switch_draft_to_shared = draft && !matches!(working.worktree.as_ref(), Some(wt) if wt.mode == "shared");
+            let target_checkout = if switch_draft_to_shared && !project_path.is_empty() {
                 project_path.clone()
             } else {
                 checkout
@@ -5848,7 +5904,7 @@ impl CoordinatorActor {
                 .as_ref()
                 .and_then(|wt| wt.path.clone())
                 .filter(|f| hold_folder(&self_tx, &thread_id, f, false).is_some());
-            let (mut current, cwd_res) = if draft && !matches!(working.worktree.as_ref(), Some(wt) if wt.mode == "shared") {
+            let (mut current, cwd_res) = if switch_draft_to_shared {
                 let selection = crate::worktree_reclaim::WorkingCopySelection {
                     shared: true,
                     base_branch: None,
@@ -5868,7 +5924,11 @@ impl CoordinatorActor {
             let (out_view, out_wt, out_wd, res) = match cwd_res {
                 Err(words) => (None, current, None, Err(ChangeRefused::from(words))),
                 Ok(cwd) => match service.checkout_local(&cwd, &view.url) {
-                    Err(err) => (None, current, None, Err(ChangeRefused::from(err.message().to_string()))),
+                    Err(err) => {
+                        // Keep `worktree` and `workingDirectory` in sync if a draft was switched to shared (workspace.ts:2271-2282).
+                        let wd = switch_draft_to_shared.then_some(Some(cwd));
+                        (None, current, wd, Err(ChangeRefused::from(err.message().to_string())))
+                    }
                     Ok(()) => {
                         crate::ops::invalidate_refs_cache(&cwd);
                         current = crate::git_local::inspect_after_change(current, true);
@@ -5895,6 +5955,8 @@ impl CoordinatorActor {
             send_outcome(&mut guard, out_view, out_wt, out_wd, res);
         });
     }
+
+    /// Chooses a thread's working copy before its first send (`configure-thread-working-copy`),
     /// refused for Watcher's own threads, a thread Sotto does not know, and one that has started or already has a folder of
     /// its own, in Node's words and order. Then, off the coordinator's thread, with a read of the chosen folder's checkout
     /// held so no change to it starts meanwhile, the shared project folder is read with Git, or the worktree to make or
@@ -8064,10 +8126,9 @@ fn allocate_independent_worktree_with_checkout(
     let wt_str = wt_path.to_string_lossy().into_owned();
 
     if let Some(existing_branch) = checkout_branch.map(str::trim).filter(|b| !b.is_empty()) {
-        let full_ref = format!("refs/heads/{existing_branch}");
-        run_git_sync(&repo_root, &["check-ref-format", &full_ref])
+        run_git_sync(&repo_root, &["check-ref-format", "--branch", existing_branch])
             .map_err(|_| "Invalid branch name.".to_string())?;
-        let commit_ref = format!("{full_ref}^{{commit}}");
+        let commit_ref = format!("refs/heads/{existing_branch}^{{commit}}");
         let base_commit = run_git_sync(&repo_root, &["rev-parse", "--verify", &commit_ref])
             .map(|s| s.trim().to_string())
             .map_err(|_| format!("The branch {existing_branch} is gone. Check the pull request out again from the branch picker."))?;

@@ -1952,6 +1952,14 @@ struct CommandReceipt<'a> {
     digest: String,
 }
 
+struct PullRequestConfirmRedeem {
+    thread_id: String,
+    url: String,
+    action: ConfirmedPullRequestAction,
+    method: Option<sotto_core::pull_requests::GitPullRequestMergeMethod>,
+    confirmation: Option<String>,
+}
+
 impl<'a> CommandReceipt<'a> {
     fn new(state: &'a HostState, client_id: &'a str, request_id: &str, command: &serde_json::Map<String, Value>) -> Self {
         let digest = sha256_hex(serde_json::to_string(command).unwrap_or_default().as_bytes());
@@ -1984,16 +1992,31 @@ impl<'a> CommandReceipt<'a> {
         self,
         client: ClientContext,
         command: serde_json::Map<String, Value>,
-        match_head_commit: Option<String>,
+        confirm_redeem: Option<PullRequestConfirmRedeem>,
         wire: &mut ClientWireState,
     ) -> HostResponseEnvelope {
         let CommandReceipt { state, client_id, request_id, digest } = self;
+        let match_head_commit: Option<String>;
         {
-            // Only pending work is busy: settled receipts make room.
+            // Only pending work is busy: settled receipts make room. Check room BEFORE redeeming any single-use
+            // pull request confirmation receipt so a `busy` refusal never burns the client's receipt (Node socketServer.ts:1703).
             let mut receipts = state.receipts.lock().unwrap();
             if !receipts.make_room() {
                 return HostResponseEnvelope::err(request_id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
             }
+            match_head_commit = if let Some(redeem) = confirm_redeem {
+                let redeemed = state
+                    .pull_request_confirmations
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .redeem(client_id, redeem.confirmation.as_deref(), &redeem.thread_id, &redeem.url, redeem.action, redeem.method);
+                match redeemed {
+                    Ok(head) => head,
+                    Err(message) => return HostResponseEnvelope::err(request_id, HostErrorCode::Forbidden, message),
+                }
+            } else {
+                None
+            };
             receipts.record(client_id, &request_id, digest);
         }
         let is_answer = command.get("type").and_then(Value::as_str) == Some("answer");
@@ -2590,30 +2613,26 @@ async fn handle_ws_request(
                 }
             }
             // A merge, close or auto-merge runs only on this client's own confirmation receipt for exactly this press,
-            // spent here (#1691). The coordinator is told the head commit the receipt was given on, never the receipt.
+            // spent inside `receipt.run` AFTER `make_room()` succeeds so a `busy` refusal never burns the receipt (#1691).
+            // The coordinator is told the head commit the receipt was given on, never the receipt.
             let mut dispatched_cmd = cmd.clone();
-            let mut match_head_commit: Option<String> = None;
+            let mut confirm_redeem = None;
             if kind == "git-pull-request-action" {
                 let Some(parsed) = GitPullRequestActionCommand::parse(cmd) else {
                     return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
                 };
                 dispatched_cmd.remove("confirmation");
                 if let Some(confirmed_action) = ConfirmedPullRequestAction::from_action(parsed.action) {
-                    let redeemed = state.pull_request_confirmations.lock().unwrap().redeem(
-                        client_id,
-                        parsed.confirmation.as_deref(),
-                        &parsed.thread_id,
-                        &parsed.url,
-                        confirmed_action,
-                        parsed.method,
-                    );
-                    match redeemed {
-                        Ok(head) => match_head_commit = head,
-                        Err(message) => return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, message),
-                    }
+                    confirm_redeem = Some(PullRequestConfirmRedeem {
+                        thread_id: parsed.thread_id,
+                        url: parsed.url,
+                        action: confirmed_action,
+                        method: parsed.method,
+                        confirmation: parsed.confirmation,
+                    });
                 }
             }
-            receipt.run(client, dispatched_cmd, match_head_commit, wire).await
+            receipt.run(client, dispatched_cmd, confirm_redeem, wire).await
         }
         "receipt" => {
             // What became of one of this client's commands, as Node's socket server answers it. With an answer named,
@@ -2807,7 +2826,7 @@ async fn handle_ws_request(
                                 if let Some(read_id) = state
                                     .pull_request_confirmations
                                     .lock()
-                                    .unwrap()
+                                    .unwrap_or_else(|e| e.into_inner())
                                     .read(client_id, &thread_id, &url, head_id.as_deref())
                                 {
                                     obj.insert("readId".into(), Value::String(read_id));
@@ -2854,7 +2873,12 @@ async fn handle_ws_request(
             if !offered_features(state, mode, client_id).iter().any(|f| f == "pull-request-confirmation") {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
-            match state.pull_request_confirmations.lock().unwrap().issue(client_id, &parsed) {
+            match state
+                .pull_request_confirmations
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .issue(client_id, &parsed)
+            {
                 Ok(receipt) => HostResponseEnvelope::ok(req.id, receipt.to_json()),
                 Err(message) => HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, message),
             }

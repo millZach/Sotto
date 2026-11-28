@@ -97,9 +97,9 @@ pub fn pull_request_key(url: &str) -> Option<String> {
     Some(format!("{}/{}#{}", addr.owner, addr.name, addr.number).to_lowercase())
 }
 
-/// Strict URL check matching `gitPullRequestUrlSchema` (<= 2,048 UTF-16 units and matching `GITHUB_PULL_REQUEST_URL`).
+/// Strict URL check matching `gitPullRequestUrlSchema` (<= 2,048 UTF-16 units, no surrounding whitespace, matching `GITHUB_PULL_REQUEST_URL`).
 pub fn is_valid_pull_request_url(url: &str) -> bool {
-    url.encode_utf16().count() <= 2_048 && parse_pull_request_address(url).is_some()
+    url == js_trim(url) && url.encode_utf16().count() <= 2_048 && parse_pull_request_address(url).is_some()
 }
 
 /// Parses a `gh pr checkout` line, a GitHub pull request URL, `#42` or `42`, matching `parsePullRequestReference`.
@@ -156,14 +156,16 @@ pub fn github_repository_of(remote: &str) -> Option<String> {
     let trimmed = js_trim(remote);
     let trimmed = trimmed.strip_suffix('/').unwrap_or(trimmed);
     let rest = if let Some(after) = strip_ci_prefix(trimmed, "https://") {
-        if let Some(after_at) = after.split_once('@') {
-            if after_at.0.contains('/') || after_at.0.is_empty() {
+        let host_part = after.split('/').next().unwrap_or(after);
+        let without_auth = if let Some(at) = host_part.find('@') {
+            if at == 0 {
                 return None;
             }
-            strip_ci_prefix(after_at.1, "github.com/")?
+            &after[at + 1..]
         } else {
-            strip_ci_prefix(after, "github.com/")?
-        }
+            after
+        };
+        strip_ci_prefix(without_auth, "github.com/")?
     } else if let Some(after) = strip_ci_prefix(trimmed, "git@github.com:") {
         after
     } else {
@@ -619,14 +621,57 @@ impl GitCheckoutPullRequestCommand {
 }
 
 /// Validates any of the 4 PR commands strictly before receipts / dispatch.
+/// For `git-pull-request-action`, well-formed `readId` / `matchHeadCommit` are allowed past schema validation
+/// so `validate_remote_command` rejects them from paired clients with `Forbidden` (matching `agentCommandSchema` + `remoteCommands.ts`).
 pub fn valid_pull_request_command_shape(cmd: &Map<String, Value>) -> bool {
     match cmd.get("type").and_then(Value::as_str) {
-        Some("git-pull-request-action") => GitPullRequestActionCommand::parse(cmd).is_some(),
+        Some("git-pull-request-action") => valid_pull_request_action_schema(cmd),
         Some("git-link-pull-request") => GitLinkPullRequestCommand::parse(cmd).is_some(),
         Some("git-unlink-pull-request") => GitUnlinkPullRequestCommand::parse(cmd).is_some(),
         Some("git-checkout-pull-request") => GitCheckoutPullRequestCommand::parse(cmd).is_some(),
         _ => false,
     }
+}
+
+fn valid_pull_request_action_schema(cmd: &Map<String, Value>) -> bool {
+    if cmd.get("type").and_then(Value::as_str) != Some("git-pull-request-action") {
+        return false;
+    }
+    if cmd.keys().any(|k| {
+        !matches!(
+            k.as_str(),
+            "type" | "threadId" | "url" | "action" | "method" | "confirmation" | "readId" | "matchHeadCommit"
+        )
+    }) {
+        return false;
+    }
+    if protocol_id(cmd.get("threadId")).is_none() {
+        return false;
+    }
+    if !cmd.get("url").and_then(Value::as_str).is_some_and(is_valid_pull_request_url) {
+        return false;
+    }
+    if cmd.get("action").and_then(Value::as_str).and_then(GitPullRequestAction::parse).is_none() {
+        return false;
+    }
+    if let Some(v) = cmd.get("method") {
+        if v.as_str().and_then(GitPullRequestMergeMethod::parse).is_none() {
+            return false;
+        }
+    }
+    for uuid_key in ["confirmation", "readId"] {
+        if let Some(v) = cmd.get(uuid_key) {
+            if !v.as_str().is_some_and(is_protocol_uuid) {
+                return false;
+            }
+        }
+    }
+    if let Some(v) = cmd.get("matchHeadCommit") {
+        if !v.as_str().is_some_and(is_valid_git_commit_id) {
+            return false;
+        }
+    }
+    true
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -637,6 +682,17 @@ fn contains_ci(haystack: &str, needle: &str) -> bool {
 }
 
 fn contains_word_ci(haystack: &str, phrase: &str) -> bool {
+    contains_word_bounded_ci(haystack, phrase, true)
+}
+
+fn contains_word_prefix_ci(haystack: &str, phrase: &str) -> bool {
+    contains_word_bounded_ci(haystack, phrase, false)
+}
+
+fn contains_word_bounded_ci(haystack: &str, phrase: &str, check_right: bool) -> bool {
+    if phrase.is_empty() {
+        return false;
+    }
     let lower = haystack.to_ascii_lowercase();
     let needle = phrase.to_ascii_lowercase();
     let bytes = lower.as_bytes();
@@ -645,11 +701,11 @@ fn contains_word_ci(haystack: &str, phrase: &str) -> bool {
         let abs = start + pos;
         let end = abs + needle.len();
         let left_ok = abs == 0 || !is_word_byte(bytes[abs - 1]);
-        let right_ok = end == bytes.len() || !is_word_byte(bytes[end]);
+        let right_ok = !check_right || end == bytes.len() || !is_word_byte(bytes[end]);
         if left_ok && right_ok {
             return true;
         }
-        start = abs + 1;
+        start = abs + lower[abs..].chars().next().map_or(1, char::len_utf8);
     }
     false
 }
@@ -673,7 +729,7 @@ pub fn is_unreachable_answer(message: &str) -> bool {
     contains_word_ci(message, "error connecting to")
         || contains_word_ci(message, "dial tcp")
         || contains_word_ci(message, "no such host")
-        || contains_word_ci(message, "getaddrinfo")
+        || contains_word_prefix_ci(message, "getaddrinfo")
         || contains_ci(message, "could not resolve host")
         || contains_word_ci(message, "connectex")
         || contains_ci(message, "connection refused")
@@ -681,7 +737,7 @@ pub fn is_unreachable_answer(message: &str) -> bool {
         || contains_ci(message, "network is unreachable")
         || contains_ci(message, "unreachable network")
         || contains_ci(message, "tls handshake timeout")
-        || contains_word_ci(message, "x509:")
+        || contains_word_prefix_ci(message, "x509:")
         || contains_ci(message, "tls: failed to verify")
         || contains_ci(message, "certificate signed by unknown authority")
         || contains_ci(message, "certificate has expired")
@@ -706,15 +762,18 @@ fn is_primary_limit(message: &str) -> bool {
 }
 
 pub fn retry_words(retry_at_ms: i64, now_ms: i64) -> String {
-    let wait_ms = (retry_at_ms - now_ms).max(0);
-    if wait_ms < 45_000 {
-        return "in about a minute".into();
-    }
-    let minutes = ((wait_ms as f64) / 60_000.0).ceil() as i64;
+    let minutes = (((retry_at_ms - now_ms).max(0) as f64) / 60_000.0).ceil() as i64;
     if minutes <= 1 {
-        "in about a minute".into()
+        return "in a minute".into();
+    }
+    if minutes < 60 {
+        return format!("in about {minutes} minutes");
+    }
+    let hours = ((minutes as f64) / 60.0).round() as i64;
+    if hours <= 1 {
+        "in about an hour".into()
     } else {
-        format!("in about {minutes} minutes")
+        format!("in about {hours} hours")
     }
 }
 
@@ -751,31 +810,37 @@ fn refusal_reading(stdout: &str) -> Option<GitHubRateLimitReading> {
     parse_rate_limit_reading(val.get("data").and_then(|d| d.get("rateLimit")))
 }
 
+/// Parses an ASCII unsigned decimal slice safely without accepting signs or panicking on UTF-8 boundaries.
+fn parse_ascii_digits(bytes: &[u8], range: std::ops::Range<usize>) -> Option<i64> {
+    let slice = bytes.get(range)?;
+    if slice.is_empty() || !slice.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(slice).ok()?.parse::<u64>().ok().and_then(|v| i64::try_from(v).ok())
+}
+
 /// Parses an ISO-8601 UTC/offset timestamp into epoch milliseconds (matching `Date.parse` for GitHub timestamps).
 fn parse_iso_ms(text: &str) -> Option<i64> {
     let trimmed = text.trim();
-    if trimmed.len() < 19 {
+    let bytes = trimmed.as_bytes();
+    if bytes.len() < 19 {
         return None;
     }
-    let bytes = trimmed.as_bytes();
-    let parse_u = |range: std::ops::Range<usize>| -> Option<i64> {
-        std::str::from_utf8(bytes.get(range)?).ok()?.parse::<i64>().ok()
-    };
-    let year = parse_u(0..4)?;
+    let year = parse_ascii_digits(bytes, 0..4)?;
     if bytes.get(4) != Some(&b'-') || bytes.get(7) != Some(&b'-') {
         return None;
     }
-    let month = parse_u(5..7)?;
-    let day = parse_u(8..10)?;
+    let month = parse_ascii_digits(bytes, 5..7)?;
+    let day = parse_ascii_digits(bytes, 8..10)?;
     if !matches!(bytes.get(10), Some(b'T' | b't' | b' ')) {
         return None;
     }
-    let hour = parse_u(11..13)?;
+    let hour = parse_ascii_digits(bytes, 11..13)?;
     if bytes.get(13) != Some(&b':') || bytes.get(16) != Some(&b':') {
         return None;
     }
-    let min = parse_u(14..16)?;
-    let sec = parse_u(17..19)?;
+    let min = parse_ascii_digits(bytes, 14..16)?;
+    let sec = parse_ascii_digits(bytes, 17..19)?;
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) || !(0..=23).contains(&hour) || !(0..=59).contains(&min) || !(0..=60).contains(&sec) {
         return None;
     }
@@ -787,22 +852,24 @@ fn parse_iso_ms(text: &str) -> Option<i64> {
         while pos < bytes.len() && bytes[pos].is_ascii_digit() {
             pos += 1;
         }
-        let frac = std::str::from_utf8(&bytes[frac_start..pos]).ok()?;
-        if frac.is_empty() {
+        let frac_bytes = &bytes[frac_start..pos];
+        if frac_bytes.is_empty() {
             return None;
         }
-        let padded = format!("{frac:0<3}");
-        millis = padded[..3].parse::<i64>().ok()?;
+        let d0 = i64::from(frac_bytes[0] - b'0');
+        let d1 = frac_bytes.get(1).map_or(0, |b| i64::from(b - b'0'));
+        let d2 = frac_bytes.get(2).map_or(0, |b| i64::from(b - b'0'));
+        millis = d0 * 100 + d1 * 10 + d2;
     }
     let offset_secs: i64 = match bytes.get(pos) {
         Some(b'Z' | b'z') if pos + 1 == bytes.len() => 0,
         Some(sign @ (b'+' | b'-')) => {
             let sign_mul = if *sign == b'+' { 1 } else { -1 };
-            let rest = std::str::from_utf8(&bytes[pos + 1..]).ok()?;
-            let (oh, om) = if rest.len() == 5 && rest.as_bytes()[2] == b':' {
-                (rest[0..2].parse::<i64>().ok()?, rest[3..5].parse::<i64>().ok()?)
+            let rest = &bytes[pos + 1..];
+            let (oh, om) = if rest.len() == 5 && rest[2] == b':' {
+                (parse_ascii_digits(rest, 0..2)?, parse_ascii_digits(rest, 3..5)?)
             } else if rest.len() == 4 {
-                (rest[0..2].parse::<i64>().ok()?, rest[2..4].parse::<i64>().ok()?)
+                (parse_ascii_digits(rest, 0..2)?, parse_ascii_digits(rest, 2..4)?)
             } else {
                 return None;
             };
@@ -1396,7 +1463,15 @@ impl GitPullRequests {
     }
 
     pub fn list(&self, cwd: &str) -> Result<Option<Value>, GitPullRequestError> {
-        let remotes = read_github_remotes(cwd, &self.hosts).unwrap_or_default();
+        let remotes = read_github_remotes(cwd, &self.hosts).map_err(|err| {
+            let reason = reason_of(&err);
+            let msg = if reason.is_empty() {
+                "Could not read the open pull requests.".to_string()
+            } else {
+                format!("Could not read the open pull requests. {reason}")
+            };
+            GitPullRequestError::refusal(msg)
+        })?;
         let Some(repo) = base_repository(&remotes) else {
             return Ok(None);
         };
@@ -1443,31 +1518,59 @@ impl GitPullRequests {
         let login = data.get("viewer").and_then(|v| v.get("login")).and_then(Value::as_str);
         self.rate_limit.answered(&repo.host, asked, rl.as_ref(), login);
 
-        let prs = data
-            .get("repository")
-            .and_then(|r| r.get("pullRequests"))
-            .and_then(Value::as_object)
-            .ok_or_else(|| {
-                GitPullRequestError::refusal(format!(
+        let repo_val = match data.get("repository") {
+            None | Some(Value::Null) => {
+                return Err(GitPullRequestError::refusal(format!(
                     "Could not read the open pull requests. GitHub has no repository {}/{} that your gh sign-in can see.",
                     repo.owner, repo.name
-                ))
-            })?;
+                )));
+            }
+            Some(Value::Object(obj)) => obj,
+            Some(_) => {
+                return Err(GitPullRequestError::refusal(
+                    "GitHub answered in a form Sotto could not read. Refresh to try again.",
+                ));
+            }
+        };
+        let prs = repo_val.get("pullRequests").and_then(Value::as_object).ok_or_else(|| {
+            GitPullRequestError::refusal("GitHub answered in a form Sotto could not read. Refresh to try again.")
+        })?;
         let total = prs.get("totalCount").and_then(Value::as_u64).ok_or_else(|| {
             GitPullRequestError::refusal("GitHub answered in a form Sotto could not read. Refresh to try again.")
         })?;
-        let nodes = prs.get("nodes").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let nodes = match prs.get("nodes") {
+            None | Some(Value::Null) => &[][..],
+            Some(Value::Array(arr)) => arr.as_slice(),
+            Some(_) => {
+                return Err(GitPullRequestError::refusal(
+                    "GitHub answered in a form Sotto could not read. Refresh to try again.",
+                ));
+            }
+        };
         let mut items = Vec::new();
         for node in nodes {
             if items.len() >= GIT_PULL_REQUEST_LIST_MAX {
                 break;
             }
-            let Some(obj) = node.as_object() else { continue };
-            let Some(number) = obj.get("number").and_then(Value::as_u64).filter(|&n| n > 0) else { continue };
-            let Some(title) = obj.get("title").and_then(Value::as_str) else { continue };
-            let Some(url) = obj.get("url").and_then(Value::as_str) else { continue };
-            if parse_pull_request_address(url).is_none() {
+            if node.is_null() {
                 continue;
+            }
+            let obj = node.as_object().ok_or_else(|| {
+                GitPullRequestError::refusal("GitHub answered in a form Sotto could not read. Refresh to try again.")
+            })?;
+            let number = obj.get("number").and_then(Value::as_u64).filter(|&n| n > 0).ok_or_else(|| {
+                GitPullRequestError::refusal("GitHub answered in a form Sotto could not read. Refresh to try again.")
+            })?;
+            let title = obj.get("title").and_then(Value::as_str).ok_or_else(|| {
+                GitPullRequestError::refusal("GitHub answered in a form Sotto could not read. Refresh to try again.")
+            })?;
+            let url = obj.get("url").and_then(Value::as_str).ok_or_else(|| {
+                GitPullRequestError::refusal("GitHub answered in a form Sotto could not read. Refresh to try again.")
+            })?;
+            if parse_pull_request_address(url).is_none() {
+                return Err(GitPullRequestError::refusal(
+                    "GitHub answered in a form Sotto could not read. Refresh to try again.",
+                ));
             }
             let review_decision = obj.get("reviewDecision").and_then(Value::as_str).and_then(|s| {
                 match s.to_ascii_uppercase().as_str() {
@@ -1587,12 +1690,30 @@ impl GitPullRequests {
             Err(GitPullRequestError::Refusal { .. }) => {}
         }
         if let Some(key) = pull_request_key(&press.url) {
+            const PRIMED_MAX: usize = 128;
             let at = (self.clock)();
             let mut primed = self.primed.lock().unwrap_or_else(|e| e.into_inner());
+            primed.retain(|_, entry| match entry {
+                PrimedEntry::View { at: ts, .. } | PrimedEntry::Limited { at: ts, .. } => at - *ts < PRIMED_FRESH_MS,
+            });
             if let Some(ref view) = after {
                 primed.insert(key, PrimedEntry::View { at, view: Box::new(view.clone()) });
             } else if let Some(r) = retry_at_ms {
                 primed.insert(key, PrimedEntry::Limited { at, retry_at_ms: r });
+            }
+            while primed.len() > PRIMED_MAX {
+                let oldest = primed
+                    .iter()
+                    .min_by_key(|(_, entry)| match entry {
+                        PrimedEntry::View { at: ts, .. } | PrimedEntry::Limited { at: ts, .. } => *ts,
+                    })
+                    .map(|(k, _)| k.clone());
+                match oldest {
+                    Some(k) => {
+                        primed.remove(&k);
+                    }
+                    None => break,
+                }
             }
         }
         let Some(err) = failure else {
@@ -1719,7 +1840,15 @@ impl GitPullRequests {
                 addr.number,
             ));
         }
-        let remotes = read_github_remotes(cwd, &self.hosts).unwrap_or_default();
+        let remotes = read_github_remotes(cwd, &self.hosts).map_err(|err| {
+            let reason = reason_of(&err);
+            let msg = if reason.is_empty() {
+                "Could not read the GitHub remotes for this project.".to_string()
+            } else {
+                format!("Could not read the GitHub remotes for this project. {reason}")
+            };
+            GitPullRequestError::refusal(msg)
+        })?;
         let repo = base_repository(&remotes).ok_or_else(|| {
             GitPullRequestError::refusal(
                 "This project has no GitHub remote to read the pull request from. Use its full GitHub URL.",
@@ -1732,6 +1861,7 @@ impl GitPullRequests {
     }
 
     fn keep_merge_settings(&self, key: &str, repo: &Map<String, Value>) -> MergeSettings {
+        const MERGE_SETTINGS_MAX: usize = 128;
         let mut merge_methods = Vec::new();
         if repo.get("mergeCommitAllowed").and_then(Value::as_bool) != Some(false) {
             merge_methods.push(GitPullRequestMergeMethod::Merge);
@@ -1742,13 +1872,25 @@ impl GitPullRequests {
         if repo.get("rebaseMergeAllowed").and_then(Value::as_bool) != Some(false) {
             merge_methods.push(GitPullRequestMergeMethod::Rebase);
         }
+        let now = (self.clock)();
         let settings = MergeSettings {
-            at: (self.clock)(),
+            at: now,
             merge_methods,
             auto_merge_allowed: repo.get("autoMergeAllowed").and_then(Value::as_bool) != Some(false),
         };
         if repo.get("mergeCommitAllowed").and_then(Value::as_bool).is_some() {
-            self.merge_settings.lock().unwrap_or_else(|e| e.into_inner()).insert(key.to_string(), settings.clone());
+            let mut cache = self.merge_settings.lock().unwrap_or_else(|e| e.into_inner());
+            cache.retain(|_, entry| now - entry.at < MERGE_SETTINGS_FRESH_MS);
+            cache.insert(key.to_string(), settings.clone());
+            while cache.len() > MERGE_SETTINGS_MAX {
+                let oldest = cache.iter().min_by_key(|(_, entry)| entry.at).map(|(k, _)| k.clone());
+                match oldest {
+                    Some(k) => {
+                        cache.remove(&k);
+                    }
+                    None => break,
+                }
+            }
         }
         settings
     }
@@ -2367,6 +2509,8 @@ mod tests {
         run(&repo, &["init", "--initial-branch=main"]);
         run(&repo, &["config", "user.name", "Test"]);
         run(&repo, &["config", "user.email", "test@example.com"]);
+        run(&repo, &["config", "commit.gpgsign", "false"]);
+        run(&repo, &["config", "core.autocrlf", "false"]);
         fs::write(repo.join("README.md"), "hi\n").unwrap();
         run(&repo, &["add", "-A"]);
         run(&repo, &["commit", "-m", "First"]);
@@ -2677,5 +2821,61 @@ mod tests {
             .unwrap();
         assert_eq!(reused.branch, "sotto/pr-5/feat-x");
         assert_eq!(reused.worktree_path, None);
+    }
+
+    #[test]
+    fn parse_iso_ms_classifiers_and_retry_words_match_node_and_stay_utf8_safe() {
+        // Multi-byte UTF-8 and signed digits must return None, never panic or parse negatives.
+        assert_eq!(parse_iso_ms("2026-11-28T00:00:00+🎉"), None);
+        assert_eq!(parse_iso_ms("2026-11-28T00:00:00+a你"), None);
+        assert_eq!(parse_iso_ms("2026-11-28T00:00:00+-5:00"), None);
+        assert_eq!(parse_iso_ms("2026-11-28T+1:+2:+3Z"), None);
+        assert!(parse_iso_ms("2026-11-28T00:00:00Z").is_some());
+        assert_eq!(
+            parse_iso_ms("2026-11-28T05:30:00+0530"),
+            parse_iso_ms("2026-11-28T00:00:00Z")
+        );
+        assert_eq!(
+            parse_iso_ms("2026-11-27T16:00:00-08:00"),
+            parse_iso_ms("2026-11-28T00:00:00Z")
+        );
+
+        // Strict URL schema rejects leading/trailing whitespace.
+        assert!(is_valid_pull_request_url("https://github.com/org/repo/pull/42"));
+        assert!(!is_valid_pull_request_url(" https://github.com/org/repo/pull/42"));
+        assert!(!is_valid_pull_request_url("https://github.com/org/repo/pull/42 "));
+
+        // Windows DNS (`getaddrinfow`) and unspaced `x509:` classify as unreachable (`offline`).
+        assert!(is_unreachable_answer("dial tcp: lookup api.github.com: getaddrinfow: No such host"));
+        assert!(is_unreachable_answer("Post https://api.github.com/graphql: x509:certificate signed by unknown"));
+
+        // retry_words matches Node's `github.ts` copy for minutes and hours.
+        assert_eq!(retry_words(1_000, 1_000), "in a minute");
+        assert_eq!(retry_words(61_000, 1_000), "in a minute");
+        assert_eq!(retry_words(301_000, 1_000), "in about 5 minutes");
+        assert_eq!(retry_words(3_601_000, 1_000), "in about an hour");
+        assert_eq!(retry_words(7_201_000, 1_000), "in about 2 hours");
+
+        // `valid_pull_request_command_shape` allows well-formed `matchHeadCommit` / `readId`
+        // so `validate_remote_command` rejects them with Forbidden rather than InvalidRequest.
+        let sha = "a".repeat(40);
+        let good_spoof = json!({
+            "type": "git-pull-request-action",
+            "threadId": "t1",
+            "url": "https://github.com/org/repo/pull/42",
+            "action": "merge",
+            "method": "squash",
+            "matchHeadCommit": sha
+        });
+        assert!(valid_pull_request_command_shape(good_spoof.as_object().unwrap()));
+        assert!(GitPullRequestActionCommand::parse(good_spoof.as_object().unwrap()).is_none());
+        let bad_spoof = json!({
+            "type": "git-pull-request-action",
+            "threadId": "t1",
+            "url": "https://github.com/org/repo/pull/42",
+            "action": "merge",
+            "matchHeadCommit": "not-a-sha"
+        });
+        assert!(!valid_pull_request_command_shape(bad_spoof.as_object().unwrap()));
     }
 }
