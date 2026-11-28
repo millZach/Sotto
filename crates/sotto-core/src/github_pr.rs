@@ -180,10 +180,9 @@ fn parse_remote_url(url: &str) -> Option<ParsedRemote> {
     {
         return None;
     }
-    let name = if name_raw.len() >= 4 && name_raw[name_raw.len() - 4..].eq_ignore_ascii_case(".git") {
-        &name_raw[..name_raw.len() - 4]
-    } else {
-        name_raw
+    let name = match name_raw.len().checked_sub(4).and_then(|at| name_raw.split_at_checked(at)) {
+        Some((head, tail)) if tail.eq_ignore_ascii_case(".git") => head,
+        _ => name_raw,
     };
     if name.is_empty() {
         return None;
@@ -987,6 +986,17 @@ mod tests {
         assert_eq!((r1.host.as_str(), r1.ssh, r1.owner.as_str(), r1.name.as_str()), ("github.com", false, "Org", "Repo"));
         let r2 = parse_remote_url("git@github-work:Org/Repo.git").unwrap();
         assert_eq!((r2.host.as_str(), r2.ssh), ("github-work", true));
+        // Non-ASCII repo names whose byte length >= 4 must not panic on `.git` suffix stripping.
+        for (url, expected_name) in [
+            ("https://github.com/org/über", "über"),
+            ("https://github.com/org/日本", "日本"),
+            ("https://github.com/org/über.git", "über"),
+            ("git@github.com:org/über.GIT", "über"),
+            ("https://github.com/org/r.git", "r"),
+        ] {
+            let parsed = parse_remote_url(url).unwrap_or_else(|| panic!("expected parse for {url}"));
+            assert_eq!(parsed.name, expected_name, "{url}");
+        }
         // Rejected: multiple trailing slashes, empty userinfo, non-numeric port, local path.
         assert!(parse_remote_url("https://github.com/o/r///").is_none());
         assert!(parse_remote_url("https://@github.com/o/r").is_none());
