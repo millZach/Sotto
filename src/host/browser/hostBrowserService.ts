@@ -13,8 +13,8 @@ interface HostPageRecord extends TaskPage {
   seen: HostPageState
 }
 
-/** A paired host's browser takes no secret reference (ADR-0219, decision 9). */
-export interface HostBrowserServiceDependencies extends Omit<BrowserTaskDependencies, 'words' | 'byDefault' | 'secret'> {
+/** A paired host's browser takes no secret reference (ADR-0219, decision 9), so it neither types one nor looks up its site. */
+export interface HostBrowserServiceDependencies extends Omit<BrowserTaskDependencies, 'words' | 'byDefault' | 'secret' | 'secretSite'> {
   readonly browser: HostBrowser
   /** The last **Let agents use the browser without asking** a desktop sent, as the host's settings file holds it. */
   readonly withoutAsking: boolean

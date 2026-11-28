@@ -581,7 +581,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
    * holds. An open dialog is refused first, by the capture, since it has to be answered before anything else.
    */
   private noPicture(record: R): void {
-    if (record.automation.holdsSecret() && !record.automation.dialog()) fail('blocked', 'This page holds a secret you saved, and a page can show what a password field holds, so no picture of it goes to you until it loads another document. Use snapshot, whose words are masked.')
+    // The stable catalog reads a page with inspect; snapshot is the full catalog's (ADR-0220).
+    if (record.automation.holdsSecret() && !record.automation.dialog()) fail('blocked', `This page holds a secret you saved, and a page can show what a password field holds, so no picture of it goes to you until it loads another document. Use ${this.parity ? 'snapshot' : 'inspect'}, whose words are masked.`)
   }
   /** The pending request's words: what will happen, where, and for upload which files. */
   private describe(record: R, action: BrowserAction, staged?: StagedUpload, secretFor?: string | null): string {
