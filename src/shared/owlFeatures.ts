@@ -83,6 +83,7 @@ export const OWL_FEATURES = [
   { id: 'rust-local-engine', name: 'Rust local desktop engine', owlSince: '2026-11-21', owner: 'docs/adr/0215-rust-local-desktop-engine.md', sentToStable: false },
   { id: 'mods', name: 'Mods', owlSince: '2026-11-25', owner: 'docs/adr/0217-mods-change-how-sotto-looks-and-add-parts-of-their-own.md', sentToStable: false },
   { id: 'parent-thread-coordination', name: 'Parent-to-parent thread coordination', owlSince: '2026-11-22', owner: 'docs/adr/0216-parent-threads-can-coordinate-with-each-other.md', sentToStable: false },
+  { id: 'scheduled-tasks', name: 'Scheduled tasks and playbooks', owlSince: '2026-11-26', owner: 'docs/adr/0218-scheduled-tasks-and-playbooks-run-on-the-computer-that-keeps-them.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

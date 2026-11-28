@@ -24,6 +24,8 @@ export const SETTINGS_PAGES = [
   settingsPage('settings-watcher', 'Watcher', 1),
   // The Council (ADR-0177), an Owl feature: directly below Watcher, shown only while the Owl list turns `council` on.
   settingsPage('settings-council', msg({ message: 'Council', comment: 'A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".' }), 1),
+  // Scheduled tasks (ADR-0218), an Owl feature: below the Council, shown only while the Owl list turns `scheduled-tasks` on.
+  settingsPage('settings-scheduled-tasks', msg({ message: 'Scheduled tasks', comment: 'A Settings page, named in its rail and its heading: prompts and playbooks Sotto starts on a schedule. Other messages name it as "Settings > Scheduled tasks".' }), 1),
   settingsPage('settings-providers', msg({ message: 'Providers', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".' }), 2),
   // Plugins (ADR-0205), an Owl feature: directly below Providers, shown only while the Owl list turns `plugins` on.
   settingsPage('settings-plugins', msg({ message: 'Plugins', comment: 'A Settings page, named in its rail and its heading: outside services such as GitHub that threads can use. Other messages name it as "Settings > Plugins".' }), 2),
@@ -72,7 +74,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dynamic-threads' | 'model-router' | 'inline-media' | 'popup-shortcut' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'plugins' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps' | 'mods'
+export type SettingGate = 'dynamic-threads' | 'model-router' | 'inline-media' | 'popup-shortcut' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'plugins' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps' | 'mods' | 'scheduled-tasks'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -247,6 +249,10 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'plugin-proton-mail', label: 'Proton Mail', section: 'settings-plugins', words: 'plugin mail email proton bridge password account inbox messages', gate: 'plugins' },
     { id: 'plugin-meshy', label: 'Meshy', section: 'settings-plugins', words: 'plugin 3d models meshy api key credits limit ask before each', gate: 'plugins' },
     { id: 'models-3d', label: msg`3D models`, section: 'settings-models', words: 'meshy 3d models gallery viewer turn glb usdz files credits', gate: 'plugins' },
+    { id: 'scheduled-tasks', label: msg`Run scheduled tasks`, section: 'settings-scheduled-tasks', words: 'schedule cron timer recurring automation webhook github issues playbook workflow', gate: 'scheduled-tasks' },
+    { id: 'scheduled-tasks-new', label: msg`New scheduled task`, section: 'settings-scheduled-tasks', words: 'schedule cron prompt every day week automation', gate: 'scheduled-tasks' },
+    { id: 'scheduled-tasks-example', label: msg`Add the example playbook`, section: 'settings-scheduled-tasks', words: 'playbook workflow triage fix issue steps approval', gate: 'scheduled-tasks' },
+    { id: 'scheduled-tasks-folder', label: msg`Open playbooks folder`, section: 'settings-scheduled-tasks', words: 'playbook workflow json files steps', gate: 'scheduled-tasks' },
     { id: 'mods-make', label: msg`Make a mod`, section: 'settings-mods', words: 'mods customize restyle css look theme sidebar composer', gate: 'mods' },
     { id: 'mods-turn-off', label: msg`Turn off every mod`, section: 'settings-mods', words: 'mods disable safe reset look', gate: 'mods' },
     { id: 'mods-folder', label: msg`Open mods folder`, section: 'settings-mods', words: 'mods files css by hand share import', gate: 'mods' },
