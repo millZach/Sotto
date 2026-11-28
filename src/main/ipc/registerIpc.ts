@@ -195,6 +195,7 @@ const settingKeys = [
   'phoneAccess',
   'phoneAccessName',
   'localApps',
+  'scheduledTasksEnabled',
   'popupEnabled',
   'popupShortcut',
   'showBrowserPreviews',

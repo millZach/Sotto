@@ -58,6 +58,8 @@ if (process.argv.includes('exec')) {
   line({ type: 'turn.started' })
   if (script.tool) line({ type: 'item.started', item: { id: 'item_0', type: 'command_execution', command: 'ls' } })
   if (script.fail) { line({ type: 'turn.failed', error: { message: 'Scripted failure' } }); process.exit(1) }
+  // `delayMs` stands for a client that takes that long to answer, so a caller's deadline can pass first.
+  if (script.delayMs) await new Promise(resolve => setTimeout(resolve, script.delayMs))
   line({ type: 'item.completed', item: { id: 'item_1', type: 'agent_message', text: script.text ?? 'Fixture title' } })
   line({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } })
   process.exit(0)

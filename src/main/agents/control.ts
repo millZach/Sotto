@@ -103,6 +103,7 @@ import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import type { CouncilControlHooks, CouncilCoordinatorCommand } from '../council/councilService'
+import type { AutomationControlHooks, AutomationCommand } from '../automation/taskRuns'
 import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadClearFacts, type UnsentThreadFacts } from './threadClearing'
 import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, type WatcherRecord, type WatcherRequest, type WatcherThreadTarget } from '../../shared/watcher'
@@ -418,6 +419,8 @@ export class AgentControl {
   private coordinationHooks: CoordinationControlHooks | undefined
   /** The Council (ADR-0177), given only while its Owl feature is on: the threads it follows, and its prompts' identities. */
   private councilHooks: CouncilControlHooks | undefined
+  private automationHooks: AutomationControlHooks | undefined
+  private automationIds = ''
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   /** A `create-project` or `create-thread` that `create-owlet` runs (ADR-0213): the owlet a thread is made as, or true for its project. */
   private readonly owletStarts = new WeakMap<object, AgentOwlet | true>()
@@ -455,11 +458,12 @@ export class AgentControl {
     return { deliveries: (this.state.deliveries ?? []).filter(item => this.threadAvailable(item.threadId)),
       followups: (this.state.followups ?? []).filter(item => this.threadAvailable(item.threadId)) }
   }
-  /** Whether a message is a brief delegation, Council, or peer coordination sent, so Watcher never takes it for the user's own message. */
+  /** Whether a message is a brief delegation, Council, peer coordination or a scheduled task sent, so Watcher never takes it for the user's own message. */
   delegationMessage(messageId: string): boolean {
     return this.delegationHooks?.ownsMessage?.(messageId) === true
       || this.councilHooks?.ownsMessage(messageId) === true
       || this.coordinationHooks?.ownsMessage(messageId) === true
+      || this.automationHooks?.ownsMessage(messageId) === true
   }
   /**
    * What `delegationMessage` answers from, as a number that moves when a message stops being a brief, delegation is
@@ -532,6 +536,21 @@ export class AgentControl {
       || command.fastMode !== undefined || command.reasoningEffort === undefined)) throw new Error('The Council changes only a thread\'s effort.')
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
+  }
+  /** Scheduled tasks' own hooks (ADR-0218), shaped as the Council's. Returns the unhook. */
+  useAutomation(hooks: AutomationControlHooks): () => void {
+    this.automationHooks = hooks; this.refreshAutomationObservation()
+    return () => { if (this.automationHooks === hooks) { this.automationHooks = undefined; this.refreshAutomationObservation() } }
+  }
+  /** A scheduled task's own create, send or Stop (ADR-0218), guarded as the Council's are: never an answer or a permission. */
+  commandFromAutomation(command: AutomationCommand, guard: () => void): Promise<AgentState> {
+    if (!this.automationHooks || !['create-thread', 'manual-send', 'interrupt'].includes(command.type)) throw new Error('A scheduled task cannot answer requests or change permissions.')
+    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
+    return this.admitCommandShell(parsed)
+  }
+  refreshAutomationObservation(): void {
+    const ids = (this.automationHooks?.observedThreadIds() ?? []).join(',')
+    if (this.automationIds !== ids) { this.automationIds = ids; this.observe() }
   }
   private councilObservedIds = ''
   /** The Council's threads to observe changed: they join the observed set, so their turns are read as they move on. */
@@ -2802,7 +2821,7 @@ export class AgentControl {
    * waiting on its lane to a thread the user moved away from read as unconfirmed although the provider took it.
    */
   private liveSessionIds(extra: readonly string[] = []): string[] {
-    return [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.coordinationHooks?.observedThreadIds() ?? [], ...this.councilHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
+    return [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.coordinationHooks?.observedThreadIds() ?? [], ...this.councilHooks?.observedThreadIds() ?? [], ...this.automationHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
       ...this.outboxEntries.flatMap(item => item.threadId ? [item.threadId] : []), ...this.threadPrompts.keys(), ...this.draftSends.keys(), ...extra])].filter(id => this.threadAvailable(id))
   }
   /**
@@ -5365,7 +5384,7 @@ export class AgentControl {
     const prompt = promptOf(command)
     const operation = draftId ? this.watcher.operations.find(item => item.draftId === draftId) : undefined
     // A delegated brief carries delegation's own guard to the writer, as a Watcher operation carries Watcher's (ADR-0081).
-    const delegationGuard = !machineOrigin && !operation && draftId ? this.delegationHooks?.guardFor(draftId) ?? this.coordinationHooks?.guardFor(draftId) ?? this.councilHooks?.guardFor(draftId) : undefined
+    const delegationGuard = !machineOrigin && !operation && draftId ? this.delegationHooks?.guardFor(draftId) ?? this.coordinationHooks?.guardFor(draftId) ?? this.councilHooks?.guardFor(draftId) ?? this.automationHooks?.guardFor(draftId) : undefined
     const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) }
       : delegationGuard ? { guard: delegationGuard } : undefined)
     origin?.guard()
@@ -5789,7 +5808,7 @@ export class AgentControl {
     this.assertCanAct()
     this.observe(threadId)
     const messageId = this.watcher.operations.find(item => item.draftId === draftId)?.messageId
-      ?? (draftId ? this.delegationHooks?.messageIdFor(draftId) ?? this.coordinationHooks?.messageIdFor(draftId) ?? this.councilHooks?.messageIdFor(draftId) : undefined) ?? randomUUID()
+      ?? (draftId ? this.delegationHooks?.messageIdFor(draftId) ?? this.coordinationHooks?.messageIdFor(draftId) ?? this.councilHooks?.messageIdFor(draftId) ?? this.automationHooks?.messageIdFor(draftId) : undefined) ?? randomUUID()
     const readStartedAt = performance.now()
     const read = await this.readThread(threadId, undefined, readBeforeSend(messageId))
     this.sendStages(turn)?.addRead(performance.now() - readStartedAt)
@@ -6154,6 +6173,7 @@ export class AgentControl {
     if (!this.disposed) this.delegationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
     if (!this.disposed) this.coordinationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
     if (!this.disposed) this.councilHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
+    if (!this.disposed) this.automationHooks?.observe(snapshot, this.hostThreadsOf(snapshot))
     const shownThread = (id: string): AgentThread | undefined => snapshot === this.state.host ? this.threadById(id) : snapshot.threads.find(thread => thread.id === id)
     if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !shownThread(this.state.activeThreadId)) {
       const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))

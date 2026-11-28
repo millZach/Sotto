@@ -414,6 +414,8 @@ export interface SottoBridge {
   readonly coordination?: import('./threadCoordination').CoordinationBridge
   /** Mods (ADR-0217), present only while the `mods` Owl feature is on. */
   readonly mods?: import('./mods').ModsBridge
+  /** Scheduled tasks and playbooks (ADR-0218), present only while the `scheduled-tasks` Owl feature is on. */
+  readonly scheduledTasks?: import('./scheduledTasks').ScheduledTasksBridge
   /** A secret request's card (ADR-0219), present only while the `secret-requests` Owl feature is on. */
   readonly secretRequests?: import('./secretRequests').SecretRequestsBridge
   /** A Dynamic thread overseer's record (ADR-0191 decision 9), present only while the `dynamic-threads` Owl feature is on. */

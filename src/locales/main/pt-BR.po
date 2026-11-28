@@ -7,6 +7,10 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: pt-BR\n"
 
+#: src/main/automation/scheduledTasks.ts
+msgid "(What started this run was longer than 16 KB, so it was left out.)"
+msgstr ""
+
 #: src/main/notifications/desktopNotifier.ts
 msgid "{agent} finished on {computer}."
 msgstr ""
@@ -57,6 +61,10 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{count, plural, one {Sotto did not restart while it was updating # host. Nothing was lost. Restart again once that update has finished.} other {Sotto did not restart while it was updating # hosts. Nothing was lost. Restart again once those updates have finished.}}"
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "{count, plural, one {Sotto wasn't running scheduled tasks at one of this task's times.} other {Sotto wasn't running scheduled tasks at # of this task's times.}}"
 msgstr ""
 
 #: src/main/themes/openVsx.ts
@@ -218,12 +226,32 @@ msgstr ""
 msgid "{name} is licensed as unknown, which Sotto does not import."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "{name} is paused. Runs already going carry on."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "{name} is running on its schedule again."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "{name} is saved."
+msgstr ""
+
 #: src/main/hosts/hostUpdate.ts
 msgid "{name} restarted, but its host says it runs {version}."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{name} still runs {from}. Nothing was lost."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "{name} was removed with its history. The threads its runs made are kept."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "{name} will run as soon as a slot is free."
 msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
@@ -264,6 +292,10 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "{problem} Sotto restored your files. Fix the error, then try again."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "{provider} is not connected on this computer, so nothing was sent."
 msgstr ""
 
 #: src/main/agents/delegationIpc.ts
@@ -387,6 +419,10 @@ msgstr ""
 msgid "A key snippet was installed by hand, but Hyprland is not using it. Sotto leaves it alone."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "A new secret is on the clipboard. Any older one no longer works."
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "A new-window request was blocked. Use a link destination action or open this page externally."
 msgstr ""
@@ -407,6 +443,10 @@ msgstr ""
 msgid "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "A playbook makes its own threads. Choose a project and a model for it."
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone."
 msgstr ""
@@ -421,6 +461,18 @@ msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "A required criterion is unmeasurable. No attempt was counted. Review the rubric and evidence in a new Climb."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "A scheduled task runs on the computer that keeps it. Choose a project on this computer."
+msgstr ""
+
+#: src/main/automation/scheduledTasksIpc.ts
+msgid "A scheduled task runs on the computer that keeps it. Choose a project or thread on this computer. Nothing was saved."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "A scheduled task runs on the computer that keeps it. Choose a thread on this computer."
 msgstr ""
 
 #: src/main/council/councilService.ts
@@ -566,6 +618,10 @@ msgstr ""
 msgid "Another program is using the port the host last listened on. Stop it on the SSH host, then reconnect."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "Another run was already waiting to start."
+msgstr ""
+
 #: src/main/hosts/hostBootStart.ts
 msgid "Another Sotto installation on {name} already has a unit named sotto-host. Nothing was changed, and the host keeps running as before. Remove that unit on {name}, then try again."
 msgstr ""
@@ -625,6 +681,10 @@ msgstr ""
 
 #: src/main/plugins/changeWords.ts
 msgid "Cancel the build of {named} on Vercel?"
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Cancelled by you."
 msgstr ""
 
 #: src/main/tools/browser.ts
@@ -877,6 +937,14 @@ msgstr ""
 msgid "Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "Declined at {title}."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "delete or overwrite work"
+msgstr ""
+
 #: src/main/plugins/changeWords.ts
 msgid "Deny"
 msgstr ""
@@ -989,6 +1057,14 @@ msgstr ""
 msgid "Git history or staging changed after this checkpoint. Preserve those changes before reverting."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "GitHub could not be read. Sotto will ask again in a couple of minutes."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Gone on as though it had finished, as you chose."
+msgstr ""
+
 #: src/main/hosts/desktopHosts.ts
 msgid "Hosts cannot be updated from this window. Nothing was changed."
 msgstr ""
@@ -1049,13 +1125,81 @@ msgstr ""
 msgid "It cannot send, move or delete mail. Every thread asks for itself."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "It ended without an exit code."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "It exited with code {code}."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "It ran longer than {minutes} minutes and was stopped."
+msgstr ""
+
 #. placeholder {0}: change.state
 #: src/main/plugins/changeWords.ts
 msgid "Its build now: {0}"
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "Its folder is no longer on this computer."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Its inputs can't be filled: {problems}"
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its model is no longer offered on this computer. Choose another in the task."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its output could not be read: {reason}."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Its playbook {id} is not in the playbooks folder."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Its playbook can't be read: {problem}"
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Its project is no longer on this computer, so GitHub was not asked."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its project is no longer on this computer."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its provider refused the prompt."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "its reply could not be read"
+msgstr ""
+
 #: src/main/hosts/hostSetup.ts
 msgid "Its row in Settings > Hosts & phones says what to do."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its thread could not be made."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its thread is no longer on this computer."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its thread is settled. Restore it, or choose another thread for the task."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Its turn failed in the thread."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -1304,6 +1448,10 @@ msgstr ""
 msgid "Only a PNG image up to 10 MiB can be pasted into a terminal."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "Only a run that failed or was stopped can go on."
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "Only an allowed action can be granted for the whole thread. Answer this one once."
 msgstr ""
@@ -1350,6 +1498,10 @@ msgstr ""
 
 #: src/main/phones/ipc.ts
 msgid "Open Phones in the main Sotto window."
+msgstr ""
+
+#: src/main/automation/scheduledTasksIpc.ts
+msgid "Open scheduled tasks in the main Sotto window."
 msgstr ""
 
 #: src/main/mods/modsIpc.ts
@@ -1516,6 +1668,10 @@ msgstr ""
 msgid "Promote to production"
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "publish something"
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Pull requests are unavailable on this host."
 msgstr ""
@@ -1581,6 +1737,10 @@ msgstr ""
 msgid "Reopen the issue"
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "Resume the task first. Nothing was started."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Revert was interrupted. Check recovery to reconcile native history and finish restoring files."
 msgstr ""
@@ -1615,6 +1775,10 @@ msgstr ""
 
 #: src/main/hosts/inactiveLocalHost.ts
 msgid "Saved thread ownership could not be read. Your saved answers have not changed."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Scheduled tasks were saved by a newer Sotto. Their file was kept unchanged. Update Sotto to see and change them."
 msgstr ""
 
 #: src/main/tools/ipc.ts
@@ -1715,6 +1879,10 @@ msgstr ""
 msgid "Sign in to model sources from the main Sotto window."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "skip a check"
+msgstr ""
+
 #: src/main/themes/ipc.ts
 msgid "Something went wrong. Try again."
 msgstr ""
@@ -1729,6 +1897,18 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "Sotto {version} has a newer owl. Updating restarts the bar for a moment."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Sotto can't tell how its turn ended."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Sotto can't tell how this command ended."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Sotto can't tell whether its prompt reached the thread."
 msgstr ""
 
 #: src/main/hosts/adminConnection.ts
@@ -1880,6 +2060,10 @@ msgstr ""
 msgid "Sotto could not start recording. Nothing was kept. Try Record a minute again."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "Sotto could not tell whether the last try took effect, and you chose to try again."
+msgstr ""
+
 #: src/main/files/downloads.ts
 msgid "Sotto could not write to the Downloads folder. Nothing was saved."
 msgstr ""
@@ -1940,6 +2124,7 @@ msgstr ""
 msgid "Sotto is changing whether the host on {host} starts at boot. Nothing was changed. Wait for it to finish, then try again."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
 #: src/main/council/climbService.ts
 #: src/main/council/councilService.ts
 msgid "Sotto is closing. Nothing was changed."
@@ -1963,6 +2148,10 @@ msgstr ""
 
 #: src/main/council/councilService.ts
 msgid "Sotto keeps {RECORDS_MAX} Councils, and one makes room only once it is settled and its snapshot is removed. Settle a Council, then ask again. Nothing was started."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Sotto keeps {TASKS_MAX} scheduled tasks. Remove one first."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -1997,8 +2186,16 @@ msgstr ""
 msgid "Sotto stopped signing in to the host. Nothing was changed."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "Sotto stopped while this command ran, so whether it finished is unknown."
+msgstr ""
+
 #: src/main/hosts/hostBootStart.ts
 msgid "Sotto turned off start at boot on {name} but could not remove the unit’s files there. Nothing was lost, and this computer starts the host again when it connects."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Sotto wasn't running scheduled tasks at {OCCURRENCE_COUNT_MAX} or more of this task's times."
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -2027,6 +2224,10 @@ msgstr ""
 
 #: src/main/plugins/changeWords.ts
 msgid "Speech · {name}"
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "spend money"
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -2099,6 +2300,10 @@ msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "Stopped by you."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Stopped in its thread."
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
@@ -2189,6 +2394,7 @@ msgstr ""
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
 #: src/main/plugins/ipc.ts
 msgid "That could not be done. Nothing was changed."
 msgstr ""
@@ -2246,8 +2452,28 @@ msgstr ""
 msgid "That row has nothing to do now. Nothing was changed."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "That run has already ended."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "That run is no longer here."
+msgstr ""
+
 #: src/main/agents/localProviderSignInIpc.ts
 msgid "That sign-in is not available right now. Nothing was changed."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "That step is not uncertain any more."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "That step is not waiting for you any more."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "That task is no longer here."
 msgstr ""
 
 #: src/main/themes/ipc.ts
@@ -2268,6 +2494,10 @@ msgstr ""
 
 #: src/main/council/councilService.ts
 msgid "That thread's folder is not a Git repository and is not its project's folder, so the Council cannot work in it. Nothing was started."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "That time has passed. Choose a time to come."
 msgstr ""
 
 #: src/main/agents/delegationIpc.ts
@@ -2456,6 +2686,10 @@ msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "The evidence selection changed. Preview it in a new Climb before approving."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "The example playbook is in the playbooks folder as {id}.json."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -2815,6 +3049,10 @@ msgstr ""
 msgid "The judge's turn was not confirmed. Review this round before continuing."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "The last run was still going."
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "The line Sotto added changed. Your keys were left alone."
 msgstr ""
@@ -2892,6 +3130,10 @@ msgstr ""
 msgid "The pairing code could not be read from the host. Nothing was saved. Check that the host is running and try again."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "The playbooks folder could not be opened."
+msgstr ""
+
 #: src/main/omarchy/files.ts
 msgid "The plugin folder is not a folder. Sotto left it alone."
 msgstr ""
@@ -2912,6 +3154,10 @@ msgstr ""
 msgid "The project’s production addresses will serve this deployment. It is not built again."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "The prompt could not be sent."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "The provider rejected rollback. Files are unchanged; review the native thread before retrying."
 msgstr ""
@@ -2930,6 +3176,22 @@ msgstr ""
 
 #: src/main/hosts/desktopHosts.ts
 msgid "The revoke failed."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "The run could not start."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "The run was cancelled."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "The run will go on as soon as a slot is free."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "The scheduled tasks file could not be read. It was kept unchanged, and nothing can be saved until it is fixed or moved away."
 msgstr ""
 
 #: src/main/council/climbService.ts
@@ -3149,6 +3411,10 @@ msgstr ""
 msgid "The viewed threads could not be read."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "The webhook listener could not start on this computer. Webhooks start nothing until it does."
+msgstr ""
+
 #. The file type a theme is exported as, in the save dialog
 #: src/main/index.ts
 msgid "Theme"
@@ -3251,8 +3517,20 @@ msgstr ""
 msgid "This cloud iPhone session is not running."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "This command looks like it would {words}. It runs only if you allow it."
+msgstr ""
+
 #: src/main/agents/socketHostService.ts
 msgid "This computer could not save your draft. Keep your text and images and try saving again."
+msgstr ""
+
+#: src/main/automation/scheduledTasksIpc.ts
+msgid "This computer doesn't host agents, so it runs no scheduled tasks. Turn on Run the local host in Settings › Hosts, then restart Sotto."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "This computer doesn't know the time zone {zone}."
 msgstr ""
 
 #: src/main/agents/retainedDraftStore.ts
@@ -3269,6 +3547,10 @@ msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This computer runs no threads of its own here, so there is nothing to clear. Nothing was deleted."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "This computer's credential store is locked or missing, so no secret was made."
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -3617,6 +3899,10 @@ msgstr ""
 msgid "This piece was already given to another model. Move it from the newer worker's row instead. Nothing was started."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "This playbook runs commands. Allow this version of it in the task to go on."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "This provider does not expose matching native conversation rollback."
 msgstr ""
@@ -3635,6 +3921,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "This result belongs to an earlier connection. Refresh the host."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "This run has nothing to go on with."
 msgstr ""
 
 #: src/main/agents/localProviderSignInIpc.ts
@@ -3730,6 +4020,10 @@ msgstr ""
 msgid "This version of Sotto doesn't show a host's browser. Nothing was changed."
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "This version of the playbook may run its commands."
+msgstr ""
+
 #: src/main/agents/delegationIpc.ts
 msgid "This worker's brief is too long to hand on with a note about the move. Ask the overseer in a message to give the piece to {model}. Nothing was started."
 msgstr ""
@@ -3807,12 +4101,20 @@ msgstr ""
 msgid "Turn off every mod"
 msgstr ""
 
+#: src/main/automation/scheduledTasks.ts
+msgid "Turn on Run scheduled tasks first. Nothing was started."
+msgstr ""
+
 #: src/main/agents/watcherRoomDesktop.ts
 msgid "Turn on Run the local host in Settings and restart Sotto to use Watcher."
 msgstr ""
 
 #: src/main/hosts/inactiveLocalHost.ts
 msgid "Turn on the local host in Settings > Hosts & phones and restart Sotto before turning off local history. Your saved history has not changed."
+msgstr ""
+
+#: src/main/automation/scheduledTasks.ts
+msgid "Turn on the task's webhook first."
 msgstr ""
 
 #: src/main/themes/openVsx.ts
@@ -3928,8 +4230,16 @@ msgstr ""
 msgid "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
 msgstr ""
 
+#: src/main/automation/taskRuns.ts
+msgid "Waiting for its thread to be free."
+msgstr ""
+
 #: src/main/plugins/changeWords.ts
 msgid "Watcher can search this account’s mail and read its messages, until you stop it."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "What it printed is not one JSON object of at most 16 KB."
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
@@ -3954,6 +4264,10 @@ msgstr "Janela"
 
 #: src/main/agents/ipcCore.ts
 msgid "Working-copy choices are unavailable. Reopen the project and try again."
+msgstr ""
+
+#: src/main/automation/taskRuns.ts
+msgid "Write {label} first."
 msgstr ""
 
 #: src/main/council/climbService.ts

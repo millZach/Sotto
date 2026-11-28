@@ -17,7 +17,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AppWindow, Network, Split, AudioLines, Box, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer , Wand2 } from 'lucide-react'
+import { AppWindow, Network, Split, AudioLines, Box, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer , Wand2, CalendarClock } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -55,6 +55,7 @@ import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { WatcherCompactionSetting } from './WatcherCompactionSetting'
 import { ModsSettings } from './ModsSettings'
+import { ScheduledTasksSettings } from './ScheduledTasksSettings'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
 import { useDesktopNotifications } from '../../state/desktopNotifications'
@@ -143,6 +144,8 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-watcher': WatcherNavIcon,
   // The Council (ADR-0177), an Owl feature: shown only while the Owl list turns `council` on.
   'settings-council': Landmark,
+  // Scheduled tasks (ADR-0218), an Owl feature: shown only while the Owl list turns `scheduled-tasks` on.
+  'settings-scheduled-tasks': CalendarClock,
   'settings-providers': Command,
   // Plugins (ADR-0205), an Owl feature: shown only while the Owl list turns `plugins` on.
   'settings-plugins': Plug,
@@ -385,10 +388,11 @@ export function SettingsView({
   const localAppsOn = useOwlFeature('local-apps')
   const pluginsOn = useOwlFeature('plugins')
   const modsOn = useOwlFeature('mods') && window.sotto?.mods !== undefined
+  const scheduledTasksOn = useOwlFeature('scheduled-tasks') && window.sotto?.scheduledTasks !== undefined
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
   const dictation = dictationOn(settings, dictationSwitch)
-  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn) && (section.id !== 'settings-council' || councilOn) && (section.id !== 'settings-plugins' || pluginsOn) && (section.id !== 'settings-models' || pluginsOn) && (section.id !== 'settings-mods' || modsOn)
+  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn) && (section.id !== 'settings-council' || councilOn) && (section.id !== 'settings-plugins' || pluginsOn) && (section.id !== 'settings-models' || pluginsOn) && (section.id !== 'settings-mods' || modsOn) && (section.id !== 'settings-scheduled-tasks' || scheduledTasksOn)
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
@@ -414,7 +418,7 @@ export function SettingsView({
   const notificationsShown = useDesktopNotifications() !== undefined
   const dynamicThreadsOn = useOwlFeature('dynamic-threads')
   const modelRouterOn = useOwlFeature('model-router')
-  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'model-router': modelRouterOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, plugins: pluginsOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'popup-shortcut': popupOn && settings.popupEnabled, 'local-apps': localAppsOn, mods: modsOn }
+  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'model-router': modelRouterOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, plugins: pluginsOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'popup-shortcut': popupOn && settings.popupEnabled, 'local-apps': localAppsOn, mods: modsOn, 'scheduled-tasks': scheduledTasksOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -700,6 +704,9 @@ export function SettingsView({
               {councilOn ? <Card className="settings-section" id="settings-council" {...panelProps('settings-council')}>
                 <div className="settings-section__heading"><h2><Trans>Council</Trans></h2></div>
                 <CouncilSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card> : null}
+
+              {scheduledTasksOn ? <Card className="settings-section" id="settings-scheduled-tasks" {...panelProps('settings-scheduled-tasks')}>
+                <ScheduledTasksSettings settings={settings} onUpdateSettings={onUpdateSettings} shown={activeSection === 'settings-scheduled-tasks'} /></Card> : null}
 
               <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2><Trans>Providers</Trans></h2><p className="tt-paragraph"><Trans>Accounts &amp; connections</Trans></p></div><ProvidersSettings compactIdle={{ checked: settings.compactIdleThreads, onChange: checked => void save({ compactIdleThreads: checked }) }} /></Card>
 

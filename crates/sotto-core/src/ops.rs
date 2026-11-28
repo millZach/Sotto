@@ -197,6 +197,22 @@ fn refs_cache() -> &'static Mutex<HashMap<String, RefsSnapshot>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Drops the cached `git-refs` snapshot for `folder`'s repository (or clears the cache if `common-dir` cannot be read),
+/// matching Node's `status.invalidate(cwd)` after a Git action or local Git command.
+pub(crate) fn invalidate_refs_cache(folder: &str) {
+    let common = run_git(folder, &["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let mut cache = refs_cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    match common {
+        Some(key) => {
+            cache.remove(&key);
+        }
+        None => cache.clear(),
+    }
+}
+
 fn same_path_str(a: &str, b: &str) -> bool {
     if a == b {
         return true;
@@ -541,13 +557,16 @@ fn count_untracked_lines(path: &Path) -> Option<(u64, u64)> {
     Some((lines, 0))
 }
 
-struct ChangedFileRecord {
-    path: String,
-    original_path: Option<String>,
-    status: &'static str,
+/// One changed path in `status --porcelain=v2 -z`, as Node's `parseChangedRecords` reads it.
+pub(crate) struct ChangedFileRecord {
+    pub path: String,
+    pub original_path: Option<String>,
+    pub status: &'static str,
 }
 
-fn parse_porcelain_v2_changed(output: &str) -> (bool, Vec<ChangedFileRecord>) {
+/// The changed paths of `status --porcelain=v2 -z`, as Node's `parseChangedRecords` reads them, and whether the branch
+/// has no commit yet.
+pub(crate) fn parse_porcelain_v2_changed(output: &str) -> (bool, Vec<ChangedFileRecord>) {
     let records: Vec<&str> = output.split('\0').collect();
     let mut unborn = false;
     let mut result = Vec::new();
@@ -2978,6 +2997,8 @@ fn run_git_clean(
         true,
         Instant::now() + Duration::from_secs(10),
         TimeoutStop::Kill,
+        Readers::default(),
+        &STATUS_GIT_PREFIX,
     )
 }
 
@@ -2986,7 +3007,7 @@ fn run_git_status_cmd_with_deadline(
     args: &[&str],
     deadline: Instant,
 ) -> Result<GitRunOutput, GitRunError> {
-    run_git_impl(folder, args, &[], None, None, false, deadline, TimeoutStop::Kill)
+    run_git_impl(folder, args, &[], None, None, false, deadline, TimeoutStop::Kill, Readers::default(), &STATUS_GIT_PREFIX)
 }
 
 fn run_git_status_with_deadline(
@@ -3043,8 +3064,110 @@ fn stop_at_deadline(child: &mut std::process::Child, stop: TimeoutStop, grace: I
     child.wait()
 }
 
+/// Stops `child` and its whole process tree (for example `git clone` and its `git-remote-https` / `ssh` helpers)
+/// when Sotto is closing, matching Node's `AbortSignal` tree kill (`src/main/agents/projectSetup.ts:237-249`).
+fn stop_process_tree(child: &mut std::process::Child) -> std::io::Result<std::process::ExitStatus> {
+    let pid = child.id();
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn kill(pid: i32, signal: i32) -> i32;
+        }
+        const SIGTERM: i32 = 15;
+        const SIGKILL: i32 = 9;
+        let pgid = -(pid as i32);
+        // SAFETY: `child` was spawned in its own process group (`setpgid(0, 0)`) and has not been reaped yet.
+        unsafe {
+            let _ = kill(pgid, SIGTERM);
+        }
+        let grace = Instant::now() + Duration::from_millis(250);
+        while Instant::now() < grace {
+            if let Some(status) = child.try_wait()? {
+                return Ok(status);
+            }
+            std::thread::sleep(Duration::from_millis(15));
+        }
+        unsafe {
+            let _ = kill(pgid, SIGKILL);
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    let _ = child.kill();
+    child.wait()
+}
+
+/// What Sotto's own reads put before Git's arguments: nothing locked, every path taken as written, no file monitor and no
+/// external diff.
+const STATUS_GIT_PREFIX: [&str; 8] = ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "-c", "diff.external="];
+
+/// What Node's `runGitStatusCommand` puts before a Git action's arguments, and nothing more. Git hands its own options
+/// down to the hooks it runs, so `--literal-pathspecs` here would make every glob a commit or push hook names match
+/// nothing; a step that needs paths taken as written says so itself, as Node's staging does.
+const ACTION_GIT_PREFIX: [&str; 3] = ["--no-optional-locks", "-c", "core.quotePath=false"];
+
+/// Cached `gh` binary lookup off Windows (matching `findGh` in `src/main/agents/git/ghCommand.ts`: cached for the
+/// process lifetime when found, or re-probed after 5 minutes when missing).
+fn cached_gh_cli() -> Option<PathBuf> {
+    if cfg!(windows) {
+        return None;
+    }
+    const MISSING_AGAIN: Duration = Duration::from_secs(5 * 60);
+    type GhCacheEntry = (Instant, Option<PathBuf>);
+    static GH_CACHE: OnceLock<Mutex<Option<GhCacheEntry>>> = OnceLock::new();
+    let cache = GH_CACHE.get_or_init(|| Mutex::new(None));
+    let now = Instant::now();
+    {
+        let guard = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((at, ref found)) = *guard {
+            if found.is_some() || now.saturating_duration_since(at) < MISSING_AGAIN {
+                return found.clone();
+            }
+        }
+    }
+    let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+    let found = crate::cli_lookup::find_cli(&crate::cli_lookup::CliSpec::simple("gh"), &opts)
+        .map(|res| res.executable);
+    *cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((now, found.clone()));
+    found
+}
+
+fn prepend_parent_if_outside_path(cmd: &mut Command, executable: &Path) {
+    let Some(parent) = executable.parent().filter(|p| !p.as_os_str().is_empty()) else {
+        return;
+    };
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let already_present = std::env::split_paths(&inherited).any(|entry| entry == parent);
+    if !already_present {
+        let mut paths = vec![parent.to_path_buf()];
+        paths.extend(std::env::split_paths(&inherited));
+        if let Ok(joined) = std::env::join_paths(paths) {
+            cmd.env("PATH", joined);
+        }
+    }
+}
+
+struct ToolRunResult {
+    stdout: String,
+    stderr: String,
+    exit_code: Option<i32>,
+    status_display: String,
+    success: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
-fn run_git_impl(
+fn run_tool_raw(
+    tool: &str,
     folder: &str,
     args: &[&str],
     extra_env: &[(String, String)],
@@ -3053,29 +3176,68 @@ fn run_git_impl(
     strip_all_git_env: bool,
     deadline: Instant,
     stop: TimeoutStop,
-) -> Result<GitRunOutput, GitRunError> {
-    if Instant::now() >= deadline {
-        return Err(GitRunError::Failed("git timed out".into()));
+    readers: Readers,
+    prefix: &[&str],
+) -> Result<ToolRunResult, GitRunError> {
+    run_tool_raw_cancellable(tool, folder, args, extra_env, stdin_bytes, max_buffer, strip_all_git_env, deadline, stop, readers, prefix, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_tool_raw_cancellable(
+    tool: &str,
+    folder: &str,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    stdin_bytes: Option<&[u8]>,
+    max_buffer: Option<usize>,
+    strip_all_git_env: bool,
+    deadline: Instant,
+    stop: TimeoutStop,
+    readers: Readers,
+    prefix: &[&str],
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<ToolRunResult, GitRunError> {
+    use std::sync::atomic::Ordering;
+    let Readers { lines, keep_reading } = readers;
+    // Shut once the command settles, so a grandchild still holding the output past then reaches no one, as Node's
+    // runner destroys the streams when it settles. Hold the guard across `sink(line)` so no callback races past settle.
+    let open = std::sync::Arc::new(Mutex::new(true));
+    let lines = lines.map(|sink| -> LineSink {
+        let open = std::sync::Arc::clone(&open);
+        std::sync::Arc::new(move |line: &str| {
+            let guard = open.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if *guard {
+                sink(line);
+            }
+        })
+    });
+    if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+        return Err(GitRunError::Failed(GIT_ABORTED.to_string()));
     }
-    let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
-    let mut cmd = match crate::cli_lookup::resolve_tool_cli("git", &opts) {
-        Some(res) => {
-            let mut c = Command::new(&res.executable);
-            res.apply_std(&mut c);
-            c
+    if Instant::now() >= deadline {
+        return Err(GitRunError::Failed(format!("{tool} timed out")));
+    }
+    let mut cmd = if tool == "gh" {
+        match cached_gh_cli() {
+            Some(exe) => {
+                let mut c = Command::new(&exe);
+                prepend_parent_if_outside_path(&mut c, &exe);
+                c
+            }
+            None => Command::new("gh"),
         }
-        None => Command::new("git"),
+    } else {
+        let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
+        match crate::cli_lookup::resolve_tool_cli(tool, &opts) {
+            Some(res) => {
+                let mut c = Command::new(&res.executable);
+                res.apply_std(&mut c);
+                c
+            }
+            None => Command::new(tool),
+        }
     };
-    cmd.args([
-        "--no-optional-locks",
-        "--literal-pathspecs",
-        "-c",
-        "core.fsmonitor=false",
-        "-c",
-        "core.quotePath=false",
-        "-c",
-        "diff.external=",
-    ])
+    cmd.args(prefix)
     .args(args)
     .current_dir(folder)
     .stdout(Stdio::piped())
@@ -3101,7 +3263,9 @@ fn run_git_impl(
         cmd.env("GCM_INTERACTIVE", "never");
     }
     cmd.env("GIT_TERMINAL_PROMPT", "0");
-    cmd.env("GIT_OPTIONAL_LOCKS", "0");
+    if tool == "git" {
+        cmd.env("GIT_OPTIONAL_LOCKS", "0");
+    }
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
@@ -3111,20 +3275,30 @@ fn run_git_impl(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    #[cfg(unix)]
+    if cancel.is_some() {
+        use std::os::unix::process::CommandExt;
+        extern "C" {
+            fn setpgid(pid: i32, pgid: i32) -> i32;
+        }
+        // SAFETY: `setpgid(0, 0)` is async-signal-safe and puts the child in its own process group
+        // so `stop_process_tree` kills git and all its helpers cleanly on shutdown.
+        unsafe {
+            cmd.pre_exec(|| {
+                let _ = setpgid(0, 0);
+                Ok(())
+            });
+        }
+    }
 
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            GitRunError::Unavailable("Git is unavailable.".into())
+            let msg = if tool == "git" { "Git is unavailable.".into() } else { format!("{tool} is unavailable.") };
+            GitRunError::Unavailable(msg)
         } else {
-            GitRunError::Failed(format!("Could not run git: {e}"))
+            GitRunError::Failed(format!("Could not run {tool}: {e}"))
         }
     })?;
-
-    if let Some(input) = stdin_bytes {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(input);
-        }
-    }
 
     // Drain stdout and bounded stderr on dedicated reader threads while enforcing `deadline`
     // so a stalled git clean filter or hook is always terminated instead of wedging a worker.
@@ -3133,36 +3307,36 @@ fn run_git_impl(
     // Nothing is sent on it: each reader holds a sender until it ends, so the channel closes once both pipes have.
     let (reading, pipes_closed) = std::sync::mpsc::channel::<()>();
     let stdout_reading = reading.clone();
+    let stdout_lines = lines.clone();
     let reader = std::thread::spawn(move || -> (Vec<u8>, bool) {
         let _reading = stdout_reading;
-        let mut buf = Vec::new();
-        let mut overflowed = false;
-        if let Some(mut stdout) = stdout_pipe {
-            if let Some(limit) = max_buffer {
-                let mut limited = stdout.take((limit as u64).saturating_add(1));
-                let _ = limited.read_to_end(&mut buf);
-                if buf.len() > limit {
-                    buf.truncate(limit);
-                    overflowed = true;
-                }
-            } else {
-                let _ = stdout.read_to_end(&mut buf);
-            }
+        match stdout_pipe {
+            Some(stdout) => read_pipe(stdout, max_buffer, !keep_reading, stdout_lines.as_ref()),
+            None => (Vec::new(), false),
         }
-        (buf, overflowed)
     });
     let stderr_reader = std::thread::spawn(move || -> Vec<u8> {
         let _reading = reading;
-        let mut buf = Vec::new();
-        if let Some(stderr) = stderr_pipe {
-            // As much of what Git said as its output may hold, so the last lines a refusal quotes are there.
-            let limit = max_buffer.unwrap_or(16 * 1024) as u64;
-            let _ = stderr.take(limit).read_to_end(&mut buf);
+        // As much of what the tool said as its output may hold, so the last lines a refusal quotes are there.
+        match stderr_pipe {
+            Some(stderr) => read_pipe(stderr, Some(max_buffer.unwrap_or(16 * 1024)), !keep_reading && lines.is_none(), lines.as_ref()).0,
+            None => Vec::new(),
         }
-        buf
     });
 
+    // Standard input is written on its own thread once the readers are draining, as Node's runner ends it without
+    // waiting: Git can read it late, as a commit reads its message only after its pre-commit hook, and a hook that
+    // prints more than a pipe holds would otherwise wait on a reader that waits on this write, past any deadline. The
+    // handle closes when the write ends, or fails once the child is gone.
+    if let (Some(input), Some(mut stdin)) = (stdin_bytes, child.stdin.take()) {
+        let input = input.to_vec();
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&input);
+        });
+    }
+
     let mut timed_out = false;
+    let mut aborted = false;
     // When the command settles at the latest: Node's runner gives it two seconds from its deadline, or from the stop when
     // it is stopped there (`spawnCommand`).
     let mut settle_by = deadline + TIMEOUT_GRACE;
@@ -3170,12 +3344,17 @@ fn run_git_impl(
         match child.try_wait() {
             Ok(Some(st)) => break Ok(st),
             Ok(None) => {
+                if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+                    aborted = true;
+                    settle_by = Instant::now() + TIMEOUT_GRACE;
+                    break stop_process_tree(&mut child);
+                }
                 if Instant::now() >= deadline {
                     timed_out = true;
                     settle_by = Instant::now() + TIMEOUT_GRACE;
                     break stop_at_deadline(&mut child, stop, settle_by);
                 }
-                if reader.is_finished() {
+                if reader.is_finished() && !keep_reading {
                     // Reader stopped early (e.g., max_buffer overflow); kill if still running.
                     let _ = child.kill();
                     break child.wait();
@@ -3185,35 +3364,80 @@ fn run_git_impl(
             Err(e) => break Err(e),
         }
     };
-    // A hook or a remote helper the command started can hold its pipes open after Git is gone, whether Git exited or was
-    // stopped, so the command settles on its deadline and grace, as Node's runner does (`spawnCommand`), rather than wait
-    // for a close a grandchild may never allow. One still held then did not finish in time; its readers end when the
-    // grandchild lets go.
+    // A hook or a remote helper the command started can hold its pipes open after the child is gone, whether it exited
+    // or was stopped, so the command settles on its deadline and grace, as Node's runner does (`spawnCommand`), rather
+    // than wait for a close a grandchild may never allow. One still held then did not finish in time; its readers end
+    // when the grandchild lets go.
     let held = matches!(
         pipes_closed.recv_timeout(settle_by.saturating_duration_since(Instant::now())),
         Err(std::sync::mpsc::RecvTimeoutError::Timeout)
     );
+    *open.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+    if aborted {
+        return Err(GitRunError::Failed(GIT_ABORTED.to_string()));
+    }
     if timed_out || held {
-        return Err(GitRunError::Failed("git timed out".into()));
+        return Err(GitRunError::Failed(format!("{tool} timed out")));
     }
     let (buf, overflowed) = reader.join().unwrap_or_default();
     let stderr_buf = stderr_reader.join().unwrap_or_default();
     let status =
-        status.map_err(|e| GitRunError::Failed(format!("Could not wait for git: {e}")))?;
-    let stdout_str = String::from_utf8_lossy(&buf).into_owned();
-    if overflowed {
-        return Err(GitRunError::MaxBuffer(stdout_str));
+        status.map_err(|e| GitRunError::Failed(format!("Could not wait for {tool}: {e}")))?;
+    let stdout = String::from_utf8_lossy(&buf).into_owned();
+    if overflowed && !keep_reading {
+        return Err(GitRunError::MaxBuffer(stdout));
     }
-    if !status.success() {
-        let stderr_str = String::from_utf8_lossy(&stderr_buf).trim().to_string();
+    let stderr = String::from_utf8_lossy(&stderr_buf).into_owned();
+    Ok(ToolRunResult {
+        stdout,
+        stderr,
+        exit_code: status.code(),
+        status_display: status.to_string(),
+        success: status.success(),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_tool_impl(
+    tool: &str,
+    folder: &str,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    stdin_bytes: Option<&[u8]>,
+    max_buffer: Option<usize>,
+    strip_all_git_env: bool,
+    deadline: Instant,
+    stop: TimeoutStop,
+    readers: Readers,
+    prefix: &[&str],
+) -> Result<GitRunOutput, GitRunError> {
+    let raw = run_tool_raw(tool, folder, args, extra_env, stdin_bytes, max_buffer, strip_all_git_env, deadline, stop, readers, prefix)?;
+    if !raw.success {
+        let stderr_str = raw.stderr.trim().to_string();
         let msg = if stderr_str.is_empty() {
-            format!("git exited with status {status}")
+            format!("{tool} exited with status {}", raw.status_display)
         } else {
             stderr_str
         };
         return Err(GitRunError::Failed(msg));
     }
-    Ok(GitRunOutput { stdout: stdout_str })
+    Ok(GitRunOutput { stdout: raw.stdout })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_git_impl(
+    folder: &str,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    stdin_bytes: Option<&[u8]>,
+    max_buffer: Option<usize>,
+    strip_all_git_env: bool,
+    deadline: Instant,
+    stop: TimeoutStop,
+    readers: Readers,
+    prefix: &[&str],
+) -> Result<GitRunOutput, GitRunError> {
+    run_tool_impl("git", folder, args, extra_env, stdin_bytes, max_buffer, strip_all_git_env, deadline, stop, readers, prefix)
 }
 
 /// Git as Node's `runWorktreeGitProcess` (`src/main/agents/threadWorktrees.ts`) runs it for a thread's own worktree:
@@ -3222,7 +3446,7 @@ fn run_git_impl(
 pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Duration>) -> Result<String, String> {
     // Node gives a removal no deadline at all; a day stands for none.
     let deadline = Instant::now() + deadline.unwrap_or(Duration::from_secs(86_400));
-    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline, TimeoutStop::Kill).map(|o| o.stdout).map_err(|e| match e {
+    run_git_impl(folder, args, &[], None, Some(2_000_000), false, deadline, TimeoutStop::Kill, Readers::default(), &STATUS_GIT_PREFIX).map(|o| o.stdout).map_err(|e| match e {
         GitRunError::Unavailable(_) => "Git is unavailable. Install Git or explicitly choose a shared working copy.".into(),
         GitRunError::MaxBuffer(_) => "Git returned too much output. Nothing was removed.".into(),
         GitRunError::Failed(msg) if msg == "git timed out" => "Git took too long.".into(),
@@ -3233,23 +3457,217 @@ pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Dur
 
 /// What Node's runner says when Git itself is missing (`GitUnavailableError`).
 pub(crate) const GIT_MISSING: &str = "git is not installed or is not on PATH.";
+/// Returned by `run_action_git_with` when its `cancel` flag stops an in-flight command.
+pub(crate) const GIT_ABORTED: &str = "git was stopped.";
 
-/// Git as Node's `runGitStatusCommand` (`src/main/agents/git/gitStatus.ts`) runs it for a Git action: `LC_ALL=C` with
-/// nothing that redirects Git, at most 8,000,000 bytes back, stopped at `deadline` with SIGTERM so Git can remove its
-/// locks, and failing in Node's words: what Git said on its error stream, or that it exited, did not finish or is missing.
+/// Git as Node's `runGitStatusCommand` (`src/main/agents/git/gitStatus.ts`) runs it for a Git action: Node's options
+/// alone before the arguments, `LC_ALL=C` with nothing that redirects Git, at most 8,000,000 bytes back, stopped at
+/// `deadline` with SIGTERM so Git can remove its locks, and failing in Node's words: what Git said on its error stream,
+/// or that it exited, did not finish or is missing.
 pub(crate) fn run_action_git(folder: &str, args: &[&str], deadline: Duration) -> Result<String, String> {
-    run_git_impl(folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate).map(|o| o.stdout).map_err(action_git_words)
+    run_action_git_with(folder, args, deadline, ActionGitExtras::default())
 }
 
-/// A Git action's failure in Node's runner's words.
-fn action_git_words(error: GitRunError) -> String {
+/// Each line a command prints, as it prints it, without its line ending: Node's `onLine`.
+pub(crate) type LineSink = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+/// What a command's output readers do beyond keeping it: hand each line to `lines`, and, with `keep_reading`, read on
+/// past the output limit, keeping nothing more, rather than stop the command there.
+#[derive(Default)]
+struct Readers {
+    lines: Option<LineSink>,
+    keep_reading: bool,
+}
+
+/// What a Git action may hand Git beyond its arguments, as Node's `GitCommandOptions` carries them: variables of its own,
+/// text on standard input, so a message or a path list is never an argument, a reader of each line printed, and an
+/// optional cancellation flag that terminates the child process tree cleanly on shutdown.
+#[derive(Default)]
+pub(crate) struct ActionGitExtras<'a> {
+    pub env: &'a [(String, String)],
+    pub stdin: Option<&'a [u8]>,
+    pub lines: Option<LineSink>,
+    pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
+}
+
+/// `run_action_git` with what `extras` adds.
+pub(crate) fn run_action_git_with(folder: &str, args: &[&str], deadline: Duration, extras: ActionGitExtras<'_>) -> Result<String, String> {
+    // Node's runner keeps the first 8,000,000 bytes and reads on: a Git action is never stopped or failed for printing more.
+    let readers = Readers { lines: extras.lines, keep_reading: true };
+    let raw = run_tool_raw_cancellable(
+        "git",
+        folder,
+        args,
+        extras.env,
+        extras.stdin,
+        Some(8_000_000),
+        false,
+        Instant::now() + deadline,
+        TimeoutStop::Terminate,
+        readers,
+        &ACTION_GIT_PREFIX,
+        extras.cancel,
+    );
+    let out = raw.and_then(|res| {
+        if !res.success {
+            let stderr_str = res.stderr.trim().to_string();
+            let msg = if stderr_str.is_empty() {
+                format!("git exited with status {}", res.status_display)
+            } else {
+                stderr_str
+            };
+            Err(GitRunError::Failed(msg))
+        } else {
+            Ok(res.stdout)
+        }
+    });
+    out.map_err(|e| action_tool_words("git", e))
+}
+
+/// Detailed failure from a `gh` invocation, preserving `stdout` on non-zero exit so GraphQL partial answers and
+/// rate-limit readings can be inspected identically to Node's `execFile` error (`src/main/agents/git/gitPullRequests.ts`).
+#[derive(Debug, Clone)]
+pub struct GhDetailedError {
+    pub unavailable: bool,
+    pub message: String,
+    pub stdout: String,
+}
+
+/// Runs GitHub's `gh` CLI as Node's `runGitStatusCommand` runs it (`src/main/agents/git/gitStatus.ts` + `ghCommand.ts`).
+pub(crate) fn run_action_gh_with(folder: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, String> {
+    let readers = Readers { lines: None, keep_reading: true };
+    run_tool_impl("gh", folder, args, &[], stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &[])
+        .map(|o| o.stdout)
+        .map_err(|e| action_tool_words("gh", e))
+}
+
+/// Runs `gh` like `run_action_gh_with`, preserving `stdout` and whether `gh` is missing when it fails.
+pub(crate) fn run_action_gh_detailed(folder: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, GhDetailedError> {
+    let readers = Readers { lines: None, keep_reading: true };
+    match run_tool_raw("gh", folder, args, &[], stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &[]) {
+        Ok(raw) if raw.success => Ok(raw.stdout),
+        Ok(raw) => {
+            let stderr_str = raw.stderr.trim().to_string();
+            let raw_msg = if stderr_str.is_empty() {
+                format!("gh exited with status {}", raw.status_display)
+            } else {
+                stderr_str
+            };
+            Err(GhDetailedError {
+                unavailable: false,
+                message: action_tool_words("gh", GitRunError::Failed(raw_msg)),
+                stdout: raw.stdout,
+            })
+        }
+        Err(err) => {
+            let unavailable = matches!(err, GitRunError::Unavailable(_));
+            Err(GhDetailedError {
+                unavailable,
+                message: action_tool_words("gh", err),
+                stdout: String::new(),
+            })
+        }
+    }
+}
+
+/// Runs `gh` and returns both stdout and stderr combined regardless of exit status (used for legacy `gh auth status`,
+/// where older `gh` writes signed-in hosts to stderr on exit 0 and partially signed-in configs exit 1 with hosts on stdout).
+pub(crate) fn run_action_gh_combined(folder: &str, args: &[&str], deadline: Duration) -> String {
+    let readers = Readers { lines: None, keep_reading: true };
+    match run_tool_raw("gh", folder, args, &[], None, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &[]) {
+        Ok(raw) => format!("{}\n{}", raw.stdout, raw.stderr),
+        Err(_) => String::new(),
+    }
+}
+
+/// Runs `git config --get-regexp <pattern>`, treating exit code 1 (no matching keys) as empty output like Node's
+/// `readGitHubRemotes`, even if git prints anything to stderr.
+pub(crate) fn run_action_git_config_regexp(folder: &str, pattern: &str, deadline: Duration) -> Result<String, String> {
+    let readers = Readers { lines: None, keep_reading: true };
+    let raw = run_tool_raw(
+        "git",
+        folder,
+        &["config", "--get-regexp", pattern],
+        &[],
+        None,
+        Some(8_000_000),
+        false,
+        Instant::now() + deadline,
+        TimeoutStop::Terminate,
+        readers,
+        &ACTION_GIT_PREFIX,
+    )
+    .map_err(|e| action_tool_words("git", e))?;
+    if raw.success {
+        return Ok(raw.stdout);
+    }
+    if raw.exit_code == Some(1) {
+        return Ok(String::new());
+    }
+    let stderr_str = raw.stderr.trim();
+    let err = if stderr_str.is_empty() {
+        GitRunError::Failed(format!("git exited with status {}", raw.status_display))
+    } else {
+        GitRunError::Failed(stderr_str.to_string())
+    };
+    Err(action_tool_words("git", err))
+}
+
+/// Reads a pipe to its end, keeping at most `limit` bytes (`None` for all of it), and hands each line to `lines` as it
+/// comes, split on `\n` with a `\r` before it dropped, and what is left once the pipe closes, as Node's runner does.
+/// Answered with what was kept and whether there was more than `limit`. Past `limit` it stops reading when
+/// `stop_at_limit` says so, and otherwise reads on, keeping nothing more, so every line still reaches `lines`.
+fn read_pipe(mut pipe: impl Read, limit: Option<usize>, stop_at_limit: bool, lines: Option<&LineSink>) -> (Vec<u8>, bool) {
+    let mut kept = Vec::new();
+    let mut partial: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut overflowed = false;
+    loop {
+        let read = match pipe.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        };
+        let bytes = &chunk[..read];
+        match limit {
+            Some(limit) if kept.len() + bytes.len() > limit => {
+                let room = limit.saturating_sub(kept.len());
+                kept.extend_from_slice(&bytes[..room]);
+                overflowed = true;
+            }
+            _ => kept.extend_from_slice(bytes),
+        }
+        if let Some(sink) = lines {
+            partial.extend_from_slice(bytes);
+            while let Some(end) = partial.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = partial.drain(..=end).collect();
+                let line = &line[..line.len() - 1];
+                let line = line.strip_suffix(b"\r").unwrap_or(line);
+                sink(&String::from_utf8_lossy(line));
+            }
+        }
+        if overflowed && stop_at_limit {
+            break;
+        }
+    }
+    if let (Some(sink), false) = (lines, partial.is_empty()) {
+        sink(&String::from_utf8_lossy(&partial));
+    }
+    (kept, overflowed)
+}
+
+/// A Git or `gh` action's failure in Node's runner's words.
+fn action_tool_words(tool: &str, error: GitRunError) -> String {
+    let timed_out = format!("{tool} timed out");
+    let exited_prefix = format!("{tool} exited with status ");
     match error {
-        GitRunError::Unavailable(_) => GIT_MISSING.into(),
-        GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
-        GitRunError::Failed(msg) if msg == "git timed out" => "git did not finish in time.".into(),
-        GitRunError::Failed(msg) => match msg.strip_prefix("git exited with status ").map(exit_code) {
-            Some(Some(code)) => format!("git exited with {code}."),
-            Some(None) => "git exited with a signal.".into(),
+        GitRunError::Unavailable(_) => format!("{tool} is not installed or is not on PATH."),
+        GitRunError::MaxBuffer(_) => format!("{tool} output exceeded buffer limit"),
+        GitRunError::Failed(msg) if msg == timed_out => format!("{tool} did not finish in time."),
+        GitRunError::Failed(msg) => match msg.strip_prefix(&exited_prefix).map(exit_code) {
+            Some(Some(code)) => format!("{tool} exited with {code}."),
+            Some(None) => format!("{tool} exited with a signal."),
             None => msg,
         },
     }
@@ -3291,13 +3709,37 @@ mod tests {
 
     use super::*;
 
+    /// A read interrupted by a signal is tried again, as `read_to_end` does, rather than taken for the end of the output.
+    #[test]
+    fn reads_on_past_an_interrupted_read() {
+        struct Interrupted(Vec<std::io::Result<&'static [u8]>>);
+        impl Read for Interrupted {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                match self.0.pop() {
+                    None => Ok(0),
+                    Some(Err(error)) => Err(error),
+                    Some(Ok(bytes)) => {
+                        buf[..bytes.len()].copy_from_slice(bytes);
+                        Ok(bytes.len())
+                    }
+                }
+            }
+        }
+        let pipe = Interrupted(vec![Ok(b"second\n"), Err(std::io::ErrorKind::Interrupted.into()), Ok(b"first\n")]);
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let sink = std::sync::Arc::clone(&seen);
+        let lines: LineSink = std::sync::Arc::new(move |line: &str| sink.lock().unwrap().push(line.to_string()));
+        assert_eq!(read_pipe(pipe, None, true, Some(&lines)), (b"first\nsecond\n".to_vec(), false));
+        assert_eq!(*seen.lock().unwrap(), ["first", "second"]);
+    }
+
     /// A Git action that exits with a Windows code of 0x80000000 or more, which `ExitStatus` writes in hex, is said as
     /// Node says it: the unsigned code in decimal, as libuv hands it over (`spawnCommand`), not as a signal.
     #[cfg(windows)]
     #[test]
     fn says_a_large_windows_exit_code_as_node_does() {
         use std::os::windows::process::ExitStatusExt;
-        let said = |code: u32| action_git_words(GitRunError::Failed(format!("git exited with status {}", std::process::ExitStatus::from_raw(code))));
+        let said = |code: u32| action_tool_words("git", GitRunError::Failed(format!("git exited with status {}", std::process::ExitStatus::from_raw(code))));
         assert_eq!(said(0xC000_0005), "git exited with 3221225477.");
         assert_eq!(said(0x8000_0000), "git exited with 2147483648.");
         assert_eq!(said(128), "git exited with 128.");

@@ -1,7 +1,12 @@
 pub mod acp;
+pub(crate) mod acp_side;
 pub mod claude;
+mod claude_side;
 pub mod claude_history;
 pub mod codex;
+mod codex_side;
+pub(crate) mod grok_side;
+mod side_process;
 pub mod muse;
 pub mod opencode;
 
@@ -13,6 +18,44 @@ pub use claude_history::{
 pub use codex::{CodexAdapter, CodexAdapterConfig};
 pub use muse::{MuseAdapter, MuseAdapterConfig};
 pub use opencode::{OpenCodeAdapter, OpenCodeAdapterConfig};
+
+/// Node's `effortKey`: lowercased, with hyphens, underscores and white space taken out.
+fn effort_key(id: &str) -> String {
+    id.to_lowercase().chars().filter(|c| !matches!(c, '-' | '_') && !crate::git_local::js_space(*c)).collect()
+}
+
+/// Node's `EFFORT_RANK`: the levels whose place is known, least thorough first.
+pub(crate) fn effort_rank(id: &str) -> Option<u8> {
+    Some(match effort_key(id).as_str() {
+        "off" | "none" => 0,
+        "minimal" => 1,
+        "low" => 2,
+        "medium" => 3,
+        "high" => 4,
+        "xhigh" | "extrahigh" => 5,
+        "max" => 6,
+        "ultra" => 7,
+        "ultracode" => 8,
+        _ => return None,
+    })
+}
+
+/// Node's `orderReasoningEfforts` (`src/shared/reasoningEfforts.ts`): a provider's reported levels in Sotto's order,
+/// least thorough first, with repeats dropped and the list turned round as a whole when its known levels run highest
+/// first, as Grok reports them. A side call runs at the first.
+pub(crate) fn order_reasoning_efforts(ids: &[String]) -> Vec<String> {
+    let mut unique: Vec<String> = Vec::new();
+    for id in ids {
+        if !unique.contains(id) {
+            unique.push(id.clone());
+        }
+    }
+    let ranks: Vec<u8> = unique.iter().filter_map(|id| effort_rank(id)).collect();
+    if ranks.len() > 1 && ranks[0] > ranks[ranks.len() - 1] {
+        unique.reverse();
+    }
+    unique
+}
 
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -199,6 +242,15 @@ pub(crate) fn encode_serde_record<T: serde::Serialize>(record: &T) -> serde_json
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn orders_efforts_as_nodes_order_reasoning_efforts_does() {
+        let order = |ids: &[&str]| order_reasoning_efforts(&ids.iter().map(|id| id.to_string()).collect::<Vec<_>>());
+        assert_eq!(order(&["xhigh", "high", "medium", "low"]), ["low", "medium", "high", "xhigh"]);
+        assert_eq!(order(&["low", "high", "low"]), ["low", "high"]);
+        assert_eq!(order(&["Extra_High", "custom", "minimal"]), ["minimal", "custom", "Extra_High"]);
+        assert_eq!(order(&["high", "custom"]), ["high", "custom"]);
+    }
+
     use super::*;
     use serde_json::{json, Value};
     use std::path::Path;

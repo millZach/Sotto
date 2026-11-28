@@ -87,6 +87,8 @@ import { VISUALIZE_TOOL, VisualToolServer } from '../agents/visualTools'
 import { createWatcherRoomDesktop } from '../agents/watcherRoomDesktop'
 import { windowHistories } from '../agents/windowActivityBodies'
 import { githubBaseBranchChecks, githubOpenPullRequestBranches, githubPullRequestMerged, githubPullRequestState } from '../agents/worktreeCleanup'
+import { ScheduledTaskService } from '../automation/scheduledTasks'
+import { registerScheduledTasksIpc } from '../automation/scheduledTasksIpc'
 import { registerCouncilIpc } from '../council/councilIpc'
 import { CouncilService } from '../council/councilService'
 import { E2EAgentHost, e2eAgentReasoner } from '../e2e/agentEffects'
@@ -887,6 +889,22 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       ?? new BranchBundles({ stagingDirectory: join(userDataPath, 'council-staging'), recordsPath: join(userDataPath, 'council-staging', 'records.json') }),
   }) : undefined
   if (councilService) await councilService.recover()
+  // Scheduled tasks run on the computer that keeps them (ADR-0218): only where this computer hosts agents.
+  const scheduledTasks = owlFeatures['scheduled-tasks'] && startupSettings.localHostEnabled ? new ScheduledTaskService({
+    directory: userDataPath,
+    control: agentControl,
+    host: agentHost,
+    enabled: () => workingCopySettings.scheduledTasksEnabled,
+    historyEnabled: () => agentHistoryEnabled,
+    credentials: shellBridge.credentials as import('../agents/credentials').AgentCredentials,
+    clipboard: text => shellBridge.clipboardWrite(text),
+    openPath: path => shellBridge.openPath(path),
+    authority,
+    runGit: ghStandIn ? runWithGhStandIn(ghStandIn) : e2eConfiguration ? async () => { throw new GitUnavailableError('gh is not installed') } : runGitStatusCommand,
+    webhooks: e2eConfiguration === null,
+    log,
+  }) : undefined
+  if (scheduledTasks) await scheduledTasks.recover()
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { dynamic: owlFeatures['dynamic-threads'], roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   const coordinationTools = threadCoordinationService ? new CoordinationToolServer(threadCoordinationService) : undefined
@@ -1202,6 +1220,9 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     senders, () => agentControl.hostId(), (channel, payload) => { shellBridge.sendToMain(channel, payload) }, hostRouter)
   const cleanupContinue = registerContinueIpc(ipc, continueService, senders)
   const cleanupCouncil = registerCouncilIpc(ipc, councilService, senders, () => agentControl.hostId(), (channel, payload) => { shellBridge.sendToMain(channel, payload) })
+  const cleanupScheduledTasks = owlFeatures['scheduled-tasks']
+    ? registerScheduledTasksIpc(ipc, scheduledTasks, senders, () => agentControl.hostId(), (channel, payload) => { shellBridge.sendToMain(channel, payload) })
+    : () => undefined
   const cleanupThreadMoves = registerThreadMoveIpc(ipc, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, senders,
     (channel, payload) => { shellBridge.sendToMain(channel, payload) })
   const cleanupNextPrompts = registerNextPromptIpc(ipc, nextPromptEnabled, localRuntime.nextPrompts, () => agentControl.hostId(), senders, hostRouter,
@@ -1460,6 +1481,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     cleanupCheckQueues()
     cleanupContinue()
     cleanupCouncil()
+    cleanupScheduledTasks()
     cleanupThreadMoves()
     cleanupNextPrompts()
     unsubscribeHostNextPrompts?.()
@@ -1504,7 +1526,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     hostUpdates.dispose()
     hostBoot.dispose()
     hostPhones.close()
-    const councilResults = await Promise.allSettled([councilService?.close()])
+    const serviceResults = await Promise.allSettled([councilService?.close(), scheduledTasks?.close()])
     const closeDesktopHosts = async (): Promise<void> => {
       if (!remoteHostE2E) { await desktopHosts.close(); return }
       try { await desktopHosts.close() }
@@ -1512,6 +1534,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     }
     const results = await Promise.allSettled([
       councilService?.settled(),
+      scheduledTasks?.settled(),
       closeDesktopHosts(),
       closeLocal(),
       hostSetupTools.close(),
@@ -1530,7 +1553,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     hostRouter.dispose()
     disposeIpc()
     memoryStore?.close()
-    const failure = [...councilResults, ...results].find(result => result.status === 'rejected')
+    const failure = [...serviceResults, ...results].find(result => result.status === 'rejected')
     if (failure?.status === 'rejected') throw failure.reason
   })()
 
@@ -1585,6 +1608,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       if (grantDefaultChanged && pairedHostBrowser) for (const connection of hostRouter.remoteConnections()) void hostRouter.tellBrowserSetting(connection, settings.browserWithoutAsking).catch(() => log('host-browser-setting-failed'))
       if (babysittingChanged) void pullRequestTools?.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
+      if (settings.scheduledTasksEnabled !== previous.scheduledTasksEnabled) scheduledTasks?.settingsChanged()
     },
     cleanSettingsHistory(afterClean) {
       return cleanSettingsHistory(agentControl, afterClean, [cleanRetiredHistory])

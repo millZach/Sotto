@@ -66,7 +66,12 @@ const sessionFile = id => path(`sessions/${id}.json`)
 const sessions = new Map()
 const resident = new Set()
 const loadSession = id => { if (sessions.has(id)) return sessions.get(id); try { const session = JSON.parse(readFileSync(sessionFile(id), 'utf8')); sessions.set(id, session); return session } catch { return undefined } }
-const save = id => writeFileSync(sessionFile(id), JSON.stringify(sessions.get(id)))
+let saveSerial = 0
+const save = id => {
+  const staged = path(`sessions/${id}.${process.pid}.${++saveSerial}.tmp`)
+  writeFileSync(staged, JSON.stringify(sessions.get(id)))
+  renameSync(staged, sessionFile(id))
+}
 const configOptions = session => {
   const model = modelOf(session.model), option = effortOf(model)
   return [{ id: 'mode', category: 'mode', type: 'select', currentValue: session.mode, options: ['agent', 'plan', 'ask'].map(value => ({ value, name: value })) },
@@ -121,14 +126,18 @@ createInterface({ input: process.stdin }).on('line', line => {
     appendFileSync(path('oneshot.jsonl'), JSON.stringify({ cwd: session.cwd, model: session.model, effort: session.effort, mode: session.mode, material: p.prompt.map(part => part.text ?? '').join('') }) + '\n')
     const script = read('oneshot.json', {})
     if (script.fail) { send({ id: frame.id, error: { code: -32603, message: 'Scripted failure' } }); return }
-    // `tool`: the model reads a file before it answers, as Cursor's ask mode can, and ends its turn as if nothing stopped it.
-    if (script.tool) {
-      const toolCallId = `call_side_${randomUUID()}\nfc_fixture`
-      update(p.sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'Read README.md', kind: 'read', status: 'pending', rawInput: { path: join(session.cwd, 'README.md') } })
-      update(p.sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: 'Synthetic file content' } })
+    const answer = () => {
+      // `tool`: the model reads a file before it answers, as Cursor's ask mode can, and ends its turn as if nothing stopped it.
+      if (script.tool) {
+        const toolCallId = `call_side_${randomUUID()}\nfc_fixture`
+        update(p.sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'Read README.md', kind: 'read', status: 'pending', rawInput: { path: join(session.cwd, 'README.md') } })
+        update(p.sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: 'Synthetic file content' } })
+      }
+      update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.text ?? 'Fixture title' } })
+      send({ id: frame.id, result: { stopReason: 'end_turn' } })
     }
-    update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.text ?? 'Fixture title' } })
-    send({ id: frame.id, result: { stopReason: 'end_turn' } })
+    // `delayMs` stands for a client that takes that long to answer, so a caller's deadline can pass first.
+    if (script.delayMs) setTimeout(answer, script.delayMs); else answer()
     return
   }
   // A side session stopped by Sotto is recorded apart too, with the Cursor folder its process ran with.

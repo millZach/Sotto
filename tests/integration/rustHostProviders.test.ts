@@ -5,7 +5,7 @@
 // fake driver (`providers.ts`), asserting zero protocol violations and zero fake schema violations.
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -28,13 +28,13 @@ const RUN_RUST_HOST = process.env.SOTTO_TEST_RUST_HOST === '1'
 const PIXEL_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 const NOTES_BYTES = Buffer.from('Referee notes from Rust provider test\n')
 
-async function findRustHostBinary(): Promise<string> {
-  const exe = process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host'
+/** A file Cargo built, `file` under its debug or release folder, or the error saying how to build it. */
+async function findRustBuild(file: string, build: string): Promise<string> {
   const cargoTargetDir = process.env.CARGO_TARGET_DIR
   const candidates = [
-    ...(cargoTargetDir ? [join(cargoTargetDir, 'debug', exe), join(cargoTargetDir, 'release', exe)] : []),
-    resolve('target', 'debug', exe),
-    resolve('target', 'release', exe),
+    ...(cargoTargetDir ? [join(cargoTargetDir, 'debug', file), join(cargoTargetDir, 'release', file)] : []),
+    resolve('target', 'debug', file),
+    resolve('target', 'release', file),
   ]
   for (const candidate of candidates) {
     try {
@@ -44,7 +44,11 @@ async function findRustHostBinary(): Promise<string> {
       // Try next build location.
     }
   }
-  throw new Error(`Could not find compiled Rust ${exe}. Run cargo build -p sotto-host --bin sotto-host first.`)
+  throw new Error(`Could not find compiled Rust ${file}. Run ${build} first.`)
+}
+
+async function findRustHostBinary(): Promise<string> {
+  return findRustBuild(process.platform === 'win32' ? 'sotto-host.exe' : 'sotto-host', 'cargo build -p sotto-host --bin sotto-host')
 }
 
 interface TestClient {
@@ -465,7 +469,11 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host native Codex and Claude Code ad
     const writeFakeBin = async (dir: string, name: string, fixtureFile: string, extraArgs = ''): Promise<void> => {
       await mkdir(dir, { recursive: true })
       const script = join(fixtures, fixtureFile)
-      if (windows) {
+      if (windows && name === 'claude') {
+        // Claude Code is found only by its `.exe` name on Windows, as Node finds it: npm's `claude.cmd` is passed over.
+        await copyFile(await findRustBuild(join('examples', 'fake-native-client.exe'), 'cargo build -p sotto-host --example fake-native-client'), join(dir, `${name}.exe`))
+        await writeFile(join(dir, `${name}.launch`), [process.execPath, script, dataDir].join('\n'), 'utf8')
+      } else if (windows) {
         const file = join(dir, `${name}.cmd`)
         const body = `@echo off\r\n"${process.execPath}" "${script}" "${dataDir}" ${extraArgs}%*\r\n`
         await writeFile(file, body, 'utf8')

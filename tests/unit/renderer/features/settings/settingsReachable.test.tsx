@@ -1,4 +1,5 @@
 import type { ModsBridge } from '../../../../../src/shared/mods'
+import type { ScheduledTasksBridge } from '../../../../../src/shared/scheduledTasks'
 import { threadsStateFixture } from '../../../../fixtures/agentState'
 import { phonesBridgeFixture } from '../../../../fixtures/renderer/hostBridges'
 import { baseProps, settingsTab } from '../../../../fixtures/renderer/settingsViewHarness'
@@ -42,7 +43,10 @@ function withMain(): void {
   // Settings › Mods (ADR-0217) shows only with its bridge.
   const mods: ModsBridge = { list: vi.fn(async () => ({ mods: [] })), make: vi.fn(), openFolder: vi.fn(), reveal: vi.fn(), remove: vi.fn(),
     onChanged: () => () => undefined, onAllOff: () => () => undefined }
-  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers, popup, mods })
+  // Settings › Scheduled tasks (ADR-0218) shows only with its bridge, here with no tasks yet.
+  const scheduledTasks: ScheduledTasksBridge = { read: vi.fn(async () => ({ available: true, enabled: false, tasks: [], runs: [], playbooks: [], playbooksFolder: '',
+    webhooks: { listening: false }, credentials: true })), command: vi.fn(async () => ({ ok: true as const })), onChanged: () => () => undefined }
+  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers, popup, mods, scheduledTasks })
 }
 
 function withAgents(): void {
