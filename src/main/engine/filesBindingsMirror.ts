@@ -43,8 +43,9 @@ export class FilesBindingsMirror {
   private readonly closedThreads = new Set<string>()
 
   /**
-   * Takes in what changed, and answers the local threads that ended with it: those that closed, archived or settled,
-   * and those that went. A thread that was closed already, or a whole list sent again, ends none.
+   * Takes in what changed, and answers the local threads that ended with it: those their provider closed, archived or
+   * settled there, and those that went. The user's Settle closes none, as Undo brings a settled thread straight back.
+   * A thread that was closed already, or a whole list sent again, ends none.
    */
   apply(delta: FilesBindingsDelta): string[] {
     const titledBefore = new Set(this.threadTitles.keys()), closedBefore = new Set(this.closedThreads)
