@@ -28,6 +28,11 @@ export const MASK = '••••••••'
 /** A secret shorter than this many characters is not masked: one that short is as likely the page's own words. */
 export const MASK_MINIMUM = 3
 
+/** `text` cut to at most `max` code units, never between the halves of a surrogate pair, which would leave no character. */
+export function cutWhole(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, Math.max(0, max)).replace(/[\uD800-\uDBFF]$/u, '')
+}
+
 /** The secret's bytes and the Knuth-Morris-Pratt table that says how far a partial match falls back. */
 interface Needle { readonly bytes: Uint8Array; readonly fallback: Int32Array }
 /** A typed secret as the search needs it, made once when it is typed. It holds the secret's bytes, so it stays in memory only. */
@@ -286,6 +291,8 @@ export function maskSecrets(text: string, secrets: Iterable<SecretMatcher | null
   }
   if (matchers.length && coverAll(words, matchers, keep, covered)) found = true
   let length = Math.max(0, Math.min(max ?? words.length, words.length))
+  // A cut between the halves of a surrogate pair takes the whole character off.
+  if (length < words.length && /[\uD800-\uDBFF]/u.test(words[length - 1] ?? '')) length--
   if (!found) return words.slice(0, length)
   if (length > 0 && covered[length - 1]) { const end = covered.indexOf(0, length); length = end < 0 ? words.length : end }
   const parts: string[] = []

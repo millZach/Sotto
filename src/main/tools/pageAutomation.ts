@@ -1,7 +1,7 @@
 import { ToolFailure, fail } from './common'
 import { SNAPSHOT_TEXT, fieldContents, formatSnapshot, keyEvents, modifierMask, type AXNode } from './pageSnapshot'
 import { BROWSER_URL_MAX, safeBrowserUrl, presetSize, type BrowserAction, type BrowserAppearance, type BrowserBounds, type BrowserCapture, type BrowserDialog, type BrowserTargetFields } from '../../shared/browser'
-import { MASK, maskSecrets, secretMatchers, type SecretMatcher, type Tidy } from './secretMask'
+import { MASK, cutWhole, maskSecrets, secretMatchers, type SecretMatcher, type Tidy } from './secretMask'
 
 /**
  * The page's debugger, as a page automation drives it: Electron's own on the desktop, a DevTools session over a pipe
@@ -622,7 +622,7 @@ export abstract class PageAutomation {
    * Never throws, as `masked`.
    */
   told(text: string, max: number, tidy?: Tidy): string {
-    try { return maskSecrets(text, this.typedSecrets.size ? this.matchers() : [], this.origin(), max, tidy).slice(0, max) } catch { return MASK.slice(0, max) }
+    try { return cutWhole(maskSecrets(text, this.typedSecrets.size ? this.matchers() : [], this.origin(), max, tidy), max) } catch { return MASK.slice(0, max) }
   }
   /**
    * How much further than a cap the page's words are read while a secret is typed here, so a secret that starts before
@@ -662,8 +662,8 @@ export abstract class PageAutomation {
     if (originOf(said) === origin) {
       // The longest start of it that fits, found by halving: a longer start is no shorter once escaped.
       let low = origin.length, high = said.length - 1
-      while (low < high) { const middle = Math.ceil((low + high) / 2); if (fits(said.slice(0, middle))) low = middle; else high = middle - 1 }
-      if (low > origin.length) return said.slice(0, low)
+      while (low < high) { const middle = Math.ceil((low + high) / 2); if (fits(cutWhole(said, middle))) low = middle; else high = middle - 1 }
+      if (low > origin.length) return cutWhole(said, low)
     }
     return origin ? `${origin}/${MASK}` : said
   }

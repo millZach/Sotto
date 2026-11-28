@@ -1335,6 +1335,19 @@ describe('what is masked fits where it goes, and is tidied before it is cut (aft
     expect(JSON.stringify(dialog)).not.toContain(pin)
   })
 
+  it('never cuts between the halves of a surrogate pair, whether a mask pushed the character to the cut or not', async () => {
+    const endsHalfway = (text: string): boolean => /[\uD800-\uDBFF]$/u.test(text)
+    // The PIN's mask is four characters longer than the PIN, which carries the emoji across the cut at 512.
+    const automation_ = await typedOn(naming(), '4821')
+    const told = automation_.told(`4821${'a'.repeat(503)}😀`, 512)
+    expect(endsHalfway(told)).toBe(false)
+    expect(told).toBe(`••••••••${'a'.repeat(503)}`)
+    // With no secret in the words, a cut through the emoji takes it off whole, and one past it keeps it.
+    expect(maskSecrets(`${'a'.repeat(9)}😀`, [], '', 10)).toBe('a'.repeat(9))
+    expect(maskSecrets(`${'a'.repeat(9)}😀`, [], '', 11)).toBe(`${'a'.repeat(9)}😀`)
+    expect(automation_.told(`${'a'.repeat(9)}😀`, 10)).toBe('a'.repeat(9))
+  })
+
   it('says only the origin and a mask of an address whose mask would change its origin (P-L1)', async () => {
     // A secret that runs from the host into the path: masked, the host would be another.
     const automation_ = await typedOn(naming(), 'ple/checkout')

@@ -7,6 +7,7 @@ import { BrowserGrants, alwaysAsks, grantCovers } from './browserGrants'
 import { uploadPaths, type BrowserFiles, type StagedUpload } from './browserFiles'
 import { ToolFailure, ToolOperations, fail, parse, workspace } from './common'
 import { SECRET_SPENT, isTargeted, type PageAutomation, type TargetedAction } from './pageAutomation'
+import { cutWhole } from './secretMask'
 import type { SecretSite } from '../../shared/secretRequests'
 import { ThreadFilePages } from './threadFilePages'
 
@@ -822,7 +823,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       // Whatever the page says back, its address included, goes on with a secret typed into it masked (ADR-0219).
       output = record.automation.masked(output)
       // The window takes so much of it, and what it is cut from is masked already, so only the end of a mask can go.
-      task.output = output.slice(0, BROWSER_OUTPUT_MAX)
+      task.output = cutWhole(output, BROWSER_OUTPUT_MAX)
       const grantNote = granted ? ' Not asked: you let this thread use the browser without asking.' : ''
       task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: this.stepDetail(action, output, grantNote), url: record.automation.maskedUrl(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40)
@@ -855,7 +856,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     if (action.type === 'snapshot') return 'Read the page: its elements, words, console and errors.'
     if (action.type === 'evaluate') return `Ran a script in the page.${grantNote}`
     if (action.type === 'upload') return action.paths.length ? `Gave the page ${action.paths.length} file${action.paths.length === 1 ? '' : 's'}.` : 'Cancelled the page\'s file chooser.'
-    return grantNote ? `${output.slice(0, 1800)}${grantNote}` : output.slice(0, 2000)
+    return grantNote ? `${cutWhole(output, 1800)}${grantNote}` : cutWhole(output, 2000)
   }
   /**
    * After a navigation, waits until the page has loaded as far as `waitUntil` says, or `timeoutMs` passes. A page that
