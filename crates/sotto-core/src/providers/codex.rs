@@ -1183,7 +1183,7 @@ impl ProviderAdapter for CodexAdapter {
                 }
                 Some(rec) => {
                     // Ensure loaded in this thread process (idempotent in Codex when already loaded).
-                    let _ = proc
+                    if proc
                         .call(
                             "thread/resume",
                             json!({
@@ -1199,7 +1199,30 @@ impl ProviderAdapter for CodexAdapter {
                             }),
                             self.config.request_timeout_ms,
                         )
-                        .await;
+                        .await
+                        .is_ok()
+                    {
+                        let mut changed = false;
+                        if let Some(stored) = self.shared.records.lock().unwrap().get_mut(&req.thread_id) {
+                            if stored.model_id.as_deref() != Some(raw_model.as_str()) {
+                                stored.model_id = Some(raw_model);
+                                changed = true;
+                            }
+                            if stored.reasoning_effort.as_deref() != Some(effort.as_str()) {
+                                stored.reasoning_effort = Some(effort);
+                                changed = true;
+                            }
+                            if let Some(mode) = req.runtime_mode.as_ref() {
+                                if stored.runtime_mode.as_deref() != Some(mode.as_str()) {
+                                    stored.runtime_mode = Some(mode.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                        if changed {
+                            self.shared.save_records();
+                        }
+                    }
                     rec.codex_thread_id
                 }
             };
