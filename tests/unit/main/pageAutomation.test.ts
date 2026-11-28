@@ -978,6 +978,30 @@ describe('page words are masked before they are cut or tidied (after the third r
     await expect(automation_.waitFor({ type: 'wait_for', text: 'wwww', timeoutMs: 1 }, go)).resolves.toContain('Seen')
   })
 
+  it('keeps inspect\'s answer within its size once masked, as each mask can be longer than the secret it stands for', async () => {
+    // A short secret, said apart many times in what the page names an element's role, or in its address: each three
+    // characters become nine, so the masked answer outgrows the raw one.
+    const many = (copies: number): string => 'abc '.repeat(copies)
+    const fake = showing('', [], (method, params) => {
+      const expression = String(params.expression ?? '')
+      if (method !== 'Runtime.evaluate' || !expression.startsWith('Array.from(document.querySelectorAll')) return undefined
+      // Each role is cut where the read asks, as the page's own slice would cut it.
+      const cut = /role:\(el\.getAttribute\('role'\)\|\|''\)\.slice\(0,(\d+)\)/u.exec(expression)
+      const role = (index: number): string => `${many(475)}${index}`.slice(0, cut ? Number(cut[1]) : undefined)
+      return { result: { value: Array.from({ length: 100 }, (_, index) => ({ tag: 'div', role: role(index), name: '', x: 0, y: 0, width: 1, height: 1, disabled: false })) } }
+    })
+    const automation_ = await typedOn(fake, 'abc')
+    const roles = await automation_.inspect()
+    expect(roles.length).toBeLessThanOrEqual(200_000)
+    expect(roles).not.toContain('abc')
+    expect((JSON.parse(roles) as { elements: { role: string }[] }).elements[0]?.role).toMatch(/^(•{8} ){10}/u)
+    fake.url = () => `https://shop.example/search?q=${'abc+'.repeat(40_000)}`
+    const address = await automation_.inspect()
+    expect(address.length).toBeLessThanOrEqual(200_000)
+    expect(address).not.toContain('abc')
+    expect(JSON.parse(address)).toMatchObject({ url: expect.stringMatching(/^https:\/\/shop\.example\/search\?q=(•{8}\+){10}/u), truncated: true })
+  })
+
   it('reads a console message, an error and a dialog past their cuts, and masks a dialog before its tabs are spaces', async () => {
     const fake = showing('')
     const automation_ = await typedOn(fake)

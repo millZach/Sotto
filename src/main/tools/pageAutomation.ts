@@ -44,8 +44,10 @@ const DIALOG_WORDS = 2000
 const pageWords = (value: string): string => value.replace(/[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/gu, ' ')
 /** How much of a console message and of an error the agent is told. */
 const CONSOLE_WORDS = 500, ERROR_WORDS = 2000
-/** How much of an element's name and words a pick, a comment on the page or inspect says. */
-const ELEMENT_NAME = 500, ELEMENT_TEXT = 1000, INSPECT_NAME = 300, INSPECT_ELEMENT_NAME = 200
+/** How much of an element's name, words and role a pick, a comment on the page or inspect says. */
+const ELEMENT_NAME = 500, ELEMENT_TEXT = 1000, INSPECT_NAME = 300, INSPECT_ELEMENT_NAME = 200, INSPECT_ROLE = 100
+/** How long inspect's answer may be once masked, and how much of the address one too long says. */
+const INSPECT_SIZE = 200_000, INSPECT_URL = 2000
 /** The most of an element's markup read for its words. */
 const ELEMENT_MARKUP = 200_000
 /** Run on an element: scrolls its nearest scrolling container, or the page, and returns how far that moved. */
@@ -585,14 +587,16 @@ export abstract class PageAutomation {
     // Each name is masked before it is cut, and read far enough past the cut to be masked whole (`told`).
     const nodes = (result.nodes ?? []).filter(node => !node.ignored && !hidden.has(node.nodeId)).slice(0, 200).map(node => ({ role: String(node.role?.value ?? '').slice(0, 100), name: this.told(String(node.name?.value ?? ''), INSPECT_NAME), nodeId: node.backendDOMNodeId }))
     const dom = await this.send('Runtime.evaluate', {
-      expression: `Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3')).slice(0,100).map(el => { const r=el.getBoundingClientRect(); return { tag:el.tagName.toLowerCase(), role:el.getAttribute('role')||'', name:(el.getAttribute('aria-label')||el.innerText||el.getAttribute('placeholder')||'').slice(0,${INSPECT_ELEMENT_NAME + this.overread}), x:r.x,y:r.y,width:r.width,height:r.height, disabled:!!el.disabled }; })`,
+      expression: `Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],h1,h2,h3')).slice(0,100).map(el => { const r=el.getBoundingClientRect(); return { tag:el.tagName.toLowerCase(), role:(el.getAttribute('role')||'').slice(0,${INSPECT_ROLE + this.overread}), name:(el.getAttribute('aria-label')||el.innerText||el.getAttribute('placeholder')||'').slice(0,${INSPECT_ELEMENT_NAME + this.overread}), x:r.x,y:r.y,width:r.width,height:r.height, disabled:!!el.disabled }; })`,
       returnByValue: true,
     }) as { result?: { value?: unknown } }
     const listed: unknown = dom.result?.value
-    const elements = Array.isArray(listed) ? listed.map((element: unknown) => element && typeof element === 'object' ? { ...element, name: this.told(String((element as { name?: unknown }).name ?? ''), INSPECT_ELEMENT_NAME) } : element) : []
+    const elements = Array.isArray(listed) ? listed.map((element: unknown) => element && typeof element === 'object' ? { ...element, role: this.told(String((element as { role?: unknown }).role ?? ''), INSPECT_ROLE), name: this.told(String((element as { name?: unknown }).name ?? ''), INSPECT_ELEMENT_NAME) } : element) : []
     const errors = this.errors.map(entry => ({ kind: entry.kind, message: this.told(entry.message, ERROR_WORDS) }))
-    const output = JSON.stringify({ url: this.page.url(), nodes, elements, errors, truncated: (result.nodes?.length ?? 0) > 200 })
-    return this.masked(output.length <= 200_000 ? output : JSON.stringify({ url: this.page.url(), nodes: nodes.slice(0, 100), errors: errors.slice(-10), truncated: true }))
+    // The answer is measured once masked, as a mask can be longer than the secret it stands for; one too long is told
+    // with less of the page, and the address cut as its words are.
+    const output = this.masked(JSON.stringify({ url: this.page.url(), nodes, elements, errors, truncated: (result.nodes?.length ?? 0) > 200 }))
+    return output.length <= INSPECT_SIZE ? output : this.masked(JSON.stringify({ url: this.told(this.page.url(), INSPECT_URL), nodes: nodes.slice(0, 100), errors: errors.slice(-10), truncated: true }))
   }
   /**
    * `text` with every secret typed into this page masked: as written, as JSON writes it, and however an address or a form
