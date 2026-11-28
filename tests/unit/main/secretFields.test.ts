@@ -2,8 +2,8 @@
 /**
  * Fields on a page a secret was typed into (ADR-0219 and ADR-0222, after the fourth review of the browser-parity
  * branch), with every read Sotto makes of the page run in a DOM, as Chromium runs it in the page: which keys a field
- * that holds the secret still takes, by the kind of field it is, and that a field Sotto cannot read counts as one that
- * holds it.
+ * that holds the secret still takes, by the kind of field it is; that the page's own origin is not taken for the
+ * secret; and that a field Sotto cannot read counts as one that holds it.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PageInput, type PagePicture } from '../../../src/main/tools/pageAutomation'
@@ -94,9 +94,10 @@ type Key = Extract<PageInput, { type: 'key' }>
 const key = (pressed: string, ...modifiers: NonNullable<Key['modifiers']>): Key => ({ type: 'key', key: pressed, modifiers })
 
 /** A sign-in page with a password field, `value` typed into it from a secret request, and the focus then on `field`. */
-async function typedInto(value: string, field?: HTMLElement): Promise<{ fake: DomPage; automation: TestAutomation }> {
+async function typedInto(value: string, field?: HTMLElement, options: { address?: string } = {}): Promise<{ fake: DomPage; automation: TestAutomation }> {
   document.body.innerHTML = '<input id="password" type="password">'
   const fake = new DomPage(), automation = new TestAutomation(fake)
+  if (options.address) fake.address = options.address
   automation.parity = true
   await automation.typeSecret(async () => value, go, { selector: '#password' })
   expect((document.getElementById('password') as HTMLInputElement).value).toBe(value)
@@ -146,6 +147,27 @@ describe('the keys a field that holds a typed secret takes, by its kind (after t
       for (const pressed of ['Enter', 'Tab', 'Backspace', 'Space']) await automation.input(key(pressed), go)
       expect(fake.keys(), kind).toEqual(['Enter', 'Tab', 'Backspace', ' '])
     }
+  })
+})
+
+describe('the page\'s own origin is not taken for the secret (after the fourth review, P-L4)', () => {
+  it('finds no secret in a later document or a field that names the page\'s own address, and finds it said on its own', async () => {
+    // A PIN that is also the page's port: a later document's script names the page's address, and a field holds a webhook on it.
+    const hook = holding['a single-line field']('http://localhost:5173/hooks/deploy')
+    const { fake, automation } = await typedInto('5173', hook, { address: 'http://localhost:5173/login' })
+    // The sign-in document is gone, and its field with it.
+    automation.documentCommitted()
+    document.getElementById('password')!.remove()
+    document.body.insertAdjacentHTML('afterbegin', '<script type="application/json">{"api":"http://localhost:5173/api"}</script><p>Dashboard</p>')
+    expect(await automation.showsSecret()).toBe(false)
+    await automation.input({ type: 'key', key: 'a', modifiers: ['Control'] }, go)
+    await automation.input(key('Backspace'), go)
+    expect(fake.keys()).toEqual(['a', 'Backspace'])
+    // Said on its own, it is the secret.
+    document.body.insertAdjacentHTML('beforeend', '<p>Your PIN is 5173</p>')
+    expect(await automation.showsSecret()).toBe(true)
+    ;(hook as HTMLInputElement).value = 'PIN 5173'
+    await expect(automation.input(key('Backspace'), go)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('holds a secret you saved') })
   })
 })
 

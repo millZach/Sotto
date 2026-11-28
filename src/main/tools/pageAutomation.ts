@@ -1014,7 +1014,7 @@ export abstract class PageAutomation {
       await this.ready()
       const read = await this.send('Runtime.evaluate', { expression: DOCUMENT_TEXT, returnByValue: true }) as { result?: { value?: unknown } }
       const text = read.result?.value
-      return typeof text !== 'string' || this.masked(text, '') !== text
+      return typeof text !== 'string' || this.masked(text) !== text
     } catch { return true }
   }
   /** Whether a secret was typed into this page while it has been open, in any of its documents. */
@@ -1049,7 +1049,7 @@ export abstract class PageAutomation {
   }
   /** Whether a field as `field` read it holds a typed secret; one that could not be read (null) counts as holding one. */
   private keepsSecret(field: { text: string } | null): boolean {
-    return field === null || (field.text !== '' && this.masked(field.text, '') !== field.text)
+    return field === null || (field.text !== '' && this.masked(field.text) !== field.text)
   }
   /**
    * The field `backendNodeId` names, or the focused one (`FIELD_TEXT`): the text an edit there would change and whether
